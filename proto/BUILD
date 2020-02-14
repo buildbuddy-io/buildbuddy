@@ -39,6 +39,6 @@ proto_library(
 
 go_grpc_library(
     name = "build_go_proto",
-    importpath = "proto/client/v1/bep",
+    importpath = "proto",
     proto = ":build_proto",
 )

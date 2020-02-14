@@ -16,7 +16,7 @@ syntax = "proto3";
 
 package google.api;
 
-import "proto/client/v1/bep/http.proto";
+import "proto/http.proto";
 import "google/protobuf/descriptor.proto";
 
 option java_multiple_files = true;

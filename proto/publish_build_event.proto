@@ -17,8 +17,8 @@ syntax = "proto3";
 
 package google.devtools.build.v1;
 
-import "proto/client/v1/bep/annotations.proto";
-import "proto/client/v1/bep/build_events.proto";
+import "proto/annotations.proto";
+import "proto/build_events.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 
@@ -56,9 +56,9 @@ service PublishBuildEvent {
   rpc PublishLifecycleEvent(PublishLifecycleEventRequest)
       returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      post: "/v1/projects/{project_id=*}/lifecycleEvents:publish"
-      body: "*"
-      additional_bindings { post: "/v1/lifecycleEvents:publish" body: "*" }
+      post : "/v1/projects/{project_id=*}/lifecycleEvents:publish"
+      body : "*"
+      additional_bindings {post : "/v1/lifecycleEvents:publish" body : "*"}
     };
   }
 
@@ -67,9 +67,9 @@ service PublishBuildEvent {
   rpc PublishBuildToolEventStream(stream PublishBuildToolEventStreamRequest)
       returns (stream PublishBuildToolEventStreamResponse) {
     option (google.api.http) = {
-      post: "/v1/projects/{project_id=*}/events:publish"
-      body: "*"
-      additional_bindings { post: "/v1/events:publish" body: "*" }
+      post : "/v1/projects/{project_id=*}/events:publish"
+      body : "*"
+      additional_bindings {post : "/v1/events:publish" body : "*"}
     };
   }
 }

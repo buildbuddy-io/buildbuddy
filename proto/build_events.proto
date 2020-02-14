@@ -17,7 +17,7 @@ syntax = "proto3";
 
 package google.devtools.build.v1;
 
-import "proto/client/v1/bep/build_status.proto";
+import "proto/build_status.proto";
 import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
 
