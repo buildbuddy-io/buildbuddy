@@ -42,3 +42,70 @@ go_grpc_library(
     importpath = "proto",
     proto = ":build_proto",
 )
+
+go_proto_library(
+    name = "build_event_stream_go_proto",
+    importpath = "github.com/buchgr/bazel-remote/event/proto",
+    proto = ":build_event_stream_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":command_line_go_proto",
+        ":invocation_policy_go_proto",
+    ],
+)
+
+proto_library(
+    name = "build_event_stream_proto",
+    srcs = ["build_event_stream.proto"],
+    deps = [
+        ":command_line_proto",
+        ":invocation_policy_proto",
+    ],
+)
+
+go_proto_library(
+    name = "invocation_policy_go_proto",
+    importpath = "blaze.invocation_policy",
+    proto = ":invocation_policy_proto",
+    deps = [
+    ],
+)
+
+proto_library(
+    name = "invocation_policy_proto",
+    srcs = ["invocation_policy.proto"],
+    deps = [
+    ],
+)
+
+go_proto_library(
+    name = "command_line_go_proto",
+    importpath = "command_line",
+    proto = ":command_line_proto",
+    deps = [
+        ":option_filters_go_proto",
+    ],
+)
+
+proto_library(
+    name = "command_line_proto",
+    srcs = ["command_line.proto"],
+    deps = [
+        ":option_filters_proto",
+    ],
+)
+
+go_proto_library(
+    name = "option_filters_go_proto",
+    importpath = "options",
+    proto = ":option_filters_proto",
+    deps = [
+    ],
+)
+
+proto_library(
+    name = "option_filters_proto",
+    srcs = ["option_filters.proto"],
+    deps = [
+    ],
+)
