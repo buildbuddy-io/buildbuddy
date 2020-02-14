@@ -1,5 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_grpc_library", "go_proto_library")
+load("//rules:typescript_proto_library.bzl", "ts_proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -41,4 +42,15 @@ go_grpc_library(
     name = "build_go_proto",
     importpath = "proto",
     proto = ":build_proto",
+)
+
+go_grpc_library(
+    name = "build_go_proto",
+    importpath = "proto",
+    proto = ":build_proto",
+)
+
+ts_proto_library(
+    name = "build_ts_proto",
+    deps = [":build_proto"],
 )
