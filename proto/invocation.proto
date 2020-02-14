@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+import "proto/build_event_stream.proto";
+
+package invocation;
+
+message Invocation { repeated BuildEvent build_event = 1; }
+
+message InvocationQuery { optional string invocation_id = 1; }
+
+message GetInvocationRequest { optional InvocationQuery query = 1; }
+
+message GetInvocationResponse { repeated Invocation invocation = 1; }

@@ -44,12 +44,6 @@ go_grpc_library(
     proto = ":build_proto",
 )
 
-go_grpc_library(
-    name = "build_go_proto",
-    importpath = "proto",
-    proto = ":build_proto",
-)
-
 ts_proto_library(
     name = "build_ts_proto",
     deps = [":build_proto"],
@@ -120,4 +114,34 @@ proto_library(
     srcs = ["option_filters.proto"],
     deps = [
     ],
+)
+
+proto_library(
+    name = "invocation_proto",
+    srcs = ["invocation.proto"],
+    deps = [
+        ":build_event_stream_proto",
+    ],
+)
+
+proto_library(
+    name = "service_proto",
+    srcs = ["service.proto"],
+    deps = [
+        ":invocation_proto",
+    ],
+)
+
+go_grpc_library(
+    name = "service_go_proto",
+    importpath = "proto/service",
+    proto = ":service_proto",
+    deps = [
+        ":invocation_go_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "service_ts_proto",
+    deps = [":service_proto"],
 )
