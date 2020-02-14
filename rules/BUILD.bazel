@@ -1,0 +1,76 @@
+# Copyright 2018 The Bazel Authors. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("@build_bazel_rules_nodejs//:index.bzl", "nodejs_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+bzl_library(
+    name = "bzl",
+    srcs = glob(["*.bzl"]),
+    visibility = ["//:__pkg__"],
+)
+
+nodejs_binary(
+    name = "pbjs",
+    data = [
+        "@npm//protobufjs",
+        # these deps are needed even tho they are not automatic transitive deps of
+        # protobufjs since if they are not in the runfiles then protobufjs attempts to
+        # run `npm install` at runtime to get thhem which fails as it tries to access
+        # the npm cache outside of the sandbox
+        "@npm//semver",
+        "@npm//chalk",
+        "@npm//glob",
+        "@npm//jsdoc",
+        "@npm//minimist",
+        "@npm//tmp",
+        "@npm//uglify-js",
+        "@npm//espree",
+        "@npm//escodegen",
+        "@npm//estraverse",
+    ],
+    entry_point = "@npm//:node_modules/protobufjs/bin/pbjs",
+    install_source_map_support = False,
+)
+
+nodejs_binary(
+    name = "pbts",
+    data = [
+        "@npm//protobufjs",
+        # these deps are needed even tho they are not automatic transitive deps of
+        # protobufjs since if they are not in the runfiles then protobufjs attempts to
+        # run `npm install` at runtime to get thhem which fails as it tries to access
+        # the npm cache outside of the sandbox
+        "@npm//semver",
+        "@npm//chalk",
+        "@npm//glob",
+        "@npm//jsdoc",
+        "@npm//minimist",
+        "@npm//tmp",
+        "@npm//uglify-js",
+        "@npm//espree",
+        "@npm//escodegen",
+        "@npm//estraverse",
+    ],
+    entry_point = "@npm//:node_modules/protobufjs/bin/pbts",
+    install_source_map_support = False,
+)
+
+filegroup(
+    name = "npm_package_assets",
+    srcs = glob(["*"]),
+    visibility = ["//internal:__pkg__"],
+)
