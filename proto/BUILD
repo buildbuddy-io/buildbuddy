@@ -124,6 +124,11 @@ proto_library(
     ],
 )
 
+ts_proto_library(
+    name = "invocation_ts_proto",
+    deps = [":invocation_proto"],
+)
+
 proto_library(
     name = "service_proto",
     srcs = ["service.proto"],
