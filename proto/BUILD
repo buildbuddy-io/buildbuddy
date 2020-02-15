@@ -131,23 +131,23 @@ ts_proto_library(
 )
 
 proto_library(
-    name = "service_proto",
-    srcs = ["service.proto"],
+    name = "buildbuddy_service_proto",
+    srcs = ["buildbuddy_service.proto"],
     deps = [
         ":invocation_proto",
     ],
 )
 
 go_grpc_library(
-    name = "service_go_proto",
-    importpath = "proto/service",
-    proto = ":service_proto",
+    name = "buildbuddy_service_go_proto",
+    importpath = "proto/buildbuddy_service",
+    proto = ":buildbuddy_service_proto",
     deps = [
         ":invocation_go_proto",
     ],
 )
 
 ts_proto_library(
-    name = "service_ts_proto",
-    deps = [":service_proto"],
+    name = "buildbuddy_service_ts_proto",
+    deps = [":buildbuddy_service_proto"],
 )

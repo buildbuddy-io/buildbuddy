@@ -43,13 +43,13 @@ func main() {
 		log.Fatalf("Error initializing static file server: %v", err)
 	}
 
-	afs, err := static.NewStaticFileServer(*appDirectory, true)
+	afs, err := static.NewStaticFileServer(*appDirectory, false)
 	if err != nil {
 		log.Fatalf("Error initializing app server: %v", err)
 	}
 
-	http.Handle("/", redirectHTTPS(afs))
 	http.Handle("/static", redirectHTTPS(sfs))
+	http.Handle("/", redirectHTTPS(afs))
 
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
 	log.Printf("HTTP listening on http://%s\n", hostAndPort)

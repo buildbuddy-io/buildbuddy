@@ -6,7 +6,7 @@ ts_library(
     name = "service",
     srcs = glob(["*.ts"]),
     deps = [
-        "//proto:service_ts_proto",
+        "//proto:buildbuddy_service_ts_proto",
         "@npm//@types/fbemitter",
         "@npm//fbemitter",
         "@npm//protobufjs",
