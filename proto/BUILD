@@ -38,6 +38,7 @@ proto_library(
     ],
 )
 
+# Need to use go_grpc_library here to include the generated services.
 go_grpc_library(
     name = "build_go_proto",
     importpath = "proto",
@@ -51,7 +52,7 @@ ts_proto_library(
 
 go_proto_library(
     name = "build_event_stream_go_proto",
-    importpath = "github.com/buchgr/bazel-remote/event/proto",
+    importpath = "proto/build_event_stream",
     proto = ":build_event_stream_proto",
     visibility = ["//visibility:public"],
     deps = [
@@ -71,7 +72,7 @@ proto_library(
 
 go_proto_library(
     name = "invocation_policy_go_proto",
-    importpath = "blaze.invocation_policy",
+    importpath = "proto/blaze.invocation_policy",
     proto = ":invocation_policy_proto",
     deps = [
     ],
@@ -86,7 +87,7 @@ proto_library(
 
 go_proto_library(
     name = "command_line_go_proto",
-    importpath = "command_line",
+    importpath = "proto/command_line",
     proto = ":command_line_proto",
     deps = [
         ":option_filters_go_proto",
@@ -103,7 +104,7 @@ proto_library(
 
 go_proto_library(
     name = "option_filters_go_proto",
-    importpath = "options",
+    importpath = "proto/options",
     proto = ":option_filters_proto",
     deps = [
     ],

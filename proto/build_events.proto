@@ -25,6 +25,7 @@ option cc_enable_arenas = true;
 option java_multiple_files = true;
 option java_outer_classname = "BuildEventProto";
 option java_package = "com.google.devtools.build.v1";
+option go_package = "proto/google/devtools/build/v1";
 
 // An event representing some state change that occurred in the build. This
 // message does not include field for uniquely identifying an event.
