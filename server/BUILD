@@ -10,9 +10,19 @@ go_library(
     deps = [
         "//proto:build_event_stream_go_proto",
         "//proto:build_go_proto",
-        "@com_github_golang_protobuf//jsonpb:go_default_library",
         "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@io_bazel_rules_go//proto/wkt:empty_go_proto",
+    ],
+)
+
+go_library(
+    name = "buildbuddy_server",
+    srcs = ["buildbuddy_server.go"],
+    importpath = "github.com/tryflame/buildbuddy/server/buildbuddy_server",
+    deps = [
+        "//proto:buildbuddy_service_go_proto",
+        "//proto:invocation_go_proto",
     ],
 )
 
@@ -35,8 +45,10 @@ go_binary(
     ],
     deps = [
         ":build_event_server",
+        ":buildbuddy_server",
         ":static",
         "//proto:build_go_proto",
+        "//proto:buildbuddy_service_go_proto",
         "@org_golang_google_grpc//:go_default_library",
     ],
 )

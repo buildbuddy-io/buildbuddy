@@ -8,10 +8,12 @@ import (
 	"net/http"
 
 	"github.com/tryflame/buildbuddy/server/build_event_server"
+	"github.com/tryflame/buildbuddy/server/buildbuddy_server"
 	"github.com/tryflame/buildbuddy/server/static"
 	"google.golang.org/grpc"
 
 	bpb "proto"
+	bbspb "proto/buildbuddy_service"
 )
 
 var (
@@ -68,6 +70,11 @@ func main() {
 		log.Fatalf("Error initializing BuildEventProtocolServer: %v", err)
 	}
 	bpb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
+	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer()
+	if err != nil {
+		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
+	}
+	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
 	// Run the HTTP server in a goroutine because we still want to start a gRPC
 	// server below.

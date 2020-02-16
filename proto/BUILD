@@ -125,6 +125,15 @@ proto_library(
     ],
 )
 
+go_proto_library(
+    name = "invocation_go_proto",
+    importpath = "proto/invocation",
+    proto = ":invocation_proto",
+    deps = [
+        ":build_event_stream_go_proto",
+    ],
+)
+
 ts_proto_library(
     name = "invocation_ts_proto",
     deps = [":invocation_proto"],

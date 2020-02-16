@@ -2,7 +2,7 @@ syntax = "proto3";
 
 import "proto/invocation.proto";
 
-package service;
+package buildbuddy.service;
 
 service BuildBuddyService {
   rpc GetInvocation(invocation.GetInvocationRequest)

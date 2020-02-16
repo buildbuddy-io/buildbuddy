@@ -1,12 +1,12 @@
-import { service } from 'buildbuddy/proto/buildbuddy_service_ts_proto';
+import { buildbuddy } from 'buildbuddy/proto/buildbuddy_service_ts_proto';
 import events from 'fbemitter';
 
 class RpcService {
-  service: service.BuildBuddyService;
+  service: buildbuddy.service.BuildBuddyService;
   events: events.EventEmitter;
 
   constructor() {
-    this.service = new service.BuildBuddyService(this.rpc.bind(this));
+    this.service = new buildbuddy.service.BuildBuddyService(this.rpc.bind(this));
     this.events = new events.EventEmitter();
   }
 
