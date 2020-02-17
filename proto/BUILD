@@ -70,6 +70,11 @@ proto_library(
     ],
 )
 
+ts_proto_library(
+    name = "build_event_stream_ts_proto",
+    deps = [":build_event_stream_proto"],
+)
+
 go_proto_library(
     name = "invocation_policy_go_proto",
     importpath = "proto/blaze.invocation_policy",

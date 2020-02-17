@@ -1,4 +1,5 @@
 import React from 'react';
+import MenuComponent from 'buildbuddy/app/menu/menu';
 import HomeComponent from 'buildbuddy/app/home/home';
 
 interface State {
@@ -25,12 +26,10 @@ export default class RootComponent extends React.Component {
   }
 
   render() {
-    var component = <HomeComponent />;
-
     return (
       <div>
-        BuildBuddy
-        {component}
+        <MenuComponent />
+        <HomeComponent />
       </div>
     );
   }

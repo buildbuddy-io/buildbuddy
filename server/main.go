@@ -8,12 +8,10 @@ import (
 	"net/http"
 
 	"github.com/tryflame/buildbuddy/server/build_event_server"
-	"github.com/tryflame/buildbuddy/server/buildbuddy_server"
 	"github.com/tryflame/buildbuddy/server/static"
 	"google.golang.org/grpc"
 
 	bpb "proto"
-	bbspb "proto/buildbuddy_service"
 )
 
 var (
@@ -21,7 +19,7 @@ var (
 	port     = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
 	gRPCPort = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
 
-	staticDirectory = flag.String("static_directory", "/static-content", "the directory containing static files to host")
+	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
 )
 
@@ -45,13 +43,13 @@ func main() {
 		log.Fatalf("Error initializing static file server: %v", err)
 	}
 
-	afs, err := static.NewStaticFileServer(*appDirectory, false)
+	afs, err := static.NewStaticFileServer(*appDirectory, true)
 	if err != nil {
 		log.Fatalf("Error initializing app server: %v", err)
 	}
 
-	http.Handle("/static", redirectHTTPS(sfs))
-	http.Handle("/", redirectHTTPS(afs))
+	http.Handle("/", redirectHTTPS(sfs))
+	http.Handle("/app/", redirectHTTPS(afs))
 
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
 	log.Printf("HTTP listening on http://%s\n", hostAndPort)

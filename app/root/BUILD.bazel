@@ -7,6 +7,7 @@ ts_library(
     srcs = glob(["*.tsx"]),
     deps = [
         "//app/home",
+        "//app/menu",
         "//app/service",
         "@npm//@types/react",
         "@npm//protobufjs",

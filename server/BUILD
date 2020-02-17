@@ -42,6 +42,7 @@ go_binary(
     srcs = ["main.go"],
     data = [
         "//app:app_bundle",
+        "//static",
     ],
     deps = [
         ":build_event_server",
