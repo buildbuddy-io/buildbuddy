@@ -3,12 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 
 	"github.com/tryflame/buildbuddy/server/blobstore"
+	"github.com/tryflame/buildbuddy/server/build_event_handler"
 	"github.com/tryflame/buildbuddy/server/build_event_server"
 	"github.com/tryflame/buildbuddy/server/buildbuddy_server"
 	"github.com/tryflame/buildbuddy/server/config"
@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 
 	bpb "proto"
+	bbspb "proto/buildbuddy_service"
 )
 
 var (
@@ -49,17 +50,20 @@ func main() {
 	}
 
 	fmt.Printf("Loaded configurator: %s", configurator)
-	sfs, err := static.NewStaticFileServer(*staticDirectory, false)
+	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, false)
 	if err != nil {
-		log.Fatalf("Error initializing static file server: %v", err)
+		log.Fatalf("Error initializing static file server: %s", err)
 	}
+
+	diskBlobStore := blobstore.NewDiskBlobStore(configurator.GetStorageDiskRootDir())
+	eventHandler := build_event_handler.NewBuildEventHandler(diskBlobStore)
 
 	afs, err := static.NewStaticFileServer(*appDirectory, true)
 	if err != nil {
-		log.Fatalf("Error initializing app server: %v", err)
+		log.Fatalf("Error initializing app server: %s", err)
 	}
 
-	http.Handle("/", redirectHTTPS(sfs))
+	http.Handle("/", redirectHTTPS(staticFileServer))
 	http.Handle("/app/", redirectHTTPS(afs))
 
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
@@ -71,12 +75,12 @@ func main() {
 
 	lis, err := net.Listen("tcp", gRPCHostAndPort)
 	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
+		log.Fatalf("Failed to listen: %s", err)
 	}
 	grpcServer := grpc.NewServer()
-	buildEventServer, err := build_event_server.NewBuildEventProtocolServer()
+	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(eventHandler)
 	if err != nil {
-		log.Fatalf("Error initializing BuildEventProtocolServer: %v", err)
+		log.Fatalf("Error initializing BuildEventProtocolServer: %s", err)
 	}
 	bpb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
 	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer()

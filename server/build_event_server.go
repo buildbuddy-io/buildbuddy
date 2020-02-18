@@ -5,38 +5,38 @@ import (
 	"io"
 	"log"
 
-	_ "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/tryflame/buildbuddy/server/build_event_handler"
 
 	bpb "proto"
 	"proto/build_event_stream"
 )
 
 type BuildEventProtocolServer struct {
+	eventHandler *build_event_handler.BuildEventHandler
 }
 
-func NewBuildEventProtocolServer() (*BuildEventProtocolServer, error) {
-	return &BuildEventProtocolServer{}, nil
+func NewBuildEventProtocolServer(h *build_event_handler.BuildEventHandler) (*BuildEventProtocolServer, error) {
+	return &BuildEventProtocolServer{
+		eventHandler: h,
+	}, nil
 }
 
-func (s *BuildEventProtocolServer) chompBuildEvent(obe *bpb.OrderedBuildEvent) error {
+func (s *BuildEventProtocolServer) chompBuildEvent(obe *bpb.OrderedBuildEvent) (*build_event_stream.BuildEvent, bool, error) {
 	switch buildEvent := obe.Event.Event.(type) {
 	case *bpb.BuildEvent_ComponentStreamFinished:
 		log.Print("BuildTool: ComponentStreamFinished: ", buildEvent.ComponentStreamFinished)
+		return nil, true, nil
 	case *bpb.BuildEvent_BazelEvent:
 		var bazelBuildEvent build_event_stream.BuildEvent
 		if err := ptypes.UnmarshalAny(buildEvent.BazelEvent, &bazelBuildEvent); err != nil {
-			return err
+			return nil, false, err
 		}
-		switch bazelBuildEvent.Payload.(type) {
-		default:
-			log.Printf("Payload: %+v", bazelBuildEvent.Payload)
-		}
-	default:
-		log.Printf("Unknown event: %+v", buildEvent)
+		return &bazelBuildEvent, false, nil
 	}
-	return nil
+	return nil, false, nil
 }
 
 func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, req *bpb.PublishLifecycleEventRequest) (*empty.Empty, error) {
@@ -71,9 +71,15 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream bpb.Publis
 		if err != nil {
 			return err
 		}
-		if err := s.chompBuildEvent(in.OrderedBuildEvent); err != nil {
+		key := proto.MarshalTextString(in.OrderedBuildEvent.StreamId)
+		eventChannel := s.eventHandler.GetEventChannel(key)
+		bazelEvent, last, err := s.chompBuildEvent(in.OrderedBuildEvent)
+		if err != nil {
 			return err
 		}
+		log.Printf("About to write event")
+		eventChannel.WriteEvent(bazelEvent, last)
+		log.Printf("Write event")
 
 		if lastReceived == -1 {
 			lastReceived = in.OrderedBuildEvent.SequenceNumber

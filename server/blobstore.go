@@ -42,3 +42,10 @@ func (d *DiskBlobStore) GetBlob(blobName string) (Blob, error) {
 	}
 	return bufio.NewReadWriter(bufio.NewReader(f), bufio.NewWriter(f)), nil
 }
+
+func (d *DiskBlobStore) DeleteBlob(blobName string) error {
+	if filepath.Base(blobName) != blobName {
+		return fmt.Errorf("blobName (%s) must not contain dirs.", blobName)
+	}
+	return os.Remove(filepath.Join(d.rootDir, blobName))
+}
