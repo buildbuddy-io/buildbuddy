@@ -1,0 +1,5 @@
+storage:
+  disk:
+    root_directory: /tmp/buildbuddy
+    ttl_seconds: 100
+

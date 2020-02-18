@@ -4,6 +4,14 @@ load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 package(default_visibility = ["//visibility:public"])
 
 go_library(
+    name = "blobstore",
+    srcs = ["blobstore.go"],
+    importpath = "github.com/tryflame/buildbuddy/server/blobstore",
+    deps = [
+    ],
+)
+
+go_library(
     name = "build_event_server",
     srcs = ["build_event_server.go"],
     importpath = "github.com/tryflame/buildbuddy/server/build_event_server",
@@ -27,6 +35,15 @@ go_library(
 )
 
 go_library(
+    name = "config",
+    srcs = ["config.go"],
+    importpath = "github.com/tryflame/buildbuddy/server/config",
+    deps = [
+        "@in_gopkg_yaml_v2//:go_default_library",
+    ],
+)
+
+go_library(
     name = "static",
     srcs = ["static.go"],
     importpath = "github.com/tryflame/buildbuddy/server/static",
@@ -44,8 +61,10 @@ go_binary(
         "//app:app_bundle",
     ],
     deps = [
+        ":blobstore",
         ":build_event_server",
         ":buildbuddy_server",
+        ":config",
         ":static",
         "//proto:build_go_proto",
         "//proto:buildbuddy_service_go_proto",

@@ -3,12 +3,15 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 
+	"github.com/tryflame/buildbuddy/server/blobstore"
 	"github.com/tryflame/buildbuddy/server/build_event_server"
 	"github.com/tryflame/buildbuddy/server/buildbuddy_server"
+	"github.com/tryflame/buildbuddy/server/config"
 	"github.com/tryflame/buildbuddy/server/static"
 	"google.golang.org/grpc"
 
@@ -17,9 +20,10 @@ import (
 )
 
 var (
-	listen   = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
-	port     = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	gRPCPort = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
+	listen     = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	port       = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
+	gRPCPort   = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
+	configFile = flag.String("config_file", "", "The path to a buildbuddy config file")
 
 	staticDirectory = flag.String("static_directory", "/static-content", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
@@ -40,6 +44,12 @@ func main() {
 	// Parse all flags, once and for all.
 	flag.Parse()
 
+	configurator, err := config.NewConfigurator(*configFile)
+	if err != nil {
+		log.Fatalf("Error loading config from file: %s", err)
+	}
+
+	fmt.Printf("Loaded configurator: %s", configurator)
 	sfs, err := static.NewStaticFileServer(*staticDirectory, false)
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %v", err)

@@ -169,3 +169,18 @@ switched_rules_by_language(
     name = "bazel_remote_apis_imports",
     go = True,
 )
+
+# Needed for go dependencies.
+go_repository(
+    name = "in_gopkg_check_v1",
+    importpath = "gopkg.in/check.v1",
+    sum = "h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=",
+    version = "v0.0.0-20161208181325-20d25e280405",
+)
+
+go_repository(
+    name = "in_gopkg_yaml_v2",
+    importpath = "gopkg.in/yaml.v2",
+    sum = "h1:obN1ZagJSUGI0Ek/LBmuj4SNLPfIny3KsKFopxRdj10=",
+    version = "v2.2.8",
+)
