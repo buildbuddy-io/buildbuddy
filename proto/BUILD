@@ -107,6 +107,11 @@ proto_library(
     ],
 )
 
+ts_proto_library(
+    name = "command_line_ts_proto",
+    deps = [":command_line_proto"],
+)
+
 go_proto_library(
     name = "option_filters_go_proto",
     importpath = "proto/options",

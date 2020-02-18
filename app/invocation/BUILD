@@ -8,6 +8,7 @@ ts_library(
     deps = [
         "//app/service",
         "//proto:build_event_stream_ts_proto",
+        "//proto:command_line_ts_proto",
         "//proto:invocation_ts_proto",
         "@npm//@types/long",
         "@npm//@types/moment",

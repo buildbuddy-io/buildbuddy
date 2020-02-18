@@ -4,6 +4,7 @@ import moment from 'moment';
 import rpcService from 'buildbuddy/app/service/rpc_service'
 import { invocation } from 'buildbuddy/proto/invocation_ts_proto';
 import { build_event_stream } from 'buildbuddy/proto/build_event_stream_ts_proto';
+import { command_line } from 'buildbuddy/proto/command_line_ts_proto';
 
 interface State {
   progress: build_event_stream.Progress[],
@@ -14,7 +15,7 @@ interface State {
   workspaceConfig: build_event_stream.WorkspaceConfig,
   optionsParsed: build_event_stream.OptionsParsed,
   unstructuredCommandLine: build_event_stream.UnstructuredCommandLine,
-  // structuredCommandLine: build_event_stream.StructuredCommandLine,
+  structuredCommandLine: command_line.CommandLine,
   started: build_event_stream.BuildStarted,
   buildInfoMap: Map<string, string>,
 }
@@ -33,6 +34,7 @@ export default class InvocationComponent extends React.Component {
     workspaceConfig: null,
     optionsParsed: null,
     unstructuredCommandLine: null,
+    structuredCommandLine: null,
     started: null,
     buildInfoMap: new Map<string, string>(),
   };
@@ -40,6 +42,9 @@ export default class InvocationComponent extends React.Component {
   props: Props;
 
   componentWillMount() {
+    // TODO(siggisim): Move moment configuration elsewhere
+    moment.relativeTimeThreshold('ss', 1);
+
     let request = new invocation.GetInvocationRequest();
     request.query = new invocation.InvocationQuery();
     request.query.invocationId = this.props.invocationId;
@@ -91,13 +96,14 @@ export default class InvocationComponent extends React.Component {
   INFO: Streaming build results to: http://localhost:8080/#/invocation/368d4ef5-b510-486b-a650-804d80715bd7
   INFO: Build completed successfully, 3 total actions`, stderr: "", toJSON: null
       }],
-      finished: null,
-      toolLogs: { log: [{ name: "elapsed time", contents: new TextEncoder().encode("0.61500") }], toJSON: null },
+      finished: { overallSuccess: true, exitCode: { name: "SUCCESS", code: 0 }, finishTimeMillis: Long.fromString("1582062129168"), toJSON: null },
+      toolLogs: { log: [{ name: "elapsed time", contents: new TextEncoder().encode("1.61500") }], toJSON: null },
       workspaceStatus: { item: [{ key: "BUILD_USER", value: "siggi" }], toJSON: null },
       configuration: null,
       workspaceConfig: null,
       optionsParsed: null,
       unstructuredCommandLine: null,
+      structuredCommandLine: null,
       started: { startTimeMillis: Long.fromString("1581977983847"), uuid: "", buildToolVersion: "2.0.0", optionsDescription: "", command: "", workingDirectory: "", serverPid: null, workspaceDirectory: "", toJSON: null },
       buildInfoMap: new Map<string, string>(),
     };
@@ -111,8 +117,30 @@ export default class InvocationComponent extends React.Component {
     return moment(this.state.started?.startTimeMillis.toNumber()).format('MMMM Do, YYYY [at] h:mm:ss a');
   }
 
-  getDuration() {
-    return moment.duration(+this.state.buildInfoMap.get('elapsed time'), "seconds").humanize() || "Unknown";
+  timeSinceStart() {
+    return moment(this.state.started?.startTimeMillis.toNumber()).fromNow(true);
+  }
+
+  getHumanReadableDuration() {
+    let elapsedTime = +this.state.buildInfoMap.get('elapsed time');
+    if (elapsedTime < 1) {
+      return "under a second";
+    }
+    return moment.duration(elapsedTime, "seconds").humanize() || "Unknown";
+  }
+
+  getDuractionSeconds() {
+    return `${this.state.buildInfoMap.get('elapsed time')} seconds`
+  }
+
+  getStatus() {
+    if (!this.state.started) {
+      return "Not started"
+    }
+    if (!this.state.finished) {
+      return "Building"
+    }
+    return this.state.finished.exitCode.code == 0 ? "Succeeded" : "Failed";
   }
 
   render() {
@@ -125,7 +153,12 @@ export default class InvocationComponent extends React.Component {
               <div className="subtitle">{this.getStartDate()}</div>
             </div>
             <div className="details">
-              <b>Failed</b> in <b>{this.getDuration()}</b><br />
+              <b>{this.getStatus()}</b>
+              {this.state.finished &&
+                <span> in <b title={this.getDuractionSeconds()}>{this.getHumanReadableDuration()}</b></span>}
+              {!this.state.finished && this.state.started &&
+                <span> for <b>{this.timeSinceStart()}</b></span>}
+              <br />
               <b>329</b> targets  &middot;  <b>317</b> passed  &middot;  <b>12</b> failed <br />
             </div>
           </div>
