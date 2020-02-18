@@ -63,12 +63,6 @@ func main() {
 		log.Fatalf("Error initializing app server: %s", err)
 	}
 
-	http.Handle("/", redirectHTTPS(staticFileServer))
-	http.Handle("/app/", redirectHTTPS(afs))
-
-	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
-	log.Printf("HTTP listening on http://%s\n", hostAndPort)
-
 	// Initialize our gRPC server (and fail early if not).
 	gRPCHostAndPort := fmt.Sprintf("%s:%d", *listen, *gRPCPort)
 	log.Printf("gRPC listening on http://%s\n", gRPCHostAndPort)
@@ -88,6 +82,13 @@ func main() {
 		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
 	}
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
+
+	http.Handle("/", redirectHTTPS(staticFileServer))
+	http.Handle("/app/", redirectHTTPS(afs))
+	http.Handle("/rpc/BuildBuddyService/GetInvocation", redirectHTTPS(buildBuddyServer.GetInvocationHandlerFunc()))
+
+	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
+	log.Printf("HTTP listening on http://%s\n", hostAndPort)
 
 	// Run the HTTP server in a goroutine because we still want to start a gRPC
 	// server below.

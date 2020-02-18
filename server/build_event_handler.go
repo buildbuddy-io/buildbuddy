@@ -55,7 +55,7 @@ func (b *BuildEventHandler) LookupInvocation(invocationID string) (*ipb.Invocati
 		return nil, err
 	}
 
-	var invocation *ipb.Invocation
+	invocation := new(ipb.Invocation)
 	if err := proto.Unmarshal(protoBytes, invocation); err != nil {
 		return nil, err
 	}

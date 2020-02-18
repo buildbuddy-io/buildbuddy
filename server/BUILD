@@ -34,6 +34,7 @@ go_library(
         ":build_event_handler",
         "//proto:buildbuddy_service_go_proto",
         "//proto:invocation_go_proto",
+        "@com_github_golang_protobuf//proto:go_default_library",
     ],
 )
 
