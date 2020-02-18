@@ -6,7 +6,7 @@ ts_library(
     name = "root",
     srcs = glob(["*.tsx"]),
     deps = [
-        "//app/invocation",
+        "//app/home",
         "//app/menu",
         "//app/service",
         "@npm//@types/react",
