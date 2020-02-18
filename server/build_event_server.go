@@ -4,8 +4,9 @@ import (
 	"context"
 	"io"
 	"log"
+	"sort"
 
-	"github.com/golang/protobuf/proto"
+	_ "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/tryflame/buildbuddy/server/build_event_handler"
@@ -24,19 +25,19 @@ func NewBuildEventProtocolServer(h *build_event_handler.BuildEventHandler) (*Bui
 	}, nil
 }
 
-func (s *BuildEventProtocolServer) chompBuildEvent(obe *bpb.OrderedBuildEvent) (*build_event_stream.BuildEvent, bool, error) {
+func (s *BuildEventProtocolServer) chompBuildEvent(obe *bpb.OrderedBuildEvent) (*build_event_stream.BuildEvent, error) {
 	switch buildEvent := obe.Event.Event.(type) {
 	case *bpb.BuildEvent_ComponentStreamFinished:
 		log.Print("BuildTool: ComponentStreamFinished: ", buildEvent.ComponentStreamFinished)
-		return nil, true, nil
+		return nil, nil
 	case *bpb.BuildEvent_BazelEvent:
 		var bazelBuildEvent build_event_stream.BuildEvent
 		if err := ptypes.UnmarshalAny(buildEvent.BazelEvent, &bazelBuildEvent); err != nil {
-			return nil, false, err
+			return nil, err
 		}
-		return &bazelBuildEvent, false, nil
+		return &bazelBuildEvent, nil
 	}
-	return nil, false, nil
+	return nil, nil
 }
 
 func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, req *bpb.PublishLifecycleEventRequest) (*empty.Empty, error) {
@@ -61,8 +62,11 @@ func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, re
 // adds an OPEN_STREAM event.
 func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream bpb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
 	// Semantically, the protocol requires we ack events in order.
-	// If we get an out of order event, we just bail out.
-	lastReceived := int64(-1)
+	log.Printf("publish was called!")
+	acks := make([]int, 0)
+	bazelEvents := make([]*build_event_stream.BuildEvent, 0)
+	streamID := &bpb.StreamId{}
+
 	for {
 		in, err := stream.Recv()
 		if err == io.EOF {
@@ -71,30 +75,41 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream bpb.Publis
 		if err != nil {
 			return err
 		}
-		key := proto.MarshalTextString(in.OrderedBuildEvent.StreamId)
-		eventChannel := s.eventHandler.GetEventChannel(key)
-		bazelEvent, last, err := s.chompBuildEvent(in.OrderedBuildEvent)
+		streamID = in.OrderedBuildEvent.StreamId
+		log.Printf("streamID: %+v", streamID)
+		bazelEvent, err := s.chompBuildEvent(in.OrderedBuildEvent)
 		if err != nil {
 			return err
 		}
-		log.Printf("About to write event")
-		eventChannel.WriteEvent(bazelEvent, last)
-		log.Printf("Write event")
+		if bazelEvent != nil {
+			bazelEvents = append(bazelEvents, bazelEvent)
+		}
+		acks = append(acks, int(in.OrderedBuildEvent.SequenceNumber))
+	}
 
-		if lastReceived == -1 {
-			lastReceived = in.OrderedBuildEvent.SequenceNumber
-		} else if lastReceived+1 == in.OrderedBuildEvent.SequenceNumber {
-			lastReceived = in.OrderedBuildEvent.SequenceNumber
-		} else {
-			log.Printf("Got an out-of-order build event (expected %d, got %d), bailing...", lastReceived+1, in.OrderedBuildEvent.SequenceNumber)
+	// Check that we have received all acks! If we haven't bail out since we
+	// don't want to ack *anything*. This forces the client to retransmit
+	// everything all at once, which means we don't need to worry about
+	// cross-server consistency here.
+	sort.Sort(sort.IntSlice(acks))
+	for i, ack := range acks {
+		if ack != i+1 {
+			log.Printf("Missing ack: saw %d and wanted %d. Bailing!", ack, i+1)
 			return io.EOF
 		}
+	}
+
+	if err := s.eventHandler.HandleEvents(streamID.InvocationId, bazelEvents); err != nil {
+		log.Printf("error processing build events: %s", err)
+	}
+
+	// Finally, ack everything.
+	for _, ack := range acks {
 		rsp := &bpb.PublishBuildToolEventStreamResponse{
-			StreamId:       in.OrderedBuildEvent.StreamId,
-			SequenceNumber: lastReceived,
+			StreamId:       streamID,
+			SequenceNumber: int64(ack),
 		}
 		stream.Send(rsp)
-
 	}
 	return nil
 }

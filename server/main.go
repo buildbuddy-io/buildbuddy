@@ -83,7 +83,7 @@ func main() {
 		log.Fatalf("Error initializing BuildEventProtocolServer: %s", err)
 	}
 	bpb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
-	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer()
+	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(eventHandler)
 	if err != nil {
 		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
 	}

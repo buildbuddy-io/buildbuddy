@@ -36,7 +36,7 @@ func (d *DiskBlobStore) GetBlob(blobName string) (Blob, error) {
 	if filepath.Base(blobName) != blobName {
 		return nil, fmt.Errorf("blobName (%s) must not contain dirs.", blobName)
 	}
-	f, err := os.OpenFile(filepath.Join(d.rootDir, blobName), os.O_RDWR, 0644)
+	f, err := os.OpenFile(filepath.Join(d.rootDir, blobName), os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, err
 	}
