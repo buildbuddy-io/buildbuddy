@@ -15,9 +15,9 @@ class RpcService {
     request.open('POST', `/rpc/BuildBuddyService/${method.name}`, true);
 
     request.setRequestHeader('Content-Type', 'application/proto');
+    request.responseType = 'arraybuffer';
     request.onload = () => {
       if (request.status >= 200 && request.status < 400) {
-        request.responseType = 'arraybuffer';
         callback(null, new Uint8Array(request.response));
         this.events.emit(method.name, 'completed');
         console.log(`Emitting event [${method.name}]`);

@@ -1,5 +1,5 @@
 storage:
   disk:
-    root_directory: /tmp/buildbuddy
+    root_directory: /Users/siggi/Desktop/buildbuddy/
     ttl_seconds: 100
 
