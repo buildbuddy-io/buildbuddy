@@ -46,7 +46,7 @@ go_binary(
     ],
     deps = [
         ":build_event_server",
-        ":buildbuddy_server",
+        # ":buildbuddy_server",
         ":static",
         "//proto:build_go_proto",
         "//proto:buildbuddy_service_go_proto",

@@ -106,6 +106,7 @@ a {
 }
 
 .shelf .subtitle {
+  font-weight: 700;
   margin-left: 8px;
   color: #888;
 }
@@ -142,6 +143,7 @@ a {
   line-height: 1.6em;
   margin-top: 16px;
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .card .more {
