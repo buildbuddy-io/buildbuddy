@@ -1,0 +1,154 @@
+h1,
+h2,
+h3,
+h4,
+h5,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+body {
+  font-family: 'Open Sans', sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/** Container **/
+
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 0 32px;
+  box-sizing: border-box;
+}
+
+/** Menu **/
+
+.menu {
+  box-shadow: 0px 1px 4px rgba(0, 0, 0, .15);
+  height: 64px;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  font-weight: 700;
+  font-size: 20px;
+  z-index: 1;
+  position: relative;
+}
+
+.menu .container {
+  display: flex;
+  align-items: center;
+}
+
+.menu .icon {
+  padding-top: 1px;
+  margin-right: 16px;
+  cursor: pointer;
+}
+
+/** Side menu **/
+
+.side-menu {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  bottom: 0;
+  background-color: #fff;
+  padding: 32px 48px;
+  box-shadow: 0px 1px 4px rgba(0, 0, 0, .15);
+}
+
+.side-menu li {
+  margin-top: 16px;
+  font-weight: 700;
+}
+
+/** Shelf **/
+
+.shelf {
+  background-color: #f8f8f8;
+  border-bottom: 1px solid #eaeaea;
+  padding: 48px 0;
+  font-size: 14px;
+}
+
+.shelf b {
+  font-weight: 600;
+}
+
+.shelf .titles {
+  display: flex;
+  align-items: baseline;
+}
+
+.shelf .title {
+  font-weight: 700;
+  font-size: 24px;
+}
+
+.shelf .subtitle {
+  font-weight: 600;
+  margin-left: 8px;
+  color: #888;
+}
+
+.shelf .details {
+  line-height: 1.6em;
+  margin-top: 2px;
+  color: #444;
+}
+
+/** Card **/
+
+.card {
+  box-shadow: 0px 1px 4px rgba(0, 0, 0, .15);
+  margin: 32px 0;
+  padding: 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  display: flex;
+  align-items: flex-start;
+  overflow: hidden;
+}
+
+.card .icon {
+  margin-right: 24px;
+}
+
+.card .title {
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.card .details {
+  line-height: 1.6em;
+  margin-top: 16px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.card .more {
+  margin-top: 16px;
+  font-weight: 600;
+  color: #aaa;
+  cursor: pointer;
+}

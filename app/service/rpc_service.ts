@@ -29,6 +29,8 @@ class RpcService {
     request.onerror = () => {
       callback('Error: Connection error');
     };
+
+    request.send(requestData);
   };
 }
 

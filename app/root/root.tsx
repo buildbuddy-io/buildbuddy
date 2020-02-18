@@ -1,5 +1,6 @@
 import React from 'react';
-import HomeComponent from 'buildbuddy/app/home/home';
+import MenuComponent from 'buildbuddy/app/menu/menu';
+import InvocationComponent from 'buildbuddy/app/invocation/invocation';
 
 interface State {
   hash: string;
@@ -24,13 +25,15 @@ export default class RootComponent extends React.Component {
     });
   }
 
-  render() {
-    var component = <HomeComponent />;
+  getCurrentInvocationId() {
+    return this.state.hash.replace("#/invocation/", "");
+  }
 
+  render() {
     return (
       <div>
-        BuildBuddy
-        {component}
+        <MenuComponent />
+        <InvocationComponent invocationId={this.getCurrentInvocationId()} />
       </div>
     );
   }
