@@ -31,9 +31,6 @@ export default class RootComponent extends React.Component {
 
   getCurrentInvocationId() {
     let invocationPath = "/invocation/"
-    if (this.state.hash.startsWith("#" + invocationPath)) {
-      return this.state.hash.replace("#" + invocationPath, "");
-    }
     if (!this.state.path.startsWith(invocationPath)) {
       return null;
     }
@@ -45,7 +42,7 @@ export default class RootComponent extends React.Component {
     return (
       <div>
         <MenuComponent />
-        {invocationId && <InvocationComponent invocationId={invocationId} />}
+        {invocationId && <InvocationComponent invocationId={invocationId} hash={this.state.hash} />}
         {!invocationId && <HomeComponent />}
       </div>
     );
