@@ -97,6 +97,14 @@ go_image(
     name = "buildbuddy_image",
     srcs = ["main.go"],
     deps = [
+        ":blobstore",
+        ":build_event_handler",
+        ":build_event_server",
+        ":buildbuddy_server",
+        ":config",
         ":static",
+        "//proto:build_go_proto",
+        "//proto:buildbuddy_service_go_proto",
+        "@org_golang_google_grpc//:go_default_library",
     ],
 )
