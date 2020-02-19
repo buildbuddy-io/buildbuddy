@@ -77,6 +77,7 @@ go_binary(
     data = [
         "//:config_files",
         "//app:app_bundle",
+	"//static",
     ],
     deps = [
         ":blobstore",
@@ -95,20 +96,5 @@ go_binary(
 # rule from @io_bazel_rules_docker instead, which creates a docker image.
 go_image(
     name = "buildbuddy_image",
-    srcs = ["main.go"],
-    data = [
-        "//:config_files",
-        "//app:app_bundle",
-    ],
-    deps = [
-        ":blobstore",
-        ":build_event_handler",
-        ":build_event_server",
-        ":buildbuddy_server",
-        ":config",
-        ":static",
-        "//proto:build_go_proto",
-        "//proto:buildbuddy_service_go_proto",
-        "@org_golang_google_grpc//:go_default_library",
-    ],
+    binary = ":buildbuddy",
 )
