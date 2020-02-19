@@ -65,7 +65,7 @@ metadata:
   name: app-buildbuddy-io-certificate
 spec:
   domains:
-    - dev.app.buildbuddy.io
+    - app.buildbuddy.dev
 ---
 apiVersion: extensions/v1beta1
 kind: Ingress
