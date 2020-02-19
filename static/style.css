@@ -142,7 +142,7 @@ a {
 .card .details {
   line-height: 1.6em;
   margin-top: 16px;
-  word-break: break-word;
+  word-break: break-all;
   white-space: pre-wrap;
 }
 
@@ -151,4 +151,8 @@ a {
   font-weight: 600;
   color: #aaa;
   cursor: pointer;
+}
+
+.mono {
+  font-family: 'Source Code Pro', monospace;
 }
