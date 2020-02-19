@@ -72,10 +72,10 @@ kind: Ingress
 metadata:
   name: buildbuddy-app-ingress
   annotations:
-      networking.gke.io/managed-certificates: "app-buildbuddy-io-certificate"
+      networking.gke.io/managed-certificates: "app-buildbuddy-dev-certificate"
 spec:
   rules:
-    - host: dev.app.buildbuddy.io
+    - host: app.buildbuddy.dev
       http:
         paths:
           - backend:
