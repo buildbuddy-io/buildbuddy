@@ -13,6 +13,7 @@ interface State {
   failed: build_event_stream.BuildEvent[],
   files: build_event_stream.NamedSetOfFiles[],
   finished: build_event_stream.BuildFinished,
+  aborted: build_event_stream.Aborted,
   toolLogs: build_event_stream.BuildToolLogs,
   workspaceStatus: build_event_stream.WorkspaceStatus,
   configuration: build_event_stream.Configuration,
@@ -21,6 +22,7 @@ interface State {
   unstructuredCommandLine: build_event_stream.UnstructuredCommandLine,
   structuredCommandLine: command_line.CommandLine,
   started: build_event_stream.BuildStarted,
+  expanded: build_event_stream.BuildEvent,
   buildInfoMap: Map<string, string>,
 
   progressLimit: number,
@@ -45,6 +47,7 @@ export default class InvocationComponent extends React.Component {
     files: [],
     started: null,
     finished: null,
+    aborted: null,
     toolLogs: null,
     workspaceStatus: null,
     configuration: null,
@@ -52,6 +55,7 @@ export default class InvocationComponent extends React.Component {
     optionsParsed: null,
     unstructuredCommandLine: null,
     structuredCommandLine: null,
+    expanded: null,
     buildInfoMap: new Map<string, string>(),
 
     progressLimit: defaultPageSize,
@@ -84,7 +88,9 @@ export default class InvocationComponent extends React.Component {
             this.state.failed.push(buildEvent as build_event_stream.BuildEvent);
           }
           if (buildEvent.started) this.state.started = buildEvent.started as build_event_stream.BuildStarted;
+          if (buildEvent.expanded) this.state.expanded = buildEvent as build_event_stream.BuildEvent;
           if (buildEvent.finished) this.state.finished = buildEvent.finished as build_event_stream.BuildFinished;
+          if (buildEvent.aborted) this.state.aborted = buildEvent.aborted as build_event_stream.Aborted;
           if (buildEvent.buildToolLogs) this.state.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
           if (buildEvent.workspaceStatus) this.state.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
           if (buildEvent.configuration) this.state.configuration = buildEvent.configuration as build_event_stream.Configuration;
@@ -146,9 +152,10 @@ export default class InvocationComponent extends React.Component {
       optionsParsed: null,
       unstructuredCommandLine: null,
       structuredCommandLine: null,
+      aborted: null,
       started: { startTimeMillis: Long.fromString("1581977983847"), uuid: "", buildToolVersion: "2.0.0", optionsDescription: "", command: "", workingDirectory: "", serverPid: null, workspaceDirectory: "", toJSON: null },
+      expanded: null,
       buildInfoMap: new Map<string, string>(),
-
       progressLimit: defaultPageSize,
       succeededLimit: defaultPageSize,
       failedLimit: defaultPageSize,
@@ -158,11 +165,31 @@ export default class InvocationComponent extends React.Component {
   }
 
   getUser() {
-    return this.state.buildInfoMap.get('BUILD_USER') || "Unknown user";
+    let username = this.state.buildInfoMap.get('BUILD_USER');
+    if (!username) {
+      return "Unknown user";
+    }
+    return username[0].toUpperCase() + username.slice(1);
+  }
+
+  getHost() {
+    return this.state.buildInfoMap.get('BUILD_HOST') || "Unknown host";
+  }
+
+  getCommand() {
+    return this.state.started?.command || "build"
+  }
+
+  getPattern() {
+    return this.state.expanded?.id.pattern.pattern.join(", ");
   }
 
   getStartDate() {
-    return moment(this.state.started?.startTimeMillis.toNumber()).format('MMMM Do, YYYY [at] h:mm:ss a');
+    return moment(this.state.started?.startTimeMillis.toNumber()).format('MMMM Do, YYYY');
+  }
+
+  getStartTime() {
+    return moment(this.state.started?.startTimeMillis.toNumber()).format('h:mm:ss a');
   }
 
   timeSinceStart() {
@@ -181,6 +208,13 @@ export default class InvocationComponent extends React.Component {
     return `${this.state.buildInfoMap.get('elapsed time')} seconds`
   }
 
+  getTiming() {
+    if (!this.state.finished && this.state.started) {
+      return this.timeSinceStart();
+    }
+    return this.getHumanReadableDuration()
+  }
+
   getStatus() {
     if (!this.state.started) {
       return "Not started"
@@ -189,6 +223,17 @@ export default class InvocationComponent extends React.Component {
       return "Building"
     }
     return this.state.finished.exitCode.code == 0 ? "Succeeded" : "Failed";
+  }
+
+  getStatusIcon() {
+    if (!this.state.started) {
+      return <img className="icon" src="/image/question-circle.svg" />
+    }
+    if (!this.state.finished) {
+      return <img className="icon" src="/image/play-circle.svg" />
+    }
+    return this.state.finished.exitCode.code == 0 ? <img className="icon" src="/image/check-circle.svg" /> : <img className="icon" src="/image/x-circle.svg" />;
+
   }
 
   handleMoreFailedClicked() {
@@ -216,24 +261,40 @@ export default class InvocationComponent extends React.Component {
       <div>
         <div className="shelf">
           <div className="container">
+            <div className="invocation">Invocation {this.props.invocationId}</div>
             <div className="titles">
-              <div className="title">{this.getUser()}'s build</div>
-              <div className="subtitle">{this.getStartDate()}</div>
+              <div className="title">{this.getUser()}'s {this.getCommand()} {this.getPattern()}</div>
+              <div className="subtitle">{this.getStartDate()} at {this.getStartTime()}</div>
             </div>
             <div className="details">
-              <b>{this.getStatus()}</b>
-              {this.state.finished &&
-                <span> in <b title={this.getDuractionSeconds()}>{this.getHumanReadableDuration()}</b></span>}
-              {!this.state.finished && this.state.started &&
-                <span> for <b>{this.timeSinceStart()}</b></span>}
-              <br />
-              <b>{this.state.targets.length}</b> {this.state.targets.length == 1 ? "target" : "targets"}
-              &nbsp;&middot; <b>{this.state.succeeded.length}</b> passed
-              {!!this.state.failed.length && <span> &middot; <b>{this.state.failed.length}</b> failed</span>} <br />
+              <div className="detail">{this.getStatusIcon()} {this.getStatus()}</div>
+              <div className="detail"><img className="icon" src="/image/clock-regular.svg" /> {this.getTiming()}</div>
+              <div className="detail"><img className="icon" src="/image/user-regular.svg" />
+                {this.getUser()}</div>
+              <div className="detail"><img className="icon" src="/image/hard-drive-regular.svg" />
+                {this.getHost()}</div>
+              <div className="detail"><img className="icon" src="/image/tool-regular.svg" />
+                {this.getCommand()}</div>
+              <div className="detail"><img className="icon" src="/image/zap-regular.svg" />
+                {this.getPattern()}</div>
+              <div className="detail"><img className="icon" src="/image/target-regular.svg" />
+                {this.state.targets.length} {this.state.targets.length == 1 ? "target" : "targets"}
+              </div>
             </div>
           </div>
         </div>
         <div className="container">
+
+          {this.state.aborted?.description &&
+            <div className="card">
+              <img className="icon" src="/image/alert-circle.svg" />
+              <div className="content">
+                <div className="title">Error</div>
+                <div className="details">
+                  {this.state.aborted.description}
+                </div>
+              </div>
+            </div>}
 
           {!!this.state.failed.length &&
             <div className="card">
@@ -303,6 +364,7 @@ export default class InvocationComponent extends React.Component {
               <div className="details">
                 {this.state.succeeded.flatMap(completed => completed.completed.importantOutput.map(
                   output => <div>{output.name}</div>)).slice(0, this.state.artifactLimit)}
+                {this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length == 0 && <span>No artifacts</span>}
               </div>
               {this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length > defaultPageSize && !!this.state.artifactLimit && <div className="more" onClick={this.handleMoreArtifactClicked.bind(this)}>See more artifacts</div>}
               {this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length > defaultPageSize && !this.state.artifactLimit && <div className="more" onClick={this.handleMoreArtifactClicked.bind(this)}>See less artifacts</div>}
