@@ -26,11 +26,8 @@ export default class MenuComponent extends React.Component {
           <div className="side-menu">
             <ul>
               <li><a href="/">Home</a></li>
-              <li><a href="/">Release notes</a></li>
-              <li><a href="/">Community slack</a></li>
-              <li><a href="/">Help page</a></li>
-              <li><a href="/">Github repo</a></li>
-              <li><a href="/">Contact us</a></li>
+              <li><a href="https://github.com/tryflame/buildbuddy">Github repo</a></li>
+              <li><a href="mailto:help@tryflame.com">Contact us</a></li>
             </ul>
           </div>}
       </div>

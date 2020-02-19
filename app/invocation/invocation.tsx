@@ -33,7 +33,8 @@ interface State {
 }
 
 interface Props {
-  invocationId: string
+  invocationId: string,
+  hash: string
 }
 
 const defaultPageSize = 5;
@@ -284,8 +285,26 @@ export default class InvocationComponent extends React.Component {
           </div>
         </div>
         <div className="container">
+          <div className="tabs">
+            <a href="#" className={`tab ${this.props.hash == '' && 'selected'}`}>
+              ALL
+            </a>
+            <a href="#targets" className={`tab ${this.props.hash == '#targets' && 'selected'}`}>
+              TARGETS
+            </a>
+            <a href="#log" className={`tab ${this.props.hash == '#log' && 'selected'}`}>
+              BUILD LOGS
+            </a>
+            <a href="#details" className={`tab ${this.props.hash == '#details' && 'selected'}`}>
+              INVOCATION DETAILS
+            </a>
+            <a href="#artifacts" className={`tab ${this.props.hash == '#artifacts' && 'selected'}`}>
+              ARTIFACTS
+          </a>
+          </div>
 
-          {this.state.aborted?.description &&
+          {(!this.props.hash || this.props.hash == "#log") &&
+            this.state.aborted?.description &&
             <div className="card">
               <img className="icon" src="/image/alert-circle.svg" />
               <div className="content">
@@ -296,80 +315,93 @@ export default class InvocationComponent extends React.Component {
               </div>
             </div>}
 
-          {!!this.state.failed.length &&
+          {(!this.props.hash || this.props.hash == "#targets") &&
+            !!this.state.failed.length &&
             <div className="card">
               <img className="icon" src="/image/x-circle.svg" />
               <div className="content">
                 <div className="title">{this.state.failed.length} {this.state.failed.length == 1 ? "target" : "targets"} failed</div>
                 <div className="details">
-                  {this.state.failed.slice(0, this.state.failedLimit).map(failed =>
+                  {this.state.failed.slice(0, !this.props.hash && this.state.failedLimit || undefined).map(failed =>
                     <div>{failed.id.targetCompleted.label}</div>
                   )}
                 </div>
-                {this.state.failed.length > defaultPageSize && !!this.state.failedLimit && <div className="more" onClick={this.handleMoreFailedClicked.bind(this)}>See more failing targets</div>}
-                {this.state.failed.length > defaultPageSize && !this.state.failedLimit && <div className="more" onClick={this.handleMoreFailedClicked.bind(this)}>See less failing targets</div>}
+                {!this.props.hash && this.state.failed.length > defaultPageSize && !!this.state.failedLimit &&
+                  <div className="more" onClick={this.handleMoreFailedClicked.bind(this)}>See more failing targets</div>}
+                {!this.props.hash && this.state.failed.length > defaultPageSize && !this.state.failedLimit &&
+                  <div className="more" onClick={this.handleMoreFailedClicked.bind(this)}>See less failing targets</div>}
               </div>
             </div>}
 
-          {!!this.state.succeeded.length &&
+          {(!this.props.hash || this.props.hash == "#targets") &&
+            !!this.state.succeeded.length &&
             <div className="card">
               <img className="icon" src="/image/check-circle.svg" />
               <div className="content">
                 <div className="title">{this.state.succeeded.length} {this.state.succeeded.length == 1 ? "target" : "targets"} passed</div>
                 <div className="details">
-                  {this.state.succeeded.slice(0, this.state.succeededLimit).map(succeeded =>
+                  {this.state.succeeded.slice(0, !this.props.hash && this.state.succeededLimit || undefined).map(succeeded =>
                     <div>{succeeded.id.targetCompleted.label}</div>
                   )}
                 </div>
-                {this.state.succeeded.length > defaultPageSize && !!this.state.succeededLimit &&
+                {!this.props.hash && this.state.succeeded.length > defaultPageSize && !!this.state.succeededLimit &&
                   <div className="more" onClick={this.handleMoreSucceededClicked.bind(this)}>See more passing targets</div>}
-                {this.state.succeeded.length > defaultPageSize && !this.state.succeededLimit &&
+                {!this.props.hash && this.state.succeeded.length > defaultPageSize && !this.state.succeededLimit &&
                   <div className="more" onClick={this.handleMoreSucceededClicked.bind(this)}>See less passing targets</div>}
               </div>
             </div>}
 
-          <div className="card">
-            <img className="icon" src="/image/log-circle.svg" />
-            <div className="content">
-              <div className="title">Build log</div>
-              <div className="details">
-                {this.state.progress.slice(-1 * this.state.progressLimit).map(progress => {
-                  let ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
-                  return (progress.stdout + progress.stderr).replace(ansiRegex, "").replace(/\n\n/g, "\n");
-                })}
+          {(!this.props.hash || this.props.hash == "#log") &&
+            <div className="card">
+              <img className="icon" src="/image/log-circle.svg" />
+              <div className="content">
+                <div className="title">Build log</div>
+                <div className="details">
+                  {this.state.progress.slice(!this.props.hash && -1 * this.state.progressLimit || undefined).map(progress => {
+                    let ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
+                    return (progress.stdout + progress.stderr).replace(ansiRegex, "").replace(/\n\n/g, "\n");
+                  })}
+                </div>
+                {!this.props.hash && this.state.progress.length > defaultPageSize && !!this.state.progressLimit &&
+                  <div className="more" onClick={this.handleMoreProgressClicked.bind(this)}>See more build logs</div>}
+                {!this.props.hash && this.state.progress.length > defaultPageSize && !this.state.progressLimit &&
+                  <div className="more" onClick={this.handleMoreProgressClicked.bind(this)}>See less build logs</div>}
               </div>
-              {this.state.progress.length > defaultPageSize && !!this.state.progressLimit && <div className="more" onClick={this.handleMoreProgressClicked.bind(this)}>See more build logs</div>}
-              {this.state.progress.length > defaultPageSize && !this.state.progressLimit && <div className="more" onClick={this.handleMoreProgressClicked.bind(this)}>See less build logs</div>}
-            </div>
-          </div>
+            </div>}
 
-          <div className="card">
-            <img className="icon" src="/image/info.svg" />
-            <div className="content">
-              <div className="title">Invocation details</div>
-              <div className="details">
-                {this.state.structuredCommandLine?.sections.flatMap(section =>
-                  section.optionList?.option.map(option => <div>{option.combinedForm}</div>) || []
-                ).slice(0, this.state.invocationLimit)}
+          {(!this.props.hash || this.props.hash == "#details") &&
+            <div className="card">
+              <img className="icon" src="/image/info.svg" />
+              <div className="content">
+                <div className="title">Invocation details</div>
+                <div className="details">
+                  {this.state.structuredCommandLine?.sections.flatMap(section =>
+                    section.optionList?.option.map(option => <div>{option.combinedForm}</div>) || []
+                  ).slice(0, !this.props.hash && this.state.invocationLimit || undefined)}
+                </div>
+                {!this.props.hash && this.state.structuredCommandLine?.sections.flatMap(section => section.optionList?.option).length > defaultPageSize && !!this.state.invocationLimit &&
+                  <div className="more" onClick={this.handleMoreInvocationClicked.bind(this)}>See more invocation details</div>}
+                {!this.props.hash && this.state.structuredCommandLine?.sections.flatMap(section => section.optionList?.option).length > defaultPageSize && !this.state.invocationLimit &&
+                  <div className="more" onClick={this.handleMoreInvocationClicked.bind(this)}>See less invocation details</div>}
               </div>
-              {this.state.structuredCommandLine?.sections.flatMap(section => section.optionList?.option).length > defaultPageSize && !!this.state.invocationLimit && <div className="more" onClick={this.handleMoreInvocationClicked.bind(this)}>See more invocation details</div>}
-              {this.state.structuredCommandLine?.sections.flatMap(section => section.optionList?.option).length > defaultPageSize && !this.state.invocationLimit && <div className="more" onClick={this.handleMoreInvocationClicked.bind(this)}>See less invocation details</div>}
-            </div>
-          </div>
+            </div>}
 
-          <div className="card">
-            <img className="icon" src="/image/arrow-down-circle.svg" />
-            <div className="content">
-              <div className="title">Artifacts</div>
-              <div className="details">
-                {this.state.succeeded.flatMap(completed => completed.completed.importantOutput.map(
-                  output => <div>{output.name}</div>)).slice(0, this.state.artifactLimit)}
-                {this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length == 0 && <span>No artifacts</span>}
+          {(!this.props.hash || this.props.hash == "#artifacts") &&
+            <div className="card">
+              <img className="icon" src="/image/arrow-down-circle.svg" />
+              <div className="content">
+                <div className="title">Artifacts</div>
+                <div className="details">
+                  {this.state.succeeded.flatMap(completed => completed.completed.importantOutput.map(
+                    output => <div>{output.name}</div>)).slice(0, !this.props.hash && this.state.artifactLimit || undefined)}
+                  {this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length == 0 && <span>No artifacts</span>}
+                </div>
+                {!this.props.hash && this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length > defaultPageSize && !!this.state.artifactLimit &&
+                  <div className="more" onClick={this.handleMoreArtifactClicked.bind(this)}>See more artifacts</div>}
+                {!this.props.hash && this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length > defaultPageSize && !this.state.artifactLimit && <div className="more" onClick={this.handleMoreArtifactClicked.bind(this)}>See less artifacts</div>}
               </div>
-              {this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length > defaultPageSize && !!this.state.artifactLimit && <div className="more" onClick={this.handleMoreArtifactClicked.bind(this)}>See more artifacts</div>}
-              {this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length > defaultPageSize && !this.state.artifactLimit && <div className="more" onClick={this.handleMoreArtifactClicked.bind(this)}>See less artifacts</div>}
             </div>
-          </div>
+          }
         </div>
       </div>
     );

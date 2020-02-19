@@ -45,7 +45,7 @@ export default class RootComponent extends React.Component {
     return (
       <div>
         <MenuComponent />
-        {invocationId && <InvocationComponent invocationId={invocationId} />}
+        {invocationId && <InvocationComponent invocationId={invocationId} hash={this.state.hash} />}
         {!invocationId && <HomeComponent />}
       </div>
     );
