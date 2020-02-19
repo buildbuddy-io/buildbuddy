@@ -27,6 +27,7 @@ interface Props {
 export default class InvocationComponent extends React.Component {
   state: State = {
     progress: [],
+    started: null,
     finished: null,
     toolLogs: null,
     workspaceStatus: null,
@@ -35,7 +36,6 @@ export default class InvocationComponent extends React.Component {
     optionsParsed: null,
     unstructuredCommandLine: null,
     structuredCommandLine: null,
-    started: null,
     buildInfoMap: new Map<string, string>(),
   };
 
@@ -49,11 +49,19 @@ export default class InvocationComponent extends React.Component {
     request.query = new invocation.InvocationQuery();
     request.query.invocationId = this.props.invocationId;
     rpcService.service.getInvocation(request).then((response) => {
+      console.log(response);
       for (let invocation of response.invocation) {
         for (let buildEvent of invocation.buildEvent) {
           if (buildEvent.progress) this.state.progress.push(buildEvent.progress as build_event_stream.Progress);
+          if (buildEvent.started) this.state.started = buildEvent.started as build_event_stream.BuildStarted;
           if (buildEvent.finished) this.state.finished = buildEvent.finished as build_event_stream.BuildFinished;
+          if (buildEvent.buildToolLogs) this.state.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
           if (buildEvent.workspaceStatus) this.state.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
+          if (buildEvent.configuration) this.state.configuration = buildEvent.configuration as build_event_stream.Configuration;
+          if (buildEvent.workspaceInfo) this.state.workspaceConfig = buildEvent.workspaceInfo as build_event_stream.WorkspaceConfig;
+          if (buildEvent.optionsParsed) this.state.optionsParsed = buildEvent.optionsParsed as build_event_stream.OptionsParsed;
+          if (buildEvent.unstructuredCommandLine) this.state.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+          if (buildEvent.structuredCommandLine) this.state.structuredCommandLine = buildEvent.structuredCommandLine as command_line.CommandLine;
         }
       }
       this.updateState();
