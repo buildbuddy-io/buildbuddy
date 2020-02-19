@@ -1,0 +1,5 @@
+storage:
+  disk:
+    root_directory: /devdata/
+    ttl_seconds: 86400
+

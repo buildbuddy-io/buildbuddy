@@ -75,8 +75,8 @@ go_binary(
     name = "buildbuddy",
     srcs = ["main.go"],
     data = [
+        "//:config_files",
         "//app:app_bundle",
-        "//static",
     ],
     deps = [
         ":blobstore",
@@ -96,6 +96,10 @@ go_binary(
 go_image(
     name = "buildbuddy_image",
     srcs = ["main.go"],
+    data = [
+        "//:config_files",
+        "//app:app_bundle",
+    ],
     deps = [
         ":blobstore",
         ":build_event_handler",
