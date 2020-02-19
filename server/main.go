@@ -50,7 +50,7 @@ func main() {
 	}
 
 	fmt.Printf("Loaded configurator: %s", configurator)
-	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, false)
+	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, false, []string{"/invocation/"})
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)
 	}
@@ -58,7 +58,7 @@ func main() {
 	diskBlobStore := blobstore.NewDiskBlobStore(configurator.GetStorageDiskRootDir())
 	eventHandler := build_event_handler.NewBuildEventHandler(diskBlobStore)
 
-	afs, err := static.NewStaticFileServer(*appDirectory, true)
+	afs, err := static.NewStaticFileServer(*appDirectory, true, []string{})
 	if err != nil {
 		log.Fatalf("Error initializing app server: %s", err)
 	}

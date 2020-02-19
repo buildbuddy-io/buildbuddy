@@ -49,9 +49,11 @@ a {
   align-items: center;
   box-sizing: border-box;
   font-weight: 700;
-  font-size: 20px;
+  font-size: 24px;
   z-index: 1;
   position: relative;
+  background-color: rgba(55,71,79 ,1);
+  color: #fff;
 }
 
 .menu .container {
@@ -63,6 +65,10 @@ a {
   padding-top: 1px;
   margin-right: 16px;
   cursor: pointer;
+}
+
+.menu .title {
+  color: rgba(255, 255, 255, .90);
 }
 
 /** Side menu **/
@@ -153,6 +159,33 @@ a {
   cursor: pointer;
 }
 
-.mono {
+/** Home **/
+
+.home {
+  margin-top: 32px;
+  margin-bottom: 64px;
+}
+
+.home .title {
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.home code {
+  display: block;
+  padding: 32px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  margin-top: 16px;
+  background-color: #fafafa;
   font-family: 'Source Code Pro', monospace;
+  line-height: 1.6em;
+}
+
+.home p {
+  margin-top: 32px;
+}
+
+.home a {
+  text-decoration: underline;
 }

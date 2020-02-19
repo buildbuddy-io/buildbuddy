@@ -1,9 +1,11 @@
 import React from 'react';
 import MenuComponent from 'buildbuddy/app/menu/menu';
 import InvocationComponent from 'buildbuddy/app/invocation/invocation';
+import HomeComponent from 'buildbuddy/app/home/home';
 
 interface State {
   hash: string;
+  path: string;
   loading: boolean;
   loggedIn: boolean;
 }
@@ -11,29 +13,40 @@ interface State {
 export default class RootComponent extends React.Component {
   state: State = {
     hash: window.location.hash,
+    path: window.location.pathname,
     loading: true,
     loggedIn: false,
   };
 
   componentWillMount() {
-    window.onhashchange = () => this.handleHashChange();
+    window.onpopstate = () => this.handlePathChange();
   }
 
-  handleHashChange() {
+  handlePathChange() {
     this.setState({
       hash: window.location.hash,
+      path: window.location.pathname,
     });
   }
 
   getCurrentInvocationId() {
-    return this.state.hash.replace("#/invocation/", "");
+    let invocationPath = "/invocation/"
+    if (this.state.hash.startsWith("#" + invocationPath)) {
+      return this.state.hash.replace("#" + invocationPath, "");
+    }
+    if (!this.state.path.startsWith(invocationPath)) {
+      return null;
+    }
+    return this.state.path.replace(invocationPath, "");
   }
 
   render() {
+    let invocationId = this.getCurrentInvocationId();
     return (
       <div>
         <MenuComponent />
-        <InvocationComponent invocationId={this.getCurrentInvocationId()} />
+        {invocationId && <InvocationComponent invocationId={invocationId} />}
+        {!invocationId && <HomeComponent />}
       </div>
     );
   }

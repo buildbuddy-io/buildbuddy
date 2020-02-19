@@ -3,6 +3,7 @@ package static
 import (
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 )
@@ -15,7 +16,7 @@ type StaticFileServer struct {
 
 // NewStaticFileServer returns a new static file server that will serve the
 // content in relpath, optionally stripping the prefix.
-func NewStaticFileServer(relPath string, stripPrefix bool) (*StaticFileServer, error) {
+func NewStaticFileServer(relPath string, stripPrefix bool, rootPaths []string) (*StaticFileServer, error) {
 	// Figure out where our runfiles (static content bundled with the binary) live.
 	rfp, err := bazel.RunfilesPath()
 	if err != nil {
@@ -27,6 +28,9 @@ func NewStaticFileServer(relPath string, stripPrefix bool) (*StaticFileServer, e
 	if stripPrefix {
 		handler = http.StripPrefix(relPath, handler)
 	}
+	if len(rootPaths) > 0 {
+		handler = handleRootPaths(rootPaths, handler)
+	}
 	return &StaticFileServer{
 		handler: handler,
 	}, nil
@@ -35,4 +39,16 @@ func NewStaticFileServer(relPath string, stripPrefix bool) (*StaticFileServer, e
 // ServeHTTP implements the HTTP HandlerFunc interface.
 func (s *StaticFileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
+}
+
+func handleRootPaths(rootPaths []string, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, rootPath := range rootPaths {
+			if strings.HasPrefix(r.URL.Path, rootPath) {
+				r.URL.Path = "/"
+			}
+		}
+
+		h.ServeHTTP(w, r)
+	})
 }

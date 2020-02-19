@@ -19,8 +19,8 @@ export default class MenuComponent extends React.Component {
         <div className="menu">
           <div className="container">
             <img onClick={this.handleMenuClicked.bind(this)} className="icon" src="/image/menu.svg" />
-            BuildBuddy
-        </div>
+            <div className="title">BuildBuddy</div>
+          </div>
         </div>
         {this.state.menuExpanded &&
           <div className="side-menu">

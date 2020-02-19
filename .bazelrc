@@ -1,2 +1,2 @@
-build:local --bes_results_url=http://localhost:8080/\#/invocation/
+build:local --bes_results_url=http://localhost:8080/invocation/
 build:local --bes_backend=grpc://localhost:1985
