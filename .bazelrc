@@ -2,4 +2,4 @@ build:local --bes_results_url=http://localhost:8080/invocation/
 build:local --bes_backend=grpc://localhost:1985
 
 build:dev --bes_results_url=http://app.buildbuddy.dev/invocation/
-build:dev --bes_backend=grpc://app.buildbuddy.dev:1985
+build:dev --bes_backend=grpc://events.buildbuddy.dev:1985

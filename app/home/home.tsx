@@ -28,7 +28,7 @@ export default class HomeComponent extends React.Component {
             <b>.bazelrc</b>
             <code>
               build --bes_results_url={window.location.protocol}//{window.location.host}/invocation/<br/>
-              build --bes_backend=grpc://{window.location.hostname}:1985
+              build --bes_backend=grpc://{window.location.hostname.replace("app.", "events.")}:1985
             </code>
           </p>
           <p>
