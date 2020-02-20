@@ -1,9 +1,13 @@
-# Configuration for deployment to kubernetes
-
+apiVersion: v1
+kind: Namespace
+metadata:
+    name: buildbuddy-dev
+---
 apiVersion: apps/v1beta1
 kind: Deployment
 metadata:
   name: buildbuddy-app
+  namespace: buildbuddy-dev
 spec:
   selector:
     matchLabels:
@@ -45,6 +49,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: buildbuddy-app-service
+  namespace: buildbuddy-dev
 spec:
   selector:
     app: buildbuddy-app
@@ -63,6 +68,7 @@ apiVersion: networking.gke.io/v1beta1
 kind: ManagedCertificate
 metadata:
   name: buildbuddy-dev-certificate
+  namespace: buildbuddy-dev
 spec:
   domains:
     - buildbuddy.dev
@@ -71,6 +77,7 @@ apiVersion: networking.gke.io/v1beta1
 kind: ManagedCertificate
 metadata:
   name: app-buildbuddy-dev-certificate
+  namespace: buildbuddy-dev
 spec:
   domains:
     - app.buildbuddy.dev
@@ -79,6 +86,7 @@ apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
   name: buildbuddy-app-ingress
+  namespace: buildbuddy-dev
   annotations:
       networking.gke.io/managed-certificates: "buildbuddy-dev-certificate,app-buildbuddy-dev-certificate"
 spec:
@@ -94,6 +102,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: buildbuddy-app-claim
+  namespace: buildbuddy-dev
 spec:
   accessModes:
     - ReadWriteOnce
