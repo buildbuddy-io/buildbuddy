@@ -22,8 +22,6 @@ func NewBuildBuddyServer(h *build_event_handler.BuildEventHandler) (*BuildBuddyS
 }
 
 func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvocationRequest) (*inpb.GetInvocationResponse, error) {
-	fmt.Printf("GetInvocation called: %s\n", req)
-
 	inv, err := s.eventHandler.LookupInvocation(req.Query.InvocationId)
 	if err != nil {
 		return nil, err
@@ -37,7 +35,6 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 
 func (s *BuildBuddyServer) GetInvocationHandlerFunc() http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("HandlerFunc was called!\n")
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
