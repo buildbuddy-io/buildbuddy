@@ -67,7 +67,7 @@ spec:
 apiVersion: networking.gke.io/v1beta1
 kind: ManagedCertificate
 metadata:
-  name: buildbuddy-dev-certificate
+  name: buildbuddy-dev-cert
   namespace: buildbuddy-dev
 spec:
   domains:
@@ -76,7 +76,7 @@ spec:
 apiVersion: networking.gke.io/v1beta1
 kind: ManagedCertificate
 metadata:
-  name: app-buildbuddy-dev-certificate
+  name: app-buildbuddy-dev-cert
   namespace: buildbuddy-dev
 spec:
   domains:
@@ -88,7 +88,7 @@ metadata:
   name: buildbuddy-app-ingress
   namespace: buildbuddy-dev
   annotations:
-      networking.gke.io/managed-certificates: "buildbuddy-dev-certificate,app-buildbuddy-dev-certificate"
+      networking.gke.io/managed-certificates: "buildbuddy-dev-cert,app-buildbuddy-dev-cert"
 spec:
   rules:
     - host: app.buildbuddy.dev

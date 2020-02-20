@@ -228,7 +228,7 @@ export default class InvocationComponent extends React.Component {
 
   getStatusIcon() {
     if (!this.state.started) {
-      return <img className="icon" src="/image/question-circle.svg" />
+      return <img className="icon" src="/image/help-circle.svg" />
     }
     if (!this.state.finished) {
       return <img className="icon" src="/image/play-circle.svg" />
