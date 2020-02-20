@@ -2,7 +2,6 @@ package buildbuddy_server
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 
