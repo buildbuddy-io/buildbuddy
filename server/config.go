@@ -25,6 +25,14 @@ type diskConfig struct {
 	TtlSeconds    int64  `yaml:"ttl_seconds"`
 }
 
+func ensureDirectoryExists(dir string) error {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		log.Printf("Directory '%s' did not exist; creating it.", dir)
+		return os.MkdirAll(dir, os.ModeDir)
+	}
+	return nil
+}
+
 func readConfig(fullConfigPath string) (*generalConfig, error) {
 	_, err := os.Stat(fullConfigPath)
 
@@ -45,6 +53,15 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 	return &gc, nil
 }
 
+func validateConfig(c *generalConfig) error {
+	if c.Storage.Disk.RootDirectory != "" {
+		if err := ensureDirectoryExists(c.Storage.Disk.RootDirectory); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type Configurator struct {
 	fullConfigPath string
 	lastReadTime   time.Time
@@ -52,8 +69,12 @@ type Configurator struct {
 }
 
 func NewConfigurator(configFilePath string) (*Configurator, error) {
+	log.Printf("Reading buildbuddy config from '%s'", configFilePath)
 	conf, err := readConfig(configFilePath)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateConfig(conf); err != nil {
 		return nil, err
 	}
 	return &Configurator{

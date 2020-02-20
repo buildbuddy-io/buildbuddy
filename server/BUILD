@@ -77,7 +77,7 @@ go_binary(
     data = [
         "//:config_files",
         "//app:app_bundle",
-	"//static",
+        "//static",
     ],
     deps = [
         ":blobstore",

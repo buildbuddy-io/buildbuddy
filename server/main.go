@@ -23,7 +23,7 @@ var (
 	listen     = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port       = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
 	gRPCPort   = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
-	configFile = flag.String("config_file", "", "The path to a buildbuddy config file")
+	configFile = flag.String("config_file", "config/buildbuddy.local.yaml", "The path to a buildbuddy config file")
 
 	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
@@ -49,7 +49,6 @@ func main() {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 
-	fmt.Printf("Loaded configurator: %s", configurator)
 	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, false, []string{"/invocation/"})
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)
