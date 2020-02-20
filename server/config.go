@@ -28,7 +28,7 @@ type diskConfig struct {
 func ensureDirectoryExists(dir string) error {
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		log.Printf("Directory '%s' did not exist; creating it.", dir)
-		return os.MkdirAll(dir, os.ModeDir)
+		return os.MkdirAll(dir, 0755)
 	}
 	return nil
 }
