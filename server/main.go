@@ -4,8 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
+	"strings"
 
 	"github.com/tryflame/buildbuddy/server/blobstore"
 	"github.com/tryflame/buildbuddy/server/build_event_handler"
@@ -22,7 +22,6 @@ import (
 var (
 	listen     = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port       = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	gRPCPort   = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
 	configFile = flag.String("config_file", "config/buildbuddy.local.yaml", "The path to a buildbuddy config file")
 
 	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
@@ -37,6 +36,18 @@ func redirectHTTPS(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+func grpcHandlerFunc(grpcServer *grpc.Server, otherHandler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("%+v", r)
+		log.Printf("%+v", r.Header)
+		if r.ProtoMajor == 2 && strings.Contains(r.Header.Get("Content-Type"), "application/grpc") {
+			grpcServer.ServeHTTP(w, r)
+		} else {
+			otherHandler.ServeHTTP(w, r)
+		}
 	})
 }
 
@@ -62,14 +73,6 @@ func main() {
 		log.Fatalf("Error initializing app server: %s", err)
 	}
 
-	// Initialize our gRPC server (and fail early if not).
-	gRPCHostAndPort := fmt.Sprintf("%s:%d", *listen, *gRPCPort)
-	log.Printf("gRPC listening on http://%s\n", gRPCHostAndPort)
-
-	lis, err := net.Listen("tcp", gRPCHostAndPort)
-	if err != nil {
-		log.Fatalf("Failed to listen: %s", err)
-	}
 	grpcServer := grpc.NewServer()
 	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(eventHandler)
 	if err != nil {
@@ -82,7 +85,7 @@ func main() {
 	}
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
-	http.Handle("/", redirectHTTPS(staticFileServer))
+	http.Handle("/", grpcHandlerFunc(grpcServer, redirectHTTPS(staticFileServer)))
 	http.Handle("/app/", redirectHTTPS(afs))
 	http.Handle("/rpc/BuildBuddyService/GetInvocation", redirectHTTPS(buildBuddyServer.GetInvocationHandlerFunc()))
 
@@ -91,11 +94,5 @@ func main() {
 
 	// Run the HTTP server in a goroutine because we still want to start a gRPC
 	// server below.
-	go func() {
-		log.Fatal(http.ListenAndServe(hostAndPort, nil))
-	}()
-	go func() {
-		log.Fatal(grpcServer.Serve(lis))
-	}()
-	select {}
+	log.Fatal(http.ListenAndServeTLS(hostAndPort, "cert/dev.crt", "cert/dev.key", grpcHandlerFunc(grpcServer, http.DefaultServeMux)))
 }

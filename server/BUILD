@@ -77,6 +77,7 @@ go_binary(
     data = [
         "//:config_files",
         "//app:app_bundle",
+        "//cert",
         "//static",
     ],
     deps = [
