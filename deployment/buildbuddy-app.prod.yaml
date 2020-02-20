@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+    name: buildbuddy-prod
+---
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: buildbuddy-app
+  namespace: buildbuddy-prod
+spec:
+  selector:
+    matchLabels:
+      app: buildbuddy-app
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: buildbuddy-app
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-nodepool: default-pool
+      containers:
+        - name: buildbuddy-app
+          image: gcr.io/flame-build/buildbuddy-app:server_image
+          imagePullPolicy: Always
+          args: ["--config_file=config/buildbuddy.prod.yaml"]
+          env:
+          - name: ENV
+            value: "prod"
+          - name: SERVICE_NAME
+            value: "app-backend"
+          - name: VERSION
+            value: "prod-1.0"
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: grpc
+              containerPort: 1985
+          volumeMounts:
+            - mountPath: /data
+              name: buildbuddy-app-data
+      volumes:
+        - name: buildbuddy-app-data
+          persistentVolumeClaim:
+            claimName: buildbuddy-app-claim
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: buildbuddy-app-service
+  namespace: buildbuddy-prod
+spec:
+  selector:
+    app: buildbuddy-app
+  ports:
+    - name: http
+      protocol: 'TCP'
+      port: 80
+      targetPort: 8080
+    - name: grpc
+      protocol: 'TCP'
+      port: 1985
+      targetPort: 1985
+  type: LoadBalancer
+---
+apiVersion: networking.gke.io/v1beta1
+kind: ManagedCertificate
+metadata:
+  name: buildbuddy-prod-certificate
+  namespace: buildbuddy-prod
+spec:
+  domains:
+    - buildbuddy.io
+---
+apiVersion: networking.gke.io/v1beta1
+kind: ManagedCertificate
+metadata:
+  name: app-buildbuddy-prod-certificate
+  namespace: buildbuddy-prod
+spec:
+  domains:
+    - app.buildbuddy.io
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: buildbuddy-app-ingress
+  namespace: buildbuddy-prod
+  annotations:
+      networking.gke.io/managed-certificates: "buildbuddy-prod-certificate,app-buildbuddy-prod-certificate"
+spec:
+  rules:
+    - host: buildbuddy.io
+      http:
+        paths:
+          - backend:
+              serviceName: buildbuddy-app-service
+              servicePort: 80
+    - host: app.buildbuddy.io
+      http:
+        paths:
+          - backend:
+              serviceName: buildbuddy-app-service
+              servicePort: 80
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: buildbuddy-app-claim
+  namespace: buildbuddy-prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Gi
