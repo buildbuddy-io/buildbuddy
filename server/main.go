@@ -54,8 +54,11 @@ func main() {
 		log.Fatalf("Error initializing static file server: %s", err)
 	}
 
-	diskBlobStore := blobstore.NewDiskBlobStore(configurator.GetStorageDiskRootDir())
-	eventHandler := build_event_handler.NewBuildEventHandler(diskBlobStore)
+	bs, err := blobstore.GetConfiguredBlobstore(configurator)
+	if err != nil {
+		log.Fatalf("Error configuring blobstore: %s", err)
+	}
+	eventHandler := build_event_handler.NewBuildEventHandler(bs)
 
 	afs, err := static.NewStaticFileServer(*appDirectory, true, []string{})
 	if err != nil {

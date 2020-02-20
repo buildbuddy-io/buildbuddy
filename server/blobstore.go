@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/tryflame/buildbuddy/server/config"
 )
 
 // A Blob must implement the io.Reader & io.Writer interfaces.
@@ -21,6 +23,15 @@ type Blobstore interface {
 	DeleteBlob(blobName string) error
 }
 
+// Returns whatever blobstore is specified in the config.
+func GetConfiguredBlobstore(c *config.Configurator) (Blobstore, error) {
+	if c.GetStorageDiskRootDir() != "" {
+		return NewDiskBlobStore(c.GetStorageDiskRootDir()), nil
+	}
+	return nil, fmt.Errorf("No storage backend configured -- please specify at least one in the config")
+}
+
+// A super simple disk-based blob storage implementation.
 type DiskBlobStore struct {
 	rootDir string
 }

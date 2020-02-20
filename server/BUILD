@@ -8,6 +8,7 @@ go_library(
     srcs = ["blobstore.go"],
     importpath = "github.com/tryflame/buildbuddy/server/blobstore",
     deps = [
+        ":config",
     ],
 )
 
