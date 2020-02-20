@@ -1,0 +1,5 @@
+storage:
+  disk:
+    root_directory: /data/
+    ttl_seconds: 604800
+
