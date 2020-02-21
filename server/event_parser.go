@@ -1,7 +1,6 @@
 package event_parser
 
 import (
-	"log"
 	"time"
 
 	"proto/build_event_stream"
@@ -12,7 +11,7 @@ func FillInvocationFromEvents(buildEvents []*build_event_stream.BuildEvent, invo
 	startTimeMillis := int64(-1)
 	endTimeMillis := int64(-1)
 
-	for i, be := range buildEvents {
+	for _, be := range buildEvents {
 		switch p := be.Payload.(type) {
 		case *build_event_stream.BuildEvent_Progress:
 			{
