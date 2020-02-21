@@ -139,35 +139,11 @@ go_repository(
     version = "v1.26.0",
 )
 
-# Needed for the googleapis protos used by com_github_bazelbuild_remote_apis
-# below.
-http_archive(
-    name = "googleapis",
-    build_file = "BUILD.googleapis",
-    sha256 = "7b6ea252f0b8fb5cd722f45feb83e115b689909bbb6a393a873b6cbad4ceae1d",
-    strip_prefix = "googleapis-143084a2624b6591ee1f9d23e7f5241856642f4d",
-    urls = ["https://github.com/googleapis/googleapis/archive/143084a2624b6591ee1f9d23e7f5241856642f4d.zip"],
-)
-
-go_repository(
-    name = "com_github_bazelbuild_remote_apis",
-    importpath = "github.com/bazelbuild/remote-apis",
-    sum = "h1:OPH+hf+ICw8WEp2CV2ncfdyWPC30Cmw8b5NKun0n5IQ=",
-    version = "v0.0.0-20191119143007-b5123b1bb285",
-)
-
 go_repository(
     name = "com_github_google_uuid",
     importpath = "github.com/google/uuid",
     sum = "h1:Gkbcsh/GbpXz7lPftLA3P6TYMwjCLYm83jiFQZF/3gY=",
     version = "v1.1.1",
-)
-
-load("@com_github_bazelbuild_remote_apis//:repository_rules.bzl", "switched_rules_by_language")
-
-switched_rules_by_language(
-    name = "bazel_remote_apis_imports",
-    go = True,
 )
 
 # Needed for go dependencies.
