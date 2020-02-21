@@ -13,7 +13,8 @@ import (
 // When adding new storage fields, always be explicit about their yaml field
 // name.
 type generalConfig struct {
-	Storage storageConfig `yaml:"storage"`
+	Storage  storageConfig  `yaml:"storage"`
+	Database databaseConfig `yaml:"database"`
 }
 
 type storageConfig struct {
@@ -23,6 +24,10 @@ type storageConfig struct {
 type diskConfig struct {
 	RootDirectory string `yaml:"root_directory"`
 	TtlSeconds    int64  `yaml:"ttl_seconds"`
+}
+
+type databaseConfig struct {
+	DataSource string `yaml:"data_source"`
 }
 
 func ensureDirectoryExists(dir string) error {
@@ -105,4 +110,9 @@ func (c *Configurator) rereadIfStale() {
 func (c *Configurator) GetStorageDiskRootDir() string {
 	c.rereadIfStale()
 	return c.gc.Storage.Disk.RootDirectory
+}
+
+func (c *Configurator) GetDBDataSource() string {
+	c.rereadIfStale()
+	return c.gc.Database.DataSource
 }

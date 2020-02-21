@@ -28,7 +28,6 @@ func NewBuildEventProtocolServer(h *build_event_handler.BuildEventHandler) (*Bui
 func (s *BuildEventProtocolServer) chompBuildEvent(obe *bpb.OrderedBuildEvent) (*build_event_stream.BuildEvent, error) {
 	switch buildEvent := obe.Event.Event.(type) {
 	case *bpb.BuildEvent_ComponentStreamFinished:
-		log.Print("BuildTool: ComponentStreamFinished: ", buildEvent.ComponentStreamFinished)
 		return nil, nil
 	case *bpb.BuildEvent_BazelEvent:
 		var bazelBuildEvent build_event_stream.BuildEvent
@@ -62,7 +61,6 @@ func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, re
 // adds an OPEN_STREAM event.
 func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream bpb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
 	// Semantically, the protocol requires we ack events in order.
-	log.Printf("publish was called!")
 	acks := make([]int, 0)
 	bazelEvents := make([]*build_event_stream.BuildEvent, 0)
 	streamID := &bpb.StreamId{}
@@ -100,7 +98,8 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream bpb.Publis
 	}
 
 	if err := s.eventHandler.HandleEvents(streamID.InvocationId, bazelEvents); err != nil {
-		log.Printf("error processing build events: %s", err)
+		log.Printf("Error processing build events: %s", err)
+		return io.EOF
 	}
 
 	// Finally, ack everything.
