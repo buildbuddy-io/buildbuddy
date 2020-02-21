@@ -1,3 +1,5 @@
+database:
+  data_source: "sqlite3:///tmp/buildbuddy.db"
 storage:
   disk:
     root_directory: /tmp/buildbuddy

@@ -54,10 +54,43 @@ go_library(
     importpath = "github.com/tryflame/buildbuddy/server/build_event_handler",
     deps = [
         ":blobstore",
+        ":database",
+        ":event_parser",
+        ":tables",
         "//proto:build_event_stream_go_proto",
         "//proto:build_go_proto",
         "//proto:invocation_go_proto",
         "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_jinzhu_gorm//:go_default_library",
+    ],
+)
+
+go_library(
+    name = "database",
+    srcs = [
+        "database.go",
+    ],
+    importpath = "github.com/tryflame/buildbuddy/server/database",
+    deps = [
+        ":config",
+        ":tables",
+        "//proto:invocation_go_proto",
+        "@com_github_jinzhu_gorm//:go_default_library",
+        "@com_github_jinzhu_gorm//dialects/mysql:go_default_library",
+        "@com_github_jinzhu_gorm//dialects/postgres:go_default_library",
+        "@com_github_jinzhu_gorm//dialects/sqlite:go_default_library",
+    ],
+)
+
+go_library(
+    name = "event_parser",
+    srcs = [
+        "event_parser.go",
+    ],
+    importpath = "github.com/tryflame/buildbuddy/server/event_parser",
+    deps = [
+        "//proto:build_event_stream_go_proto",
+        "//proto:invocation_go_proto",
     ],
 )
 
@@ -67,6 +100,18 @@ go_library(
     importpath = "github.com/tryflame/buildbuddy/server/static",
     deps = [
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+    ],
+)
+
+go_library(
+    name = "tables",
+    srcs = [
+        "tables.go",
+    ],
+    importpath = "github.com/tryflame/buildbuddy/server/tables",
+    deps = [
+        "//proto:invocation_go_proto",
+        "@com_github_jinzhu_gorm//:go_default_library",
     ],
 )
 
@@ -86,6 +131,7 @@ go_binary(
         ":build_event_server",
         ":buildbuddy_server",
         ":config",
+        ":database",
         ":static",
         "//proto:build_go_proto",
         "//proto:buildbuddy_service_go_proto",

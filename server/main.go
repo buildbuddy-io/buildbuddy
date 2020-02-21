@@ -12,6 +12,7 @@ import (
 	"github.com/tryflame/buildbuddy/server/build_event_server"
 	"github.com/tryflame/buildbuddy/server/buildbuddy_server"
 	"github.com/tryflame/buildbuddy/server/config"
+	"github.com/tryflame/buildbuddy/server/database"
 	"github.com/tryflame/buildbuddy/server/static"
 	"google.golang.org/grpc"
 
@@ -58,7 +59,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}
-	eventHandler := build_event_handler.NewBuildEventHandler(bs)
+	db, err := database.GetConfiguredDatabase(configurator)
+	if err != nil {
+		log.Fatalf("Error configuring database: %s", err)
+	}
+	eventHandler := build_event_handler.NewBuildEventHandler(bs, db)
 
 	afs, err := static.NewStaticFileServer(*appDirectory, true, []string{})
 	if err != nil {
