@@ -22,7 +22,7 @@ spec:
         cloud.google.com/gke-nodepool: default-pool
       containers:
         - name: buildbuddy-app
-          image: gcr.io/flame-build/buildbuddy-app:server_image
+          image: gcr.io/flame-build/buildbuddy-app-dev:server_image
           imagePullPolicy: Always
           args: ["--config_file=config/buildbuddy.dev.yaml"]
           env:
@@ -67,15 +67,6 @@ spec:
 apiVersion: networking.gke.io/v1beta1
 kind: ManagedCertificate
 metadata:
-  name: buildbuddy-dev-certificate
-  namespace: buildbuddy-dev
-spec:
-  domains:
-    - buildbuddy.dev
----
-apiVersion: networking.gke.io/v1beta1
-kind: ManagedCertificate
-metadata:
   name: app-buildbuddy-dev-certificate
   namespace: buildbuddy-dev
 spec:
@@ -88,15 +79,9 @@ metadata:
   name: buildbuddy-app-ingress
   namespace: buildbuddy-dev
   annotations:
-      networking.gke.io/managed-certificates: "buildbuddy-dev-certificate,app-buildbuddy-dev-certificate"
+      networking.gke.io/managed-certificates: "app-buildbuddy-dev-certificate"
 spec:
   rules:
-    - host: buildbuddy.dev
-      http:
-        paths:
-          - backend:
-              serviceName: buildbuddy-app-service
-              servicePort: 80
     - host: app.buildbuddy.dev
       http:
         paths:
