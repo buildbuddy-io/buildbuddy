@@ -22,7 +22,7 @@ k8s_objects(
 
 k8s_object(
     name = "buildbuddy_prod_app",
-    cluster = "gke_flame-build_us-west1-a_buildbuddy-prod",
+    cluster = "gke_flame-build_us-west1_buildbuddy-prod",
     images = {
         "gcr.io/flame-build/buildbuddy-app-prod:server_image": "//server:buildbuddy_image",
     },

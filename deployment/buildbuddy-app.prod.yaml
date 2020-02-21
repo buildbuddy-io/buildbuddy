@@ -79,7 +79,7 @@ metadata:
   name: buildbuddy-app-ingress
   namespace: buildbuddy-prod
   annotations:
-      networking.gke.io/managed-certificates: "buildbuddy-prod-certificate,app-buildbuddy-prod-certificate"
+      networking.gke.io/managed-certificates: "app-buildbuddy-prod-certificate"
 spec:
   rules:
     - host: app.buildbuddy.io
