@@ -19,19 +19,3 @@ k8s_objects(
         ":buildbuddy_dev_app",
     ],
 )
-
-k8s_object(
-    name = "buildbuddy_prod_app",
-    cluster = "gke_flame-build_us-west1-a_buildbuddy-prod",
-    images = {
-        "gcr.io/flame-build/buildbuddy-app-prod:server_image": "//server:buildbuddy_image",
-    },
-    template = ":buildbuddy-app.prod.yaml",
-)
-
-k8s_objects(
-    name = "prod",
-    objects = [
-        ":buildbuddy_prod_app",
-    ],
-)
