@@ -3,3 +3,6 @@ build:local --bes_backend=grpc://localhost:1985
 
 build:dev --bes_results_url=https://app.buildbuddy.dev/invocation/
 build:dev --bes_backend=grpc://events.buildbuddy.dev:1985
+
+build:prod --bes_results_url=https://app.buildbuddy.io/invocation/
+build:prod --bes_backend=grpc://events.buildbuddy.io:1985
