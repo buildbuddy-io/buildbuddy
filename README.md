@@ -3,7 +3,9 @@ BuildBuddy is an open source Bazel build event viewer. It helps you collect, vie
 
 It's written in Golang and React and can be deployed as a Docker image. It's run as a [cloud hosted service](https://buildbuddy.io) and can be deployed to your cloud provider or run on-prem. BuildBuddy's core is open sourced in this repo under the [MIT License](https://github.com/tryflame/buildbuddy/blob/master/LICENSE).
 
-<center><img width="50%" src="https://buildbuddy.io/images/preview.png"></center>
+<p align="center">
+  <img width="50%" src="https://buildbuddy.io/images/preview.png">
+</p>
 
 ## Features
 
