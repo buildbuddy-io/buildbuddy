@@ -1,7 +1,7 @@
 import React from 'react';
-import MenuComponent from 'buildbuddy/app/menu/menu';
-import InvocationComponent from 'buildbuddy/app/invocation/invocation';
-import HomeComponent from 'buildbuddy/app/home/home';
+import MenuComponent from '../menu/menu';
+import InvocationComponent from '../invocation/invocation';
+import HomeComponent from '../home/home';
 
 interface State {
   hash: string;
@@ -41,9 +41,9 @@ export default class RootComponent extends React.Component {
     let invocationId = this.getCurrentInvocationId();
     return (
       <div>
-        <MenuComponent />
+        {/* <MenuComponent />
         {invocationId && <InvocationComponent invocationId={invocationId} hash={this.state.hash} />}
-        {!invocationId && <HomeComponent />}
+        {!invocationId && <HomeComponent />} */}
       </div>
     );
   }

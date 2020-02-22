@@ -1,10 +1,10 @@
 import React from 'react';
 import Long from 'long';
 import moment from 'moment';
-import rpcService from 'buildbuddy/app/service/rpc_service'
-import { invocation } from 'buildbuddy/proto/invocation_ts_proto';
-import { build_event_stream } from 'buildbuddy/proto/build_event_stream_ts_proto';
-import { command_line } from 'buildbuddy/proto/command_line_ts_proto';
+import rpcService from '../service/rpc_service'
+import { invocation } from '../../proto/invocation_ts_proto';
+import { build_event_stream } from '../../proto/build_event_stream_ts_proto';
+import { command_line } from '../../proto/command_line_ts_proto';
 
 interface State {
   progress: build_event_stream.Progress[],

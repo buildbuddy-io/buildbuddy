@@ -8,6 +8,7 @@ gazelle(name = "gazelle")
 exports_files([
     "tsconfig.json",
     "package.json",
+    "yarn.lock",
 ])
 
 filegroup(

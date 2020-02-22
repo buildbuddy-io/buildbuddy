@@ -1,4 +1,4 @@
-import { buildbuddy } from 'buildbuddy/proto/buildbuddy_service_ts_proto';
+import { buildbuddy } from '../../proto/buildbuddy_service_ts_proto';
 import events from 'fbemitter';
 
 class RpcService {
