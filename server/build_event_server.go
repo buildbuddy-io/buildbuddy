@@ -97,7 +97,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream bpb.Publis
 		}
 	}
 
-	if err := s.eventHandler.HandleEvents(streamID.InvocationId, bazelEvents); err != nil {
+	if err := s.eventHandler.HandleEvents(stream.Context(), streamID.InvocationId, bazelEvents); err != nil {
 		log.Printf("Error processing build events: %s", err)
 		return io.EOF
 	}

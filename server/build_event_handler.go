@@ -1,9 +1,7 @@
 package build_event_handler
 
 import (
-	"bytes"
-	"io"
-	"io/ioutil"
+	"context"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/jinzhu/gorm"
@@ -28,23 +26,15 @@ func NewBuildEventHandler(bs blobstore.Blobstore, db *database.Database) *BuildE
 	}
 }
 
-func (h *BuildEventHandler) writeToBlobstore(invocation *inpb.Invocation) error {
+func (h *BuildEventHandler) writeToBlobstore(ctx context.Context, invocation *inpb.Invocation) error {
 	protoBytes, err := proto.Marshal(invocation)
 	if err != nil {
 		return err
 	}
-	blob, err := h.bs.GetBlob(invocation.InvocationId)
-	if err != nil {
-		return err
-	}
-	protoBytesBuf := bytes.NewBuffer(protoBytes)
-	if _, err := io.Copy(blob, protoBytesBuf); err != nil {
-		return err
-	}
-	return nil
+	return h.bs.WriteBlob(ctx, invocation.InvocationId, protoBytes)
 }
 
-func (h *BuildEventHandler) HandleEvents(invocationID string, buildEvents []*build_event_stream.BuildEvent) error {
+func (h *BuildEventHandler) HandleEvents(ctx context.Context, invocationID string, buildEvents []*build_event_stream.BuildEvent) error {
 	invocation := &inpb.Invocation{
 		InvocationId: invocationID,
 		BuildEvent:   buildEvents,
@@ -58,17 +48,12 @@ func (h *BuildEventHandler) HandleEvents(invocationID string, buildEvents []*bui
 		}
 
 		// Write the blob inside the transaction. All or nothing.
-		return h.writeToBlobstore(invocation)
+		return h.writeToBlobstore(ctx, invocation)
 	})
 }
 
-func (h *BuildEventHandler) LookupInvocation(invocationID string) (*inpb.Invocation, error) {
-	blob, err := h.bs.GetBlob(invocationID)
-	if err != nil {
-		return nil, err
-	}
-
-	protoBytes, err := ioutil.ReadAll(blob)
+func (h *BuildEventHandler) LookupInvocation(ctx context.Context, invocationID string) (*inpb.Invocation, error) {
+	protoBytes, err := h.bs.ReadBlob(ctx, invocationID)
 	if err != nil {
 		return nil, err
 	}

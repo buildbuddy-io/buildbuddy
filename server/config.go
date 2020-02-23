@@ -13,21 +13,28 @@ import (
 // When adding new storage fields, always be explicit about their yaml field
 // name.
 type generalConfig struct {
-	Storage  storageConfig  `yaml:"storage"`
 	Database databaseConfig `yaml:"database"`
-}
-
-type storageConfig struct {
-	Disk diskConfig `yaml:"disk"`
-}
-
-type diskConfig struct {
-	RootDirectory string `yaml:"root_directory"`
-	TtlSeconds    int64  `yaml:"ttl_seconds"`
+	Storage  storageConfig  `yaml:"storage"`
 }
 
 type databaseConfig struct {
 	DataSource string `yaml:"data_source"`
+}
+
+type storageConfig struct {
+	Disk DiskConfig `yaml:"disk"`
+	GCS  GCSConfig  `yaml:"gcs"`
+}
+
+type DiskConfig struct {
+	RootDirectory string `yaml:"root_directory"`
+	TtlSeconds    int64  `yaml:"ttl_seconds"`
+}
+
+type GCSConfig struct {
+	Bucket          string `yaml:"bucket"`
+	CredentialsFile string `yaml:"credentials_file"`
+	ProjectID       string `yaml:"project_id"`
 }
 
 func ensureDirectoryExists(dir string) error {
@@ -110,6 +117,11 @@ func (c *Configurator) rereadIfStale() {
 func (c *Configurator) GetStorageDiskRootDir() string {
 	c.rereadIfStale()
 	return c.gc.Storage.Disk.RootDirectory
+}
+
+func (c *Configurator) GetStorageGCSConfig() *GCSConfig {
+	c.rereadIfStale()
+	return &c.gc.Storage.GCS
 }
 
 func (c *Configurator) GetDBDataSource() string {

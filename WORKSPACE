@@ -1,3 +1,4 @@
+#gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
 workspace(
     name = "buildbuddy",
     managed_directories = {"@npm": ["node_modules"]},
@@ -130,4 +131,5 @@ load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
 protobuf_deps()
 
 load(":deps.bzl", "install_buildbuddy_dependencies")
+
 install_buildbuddy_dependencies()
