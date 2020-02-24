@@ -1,7 +1,9 @@
 package static
 
 import (
+	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -11,6 +13,7 @@ import (
 // StaticFileServer implements a static file http server that serves static
 // files out of the runfiles bundled with this application.
 type StaticFileServer struct {
+	relPath string
 	handler http.Handler
 }
 
@@ -32,12 +35,17 @@ func NewStaticFileServer(relPath string, stripPrefix bool, rootPaths []string) (
 		handler = handleRootPaths(rootPaths, handler)
 	}
 	return &StaticFileServer{
+		relPath: relPath,
 		handler: handler,
 	}, nil
 }
 
 // ServeHTTP implements the HTTP HandlerFunc interface.
 func (s *StaticFileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	cwd, _ := os.Getwd()
+	fp := filepath.Join(cwd, s.relPath, r.URL.Path)
+	_, err := os.Stat(fp)
+	log.Printf("SFS @ %s got request for: %s, (file: %s, exists? %t)", s.relPath, r.URL.Path, fp, !os.IsNotExist(err))
 	s.handler.ServeHTTP(w, r)
 }
 
