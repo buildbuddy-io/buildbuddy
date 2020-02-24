@@ -2,8 +2,6 @@ load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 
 def install_buildbuddy_dependencies():
-    print("TYLER THE DEPENDENCIES THEY ARE LOADING")
-
     # gRPC
     go_repository(
         name = "org_golang_google_grpc",
