@@ -89,7 +89,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
 	}
-	protoHandler := protolet.GenerateHTTPHandlers(buildBuddyServer)
+	protoHandler, err := protolet.GenerateHTTPHandlers(buildBuddyServer)
+	if err != nil {
+		log.Fatalf("Error initializing RPC over HTTP handlers: %s", err)
+	}
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
 	http.Handle("/", redirectHTTPS(staticFileServer))

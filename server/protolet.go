@@ -56,7 +56,13 @@ func readRequestToProto(r *http.Request, req proto.Message) error {
 func writeProtoToResponse(rsp proto.Message, w http.ResponseWriter, r *http.Request) error {
 	switch ct := r.Header.Get("Content-Type"); ct {
 	case "":
-		fallthrough
+		protoBytes, err := proto.Marshal(rsp)
+		if err != nil {
+			return err
+		}
+		w.Write(protoBytes)
+		w.Header().Set("Content-Type", "application/protobuf")
+		return nil
 	case "application/proto", "application/protobuf":
 		protoBytes, err := proto.Marshal(rsp)
 		if err != nil {
@@ -74,9 +80,9 @@ func writeProtoToResponse(rsp proto.Message, w http.ResponseWriter, r *http.Requ
 	}
 }
 
-func GenerateHTTPHandlers(server interface{}) http.HandlerFunc {
+func GenerateHTTPHandlers(server interface{}) (http.HandlerFunc, error) {
 	if reflect.ValueOf(server).Type().Kind() != reflect.Ptr {
-		panic("GenerateHTTPHandlers must be called with a pointer to a RPC service implementation")
+		return nil, fmt.Errorf("GenerateHTTPHandlers must be called with a pointer to an RPC service implementation")
 	}
 	handlerFns := make(map[string]reflect.Value)
 
@@ -118,5 +124,5 @@ func GenerateHTTPHandlers(server interface{}) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-	})
+	}), nil
 }
