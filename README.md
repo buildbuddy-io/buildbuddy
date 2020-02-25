@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="50%" src="https://buildbuddy.io/images/preview.png"><br/>
+  <img width="50%" src="https://buildbuddy.io/images/header.png"><br/>
   <a href="https://buildbuddy.io">BuildBuddy</a> is an open source Bazel build event viewer<br/><br/>
   <img src="https://img.shields.io/badge/License-MIT-green.svg" />
 </p>
