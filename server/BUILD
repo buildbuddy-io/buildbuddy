@@ -124,7 +124,7 @@ go_binary(
     srcs = ["main.go"],
     data = [
         "//:config_files",
-        "//app:app_bundle",
+        "//app:app_bundle.min",
         "//static",
     ],
     deps = [

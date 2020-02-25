@@ -1,5 +1,6 @@
 load("@npm_bazel_typescript//:index.bzl", "ts_devserver", "ts_library")
 load("@npm_bazel_rollup//:index.bzl", "rollup_bundle")
+load("@npm_bazel_terser//:index.bzl", "terser_minified")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -13,6 +14,11 @@ rollup_bundle(
         "@npm//rollup-plugin-node-resolve",
         "@npm//rollup-plugin-replace",
     ],
+)
+
+terser_minified(
+    name = "app_bundle.min",
+    src = ":app_bundle",
 )
 
 ts_library(

@@ -19,6 +19,6 @@ module.exports = {
     if (message.code === 'EVAL' || message.code === 'CIRCULAR_DEPENDENCY') {
       return;
     }
-    console.error(message);
+    warn(message);
   }
 };
