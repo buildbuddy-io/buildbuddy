@@ -9,7 +9,6 @@ import (
 	"github.com/tryflame/buildbuddy/server/database"
 	"github.com/tryflame/buildbuddy/server/event_parser"
 	"github.com/tryflame/buildbuddy/server/tables"
-	_ "proto/build_event_stream"
 
 	inpb "proto/invocation"
 )
