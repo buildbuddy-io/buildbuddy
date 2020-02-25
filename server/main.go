@@ -105,5 +105,6 @@ func main() {
 	go func() {
 		log.Fatal(grpcServer.Serve(lis))
 	}()
+
 	select {}
 }

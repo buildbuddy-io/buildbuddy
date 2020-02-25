@@ -122,11 +122,14 @@ go_library(
 go_binary(
     name = "buildbuddy",
     srcs = ["main.go"],
+    cgo = True,
     data = [
         "//:config_files",
         "//app:app_bundle",
         "//static",
     ],
+    pure = "off",
+    # toolchains = ["//toolchain:cc"],
     deps = [
         ":blobstore",
         ":build_event_handler",

@@ -133,3 +133,29 @@ protobuf_deps()
 load(":deps.bzl", "install_buildbuddy_dependencies")
 
 install_buildbuddy_dependencies()
+
+# RBE
+
+http_archive(
+    name = "io_k8s_repo_infra",
+    urls = ["https://github.com/kubernetes/repo-infra/archive/v0.0.1.tar.gz"],
+)
+
+http_archive(
+    name = "bazel_toolchains",
+    sha256 = "aa0df93b37fae9fe88de4ab7da3bed6396561a3f03d70c562d60f306ddacff43",
+    strip_prefix = "bazel-toolchains-2.0.5",
+    urls = [
+        "https://github.com/bazelbuild/bazel-toolchains/releases/download/2.0.5/bazel-toolchains-2.0.5.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/archive/2.0.5.tar.gz",
+        # "https://github.com/bazelbuild/bazel-toolchains/releases/download/2.1.0/bazel-toolchains-2.1.0.tar.gz",
+        # "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/archive/2.1.0.tar.gz",
+    ],
+)
+
+load("@bazel_toolchains//rules:rbe_repo.bzl", "rbe_autoconfig")
+
+# Creates a default toolchain config for RBE.
+# Use this as is if you are using the rbe_ubuntu16_04 container,
+# otherwise refer to RBE docs.
+rbe_autoconfig(name = "rbe_default")

@@ -1,3 +1,5 @@
+build --incompatible_enable_cc_toolchain_resolution=true
+
 build:local --bes_results_url=http://localhost:8080/invocation/
 build:local --bes_backend=grpc://localhost:1985
 
@@ -6,3 +8,17 @@ build:dev --bes_backend=grpc://events.buildbuddy.dev:1985
 
 build:prod --bes_results_url=https://app.buildbuddy.io/invocation/
 build:prod --bes_backend=grpc://events.buildbuddy.io:1985
+
+
+build:remote --crosstool_top=@rbe_default//cc:toolchain
+build:remote --host_platform=@rbe_default//config:platform
+build:remote --platforms=@rbe_default//config:platform
+build:remote --extra_toolchains=@rbe_default//config:cc-toolchain
+
+build:asmjs --crosstool_top=//toolchain:gcc_toolchain
+build:asmjs --cpu=gcc
+build:asmjs --host_crosstool_top=@bazel_tools//tools/cpp:toolchain
+
+build:linuxondarwin --host_crosstool_top=@bazel_tools//tools/cpp:toolchain
+build:linuxondarwin --crosstool_top=@llvm_toolchain//:osxcross
+build:linuxondarwin --cpu linux-cross
