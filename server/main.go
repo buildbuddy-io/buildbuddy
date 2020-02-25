@@ -13,6 +13,7 @@ import (
 	"github.com/tryflame/buildbuddy/server/buildbuddy_server"
 	"github.com/tryflame/buildbuddy/server/config"
 	"github.com/tryflame/buildbuddy/server/database"
+	"github.com/tryflame/buildbuddy/server/protolet"
 	"github.com/tryflame/buildbuddy/server/static"
 	"google.golang.org/grpc"
 
@@ -88,11 +89,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
 	}
+	protoHandler := protolet.GenerateHTTPHandlers(buildBuddyServer)
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
 	http.Handle("/", redirectHTTPS(staticFileServer))
 	http.Handle("/app/", redirectHTTPS(afs))
-	http.Handle("/rpc/BuildBuddyService/GetInvocation", redirectHTTPS(buildBuddyServer.GetInvocationHandlerFunc()))
+	http.Handle("/rpc/BuildBuddyService/", http.StripPrefix("/rpc/BuildBuddyService/", protoHandler))
 
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
 	log.Printf("HTTP listening on http://%s\n", hostAndPort)

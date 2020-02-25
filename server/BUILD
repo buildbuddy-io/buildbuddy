@@ -97,6 +97,15 @@ go_library(
 )
 
 go_library(
+    name = "protolet",
+    srcs = ["protolet.go"],
+    importpath = "github.com/tryflame/buildbuddy/server/protolet",
+    deps = [
+        "@com_github_golang_protobuf//proto:go_default_library",
+    ],
+)
+
+go_library(
     name = "static",
     srcs = ["static.go"],
     importpath = "github.com/tryflame/buildbuddy/server/static",
@@ -134,6 +143,7 @@ go_binary(
         ":buildbuddy_server",
         ":config",
         ":database",
+        ":protolet",
         ":static",
         "//proto:build_go_proto",
         "//proto:buildbuddy_service_go_proto",
