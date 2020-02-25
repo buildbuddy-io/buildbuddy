@@ -7,12 +7,12 @@ import (
 	inpb "proto/invocation"
 )
 
-func FillInvocationFromEvents(buildEvents []*build_event_stream.BuildEvent, invocation *inpb.Invocation) {
+func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *inpb.Invocation) {
 	startTimeMillis := int64(-1)
 	endTimeMillis := int64(-1)
 
-	for _, be := range buildEvents {
-		switch p := be.Payload.(type) {
+	for _, event := range buildEvents {
+		switch p := event.BuildEvent.Payload.(type) {
 		case *build_event_stream.BuildEvent_Progress:
 			{
 			}
@@ -23,7 +23,7 @@ func FillInvocationFromEvents(buildEvents []*build_event_stream.BuildEvent, invo
 			{
 				startTimeMillis = p.Started.StartTimeMillis
 				invocation.Command = p.Started.Command
-				for _, child := range be.Children {
+				for _, child := range event.BuildEvent.Children {
 					// Here we are then. Knee-deep.
 					switch c := child.Id.(type) {
 					case *build_event_stream.BuildEventId_Pattern:

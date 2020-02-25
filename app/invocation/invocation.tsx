@@ -84,7 +84,8 @@ export default class InvocationComponent extends React.Component {
       console.log(response);
       this.state.invocations = response.invocation as invocation.Invocation[];
       for (let invocation of response.invocation) {
-        for (let buildEvent of invocation.buildEvent) {
+        for (let event of invocation.event) {
+          let buildEvent = event.buildEvent;
           if (buildEvent.progress) this.state.progress.push(buildEvent.progress as build_event_stream.Progress);
           if (buildEvent.namedSetOfFiles) this.state.files.push(buildEvent.namedSetOfFiles as build_event_stream.NamedSetOfFiles);
           if (buildEvent.configured) this.state.targets.push(buildEvent as build_event_stream.BuildEvent);
@@ -137,10 +138,6 @@ export default class InvocationComponent extends React.Component {
 
   getCommand() {
     return this.state.started?.command || "build"
-  }
-
-  getTool() {
-    return `bazel ${this.state.started?.buildToolVersion} ` + this.state.started?.command || "build"
   }
 
   getPattern() {
@@ -241,7 +238,7 @@ export default class InvocationComponent extends React.Component {
               <div className="detail"><img className="icon" src="/image/hard-drive-regular.svg" />
                 {this.getHost()}</div>
               <div className="detail"><img className="icon" src="/image/tool-regular.svg" />
-                {this.getTool()}</div>
+                {this.getCommand()}</div>
               <div className="detail"><img className="icon" src="/image/zap-regular.svg" />
                 {this.getPattern()}</div>
               <div className="detail"><img className="icon" src="/image/target-regular.svg" />
@@ -255,11 +252,11 @@ export default class InvocationComponent extends React.Component {
             <a href="#" className={`tab ${this.props.hash == '' && 'selected'}`}>
               ALL
             </a>
-            <a href="#log" className={`tab ${this.props.hash == '#log' && 'selected'}`}>
-              BUILD LOGS
-            </a>
             <a href="#targets" className={`tab ${this.props.hash == '#targets' && 'selected'}`}>
               TARGETS
+            </a>
+            <a href="#log" className={`tab ${this.props.hash == '#log' && 'selected'}`}>
+              BUILD LOGS
             </a>
             <a href="#details" className={`tab ${this.props.hash == '#details' && 'selected'}`}>
               INVOCATION DETAILS
@@ -271,24 +268,6 @@ export default class InvocationComponent extends React.Component {
               RAW
           </a>
           </div>
-
-          {(!this.props.hash || this.props.hash == "#log") &&
-            <div className={`card dark ${this.props.hash == "#log" ? "expanded" : ""}`}>
-              <img className="icon" src="/image/log-circle-light.svg" />
-              <div className="content">
-                <div className="title">Build logs </div>
-                <div className="details">
-                  <TerminalComponent value={this.state.progress/*.slice(!this.props.hash && -1 * this.state.progressLimit || undefined)*/.map(progress => {
-                    return (progress.stdout + progress.stderr);
-                  }).filter(output => output && output.length > 0).join("")} />
-                </div>
-                {/* {!this.props.hash && this.state.progress.length > defaultPageSize && !!this.state.progressLimit &&
-                  <div className="more" onClick={this.handleMoreProgressClicked.bind(this)}>See more build logs</div>}
-                {!this.props.hash && this.state.progress.length > defaultPageSize && !this.state.progressLimit &&
-                  <div className="more" onClick={this.handleMoreProgressClicked.bind(this)}>See less build logs</div>} */}
-              </div>
-            </div>}
-
 
           {(!this.props.hash || this.props.hash == "#log") &&
             this.state.aborted?.description &&
@@ -335,6 +314,23 @@ export default class InvocationComponent extends React.Component {
                   <div className="more" onClick={this.handleMoreSucceededClicked.bind(this)}>See more passing targets</div>}
                 {!this.props.hash && this.state.succeeded.length > defaultPageSize && !this.state.succeededLimit &&
                   <div className="more" onClick={this.handleMoreSucceededClicked.bind(this)}>See less passing targets</div>}
+              </div>
+            </div>}
+
+          {(!this.props.hash || this.props.hash == "#log") &&
+            <div className={`card dark ${this.props.hash == "#log" ? "expanded" : ""}`}>
+              <img className="icon" src="/image/log-circle-light.svg" />
+              <div className="content">
+                <div className="title">Build logs</div>
+                <div className="details">
+                  <TerminalComponent value={this.state.progress/*.slice(!this.props.hash && -1 * this.state.progressLimit || undefined)*/.map(progress => {
+                    return (progress.stdout + progress.stderr);
+                  }).filter(output => output && output.length > 0).join("")} />
+                </div>
+                {/* {!this.props.hash && this.state.progress.length > defaultPageSize && !!this.state.progressLimit &&
+                  <div className="more" onClick={this.handleMoreProgressClicked.bind(this)}>See more build logs</div>}
+                {!this.props.hash && this.state.progress.length > defaultPageSize && !this.state.progressLimit &&
+                  <div className="more" onClick={this.handleMoreProgressClicked.bind(this)}>See less build logs</div>} */}
               </div>
             </div>}
 

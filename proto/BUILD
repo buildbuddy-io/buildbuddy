@@ -132,6 +132,7 @@ proto_library(
     srcs = ["invocation.proto"],
     deps = [
         ":build_event_stream_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 

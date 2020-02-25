@@ -9,7 +9,6 @@ import (
 	"github.com/tryflame/buildbuddy/server/database"
 	"github.com/tryflame/buildbuddy/server/event_parser"
 	"github.com/tryflame/buildbuddy/server/tables"
-	"proto/build_event_stream"
 
 	inpb "proto/invocation"
 )
@@ -34,12 +33,12 @@ func (h *BuildEventHandler) writeToBlobstore(ctx context.Context, invocation *in
 	return h.bs.WriteBlob(ctx, invocation.InvocationId, protoBytes)
 }
 
-func (h *BuildEventHandler) HandleEvents(ctx context.Context, invocationID string, buildEvents []*build_event_stream.BuildEvent) error {
+func (h *BuildEventHandler) HandleEvents(ctx context.Context, invocationID string, invocationEvents []*inpb.InvocationEvent) error {
 	invocation := &inpb.Invocation{
 		InvocationId: invocationID,
-		BuildEvent:   buildEvents,
+		Event:   invocationEvents,
 	}
-	event_parser.FillInvocationFromEvents(buildEvents, invocation)
+	event_parser.FillInvocationFromEvents(invocationEvents, invocation)
 	return h.db.GormDB.Transaction(func(tx *gorm.DB) error {
 		i := &tables.Invocation{}
 		i.FromProto(invocation)
