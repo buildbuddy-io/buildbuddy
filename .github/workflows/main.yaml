@@ -7,9 +7,23 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+    - name: Checkout
     - uses: actions/checkout@v1
 
-    - name: Mount bazel cache
+    # Setup gcloud CLI
+    - name: GCloud
+      uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
+      with:
+        version: '270.0.0'
+        service_account_email: ${{ secrets.SA_EMAIL }}
+        service_account_key: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+
+    # Configure docker to use the gcloud command-line tool as a credential helper
+    - name: Auth
+      run: |
+        gcloud auth configure-docker
+
+    - name: Mount Bazel cache
       uses: actions/cache@v1
       with:
         path: "/home/runner/.cache/bazel"
@@ -25,3 +39,7 @@ jobs:
     - name: Build
       run: |
         "${GITHUB_WORKSPACE}/bin/bazel" build //...
+
+    - name: Deploy
+      run: |
+        "${GITHUB_WORKSPACE}/bin/bazel" run deployment:dev.apply
