@@ -84,7 +84,8 @@ export default class InvocationComponent extends React.Component {
       console.log(response);
       this.state.invocations = response.invocation as invocation.Invocation[];
       for (let invocation of response.invocation) {
-        for (let buildEvent of invocation.buildEvent) {
+        for (let event of invocation.event) {
+          let buildEvent = event.buildEvent;
           if (buildEvent.progress) this.state.progress.push(buildEvent.progress as build_event_stream.Progress);
           if (buildEvent.namedSetOfFiles) this.state.files.push(buildEvent.namedSetOfFiles as build_event_stream.NamedSetOfFiles);
           if (buildEvent.configured) this.state.targets.push(buildEvent as build_event_stream.BuildEvent);
