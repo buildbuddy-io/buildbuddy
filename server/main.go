@@ -30,7 +30,7 @@ var (
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
 )
 
-func redirectNotHTTPS(next http.Handler) http.Handler {
+func redirectHTTPS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		protocol := r.Header.Get("X-Forwarded-Proto") // Set by load balancer
 		if protocol == "http" {
