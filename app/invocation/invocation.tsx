@@ -2,11 +2,14 @@ import React from 'react';
 import Long from 'long';
 import moment from 'moment';
 import rpcService from '../service/rpc_service'
+import { TerminalComponent } from '../terminal/terminal'
 import { invocation } from '../../proto/invocation_ts_proto';
 import { build_event_stream } from '../../proto/build_event_stream_ts_proto';
 import { command_line } from '../../proto/command_line_ts_proto';
 
 interface State {
+  invocations: invocation.Invocation[],
+
   progress: build_event_stream.Progress[],
   targets: build_event_stream.BuildEvent[],
   succeeded: build_event_stream.BuildEvent[],
@@ -41,6 +44,8 @@ const defaultPageSize = 5;
 
 export default class InvocationComponent extends React.Component {
   state: State = {
+    invocations: [],
+
     progress: [],
     targets: [],
     succeeded: [],
@@ -77,6 +82,7 @@ export default class InvocationComponent extends React.Component {
     request.query.invocationId = this.props.invocationId;
     rpcService.service.getInvocation(request).then((response) => {
       console.log(response);
+      this.state.invocations = response.invocation as invocation.Invocation[];
       for (let invocation of response.invocation) {
         for (let buildEvent of invocation.buildEvent) {
           if (buildEvent.progress) this.state.progress.push(buildEvent.progress as build_event_stream.Progress);
@@ -117,54 +123,6 @@ export default class InvocationComponent extends React.Component {
     this.setState(this.state);
   }
 
-  getSampleData(): State {
-    return {
-      progress: [{
-        stdout: `bazel build --config=bb app
-  INFO: Streaming build results to: http://localhost:8080/#/invocation/e45e186f-042e-47b5-aec1-b3d91e188711
-  INFO: Analyzed target //app:app (0 packages loaded, 0 targets configured).
-  INFO: Found 1 target...
-  Target //app:app up-to-date:
-    bazel-bin/app/app.d.ts
-  INFO: Elapsed time: 0.268s, Critical Path: 0.00s
-  INFO: 0 processes.
-  INFO: Streaming build results to: http://localhost:8080/#/invocation/e45e186f-042e-47b5-aec1-b3d91e188711
-  INFO: Build completed successfully, 1 total action
-  siggi:buildbuddy siggi$ bazel build --config=bb app
-  INFO: Streaming build results to: http://localhost:8080/#/invocation/368d4ef5-b510-486b-a650-804d80715bd7
-  INFO: Analyzed target //app:app (0 packages loaded, 0 targets configured).
-  INFO: Found 1 target...
-  Target //app:app up-to-date:
-    bazel-bin/app/app.d.ts
-  INFO: Elapsed time: 0.429s, Critical Path: 0.20s
-  INFO: 1 process: 1 worker.
-  INFO: Streaming build results to: http://localhost:8080/#/invocation/368d4ef5-b510-486b-a650-804d80715bd7
-  INFO: Build completed successfully, 3 total actions`, stderr: "", toJSON: null
-      }],
-      files: [],
-      succeeded: [],
-      failed: [],
-      targets: [],
-      finished: { overallSuccess: true, exitCode: { name: "SUCCESS", code: 0 }, finishTimeMillis: Long.fromString("1582062129168"), toJSON: null },
-      toolLogs: { log: [{ name: "elapsed time", contents: new TextEncoder().encode("1.61500") }], toJSON: null },
-      workspaceStatus: { item: [{ key: "BUILD_USER", value: "siggi" }], toJSON: null },
-      configuration: null,
-      workspaceConfig: null,
-      optionsParsed: null,
-      unstructuredCommandLine: null,
-      structuredCommandLine: null,
-      aborted: null,
-      started: { startTimeMillis: Long.fromString("1581977983847"), uuid: "", buildToolVersion: "2.0.0", optionsDescription: "", command: "", workingDirectory: "", serverPid: null, workspaceDirectory: "", toJSON: null },
-      expanded: null,
-      buildInfoMap: new Map<string, string>(),
-      progressLimit: defaultPageSize,
-      succeededLimit: defaultPageSize,
-      failedLimit: defaultPageSize,
-      invocationLimit: defaultPageSize,
-      artifactLimit: defaultPageSize,
-    };
-  }
-
   getUser() {
     let username = this.state.buildInfoMap.get('BUILD_USER');
     if (!username) {
@@ -185,16 +143,20 @@ export default class InvocationComponent extends React.Component {
     return this.state.expanded?.id.pattern.pattern.join(", ");
   }
 
+  getStartTimeNumber() {
+    return typeof this.state.started?.startTimeMillis == "number" ? this.state.started?.startTimeMillis : this.state.started?.startTimeMillis.toNumber();
+  }
+
   getStartDate() {
-    return moment(this.state.started?.startTimeMillis.toNumber()).format('MMMM Do, YYYY');
+    return moment(this.getStartTimeNumber()).format('MMMM Do, YYYY');
   }
 
   getStartTime() {
-    return moment(this.state.started?.startTimeMillis.toNumber()).format('h:mm:ss a');
+    return moment(this.getStartTimeNumber()).format('h:mm:ss a');
   }
 
   timeSinceStart() {
-    return moment(this.state.started?.startTimeMillis.toNumber()).fromNow(true);
+    return moment(this.getStartTimeNumber()).fromNow(true);
   }
 
   getHumanReadableDuration() {
@@ -301,6 +263,9 @@ export default class InvocationComponent extends React.Component {
             <a href="#artifacts" className={`tab ${this.props.hash == '#artifacts' && 'selected'}`}>
               ARTIFACTS
           </a>
+            <a href="#raw" className={`tab ${this.props.hash == '#raw' && 'selected'}`}>
+              RAW
+          </a>
           </div>
 
           {(!this.props.hash || this.props.hash == "#log") &&
@@ -352,20 +317,19 @@ export default class InvocationComponent extends React.Component {
             </div>}
 
           {(!this.props.hash || this.props.hash == "#log") &&
-            <div className="card">
-              <img className="icon" src="/image/log-circle.svg" />
+            <div className={`card dark ${this.props.hash == "#log" ? "expanded" : ""}`}>
+              <img className="icon" src="/image/log-circle-light.svg" />
               <div className="content">
-                <div className="title">Build log</div>
+                <div className="title">Build logs</div>
                 <div className="details">
-                  {this.state.progress.slice(!this.props.hash && -1 * this.state.progressLimit || undefined).map(progress => {
-                    let ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
-                    return (progress.stdout + progress.stderr).replace(ansiRegex, "").replace(/\n\n/g, "\n");
-                  })}
+                  <TerminalComponent value={this.state.progress/*.slice(!this.props.hash && -1 * this.state.progressLimit || undefined)*/.map(progress => {
+                    return (progress.stdout + progress.stderr);
+                  }).filter(output => output && output.length > 0).join("")} />
                 </div>
-                {!this.props.hash && this.state.progress.length > defaultPageSize && !!this.state.progressLimit &&
+                {/* {!this.props.hash && this.state.progress.length > defaultPageSize && !!this.state.progressLimit &&
                   <div className="more" onClick={this.handleMoreProgressClicked.bind(this)}>See more build logs</div>}
                 {!this.props.hash && this.state.progress.length > defaultPageSize && !this.state.progressLimit &&
-                  <div className="more" onClick={this.handleMoreProgressClicked.bind(this)}>See less build logs</div>}
+                  <div className="more" onClick={this.handleMoreProgressClicked.bind(this)}>See less build logs</div>} */}
               </div>
             </div>}
 
@@ -395,6 +359,21 @@ export default class InvocationComponent extends React.Component {
                   {this.state.succeeded.flatMap(completed => completed.completed.importantOutput.map(
                     output => <div>{output.name}</div>)).slice(0, !this.props.hash && this.state.artifactLimit || undefined)}
                   {this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length == 0 && <span>No artifacts</span>}
+                </div>
+                {!this.props.hash && this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length > defaultPageSize && !!this.state.artifactLimit &&
+                  <div className="more" onClick={this.handleMoreArtifactClicked.bind(this)}>See more artifacts</div>}
+                {!this.props.hash && this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length > defaultPageSize && !this.state.artifactLimit && <div className="more" onClick={this.handleMoreArtifactClicked.bind(this)}>See less artifacts</div>}
+              </div>
+            </div>
+          }
+
+          {(this.props.hash == "#raw") &&
+            <div className="card">
+              <img className="icon" src="/image/log-circle.svg" />
+              <div className="content">
+                <div className="title">Raw logs</div>
+                <div className="details code">
+                  {this.state.invocations.flatMap(invocation => JSON.stringify(invocation.toJSON(), null, 4))}
                 </div>
                 {!this.props.hash && this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length > defaultPageSize && !!this.state.artifactLimit &&
                   <div className="more" onClick={this.handleMoreArtifactClicked.bind(this)}>See more artifacts</div>}

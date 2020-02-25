@@ -36,6 +36,8 @@
     "semver": "^5.5.0",
     "tmp": "^0.0.33",
     "typescript": "^3.4.5",
-    "uglify-js": "^3.6.0"
+    "uglify-js": "^3.6.0",
+    "xterm": "^4.4.0",
+    "xterm-addon-fit": "^0.3.0"
   }
 }
