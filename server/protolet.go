@@ -3,11 +3,12 @@ package protolet
 import (
 	"context"
 	"fmt"
-	"github.com/golang/protobuf/proto"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"reflect"
+
+	"github.com/golang/protobuf/proto"
 )
 
 func isRPCMethod(m reflect.Method) bool {
