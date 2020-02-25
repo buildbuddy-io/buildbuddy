@@ -2,6 +2,11 @@ name: CI
 
 on: [push]
 
+env:
+  GKE_PROJECT: ${{ secrets.GKE_PROJECT }}
+  GKE_CLUSTER: buildbuddy-dev
+  GKE_ZONE: us-west1-a
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,6 +27,8 @@ jobs:
     - name: Auth
       run: |
         gcloud auth configure-docker
+        gcloud container clusters get-credentials $GKE_CLUSTER \
+          --zone $GKE_ZONE --project $GKE_PROJECT
 
     - name: Mount Bazel cache
       uses: actions/cache@v1
