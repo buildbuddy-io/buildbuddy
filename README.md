@@ -1,7 +1,8 @@
 <p align="center">
-  <img width="50%" src="https://buildbuddy.io/images/header.png"><br/>
+  <img width="40%" src="https://buildbuddy.io/images/header.png"><br/>
   <a href="https://buildbuddy.io">BuildBuddy</a> is an open source Bazel build event viewer<br/><br/>
   <img src="https://img.shields.io/badge/License-MIT-green.svg" />
+  <img src="https://img.shields.io/github/workflow/status/tryflame/buildbuddy/CI" />
 </p>
 
 # Intro
@@ -20,5 +21,5 @@ It's written in Golang and React and can be deployed as a Docker image. It's run
 # Get started
 Get up and running fast with the cloud hosted [BuildBuddy.io](https://buildbuddy.io) service - or host your own version in the cloud or on-prem.
 
-# Questions
+# Questions?
 If you have any questions, e-mail us at hello@tryflame.com. We’d love to chat!
