@@ -1,6 +1,6 @@
 database:
   data_source: "sqlite3:///devdata/buildbuddy.db"
 storage:
+  ttl_seconds: 604800  # 1 week in seconds
   disk:
     root_directory: /devdata/
-    ttl_seconds: 86400
