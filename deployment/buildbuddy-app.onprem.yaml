@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+    name: buildbuddy
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: buildbuddy-app
+  namespace: buildbuddy
+spec:
+  replicas: 1
+  serviceName: buildbuddy-app
+  selector:
+    matchLabels:
+      app: buildbuddy-app
+  template:
+    metadata:
+      labels:
+        app: buildbuddy-app
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-nodepool: default-pool
+      containers:
+        - name: buildbuddy-app
+          # Bumping this version? Ensure you've built //deployment:release_onprem and pushed a new image!
+          image: gcr.io/flame-public/buildbuddy-app-onprem:server-image-0.0.3
+          imagePullPolicy: Always
+          args: ["--config_file=config/buildbuddy.onprem.yaml"]
+          env:
+          - name: ENV
+            value: "onprem"
+          - name: SERVICE_NAME
+            value: "app-backend"
+          - name: VERSION
+            value: "prod-1.0"
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: grpc
+              containerPort: 1985
+          volumeMounts:
+            - mountPath: /data
+              name: data
+  volumeClaimTemplates:
+      - metadata:
+          name: data
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: buildbuddy-app-service
+  namespace: buildbuddy
+spec:
+  selector:
+    app: buildbuddy-app
+  ports:
+    - name: http
+      protocol: 'TCP'
+      port: 80
+      targetPort: 8080
+    - name: grpc
+      protocol: 'TCP'
+      port: 1985
+      targetPort: 1985
+  type: LoadBalancer
