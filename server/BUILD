@@ -42,15 +42,6 @@ go_library(
 )
 
 go_library(
-    name = "config",
-    srcs = ["config.go"],
-    importpath = "github.com/tryflame/buildbuddy/server/config",
-    deps = [
-        "@in_gopkg_yaml_v2//:go_default_library",
-    ],
-)
-
-go_library(
     name = "build_event_handler",
     srcs = ["build_event_handler.go"],
     importpath = "github.com/tryflame/buildbuddy/server/build_event_handler",
@@ -64,6 +55,15 @@ go_library(
         "//proto:invocation_go_proto",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_jinzhu_gorm//:go_default_library",
+    ],
+)
+
+go_library(
+    name = "config",
+    srcs = ["config.go"],
+    importpath = "github.com/tryflame/buildbuddy/server/config",
+    deps = [
+        "@in_gopkg_yaml_v2//:go_default_library",
     ],
 )
 
@@ -93,6 +93,27 @@ go_library(
     deps = [
         "//proto:build_event_stream_go_proto",
         "//proto:invocation_go_proto",
+    ],
+)
+
+go_library(
+    name = "janitor",
+    srcs = ["janitor.go"],
+    importpath = "github.com/tryflame/buildbuddy/server/janitor",
+    deps = [
+        ":blobstore",
+        ":config",
+        ":database",
+        ":tables",
+    ],
+)
+
+go_library(
+    name = "protolet",
+    srcs = ["protolet.go"],
+    importpath = "github.com/tryflame/buildbuddy/server/protolet",
+    deps = [
+        "@com_github_golang_protobuf//proto:go_default_library",
     ],
 )
 
@@ -134,6 +155,8 @@ go_binary(
         ":buildbuddy_server",
         ":config",
         ":database",
+        ":janitor",
+        ":protolet",
         ":static",
         "//proto:build_go_proto",
         "//proto:buildbuddy_service_go_proto",

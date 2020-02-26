@@ -22,13 +22,13 @@ type databaseConfig struct {
 }
 
 type storageConfig struct {
-	Disk DiskConfig `yaml:"disk"`
-	GCS  GCSConfig  `yaml:"gcs"`
+	Disk       DiskConfig `yaml:"disk"`
+	GCS        GCSConfig  `yaml:"gcs"`
+	TTLSeconds int        `yaml:"ttl_seconds"`
 }
 
 type DiskConfig struct {
 	RootDirectory string `yaml:"root_directory"`
-	TtlSeconds    int64  `yaml:"ttl_seconds"`
 }
 
 type GCSConfig struct {
@@ -112,6 +112,10 @@ func (c *Configurator) rereadIfStale() {
 		return
 	}
 	c.gc = conf
+}
+
+func (c *Configurator) GetStorageTtlSeconds() int {
+	return c.gc.Storage.TTLSeconds
 }
 
 func (c *Configurator) GetStorageDiskRootDir() string {

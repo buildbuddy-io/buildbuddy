@@ -25,12 +25,12 @@ func NewBuildEventHandler(bs blobstore.Blobstore, db *database.Database) *BuildE
 	}
 }
 
-func (h *BuildEventHandler) writeToBlobstore(ctx context.Context, invocation *inpb.Invocation) error {
+func (h *BuildEventHandler) writeToBlobstore(ctx context.Context, blobID string, invocation *inpb.Invocation) error {
 	protoBytes, err := proto.Marshal(invocation)
 	if err != nil {
 		return err
 	}
-	return h.bs.WriteBlob(ctx, invocation.InvocationId, protoBytes)
+	return h.bs.WriteBlob(ctx, blobID, protoBytes)
 }
 
 func (h *BuildEventHandler) HandleEvents(ctx context.Context, invocationID string, invocationEvents []*inpb.InvocationEvent) error {
@@ -42,12 +42,13 @@ func (h *BuildEventHandler) HandleEvents(ctx context.Context, invocationID strin
 	return h.db.GormDB.Transaction(func(tx *gorm.DB) error {
 		i := &tables.Invocation{}
 		i.FromProto(invocation)
+		i.BlobID = invocationID
 		if err := tx.Create(i).Error; err != nil {
 			return err
 		}
 
 		// Write the blob inside the transaction. All or nothing.
-		return h.writeToBlobstore(ctx, invocation)
+		return h.writeToBlobstore(ctx, invocationID, invocation)
 	})
 }
 

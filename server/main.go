@@ -13,6 +13,8 @@ import (
 	"github.com/tryflame/buildbuddy/server/buildbuddy_server"
 	"github.com/tryflame/buildbuddy/server/config"
 	"github.com/tryflame/buildbuddy/server/database"
+	"github.com/tryflame/buildbuddy/server/janitor"
+	"github.com/tryflame/buildbuddy/server/protolet"
 	"github.com/tryflame/buildbuddy/server/static"
 	"google.golang.org/grpc"
 
@@ -88,14 +90,22 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
 	}
+	protoHandler, err := protolet.GenerateHTTPHandlers(buildBuddyServer)
+	if err != nil {
+		log.Fatalf("Error initializing RPC over HTTP handlers: %s", err)
+	}
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
 	http.Handle("/", redirectHTTPS(staticFileServer))
 	http.Handle("/app/", redirectHTTPS(afs))
-	http.Handle("/rpc/BuildBuddyService/GetInvocation", redirectHTTPS(buildBuddyServer.GetInvocationHandlerFunc()))
+	http.Handle("/rpc/BuildBuddyService/", http.StripPrefix("/rpc/BuildBuddyService/", protoHandler))
 
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
 	log.Printf("HTTP listening on http://%s\n", hostAndPort)
+
+	cleanupService := janitor.NewJanitor(bs, db, configurator)
+	cleanupService.Start()
+	defer cleanupService.Stop()
 
 	// Run the HTTP server in a goroutine because we still want to start a gRPC
 	// server below.
