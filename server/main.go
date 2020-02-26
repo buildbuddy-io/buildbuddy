@@ -13,6 +13,7 @@ import (
 	"github.com/tryflame/buildbuddy/server/buildbuddy_server"
 	"github.com/tryflame/buildbuddy/server/config"
 	"github.com/tryflame/buildbuddy/server/database"
+	"github.com/tryflame/buildbuddy/server/janitor"
 	"github.com/tryflame/buildbuddy/server/protolet"
 	"github.com/tryflame/buildbuddy/server/static"
 	"google.golang.org/grpc"
@@ -101,6 +102,10 @@ func main() {
 
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
 	log.Printf("HTTP listening on http://%s\n", hostAndPort)
+
+	cleanupService := janitor.NewJanitor(bs, db, configurator)
+	cleanupService.Start()
+	defer cleanupService.Stop()
 
 	// Run the HTTP server in a goroutine because we still want to start a gRPC
 	// server below.

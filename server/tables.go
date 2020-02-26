@@ -104,6 +104,7 @@ type Invocation struct {
 	Command      string
 	Pattern      string
 	ActionCount  int64
+	BlobID       string
 }
 
 func (i *Invocation) TableName() string {
