@@ -23,10 +23,13 @@ interface State {
   workspaceConfig: build_event_stream.WorkspaceConfig,
   optionsParsed: build_event_stream.OptionsParsed,
   unstructuredCommandLine: build_event_stream.UnstructuredCommandLine,
-  structuredCommandLine: command_line.CommandLine,
+  structuredCommandLine: command_line.CommandLine[],
   started: build_event_stream.BuildStarted,
   expanded: build_event_stream.BuildEvent,
   buildInfoMap: Map<string, string>,
+
+  configuredMap: Map<string, invocation.InvocationEvent>,
+  completedMap: Map<string, invocation.InvocationEvent>,
 
   progressLimit: number,
   succeededLimit: number,
@@ -40,7 +43,7 @@ interface Props {
   hash: string
 }
 
-const defaultPageSize = 5;
+const defaultPageSize = 10;
 
 export default class InvocationComponent extends React.Component {
   state: State = {
@@ -60,9 +63,12 @@ export default class InvocationComponent extends React.Component {
     workspaceConfig: null,
     optionsParsed: null,
     unstructuredCommandLine: null,
-    structuredCommandLine: null,
+    structuredCommandLine: [],
     expanded: null,
     buildInfoMap: new Map<string, string>(),
+
+    configuredMap: new Map<string, build_event_stream.BuildEvent>(),
+    completedMap: new Map<string, build_event_stream.BuildEvent>(),
 
     progressLimit: defaultPageSize,
     succeededLimit: defaultPageSize,
@@ -89,6 +95,12 @@ export default class InvocationComponent extends React.Component {
           if (buildEvent.progress) this.state.progress.push(buildEvent.progress as build_event_stream.Progress);
           if (buildEvent.namedSetOfFiles) this.state.files.push(buildEvent.namedSetOfFiles as build_event_stream.NamedSetOfFiles);
           if (buildEvent.configured) this.state.targets.push(buildEvent as build_event_stream.BuildEvent);
+          if (buildEvent.configured) {
+            this.state.configuredMap.set(buildEvent.id.targetConfigured.label, event as invocation.InvocationEvent);
+          }
+          if (buildEvent.completed) {
+            this.state.completedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
+          }
           if (buildEvent.completed && buildEvent.completed.success) {
             this.state.succeeded.push(buildEvent as build_event_stream.BuildEvent);
           }
@@ -105,7 +117,7 @@ export default class InvocationComponent extends React.Component {
           if (buildEvent.workspaceInfo) this.state.workspaceConfig = buildEvent.workspaceInfo as build_event_stream.WorkspaceConfig;
           if (buildEvent.optionsParsed) this.state.optionsParsed = buildEvent.optionsParsed as build_event_stream.OptionsParsed;
           if (buildEvent.unstructuredCommandLine) this.state.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
-          if (buildEvent.structuredCommandLine?.commandLineLabel == "original") this.state.structuredCommandLine = buildEvent.structuredCommandLine as command_line.CommandLine;
+          if (buildEvent.structuredCommandLine) this.state.structuredCommandLine.push(buildEvent.structuredCommandLine as command_line.CommandLine);
         }
       }
       this.updateState();
@@ -204,6 +216,11 @@ export default class InvocationComponent extends React.Component {
 
   }
 
+  getDuration(completionTime: any, beginTime: any) {
+    let nanos = ((+completionTime.nanos) - (+beginTime.nanos)) / 1000000000
+    return `${(+completionTime.seconds) - (+beginTime.seconds) + nanos}`;
+  }
+
   handleMoreFailedClicked() {
     this.setState({ ...this.state, failedLimit: this.state.failedLimit ? undefined : defaultPageSize })
   }
@@ -222,6 +239,10 @@ export default class InvocationComponent extends React.Component {
 
   handleMoreArtifactClicked() {
     this.setState({ ...this.state, artifactLimit: this.state.artifactLimit ? undefined : defaultPageSize })
+  }
+
+  handleArtifactClicked(outputUri: string) {
+    window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", outputUri);
   }
 
   render() {
@@ -311,7 +332,13 @@ export default class InvocationComponent extends React.Component {
                 <div className="title">{this.state.failed.length} {this.state.failed.length == 1 ? "target" : "targets"} failed</div>
                 <div className="details">
                   {this.state.failed.slice(0, !this.props.hash && this.state.failedLimit || undefined).map(failed =>
-                    <div>{failed.id.targetCompleted.label}</div>
+                    <div className="list-grid">
+                      <div>{failed.id.targetCompleted.label}</div>
+                      <div>{this.state.configuredMap.get(failed.id.targetCompleted.label).buildEvent.configured.targetKind}</div>
+                      <div>{this.getDuration(
+                              this.state.completedMap.get(failed.id.targetCompleted.label).eventTime, 
+                              this.state.configuredMap.get(failed.id.targetCompleted.label).eventTime)} seconds</div>
+                    </div>
                   )}
                 </div>
                 {!this.props.hash && this.state.failed.length > defaultPageSize && !!this.state.failedLimit &&
@@ -329,7 +356,13 @@ export default class InvocationComponent extends React.Component {
                 <div className="title">{this.state.succeeded.length} {this.state.succeeded.length == 1 ? "target" : "targets"} passed</div>
                 <div className="details">
                   {this.state.succeeded.slice(0, !this.props.hash && this.state.succeededLimit || undefined).map(succeeded =>
-                    <div>{succeeded.id.targetCompleted.label}</div>
+                    <div className="list-grid">
+                      <div>{succeeded.id.targetCompleted.label}</div>
+                      <div>{this.state.configuredMap.get(succeeded.id.targetCompleted.label).buildEvent.configured.targetKind}</div>
+                      <div>{this.getDuration(
+                              this.state.completedMap.get(succeeded.id.targetCompleted.label).eventTime, 
+                              this.state.configuredMap.get(succeeded.id.targetCompleted.label).eventTime)} seconds</div>
+                    </div>
                   )}
                 </div>
                 {!this.props.hash && this.state.succeeded.length > defaultPageSize && !!this.state.succeededLimit &&
@@ -345,25 +378,50 @@ export default class InvocationComponent extends React.Component {
               <div className="content">
                 <div className="title">Invocation details</div>
                 <div className="details">
-                  {this.state.structuredCommandLine?.sections.flatMap(section =>
-                    section.optionList?.option.map(option => <div>{option.combinedForm}</div>) || []
-                  ).slice(0, !this.props.hash && this.state.invocationLimit || undefined)}
-                </div>
-                {!this.props.hash && this.state.structuredCommandLine?.sections.flatMap(section => section.optionList?.option).length > defaultPageSize && !!this.state.invocationLimit &&
+                  {this.state.structuredCommandLine
+                      .filter(commandLine => commandLine.commandLineLabel && commandLine.commandLineLabel.length)
+                      .slice(0, !this.props.hash && this.state.invocationLimit ? 1 : undefined)
+                      .map(commandLine => 
+                    <div className="invocation-command-line">
+                      <div className="invocation-command-line-title">{commandLine.commandLineLabel}</div>
+                      {commandLine.sections
+                        // .slice(0, !this.props.hash && this.state.invocationLimit ? 2 : undefined)
+                        .flatMap(section =>
+                        <div className="invocation-section">
+                          <div className="invocation-section-title">
+                          {section.sectionLabel}
+                          </div>
+                          <div>
+                          {section.chunkList?.chunk.map(chunk => <div className="invocation-chunk">{chunk}</div>) || []}
+                          {section.optionList?.option.map(option => <div>
+                              <span className="invocation-option-dash">--</span>
+                              <span className="invocation-option-name">{option.optionName}</span>
+                              <span className="invocation-option-equal">=</span>
+                              <span className="invocation-option-value">{option.optionValue}</span> {/*option.effectTags.map(tag => JSON.stringify(tag)).join(", ") */}</div>) || []}
+                          </div>
+                        </div>
+                      )}
+                      </div>)}
+                  </div>
+                {!this.props.hash && !!this.state.invocationLimit &&
                   <div className="more" onClick={this.handleMoreInvocationClicked.bind(this)}>See more invocation details</div>}
-                {!this.props.hash && this.state.structuredCommandLine?.sections.flatMap(section => section.optionList?.option).length > defaultPageSize && !this.state.invocationLimit &&
+                {!this.props.hash && !this.state.invocationLimit &&
                   <div className="more" onClick={this.handleMoreInvocationClicked.bind(this)}>See less invocation details</div>}
               </div>
             </div>}
 
           {(!this.props.hash || this.props.hash == "#artifacts") &&
-            <div className="card">
+            <div className="card artifacts">
               <img className="icon" src="/image/arrow-down-circle.svg" />
               <div className="content">
                 <div className="title">Artifacts</div>
                 <div className="details">
-                  {this.state.succeeded.flatMap(completed => completed.completed.importantOutput.map(
-                    output => <div>{output.name}</div>)).slice(0, !this.props.hash && this.state.artifactLimit || undefined)}
+                  {this.state.succeeded.flatMap(completed => completed.completed.importantOutput.map(output => 
+                  <div className="list-grid" onClick={this.handleArtifactClicked.bind(this, output.uri)}>
+                    <div>{output.name}</div>
+                    <div>{completed.id.targetCompleted.label}</div>
+                  </div>))
+                    .slice(0, !this.props.hash && this.state.artifactLimit || undefined)}
                   {this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length == 0 && <span>No artifacts</span>}
                 </div>
                 {!this.props.hash && this.state.succeeded.flatMap(completed => completed.completed.importantOutput).length > defaultPageSize && !!this.state.artifactLimit &&
