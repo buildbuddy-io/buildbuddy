@@ -13,8 +13,10 @@ To upload your own logs, you just need to configure bazel to point to a BuildBud
 
 You can view a [sample .bazelrc](https://app.buildbuddy.io/) here. For basic, unauthenticated uploads, create a .bazelrc file in your project root (or edit the existing one) and add the following lines:
 
-* build --bes_results_url=https://app.buildbuddy.io/invocation/
-* build --bes_backend=grpc://events.buildbuddy.io:1985
+```
+build --bes_results_url=https://app.buildbuddy.io/invocation/
+build --bes_backend=grpc://events.buildbuddy.io:1985
+```
 
 Now, when you run a build or test with bazel, it will print a url where you can view your build or test results. For example:
 
