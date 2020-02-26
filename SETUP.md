@@ -3,11 +3,11 @@
 </p>
 
 # Intro
-BuildBuddy is an open source Bazel build event viewer. The two primary ways to use BuildBuddy are to use the cloud instance, or to run it yourself on premise. We support both!
+Setting up BuildBuddy to view your own logs is easy! The two primary ways are to use the cloud BuildBuddy instance, or to run it your own instance on-premise. We support both!
 
 # Cloud BuildBuddy
 
-Cloud BuildBuddy is run as a service in multiple datacenters around the world. To upload your own logs, you need to configure bazel to point to a BuildBuddy instance. The easiest way to do this is with a .bazelrc file in the root of your project.
+[Cloud BuildBuddy](https://app.buildbuddy.io/) is run as a service in multiple datacenters around the world. To upload your own logs, you just need to configure bazel to point to a BuildBuddy instance. The easiest way to do this is with a .bazelrc file in the root of your project.
 
 You can view a [sample .bazelrc](https://app.buildbuddy.io/) here. For basic, unauthenticated uploads, create a .bazelrc file in your project root (or edit the existing one) and add the following lines:
 
@@ -36,15 +36,16 @@ We've designed BuildBuddy to be easy to run on-premise for those use cases where
 
 The simplest method of running BuildBuddy on your own computers is to download it and use bazel run. Doing that is as simple as:
 
-### Get the source
-```
-git clone "git@github.com:tryflame/buildbuddy.git"
-```
+* ### Get the source
+  ```
+  git clone "git@github.com:tryflame/buildbuddy.git"
+  ```
 
-### Build and run it with bazel
-```
-cd buildbuddy && bazel run -c opt server:buildbuddy
-```
+* ### Build and run it with bazel
+  ```
+  cd buildbuddy && bazel run -c opt server:buildbuddy
+  ```
+
 ## Docker Image
 
 We publish a docker image with every release that contains a pre-configured BuildBuddy. To run it:
@@ -56,7 +57,7 @@ docker run buildbuddy_docker.tar
 
 ## Kubernetes
 
-Assuming you have kubectl setup and configured, we provide a shell script that will deploy the necessary services to your cluster, all namespaced under the "buildbuddy" namespace. This script uses [this deployment file](github.com/tryflame), if you want to see the details of what is being configured.
+If you run or have access to a kubernetes cluster, and you have the "kubectl" command configured, we provide a shell script that will deploy BuildBuddy to your cluster, namespaced under the "buildbuddy" namespace. This script uses [this deployment file](github.com/tryflame), if you want to see the details of what is being configured.
 ```
 bash k8s_on_prem.sh
 ```
