@@ -12,6 +12,7 @@ import (
 	"github.com/tryflame/buildbuddy/server/build_event_handler"
 
 	bpb "proto"
+	inpb "proto/invocation"
 	"proto/build_event_stream"
 )
 
@@ -25,7 +26,7 @@ func NewBuildEventProtocolServer(h *build_event_handler.BuildEventHandler) (*Bui
 	}, nil
 }
 
-func (s *BuildEventProtocolServer) chompBuildEvent(obe *bpb.OrderedBuildEvent) (*build_event_stream.BuildEvent, error) {
+func (s *BuildEventProtocolServer) chompBuildEvent(obe *bpb.OrderedBuildEvent) (*inpb.InvocationEvent, error) {
 	switch buildEvent := obe.Event.Event.(type) {
 	case *bpb.BuildEvent_ComponentStreamFinished:
 		return nil, nil
@@ -34,7 +35,12 @@ func (s *BuildEventProtocolServer) chompBuildEvent(obe *bpb.OrderedBuildEvent) (
 		if err := ptypes.UnmarshalAny(buildEvent.BazelEvent, &bazelBuildEvent); err != nil {
 			return nil, err
 		}
-		return &bazelBuildEvent, nil
+		invocationEvent := &inpb.InvocationEvent{
+			EventTime: obe.Event.EventTime,
+			BuildEvent: &bazelBuildEvent,
+		}
+
+		return invocationEvent, nil
 	}
 	return nil, nil
 }
@@ -62,7 +68,7 @@ func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, re
 func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream bpb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
 	// Semantically, the protocol requires we ack events in order.
 	acks := make([]int, 0)
-	bazelEvents := make([]*build_event_stream.BuildEvent, 0)
+	invocationEvents := make([]*inpb.InvocationEvent, 0)
 	streamID := &bpb.StreamId{}
 
 	for {
@@ -75,12 +81,12 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream bpb.Publis
 		}
 		streamID = in.OrderedBuildEvent.StreamId
 		log.Printf("streamID: %+v", streamID)
-		bazelEvent, err := s.chompBuildEvent(in.OrderedBuildEvent)
+		invocationEvent, err := s.chompBuildEvent(in.OrderedBuildEvent)
 		if err != nil {
 			return err
 		}
-		if bazelEvent != nil {
-			bazelEvents = append(bazelEvents, bazelEvent)
+		if invocationEvent != nil {
+			invocationEvents = append(invocationEvents, invocationEvent)
 		}
 		acks = append(acks, int(in.OrderedBuildEvent.SequenceNumber))
 	}
@@ -97,7 +103,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream bpb.Publis
 		}
 	}
 
-	if err := s.eventHandler.HandleEvents(stream.Context(), streamID.InvocationId, bazelEvents); err != nil {
+	if err := s.eventHandler.HandleEvents(stream.Context(), streamID.InvocationId, invocationEvents); err != nil {
 		log.Printf("Error processing build events: %s", err)
 		return io.EOF
 	}
