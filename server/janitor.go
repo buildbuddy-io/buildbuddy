@@ -51,7 +51,7 @@ func (j *Janitor) deleteInvocation(invocation *tables.Invocation) {
 }
 
 func (j *Janitor) deleteExpiredInvocations() {
-	cutoffUsec := time.Now().Add(j.ttl).UnixNano()
+	cutoffUsec := time.Now().Add(-1 * j.ttl).UnixNano()
 	rows, err := j.db.GormDB.Raw(`SELECT * FROM Invocations as i
                                       WHERE i.created_at_usec < ?
                                       LIMIT 10`, cutoffUsec).Rows()
