@@ -22,9 +22,9 @@ type databaseConfig struct {
 }
 
 type storageConfig struct {
-	Disk DiskConfig `yaml:"disk"`
-	GCS  GCSConfig  `yaml:"gcs"`
-	TTLSeconds    int  `yaml:"ttl_seconds"`
+	Disk       DiskConfig `yaml:"disk"`
+	GCS        GCSConfig  `yaml:"gcs"`
+	TTLSeconds int        `yaml:"ttl_seconds"`
 }
 
 type DiskConfig struct {

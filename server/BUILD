@@ -102,9 +102,9 @@ go_library(
     importpath = "github.com/tryflame/buildbuddy/server/janitor",
     deps = [
         ":blobstore",
-	":config",
+        ":config",
         ":database",
-	":tables",
+        ":tables",
     ],
 )
 
@@ -155,7 +155,7 @@ go_binary(
         ":buildbuddy_server",
         ":config",
         ":database",
-	":janitor",
+        ":janitor",
         ":protolet",
         ":static",
         "//proto:build_go_proto",
