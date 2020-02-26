@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jinzhu/gorm"
 	inpb "proto/invocation"
 )
 
@@ -72,9 +73,25 @@ func registerTable(prefix string, t Table) {
 //   3) Register your new table struct with the register function in init() below.
 
 // NB: gorm can only work on exported fields.
+
 type Model struct {
-	CreatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
-	UpdatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
+	CreatedAtUsec int64
+	UpdatedAtUsec int64
+}
+
+// Timestamps are hard and differing sql implementations do... a lot. Too much.
+// So, we handle this in go-code and set these to time.Now().UnixNano and store
+// as int64.
+func (m *Model) BeforeCreate(tx *gorm.DB) (err error) {
+	nowInt64 := int64(time.Now().UnixNano())
+	m.CreatedAtUsec = nowInt64
+	m.UpdatedAtUsec = nowInt64
+	return nil
+}
+
+func (m *Model) BeforeUpdate(tx *gorm.DB) (err error) {
+	m.UpdatedAtUsec = int64(time.Now().UnixNano())
+	return nil
 }
 
 type Invocation struct {
