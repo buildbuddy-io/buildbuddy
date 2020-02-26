@@ -2,7 +2,6 @@
   <h1>Installing and Configuring Buildbuddy</h1>
 </p>
 
-# Intro
 Setting up BuildBuddy to view your own logs is easy! The two primary ways are to use the cloud BuildBuddy instance, or to run it your own instance on-premise. We support both!
 
 # Cloud BuildBuddy
