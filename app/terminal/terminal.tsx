@@ -28,17 +28,23 @@ export default class TerminalComponent extends React.Component<TerminalProps> {
   }
 
   componentDidMount() {
-    this.xterm = new xterm.Terminal({ rendererType: "dom", convertEol: true, lineHeight: 1.4, theme: new DarkTheme() });
+    this.xterm = new xterm.Terminal({
+      rendererType: "dom",
+      convertEol: true,
+      lineHeight: 1.4,
+      scrollback: 9999999,
+      cols: 500,
+      theme: new DarkTheme(),
+    });
     this.fit = new FitAddon();
     this.xterm.loadAddon(this.fit);
 
     this.xterm.open(this.container);
     if (this.props.value) {
-      this.xterm.write(this.props.value);
+      this.xterm.write(this.props.value, () => {
+        this.fit.fit();
+      });
     }
-    setTimeout(() => {
-      this.fit.fit();
-    }, 0);
   }
   componentWillUnmount() {
     if (this.xterm) {
@@ -50,15 +56,19 @@ export default class TerminalComponent extends React.Component<TerminalProps> {
   shouldComponentUpdate(nextProps: any, nextState: any) {
     if (nextProps.hasOwnProperty('value') && nextProps.value != this.props.value) {
       if (this.xterm) {
+        this.xterm.resize(500, 20);
         this.xterm.reset();
         setTimeout(() => {
-          this.xterm.write(nextProps.value);
+          this.xterm.write(nextProps.value, () => {
+            this.fit.fit();
+          });
         }, 0);
       }
+    } else {
+      setTimeout(() => {
+        this.fit.fit();
+      }, 0);
     }
-    setTimeout(() => {
-      this.fit.fit();
-    }, 0);
 
     return false;
   }

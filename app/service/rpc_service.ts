@@ -22,7 +22,7 @@ class RpcService {
         this.events.emit(method.name, 'completed');
         console.log(`Emitting event [${method.name}]`);
       } else {
-        callback(`Error: ${request.responseText}`);
+        callback(`Error: ${new TextDecoder("utf-8").decode(new Uint8Array(request.response))}`);
       }
     };
 
