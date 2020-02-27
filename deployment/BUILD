@@ -35,4 +35,5 @@ container_push(
     registry = "gcr.io",
     repository = "flame-public/buildbuddy-app-onprem",
     tag = "server-image-$(version)",
+    tags = ["manual"],  # Don't include this target in wildcard patterns
 )
