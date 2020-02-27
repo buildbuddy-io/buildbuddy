@@ -15,7 +15,7 @@ We support both!
 
 To upload your own logs, you just need to configure bazel to point to a BuildBuddy instance. The easiest way to do this is with a .bazelrc file in the root of your project.
 
-You can view a [sample .bazelrc](https://app.buildbuddy.io/) here. For basic, unauthenticated uploads, create a .bazelrc file in your project root (or edit the existing one) and add the following lines:
+You can view a [sample .bazelrc](https://github.com/tryflame/buildbuddy/blob/master/.bazelrc) here. For basic, unauthenticated uploads, create a .bazelrc file in your project root (or edit the existing one) and add the following lines:
 
 ```
 build --bes_results_url=https://app.buildbuddy.io/invocation/
