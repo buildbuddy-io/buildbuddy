@@ -545,6 +545,14 @@ a {
   padding: 0;
 }
 
+.dense .state-page .container {
+  padding: 0 32px;
+}
+
+.dense .state-page .shelf {
+  padding: 48px 0;
+}
+
 .dense .tabs {
   margin: 0;
 }
