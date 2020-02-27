@@ -47,6 +47,7 @@ export default class InvocationComponent extends React.Component {
   props: Props;
 
   componentWillMount() {
+    document.title = `Invocation ${this.props.invocationId} | Buildbuddy`;
     // TODO(siggisim): Move moment configuration elsewhere
     moment.relativeTimeThreshold('ss', 0);
 
@@ -59,6 +60,7 @@ export default class InvocationComponent extends React.Component {
         model: InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]),
         loading: false
       });
+      document.title = `${this.state.model.getUser()}'s ${this.state.model.getCommand()} ${this.state.model.getPattern()} | Buildbuddy`;
     }).catch((error: any) => {
       this.setState({
         notFound: true,
