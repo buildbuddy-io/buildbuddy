@@ -14,7 +14,7 @@ export default class DenseInvocationOverviewComponent extends React.Component {
         <div className="dense-invocation-title">Invocation</div>
         <div className="dense-invocation-invocation-id">{this.props.invocationId} ({this.props.model.getStartDate()}, {this.props.model.getStartTime()})</div>
       </div>
-      <div className="dense-invocation-status-bar">
+      <div className={this.props.model.getStatus() == "Succeeded" ? `dense-invocation-status-bar succeeded` : `dense-invocation-status-bar failed`}>
         <div>
           {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"} evaluated on&nbsp;
           {this.props.model.getStartDate()} at {this.props.model.getStartTime()} for <span title={this.props.model.getDuractionSeconds()}>{this.props.model.getTiming()}</span>

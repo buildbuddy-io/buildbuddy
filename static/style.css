@@ -636,11 +636,21 @@ a {
 }
 
 .dense-invocation-status-bar {
-  border-top: 4px solid #4CAF50;
-  background-color: #E8F5E9;
+  border-top: 4px solid #888;
+  background-color: #eee;
   padding: 4px 16px;
   display: flex;
   justify-content: space-between;
+}
+
+.dense-invocation-status-bar.succeeded {
+  border-top: 4px solid #4CAF50;
+  background-color: #E8F5E9;
+}
+
+.dense-invocation-status-bar.failed {
+  border-top: 4px solid #b71c1c;
+  background-color: #ffebee;
 }
 
 .dense-invocation-overview-grid {
