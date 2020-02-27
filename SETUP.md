@@ -1,6 +1,4 @@
-<p align="center">
-  <h1>Installing and Configuring Buildbuddy</h1>
-</p>
+# Installing and Configuring Buildbuddy
 
 Setting up BuildBuddy to view your own logs is easy! Your two options are:
 
@@ -15,7 +13,7 @@ We support both!
 
 To upload your own logs, you just need to configure bazel to point to a BuildBuddy instance. The easiest way to do this is with a .bazelrc file in the root of your project.
 
-You can view a [sample .bazelrc](https://github.com/tryflame/buildbuddy/blob/master/.bazelrc) here. For basic, unauthenticated uploads, create a .bazelrc file in your project root (or edit the existing one) and add the following lines:
+You can view a [sample .bazelrc](https://github.com/tryflame/buildbuddy/blob/master/.bazelrc) here. For basic, unauthenticated uploads, create a `.bazelrc` file in your project root (or edit the existing one) and add the following lines:
 
 ```
 build --bes_results_url=https://app.buildbuddy.io/invocation/
@@ -48,7 +46,7 @@ The simplest method of running BuildBuddy on your own computer is to download an
 
 * ### Get the source
   ```
-  git clone "git@github.com:tryflame/buildbuddy.git"
+  git clone "https://github.com/tryflame/buildbuddy"
   ```
 
 * ### Build and run using bazel
@@ -58,7 +56,7 @@ The simplest method of running BuildBuddy on your own computer is to download an
 
 ## Docker Image
 
-We publish a docker image with every release that contains a pre-configured BuildBuddy. To run it:
+We publish a [Docker](https://www.docker.com/) image with every release that contains a pre-configured BuildBuddy. To run it:
 
 ```
 docker run -p 1985:1985 -p 8080:8080 gcr.io/flame-public/buildbuddy-app-onprem:server-image-0.0.3
@@ -66,7 +64,7 @@ docker run -p 1985:1985 -p 8080:8080 gcr.io/flame-public/buildbuddy-app-onprem:s
 
 ## Kubernetes
 
-If you run or have access to a kubernetes cluster, and you have the "kubectl" command configured, we provide a shell script that will deploy BuildBuddy to your cluster, namespaced under the "buildbuddy" namespace. This script uses [this deployment file](github.com/tryflame), if you want to see the details of what is being configured.
+If you run or have access to a Kubernetes cluster, and you have the "kubectl" command configured, we provide a shell script that will deploy BuildBuddy to your cluster, namespaced under the "buildbuddy" namespace. This script uses [this deployment file]([github.com/tryflame](https://github.com/tryflame/buildbuddy/blob/master/deployment/buildbuddy-app.dev.yaml)), if you want to see the details of what is being configured.
 ```
 bash k8s_on_prem.sh
 ```
