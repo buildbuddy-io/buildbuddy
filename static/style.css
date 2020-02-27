@@ -545,7 +545,8 @@ a {
   padding: 0;
 }
 
-.dense .state-page .container {
+.dense .state-page .container,
+.dense .home .container {
   padding: 0 32px;
 }
 
