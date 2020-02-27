@@ -125,13 +125,14 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *bpb.PublishBuildT
 		if err := e.insertOrUpdateInvocation(ctx, iid); err != nil {
 			return err
 		}
-	} else {
-		// For everything else, just save the event to our buffer and keep on chugging.
-		e.eventBuffer = append(e.eventBuffer, &inpb.InvocationEvent{
-			EventTime:  event.OrderedBuildEvent.Event.EventTime,
-			BuildEvent: &bazelBuildEvent,
-		})
 	}
+
+	// For everything else, just save the event to our buffer and keep on chugging.
+	e.eventBuffer = append(e.eventBuffer, &inpb.InvocationEvent{
+		EventTime:  event.OrderedBuildEvent.Event.EventTime,
+		BuildEvent: &bazelBuildEvent,
+	})
+
 	return nil
 }
 
