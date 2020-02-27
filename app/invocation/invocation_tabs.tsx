@@ -4,7 +4,7 @@ interface Props {
   hash: string,
 }
 
-export default class InvocationNotFoundComponent extends React.Component {
+export default class InvocationTabsComponent extends React.Component {
   props: Props;
 
   render() {
