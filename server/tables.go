@@ -96,15 +96,16 @@ func (m *Model) BeforeUpdate(tx *gorm.DB) (err error) {
 
 type Invocation struct {
 	Model
-	InvocationID string `gorm:"primary_key;"`
-	Success      bool
-	User         string
-	DurationUsec int64
-	Host         string
-	Command      string
-	Pattern      string
-	ActionCount  int64
-	BlobID       string
+	InvocationID     string `gorm:"primary_key;"`
+	Success          bool
+	User             string
+	DurationUsec     int64
+	Host             string
+	Command          string
+	Pattern          string
+	ActionCount      int64
+	BlobID           string
+	InvocationStatus int64
 }
 
 func (i *Invocation) TableName() string {

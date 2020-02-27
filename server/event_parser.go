@@ -12,6 +12,8 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 	endTimeMillis := int64(-1)
 
 	for _, event := range buildEvents {
+		invocation.Event = append(invocation.Event, event)
+
 		switch p := event.BuildEvent.Payload.(type) {
 		case *build_event_stream.BuildEvent_Progress:
 			{

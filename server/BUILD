@@ -15,6 +15,24 @@ go_library(
 )
 
 go_library(
+    name = "build_event_handler",
+    srcs = ["build_event_handler.go"],
+    importpath = "github.com/tryflame/buildbuddy/server/build_event_handler",
+    deps = [
+        ":blobstore",
+        ":database",
+        ":event_parser",
+        ":tables",
+        "//proto:build_event_stream_go_proto",
+        "//proto:build_go_proto",
+        "//proto:invocation_go_proto",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
+        "@com_github_jinzhu_gorm//:go_default_library",
+    ],
+)
+
+go_library(
     name = "build_event_server",
     srcs = ["build_event_server.go"],
     importpath = "github.com/tryflame/buildbuddy/server/build_event_server",
@@ -38,23 +56,6 @@ go_library(
         "//proto:buildbuddy_service_go_proto",
         "//proto:invocation_go_proto",
         "@com_github_golang_protobuf//proto:go_default_library",
-    ],
-)
-
-go_library(
-    name = "build_event_handler",
-    srcs = ["build_event_handler.go"],
-    importpath = "github.com/tryflame/buildbuddy/server/build_event_handler",
-    deps = [
-        ":blobstore",
-        ":database",
-        ":event_parser",
-        ":tables",
-        "//proto:build_event_stream_go_proto",
-        "//proto:build_go_proto",
-        "//proto:invocation_go_proto",
-        "@com_github_golang_protobuf//proto:go_default_library",
-        "@com_github_jinzhu_gorm//:go_default_library",
     ],
 )
 
