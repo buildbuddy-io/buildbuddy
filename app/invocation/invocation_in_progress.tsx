@@ -8,7 +8,7 @@ export default class InvocationInProgressComponent extends React.Component {
   props: Props;
 
   render() {
-    return <div>
+    return <div className="state-page">
       <div className="shelf">
         <div className="container">
           <div className="invocation">Invocation {this.props.invocationId}</div>

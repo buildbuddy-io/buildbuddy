@@ -29,6 +29,106 @@ export default class ArtifactsCardComponent extends React.Component {
       <div className="content">
         <div className="title">Invocation details</div>
         <div className="details">
+          <div className="invocation-section">
+            <div className="invocation-section-title">
+              Status
+            </div>
+            <div>
+              {this.props.model.getStatus()}
+            </div>
+          </div>
+          <div className="invocation-section">
+            <div className="invocation-section-title">
+              Run date
+            </div>
+            <div>
+              {this.props.model.getStartDate()} at {this.props.model.getStartTime()}
+            </div>
+          </div>
+          <div className="invocation-section">
+            <div className="invocation-section-title">
+              Elapsed time
+            </div>
+            <div>
+              {this.props.model.getTiming()}
+            </div>
+          </div>
+          <div className="invocation-section">
+            <div className="invocation-section-title">
+              User
+            </div>
+            <div>
+              {this.props.model.getUser()}
+            </div>
+          </div>
+          <div className="invocation-section">
+            <div className="invocation-section-title">
+              Host name
+            </div>
+            <div>
+              {this.props.model.getHost()}
+            </div>
+          </div>
+          <div className="invocation-section">
+            <div className="invocation-section-title">
+              Tool
+            </div>
+            <div>
+              {this.props.model.getTool()}
+            </div>
+          </div>
+          <div className="invocation-section">
+            <div className="invocation-section-title">
+              Pattern
+            </div>
+            <div>
+              {this.props.model.getPattern()}
+            </div>
+          </div>
+          <div className="invocation-section">
+            <div className="invocation-section-title">
+              CPU
+            </div>
+            <div>
+              {this.props.model.getCPU()}
+            </div>
+          </div>
+          <div className="invocation-section">
+            <div className="invocation-section-title">
+              Mode
+            </div>
+            <div>
+              {this.props.model.getMode()}
+            </div>
+          </div>
+          <div className="invocation-section">
+            <div className="invocation-section-title">
+              Targets
+            </div>
+            <div>
+              {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
+              {!!this.props.model.buildMetrics?.targetMetrics.targetsConfigured &&
+                <span> ({this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured / {this.props.model.buildMetrics?.targetMetrics.targetsLoaded} loaded)</span>}
+            </div>
+          </div>
+          <div className="invocation-section">
+            <div className="invocation-section-title">
+              Actions
+            </div>
+            <div>
+              {this.props.model.buildMetrics?.actionSummary.actionsExecuted} actions
+              {!!this.props.model.buildMetrics?.actionSummary.actionsCreated &&
+                <span> ({this.props.model.buildMetrics?.actionSummary.actionsCreated} created)</span>}
+            </div>
+          </div>
+          <div className="invocation-section">
+            <div className="invocation-section-title">
+              Packages
+            </div>
+            <div>
+              {this.props.model.buildMetrics?.packageMetrics.packagesLoaded} packages
+            </div>
+          </div>
           {this.props.model.structuredCommandLine
             .filter(commandLine => commandLine.commandLineLabel && commandLine.commandLineLabel.length)
             .sort((a, b) => {
@@ -37,7 +137,7 @@ export default class ArtifactsCardComponent extends React.Component {
             .slice(0, this.props.limitResults && this.state.limit ? this.state.limit : undefined)
             .map(commandLine =>
               <div className="invocation-command-line">
-                <div className="invocation-command-line-title">{commandLine.commandLineLabel}</div>
+                <div className="invocation-command-line-title">{commandLine.commandLineLabel} command line</div>
                 {commandLine.sections
                   .flatMap(section =>
                     <div className="invocation-section">

@@ -19,8 +19,8 @@ export default class HomeComponent extends React.Component {
 
   render() {
     return (
-      <div className="container">
-        <div className="home">
+      <div className="home">
+        <div className="container">
           <div className="title">Welcome to BuildBuddy!</div>
           <p>
           BuildBuddy is an open source Bazel build event viewer. It helps you collect, view, share and debug build events in a user-friendly web UI.
