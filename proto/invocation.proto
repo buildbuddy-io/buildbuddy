@@ -32,7 +32,15 @@ message Invocation {
 
     // The number of actions performed.
     int64 action_count = 9;
+
+    enum InvocationStatus {
+        UNKNOWN_INVOCATION_STATUS = 0;
+        COMPLETE_INVOCATION_STATUS = 1;
+        PARTIAL_INVOCATION_STATUS = 2;
+    }
+    InvocationStatus invocation_status = 10;
 }
+
 
 message InvocationEvent {
     // The time this event occurred.
