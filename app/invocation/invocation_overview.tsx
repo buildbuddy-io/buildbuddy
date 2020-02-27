@@ -40,7 +40,6 @@ export default class InvocationOverviewComponent extends React.Component {
           <img className="icon" src="/image/grid-regular.svg" />
           {this.props.model.getPattern()}
         </div>
-        {/* TODO(siggisim): Decide which badges we want to show up here 
         <div className="detail" title={`${this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured / ${this.props.model.buildMetrics?.targetMetrics.targetsLoaded} loaded`}>
           <img className="icon" src="/image/target-regular.svg" />
           {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
@@ -60,7 +59,7 @@ export default class InvocationOverviewComponent extends React.Component {
         <div className="detail">
           <img className="icon" src="/image/zap-regular.svg" />
           {this.props.model.getMode()}
-        </div> */}
+        </div>
       </div>
     </div>
   }
