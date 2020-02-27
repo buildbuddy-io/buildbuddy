@@ -64,7 +64,7 @@ docker run -p 1985:1985 -p 8080:8080 gcr.io/flame-public/buildbuddy-app-onprem:s
 
 ## Kubernetes
 
-If you run or have access to a Kubernetes cluster, and you have the "kubectl" command configured, we provide a shell script that will deploy BuildBuddy to your cluster, namespaced under the "buildbuddy" namespace. This script uses [this deployment file]([github.com/tryflame](https://github.com/tryflame/buildbuddy/blob/master/deployment/buildbuddy-app.dev.yaml)), if you want to see the details of what is being configured.
+If you run or have access to a Kubernetes cluster, and you have the "kubectl" command configured, we provide a shell script that will deploy BuildBuddy to your cluster, namespaced under the "buildbuddy" namespace. This script uses [this deployment file](https://github.com/tryflame/buildbuddy/blob/master/deployment/buildbuddy-app.dev.yaml), if you want to see the details of what is being configured.
 ```
 bash k8s_on_prem.sh
 ```
