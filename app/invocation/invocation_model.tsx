@@ -5,13 +5,16 @@ import { build_event_stream } from '../../proto/build_event_stream_ts_proto';
 import { command_line } from '../../proto/command_line_ts_proto';
 
 export default class InvocationModel {
-  invocations: invocation.Invocation[];
+  invocations: invocation.Invocation[] = [];
 
-  progress: build_event_stream.Progress[];
-  targets: build_event_stream.BuildEvent[];
-  succeeded: build_event_stream.BuildEvent[];
-  failed: build_event_stream.BuildEvent[];
-  files: build_event_stream.NamedSetOfFiles[];
+  progress = new Array<build_event_stream.Progress>();
+  targets: build_event_stream.BuildEvent[] = [];
+  succeeded: build_event_stream.BuildEvent[] = [];
+  broken: build_event_stream.BuildEvent[] = [];
+  failed: build_event_stream.BuildEvent[] = [];
+  flaky: build_event_stream.BuildEvent[] = [];
+  files: build_event_stream.NamedSetOfFiles[] = [];
+  structuredCommandLine: command_line.CommandLine[] = [];
   finished: build_event_stream.BuildFinished;
   aborted: build_event_stream.BuildEvent;
   toolLogs: build_event_stream.BuildToolLogs;
@@ -20,45 +23,16 @@ export default class InvocationModel {
   workspaceConfig: build_event_stream.WorkspaceConfig;
   optionsParsed: build_event_stream.OptionsParsed;
   unstructuredCommandLine: build_event_stream.UnstructuredCommandLine;
-  structuredCommandLine: command_line.CommandLine[];
   started: build_event_stream.BuildStarted;
   expanded: build_event_stream.BuildEvent;
   buildMetrics: build_event_stream.BuildMetrics;
 
-  workspaceStatusMap: Map<string, string>;
-  toolLogMap: Map<string, string>;
-  clientEnvMap: Map<string, string>;
-  configuredMap: Map<string, invocation.InvocationEvent>;
-  completedMap: Map<string, invocation.InvocationEvent>;
-  testResultMap: Map<string, invocation.InvocationEvent>;
-
-  constructor() {
-    this.invocations = [];
-    this.progress = [];
-    this.targets = [];
-    this.succeeded = [];
-    this.failed = [];
-    this.files = [];
-    this.started = null;
-    this.finished = null;
-    this.aborted = null;
-    this.toolLogs = null;
-    this.workspaceStatus = null;
-    this.configuration = null;
-    this.workspaceConfig = null;
-    this.optionsParsed = null;
-    this.unstructuredCommandLine = null;
-    this.structuredCommandLine = [];
-    this.expanded = null;
-    this.buildMetrics = null;
-
-    this.workspaceStatusMap = new Map<string, string>();
-    this.toolLogMap = new Map<string, string>();
-    this.clientEnvMap = new Map<string, string>();
-    this.configuredMap = new Map<string, invocation.InvocationEvent>();
-    this.completedMap = new Map<string, invocation.InvocationEvent>();
-    this.testResultMap = new Map<string, invocation.InvocationEvent>();
-  }
+  workspaceStatusMap = new Map<string, string>();
+  toolLogMap = new Map<string, string>();
+  clientEnvMap = new Map<string, string>();
+  configuredMap = new Map<string, invocation.InvocationEvent>();
+  completedMap = new Map<string, invocation.InvocationEvent>();
+  testResultMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
 
   static modelFromInvocations(invocations: invocation.Invocation[]) {
     let model = new InvocationModel();

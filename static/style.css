@@ -59,12 +59,23 @@ a {
 .menu .container {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+}
+
+.menu .container div {
+  display: flex;
+  align-items: center;
 }
 
 .menu .icon {
   padding-top: 1px;
   margin-right: 16px;
   cursor: pointer;
+}
+
+.menu-control {
+  cursor: pointer;
+  opacity: .8;
 }
 
 .menu .title {
@@ -125,14 +136,14 @@ a {
 
 .shelf .invocation {
   font-size: 16px;
-  color: #ccc;
+  color: #aaa;
   margin-bottom: 8px;
 }
 
 .shelf .details {
   font-size: 16px;
   line-height: 1.6em;
-  color: rgba(0, 0, 0, .5);
+  color: rgba(0, 0, 0, .7);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -170,7 +181,7 @@ a {
   padding: 12px 32px;
   cursor: pointer;
   margin-top: 8px;
-  color: #ccc;
+  color: #aaa;
   text-align: center;
   flex-shrink: 0;
   font-size: 12px;
@@ -296,7 +307,16 @@ a {
 
 .list-grid div:last-of-type {
   text-align: right;
-  color: #ccc;
+  color: #aaa;
+}
+
+.target {
+  display: flex;
+  align-self: center;
+}
+
+.target-status-icon {
+  display: none;
 }
 
 .clickable {
@@ -326,9 +346,9 @@ a {
 }
 
 .invocation-command-line {
-  border-bottom: 1px solid #eee;
-  margin-bottom: 32px;
-  padding-bottom: 32px;
+  border-top: 1px solid #eee;
+  margin-top: 32px;
+  padding-top: 32px;
 }
 
 .invocation-command-line:last-of-type {
@@ -338,9 +358,9 @@ a {
 
 .invocation-command-line-title {
   font-weight: 700;
-  font-size: 36px;
-  text-align: right;
-  color: #ddd;
+  font-size: 18px;
+  color: #222;
+  margin-bottom: 16px;
 }
 
 .invocation-section div.invocation-section-title {
@@ -511,4 +531,132 @@ a {
 
 .xterm-underline {
   text-decoration: underline;
+}
+
+
+/** Dense mode **/
+
+.dense .container {
+  max-width: 100%;
+  padding: 0;
+}
+
+.dense .shelf {
+  padding: 0;
+}
+
+.dense .tabs {
+  margin: 0;
+}
+
+.dense .tab {
+  margin-top: 0;
+  padding: 12px 16px;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+  color: #444;
+}
+
+.dense .tab.selected {
+  background-color: transparent;
+  color: #455A64;
+  position: relative;
+}
+
+.dense .tab.selected:after {
+  display: block;
+  content: ' ';
+  background-color: #455A64;
+  height: 4px;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  border-top-left-radius: 3px;
+  border-top-right-radius: 3px;
+}
+
+.dense .card {
+  margin: 0;
+  border-radius: 0;
+  padding: 16px;
+  box-shadow: none;
+  border-top: 1px solid #eee;
+}
+
+.dense .card .list-grid {
+  /* border-top: 1px solid #eee; */
+}
+
+.dense .card .details {
+  margin-top: 8px;
+}
+
+.dense .card .icon {
+  display: none;
+}
+
+.dense .menu .container {
+  padding: 0 16px;
+}
+
+.dense .list-grid div:first-of-type {
+  font-weight: 400;
+}
+
+.dense .list-grid div:last-of-type {
+  color: #888;
+}
+
+.dense .target-status-icon {
+  display: block;
+  width: 16px;
+  margin-right: 4px;
+}
+
+.dense-invocation {
+  padding: 8px 16px;
+}
+
+.dense-invocation-title {
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.dense-invocation-invocation-id {
+}
+
+.dense-invocation-status-bar {
+  border-top: 4px solid #4CAF50;
+  background-color: #E8F5E9;
+  padding: 4px 16px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.dense-invocation-overview-grid {
+  display: flex;
+  background-color: #fff;
+}
+
+.dense-invocation-overview-grid-chunk {
+  flex-grow: 1;
+  padding: 8px 16px;
+  border-right: 1px solid #eee;
+}
+
+.dense-invocation-overview-grid-title {
+
+}
+
+.dense-invocation-overview-grid-value {
+  font-size: 20px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+}
+
+.dense-invocation-overview-grid-value .icon {
+  margin-right: 8px;
 }

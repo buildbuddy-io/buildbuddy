@@ -20,7 +20,12 @@ export default class ArtifactsCardComponent extends React.Component {
   }
 
   handleArtifactClicked(outputUri: string) {
-    window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", outputUri);
+    if (!outputUri) return;
+    if (outputUri.startsWith("file://")) {
+      window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", outputUri);
+    } else {
+      window.open(outputUri, '_blank');
+    }
   }
 
   handleMoreArtifactClicked() {

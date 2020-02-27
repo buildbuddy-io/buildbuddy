@@ -26,7 +26,11 @@ export default class SucceededTargetsCardComponent extends React.Component {
   handleTargetClicked(label: string) {
     let log = this.props.model.getTestResultLog(label);
     if (!log) return;
-    window.prompt("Copy test log path to clipboard: Cmd+C, Enter", log);
+    if (log.startsWith("file://")) {
+      window.prompt("Copy test log path to clipboard: Cmd+C, Enter", log);
+    } else {
+      window.open(log, '_blank');
+    }
   }
 
   render() {
@@ -39,12 +43,9 @@ export default class SucceededTargetsCardComponent extends React.Component {
         <div className="details">
           {this.props.model.failed.slice(0, this.props.limitResults && this.state.limit || undefined).map(failed =>
             <div className="list-grid" onClick={this.handleTargetClicked.bind(this, failed.id.targetCompleted.label)}>
-              <div className={`${this.props.model.getTestResultLog(failed.id.targetCompleted.label) ? 'clickable' : ''}`}>
-                {failed.id.targetCompleted.label}
-              </div>
-              <div>
-                {this.props.model.configuredMap.get(failed.id.targetCompleted.label).buildEvent.configured.targetKind}
-                {this.props.model.getTestSize(this.props.model.configuredMap.get(failed.id.targetCompleted.label).buildEvent.configured.testSize)}
+              <div title={`${this.props.model.configuredMap.get(failed.id.targetCompleted.label).buildEvent.configured.targetKind} ${this.props.model.getTestSize(this.props.model.configuredMap.get(failed.id.targetCompleted.label).buildEvent.configured.testSize)}`}
+                className={`${this.props.model.getTestResultLog(failed.id.targetCompleted.label) ? 'clickable target' : 'target'}`}>
+                <img className="target-status-icon" src="/image/x-circle.svg" /> {failed.id.targetCompleted.label}
               </div>
               <div>{this.props.model.getRuntime(failed.id.targetCompleted.label)} seconds</div>
             </div>

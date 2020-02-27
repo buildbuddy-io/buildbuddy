@@ -4,7 +4,7 @@ package(default_visibility = ["//visibility:public"])
 
 ts_library(
     name = "invocation",
-    srcs = glob(["*.tsx"]),
+    srcs = glob(["**/*.tsx"]),
     deps = [
         "//app/service",
         "//app/terminal",
