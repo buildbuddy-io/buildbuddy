@@ -13,7 +13,7 @@ export default class DenseInvocationTabsComponent extends React.Component {
         TARGETS
       </a>
       <a href="#log" className={`tab ${this.props.hash == '#log' && 'selected'}`}>
-        BUILD LOG
+        BUILD LOGS
       </a>
       <a href="#details" className={`tab ${this.props.hash == '#details' && 'selected'}`}>
         INVOCATION DETAILS
