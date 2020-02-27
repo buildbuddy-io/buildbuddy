@@ -32,7 +32,7 @@ build --bes_results_url=https://app.buildbuddy.io/invocation/
 build --bes_backend=grpc://events.buildbuddy.io:1985
 ```
 
-This will print a **Buildbuddy url** containing your build results at the beginning and end of every Bazel invocation. You can command click / double click on these to view
+This will print a **Buildbuddy url** containing your build results at the beginning and end of every Bazel invocation. You can command click / double click on these to open the results in a browser.
 
 **Want more control?** Want to set it up for your team? Get up and running fast with the cloud hosted [BuildBuddy.io](https://buildbuddy.io) service.
 
