@@ -264,10 +264,16 @@ a {
 
 .terminal {
   height: 300px;
+  overflow-x: auto;
 }
 
 .expanded .terminal {
-  height: 500px;
+  height: 1000px;
+}
+
+.disclaimer {
+  color: #aaa;
+  margin-top: 4px;
 }
 
 .list-grid {
@@ -293,12 +299,22 @@ a {
   color: #ccc;
 }
 
-.artifacts .list-grid {
+.clickable {
+  text-decoration: underline;
   cursor: pointer;
 }
 
-.artifacts .list-grid div:last-of-type {
-  text-align: left;
+.artifact-name {
+  font-weight: 600;
+  text-decoration: underline;
+  margin-left: 32px;
+  margin-top: 4px;
+  cursor: pointer;
+}
+
+.artifact-section-title {
+  color: #aaa;
+  margin-top: 8px;
 }
 
 .invocation-section {

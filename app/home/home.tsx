@@ -9,6 +9,10 @@ export default class HomeComponent extends React.Component {
     menuExpanded: false
   };
 
+  componentWillMount() {
+    document.title = `Home | Buildbuddy`;
+  }
+
   handleMenuClicked() {
     this.setState({ menuExpanded: !this.state.menuExpanded });
   }
