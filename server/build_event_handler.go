@@ -144,15 +144,34 @@ func (h *BuildEventHandler) OpenChannel(ctx context.Context, iid string) *EventC
 	}
 }
 
-func (h *BuildEventHandler) LookupInvocation(ctx context.Context, invocationID string) (*inpb.Invocation, error) {
-	protoBytes, err := h.bs.ReadBlob(ctx, invocationID)
+func (h *BuildEventHandler) LookupInvocation(ctx context.Context, iid string) (*inpb.Invocation, error) {
+	ti := &tables.Invocation{}
+	err := h.db.GormDB.Transaction(func(tx *gorm.DB) error {
+		existingRow := tx.Raw(`SELECT i.invocation_id, i.invocation_status FROM Invocations as i WHERE i.invocation_id = ?`, iid)
+		if err := existingRow.Scan(ti).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	invocation := &inpb.Invocation{
+		InvocationId:     ti.InvocationID,
+		InvocationStatus: inpb.Invocation_InvocationStatus(ti.InvocationStatus),
+	}
+	if ti.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
+		return invocation, nil
+	}
+
+	protoBytes, err := h.bs.ReadBlob(ctx, iid)
 	if err != nil {
 		return nil, err
 	}
 
-	invocation := new(inpb.Invocation)
 	if err := proto.Unmarshal(protoBytes, invocation); err != nil {
 		return nil, err
 	}
+
 	return invocation, nil
 }
