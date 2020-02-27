@@ -54,8 +54,7 @@ The simplest method of running BuildBuddy on your own computer is to download an
 We publish a docker image with every release that contains a pre-configured BuildBuddy. To run it:
 
 ```
-# Download the buildbuddy_docker.tar image from GitHub.
-docker run buildbuddy_docker.tar
+docker run -p 1985:1985 -p 8080:8080 gcr.io/flame-public/buildbuddy-app-onprem:server-image-0.0.3
 ```
 
 ## Kubernetes
