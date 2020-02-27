@@ -26,16 +26,17 @@ It's written in Golang and React and can be deployed as a Docker image. It's run
 
 Getting started with Buildbuddy is simple and free for personal use. Just add these two lines to your `.bazelrc` file.
 
+**.bazelrc**
 ```
 build --bes_results_url=https://app.buildbuddy.io/invocation/
 build --bes_backend=grpc://events.buildbuddy.io:1985
 ```
 
-This will print a buildbuddy url containing your build results at the beginning and end of every Bazel invocation.
+This will print a **Buildbuddy url** containing your build results at the beginning and end of every Bazel invocation. You can command click / double click on these to view
 
-Want more control? Get up and running fast with the cloud hosted [BuildBuddy.io](https://buildbuddy.io) service.
+**Want more control?** Want to set it up for your team? Get up and running fast with the cloud hosted [BuildBuddy.io](https://buildbuddy.io) service.
 
-If you'd like to host your own instance on-premises or in the cloud, check out our [getting started](https://github.com/tryflame/buildbuddy/blob/master/SETUP.md) guide.
+If you'd like to host your own instance **on-premises** or in the cloud, check out our [getting started](https://github.com/tryflame/buildbuddy/blob/master/SETUP.md) guide.
 
 # Questions?
 If you have any questions, e-mail us at hello@tryflame.com. We’d love to chat!
