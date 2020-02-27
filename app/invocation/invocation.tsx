@@ -16,7 +16,7 @@ import BuildLogsCardComponent from './invocation_build_logs_card'
 import ErrorCardComponent from './invocation_error_card';
 import FailedTargetsCardComponent from './invocation_failed_targets_card'
 import InvocationDetailsCardComponent from './invocation_details_card'
-import ArtifactsCardComponent from './artifacts_card'
+import ArtifactsCardComponent from './invocation_artifacts_card'
 import RawLogsCardComponent from './invocation_raw_logs_card'
 import SucceededTargetsCardComponent from './invocation_succeeded_targets_card'
 
