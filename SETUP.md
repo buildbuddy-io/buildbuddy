@@ -2,7 +2,12 @@
   <h1>Installing and Configuring Buildbuddy</h1>
 </p>
 
-Setting up BuildBuddy to view your own logs is easy! The two primary ways are to use the Cloud BuildBuddy instance, or to run it your own instance on-premise. We support both!
+Setting up BuildBuddy to view your own logs is easy! Your two options are:
+
+* Use the Cloud BuildBuddy instance, or
+* Run your own instance on-premise
+
+We support both!
 
 # Cloud BuildBuddy
 
@@ -17,7 +22,7 @@ build --bes_results_url=https://app.buildbuddy.io/invocation/
 build --bes_backend=grpc://events.buildbuddy.io:1985
 ```
 
-Now, when you run a build or test with bazel, it will print a url where you can view your build or test results. For example:
+Now, when you build or test with bazel, it will print a url where you can view your build or test results. For example:
 
 ```
 tylerw@lunchbox:~/tryflame/buildbuddy$ bazel build --config=prod server:all
@@ -33,18 +38,20 @@ tylerw@lunchbox:~/tryflame/buildbuddy$
 
 # On Premise
 
-We've designed BuildBuddy to be easy to run on-premise for those use cases where data absolutely must not leave a company's servers. The software itself is open-core and easy to audit. We can also help you to run BuildBuddy in your own custom environment. [Tell us about your setup](mailto:support@tryflame.com?subject=[Enterprise]%20BuildBuddy%20Setup)
+We've designed BuildBuddy to be easy to run on-premise for those use cases where data absolutely must not leave a company's servers. The software itself is open-source and easy to audit.
+
+We can also help you run BuildBuddy in your own custom environment. [Reach out if you want help getting set up!](mailto:support@tryflame.com?subject=Custom%20BuildBuddy%20Setup)
 
 ## Bazel Run
 
-The simplest method of running BuildBuddy on your own computer is to download and run it with bazel run. Doing that is simple :
+The simplest method of running BuildBuddy on your own computer is to download and run it with "bazel run". Doing that is simple:
 
 * ### Get the source
   ```
   git clone "git@github.com:tryflame/buildbuddy.git"
   ```
 
-* ### Build and run with bazel
+* ### Build and run using bazel
   ```
   cd buildbuddy && bazel run -c opt server:buildbuddy
   ```
