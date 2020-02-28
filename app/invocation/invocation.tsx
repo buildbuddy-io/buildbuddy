@@ -61,6 +61,13 @@ export default class InvocationComponent extends React.Component {
     request.query.invocationId = this.props.invocationId;
     rpcService.service.getInvocation(request).then((response) => {
       console.log(response);
+
+      if (response.invocation.length && response.invocation[0].invocationStatus ==
+        invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS) {
+        this.handleInProgressBuild();
+        return;
+      }
+
       this.setState({
         model: InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]),
         loading: false
@@ -72,6 +79,17 @@ export default class InvocationComponent extends React.Component {
         loading: false
       });
     });
+  }
+
+  handleInProgressBuild() {
+    this.setState({
+      loading: false,
+      inProgress: true,
+    });
+    // Refresh the page in 3 seconds to update status.
+    setTimeout(() => {
+      location.reload()
+    }, 3000);
   }
 
   render() {
