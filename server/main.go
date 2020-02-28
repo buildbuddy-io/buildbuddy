@@ -52,7 +52,7 @@ func main() {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 
-	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, false, []string{"/invocation/"})
+	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, []string{"/invocation/"})
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)
 	}
@@ -67,7 +67,7 @@ func main() {
 	}
 	eventHandler := build_event_handler.NewBuildEventHandler(bs, db)
 
-	afs, err := static.NewStaticFileServer(*appDirectory, true, []string{})
+	afs, err := static.NewStaticFileServer(*appDirectory, []string{})
 	if err != nil {
 		log.Fatalf("Error initializing app server: %s", err)
 	}
@@ -97,7 +97,7 @@ func main() {
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
 	http.Handle("/", redirectHTTPS(staticFileServer))
-	http.Handle("/app/", redirectHTTPS(afs))
+	http.Handle("/app/", redirectHTTPS(http.StripPrefix("/app", afs)))
 	http.Handle("/rpc/BuildBuddyService/", http.StripPrefix("/rpc/BuildBuddyService/", protoHandler))
 
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)

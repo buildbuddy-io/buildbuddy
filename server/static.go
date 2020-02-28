@@ -16,7 +16,7 @@ type StaticFileServer struct {
 
 // NewStaticFileServer returns a new static file server that will serve the
 // content in relpath, optionally stripping the prefix.
-func NewStaticFileServer(relPath string, stripPrefix bool, rootPaths []string) (*StaticFileServer, error) {
+func NewStaticFileServer(relPath string, rootPaths []string) (*StaticFileServer, error) {
 	// Figure out where our runfiles (static content bundled with the binary) live.
 	rfp, err := bazel.RunfilesPath()
 	if err != nil {
@@ -25,9 +25,6 @@ func NewStaticFileServer(relPath string, stripPrefix bool, rootPaths []string) (
 	// Handle "/static/*" requests by serving those static files out of the bundled runfiles.
 	pkgStaticDir := filepath.Join(rfp, relPath)
 	handler := http.FileServer(http.Dir(pkgStaticDir))
-	if stripPrefix {
-		handler = http.StripPrefix(relPath, handler)
-	}
 	if len(rootPaths) > 0 {
 		handler = handleRootPaths(rootPaths, handler)
 	}
