@@ -8,11 +8,9 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"github.com/jinzhu/gorm"
-	"github.com/tryflame/buildbuddy/server/blobstore"
 	"github.com/tryflame/buildbuddy/server/config"
-	"github.com/tryflame/buildbuddy/server/database"
 	"github.com/tryflame/buildbuddy/server/event_parser"
+	"github.com/tryflame/buildbuddy/server/interfaces"
 	"github.com/tryflame/buildbuddy/server/protofile"
 	"github.com/tryflame/buildbuddy/server/tables"
 
@@ -26,12 +24,12 @@ const (
 )
 
 type BuildEventHandler struct {
-	bs blobstore.Blobstore
-	db *database.Database
+	bs interfaces.Blobstore
+	db interfaces.Database
 	c  *config.Configurator
 }
 
-func NewBuildEventHandler(bs blobstore.Blobstore, c *config.Configurator, db *database.Database) *BuildEventHandler {
+func NewBuildEventHandler(bs interfaces.Blobstore, c *config.Configurator, db interfaces.Database) *BuildEventHandler {
 	return &BuildEventHandler{
 		bs: bs,
 		c:  c,
@@ -56,8 +54,8 @@ func readBazelEvent(obe *bpb.OrderedBuildEvent, out *build_event_stream.BuildEve
 }
 
 type EventChannel struct {
-	bs blobstore.Blobstore
-	db *database.Database
+	bs interfaces.Blobstore
+	db interfaces.Database
 	pw *protofile.BufferedProtoWriter
 }
 
@@ -84,31 +82,13 @@ func (e *EventChannel) writeCompletedBlob(ctx context.Context, blobID string, in
 	if err != nil {
 		return err
 	}
-	return e.bs.WriteBlob(ctx, blobID+"-completed.pb", protoBytes)
-}
-
-func (e *EventChannel) insertOrUpdateInvocation(ctx context.Context, iid string) error {
-	return e.db.GormDB.Transaction(func(tx *gorm.DB) error {
-		existingRow := tx.Raw(`SELECT i.invocation_id FROM Invocations as i WHERE i.invocation_id = ?`, iid)
-		err := existingRow.Scan(&struct{}{}).Error
-		if err == gorm.ErrRecordNotFound {
-			i := &tables.Invocation{
-				InvocationID:     iid,
-				InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
-			}
-			return tx.Create(i).Error
-		}
-		if err == nil {
-			return tx.Exec("UPDATE Invocations SET invocation_status = ? WHERE invocation_id = ?",
-				int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS), iid).Error
-		}
-		return err
-	})
+	return e.bs.WriteBlob(ctx, blobID, protoBytes)
 }
 
 func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error {
 	invocation := &inpb.Invocation{
-		InvocationId: iid,
+		InvocationId:     iid,
+		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
 	}
 	events, err := e.readAllTempBlobs(ctx, iid)
 	if err != nil {
@@ -116,19 +96,15 @@ func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error
 	}
 	event_parser.FillInvocationFromEvents(events, invocation)
 
-	return e.db.GormDB.Transaction(func(tx *gorm.DB) error {
-		i := &tables.Invocation{}
-		// This is pretty gnarly. Let's remove the ORM here asap.
-		tx.Where("invocation_id = ?", iid).First(&i)
-		i.FromProto(invocation)
-		i.BlobID = iid
-		i.InvocationStatus = int64(inpb.Invocation_COMPLETE_INVOCATION_STATUS)
-		if err := tx.Save(i).Error; err != nil {
-			return err
-		}
-		// Write the blob inside the transaction. All or nothing.
-		return e.writeCompletedBlob(ctx, iid, invocation)
-	})
+	// TODO(tylerw): We can probably omit this and just rely entirely on chunk reader.
+	completedBlobID := iid + "-completed.pb"
+	if err := e.writeCompletedBlob(ctx, completedBlobID, invocation); err != nil {
+		return err
+	}
+
+	ti := &tables.Invocation{}
+	ti.FromProtoAndBlobID(invocation, completedBlobID)
+	return e.db.InsertOrUpdateInvocation(ctx, ti)
 }
 
 func (e *EventChannel) HandleEvent(ctx context.Context, event *bpb.PublishBuildToolEventStreamRequest) error {
@@ -152,7 +128,11 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *bpb.PublishBuildT
 	// If this is the first event, keep track of the project ID and save any notification keywords.
 	if seqNo == 1 {
 		log.Printf("First event! project_id: %s, notification_keywords: %s", event.ProjectId, event.NotificationKeywords)
-		if err := e.insertOrUpdateInvocation(ctx, iid); err != nil {
+		ti := &tables.Invocation{
+			InvocationID:     iid,
+			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
+		}
+		if err := e.db.InsertOrUpdateInvocation(ctx, ti); err != nil {
 			return err
 		}
 	}
@@ -178,21 +158,11 @@ func (h *BuildEventHandler) OpenChannel(ctx context.Context, iid string) *EventC
 }
 
 func (h *BuildEventHandler) LookupInvocation(ctx context.Context, iid string) (*inpb.Invocation, error) {
-	ti := &tables.Invocation{}
-	err := h.db.GormDB.Transaction(func(tx *gorm.DB) error {
-		existingRow := tx.Raw(`SELECT i.invocation_id, i.invocation_status FROM Invocations as i WHERE i.invocation_id = ?`, iid)
-		if err := existingRow.Scan(ti).Error; err != nil {
-			return err
-		}
-		return nil
-	})
+	ti, err := h.db.LookupInvocation(ctx, iid)
 	if err != nil {
 		return nil, err
 	}
-	invocation := &inpb.Invocation{
-		InvocationId:     ti.InvocationID,
-		InvocationStatus: inpb.Invocation_InvocationStatus(ti.InvocationStatus),
-	}
+	invocation := ti.ToProto()
 
 	pr := protofile.NewBufferedProtoReader(h.bs, iid)
 	for {

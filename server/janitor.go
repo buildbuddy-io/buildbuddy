@@ -6,9 +6,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/tryflame/buildbuddy/server/blobstore"
 	"github.com/tryflame/buildbuddy/server/config"
 	"github.com/tryflame/buildbuddy/server/database"
+	"github.com/tryflame/buildbuddy/server/interfaces"
 	"github.com/tryflame/buildbuddy/server/tables"
 )
 
@@ -22,13 +22,13 @@ type Janitor struct {
 	ticker *time.Ticker
 	quit   chan struct{}
 
-	bs blobstore.Blobstore
-	db *database.Database
+	bs interfaces.Blobstore
+	db interfaces.Database
 
 	ttl time.Duration
 }
 
-func NewJanitor(bs blobstore.Blobstore, db *database.Database, c *config.Configurator) *Janitor {
+func NewJanitor(bs interfaces.Blobstore, db *database.Database, c *config.Configurator) *Janitor {
 	return &Janitor{
 		bs:  bs,
 		db:  db,
@@ -37,37 +37,28 @@ func NewJanitor(bs blobstore.Blobstore, db *database.Database, c *config.Configu
 }
 
 func (j *Janitor) deleteInvocation(invocation *tables.Invocation) {
-	if err := j.bs.DeleteBlob(context.Background(), invocation.BlobID); err != nil {
-		if *logDeletionErrors {
-			log.Printf("Error deleting blob (%s): %s", invocation.BlobID, err)
-		}
+	ctx := context.Background()
+	if err := j.bs.DeleteBlob(ctx, invocation.BlobID); err != nil && *logDeletionErrors {
+		log.Printf("Error deleting blob (%s): %s", invocation.BlobID, err)
 	}
+
 	// Try to delete the row too, even if blob deletion failed.
-	if err := j.db.GormDB.Delete(&tables.Invocation{InvocationID: invocation.InvocationID}).Error; err != nil {
-		if *logDeletionErrors {
-			log.Printf("Error deleting row (%s): %s", invocation.InvocationID, err)
-		}
+	if err := j.db.DeleteInvocation(ctx, invocation.InvocationID); err != nil && *logDeletionErrors {
+		log.Printf("Error deleting invocation (%s): %s", invocation.InvocationID, err)
 	}
 }
 
 func (j *Janitor) deleteExpiredInvocations() {
-	cutoffUsec := time.Now().Add(-1 * j.ttl).UnixNano()
-	rows, err := j.db.GormDB.Raw(`SELECT * FROM Invocations as i
-                                      WHERE i.created_at_usec < ?
-                                      LIMIT 10`, cutoffUsec).Rows()
-	if err != nil {
-		log.Printf("error querying rows to delete: %s", err)
+	ctx := context.Background()
+	cutoff := time.Now().Add(-1 * j.ttl)
+	expired, err := j.db.LookupExpiredInvocations(ctx, cutoff, 10)
+	if err != nil && *logDeletionErrors {
+		log.Printf("Error finding expired deletions: %s", err)
 		return
 	}
-	defer rows.Close()
 
-	var invocation tables.Invocation
-	for rows.Next() {
-		if err := j.db.GormDB.ScanRows(rows, &invocation); err != nil {
-			log.Printf("error scanning row: %s", err)
-			break
-		}
-		defer j.deleteInvocation(&invocation)
+	for _, exp := range expired {
+		j.deleteInvocation(exp)
 	}
 }
 

@@ -112,15 +112,36 @@ func (i *Invocation) TableName() string {
 	return "Invocations"
 }
 
-func (i *Invocation) FromProto(p *inpb.Invocation) {
-	i.InvocationID = p.InvocationId
+func (i *Invocation) FromProtoAndBlobID(p *inpb.Invocation, blobID string) {
+	i.InvocationID = p.InvocationId // Required.
 	i.Success = p.Success
 	i.User = p.User
 	i.DurationUsec = p.DurationUsec
 	i.Host = p.Host
 	i.Command = p.Command
-	i.Pattern = strings.Join(p.Pattern, ", ")
+	if p.Pattern != nil {
+		i.Pattern = strings.Join(p.Pattern, ", ")
+	}
 	i.ActionCount = p.ActionCount
+	i.BlobID = blobID
+	i.InvocationStatus = int64(p.InvocationStatus)
+}
+
+func (i *Invocation) ToProto() *inpb.Invocation {
+	out := &inpb.Invocation{}
+	out.InvocationId = i.InvocationID // Required.
+	out.Success = i.Success
+	out.User = i.User
+	out.DurationUsec = i.DurationUsec
+	out.Host = i.Host
+	out.Command = i.Command
+	if i.Pattern != "" {
+		out.Pattern = strings.Split(i.Pattern, ", ")
+	}
+	out.ActionCount = i.ActionCount
+	// BlobID is not present in output client proto.
+	out.InvocationStatus = inpb.Invocation_InvocationStatus(i.InvocationStatus)
+	return out
 }
 
 func init() {

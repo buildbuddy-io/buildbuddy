@@ -11,18 +11,12 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/tryflame/buildbuddy/server/config"
+	"github.com/tryflame/buildbuddy/server/interfaces"
 	"google.golang.org/api/option"
 )
 
-// A Blobstore must allow for reading, writing, and deleting blobs.
-type Blobstore interface {
-	ReadBlob(ctx context.Context, blobName string) ([]byte, error)
-	WriteBlob(ctx context.Context, blobName string, data []byte) error
-	DeleteBlob(ctx context.Context, blobName string) error
-}
-
 // Returns whatever blobstore is specified in the config.
-func GetConfiguredBlobstore(c *config.Configurator) (Blobstore, error) {
+func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error) {
 	if c.GetStorageDiskRootDir() != "" {
 		return NewDiskBlobStore(c.GetStorageDiskRootDir()), nil
 	}
@@ -43,7 +37,8 @@ func ensureDirectoryExists(dir string) error {
 	return nil
 }
 
-// A super simple disk-based blob storage implementation.
+// A Disk-based blob storage implementation that reads and writes blobs to/from
+// files.
 type DiskBlobStore struct {
 	rootDir string
 }
@@ -55,7 +50,8 @@ func NewDiskBlobStore(rootDir string) *DiskBlobStore {
 }
 
 func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) error {
-	// Probably could support nesting in directories here but we are lazy.
+	// Probably could be more careful here but we are generating these ourselves
+	// for now.
 	if strings.Contains(blobName, "..") {
 		return fmt.Errorf("blobName (%s) must not contain ../", blobName)
 	}
@@ -78,6 +74,7 @@ func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	return os.Remove(filepath.Join(d.rootDir, blobName))
 }
 
+// GCSBlobStore implements the blobstore API on top of the google cloud storage API.
 type GCSBlobStore struct {
 	gcsClient    *storage.Client
 	bucketHandle *storage.BucketHandle
