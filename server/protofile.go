@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/tryflame/buildbuddy/server/blobstore"
+	"github.com/tryflame/buildbuddy/server/interfaces"
 )
 
 // BufferedProtoWriter chunks together and writes protos to blobstore after
@@ -18,7 +18,7 @@ import (
 // calling Flush to ensure all data is written.
 type BufferedProtoWriter struct {
 	streamID string
-	bs       blobstore.Blobstore
+	bs       interfaces.Blobstore
 
 	maxBufferSizeBytes int
 
@@ -35,7 +35,7 @@ type BufferedProtoWriter struct {
 // streamID, because it may still be written to from another goroutine.
 type BufferedProtoReader struct {
 	streamID string
-	bs       blobstore.Blobstore
+	bs       interfaces.Blobstore
 
 	// Read Variables
 	readMutex          sync.Mutex // protects(readBuf), protects(readSequenceNumber)
@@ -43,7 +43,7 @@ type BufferedProtoReader struct {
 	readSequenceNumber int
 }
 
-func NewBufferedProtoReader(bs blobstore.Blobstore, streamID string) *BufferedProtoReader {
+func NewBufferedProtoReader(bs interfaces.Blobstore, streamID string) *BufferedProtoReader {
 	return &BufferedProtoReader{
 		streamID: streamID,
 		bs:       bs,
@@ -53,7 +53,7 @@ func NewBufferedProtoReader(bs blobstore.Blobstore, streamID string) *BufferedPr
 	}
 }
 
-func NewBufferedProtoWriter(bs blobstore.Blobstore, streamID string, bufferSizeBytes int) *BufferedProtoWriter {
+func NewBufferedProtoWriter(bs interfaces.Blobstore, streamID string, bufferSizeBytes int) *BufferedProtoWriter {
 	return &BufferedProtoWriter{
 		streamID:           streamID,
 		bs:                 bs,

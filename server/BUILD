@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/tryflame/buildbuddy/server/blobstore",
     deps = [
         ":config",
+        ":interfaces",
         "@com_google_cloud_go_storage//:go_default_library",
         "@org_golang_google_api//option:go_default_library",
     ],
@@ -19,10 +20,9 @@ go_library(
     srcs = ["build_event_handler.go"],
     importpath = "github.com/tryflame/buildbuddy/server/build_event_handler",
     deps = [
-        ":blobstore",
         ":config",
-        ":database",
         ":event_parser",
+        ":interfaces",
         ":protofile",
         ":tables",
         "//proto:build_event_stream_go_proto",
@@ -30,7 +30,6 @@ go_library(
         "//proto:invocation_go_proto",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
-        "@com_github_jinzhu_gorm//:go_default_library",
     ],
 )
 
@@ -79,7 +78,6 @@ go_library(
     deps = [
         ":config",
         ":tables",
-        "//proto:invocation_go_proto",
         "@com_github_jinzhu_gorm//:go_default_library",
         "@com_github_jinzhu_gorm//dialects/mysql:go_default_library",
         "@com_github_jinzhu_gorm//dialects/postgres:go_default_library",
@@ -104,10 +102,20 @@ go_library(
     srcs = ["janitor.go"],
     importpath = "github.com/tryflame/buildbuddy/server/janitor",
     deps = [
-        ":blobstore",
         ":config",
         ":database",
+        ":interfaces",
         ":tables",
+    ],
+)
+
+go_library(
+    name = "interfaces",
+    srcs = ["interfaces.go"],
+    importpath = "github.com/tryflame/buildbuddy/server/interfaces",
+    deps = [
+        ":tables",
+        "//proto:invocation_go_proto",
     ],
 )
 
@@ -116,7 +124,7 @@ go_library(
     srcs = ["protofile.go"],
     importpath = "github.com/tryflame/buildbuddy/server/protofile",
     deps = [
-        ":blobstore",
+        ":interfaces",
         "@com_github_golang_protobuf//proto:go_default_library",
     ],
 )
