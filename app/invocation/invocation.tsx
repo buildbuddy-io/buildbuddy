@@ -35,7 +35,8 @@ interface State {
 
 interface Props {
   invocationId: string,
-  hash: string
+  hash: string,
+  search: URLSearchParams,
   denseMode: boolean,
 }
 
@@ -96,6 +97,13 @@ export default class InvocationComponent extends React.Component {
     }, 3000);
   }
 
+  handleFilterChange(event: any) {
+    let filterName = this.props.hash == "#artifacts" ? "artifactFilter" : "targetFilter";
+    let filterParam = event.target.value ? '?' + filterName + '=' + encodeURIComponent(event.target.value) : '';
+    var newurl = window.location.protocol + "//" + window.location.host + window.location.pathname + filterParam + window.location.hash;
+    window.history.pushState({ path: newurl }, '', newurl);
+  }
+
   render() {
     if (this.state.loading) {
       return <InvocationLoadingComponent invocationId={this.props.invocationId} />;
@@ -111,6 +119,9 @@ export default class InvocationComponent extends React.Component {
 
     var showAll = !this.props.hash && !this.props.denseMode;
 
+    var targetFilter = this.props.search.get("targetFilter") || "";
+    var artifactFilter = this.props.search.get("artifactFilter") || "";
+
     return (
       <div className={this.props.denseMode ? 'dense' : ''}>
         <div className="shelf">
@@ -125,6 +136,11 @@ export default class InvocationComponent extends React.Component {
             <DenseInvocationTabsComponent hash={this.props.hash} /> :
             <InvocationTabsComponent hash={this.props.hash} />
           }
+          {((!this.props.hash && this.props.denseMode) || this.props.hash == "#targets" || this.props.hash == "#artifacts") &&
+            <div className="filter">
+              <img src="/image/filter.svg" />
+              <input value={this.props.hash == "#artifacts" ? artifactFilter : targetFilter} className="filter-input" placeholder="Filter..." onChange={this.handleFilterChange.bind(this)} />
+            </div>}
 
           {(showAll || this.props.hash == "#log") &&
             <BuildLogsCardComponent model={this.state.model} expanded={this.props.hash == "#log"} />}
@@ -140,6 +156,7 @@ export default class InvocationComponent extends React.Component {
               presentVerb="failing"
               pastVerb="failed"
               model={this.state.model}
+              filter={targetFilter}
               pageSize={showAll ? smallPageSize : largePageSize}
             />}
 
@@ -150,6 +167,7 @@ export default class InvocationComponent extends React.Component {
               presentVerb="broken"
               pastVerb="broken"
               model={this.state.model}
+              filter={targetFilter}
               pageSize={showAll ? smallPageSize : largePageSize}
             />}
 
@@ -160,6 +178,7 @@ export default class InvocationComponent extends React.Component {
               presentVerb="flaky"
               pastVerb="flaky"
               model={this.state.model}
+              filter={targetFilter}
               pageSize={showAll ? smallPageSize : largePageSize}
             />}
 
@@ -170,6 +189,7 @@ export default class InvocationComponent extends React.Component {
               presentVerb="passing"
               pastVerb="passed"
               model={this.state.model}
+              filter={targetFilter}
               pageSize={showAll ? smallPageSize : largePageSize}
             />}
 
@@ -177,7 +197,11 @@ export default class InvocationComponent extends React.Component {
             <InvocationDetailsCardComponent model={this.state.model} limitResults={!this.props.hash} />}
 
           {(showAll || this.props.hash == "#artifacts") &&
-            <ArtifactsCardComponent model={this.state.model} pageSize={this.props.hash ? largePageSize : smallPageSize} />}
+            <ArtifactsCardComponent
+              model={this.state.model}
+              filter={artifactFilter}
+              pageSize={this.props.hash ? largePageSize : smallPageSize}
+            />}
 
           {(this.props.hash == "#raw") && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
         </div>

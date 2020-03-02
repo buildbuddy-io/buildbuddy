@@ -229,11 +229,11 @@ export default class InvocationModel {
   getRuntime(label: string) {
     let testResult = this.testResultMap.get(label)?.buildEvent.testResult;
     if (testResult) {
-      return +testResult.testAttemptDurationMillis / 1000;
+      return +testResult.testAttemptDurationMillis / 1000 + " seconds";
     }
     return this.getDuration(
       this.completedMap.get(label).eventTime,
-      this.configuredMap.get(label).eventTime);
+      this.configuredMap.get(label).eventTime) + " seconds";
   }
 
   getTestSize(testSize: build_event_stream.TestSize) {
