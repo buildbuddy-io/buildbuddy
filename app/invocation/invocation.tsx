@@ -39,6 +39,9 @@ interface Props {
   denseMode: boolean,
 }
 
+const largePageSize = 100;
+const smallPageSize = 10;
+
 export default class InvocationComponent extends React.Component {
   state: State = {
     loading: true,
@@ -137,7 +140,8 @@ export default class InvocationComponent extends React.Component {
               presentVerb="failing"
               pastVerb="failed"
               model={this.state.model}
-              limitResults={showAll} />}
+              pageSize={showAll ? smallPageSize : largePageSize}
+            />}
 
           {(!this.props.hash || this.props.hash == "#targets") && !!this.state.model.broken.length &&
             <TargetsCardComponent
@@ -146,7 +150,8 @@ export default class InvocationComponent extends React.Component {
               presentVerb="broken"
               pastVerb="broken"
               model={this.state.model}
-              limitResults={showAll} />}
+              pageSize={showAll ? smallPageSize : largePageSize}
+            />}
 
           {(!this.props.hash || this.props.hash == "#targets") && !!this.state.model.flaky.length &&
             <TargetsCardComponent
@@ -155,7 +160,8 @@ export default class InvocationComponent extends React.Component {
               presentVerb="flaky"
               pastVerb="flaky"
               model={this.state.model}
-              limitResults={showAll} />}
+              pageSize={showAll ? smallPageSize : largePageSize}
+            />}
 
           {(!this.props.hash || this.props.hash == "#targets") && !!this.state.model.succeeded.length &&
             <TargetsCardComponent
@@ -164,15 +170,16 @@ export default class InvocationComponent extends React.Component {
               presentVerb="passing"
               pastVerb="passed"
               model={this.state.model}
-              limitResults={showAll} />}
+              pageSize={showAll ? smallPageSize : largePageSize}
+            />}
 
           {(showAll || this.props.hash == "#details") &&
             <InvocationDetailsCardComponent model={this.state.model} limitResults={!this.props.hash} />}
 
           {(showAll || this.props.hash == "#artifacts") &&
-            <ArtifactsCardComponent model={this.state.model} limitResults={!this.props.hash} />}
+            <ArtifactsCardComponent model={this.state.model} pageSize={this.props.hash ? largePageSize : smallPageSize} />}
 
-          {(this.props.hash == "#raw") && <RawLogsCardComponent model={this.state.model} />}
+          {(this.props.hash == "#raw") && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
         </div>
       </div>
     );

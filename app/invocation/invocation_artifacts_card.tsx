@@ -3,20 +3,18 @@ import InvocationModel from './invocation_model'
 
 interface Props {
   model: InvocationModel,
-  limitResults: boolean,
+  pageSize: number,
 }
 
 interface State {
-  limit: number
+  numPages: number
 }
-
-const defaultPageSize = 10;
 
 export default class ArtifactsCardComponent extends React.Component {
   props: Props;
 
-  state = {
-    limit: defaultPageSize
+  state: State = {
+    numPages: 1
   }
 
   handleArtifactClicked(outputUri: string) {
@@ -29,7 +27,7 @@ export default class ArtifactsCardComponent extends React.Component {
   }
 
   handleMoreArtifactClicked() {
-    this.setState({ ...this.state, limit: this.state.limit ? undefined : defaultPageSize })
+    this.setState({ ...this.state, numPages: this.state.numPages + 1 })
   }
 
   render() {
@@ -40,7 +38,7 @@ export default class ArtifactsCardComponent extends React.Component {
         <div className="details">
           {this.props.model.succeeded
             .filter(completed => completed.completed.importantOutput.length)
-            .slice(0, this.props.limitResults && this.state.limit || undefined)
+            .slice(0, this.props.pageSize && (this.state.numPages * this.props.pageSize) || undefined)
             .map(completed => <div>
               <div className="artifact-section-title">{completed.id.targetCompleted.label}</div>
               {completed.completed.importantOutput.map(output =>
@@ -53,12 +51,8 @@ export default class ArtifactsCardComponent extends React.Component {
           {this.props.model.succeeded.flatMap(completed => completed.completed.importantOutput).length == 0 &&
             <span>No artifacts</span>}
         </div>
-        {this.props.limitResults && this.props.model.succeeded.flatMap(
-          completed => completed.completed.importantOutput).length > defaultPageSize && !!this.state.limit &&
+        {this.props.pageSize && this.props.model.succeeded.length > (this.state.numPages * this.props.pageSize) && !!this.state.numPages &&
           <div className="more" onClick={this.handleMoreArtifactClicked.bind(this)}>See more artifacts</div>}
-        {this.props.limitResults && this.props.model.succeeded.flatMap(
-          completed => completed.completed.importantOutput).length > defaultPageSize && !this.state.limit &&
-          <div className="more" onClick={this.handleMoreArtifactClicked.bind(this)}>See less artifacts</div>}
       </div>
     </div>
   }

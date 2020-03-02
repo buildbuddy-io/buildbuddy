@@ -265,6 +265,10 @@ a {
   overflow-y: auto;
 }
 
+.code {
+  font-family: 'Source Code Pro', monospace;
+}
+
 .home p {
   margin-top: 32px;
 }
@@ -391,6 +395,12 @@ a {
 .invocation-chunk {
   color: #444;
   font-weight: 600;
+}
+
+.raw-event-title {
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 4px;
 }
 
 
