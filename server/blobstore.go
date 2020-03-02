@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"cloud.google.com/go/storage"
 	"github.com/tryflame/buildbuddy/server/config"
@@ -35,6 +36,13 @@ func GetConfiguredBlobstore(c *config.Configurator) (Blobstore, error) {
 	return nil, fmt.Errorf("No storage backend configured -- please specify at least one in the config")
 }
 
+func ensureDirectoryExists(dir string) error {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return os.MkdirAll(dir, 0755)
+	}
+	return nil
+}
+
 // A super simple disk-based blob storage implementation.
 type DiskBlobStore struct {
 	rootDir string
@@ -48,10 +56,18 @@ func NewDiskBlobStore(rootDir string) *DiskBlobStore {
 
 func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) error {
 	// Probably could support nesting in directories here but we are lazy.
-	if filepath.Base(blobName) != blobName {
-		return fmt.Errorf("blobName (%s) must not contain dirs.", blobName)
+	if strings.Contains(blobName, "..") {
+		return fmt.Errorf("blobName (%s) must not contain ../", blobName)
 	}
-	return ioutil.WriteFile(filepath.Join(d.rootDir, blobName), data, 0644)
+	fullPath := filepath.Join(d.rootDir, blobName)
+	if err := ensureDirectoryExists(filepath.Dir(fullPath)); err != nil {
+		return err
+	}
+	tmpFileName := fullPath + ".tmp"
+	if err := ioutil.WriteFile(tmpFileName, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmpFileName, fullPath)
 }
 
 func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {

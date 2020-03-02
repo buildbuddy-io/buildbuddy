@@ -20,8 +20,10 @@ go_library(
     importpath = "github.com/tryflame/buildbuddy/server/build_event_handler",
     deps = [
         ":blobstore",
+        ":config",
         ":database",
         ":event_parser",
+        ":protofile",
         ":tables",
         "//proto:build_event_stream_go_proto",
         "//proto:build_go_proto",
@@ -106,6 +108,16 @@ go_library(
         ":config",
         ":database",
         ":tables",
+    ],
+)
+
+go_library(
+    name = "protofile",
+    srcs = ["protofile.go"],
+    importpath = "github.com/tryflame/buildbuddy/server/protofile",
+    deps = [
+        ":blobstore",
+        "@com_github_golang_protobuf//proto:go_default_library",
     ],
 )
 
