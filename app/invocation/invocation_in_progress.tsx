@@ -15,7 +15,7 @@ export default class InvocationInProgressComponent extends React.Component {
           <div className="titles">
             <div className="title">Invocation in progress...</div>
           </div>
-          <div className="details">This page will refresh in a few seconds.</div>
+          <div className="details">This page will refresh every few seconds.</div>
         </div>
       </div>
     </div>

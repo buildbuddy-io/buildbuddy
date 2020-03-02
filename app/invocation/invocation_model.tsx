@@ -190,7 +190,7 @@ export default class InvocationModel {
       return "Not started"
     }
     if (!this.finished) {
-      return "Building"
+      return "Running..."
     }
     return this.finished.exitCode.code == 0 ? "Succeeded" : "Failed";
   }

@@ -55,19 +55,25 @@ export default class InvocationComponent extends React.Component {
     // TODO(siggisim): Move moment configuration elsewhere
     moment.relativeTimeThreshold('ss', 0);
 
+    this.fetchInvocation();
+  }
+
+  fetchInvocation() {
     let request = new invocation.GetInvocationRequest();
     request.query = new invocation.InvocationQuery();
     request.query.invocationId = this.props.invocationId;
     rpcService.service.getInvocation(request).then((response) => {
       console.log(response);
 
+      var showInProgressScreen = false;
       if (response.invocation.length && response.invocation[0].invocationStatus ==
         invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS) {
-        this.handleInProgressBuild();
-        return;
+        showInProgressScreen = response.invocation[0].event.length == 0;
+        this.fetchUpdatedProgress();
       }
 
       this.setState({
+        inProgress: showInProgressScreen,
         model: InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]),
         loading: false
       });
@@ -80,14 +86,10 @@ export default class InvocationComponent extends React.Component {
     });
   }
 
-  handleInProgressBuild() {
-    this.setState({
-      loading: false,
-      inProgress: true,
-    });
-    // Refresh the page in 3 seconds to update status.
+  fetchUpdatedProgress() {
+    // Refetch invocation data in 3 seconds to update status.
     setTimeout(() => {
-      location.reload()
+      this.fetchInvocation();
     }, 3000);
   }
 
@@ -157,7 +159,7 @@ export default class InvocationComponent extends React.Component {
 
           {(!this.props.hash || this.props.hash == "#targets") && !!this.state.model.succeeded.length &&
             <TargetsCardComponent
-              buildEvents={this.state.model.failed}
+              buildEvents={this.state.model.succeeded}
               iconPath="/image/check-circle.svg"
               presentVerb="passing"
               pastVerb="passed"
