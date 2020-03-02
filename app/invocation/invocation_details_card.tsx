@@ -129,6 +129,79 @@ export default class ArtifactsCardComponent extends React.Component {
               {this.props.model.buildMetrics?.packageMetrics.packagesLoaded} packages
             </div>
           </div>
+
+          {this.props.model.getGithubUser() &&
+            <div className="invocation-section">
+              <div className="invocation-section-title">
+                Github user
+              </div>
+              <div>
+                <a href={`https://github.com/${this.props.model.getGithubUser()}`}>
+                  {this.props.model.getGithubUser()}
+                </a>
+              </div>
+            </div>}
+
+          {this.props.model.getGithubRepo() &&
+            <div className="invocation-section">
+              <div className="invocation-section-title">
+                Github repo
+              </div>
+              <div>
+                <a href={`https://github.com/${this.props.model.getGithubRepo()}`}>
+                  {this.props.model.getGithubRepo()}
+                </a>
+              </div>
+            </div>}
+
+          {this.props.model.getGithubSHA() &&
+            <div className="invocation-section">
+              <div className="invocation-section-title">
+                Github commit
+              </div>
+              <div>
+                <a href={`https://github.com/${this.props.model.getGithubRepo()}/commit/${this.props.model.getGithubSHA()}`}>
+                  {this.props.model.getGithubSHA()}
+                </a>
+              </div>
+            </div>}
+
+          {this.props.model.getGithubRun() &&
+            <div className="invocation-section">
+              <div className="invocation-section-title">
+                Github run
+              </div>
+              <div>
+                <a href={`https://github.com/${this.props.model.getGithubRepo()}/actions/runs/${this.props.model.getGithubRun()}`}>
+                  {this.props.model.getGithubRun()}
+                </a>
+              </div>
+            </div>}
+
+          {this.props.model.getGKEProject() &&
+            <div className="invocation-section">
+              <div className="invocation-section-title">
+                GKE project
+              </div>
+              <div>
+                <a href={`http://console.cloud.google.com/home/dashboard?project=${this.props.model.getGKEProject()}`}>
+                  {this.props.model.getGKEProject()}
+                </a>
+              </div>
+            </div>}
+
+          {this.props.model.getGKECluster() &&
+            <div className="invocation-section">
+              <div className="invocation-section-title">
+                GKE cluster
+              </div>
+              <div>
+                <a href={`https://console.cloud.google.com/kubernetes/list?project=${this.props.model.getGKEProject()}&filter=name:${this.props.model.getGKECluster()}}`}>
+                  {this.props.model.getGKECluster()}
+                </a>
+              </div>
+            </div>}
+
           {this.props.model.structuredCommandLine
             .filter(commandLine => commandLine.commandLineLabel && commandLine.commandLineLabel.length)
             .sort((a, b) => {

@@ -110,6 +110,30 @@ export default class InvocationModel {
     return this.workspaceStatusMap.get('BUILD_HOST') || "Unknown host";
   }
 
+  getGithubUser() {
+    return this.clientEnvMap.get('GITHUB_ACTOR');
+  }
+
+  getGithubRepo() {
+    return this.clientEnvMap.get('GITHUB_REPOSITORY');
+  }
+
+  getGithubSHA() {
+    return this.clientEnvMap.get('GITHUB_SHA');
+  }
+
+  getGithubRun() {
+    return this.clientEnvMap.get('GITHUB_RUN_ID');
+  }
+
+  getGKEProject() {
+    return this.clientEnvMap.get('GKE_PROJECT')
+  }
+
+  getGKECluster() {
+    return this.clientEnvMap.get('GKE_CLUSTER')
+  }
+
   getCommand() {
     return this.started?.command || "build"
   }
