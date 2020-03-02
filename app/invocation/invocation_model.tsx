@@ -70,7 +70,11 @@ export default class InvocationModel {
     for (let label of model.completedMap.keys()) {
       let buildEvent = model.completedMap.get(label)?.buildEvent;
       let testResult = model.testResultMap.get(label)?.buildEvent.testResult;
-      if (!buildEvent.completed.success || (testResult && testResult.status != build_event_stream.TestStatus.PASSED)) {
+      if (testResult && testResult.status == build_event_stream.TestStatus.FLAKY) {
+        model.flaky.push(buildEvent as build_event_stream.BuildEvent);
+      } else if (testResult && testResult.status == build_event_stream.TestStatus.FAILED_TO_BUILD) {
+        model.broken.push(buildEvent as build_event_stream.BuildEvent);
+      } else if (!buildEvent.completed.success || (testResult && testResult.status != build_event_stream.TestStatus.PASSED)) {
         model.failed.push(buildEvent as build_event_stream.BuildEvent);
       } else {
         model.succeeded.push(buildEvent as build_event_stream.BuildEvent);

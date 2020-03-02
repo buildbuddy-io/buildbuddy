@@ -14,11 +14,10 @@ import InvocationOverviewComponent from './invocation_overview'
 import InvocationTabsComponent from './invocation_tabs';
 import BuildLogsCardComponent from './invocation_build_logs_card'
 import ErrorCardComponent from './invocation_error_card';
-import FailedTargetsCardComponent from './invocation_failed_targets_card'
 import InvocationDetailsCardComponent from './invocation_details_card'
 import ArtifactsCardComponent from './invocation_artifacts_card'
 import RawLogsCardComponent from './invocation_raw_logs_card'
-import SucceededTargetsCardComponent from './invocation_succeeded_targets_card'
+import TargetsCardComponent from './invocation_targets_card'
 
 import DenseInvocationOverviewComponent from './dense/dense_invocation_overview'
 import DenseInvocationTabsComponent from './dense/dense_invocation_tabs'
@@ -129,13 +128,41 @@ export default class InvocationComponent extends React.Component {
             this.state.model.aborted?.aborted.description &&
             <ErrorCardComponent model={this.state.model} />}
 
-          {(!this.props.hash || this.props.hash == "#targets") &&
-            !!this.state.model.failed.length &&
-            <FailedTargetsCardComponent model={this.state.model} limitResults={showAll} />}
+          {(!this.props.hash || this.props.hash == "#targets") && !!this.state.model.failed.length &&
+            <TargetsCardComponent
+              buildEvents={this.state.model.failed}
+              iconPath="/image/x-circle.svg"
+              presentVerb="failing"
+              pastVerb="failed"
+              model={this.state.model}
+              limitResults={showAll} />}
 
-          {(!this.props.hash || this.props.hash == "#targets") &&
-            !!this.state.model.succeeded.length &&
-            <SucceededTargetsCardComponent model={this.state.model} limitResults={showAll} />}
+          {(!this.props.hash || this.props.hash == "#targets") && !!this.state.model.broken.length &&
+            <TargetsCardComponent
+              buildEvents={this.state.model.broken}
+              iconPath="/image/x-circle.svg"
+              presentVerb="broken"
+              pastVerb="broken"
+              model={this.state.model}
+              limitResults={showAll} />}
+
+          {(!this.props.hash || this.props.hash == "#targets") && !!this.state.model.flaky.length &&
+            <TargetsCardComponent
+              buildEvents={this.state.model.flaky}
+              iconPath="/image/x-circle.svg"
+              presentVerb="flaky"
+              pastVerb="flaky"
+              model={this.state.model}
+              limitResults={showAll} />}
+
+          {(!this.props.hash || this.props.hash == "#targets") && !!this.state.model.succeeded.length &&
+            <TargetsCardComponent
+              buildEvents={this.state.model.failed}
+              iconPath="/image/check-circle.svg"
+              presentVerb="passing"
+              pastVerb="passed"
+              model={this.state.model}
+              limitResults={showAll} />}
 
           {(showAll || this.props.hash == "#details") &&
             <InvocationDetailsCardComponent model={this.state.model} limitResults={!this.props.hash} />}
