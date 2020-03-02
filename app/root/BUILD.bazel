@@ -9,6 +9,7 @@ ts_library(
         "//app/home",
         "//app/invocation",
         "//app/menu",
+        "//app/router",
         "//app/service",
         "@npm//@types/react",
         "@npm//protobufjs",

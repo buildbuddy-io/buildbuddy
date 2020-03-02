@@ -6,6 +6,7 @@ ts_library(
     name = "invocation",
     srcs = glob(["**/*.tsx"]),
     deps = [
+        "//app/router",
         "//app/service",
         "//app/terminal",
         "//proto:build_event_stream_ts_proto",

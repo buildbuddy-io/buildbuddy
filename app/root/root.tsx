@@ -2,6 +2,7 @@ import React from 'react';
 import MenuComponent from '../menu/menu';
 import InvocationComponent from '../invocation/invocation';
 import HomeComponent from '../home/home';
+import router from '../router/router';
 
 const denseModeKey = "VIEW_MODE";
 const denseModeValue = "DENSE";
@@ -22,22 +23,7 @@ export default class RootComponent extends React.Component {
   };
 
   componentWillMount() {
-    let pathChangeHandler = this.handlePathChange.bind(this);
-    history.pushState = (f => function pushState() {
-      var ret = f.apply(this, arguments);
-      pathChangeHandler();
-      return ret;
-    })(history.pushState);
-
-    history.replaceState = (f => function replaceState() {
-      var ret = f.apply(this, arguments);
-      pathChangeHandler();
-      return ret;
-    })(history.replaceState);
-
-    window.addEventListener('popstate', () => {
-      pathChangeHandler();
-    });
+    router.register(this.handlePathChange.bind(this));
   }
 
   handlePathChange() {
