@@ -70,7 +70,11 @@ export default class InvocationModel {
     for (let label of model.completedMap.keys()) {
       let buildEvent = model.completedMap.get(label)?.buildEvent;
       let testResult = model.testResultMap.get(label)?.buildEvent.testResult;
-      if (!buildEvent.completed.success || (testResult && testResult.status != build_event_stream.TestStatus.PASSED)) {
+      if (testResult && testResult.status == build_event_stream.TestStatus.FLAKY) {
+        model.flaky.push(buildEvent as build_event_stream.BuildEvent);
+      } else if (testResult && testResult.status == build_event_stream.TestStatus.FAILED_TO_BUILD) {
+        model.broken.push(buildEvent as build_event_stream.BuildEvent);
+      } else if (!buildEvent.completed.success || (testResult && testResult.status != build_event_stream.TestStatus.PASSED)) {
         model.failed.push(buildEvent as build_event_stream.BuildEvent);
       } else {
         model.succeeded.push(buildEvent as build_event_stream.BuildEvent);
@@ -186,7 +190,7 @@ export default class InvocationModel {
       return "Not started"
     }
     if (!this.finished) {
-      return "Building"
+      return "Running..."
     }
     return this.finished.exitCode.code == 0 ? "Succeeded" : "Failed";
   }
@@ -225,11 +229,11 @@ export default class InvocationModel {
   getRuntime(label: string) {
     let testResult = this.testResultMap.get(label)?.buildEvent.testResult;
     if (testResult) {
-      return +testResult.testAttemptDurationMillis / 1000;
+      return +testResult.testAttemptDurationMillis / 1000 + " seconds";
     }
     return this.getDuration(
       this.completedMap.get(label).eventTime,
-      this.configuredMap.get(label).eventTime);
+      this.configuredMap.get(label).eventTime) + " seconds";
   }
 
   getTestSize(testSize: build_event_stream.TestSize) {

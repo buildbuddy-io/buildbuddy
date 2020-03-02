@@ -177,7 +177,7 @@ a {
 .tab {
   box-shadow: 0px 0px 2px rgba(0, 0, 0, .15);
   border-radius: 50px;
-  margin-left: 8px;
+  margin-right: 8px;
   padding: 12px 32px;
   cursor: pointer;
   margin-top: 8px;
@@ -191,6 +191,48 @@ a {
 .tab.selected {
   background: rgba(38,50,56 ,1);
   color: #fff;
+}
+
+/** Filter **/
+
+.filter {
+  margin-top: 24px;
+  border-radius: 21px;
+  height: 42px;
+  background-color: #f3f3f3;
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.filter img {
+  width: 16px;
+  height: 16px;
+  opacity: .3;
+  padding-left: 20px;
+}
+
+.filter-input {
+  outline: 0;
+  border: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: transparent;
+  padding: 0 32px 0 42px;
+  font-family: inherit;
+  font-size: 12px;
+  color: #888;
+  width: 100%;
+}
+
+.filter-input::placeholder {
+  color: #aaa;
 }
 
 /** Card **/
@@ -263,6 +305,10 @@ a {
   font-family: 'Source Code Pro', monospace;
   line-height: 1.6em;
   overflow-y: auto;
+}
+
+.code {
+  font-family: 'Source Code Pro', monospace;
 }
 
 .home p {
@@ -391,6 +437,12 @@ a {
 .invocation-chunk {
   color: #444;
   font-weight: 600;
+}
+
+.raw-event-title {
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 4px;
 }
 
 
@@ -556,6 +608,12 @@ a {
 
 .dense .tabs {
   margin: 0;
+}
+
+.dense .filter {
+  border-radius: 0;
+  margin-top: 0;
+  height: 36px;
 }
 
 .dense .tab {

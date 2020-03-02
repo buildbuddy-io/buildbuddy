@@ -14,11 +14,10 @@ import InvocationOverviewComponent from './invocation_overview'
 import InvocationTabsComponent from './invocation_tabs';
 import BuildLogsCardComponent from './invocation_build_logs_card'
 import ErrorCardComponent from './invocation_error_card';
-import FailedTargetsCardComponent from './invocation_failed_targets_card'
 import InvocationDetailsCardComponent from './invocation_details_card'
 import ArtifactsCardComponent from './invocation_artifacts_card'
 import RawLogsCardComponent from './invocation_raw_logs_card'
-import SucceededTargetsCardComponent from './invocation_succeeded_targets_card'
+import TargetsCardComponent from './invocation_targets_card'
 
 import DenseInvocationOverviewComponent from './dense/dense_invocation_overview'
 import DenseInvocationTabsComponent from './dense/dense_invocation_tabs'
@@ -36,9 +35,13 @@ interface State {
 
 interface Props {
   invocationId: string,
-  hash: string
+  hash: string,
+  search: URLSearchParams,
   denseMode: boolean,
 }
+
+const largePageSize = 100;
+const smallPageSize = 10;
 
 export default class InvocationComponent extends React.Component {
   state: State = {
@@ -56,19 +59,25 @@ export default class InvocationComponent extends React.Component {
     // TODO(siggisim): Move moment configuration elsewhere
     moment.relativeTimeThreshold('ss', 0);
 
+    this.fetchInvocation();
+  }
+
+  fetchInvocation() {
     let request = new invocation.GetInvocationRequest();
     request.query = new invocation.InvocationQuery();
     request.query.invocationId = this.props.invocationId;
     rpcService.service.getInvocation(request).then((response) => {
       console.log(response);
 
+      var showInProgressScreen = false;
       if (response.invocation.length && response.invocation[0].invocationStatus ==
         invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS) {
-        this.handleInProgressBuild();
-        return;
+        showInProgressScreen = response.invocation[0].event.length == 0;
+        this.fetchUpdatedProgress();
       }
 
       this.setState({
+        inProgress: showInProgressScreen,
         model: InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]),
         loading: false
       });
@@ -81,15 +90,18 @@ export default class InvocationComponent extends React.Component {
     });
   }
 
-  handleInProgressBuild() {
-    this.setState({
-      loading: false,
-      inProgress: true,
-    });
-    // Refresh the page in 3 seconds to update status.
+  fetchUpdatedProgress() {
+    // Refetch invocation data in 3 seconds to update status.
     setTimeout(() => {
-      location.reload()
+      this.fetchInvocation();
     }, 3000);
+  }
+
+  handleFilterChange(event: any) {
+    let filterName = this.props.hash == "#artifacts" ? "artifactFilter" : "targetFilter";
+    let filterParam = event.target.value ? '?' + filterName + '=' + encodeURIComponent(event.target.value) : '';
+    var newurl = window.location.protocol + "//" + window.location.host + window.location.pathname + filterParam + window.location.hash;
+    window.history.pushState({ path: newurl }, '', newurl);
   }
 
   render() {
@@ -107,6 +119,9 @@ export default class InvocationComponent extends React.Component {
 
     var showAll = !this.props.hash && !this.props.denseMode;
 
+    var targetFilter = this.props.search.get("targetFilter") || "";
+    var artifactFilter = this.props.search.get("artifactFilter") || "";
+
     return (
       <div className={this.props.denseMode ? 'dense' : ''}>
         <div className="shelf">
@@ -121,6 +136,11 @@ export default class InvocationComponent extends React.Component {
             <DenseInvocationTabsComponent hash={this.props.hash} /> :
             <InvocationTabsComponent hash={this.props.hash} />
           }
+          {((!this.props.hash && this.props.denseMode) || this.props.hash == "#targets" || this.props.hash == "#artifacts") &&
+            <div className="filter">
+              <img src="/image/filter.svg" />
+              <input value={this.props.hash == "#artifacts" ? artifactFilter : targetFilter} className="filter-input" placeholder="Filter..." onChange={this.handleFilterChange.bind(this)} />
+            </div>}
 
           {(showAll || this.props.hash == "#log") &&
             <BuildLogsCardComponent model={this.state.model} expanded={this.props.hash == "#log"} />}
@@ -129,21 +149,61 @@ export default class InvocationComponent extends React.Component {
             this.state.model.aborted?.aborted.description &&
             <ErrorCardComponent model={this.state.model} />}
 
-          {(!this.props.hash || this.props.hash == "#targets") &&
-            !!this.state.model.failed.length &&
-            <FailedTargetsCardComponent model={this.state.model} limitResults={showAll} />}
+          {(!this.props.hash || this.props.hash == "#targets") && !!this.state.model.failed.length &&
+            <TargetsCardComponent
+              buildEvents={this.state.model.failed}
+              iconPath="/image/x-circle.svg"
+              presentVerb="failing"
+              pastVerb="failed"
+              model={this.state.model}
+              filter={targetFilter}
+              pageSize={showAll ? smallPageSize : largePageSize}
+            />}
 
-          {(!this.props.hash || this.props.hash == "#targets") &&
-            !!this.state.model.succeeded.length &&
-            <SucceededTargetsCardComponent model={this.state.model} limitResults={showAll} />}
+          {(!this.props.hash || this.props.hash == "#targets") && !!this.state.model.broken.length &&
+            <TargetsCardComponent
+              buildEvents={this.state.model.broken}
+              iconPath="/image/x-circle.svg"
+              presentVerb="broken"
+              pastVerb="broken"
+              model={this.state.model}
+              filter={targetFilter}
+              pageSize={showAll ? smallPageSize : largePageSize}
+            />}
+
+          {(!this.props.hash || this.props.hash == "#targets") && !!this.state.model.flaky.length &&
+            <TargetsCardComponent
+              buildEvents={this.state.model.flaky}
+              iconPath="/image/x-circle.svg"
+              presentVerb="flaky"
+              pastVerb="flaky"
+              model={this.state.model}
+              filter={targetFilter}
+              pageSize={showAll ? smallPageSize : largePageSize}
+            />}
+
+          {(!this.props.hash || this.props.hash == "#targets") && !!this.state.model.succeeded.length &&
+            <TargetsCardComponent
+              buildEvents={this.state.model.succeeded}
+              iconPath="/image/check-circle.svg"
+              presentVerb="passing"
+              pastVerb="passed"
+              model={this.state.model}
+              filter={targetFilter}
+              pageSize={showAll ? smallPageSize : largePageSize}
+            />}
 
           {(showAll || this.props.hash == "#details") &&
             <InvocationDetailsCardComponent model={this.state.model} limitResults={!this.props.hash} />}
 
           {(showAll || this.props.hash == "#artifacts") &&
-            <ArtifactsCardComponent model={this.state.model} limitResults={!this.props.hash} />}
+            <ArtifactsCardComponent
+              model={this.state.model}
+              filter={artifactFilter}
+              pageSize={this.props.hash ? largePageSize : smallPageSize}
+            />}
 
-          {(this.props.hash == "#raw") && <RawLogsCardComponent model={this.state.model} />}
+          {(this.props.hash == "#raw") && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
         </div>
       </div>
     );
