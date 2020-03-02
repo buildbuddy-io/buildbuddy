@@ -3,14 +3,17 @@ package build_event_handler
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/jinzhu/gorm"
 	"github.com/tryflame/buildbuddy/server/blobstore"
+	"github.com/tryflame/buildbuddy/server/config"
 	"github.com/tryflame/buildbuddy/server/database"
 	"github.com/tryflame/buildbuddy/server/event_parser"
+	"github.com/tryflame/buildbuddy/server/protofile"
 	"github.com/tryflame/buildbuddy/server/tables"
 
 	bpb "proto"
@@ -19,27 +22,21 @@ import (
 )
 
 const (
-	eventBufferStartingCapacity = 20
+	defaultChunkFileSizeBytes = 1000 * 100 // 100KB
 )
 
 type BuildEventHandler struct {
 	bs blobstore.Blobstore
 	db *database.Database
+	c  *config.Configurator
 }
 
-func NewBuildEventHandler(bs blobstore.Blobstore, db *database.Database) *BuildEventHandler {
+func NewBuildEventHandler(bs blobstore.Blobstore, c *config.Configurator, db *database.Database) *BuildEventHandler {
 	return &BuildEventHandler{
 		bs: bs,
+		c:  c,
 		db: db,
 	}
-}
-
-func (e *EventChannel) writeToBlobstore(ctx context.Context, blobID string, invocation *inpb.Invocation) error {
-	protoBytes, err := proto.Marshal(invocation)
-	if err != nil {
-		return err
-	}
-	return e.bs.WriteBlob(ctx, blobID, protoBytes)
 }
 
 func isFinalEvent(obe *bpb.OrderedBuildEvent) bool {
@@ -56,6 +53,38 @@ func readBazelEvent(obe *bpb.OrderedBuildEvent, out *build_event_stream.BuildEve
 		return ptypes.UnmarshalAny(buildEvent.BazelEvent, out)
 	}
 	return fmt.Errorf("Not a bazel event %s", obe)
+}
+
+type EventChannel struct {
+	bs blobstore.Blobstore
+	db *database.Database
+	pw *protofile.BufferedProtoWriter
+}
+
+func (e *EventChannel) readAllTempBlobs(ctx context.Context, blobID string) ([]*inpb.InvocationEvent, error) {
+	events := make([]*inpb.InvocationEvent, 0)
+	pr := protofile.NewBufferedProtoReader(e.bs, blobID)
+	for {
+		event := &inpb.InvocationEvent{}
+		err := pr.ReadProto(ctx, event)
+		if err == nil {
+			events = append(events, event)
+		} else if err == io.EOF {
+			break
+		} else {
+			log.Printf("returning some other errror!")
+			return nil, err
+		}
+	}
+	return events, nil
+}
+
+func (e *EventChannel) writeCompletedBlob(ctx context.Context, blobID string, invocation *inpb.Invocation) error {
+	protoBytes, err := proto.Marshal(invocation)
+	if err != nil {
+		return err
+	}
+	return e.bs.WriteBlob(ctx, blobID+"-completed.pb", protoBytes)
 }
 
 func (e *EventChannel) insertOrUpdateInvocation(ctx context.Context, iid string) error {
@@ -81,7 +110,12 @@ func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error
 	invocation := &inpb.Invocation{
 		InvocationId: iid,
 	}
-	event_parser.FillInvocationFromEvents(e.eventBuffer, invocation)
+	events, err := e.readAllTempBlobs(ctx, iid)
+	if err != nil {
+		return err
+	}
+	event_parser.FillInvocationFromEvents(events, invocation)
+
 	return e.db.GormDB.Transaction(func(tx *gorm.DB) error {
 		i := &tables.Invocation{}
 		// This is pretty gnarly. Let's remove the ORM here asap.
@@ -93,15 +127,8 @@ func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error
 			return err
 		}
 		// Write the blob inside the transaction. All or nothing.
-		return e.writeToBlobstore(ctx, iid, invocation)
+		return e.writeCompletedBlob(ctx, iid, invocation)
 	})
-}
-
-type EventChannel struct {
-	bs blobstore.Blobstore
-	db *database.Database
-
-	eventBuffer []*inpb.InvocationEvent
 }
 
 func (e *EventChannel) HandleEvent(ctx context.Context, event *bpb.PublishBuildToolEventStreamRequest) error {
@@ -111,6 +138,9 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *bpb.PublishBuildT
 
 	// If this is the last event, write the buffer and complete the invocation record.
 	if isFinalEvent(event.OrderedBuildEvent) {
+		if err := e.pw.Flush(ctx); err != nil {
+			return err
+		}
 		return e.finalizeInvocation(ctx, iid)
 	}
 	var bazelBuildEvent build_event_stream.BuildEvent
@@ -128,19 +158,22 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *bpb.PublishBuildT
 	}
 
 	// For everything else, just save the event to our buffer and keep on chugging.
-	e.eventBuffer = append(e.eventBuffer, &inpb.InvocationEvent{
-		EventTime:  event.OrderedBuildEvent.Event.EventTime,
-		BuildEvent: &bazelBuildEvent,
+	return e.pw.WriteProtoToStream(ctx, &inpb.InvocationEvent{
+		EventTime:      event.OrderedBuildEvent.Event.EventTime,
+		BuildEvent:     &bazelBuildEvent,
+		SequenceNumber: event.OrderedBuildEvent.SequenceNumber,
 	})
-
-	return nil
 }
 
 func (h *BuildEventHandler) OpenChannel(ctx context.Context, iid string) *EventChannel {
+	chunkFileSizeBytes := h.c.GetStorageChunkFileSizeBytes()
+	if chunkFileSizeBytes == 0 {
+		chunkFileSizeBytes = defaultChunkFileSizeBytes
+	}
 	return &EventChannel{
-		bs:          h.bs,
-		db:          h.db,
-		eventBuffer: make([]*inpb.InvocationEvent, 0, eventBufferStartingCapacity),
+		bs: h.bs,
+		db: h.db,
+		pw: protofile.NewBufferedProtoWriter(h.bs, iid, chunkFileSizeBytes),
 	}
 }
 
@@ -160,18 +193,21 @@ func (h *BuildEventHandler) LookupInvocation(ctx context.Context, iid string) (*
 		InvocationId:     ti.InvocationID,
 		InvocationStatus: inpb.Invocation_InvocationStatus(ti.InvocationStatus),
 	}
-	if ti.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
-		return invocation, nil
+
+	pr := protofile.NewBufferedProtoReader(h.bs, iid)
+	for {
+		event := &inpb.InvocationEvent{}
+		err := pr.ReadProto(ctx, event)
+		if err == nil {
+			invocation.Event = append(invocation.Event, event)
+		} else if err == io.EOF {
+			break
+		} else {
+			return nil, err
+		}
 	}
 
-	protoBytes, err := h.bs.ReadBlob(ctx, iid)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := proto.Unmarshal(protoBytes, invocation); err != nil {
-		return nil, err
-	}
-
+	// Trick the frontend into showing partial results :)
+	//invocation.InvocationStatus = inpb.Invocation_COMPLETE_INVOCATION_STATUS
 	return invocation, nil
 }

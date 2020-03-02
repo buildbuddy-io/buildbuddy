@@ -48,6 +48,9 @@ message InvocationEvent {
 
     // The bazel build event.
     build_event_stream.BuildEvent build_event = 2;
+
+    // The sequence number of the event in the stream.
+    int64 sequence_number = 3;
 }
 
 message InvocationQuery {

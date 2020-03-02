@@ -65,7 +65,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error configuring database: %s", err)
 	}
-	eventHandler := build_event_handler.NewBuildEventHandler(bs, db)
+	eventHandler := build_event_handler.NewBuildEventHandler(bs, configurator, db)
 
 	afs, err := static.NewStaticFileServer(*appDirectory, []string{})
 	if err != nil {
