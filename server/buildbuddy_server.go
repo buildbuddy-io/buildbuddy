@@ -2,6 +2,7 @@ package buildbuddy_server
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/tryflame/buildbuddy/server/build_event_handler"
 	inpb "proto/invocation"
@@ -27,4 +28,8 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 			inv,
 		},
 	}, nil
+}
+
+func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {
+	return nil, fmt.Errorf("Not implemented yet")
 }

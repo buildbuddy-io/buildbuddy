@@ -7,4 +7,7 @@ package buildbuddy.service;
 service BuildBuddyService {
   rpc GetInvocation(invocation.GetInvocationRequest)
       returns (invocation.GetInvocationResponse);
+
+  rpc SearchInvocation(invocation.SearchInvocationRequest)
+      returns (invocation.SearchInvocationResponse);
 }
