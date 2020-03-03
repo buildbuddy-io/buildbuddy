@@ -8,9 +8,8 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"github.com/tryflame/buildbuddy/server/config"
+	"github.com/tryflame/buildbuddy/server/environment"
 	"github.com/tryflame/buildbuddy/server/event_parser"
-	"github.com/tryflame/buildbuddy/server/interfaces"
 	"github.com/tryflame/buildbuddy/server/protofile"
 	"github.com/tryflame/buildbuddy/server/tables"
 
@@ -24,16 +23,12 @@ const (
 )
 
 type BuildEventHandler struct {
-	bs interfaces.Blobstore
-	db interfaces.Database
-	c  *config.Configurator
+	env environment.Env
 }
 
-func NewBuildEventHandler(bs interfaces.Blobstore, c *config.Configurator, db interfaces.Database) *BuildEventHandler {
+func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	return &BuildEventHandler{
-		bs: bs,
-		c:  c,
-		db: db,
+		env: env,
 	}
 }
 
@@ -54,14 +49,13 @@ func readBazelEvent(obe *bpb.OrderedBuildEvent, out *build_event_stream.BuildEve
 }
 
 type EventChannel struct {
-	bs interfaces.Blobstore
-	db interfaces.Database
-	pw *protofile.BufferedProtoWriter
+	env environment.Env
+	pw  *protofile.BufferedProtoWriter
 }
 
 func (e *EventChannel) readAllTempBlobs(ctx context.Context, blobID string) ([]*inpb.InvocationEvent, error) {
 	events := make([]*inpb.InvocationEvent, 0)
-	pr := protofile.NewBufferedProtoReader(e.bs, blobID)
+	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), blobID)
 	for {
 		event := &inpb.InvocationEvent{}
 		err := pr.ReadProto(ctx, event)
@@ -82,7 +76,7 @@ func (e *EventChannel) writeCompletedBlob(ctx context.Context, blobID string, in
 	if err != nil {
 		return err
 	}
-	return e.bs.WriteBlob(ctx, blobID, protoBytes)
+	return e.env.GetBlobstore().WriteBlob(ctx, blobID, protoBytes)
 }
 
 func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error {
@@ -104,7 +98,7 @@ func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error
 
 	ti := &tables.Invocation{}
 	ti.FromProtoAndBlobID(invocation, completedBlobID)
-	return e.db.InsertOrUpdateInvocation(ctx, ti)
+	return e.env.GetDatabase().InsertOrUpdateInvocation(ctx, ti)
 }
 
 func (e *EventChannel) HandleEvent(ctx context.Context, event *bpb.PublishBuildToolEventStreamRequest) error {
@@ -132,7 +126,7 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *bpb.PublishBuildT
 			InvocationID:     iid,
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
 		}
-		if err := e.db.InsertOrUpdateInvocation(ctx, ti); err != nil {
+		if err := e.env.GetDatabase().InsertOrUpdateInvocation(ctx, ti); err != nil {
 			return err
 		}
 	}
@@ -146,25 +140,24 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *bpb.PublishBuildT
 }
 
 func (h *BuildEventHandler) OpenChannel(ctx context.Context, iid string) *EventChannel {
-	chunkFileSizeBytes := h.c.GetStorageChunkFileSizeBytes()
+	chunkFileSizeBytes := h.env.GetConfigurator().GetStorageChunkFileSizeBytes()
 	if chunkFileSizeBytes == 0 {
 		chunkFileSizeBytes = defaultChunkFileSizeBytes
 	}
 	return &EventChannel{
-		bs: h.bs,
-		db: h.db,
-		pw: protofile.NewBufferedProtoWriter(h.bs, iid, chunkFileSizeBytes),
+		env: h.env,
+		pw:  protofile.NewBufferedProtoWriter(h.env.GetBlobstore(), iid, chunkFileSizeBytes),
 	}
 }
 
 func (h *BuildEventHandler) LookupInvocation(ctx context.Context, iid string) (*inpb.Invocation, error) {
-	ti, err := h.db.LookupInvocation(ctx, iid)
+	ti, err := h.env.GetDatabase().LookupInvocation(ctx, iid)
 	if err != nil {
 		return nil, err
 	}
 	invocation := ti.ToProto()
 
-	pr := protofile.NewBufferedProtoReader(h.bs, iid)
+	pr := protofile.NewBufferedProtoReader(h.env.GetBlobstore(), iid)
 	for {
 		event := &inpb.InvocationEvent{}
 		err := pr.ReadProto(ctx, event)

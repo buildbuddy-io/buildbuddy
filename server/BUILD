@@ -21,6 +21,7 @@ go_library(
     importpath = "github.com/tryflame/buildbuddy/server/build_event_handler",
     deps = [
         ":config",
+        ":environment",
         ":event_parser",
         ":interfaces",
         ":protofile",
@@ -86,6 +87,18 @@ go_library(
 )
 
 go_library(
+    name = "environment",
+    srcs = ["environment.go"],
+    importpath = "github.com/tryflame/buildbuddy/server/environment",
+    deps = [
+        ":blobstore",
+        ":config",
+        ":database",
+        ":interfaces",
+    ],
+)
+
+go_library(
     name = "event_parser",
     srcs = [
         "event_parser.go",
@@ -104,6 +117,7 @@ go_library(
     deps = [
         ":config",
         ":database",
+        ":environment",
         ":interfaces",
         ":tables",
     ],
@@ -159,6 +173,25 @@ go_library(
     ],
 )
 
+go_library(
+    name = "libmain",
+    srcs = [
+        "libmain.go",
+    ],
+    importpath = "github.com/tryflame/buildbuddy/server/libmain",
+    deps = [
+        ":build_event_handler",
+        ":build_event_server",
+        ":buildbuddy_server",
+        ":environment",
+        ":protolet",
+        ":static",
+        "//proto:build_go_proto",
+        "//proto:buildbuddy_service_go_proto",
+        "@org_golang_google_grpc//:go_default_library",
+    ],
+)
+
 # Use the go_binary rule to create an executable from our main file. Depend on
 # the static_content we created above so they are included.
 go_binary(
@@ -170,18 +203,10 @@ go_binary(
         "//static",
     ],
     deps = [
-        ":blobstore",
-        ":build_event_handler",
-        ":build_event_server",
-        ":buildbuddy_server",
         ":config",
-        ":database",
+        ":environment",
         ":janitor",
-        ":protolet",
-        ":static",
-        "//proto:build_go_proto",
-        "//proto:buildbuddy_service_go_proto",
-        "@org_golang_google_grpc//:go_default_library",
+        ":libmain",
     ],
 )
 
