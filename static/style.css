@@ -67,6 +67,17 @@ a {
   align-items: center;
 }
 
+.menu .container div:last-of-type {
+  flex-grow: 1;
+  justify-content: flex-end;
+}
+
+.menu-child-title {
+  margin-left: 8px;
+  font-weight: 400;
+  color: rgba(255,255,255,.5);
+}
+
 .menu .icon {
   padding-top: 1px;
   margin-right: 16px;
@@ -80,6 +91,13 @@ a {
 
 .menu .title {
   color: rgba(255, 255, 255, .90);
+}
+
+.menu-child {
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 /** Side menu **/
@@ -226,7 +244,7 @@ a {
   background: transparent;
   padding: 0 32px 0 42px;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 14px;
   color: #888;
   width: 100%;
 }
