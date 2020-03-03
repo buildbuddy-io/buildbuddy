@@ -34,14 +34,6 @@ export default class RootComponent extends React.Component {
     });
   }
 
-  getCurrentInvocationId() {
-    let invocationPath = "/invocation/"
-    if (!this.state.path.startsWith(invocationPath)) {
-      return null;
-    }
-    return this.state.path.replace(invocationPath, "");
-  }
-
   handleToggleDenseClicked() {
     let newDenseMode = !this.state.denseMode;
     this.setState({ ...this.state, denseMode: newDenseMode })
@@ -49,7 +41,7 @@ export default class RootComponent extends React.Component {
   }
 
   render() {
-    let invocationId = this.getCurrentInvocationId();
+    let invocationId = router.getInvocationId(this.state.path);
     return (
       <div className={this.state.denseMode ? "dense" : ""}>
         <MenuComponent>

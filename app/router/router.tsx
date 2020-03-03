@@ -23,6 +23,14 @@ class Router {
     var newurl = window.location.protocol + "//" + window.location.host + window.location.pathname + queryParam + window.location.hash;
     window.history.pushState({ path: newurl }, '', newurl);
   }
+
+  getInvocationId(path: string) {
+    let invocationPath = "/invocation/"
+    if (!path.startsWith(invocationPath)) {
+      return null;
+    }
+    return path.replace(invocationPath, "");
+  }
 }
 
 export default new Router();
