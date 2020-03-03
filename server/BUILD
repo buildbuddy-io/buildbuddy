@@ -95,6 +95,7 @@ go_library(
         ":config",
         ":database",
         ":interfaces",
+        ":slack",
     ],
 )
 
@@ -149,6 +150,15 @@ go_library(
     importpath = "github.com/tryflame/buildbuddy/server/protolet",
     deps = [
         "@com_github_golang_protobuf//proto:go_default_library",
+    ],
+)
+
+go_library(
+    name = "slack",
+    srcs = ["slack.go"],
+    importpath = "github.com/tryflame/buildbuddy/server/slack",
+    deps = [
+        "//proto:invocation_go_proto",
     ],
 )
 

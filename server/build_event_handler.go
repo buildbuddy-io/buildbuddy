@@ -98,7 +98,22 @@ func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error
 
 	ti := &tables.Invocation{}
 	ti.FromProtoAndBlobID(invocation, completedBlobID)
-	return e.env.GetDatabase().InsertOrUpdateInvocation(ctx, ti)
+	if err := e.env.GetDatabase().InsertOrUpdateInvocation(ctx, ti); err != nil {
+		return err
+	}
+
+	// Notify our webhooks, if we have any.
+	for _, hook := range e.env.GetWebhooks() {
+		go func() {
+			// We use context background here because the request context will
+			// be closed soon and we don't want to block while calling webhooks.
+			if err := hook.NotifyComplete(context.Background(), invocation); err != nil {
+				log.Printf("Error calling webhook: %s", err)
+			}
+		}()
+	}
+
+	return nil
 }
 
 func (e *EventChannel) HandleEvent(ctx context.Context, event *bpb.PublishBuildToolEventStreamRequest) error {
