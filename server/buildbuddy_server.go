@@ -18,7 +18,7 @@ func NewBuildBuddyServer(h *build_event_handler.BuildEventHandler) (*BuildBuddyS
 }
 
 func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvocationRequest) (*inpb.GetInvocationResponse, error) {
-	inv, err := s.eventHandler.LookupInvocation(ctx, req.Query.InvocationId)
+	inv, err := s.eventHandler.LookupInvocation(ctx, req.Lookup.InvocationId)
 	if err != nil {
 		return nil, err
 	}

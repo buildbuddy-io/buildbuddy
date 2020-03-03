@@ -63,8 +63,8 @@ export default class InvocationComponent extends React.Component {
 
   fetchInvocation() {
     let request = new invocation.GetInvocationRequest();
-    request.query = new invocation.InvocationQuery();
-    request.query.invocationId = this.props.invocationId;
+    request.lookup = new invocation.InvocationLookup();
+    request.lookup.invocationId = this.props.invocationId;
     rpcService.service.getInvocation(request).then((response) => {
       console.log(response);
 
