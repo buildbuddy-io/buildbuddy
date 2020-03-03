@@ -20,7 +20,7 @@ class Router {
   updateParams(params: any) {
     let keys = Object.keys(params);
     let queryParam = keys.map(key => `${key}=${params[key]}`).join('&');
-    var newurl = window.location.protocol + "//" + window.location.host + window.location.pathname + queryParam + window.location.hash;
+    var newurl = window.location.protocol + "//" + window.location.host + window.location.pathname + "?" + queryParam + window.location.hash;
     window.history.pushState({ path: newurl }, '', newurl);
   }
 
