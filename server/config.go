@@ -13,8 +13,14 @@ import (
 // When adding new storage fields, always be explicit about their yaml field
 // name.
 type generalConfig struct {
-	Database databaseConfig `yaml:"database"`
-	Storage  storageConfig  `yaml:"storage"`
+	App          appConfig          `yaml:"app"`
+	Database     databaseConfig     `yaml:"database"`
+	Storage      storageConfig      `yaml:"storage"`
+	Integrations integrationsConfig `yaml:"integrations"`
+}
+
+type appConfig struct {
+	BuildBuddyURL string `yaml:"build_buddy_url"`
 }
 
 type databaseConfig struct {
@@ -36,6 +42,14 @@ type GCSConfig struct {
 	Bucket          string `yaml:"bucket"`
 	CredentialsFile string `yaml:"credentials_file"`
 	ProjectID       string `yaml:"project_id"`
+}
+
+type integrationsConfig struct {
+	Slack SlackConfig `yaml:"slack"`
+}
+
+type SlackConfig struct {
+	WebhookURL string `yaml:"webhook_url"`
 }
 
 func ensureDirectoryExists(dir string) error {
@@ -136,4 +150,14 @@ func (c *Configurator) GetStorageGCSConfig() *GCSConfig {
 func (c *Configurator) GetDBDataSource() string {
 	c.rereadIfStale()
 	return c.gc.Database.DataSource
+}
+
+func (c *Configurator) GetAppBuildBuddyURL() string {
+	c.rereadIfStale()
+	return c.gc.App.BuildBuddyURL
+}
+
+func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {
+	c.rereadIfStale()
+	return &c.gc.Integrations.Slack
 }

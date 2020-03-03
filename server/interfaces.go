@@ -29,3 +29,8 @@ type Database interface {
 type Searcher interface {
 	FindInvocations(ctx context.Context, query *tables.Invocation) ([]*inpb.Invocation, error)
 }
+
+// A webhook can be called when a build is completed.
+type Webhook interface {
+	NotifyComplete(ctx context.Context, invocation *inpb.Invocation) error
+}
