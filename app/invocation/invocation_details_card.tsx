@@ -196,7 +196,7 @@ export default class ArtifactsCardComponent extends React.Component {
                 GKE cluster
               </div>
               <div>
-                <a href={`https://console.cloud.google.com/kubernetes/list?project=${this.props.model.getGKEProject()}&filter=name:${this.props.model.getGKECluster()}}`}>
+                <a href={`https://console.cloud.google.com/kubernetes/list?project=${this.props.model.getGKEProject()}&filter=name:${this.props.model.getGKECluster()}`}>
                   {this.props.model.getGKECluster()}
                 </a>
               </div>
