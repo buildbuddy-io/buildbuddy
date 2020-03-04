@@ -69,7 +69,7 @@ func (d *Database) InsertOrUpdateInvocation(ctx context.Context, ti *tables.Invo
 func (d *Database) LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error) {
 	ti := &tables.Invocation{}
 	err := d.gormDB.Transaction(func(tx *gorm.DB) error {
-		existingRow := tx.Raw(`SELECT i.invocation_id FROM Invocations as i
+		existingRow := tx.Raw(`SELECT * FROM Invocations as i
                                        WHERE i.invocation_id = ?`, invocationID)
 		if err := existingRow.Scan(ti).Error; err != nil {
 			return err
