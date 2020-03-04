@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/golang/protobuf/proto"
-	"github.com/tryflame/buildbuddy/server/interfaces"
 )
 
 // BufferedProtoWriter chunks together and writes protos to blobstore after

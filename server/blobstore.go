@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"cloud.google.com/go/storage"
-	"github.com/tryflame/buildbuddy/server/config"
-	"github.com/tryflame/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"google.golang.org/api/option"
 )
 

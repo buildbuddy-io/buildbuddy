@@ -7,12 +7,12 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/tryflame/buildbuddy/server/build_event_handler"
-	"github.com/tryflame/buildbuddy/server/build_event_server"
-	"github.com/tryflame/buildbuddy/server/buildbuddy_server"
-	"github.com/tryflame/buildbuddy/server/environment"
-	"github.com/tryflame/buildbuddy/server/protolet"
-	"github.com/tryflame/buildbuddy/server/static"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_server"
+	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/protolet"
+	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"google.golang.org/grpc"
 
 	bpb "proto"

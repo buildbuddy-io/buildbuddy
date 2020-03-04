@@ -13,8 +13,8 @@ import (
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
 
-	"github.com/tryflame/buildbuddy/server/config"
-	"github.com/tryflame/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 )
 
 var (

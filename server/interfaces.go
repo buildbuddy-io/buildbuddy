@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/tryflame/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	inpb "proto/invocation"
 )
 

@@ -4,10 +4,10 @@ import (
 	"flag"
 	"log"
 
-	"github.com/tryflame/buildbuddy/server/config"
-	"github.com/tryflame/buildbuddy/server/environment"
-	"github.com/tryflame/buildbuddy/server/janitor"
-	"github.com/tryflame/buildbuddy/server/libmain"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/janitor"
+	"github.com/buildbuddy-io/buildbuddy/server/libmain"
 )
 
 var (

@@ -3,11 +3,11 @@ package environment
 import (
 	"log"
 
-	"github.com/tryflame/buildbuddy/server/blobstore"
-	"github.com/tryflame/buildbuddy/server/config"
-	"github.com/tryflame/buildbuddy/server/database"
-	"github.com/tryflame/buildbuddy/server/interfaces"
-	"github.com/tryflame/buildbuddy/server/slack"
+	"github.com/buildbuddy-io/buildbuddy/server/blobstore"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/database"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/slack"
 )
 
 // The environment struct allows for easily injecting many of buildbuddy's core

@@ -6,12 +6,12 @@ import (
 	"io"
 	"log"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/event_parser"
+	"github.com/buildbuddy-io/buildbuddy/server/protofile"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"github.com/tryflame/buildbuddy/server/environment"
-	"github.com/tryflame/buildbuddy/server/event_parser"
-	"github.com/tryflame/buildbuddy/server/protofile"
-	"github.com/tryflame/buildbuddy/server/tables"
 
 	bpb "proto"
 	"proto/build_event_stream"

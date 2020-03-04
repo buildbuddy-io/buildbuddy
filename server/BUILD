@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "blobstore",
     srcs = ["blobstore.go"],
-    importpath = "github.com/tryflame/buildbuddy/server/blobstore",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/blobstore",
     deps = [
         ":config",
         ":interfaces",
@@ -18,7 +18,7 @@ go_library(
 go_library(
     name = "build_event_handler",
     srcs = ["build_event_handler.go"],
-    importpath = "github.com/tryflame/buildbuddy/server/build_event_handler",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_handler",
     deps = [
         ":config",
         ":environment",
@@ -37,7 +37,7 @@ go_library(
 go_library(
     name = "build_event_server",
     srcs = ["build_event_server.go"],
-    importpath = "github.com/tryflame/buildbuddy/server/build_event_server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_server",
     deps = [
         ":build_event_handler",
         "//proto:build_event_stream_go_proto",
@@ -52,7 +52,7 @@ go_library(
 go_library(
     name = "buildbuddy_server",
     srcs = ["buildbuddy_server.go"],
-    importpath = "github.com/tryflame/buildbuddy/server/buildbuddy_server",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server",
     deps = [
         ":build_event_handler",
         "//proto:buildbuddy_service_go_proto",
@@ -64,7 +64,7 @@ go_library(
 go_library(
     name = "config",
     srcs = ["config.go"],
-    importpath = "github.com/tryflame/buildbuddy/server/config",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/config",
     deps = [
         "@in_gopkg_yaml_v2//:go_default_library",
     ],
@@ -75,7 +75,7 @@ go_library(
     srcs = [
         "database.go",
     ],
-    importpath = "github.com/tryflame/buildbuddy/server/database",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/database",
     deps = [
         ":config",
         ":tables",
@@ -89,7 +89,7 @@ go_library(
 go_library(
     name = "environment",
     srcs = ["environment.go"],
-    importpath = "github.com/tryflame/buildbuddy/server/environment",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/environment",
     deps = [
         ":blobstore",
         ":config",
@@ -104,7 +104,7 @@ go_library(
     srcs = [
         "event_parser.go",
     ],
-    importpath = "github.com/tryflame/buildbuddy/server/event_parser",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/event_parser",
     deps = [
         "//proto:build_event_stream_go_proto",
         "//proto:invocation_go_proto",
@@ -114,7 +114,7 @@ go_library(
 go_library(
     name = "janitor",
     srcs = ["janitor.go"],
-    importpath = "github.com/tryflame/buildbuddy/server/janitor",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/janitor",
     deps = [
         ":config",
         ":database",
@@ -127,7 +127,7 @@ go_library(
 go_library(
     name = "interfaces",
     srcs = ["interfaces.go"],
-    importpath = "github.com/tryflame/buildbuddy/server/interfaces",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/interfaces",
     deps = [
         ":tables",
         "//proto:invocation_go_proto",
@@ -137,7 +137,7 @@ go_library(
 go_library(
     name = "protofile",
     srcs = ["protofile.go"],
-    importpath = "github.com/tryflame/buildbuddy/server/protofile",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/protofile",
     deps = [
         ":interfaces",
         "@com_github_golang_protobuf//proto:go_default_library",
@@ -147,7 +147,7 @@ go_library(
 go_library(
     name = "protolet",
     srcs = ["protolet.go"],
-    importpath = "github.com/tryflame/buildbuddy/server/protolet",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/protolet",
     deps = [
         "@com_github_golang_protobuf//proto:go_default_library",
     ],
@@ -156,7 +156,7 @@ go_library(
 go_library(
     name = "slack",
     srcs = ["slack.go"],
-    importpath = "github.com/tryflame/buildbuddy/server/slack",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/slack",
     deps = [
         "//proto:invocation_go_proto",
     ],
@@ -165,7 +165,7 @@ go_library(
 go_library(
     name = "static",
     srcs = ["static.go"],
-    importpath = "github.com/tryflame/buildbuddy/server/static",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/static",
     deps = [
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
@@ -176,7 +176,7 @@ go_library(
     srcs = [
         "tables.go",
     ],
-    importpath = "github.com/tryflame/buildbuddy/server/tables",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/tables",
     deps = [
         "//proto:invocation_go_proto",
         "@com_github_jinzhu_gorm//:go_default_library",
@@ -188,7 +188,7 @@ go_library(
     srcs = [
         "libmain.go",
     ],
-    importpath = "github.com/tryflame/buildbuddy/server/libmain",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/libmain",
     deps = [
         ":build_event_handler",
         ":build_event_server",
