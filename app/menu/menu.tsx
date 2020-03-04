@@ -34,14 +34,14 @@ export default class MenuComponent extends React.Component {
             {this.state.menuExpanded &&
               <div className="side-menu">
                 <ul>
-                  <li><a target="_blank" href="https://github.com/tryflame/buildbuddy/issues/new">Report an issue</a></li>
-                  <li><a target="_blank" href="https://github.com/tryflame/buildbuddy">Github repo</a></li>
+                  <li><a target="_blank" href="https://github.com/buildbuddy-io/buildbuddy/issues/new">Report an issue</a></li>
+                  <li><a target="_blank" href="https://github.com/buildbuddy-io/buildbuddy">Github repo</a></li>
                   <li>
                     <a onClick={this.handleToggleDenseModeClicked.bind(this)}>
                       {this.props.denseModeEnabled ? "Disable" : "Enable"} dense mode
                 </a>
                   </li>
-                  <li><a href="mailto:help@tryflame.com">Contact us</a></li>
+                  <li><a href="mailto:hello@buildbuddy.io">Contact us</a></li>
                 </ul>
               </div>}
           </div>

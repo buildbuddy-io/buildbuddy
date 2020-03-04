@@ -2,13 +2,13 @@
   <img width="40%" src="https://buildbuddy.io/images/header.png"><br/>
   <a href="https://buildbuddy.io">BuildBuddy</a> is an open source Bazel build event viewer<br/><br/>
   <img src="https://img.shields.io/badge/License-MIT-green.svg" />
-  <img src="https://img.shields.io/github/workflow/status/tryflame/buildbuddy/CI" />
+  <img src="https://img.shields.io/github/workflow/status/buildbuddy-io/buildbuddy/CI" />
 </p>
 
 # Intro
 BuildBuddy is an open source Bazel build event viewer. It helps you collect, view, share and debug build events in a user-friendly web UI.
 
-It's written in Golang and React and can be deployed as a Docker image. It's run both as a [cloud hosted service](https://buildbuddy.io) and can be deployed to your cloud provider or run on-prem. BuildBuddy's core is open sourced in this repo under the [MIT License](https://github.com/tryflame/buildbuddy/blob/master/LICENSE).
+It's written in Golang and React and can be deployed as a Docker image. It's run both as a [cloud hosted service](https://buildbuddy.io) and can be deployed to your cloud provider or run on-prem. BuildBuddy's core is open sourced in this repo under the [MIT License](https://github.com/buildbuddy-io/buildbuddy/blob/master/LICENSE).
 
 # Features
 
@@ -36,7 +36,7 @@ This will print a **Buildbuddy url** containing your build results at the beginn
 
 **Want more control?** Want to get your whole team set up? Get up and running fast with the cloud hosted [BuildBuddy.io](https://buildbuddy.io) service.
 
-If you'd like to host your own instance **on-premises** or in the cloud, check out our [getting started](https://github.com/tryflame/buildbuddy/blob/master/SETUP.md) guide.
+If you'd like to host your own instance **on-premises** or in the cloud, check out our [getting started](https://github.com/buildbuddy-io/buildbuddy/blob/master/SETUP.md) guide.
 
 # Questions?
-If you have any questions, e-mail us at hello@tryflame.com. We’d love to chat!
+If you have any questions, e-mail us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io). We’d love to chat!

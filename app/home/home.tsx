@@ -50,7 +50,7 @@ export default class HomeComponent extends React.Component {
             Now you can command click / double click on these urls to see the results of your build!
           </p>
           <p>
-            Feel free to reach out to <a href="mailto:help@tryflame.com">help@tryflame.com</a> if you have any questions or feature requests.
+            Feel free to reach out to <a href="mailto:hello@buildbuddy.io">hello@buildbuddy.io</a> if you have any questions or feature requests.
           </p>
         </div>
       </div>
