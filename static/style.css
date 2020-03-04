@@ -60,6 +60,7 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  position: relative;
 }
 
 .menu .container div {
@@ -67,9 +68,8 @@ a {
   align-items: center;
 }
 
-.menu .container div:last-of-type {
-  flex-grow: 1;
-  justify-content: flex-end;
+.menu .title img {
+  height: 28px;
 }
 
 .menu-child-title {
@@ -80,7 +80,6 @@ a {
 
 .menu .icon {
   padding-top: 1px;
-  margin-right: 16px;
   cursor: pointer;
 }
 
@@ -104,19 +103,22 @@ a {
 
 .side-menu {
   position: absolute;
-  top: 64px;
-  left: 0;
-  bottom: 0;
-  background-color: #fff;
-  padding: 32px 48px;
+  top: 46px;
+  right: 8px;
+  background-color: rgba(38,50,56 ,1);
+  color: #fff;
+  padding: 8px 32px 32px 32px;
   box-shadow: 0px 1px 4px rgba(0, 0, 0, .15);
+  border-bottom-left-radius: 8px;
   border-bottom-right-radius: 8px;
   z-index: 1;
+  font-size: 18px;
 }
 
 .side-menu li {
   margin-top: 16px;
   font-weight: 700;
+  cursor: pointer;
 }
 
 /** Shelf **/
@@ -310,7 +312,7 @@ a {
 
 .home .title {
   font-size: 32px;
-  font-weight: 700;
+  font-weight: 700;  
 }
 
 .home code {

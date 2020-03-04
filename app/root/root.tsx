@@ -44,10 +44,7 @@ export default class RootComponent extends React.Component {
     let invocationId = router.getInvocationId(this.state.path);
     return (
       <div className={this.state.denseMode ? "dense" : ""}>
-        <MenuComponent>
-          {this.state.denseMode && <img className="menu-control" src="/image/minimize.svg" onClick={this.handleToggleDenseClicked.bind(this)} />}
-          {!this.state.denseMode && <img className="menu-control" src="/image/maximize.svg" onClick={this.handleToggleDenseClicked.bind(this)} />}
-        </MenuComponent>
+        <MenuComponent denseModeEnabled={this.state.denseMode} handleDenseModeToggled={this.handleToggleDenseClicked.bind(this)} />
         {invocationId && <InvocationComponent invocationId={invocationId} hash={this.state.hash} search={this.state.search} denseMode={this.state.denseMode} />}
         {!invocationId && <HomeComponent />}
       </div>
