@@ -6,8 +6,8 @@ import (
 	"log"
 	"sort"
 
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_handler"
 	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/tryflame/buildbuddy/server/build_event_handler"
 
 	bpb "proto"
 )

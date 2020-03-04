@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/tryflame/buildbuddy/server/environment"
-	"github.com/tryflame/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 )
 
 var (

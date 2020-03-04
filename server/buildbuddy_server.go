@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tryflame/buildbuddy/server/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_handler"
 	inpb "proto/invocation"
 )
 
