@@ -1,4 +1,4 @@
-# Installing and Configuring Buildbuddy
+# Installing and Configuring BuildBuddy
 
 Setting up BuildBuddy to view your own logs is easy! Your two options are:
 
