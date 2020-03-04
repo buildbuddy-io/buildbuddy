@@ -24,7 +24,7 @@ It's written in Golang and React and can be deployed as a Docker image. It's run
 
 # Get started
 
-Getting started with Buildbuddy is **simple** and **free** for personal use. Just add these **two lines** to your `.bazelrc` file.
+Getting started with Buildbuddy is simple. Just add these **two lines** to your `.bazelrc` file.
 
 **.bazelrc**
 ```
