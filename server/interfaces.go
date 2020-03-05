@@ -27,7 +27,8 @@ type Database interface {
 
 // A searcher allows finding various objects given a query.
 type Searcher interface {
-	QueryInvocations(ctx context.Context, query *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error)
+	IndexInvocation(ctx context.Context, invocation *inpb.Invocation) error
+	QueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error)
 }
 
 // A webhook can be called when a build is completed.

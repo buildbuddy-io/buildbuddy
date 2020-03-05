@@ -55,6 +55,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server",
     deps = [
         ":build_event_handler",
+        ":interfaces",
         "//proto:buildbuddy_service_go_proto",
         "//proto:invocation_go_proto",
         "@com_github_golang_protobuf//proto:go_default_library",
@@ -95,6 +96,7 @@ go_library(
         ":config",
         ":database",
         ":interfaces",
+        ":simplesearcher",
         ":slack",
     ],
 )
@@ -154,6 +156,17 @@ go_library(
 )
 
 go_library(
+    name = "simplesearcher",
+    srcs = ["simplesearcher.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/simplesearcher",
+    deps = [
+        ":database",
+        ":tables",
+        "//proto:invocation_go_proto",
+    ],
+)
+
+go_library(
     name = "slack",
     srcs = ["slack.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/slack",
@@ -199,6 +212,7 @@ go_library(
         "//proto:build_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//reflection:go_default_library",
     ],
 )
 

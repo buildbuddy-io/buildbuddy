@@ -98,14 +98,14 @@ type Invocation struct {
 	Model
 	InvocationID     string `gorm:"primary_key;"`
 	Success          bool
-	User             string
+	User             string `gorm:"index:user_index"`
 	DurationUsec     int64
-	Host             string
+	Host             string `gorm:"index:host_index"`
 	Command          string
 	Pattern          string
 	ActionCount      int64
 	BlobID           string
-	InvocationStatus int64
+	InvocationStatus int64 `gorm:"index:invocation_status_idx"`
 }
 
 func (i *Invocation) TableName() string {

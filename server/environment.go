@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/database"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/simplesearcher"
 	"github.com/buildbuddy-io/buildbuddy/server/slack"
 )
 
@@ -33,6 +34,7 @@ type Env interface {
 	// Optional dependencies below here. For example: enterprise-only things,
 	// or services that may not always be configured, like webhooks.
 	GetWebhooks() []interfaces.Webhook
+	GetSearcher() interfaces.Searcher
 }
 
 type RealEnv struct {
@@ -41,19 +43,42 @@ type RealEnv struct {
 	db interfaces.Database
 
 	webhooks []interfaces.Webhook
+	searcher interfaces.Searcher
 }
 
 func (r *RealEnv) GetConfigurator() *config.Configurator {
 	return r.c
 }
+func (r *RealEnv) SetConfigurator(c *config.Configurator) {
+	r.c = c
+}
+
 func (r *RealEnv) GetBlobstore() interfaces.Blobstore {
 	return r.bs
 }
+func (r *RealEnv) SetBlobstore(bs interfaces.Blobstore) {
+	r.bs = bs
+}
+
 func (r *RealEnv) GetDatabase() interfaces.Database {
 	return r.db
 }
+func (r *RealEnv) SetDatabase(db interfaces.Database) {
+	r.db = db
+}
+
 func (r *RealEnv) GetWebhooks() []interfaces.Webhook {
 	return r.webhooks
+}
+func (r *RealEnv) SetWebhooks(wh []interfaces.Webhook) {
+	r.webhooks = wh
+}
+
+func (r *RealEnv) GetSearcher() interfaces.Searcher {
+	return r.searcher
+}
+func (r *RealEnv) SetSearcher(s interfaces.Searcher) {
+	r.searcher = s
 }
 
 func GetConfiguredEnvironmentOrDie(configurator *config.Configurator) Env {
@@ -61,11 +86,12 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator) Env {
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}
-	db, err := database.GetConfiguredDatabase(configurator)
+	rawDB, err := database.GetConfiguredDatabase(configurator)
 	if err != nil {
 		log.Fatalf("Error configuring database: %s", err)
 	}
 
+	searcher := simplesearcher.NewSimpleSearcher(rawDB)
 	appURL := configurator.GetAppBuildBuddyURL()
 	webhooks := make([]interfaces.Webhook, 0)
 	if sc := configurator.GetIntegrationsSlackConfig(); sc != nil {
@@ -77,9 +103,10 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator) Env {
 		// REQUIRED
 		c:  configurator,
 		bs: bs,
-		db: db,
+		db: rawDB,
 
 		// OPTIONAL
 		webhooks: webhooks,
+		searcher: searcher,
 	}
 }

@@ -98,6 +98,12 @@ message SearchInvocationRequest {
     // Sort parameters that determine result ordering. Optional.
     // If unset, the server will determine sort order.
     InvocationSort sort = 2;
+
+    // The number of results to return. Optional.
+    // If unset, the server will pick a reasonable page size.
+    int32 count = 3;
+
+    // TODO(tylerw): Pagination.
 }
 
 message SearchInvocationResponse {

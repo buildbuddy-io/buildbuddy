@@ -112,7 +112,13 @@ func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error
 			}
 		}()
 	}
-
+	if e.env.GetSearcher() != nil {
+		go func() {
+			if err := e.env.GetSearcher().IndexInvocation(context.Background(), invocation); err != nil {
+				log.Printf("Error indexing invocation: %s", err)
+			}
+		}()
+	}
 	return nil
 }
 

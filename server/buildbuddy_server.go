@@ -5,16 +5,19 @@ import (
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	inpb "proto/invocation"
 )
 
 type BuildBuddyServer struct {
 	eventHandler *build_event_handler.BuildEventHandler
+	searcher     interfaces.Searcher
 }
 
-func NewBuildBuddyServer(h *build_event_handler.BuildEventHandler) (*BuildBuddyServer, error) {
+func NewBuildBuddyServer(h *build_event_handler.BuildEventHandler, s interfaces.Searcher) (*BuildBuddyServer, error) {
 	return &BuildBuddyServer{
 		eventHandler: h,
+		searcher:     s,
 	}, nil
 }
 
@@ -31,5 +34,11 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 }
 
 func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {
-	return nil, fmt.Errorf("Not implemented yet")
+	if s.searcher == nil {
+		return nil, fmt.Errorf("No searcher was configured")
+	}
+	if req.Query == nil {
+		return nil, fmt.Errorf("A query must be provided")
+	}
+	return s.searcher.QueryInvocations(ctx, req)
 }

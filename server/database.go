@@ -108,3 +108,23 @@ func (d *Database) DeleteInvocation(ctx context.Context, invocationID string) er
 	ti := &tables.Invocation{InvocationID: invocationID}
 	return d.gormDB.Delete(ti).Error
 }
+
+// Not part of the Database interface because it's really just here to be used
+// by SimpleSearcher.
+func (d *Database) RawQueryInvocations(ctx context.Context, sql string, values ...interface{}) ([]*tables.Invocation, error) {
+	rows, err := d.gormDB.Raw(sql, values...).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	invocations := make([]*tables.Invocation, 0)
+	var ti tables.Invocation
+	for rows.Next() {
+		if err := d.gormDB.ScanRows(rows, &ti); err != nil {
+			return nil, err
+		}
+		i := ti
+		invocations = append(invocations, &i)
+	}
+	return invocations, nil
+}

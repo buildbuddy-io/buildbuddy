@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 
 	bpb "proto"
 	bbspb "proto/buildbuddy_service"
@@ -66,7 +67,8 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Error initializing BuildEventProtocolServer: %s", err)
 	}
 	bpb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
-	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(eventHandler)
+	reflection.Register(grpcServer)
+	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(eventHandler, env.GetSearcher())
 	if err != nil {
 		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
 	}
