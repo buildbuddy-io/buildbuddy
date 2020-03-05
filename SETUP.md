@@ -2,7 +2,7 @@
 
 Setting up BuildBuddy to view your own logs is easy! Your two options are:
 
-* Use the Cloud BuildBuddy instance, or
+* Use the [Cloud BuildBuddy](https://app.buildbuddy.io/) instance, or
 * Run your own instance on-premise
 
 We support both!
@@ -23,7 +23,7 @@ build --bes_backend=grpc://events.buildbuddy.io:1985
 Now, when you build or test with bazel, it will print a url where you can view your build or test results. For example:
 
 ```
-tylerw@lunchbox:~/buildbuddy-io/buildbuddy$ bazel build --config=prod server:all
+tylerw@lunchbox:~/buildbuddy-io/buildbuddy$ bazel build server:all
 INFO: Streaming build results to: https://app.buildbuddy.io/invocation/24a37b8f-4cf2-4909-9522-3cc91d2ebfc4
 INFO: Analyzed 13 targets (0 packages loaded, 0 targets configured).
 INFO: Found 13 targets...
