@@ -114,6 +114,12 @@ go_library(
 )
 
 go_library(
+    name = "httpfilters",
+    srcs = ["httpfilters.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/httpfilters",
+)
+
+go_library(
     name = "janitor",
     srcs = ["janitor.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/janitor",
@@ -207,6 +213,7 @@ go_library(
         ":build_event_server",
         ":buildbuddy_server",
         ":environment",
+        ":httpfilters",
         ":protolet",
         ":static",
         "//proto:build_go_proto",
