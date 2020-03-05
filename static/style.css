@@ -735,6 +735,7 @@ a {
 .dense-invocation-overview-grid {
   display: flex;
   background-color: #fff;
+  overflow: auto;
 }
 
 .dense-invocation-overview-grid-chunk {
