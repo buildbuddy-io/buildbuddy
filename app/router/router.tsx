@@ -1,8 +1,8 @@
-class Router {
-  capabilities = Capabilities.coreCapabilities;
+import capabilities from '../capabilities/capabilities';
 
-  register(pathChangeHandler: VoidFunction, capabilities: Capabilities) {
-    this.capabilities = capabilities;
+class Router {
+
+  register(pathChangeHandler: VoidFunction) {
     history.pushState = (f => function pushState() {
       var ret = f.apply(this, arguments);
       pathChangeHandler();
@@ -27,24 +27,24 @@ class Router {
 
 
   navigateToInvocation(invocationId: string) {
-    if (!this.capabilities.canNavigateToInvocation()) {
-      alert(`Invocations are not available in ${this.capabilities.name}`);
+    if (!capabilities.canNavigateToPath(Path.invocationPath)) {
+      alert(`Invocations are not available in ${capabilities.name}`);
       return;
     }
     this.navigateTo(Path.invocationPath + invocationId);
   }
 
   navigateToUserHistory(user: string) {
-    if (!this.capabilities.canNavigateToUserHistory()) {
-      alert(`User history is not available in ${this.capabilities.name}`);
+    if (!capabilities.canNavigateToPath(Path.userHistoryPath)) {
+      alert(`User history is not available in ${capabilities.name}`);
       return;
     }
     this.navigateTo(Path.userHistoryPath + user);
   }
 
   navigateToHostHistory(host: string) {
-    if (!this.capabilities.canNavigateToHostHistory()) {
-      alert(`Host history is not available in ${this.capabilities.name}`);
+    if (!capabilities.canNavigateToPath(Path.hostHistoryPath)) {
+      alert(`Host history is not available in ${capabilities.name}`);
       return;
     }
     this.navigateTo(Path.hostHistoryPath + host);
@@ -76,36 +76,10 @@ class Router {
     return this.getLastPathComponent(path, Path.hostHistoryPath);
   }
 }
-
-class Path {
+export class Path {
   static invocationPath = "/invocation/";
   static userHistoryPath = "/history/user/";
   static hostHistoryPath = "/history/host/";
-}
-
-export class Capabilities {
-  name: string;
-  paths: Set<string>;
-
-  constructor(name: string, paths: Set<string>) {
-    this.name = name;
-    this.paths = paths;
-  }
-
-  canNavigateToInvocation() {
-    return this.paths.has(Path.invocationPath);
-  }
-
-  canNavigateToUserHistory() {
-    return this.paths.has(Path.userHistoryPath);
-  }
-
-  canNavigateToHostHistory() {
-    return this.paths.has(Path.hostHistoryPath);
-  }
-
-  static coreCapabilities = new Capabilities("BuildBuddy Community Edition", new Set([Path.invocationPath]));
-  static enterpriseCapabilities = new Capabilities("Buildbuddy Enterprise", new Set([Path.invocationPath, Path.userHistoryPath, Path.hostHistoryPath]));
 }
 
 export default new Router();

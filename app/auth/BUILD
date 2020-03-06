@@ -3,10 +3,9 @@ load("@npm_bazel_typescript//:index.bzl", "ts_library")
 package(default_visibility = ["//visibility:public"])
 
 ts_library(
-    name = "service",
+    name = "auth",
     srcs = glob(["*.ts"]),
     deps = [
-        "//app/auth",
         "//proto:buildbuddy_service_ts_proto",
         "@npm//@types/fbemitter",
         "@npm//fbemitter",

@@ -83,6 +83,12 @@ a {
   cursor: pointer;
 }
 
+.menu .profile-photo {
+  height: 40px;
+  border-radius: 20px;
+  cursor: pointer;
+}
+
 .menu-control {
   cursor: pointer;
   opacity: .8;

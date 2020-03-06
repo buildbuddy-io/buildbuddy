@@ -33,7 +33,7 @@ var (
 func StartAndRunServices(env environment.Env) {
 	eventHandler := build_event_handler.NewBuildEventHandler(env)
 
-	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, []string{"/invocation/", "/history/"})
+	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, []string{"/auth/", "/invocation/", "/history/"})
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)
 	}

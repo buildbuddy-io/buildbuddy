@@ -26,6 +26,7 @@
     "jsdoc": "^3.6.2",
     "minimist": "^1.2.0",
     "moment": "^2.24.0",
+    "oidc-client": "^1.10.1",
     "protobufjs": "^6.8.8",
     "react": "^16.8.6",
     "react-dom": "^16.8.6",

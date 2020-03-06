@@ -6,6 +6,8 @@ ts_library(
     name = "menu",
     srcs = glob(["*.tsx"]),
     deps = [
+        "//app/auth",
+        "//app/capabilities",
         "//app/service",
         "//proto:invocation_ts_proto",
         "@npm//@types/react",

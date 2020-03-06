@@ -1,8 +1,11 @@
 import React from 'react';
+import authService, { User } from '../auth/auth_service';
+import capabilities from '../capabilities/capabilities';
 
 interface Props {
   denseModeEnabled: boolean;
   handleDenseModeToggled: VoidFunction;
+  user: User;
 }
 interface State {
   menuExpanded: boolean;
@@ -18,8 +21,17 @@ export default class MenuComponent extends React.Component {
   handleMenuClicked() {
     this.setState({ menuExpanded: !this.state.menuExpanded });
   }
+
   handleToggleDenseModeClicked() {
     this.props.handleDenseModeToggled();
+  }
+
+  handleLoginClicked() {
+    authService.login();
+  }
+
+  handleLogoutClicked() {
+    authService.logout();
   }
 
   render() {
@@ -30,7 +42,8 @@ export default class MenuComponent extends React.Component {
             <div>
               <a href="/"><div className="title"><img src="/image/logo_white.svg" /></div></a>
             </div>
-            <img onClick={this.handleMenuClicked.bind(this)} className="icon" src="/image/menu.svg" />
+            {(!capabilities.auth || !this.props.user?.profilePhotoUrl) && <img onClick={this.handleMenuClicked.bind(this)} className="icon" src="/image/menu.svg" />}
+            {(capabilities.auth && this.props.user?.profilePhotoUrl) && <img onClick={this.handleMenuClicked.bind(this)} className="profile-photo" src={this.props.user.profilePhotoUrl} />}
             {this.state.menuExpanded &&
               <div className="side-menu">
                 <ul>
@@ -42,6 +55,8 @@ export default class MenuComponent extends React.Component {
                 </a>
                   </li>
                   <li><a href="mailto:hello@buildbuddy.io">Contact us</a></li>
+                  {(capabilities.auth && !this.props.user) && <li onClick={this.handleLoginClicked.bind(this)}>Login</li>}
+                  {(capabilities.auth && this.props.user) && <li onClick={this.handleLogoutClicked.bind(this)}>Logout</li>}
                 </ul>
               </div>}
           </div>
