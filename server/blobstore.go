@@ -1,6 +1,8 @@
 package blobstore
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io/ioutil"
@@ -49,6 +51,53 @@ func NewDiskBlobStore(rootDir string) *DiskBlobStore {
 	}
 }
 
+func decompress(in []byte, err error) ([]byte, error) {
+	if err != nil {
+		return in, err
+	}
+
+	var buf bytes.Buffer
+	// Write instead of using NewBuffer because if this is not a gzip file
+	// we want to return "in" directly later, and NewBuffer takes ownership
+	// of it.
+	if _, err := buf.Write(in); err != nil {
+		return nil, err
+	}
+	zr, err := gzip.NewReader(&buf)
+	if err == gzip.ErrHeader {
+		// Compatibility hack: if we got a header error it means this
+		// is probably an uncompressed record written before we were
+		// compressing. Just read it as-is.
+		return in, nil
+	}
+	if err != nil {
+		log.Printf("zr err: %s", err)
+		return nil, err
+	}
+	rsp, err := ioutil.ReadAll(zr)
+	if err != nil {
+		log.Printf("readall err: %s", err)
+		return nil, err
+	}
+	if err := zr.Close(); err != nil {
+		log.Printf("close err: %s", err)
+		return nil, err
+	}
+	return rsp, nil
+}
+
+func compress(in []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	zr := gzip.NewWriter(&buf)
+	if _, err := zr.Write(in); err != nil {
+		return nil, err
+	}
+	if err := zr.Close(); err != nil {
+		return nil, err
+	}
+	return ioutil.ReadAll(&buf)
+}
+
 func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) error {
 	// Probably could be more careful here but we are generating these ourselves
 	// for now.
@@ -60,14 +109,19 @@ func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []b
 		return err
 	}
 	tmpFileName := fullPath + ".tmp"
-	if err := ioutil.WriteFile(tmpFileName, data, 0644); err != nil {
+
+	compressedData, err := compress(data)
+	if err != nil {
+		return err
+	}
+	if err := ioutil.WriteFile(tmpFileName, compressedData, 0644); err != nil {
 		return err
 	}
 	return os.Rename(tmpFileName, fullPath)
 }
 
 func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
-	return ioutil.ReadFile(filepath.Join(d.rootDir, blobName))
+	return decompress(ioutil.ReadFile(filepath.Join(d.rootDir, blobName)))
 }
 
 func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
@@ -113,13 +167,17 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	return ioutil.ReadAll(reader)
+	return decompress(ioutil.ReadAll(reader))
 }
 
 func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) error {
 	writer := g.bucketHandle.Object(blobName).NewWriter(ctx)
 	defer writer.Close()
-	_, err := writer.Write(data)
+	compressedData, err := compress(data)
+	if err != nil {
+		return err
+	}
+	_, err = writer.Write(compressedData)
 	return err
 }
 

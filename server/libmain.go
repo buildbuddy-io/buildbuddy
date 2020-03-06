@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/httpfilters"
 	"github.com/buildbuddy-io/buildbuddy/server/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"google.golang.org/grpc"
@@ -28,17 +29,6 @@ var (
 	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
 )
-
-func redirectHTTPS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		protocol := r.Header.Get("X-Forwarded-Proto") // Set by load balancer
-		if protocol == "http" {
-			http.Redirect(w, r, "https://"+r.Host+r.URL.String(), http.StatusMovedPermanently)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
 
 func StartAndRunServices(env environment.Env) {
 	eventHandler := build_event_handler.NewBuildEventHandler(env)
@@ -78,9 +68,9 @@ func StartAndRunServices(env environment.Env) {
 	}
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
-	http.Handle("/", redirectHTTPS(staticFileServer))
-	http.Handle("/app/", redirectHTTPS(http.StripPrefix("/app", afs)))
-	http.Handle("/rpc/BuildBuddyService/", http.StripPrefix("/rpc/BuildBuddyService/", protoHandler))
+	http.Handle("/", httpfilters.WrapExternalHandler(staticFileServer))
+	http.Handle("/app/", httpfilters.WrapExternalHandler(http.StripPrefix("/app", afs)))
+	http.Handle("/rpc/BuildBuddyService/", httpfilters.WrapExternalHandler(http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))
 
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
 	log.Printf("HTTP listening on http://%s\n", hostAndPort)

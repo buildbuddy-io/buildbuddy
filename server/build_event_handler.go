@@ -64,7 +64,7 @@ func (e *EventChannel) readAllTempBlobs(ctx context.Context, blobID string) ([]*
 		} else if err == io.EOF {
 			break
 		} else {
-			log.Printf("returning some other errror!")
+			log.Printf("returning some other error: %s", err)
 			return nil, err
 		}
 	}
@@ -90,14 +90,8 @@ func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error
 	}
 	event_parser.FillInvocationFromEvents(events, invocation)
 
-	// TODO(tylerw): We can probably omit this and just rely entirely on chunk reader.
-	completedBlobID := iid + "-completed.pb"
-	if err := e.writeCompletedBlob(ctx, completedBlobID, invocation); err != nil {
-		return err
-	}
-
 	ti := &tables.Invocation{}
-	ti.FromProtoAndBlobID(invocation, completedBlobID)
+	ti.FromProtoAndBlobID(invocation, iid)
 	if err := e.env.GetDatabase().InsertOrUpdateInvocation(ctx, ti); err != nil {
 		return err
 	}
@@ -153,11 +147,23 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *bpb.PublishBuildT
 	}
 
 	// For everything else, just save the event to our buffer and keep on chugging.
-	return e.pw.WriteProtoToStream(ctx, &inpb.InvocationEvent{
+	err := e.pw.WriteProtoToStream(ctx, &inpb.InvocationEvent{
 		EventTime:      event.OrderedBuildEvent.Event.EventTime,
 		BuildEvent:     &bazelBuildEvent,
 		SequenceNumber: event.OrderedBuildEvent.SequenceNumber,
 	})
+	if err != nil {
+		return err
+	}
+
+	// Small optimization: Flush the event stream after ~15 events or so. Most of the
+	// command line options and workspace info has come through by then, so we have
+	// something to show the user. Flushing the proto file here allows that when the
+	// client fetches status for the incomplete build.
+	if seqNo == 15 {
+		return e.pw.Flush(ctx)
+	}
+	return nil
 }
 
 func (h *BuildEventHandler) OpenChannel(ctx context.Context, iid string) *EventChannel {
@@ -177,7 +183,6 @@ func (h *BuildEventHandler) LookupInvocation(ctx context.Context, iid string) (*
 		return nil, err
 	}
 	invocation := ti.ToProto()
-
 	pr := protofile.NewBufferedProtoReader(h.env.GetBlobstore(), iid)
 	for {
 		event := &inpb.InvocationEvent{}
@@ -191,7 +196,5 @@ func (h *BuildEventHandler) LookupInvocation(ctx context.Context, iid string) (*
 		}
 	}
 
-	// Trick the frontend into showing partial results :)
-	//invocation.InvocationStatus = inpb.Invocation_COMPLETE_INVOCATION_STATUS
 	return invocation, nil
 }

@@ -34,6 +34,6 @@ container_push(
     # --define version=1.2.3 as arguments to the bazel build command.
     registry = "gcr.io",
     repository = "flame-public/buildbuddy-app-onprem",
-    tag = "server-image-$(version)",
+    tag = "$(version)",
     tags = ["manual"],  # Don't include this target in wildcard patterns
 )
