@@ -2,6 +2,7 @@ class Router {
   capabilities = Capabilities.coreCapabilities;
 
   register(pathChangeHandler: VoidFunction, capabilities: Capabilities) {
+    this.capabilities = capabilities;
     history.pushState = (f => function pushState() {
       var ret = f.apply(this, arguments);
       pathChangeHandler();
@@ -27,21 +28,25 @@ class Router {
 
   navigateToInvocation(invocationId: string) {
     if (!this.capabilities.canNavigateToInvocation()) {
-      alert(`Invocations are not available in ${this.capabilities.name}`)
+      alert(`Invocations are not available in ${this.capabilities.name}`);
       return;
     }
     this.navigateTo(Path.invocationPath + invocationId);
   }
 
   navigateToUserHistory(user: string) {
-    alert(`User history is not available in ${this.capabilities.name}`)
-    if (!this.capabilities.canNavigateToUserHistory()) return;
+    if (!this.capabilities.canNavigateToUserHistory()) {
+      alert(`User history is not available in ${this.capabilities.name}`);
+      return;
+    }
     this.navigateTo(Path.userHistoryPath + user);
   }
 
   navigateToHostHistory(host: string) {
-    alert(`Host history is not available in ${this.capabilities.name}`)
-    if (!this.capabilities.canNavigateToHostHistory()) return;
+    if (!this.capabilities.canNavigateToHostHistory()) {
+      alert(`Host history is not available in ${this.capabilities.name}`);
+      return;
+    }
     this.navigateTo(Path.hostHistoryPath + host);
   }
 
