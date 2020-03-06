@@ -6,6 +6,7 @@ ts_library(
     name = "invocation",
     srcs = glob(["**/*.tsx"]),
     deps = [
+        "//app/format",
         "//app/router",
         "//app/service",
         "//app/terminal",

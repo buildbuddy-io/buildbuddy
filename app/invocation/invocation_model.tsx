@@ -3,6 +3,7 @@ import moment from 'moment';
 import { invocation } from '../../proto/invocation_ts_proto';
 import { build_event_stream } from '../../proto/build_event_stream_ts_proto';
 import { command_line } from '../../proto/command_line_ts_proto';
+import format from '../format/format';
 
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
@@ -107,7 +108,7 @@ export default class InvocationModel {
     if (!username) {
       return "Unknown user";
     }
-    return username[0].toUpperCase() + username.slice(1);
+    return username;
   }
 
   getHost() {
@@ -168,10 +169,7 @@ export default class InvocationModel {
 
   getHumanReadableDuration() {
     let elapsedTime = +this.toolLogMap.get('elapsed time');
-    if (elapsedTime < 1) {
-      return "under a second";
-    }
-    return moment.duration(elapsedTime, "seconds").humanize() || "Unknown";
+    return format.durationSec(elapsedTime);
   }
 
   getDuractionSeconds() {

@@ -1,5 +1,6 @@
 import React from 'react';
 import InvocationModel from '../invocation_model'
+import router from '../../router/router';
 
 interface Props {
   model: InvocationModel,
@@ -7,6 +8,14 @@ interface Props {
 }
 export default class DenseInvocationOverviewComponent extends React.Component {
   props: Props;
+
+  handleUserClicked() {
+    router.navigateToUserHistory(this.props.model.getUser());
+  }
+
+  handleHostClicked() {
+    router.navigateToHostHistory(this.props.model.getHost());
+  }
 
   render() {
     return <div className="container">
@@ -20,7 +29,7 @@ export default class DenseInvocationOverviewComponent extends React.Component {
           {this.props.model.getStartDate()} at {this.props.model.getStartTime()} for <span title={this.props.model.getDuractionSeconds()}>{this.props.model.getTiming()}</span>
         </div>
         <div>
-          Evaluation started by {this.props.model.getUser()}
+          Evaluation started by <b onClick={this.handleUserClicked.bind(this)} className="clickable">{this.props.model.getUser()}</b> on <b onClick={this.handleHostClicked.bind(this)} className="clickable">{this.props.model.getHost()}</b>
         </div>
       </div>
       <div className="dense-invocation-overview-grid">

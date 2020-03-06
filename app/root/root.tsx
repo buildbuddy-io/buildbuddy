@@ -2,7 +2,7 @@ import React from 'react';
 import MenuComponent from '../menu/menu';
 import InvocationComponent from '../invocation/invocation';
 import HomeComponent from '../home/home';
-import router from '../router/router';
+import router, { Capabilities } from '../router/router';
 
 const denseModeKey = "VIEW_MODE";
 const denseModeValue = "DENSE";
@@ -23,7 +23,7 @@ export default class RootComponent extends React.Component {
   };
 
   componentWillMount() {
-    router.register(this.handlePathChange.bind(this));
+    router.register(this.handlePathChange.bind(this), Capabilities.coreCapabilities);
   }
 
   handlePathChange() {

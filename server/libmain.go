@@ -43,7 +43,7 @@ func redirectHTTPS(next http.Handler) http.Handler {
 func StartAndRunServices(env environment.Env) {
 	eventHandler := build_event_handler.NewBuildEventHandler(env)
 
-	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, []string{"/invocation/"})
+	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, []string{"/invocation/", "/history/"})
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)
 	}

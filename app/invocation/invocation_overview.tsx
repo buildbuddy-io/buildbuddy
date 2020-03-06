@@ -1,5 +1,7 @@
 import React from 'react';
 import InvocationModel from './invocation_model'
+import router from '../router/router';
+import format from '../format/format';
 
 interface Props {
   model: InvocationModel,
@@ -8,11 +10,19 @@ interface Props {
 export default class InvocationOverviewComponent extends React.Component {
   props: Props;
 
+  handleUserClicked() {
+    router.navigateToUserHistory(this.props.model.getUser());
+  }
+
+  handleHostClicked() {
+    router.navigateToHostHistory(this.props.model.getHost());
+  }
+
   render() {
     return <div className="container">
       <div className="invocation">Invocation {this.props.invocationId}</div>
       <div className="titles">
-        <div className="title">{this.props.model.getUser()}'s {this.props.model.getCommand()} {this.props.model.getPattern()}</div>
+        <div className="title">{format.sentenceCase(this.props.model.getUser())}'s {this.props.model.getCommand()} {this.props.model.getPattern()}</div>
         <div className="subtitle">{this.props.model.getStartDate()} at {this.props.model.getStartTime()}</div>
       </div>
       <div className="details">
@@ -24,11 +34,11 @@ export default class InvocationOverviewComponent extends React.Component {
           <img className="icon" src="/image/clock-regular.svg" />
           {this.props.model.getTiming()}
         </div>
-        <div className="detail">
+        <div className="detail clickable" onClick={this.handleUserClicked.bind(this)}>
           <img className="icon" src="/image/user-regular.svg" />
           {this.props.model.getUser()}
         </div>
-        <div className="detail">
+        <div className="detail clickable" onClick={this.handleHostClicked.bind(this)}>
           <img className="icon" src="/image/hard-drive-regular.svg" />
           {this.props.model.getHost()}
         </div>

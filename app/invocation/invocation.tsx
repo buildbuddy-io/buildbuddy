@@ -112,7 +112,7 @@ export default class InvocationComponent extends React.Component {
     var showAll = !this.props.hash && !this.props.denseMode;
 
     return (
-      <div className={this.props.denseMode ? 'dense' : ''}>
+      <div>
         <div className="shelf">
           {this.props.denseMode ?
             <DenseInvocationOverviewComponent invocationId={this.props.invocationId} model={this.state.model} /> :
