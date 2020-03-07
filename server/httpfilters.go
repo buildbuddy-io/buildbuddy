@@ -50,6 +50,9 @@ func Gzip(next http.Handler) http.Handler {
 		}
 
 		w.Header().Set("Content-Encoding", "gzip")
+		// Firefox will not decompress the response if the below header
+		// is not also set.
+		w.Header().Set("Transfer-Encoding", "gzip")
 
 		gz := gzPool.Get().(*gzip.Writer)
 		defer gzPool.Put(gz)
