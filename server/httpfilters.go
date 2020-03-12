@@ -65,5 +65,5 @@ func Gzip(next http.Handler) http.Handler {
 }
 
 func WrapExternalHandler(next http.Handler) http.Handler {
-	return Gzip(next)
+	return RedirectHTTPS(Gzip(next))
 }
