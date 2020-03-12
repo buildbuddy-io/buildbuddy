@@ -57,7 +57,7 @@ export default class TargetsCardComponent extends React.Component {
             events.slice(0, this.props.pageSize && (this.state.numPages * this.props.pageSize) || undefined)
               .map(target =>
                 <div className="list-grid" onClick={this.handleTargetClicked.bind(this, target.id.targetCompleted.label)}>
-                  <div title={`${this.props.model.configuredMap.get(target.id.targetCompleted.label).buildEvent.configured.targetKind} ${this.props.model.getTestSize(this.props.model.configuredMap.get(target.id.targetCompleted.label).buildEvent.configured.testSize)}`}
+                  <div title={`${this.props.model.configuredMap.get(target.id.targetCompleted.label)?.buildEvent.configured.targetKind} ${this.props.model.getTestSize(this.props.model.configuredMap.get(target.id.targetCompleted.label)?.buildEvent.configured.testSize)}`}
                     className="clickable target">
                     <img className="target-status-icon" src={this.props.iconPath} /> {target.id.targetCompleted.label}
                   </div>

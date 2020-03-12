@@ -212,6 +212,7 @@ export default class InvocationModel {
   }
 
   getDuration(completionTime: any, beginTime: any) {
+    if (!completionTime || !beginTime) return "";
     let nanos = ((+completionTime.nanos) - (+beginTime.nanos)) / 1000000000
     return `${((+completionTime.seconds) - (+beginTime.seconds) + nanos).toFixed(3)}`;
   }
@@ -230,8 +231,8 @@ export default class InvocationModel {
       return +testResult.testAttemptDurationMillis / 1000 + " seconds";
     }
     return this.getDuration(
-      this.completedMap.get(label).eventTime,
-      this.configuredMap.get(label).eventTime) + " seconds";
+      this.completedMap.get(label)?.eventTime,
+      this.configuredMap.get(label)?.eventTime) + " seconds";
   }
 
   getTestSize(testSize: build_event_stream.TestSize) {
