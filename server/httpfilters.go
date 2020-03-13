@@ -48,7 +48,6 @@ func Gzip(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-
 		w.Header().Set("Content-Encoding", "gzip")
 		// Firefox will not decompress the response if the below header
 		// is not also set.

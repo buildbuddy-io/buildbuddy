@@ -95,6 +95,7 @@ go_library(
         ":blobstore",
         ":config",
         ":database",
+        ":healthcheck",
         ":interfaces",
         ":simplesearcher",
         ":slack",
@@ -111,6 +112,12 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto:invocation_go_proto",
     ],
+)
+
+go_library(
+    name = "healthcheck",
+    srcs = ["healthcheck.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/healthcheck",
 )
 
 go_library(
@@ -236,6 +243,7 @@ go_binary(
     deps = [
         ":config",
         ":environment",
+        ":healthcheck",
         ":janitor",
         ":libmain",
     ],

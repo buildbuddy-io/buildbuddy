@@ -71,6 +71,7 @@ func StartAndRunServices(env environment.Env) {
 	http.Handle("/", httpfilters.WrapExternalHandler(staticFileServer))
 	http.Handle("/app/", httpfilters.WrapExternalHandler(http.StripPrefix("/app", afs)))
 	http.Handle("/rpc/BuildBuddyService/", httpfilters.WrapExternalHandler(http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))
+	http.Handle("/healthz", env.GetHealthChecker())
 
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
 	log.Printf("HTTP listening on http://%s\n", hostAndPort)

@@ -6,6 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/database"
+	"github.com/buildbuddy-io/buildbuddy/server/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/simplesearcher"
 	"github.com/buildbuddy-io/buildbuddy/server/slack"
@@ -30,6 +31,7 @@ type Env interface {
 	GetConfigurator() *config.Configurator
 	GetBlobstore() interfaces.Blobstore
 	GetDatabase() interfaces.Database
+	GetHealthChecker() *healthcheck.HealthChecker
 
 	// Optional dependencies below here. For example: enterprise-only things,
 	// or services that may not always be configured, like webhooks.
@@ -41,6 +43,7 @@ type RealEnv struct {
 	c  *config.Configurator
 	bs interfaces.Blobstore
 	db interfaces.Database
+	h  *healthcheck.HealthChecker
 
 	webhooks []interfaces.Webhook
 	searcher interfaces.Searcher
@@ -51,6 +54,13 @@ func (r *RealEnv) GetConfigurator() *config.Configurator {
 }
 func (r *RealEnv) SetConfigurator(c *config.Configurator) {
 	r.c = c
+}
+
+func (r *RealEnv) GetHealthChecker() *healthcheck.HealthChecker {
+	return r.h
+}
+func (r *RealEnv) SetHealthChecker(h *healthcheck.HealthChecker) {
+	r.h = h
 }
 
 func (r *RealEnv) GetBlobstore() interfaces.Blobstore {
@@ -81,7 +91,7 @@ func (r *RealEnv) SetSearcher(s interfaces.Searcher) {
 	r.searcher = s
 }
 
-func GetConfiguredEnvironmentOrDie(configurator *config.Configurator) Env {
+func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *healthcheck.HealthChecker) Env {
 	bs, err := blobstore.GetConfiguredBlobstore(configurator)
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
@@ -104,6 +114,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator) Env {
 		c:  configurator,
 		bs: bs,
 		db: rawDB,
+		h:  checker,
 
 		// OPTIONAL
 		webhooks: webhooks,

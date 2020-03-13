@@ -37,6 +37,20 @@ spec:
               containerPort: 8080
             - name: grpc
               containerPort: 1985
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+              httpHeaders:
+                - name: server-type
+                  value: dev-buildbuddy-server
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+              httpHeaders:
+                - name: server-type
+                  value: dev-buildbuddy-server
           volumeMounts:
             - mountPath: /devdata
               name: buildbuddy-app-data

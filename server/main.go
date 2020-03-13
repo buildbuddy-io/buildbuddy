@@ -6,12 +6,14 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
 	"github.com/buildbuddy-io/buildbuddy/server/libmain"
 )
 
 var (
 	configFile = flag.String("config_file", "config/buildbuddy.local.yaml", "The path to a buildbuddy config file")
+	serverType = flag.String("server_type", "dev-buildbuddy-server", "The server type to match on health checks")
 )
 
 // NB: Most of the logic you'd typically find in a main.go file is in
@@ -26,7 +28,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
-	env := environment.GetConfiguredEnvironmentOrDie(configurator)
+	healthChecker := healthcheck.NewHealthChecker(*serverType)
+	env := environment.GetConfiguredEnvironmentOrDie(configurator, healthChecker)
 	cleanupService := janitor.NewJanitor(env)
 	cleanupService.Start()
 	defer cleanupService.Stop()
