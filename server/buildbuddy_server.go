@@ -5,24 +5,22 @@ import (
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_handler"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	inpb "proto/invocation"
 )
 
 type BuildBuddyServer struct {
-	eventHandler *build_event_handler.BuildEventHandler
-	searcher     interfaces.Searcher
+	env environment.Env
 }
 
-func NewBuildBuddyServer(h *build_event_handler.BuildEventHandler, s interfaces.Searcher) (*BuildBuddyServer, error) {
+func NewBuildBuddyServer(env environment.Env) (*BuildBuddyServer, error) {
 	return &BuildBuddyServer{
-		eventHandler: h,
-		searcher:     s,
+		env: env,
 	}, nil
 }
 
 func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvocationRequest) (*inpb.GetInvocationResponse, error) {
-	inv, err := s.eventHandler.LookupInvocation(ctx, req.Lookup.InvocationId)
+	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.Lookup.InvocationId)
 	if err != nil {
 		return nil, err
 	}
@@ -34,11 +32,12 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 }
 
 func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {
-	if s.searcher == nil {
+	searcher := s.env.GetSearcher()
+	if searcher == nil {
 		return nil, fmt.Errorf("No searcher was configured")
 	}
 	if req.Query == nil {
 		return nil, fmt.Errorf("A query must be provided")
 	}
-	return s.searcher.QueryInvocations(ctx, req)
+	return searcher.QueryInvocations(ctx, req)
 }

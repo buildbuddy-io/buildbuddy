@@ -7,18 +7,19 @@ import (
 	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/golang/protobuf/ptypes/empty"
 
 	bpb "proto"
 )
 
 type BuildEventProtocolServer struct {
-	eventHandler *build_event_handler.BuildEventHandler
+	env environment.Env
 }
 
-func NewBuildEventProtocolServer(h *build_event_handler.BuildEventHandler) (*BuildEventProtocolServer, error) {
+func NewBuildEventProtocolServer(env environment.Env) (*BuildEventProtocolServer, error) {
 	return &BuildEventProtocolServer{
-		eventHandler: h,
+		env: env,
 	}, nil
 }
 
@@ -57,7 +58,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream bpb.Publis
 		}
 		if streamID == nil {
 			streamID = in.OrderedBuildEvent.StreamId
-			channel = s.eventHandler.OpenChannel(stream.Context(), streamID.InvocationId)
+			channel = build_event_handler.OpenChannel(s.env, stream.Context(), streamID.InvocationId)
 		}
 
 		if err := channel.HandleEvent(stream.Context(), in); err != nil {

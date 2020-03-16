@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -31,8 +30,6 @@ var (
 )
 
 func StartAndRunServices(env environment.Env) {
-	eventHandler := build_event_handler.NewBuildEventHandler(env)
-
 	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, []string{"/auth/", "/invocation/", "/history/"})
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)
@@ -52,13 +49,13 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Failed to listen: %s", err)
 	}
 	grpcServer := grpc.NewServer()
-	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(eventHandler)
+	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env)
 	if err != nil {
 		log.Fatalf("Error initializing BuildEventProtocolServer: %s", err)
 	}
 	bpb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
 	reflection.Register(grpcServer)
-	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(eventHandler, env.GetSearcher())
+	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env)
 	if err != nil {
 		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
 	}

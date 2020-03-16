@@ -40,6 +40,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_server",
     deps = [
         ":build_event_handler",
+        ":environment",
         "//proto:build_event_stream_go_proto",
         "//proto:build_go_proto",
         "//proto:invocation_go_proto",
@@ -55,6 +56,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server",
     deps = [
         ":build_event_handler",
+        ":environment",
         ":interfaces",
         "//proto:buildbuddy_service_go_proto",
         "//proto:invocation_go_proto",
@@ -216,7 +218,6 @@ go_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/libmain",
     deps = [
-        ":build_event_handler",
         ":build_event_server",
         ":buildbuddy_server",
         ":environment",

@@ -166,24 +166,24 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *bpb.PublishBuildT
 	return nil
 }
 
-func (h *BuildEventHandler) OpenChannel(ctx context.Context, iid string) *EventChannel {
-	chunkFileSizeBytes := h.env.GetConfigurator().GetStorageChunkFileSizeBytes()
+func OpenChannel(env environment.Env, ctx context.Context, iid string) *EventChannel {
+	chunkFileSizeBytes := env.GetConfigurator().GetStorageChunkFileSizeBytes()
 	if chunkFileSizeBytes == 0 {
 		chunkFileSizeBytes = defaultChunkFileSizeBytes
 	}
 	return &EventChannel{
-		env: h.env,
-		pw:  protofile.NewBufferedProtoWriter(h.env.GetBlobstore(), iid, chunkFileSizeBytes),
+		env: env,
+		pw:  protofile.NewBufferedProtoWriter(env.GetBlobstore(), iid, chunkFileSizeBytes),
 	}
 }
 
-func (h *BuildEventHandler) LookupInvocation(ctx context.Context, iid string) (*inpb.Invocation, error) {
-	ti, err := h.env.GetDatabase().LookupInvocation(ctx, iid)
+func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {
+	ti, err := env.GetDatabase().LookupInvocation(ctx, iid)
 	if err != nil {
 		return nil, err
 	}
 	invocation := ti.ToProto()
-	pr := protofile.NewBufferedProtoReader(h.env.GetBlobstore(), iid)
+	pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), iid)
 	for {
 		event := &inpb.InvocationEvent{}
 		err := pr.ReadProto(ctx, event)
