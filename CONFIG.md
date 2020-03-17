@@ -15,9 +15,9 @@ There are three types of config flags: **Required**, **Recommended**, and **Opti
 
 ## App
 
-```app:``` The app section contains app-level options.
+```app:``` **Recommended** The app section contains app-level options.
 
-### BuildBuddyURL
+#### BuildBuddyURL
 
 ```build_buddy_url``` **Recommended** The BuildBuddyURL is a string that configures an external URL for where your BuildBuddy instance is hosted. This
 is used when BuildBuddy generates links.
@@ -29,55 +29,92 @@ app:
 ```
 
 ## BuildEventProxy
-```build_event_proxy:``` The BuildEventProxy section configures proxy behavior, allowing BuildBuddy to forward build events to other build-event-protocol compatible servers.
+```build_event_proxy:``` **Optional** The BuildEventProxy section configures proxy behavior, allowing BuildBuddy to forward build events to other build-event-protocol compatible servers.
 
-### Hosts
+#### Hosts
 ```hosts``` **Optional** A list of host strings that BuildBudy should connect and forward events to.
 
+Example BuildEventProxy section:
+```
+build_event_proxy:
+  hosts:
+    - "grpc://localhost:1985"
+    - "grpc://events.buildbuddy.io:1985"
+```
+
 ## Database
-```database:``` The Database section configures the database that BuildBuddy stores all data in.
+```database:``` **Required** The Database section configures the database that BuildBuddy stores all data in.
 
-### DataSource
-```data_source```
-type generalConfig struct {
-        Database        databaseConfig     `yaml:"database"`
-        Storage         storageConfig      `yaml:"storage"`
-        Integrations    integrationsConfig `yaml:"integrations"`
-}
+#### DataSource
+```data_source``` **Required** This is a connection string used by the database driver to connect to the database.
 
-type appConfig struct {
-        BuildBuddyURL string `yaml:"build_buddy_url"`
-}
+Example Database section: (sqlite)
+```
+database:
+  data_source: "sqlite3:///tmp/buildbuddy.db"
+```
 
-type buildEventProxy struct {
-        Hosts []string `yaml:"hosts"`
-}
+Example Database section: (mysql)
+```
+database:
+  data_source: "mysql://buildbuddy:pAsSwOrD@tcp(12.34.56.78)/buildbuddy_db"
+```
 
-type databaseConfig struct {
-        DataSource string `yaml:"data_source"`
-}
+## Storage
+```storage:``` **Required** The Storage section configures where and how BuildBuddy will store blob data.
 
-type storageConfig struct {
-        Disk               DiskConfig `yaml:"disk"`
-        GCS                GCSConfig  `yaml:"gcs"`
-        TTLSeconds         int        `yaml:"ttl_seconds"`
-        ChunkFileSizeBytes int        `yaml:"chunk_file_size_bytes"`
-}
+#### Disk
+```disk:``` **Optional** The Disk section configures disk-based blob storage.
 
-type DiskConfig struct {
-        RootDirectory string `yaml:"root_directory"`
-}
+##### RootDirectory
+```root_directory``` **Optional** The root directory to store all blobs in, if using disk based storage. This directory must be writable and readable by the BuildBuddy process.
 
-type GCSConfig struct {
-        Bucket          string `yaml:"bucket"`
-        CredentialsFile string `yaml:"credentials_file"`
-        ProjectID       string `yaml:"project_id"`
-}
+#### GCS
+```gcs:``` **Optional** The GCS section configures Google Cloud Storage based blob storage.
 
-type integrationsConfig struct {
-        Slack SlackConfig `yaml:"slack"`
-}
+##### Bucket
+```bucket``` **Optional** The name of the GCS bucket to store files in. Will be created if it does not already exist.
 
-type SlackConfig struct {
-        WebhookURL string `yaml:"webhook_url"`
-}
+##### CredentialsFile
+```credentials_file``` **Optional** A path to a [JSON credentials file](https://cloud.google.com/docs/authentication/getting-started) that will be used to authenticate to GCS. 
+
+##### ProjectID
+```project_id``` **Optional** The Google Cloud project ID of the project owning the above credentials and GCS bucket.
+
+
+Example Storage section: (disk)
+```
+storage:
+  ttl_seconds: 86400  # One day in seconds.
+  chunk_file_size_bytes: 3000000  # 3 MB
+  disk:
+    root_directory: /tmp/buildbuddy
+```
+
+
+Example Storage section: (gcs)
+```
+storage:
+  ttl_seconds: 0  # No TTL.
+  chunk_file_size_bytes: 3000000  # 3 MB
+  gcs:
+    bucket: "buildbuddy_blobs"
+    project_id: "my-cool-project"
+    credentials_file: "enterprise/config/my-cool-project-7a9d15f66e69.json"
+```
+
+## Integrations
+```integrations:``` **Optional** A section configuring optional external services BuildBuddy can integrate with, like Slack.
+
+#### Slack
+```slack:``` **Optional** A section configuring Slack integration.
+
+##### WebhookURL
+```webhook_url``` **Optional** A webhook url to post build update messages to.
+
+Example Integrations Section:
+```
+integrations:
+  slack:
+    webhook_url: "https://hooks.slack.com/services/AAAAAAAAA/BBBBBBBBB/1D36mNyB5nJFCBiFlIOUsKzkW"
+```
