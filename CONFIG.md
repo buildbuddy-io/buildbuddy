@@ -11,7 +11,7 @@ There are three types of config flags: **Required**, **Recommended**, and **Opti
 * **Recommended** flags should be set -- if you unset them BuildBuddy will run but produce undefined output.
 * **Optional** flags may be set to configure extra functionality. BuildBuddy will work fine without them.
 
-# Configuration Options
+# Configuration File Options
 
 ## App
 
@@ -133,3 +133,14 @@ storage:
   disk:
     root_directory: /tmp/buildbuddy
 ```
+
+
+
+# BuildBuddy Flags
+
+There are several configuration options that are not yet specified in the BuildBuddy configuration file. These are:
+
+* ```listen``` The interface that BuildBuddy will listen on. Defaults to 0.0.0.0 (all interfaces)
+* ```port``` The port to listen for HTTP traffic on. Defaults to 8080.
+* ```grpc_port``` The port to listen for gRPC traffic on. Defaults to 1985.
+
