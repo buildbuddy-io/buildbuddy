@@ -118,3 +118,18 @@ integrations:
   slack:
     webhook_url: "https://hooks.slack.com/services/AAAAAAAAA/BBBBBBBBB/1D36mNyB5nJFCBiFlIOUsKzkW"
 ```
+
+# Sample Configuration Files
+
+## Running locally (disk only)
+```
+app:
+  build_buddy_url: "http://localhost:8080"
+database:
+  data_source: "sqlite3:///tmp/buildbuddy.db"
+storage:
+  ttl_seconds: 86400  # One day in seconds.
+  chunk_file_size_bytes: 3000000  # 3 MB
+  disk:
+    root_directory: /tmp/buildbuddy
+```
