@@ -69,3 +69,6 @@ If you run or have access to a Kubernetes cluster, and you have the "kubectl" co
 bash k8s_on_prem.sh
 ```
 
+## Configuring BuildBuddy
+
+For documentation on all BuildBuddy configuration options, [check out CONFIG.md](https://github.com/buildbuddy-io/buildbuddy/blob/master/CONFIG.md).
