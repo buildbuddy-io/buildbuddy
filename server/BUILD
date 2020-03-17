@@ -35,6 +35,16 @@ go_library(
 )
 
 go_library(
+    name = "build_event_proxy",
+    srcs = ["build_event_proxy.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_proxy",
+    deps = [
+        "//proto:build_go_proto",
+        "@org_golang_google_grpc//:go_default_library",
+    ],
+)
+
+go_library(
     name = "build_event_server",
     srcs = ["build_event_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_server",
@@ -47,6 +57,7 @@ go_library(
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@io_bazel_rules_go//proto/wkt:empty_go_proto",
+        "@org_golang_google_grpc//:go_default_library",
     ],
 )
 
@@ -95,6 +106,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/environment",
     deps = [
         ":blobstore",
+        ":build_event_proxy",
         ":config",
         ":database",
         ":healthcheck",

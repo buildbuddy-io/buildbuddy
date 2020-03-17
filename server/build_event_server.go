@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/golang/protobuf/ptypes/empty"
+	"google.golang.org/grpc"
 
 	bpb "proto"
 )
@@ -24,6 +25,11 @@ func NewBuildEventProtocolServer(env environment.Env) (*BuildEventProtocolServer
 }
 
 func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, req *bpb.PublishLifecycleEventRequest) (*empty.Empty, error) {
+	for _, client := range s.env.GetBuildEventProxyClients() {
+		go func() {
+			client.PublishLifecycleEvent(ctx, req)
+		}()
+	}
 	// We don't currently handle these events.
 	return &empty.Empty{}, nil
 }
@@ -48,6 +54,18 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream bpb.Publis
 	acks := make([]int, 0)
 	var streamID *bpb.StreamId
 	var channel *build_event_handler.EventChannel
+
+	forwardingStreams := make([]bpb.PublishBuildEvent_PublishBuildToolEventStreamClient, 0)
+	for _, client := range s.env.GetBuildEventProxyClients() {
+		stream, err := client.PublishBuildToolEventStream(stream.Context(), grpc.WaitForReady(false))
+		if err != nil {
+			log.Printf("Unable to proxy stream: %s", err)
+			continue
+		}
+		defer stream.CloseSend()
+		forwardingStreams = append(forwardingStreams, stream)
+	}
+
 	for {
 		in, err := stream.Recv()
 		if err == io.EOF {
@@ -64,6 +82,10 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream bpb.Publis
 		if err := channel.HandleEvent(stream.Context(), in); err != nil {
 			log.Printf("Error handling event; this would break the build command: %s", err)
 			// return err
+		}
+		for _, stream := range forwardingStreams {
+			// Intentionally ignore errors here -- proxying is best effort.
+			stream.Send(in)
 		}
 
 		acks = append(acks, int(in.OrderedBuildEvent.SequenceNumber))

@@ -13,14 +13,19 @@ import (
 // When adding new storage fields, always be explicit about their yaml field
 // name.
 type generalConfig struct {
-	App          appConfig          `yaml:"app"`
-	Database     databaseConfig     `yaml:"database"`
-	Storage      storageConfig      `yaml:"storage"`
-	Integrations integrationsConfig `yaml:"integrations"`
+	App             appConfig          `yaml:"app"`
+	BuildEventProxy buildEventProxy    `yaml:"build_event_proxy"`
+	Database        databaseConfig     `yaml:"database"`
+	Storage         storageConfig      `yaml:"storage"`
+	Integrations    integrationsConfig `yaml:"integrations"`
 }
 
 type appConfig struct {
 	BuildBuddyURL string `yaml:"build_buddy_url"`
+}
+
+type buildEventProxy struct {
+	Hosts []string `yaml:"hosts"`
 }
 
 type databaseConfig struct {
@@ -160,4 +165,9 @@ func (c *Configurator) GetAppBuildBuddyURL() string {
 func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {
 	c.rereadIfStale()
 	return &c.gc.Integrations.Slack
+}
+
+func (c *Configurator) GetBuildEventProxyHosts() []string {
+	c.rereadIfStale()
+	return c.gc.BuildEventProxy.Hosts
 }

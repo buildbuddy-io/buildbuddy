@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/buildbuddy-io/buildbuddy/server/blobstore"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/database"
 	"github.com/buildbuddy-io/buildbuddy/server/healthcheck"
@@ -37,6 +38,7 @@ type Env interface {
 	// or services that may not always be configured, like webhooks.
 	GetWebhooks() []interfaces.Webhook
 	GetSearcher() interfaces.Searcher
+	GetBuildEventProxyClients() []*build_event_proxy.BuildEventProxyClient
 }
 
 type RealEnv struct {
@@ -45,8 +47,9 @@ type RealEnv struct {
 	db interfaces.Database
 	h  *healthcheck.HealthChecker
 
-	webhooks []interfaces.Webhook
-	searcher interfaces.Searcher
+	webhooks               []interfaces.Webhook
+	searcher               interfaces.Searcher
+	buildEventProxyClients []*build_event_proxy.BuildEventProxyClient
 }
 
 func (r *RealEnv) GetConfigurator() *config.Configurator {
@@ -91,6 +94,18 @@ func (r *RealEnv) SetSearcher(s interfaces.Searcher) {
 	r.searcher = s
 }
 
+func (r *RealEnv) GetBuildEventProxyClients() []*build_event_proxy.BuildEventProxyClient {
+	return r.buildEventProxyClients
+}
+
+func (r *RealEnv) SetBuildEventProxyClients(clients []*build_event_proxy.BuildEventProxyClient) {
+	r.buildEventProxyClients = clients
+}
+
+// Normally this code would live in main.go -- we put it here for now because
+// the environments used by the open-core version and the enterprise version are
+// not substantially different enough yet to warrant the extra complexity of
+// always updating both main files.
 func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *healthcheck.HealthChecker) Env {
 	bs, err := blobstore.GetConfiguredBlobstore(configurator)
 	if err != nil {
@@ -109,6 +124,15 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 			webhooks = append(webhooks, slack.NewSlackWebhook(sc.WebhookURL, appURL))
 		}
 	}
+
+	buildEventProxyClients := make([]*build_event_proxy.BuildEventProxyClient, 0)
+	for _, target := range configurator.GetBuildEventProxyHosts() {
+		// NB: This can block for up to a second on connecting. This would be a
+		// great place to have our health checker and mark these as optional.
+		buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(target))
+		log.Printf("Proxy: forwarding build events to: %s", target)
+	}
+
 	return &RealEnv{
 		// REQUIRED
 		c:  configurator,
@@ -117,7 +141,8 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 		h:  checker,
 
 		// OPTIONAL
-		webhooks: webhooks,
-		searcher: searcher,
+		webhooks:               webhooks,
+		searcher:               searcher,
+		buildEventProxyClients: buildEventProxyClients,
 	}
 }
