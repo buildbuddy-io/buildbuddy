@@ -96,9 +96,9 @@ def build_artifacts(repo_name, new_version):
     return "/tmp/%s.tar.gz" % repo_name
 
 def update_docker_image(new_version):
-    version_build_cmd = 'blaze build -c opt --define version=%s deployment:release_onprem' % new_version
+    version_build_cmd = 'bazel build -c opt --define version=%s deployment:release_onprem' % new_version
     run_or_die(version_build_cmd)
-    latest_build_cmd = 'blaze build -c opt --define version=latest deployment:release_onprem'
+    latest_build_cmd = 'bazel build -c opt --define version=latest deployment:release_onprem'
     run_or_die(latest_build_cmd)
 
 def github_make_request(
@@ -216,8 +216,12 @@ def main():
     create_and_push_tag(old_version, new_version)
 
     update_docker_image(new_version)
-    artifacts = build_artifacts(repo_name, new_version)
-    create_release_and_upload_artifacts("/".join(org_name, repo_name), new_version, artifacts)
+
+    # Don't need this because github automatically creates a source archive when we
+    # make a new tag. Save it for when we need it.
+    #artifacts = build_artifacts(repo_name, new_version)
+    #create_release_and_upload_artifacts("/".join(org_name, repo_name), new_version, artifacts)
+
     print("Release (%s) complete. Go enjoy a cold one!" % new_version)
 
 if __name__ == "__main__":
