@@ -105,8 +105,8 @@ def update_docker_image(new_version):
     latest_build_cmd = 'bazel build -c opt --define version=latest deployment:release_onprem'
     run_or_die(latest_build_cmd)
 
-def generate_release_notes(old_version, new_version):
-    release_notes_cmd = 'git log --pretty=format:"%ci %cn: %s"' + ' %s...%s' % (old_version, new_version)
+def generate_release_notes(old_version):
+    release_notes_cmd = 'git log --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
     p = subprocess.Popen(release_notes_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     return "".join(p.stdout.readlines())
 
@@ -214,10 +214,10 @@ def main():
     repo_name = "buildbuddy"
 
     old_version = read_version(version_file)
-    print('I found existing version: %s' % old_version)
     new_version = bump_patch_version(old_version)
-    release_notes = generate_release_notes(old_version, new_version)
+    release_notes = generate_release_notes(old_version)
     print("release notes:\n" + release_notes)
+    print('I found existing version: %s' % old_version)
     new_version = confirm_new_version(new_version)
     print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))
 
