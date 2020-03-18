@@ -84,8 +84,12 @@ def commit_version_bump(old_version, new_version):
     commit_cmd = 'git commit -am "Bump version %s -> %s (release.py)"' % (old_version, new_version)
     run_or_die(commit_cmd)
 
-def create_and_push_tag(old_version, new_version):
-    tag_cmd = 'git tag -a %s -m "Bump tag %s -> %s (release.py)"' % (new_version, old_version, new_version)
+def create_and_push_tag(old_version, new_version, release_notes=''):
+    commit_message = "Bump tag %s -> %s (release.py)" % (old_version, new_version)
+    if len(release_notes) > 0:
+        commit_message = "\n".join(commit_message, release_notes)
+
+    tag_cmd = 'git tag -a %s -m "%s"' % (new_version, commit_message)
     run_or_die(tag_cmd)
     push_tag_cmd = 'git push origin %s' % new_version
     run_or_die(push_tag_cmd)
@@ -100,6 +104,11 @@ def update_docker_image(new_version):
     run_or_die(version_build_cmd)
     latest_build_cmd = 'bazel build -c opt --define version=latest deployment:release_onprem'
     run_or_die(latest_build_cmd)
+
+def generate_release_notes(old_version, new_version):
+    release_notes_cmd = 'git log --pretty=format:"%ci %cn: %s"' + ' %s...%s' % (old_version, new_version)
+    p = subprocess.Popen(release_notes_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return "".join(p.stdout.readlines())
 
 def github_make_request(
         auth_token=None,
@@ -207,20 +216,22 @@ def main():
     old_version = read_version(version_file)
     print('I found existing version: %s' % old_version)
     new_version = bump_patch_version(old_version)
+    release_notes = generate_release_notes(old_version, new_version)
+    print("release notes:\n" + release_notes)
     new_version = confirm_new_version(new_version)
     print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))
 
     time.sleep(2)
     update_version_in_file(old_version, new_version, version_file)
     commit_version_bump(old_version, new_version)
-    create_and_push_tag(old_version, new_version)
+    create_and_push_tag(old_version, new_version, release_notes)
 
     update_docker_image(new_version)
 
-    # Don't need this because github automatically creates a source archive when we
-    # make a new tag. Save it for when we need it.
-    #artifacts = build_artifacts(repo_name, new_version)
-    #create_release_and_upload_artifacts("/".join(org_name, repo_name), new_version, artifacts)
+    ## Don't need this because github automatically creates a source archive when we
+    ## make a new tag. Useful when we have artifacts to upload.
+    # artifacts = build_artifacts(repo_name, new_version)
+    # create_release_and_upload_artifacts("/".join(org_name, repo_name), new_version, artifacts)
 
     print("Release (%s) complete. Go enjoy a cold one!" % new_version)
 
