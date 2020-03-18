@@ -132,6 +132,7 @@ proto_library(
     srcs = ["invocation.proto"],
     deps = [
         ":build_event_stream_proto",
+        ":command_line_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )
@@ -142,6 +143,7 @@ go_proto_library(
     proto = ":invocation_proto",
     deps = [
         ":build_event_stream_go_proto",
+        ":command_line_go_proto",
     ],
 )
 

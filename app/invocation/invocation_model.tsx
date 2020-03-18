@@ -41,6 +41,10 @@ export default class InvocationModel {
     model.invocations = invocations as invocation.Invocation[];
     for (let invocation of invocations) {
       if (invocation.consoleBuffer) model.consoleBuffer = invocation.consoleBuffer
+      for (let cl of invocation.structuredCommandLine) {
+        model.structuredCommandLine.push(cl as command_line.CommandLine)
+      }
+
       for (let event of invocation.event) {
         let buildEvent = event.buildEvent;
         if (buildEvent.progress) model.progress.push(buildEvent.progress as build_event_stream.Progress);
@@ -66,7 +70,6 @@ export default class InvocationModel {
         if (buildEvent.optionsParsed) model.optionsParsed = buildEvent.optionsParsed as build_event_stream.OptionsParsed;
         if (buildEvent.buildMetrics) model.buildMetrics = buildEvent.buildMetrics as build_event_stream.BuildMetrics;
         if (buildEvent.unstructuredCommandLine) model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
-        if (buildEvent.structuredCommandLine) model.structuredCommandLine.push(buildEvent.structuredCommandLine as command_line.CommandLine);
       }
     }
 

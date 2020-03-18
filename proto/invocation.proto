@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/build_event_stream.proto";
+import "proto/command_line.proto";
 import "google/protobuf/timestamp.proto";
 
 package invocation;
@@ -44,6 +45,12 @@ message Invocation {
     // NB: This buffer may be incomplete if invocation_status is not equal to
     // COMPLETE_INVOCATION_STATUS.
     string console_buffer = 11;
+
+    // The structured command line options for this invocation. These are
+    // extracted from the raw BuildEvents and in some cases filtered to remove
+    // sensitive information (like raw environment variables for non-logged-in
+    // users).
+    repeated command_line.CommandLine structured_command_line = 12;
 }
 
 
