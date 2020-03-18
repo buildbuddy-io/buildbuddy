@@ -87,7 +87,7 @@ def commit_version_bump(old_version, new_version):
 def create_and_push_tag(old_version, new_version, release_notes=''):
     commit_message = "Bump tag %s -> %s (release.py)" % (old_version, new_version)
     if len(release_notes) > 0:
-        commit_message = "\n".join(commit_message, release_notes)
+        commit_message = "\n".join([commit_message, release_notes])
 
     tag_cmd = 'git tag -a %s -m "%s"' % (new_version, commit_message)
     run_or_die(tag_cmd)
