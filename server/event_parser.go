@@ -24,6 +24,7 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 		case *build_event_stream.BuildEvent_Progress:
 			{
 				t.Write([]byte(p.Progress.Stderr))
+				t.Write([]byte(p.Progress.Stdout))
 			}
 		case *build_event_stream.BuildEvent_Aborted:
 			{
