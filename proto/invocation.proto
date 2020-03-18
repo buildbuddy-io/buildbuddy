@@ -39,6 +39,11 @@ message Invocation {
         PARTIAL_INVOCATION_STATUS = 2;
     }
     InvocationStatus invocation_status = 10;
+
+    // The console buffer extracted from the build events in this invocation.
+    // NB: This buffer may be incomplete if invocation_status is not equal to
+    // COMPLETE_INVOCATION_STATUS.
+    string console_buffer = 11;
 }
 
 

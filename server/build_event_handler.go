@@ -195,6 +195,6 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			return nil, err
 		}
 	}
-
+	event_parser.FillInvocationFromEvents(invocation.Event, invocation)
 	return invocation, nil
 }

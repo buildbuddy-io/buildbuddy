@@ -8,6 +8,7 @@ import format from '../format/format';
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
 
+  consoleBuffer: string;
   progress = new Array<build_event_stream.Progress>();
   targets: build_event_stream.BuildEvent[] = [];
   succeeded: build_event_stream.BuildEvent[] = [];
@@ -39,6 +40,7 @@ export default class InvocationModel {
     let model = new InvocationModel();
     model.invocations = invocations as invocation.Invocation[];
     for (let invocation of invocations) {
+      if (invocation.consoleBuffer) model.consoleBuffer = invocation.consoleBuffer
       for (let event of invocation.event) {
         let buildEvent = event.buildEvent;
         if (buildEvent.progress) model.progress.push(buildEvent.progress as build_event_stream.Progress);

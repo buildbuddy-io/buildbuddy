@@ -1,7 +1,10 @@
 package event_parser
 
 import (
+	"bytes"
 	"time"
+
+	"golang.org/x/crypto/ssh/terminal"
 
 	"proto/build_event_stream"
 	inpb "proto/invocation"
@@ -11,12 +14,16 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 	startTimeMillis := int64(-1)
 	endTimeMillis := int64(-1)
 
+	var rwBuf bytes.Buffer
+	t := terminal.NewTerminal(&rwBuf, "")
+
 	for _, event := range buildEvents {
 		invocation.Event = append(invocation.Event, event)
 
 		switch p := event.BuildEvent.Payload.(type) {
 		case *build_event_stream.BuildEvent_Progress:
 			{
+				t.Write([]byte(p.Progress.Stderr))
 			}
 		case *build_event_stream.BuildEvent_Aborted:
 			{
@@ -108,4 +115,5 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 
 	buildDuration := time.Duration((endTimeMillis - startTimeMillis) * int64(time.Millisecond))
 	invocation.DurationUsec = buildDuration.Microseconds()
+	invocation.ConsoleBuffer = string(rwBuf.Bytes())
 }

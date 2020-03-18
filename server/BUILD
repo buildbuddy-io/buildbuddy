@@ -125,6 +125,7 @@ go_library(
     deps = [
         "//proto:build_event_stream_go_proto",
         "//proto:invocation_go_proto",
+        "@org_golang_x_crypto//ssh/terminal:go_default_library",
     ],
 )
 

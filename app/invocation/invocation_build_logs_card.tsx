@@ -16,9 +16,7 @@ export default class BuildLogsCardComponent extends React.Component {
       <div className="content">
         <div className="title">Build logs </div>
         <div className="details">
-          <TerminalComponent value={this.props.model.progress.map(progress => {
-            return (progress.stderr + progress.stdout);
-          }).filter(output => output && output.length > 0).join("")} />
+          <TerminalComponent value={this.props.model.consoleBuffer} />
         </div>
       </div>
     </div>
