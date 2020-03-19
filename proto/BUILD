@@ -14,12 +14,6 @@ proto_library(
     ],
 )
 
-go_proto_library(
-    name = "build_status_go_proto",
-    importpath = "proto/build_status",
-    proto = ":build_status_proto",
-)
-
 proto_library(
     name = "build_events_proto",
     srcs = [
@@ -29,15 +23,6 @@ proto_library(
         ":build_status_proto",
         "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:timestamp_proto",
-    ],
-)
-
-go_proto_library(
-    name = "build_events_go_proto",
-    importpath = "proto/build_events",
-    proto = ":build_events_proto",
-    deps = [
-        ":build_status_go_proto",
     ],
 )
 
@@ -54,7 +39,86 @@ proto_library(
     ],
 )
 
-# Need to use go_grpc_library here to include the generated services.
+proto_library(
+    name = "build_event_stream_proto",
+    srcs = ["build_event_stream.proto"],
+    deps = [
+        ":command_line_proto",
+        ":invocation_policy_proto",
+    ],
+)
+
+proto_library(
+    name = "invocation_policy_proto",
+    srcs = ["invocation_policy.proto"],
+)
+
+proto_library(
+    name = "command_line_proto",
+    srcs = ["command_line.proto"],
+    deps = [
+        ":option_filters_proto",
+    ],
+)
+
+go_proto_library(
+    name = "build_status_go_proto",
+    importpath = "proto/build_status",
+    proto = ":build_status_proto",
+)
+
+go_proto_library(
+    name = "build_events_go_proto",
+    importpath = "proto/build_events",
+    proto = ":build_events_proto",
+    deps = [
+        ":build_status_go_proto",
+    ],
+)
+
+proto_library(
+    name = "option_filters_proto",
+    srcs = ["option_filters.proto"],
+)
+
+proto_library(
+    name = "invocation_proto",
+    srcs = ["invocation.proto"],
+    deps = [
+        ":build_event_stream_proto",
+        ":command_line_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+proto_library(
+    name = "buildbuddy_service_proto",
+    srcs = ["buildbuddy_service.proto"],
+    deps = [
+        ":invocation_proto",
+    ],
+)
+
+proto_library(
+    name = "semver_proto",
+    srcs = ["semver.proto"],
+)
+
+proto_library(
+    name = "remote_execution_proto",
+    srcs = ["remote_execution.proto"],
+    deps = [
+        ":semver_proto",
+        "@com_google_googleapis//google/longrunning:operations_proto",
+        "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:timestamp_proto",
+        "@go_googleapis//google/api:annotations_proto",
+        "@go_googleapis//google/rpc:status_proto",
+    ],
+)
+
+# Go proto rules below here
+
 go_grpc_library(
     name = "publish_build_event_go_proto",
     importpath = "proto/publish_build_event",
@@ -75,31 +139,10 @@ go_proto_library(
     ],
 )
 
-proto_library(
-    name = "build_event_stream_proto",
-    srcs = ["build_event_stream.proto"],
-    deps = [
-        ":command_line_proto",
-        ":invocation_policy_proto",
-    ],
-)
-
-ts_proto_library(
-    name = "build_event_stream_ts_proto",
-    deps = [":build_event_stream_proto"],
-)
-
 go_proto_library(
     name = "invocation_policy_go_proto",
     importpath = "proto/blaze.invocation_policy",
     proto = ":invocation_policy_proto",
-)
-
-proto_library(
-    name = "invocation_policy_proto",
-    srcs = ["invocation_policy.proto"],
-    deps = [
-    ],
 )
 
 go_proto_library(
@@ -111,42 +154,10 @@ go_proto_library(
     ],
 )
 
-proto_library(
-    name = "command_line_proto",
-    srcs = ["command_line.proto"],
-    deps = [
-        ":option_filters_proto",
-    ],
-)
-
-ts_proto_library(
-    name = "command_line_ts_proto",
-    deps = [":command_line_proto"],
-)
-
 go_proto_library(
     name = "option_filters_go_proto",
     importpath = "proto/options",
     proto = ":option_filters_proto",
-    deps = [
-    ],
-)
-
-proto_library(
-    name = "option_filters_proto",
-    srcs = ["option_filters.proto"],
-    deps = [
-    ],
-)
-
-proto_library(
-    name = "invocation_proto",
-    srcs = ["invocation.proto"],
-    deps = [
-        ":build_event_stream_proto",
-        ":command_line_proto",
-        "@com_google_protobuf//:timestamp_proto",
-    ],
 )
 
 go_proto_library(
@@ -159,19 +170,6 @@ go_proto_library(
     ],
 )
 
-ts_proto_library(
-    name = "invocation_ts_proto",
-    deps = [":invocation_proto"],
-)
-
-proto_library(
-    name = "buildbuddy_service_proto",
-    srcs = ["buildbuddy_service.proto"],
-    deps = [
-        ":invocation_proto",
-    ],
-)
-
 go_grpc_library(
     name = "buildbuddy_service_go_proto",
     importpath = "proto/buildbuddy_service",
@@ -179,6 +177,41 @@ go_grpc_library(
     deps = [
         ":invocation_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "semver_go_proto",
+    importpath = "proto/semver",
+    proto = ":semver_proto",
+)
+
+go_grpc_library(
+    name = "remote_execution_go_proto",
+    importpath = "proto/remote_execution",
+    proto = ":remote_execution_proto",
+    deps = [
+        ":semver_go_proto",
+        "@com_google_googleapis//google/longrunning:longrunning_go_proto",
+        "@go_googleapis//google/api:annotations_go_proto",
+        "@go_googleapis//google/rpc:status_go_proto",
+    ],
+)
+
+# TypeScript proto rules below here
+
+ts_proto_library(
+    name = "build_event_stream_ts_proto",
+    deps = [":build_event_stream_proto"],
+)
+
+ts_proto_library(
+    name = "command_line_ts_proto",
+    deps = [":command_line_proto"],
+)
+
+ts_proto_library(
+    name = "invocation_ts_proto",
+    deps = [":invocation_proto"],
 )
 
 ts_proto_library(
