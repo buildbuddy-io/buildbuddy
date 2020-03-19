@@ -13,9 +13,10 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 
-	bpb "proto"
 	"proto/build_event_stream"
+	bepb "proto/build_events"
 	inpb "proto/invocation"
+	pepb "proto/publish_build_event"
 )
 
 const (
@@ -32,17 +33,17 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	}
 }
 
-func isFinalEvent(obe *bpb.OrderedBuildEvent) bool {
+func isFinalEvent(obe *pepb.OrderedBuildEvent) bool {
 	switch obe.Event.Event.(type) {
-	case *bpb.BuildEvent_ComponentStreamFinished:
+	case *bepb.BuildEvent_ComponentStreamFinished:
 		return true
 	}
 	return false
 }
 
-func readBazelEvent(obe *bpb.OrderedBuildEvent, out *build_event_stream.BuildEvent) error {
+func readBazelEvent(obe *pepb.OrderedBuildEvent, out *build_event_stream.BuildEvent) error {
 	switch buildEvent := obe.Event.Event.(type) {
-	case *bpb.BuildEvent_BazelEvent:
+	case *bepb.BuildEvent_BazelEvent:
 		return ptypes.UnmarshalAny(buildEvent.BazelEvent, out)
 	}
 	return fmt.Errorf("Not a bazel event %s", obe)
@@ -116,7 +117,7 @@ func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error
 	return nil
 }
 
-func (e *EventChannel) HandleEvent(ctx context.Context, event *bpb.PublishBuildToolEventStreamRequest) error {
+func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuildToolEventStreamRequest) error {
 	seqNo := event.OrderedBuildEvent.SequenceNumber
 	streamID := event.OrderedBuildEvent.StreamId
 	iid := streamID.InvocationId

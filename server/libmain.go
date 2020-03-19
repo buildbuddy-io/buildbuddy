@@ -16,8 +16,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
-	bpb "proto"
 	bbspb "proto/buildbuddy_service"
+	bpb "proto/publish_build_event"
 )
 
 var (

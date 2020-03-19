@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	bpb "proto"
+	bpb "proto/publish_build_event"
 )
 
 type BuildEventProxyClient struct {

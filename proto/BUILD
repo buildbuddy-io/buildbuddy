@@ -5,44 +5,64 @@ load("//rules:typescript_proto_library.bzl", "ts_proto_library")
 package(default_visibility = ["//visibility:public"])
 
 proto_library(
-    name = "http_proto",
+    name = "build_status_proto",
     srcs = [
-        "http.proto",
-    ],
-)
-
-proto_library(
-    name = "annotations_proto",
-    srcs = [
-        "annotations.proto",
+        "build_status.proto",
     ],
     deps = [
-        ":http_proto",
-        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:any_proto",
+    ],
+)
+
+go_proto_library(
+    name = "build_status_go_proto",
+    importpath = "proto/build_status",
+    proto = ":build_status_proto",
+)
+
+proto_library(
+    name = "build_events_proto",
+    srcs = [
+        "build_events.proto",
+    ],
+    deps = [
+        ":build_status_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "build_events_go_proto",
+    importpath = "proto/build_events",
+    proto = ":build_events_proto",
+    deps = [
+        ":build_status_go_proto",
     ],
 )
 
 proto_library(
-    name = "build_proto",
+    name = "publish_build_event_proto",
     srcs = [
-        "build_events.proto",
-        "build_status.proto",
         "publish_build_event.proto",
     ],
     deps = [
-        ":annotations_proto",
-        "@com_google_protobuf//:any_proto",
+        ":build_events_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:empty_proto",
-        "@com_google_protobuf//:timestamp_proto",
+        "@go_googleapis//google/api:annotations_proto",
     ],
 )
 
 # Need to use go_grpc_library here to include the generated services.
 go_grpc_library(
-    name = "build_go_proto",
-    importpath = "proto",
-    proto = ":build_proto",
+    name = "publish_build_event_go_proto",
+    importpath = "proto/publish_build_event",
+    proto = ":publish_build_event_proto",
+    deps = [
+        ":build_events_go_proto",
+        "@go_googleapis//google/api:annotations_go_proto",
+    ],
 )
 
 ts_proto_library(
@@ -54,7 +74,6 @@ go_proto_library(
     name = "build_event_stream_go_proto",
     importpath = "proto/build_event_stream",
     proto = ":build_event_stream_proto",
-    visibility = ["//visibility:public"],
     deps = [
         ":command_line_go_proto",
         ":invocation_policy_go_proto",
@@ -79,8 +98,6 @@ go_proto_library(
     name = "invocation_policy_go_proto",
     importpath = "proto/blaze.invocation_policy",
     proto = ":invocation_policy_proto",
-    deps = [
-    ],
 )
 
 proto_library(

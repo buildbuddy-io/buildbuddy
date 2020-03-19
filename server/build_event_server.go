@@ -11,7 +11,8 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
 
-	bpb "proto"
+	bepb "proto/build_events"
+	pepb "proto/publish_build_event"
 )
 
 type BuildEventProtocolServer struct {
@@ -24,7 +25,7 @@ func NewBuildEventProtocolServer(env environment.Env) (*BuildEventProtocolServer
 	}, nil
 }
 
-func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, req *bpb.PublishLifecycleEventRequest) (*empty.Empty, error) {
+func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, req *pepb.PublishLifecycleEventRequest) (*empty.Empty, error) {
 	for _, client := range s.env.GetBuildEventProxyClients() {
 		go func() {
 			client.PublishLifecycleEvent(ctx, req)
@@ -49,13 +50,13 @@ func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, re
 // have been sent and all ACKs have been received. If not it invokes a retry logic that may
 // decide to re-send every build event for which an ACK has not been received. If so, it
 // adds an OPEN_STREAM event.
-func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream bpb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
+func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
 	// Semantically, the protocol requires we ack events in order.
 	acks := make([]int, 0)
-	var streamID *bpb.StreamId
+	var streamID *bepb.StreamId
 	var channel *build_event_handler.EventChannel
 
-	forwardingStreams := make([]bpb.PublishBuildEvent_PublishBuildToolEventStreamClient, 0)
+	forwardingStreams := make([]pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, 0)
 	for _, client := range s.env.GetBuildEventProxyClients() {
 		stream, err := client.PublishBuildToolEventStream(stream.Context(), grpc.WaitForReady(false))
 		if err != nil {
@@ -105,7 +106,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream bpb.Publis
 
 	// Finally, ack everything.
 	for _, ack := range acks {
-		rsp := &bpb.PublishBuildToolEventStreamResponse{
+		rsp := &pepb.PublishBuildToolEventStreamResponse{
 			StreamId:       streamID,
 			SequenceNumber: int64(ack),
 		}
