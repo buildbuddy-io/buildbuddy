@@ -65,11 +65,6 @@ go_grpc_library(
     ],
 )
 
-ts_proto_library(
-    name = "build_ts_proto",
-    deps = [":build_proto"],
-)
-
 go_proto_library(
     name = "build_event_stream_go_proto",
     importpath = "proto/build_event_stream",
