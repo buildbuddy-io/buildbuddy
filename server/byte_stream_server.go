@@ -8,7 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util_status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -44,13 +44,13 @@ func extractHash(resourceName string) (string, error) {
 
 func checkReadPreconditions(req *bspb.ReadRequest) error {
 	if req.ResourceName == "" {
-		return util_status.InvalidArgumentError("Missing resource name")
+		return status.InvalidArgumentError("Missing resource name")
 	}
 	if req.ReadOffset < 0 {
-		return util_status.OutOfRangeError("ReadOffset out of range")
+		return status.OutOfRangeError("ReadOffset out of range")
 	}
 	if req.ReadLimit < 0 {
-		return util_status.OutOfRangeError("ReadLimit out of range")
+		return status.OutOfRangeError("ReadLimit out of range")
 	}
 	return nil
 }
@@ -121,10 +121,10 @@ type writeState struct {
 
 func checkInitialPreconditions(req *bspb.WriteRequest) error {
 	if req.ResourceName == "" {
-		return util_status.InvalidArgumentError("Initial ResourceName must not be null")
+		return status.InvalidArgumentError("Initial ResourceName must not be null")
 	}
 	if req.WriteOffset != 0 {
-		return util_status.InvalidArgumentError("Initial WriteOffset should be 0")
+		return status.InvalidArgumentError("Initial WriteOffset should be 0")
 	}
 	return nil
 }
@@ -132,11 +132,11 @@ func checkInitialPreconditions(req *bspb.WriteRequest) error {
 func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error {
 	if req.ResourceName != "" {
 		if req.ResourceName != ws.activeResourceName {
-			return util_status.InvalidArgumentError(fmt.Sprintf("ResourceName '%s' does not match initial ResourceName: '%s'", req.ResourceName, ws.activeResourceName))
+			return status.InvalidArgumentError(fmt.Sprintf("ResourceName '%s' does not match initial ResourceName: '%s'", req.ResourceName, ws.activeResourceName))
 		}
 	}
 	if req.WriteOffset != ws.bytesWritten {
-		return util_status.InvalidArgumentError(fmt.Sprintf("Incorrect WriteOffset. Expected %d, got %d", ws.bytesWritten, req.WriteOffset))
+		return status.InvalidArgumentError(fmt.Sprintf("Incorrect WriteOffset. Expected %d, got %d", ws.bytesWritten, req.WriteOffset))
 	}
 	return nil
 }
@@ -151,7 +151,7 @@ func initStreamState(bs interfaces.Blobstore, ctx context.Context, req *bspb.Wri
 		return nil, err
 	}
 	if exists {
-		return nil, util_status.FailedPreconditionError(fmt.Sprintf("File %s already exists", hash))
+		return nil, status.FailedPreconditionError(fmt.Sprintf("File %s already exists", hash))
 	}
 	wc, err := bs.BlobWriter(ctx, hash)
 	if err != nil {

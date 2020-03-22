@@ -10,8 +10,8 @@ go_library(
     deps = [
         ":digest",
         ":environment",
-        ":util_status",
         "//proto:remote_execution_go_proto",
+        "//server/util:status",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@go_googleapis//google/rpc:status_go_proto",
         "@org_golang_google_grpc//codes:go_default_library",
@@ -40,12 +40,12 @@ go_library(
         ":environment",
         ":event_parser",
         ":interfaces",
-        ":protofile",
         ":tables",
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
         "//proto:invocation_go_proto",
         "//proto:publish_build_event_go_proto",
+        "//server/util:protofile",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
     ],
@@ -100,7 +100,7 @@ go_library(
     deps = [
         ":environment",
         ":interfaces",
-        ":util_status",
+        "//server/util:status",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
     ],
 )
@@ -131,7 +131,6 @@ go_library(
     deps = [
         ":digest",
         ":environment",
-        ":util_status",
         "//proto:remote_execution_go_proto",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@go_googleapis//google/rpc:status_go_proto",
@@ -163,8 +162,8 @@ go_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/digest",
     deps = [
-        ":util_status",
         "//proto:remote_execution_go_proto",
+        "//server/util:status",
     ],
 )
 
@@ -177,10 +176,10 @@ go_library(
         ":build_event_proxy",
         ":config",
         ":database",
-        ":healthcheck",
         ":interfaces",
         ":simplesearcher",
         ":slack",
+        "//server/util:healthcheck",
     ],
 )
 
@@ -196,18 +195,6 @@ go_library(
         "//proto:invocation_go_proto",
         "@org_golang_x_crypto//ssh/terminal:go_default_library",
     ],
-)
-
-go_library(
-    name = "healthcheck",
-    srcs = ["healthcheck.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/healthcheck",
-)
-
-go_library(
-    name = "httpfilters",
-    srcs = ["httpfilters.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/httpfilters",
 )
 
 go_library(
@@ -230,25 +217,6 @@ go_library(
     deps = [
         ":tables",
         "//proto:invocation_go_proto",
-    ],
-)
-
-go_library(
-    name = "protofile",
-    srcs = ["protofile.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/protofile",
-    deps = [
-        ":interfaces",
-        "@com_github_golang_protobuf//proto:go_default_library",
-    ],
-)
-
-go_library(
-    name = "protolet",
-    srcs = ["protolet.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/protolet",
-    deps = [
-        "@com_github_golang_protobuf//proto:go_default_library",
     ],
 )
 
@@ -294,18 +262,6 @@ go_library(
 )
 
 go_library(
-    name = "util_status",
-    srcs = [
-        "util_status.go",
-    ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util_status",
-    deps = [
-        "@org_golang_google_grpc//codes:go_default_library",
-        "@org_golang_google_grpc//status:go_default_library",
-    ],
-)
-
-go_library(
     name = "libmain",
     srcs = [
         "libmain.go",
@@ -344,9 +300,9 @@ go_binary(
     deps = [
         ":config",
         ":environment",
-        ":healthcheck",
         ":janitor",
         ":libmain",
+        "//server/util:healthcheck",
     ],
 )
 

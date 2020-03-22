@@ -1,4 +1,4 @@
-package util_status
+package status
 
 import (
 	"google.golang.org/grpc/codes"

@@ -6,7 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util_status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 
 	repb "proto/remote_execution"
@@ -41,7 +41,7 @@ func (s *ActionCacheServer) validateActionResult(r *repb.ActionResult) error {
 // * `NOT_FOUND`: The requested `ActionResult` is not in the cache.
 func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
 	if req.ActionDigest == nil {
-		return nil, util_status.InvalidArgumentError("ActionDigest is a required field")
+		return nil, status.InvalidArgumentError("ActionDigest is a required field")
 	}
 	hash, err := digest.Validate(req.ActionDigest)
 	if err != nil {
@@ -51,7 +51,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	blob, err := s.env.GetBlobstore().ReadBlob(ctx, hash)
 	if err != nil {
-		return nil, util_status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", hash, err))
+		return nil, status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", hash, err))
 		return nil, err
 	}
 
@@ -60,7 +60,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		return nil, err
 	}
 	if err := s.validateActionResult(rsp); err != nil {
-		return nil, util_status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", hash, err))
+		return nil, status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", hash, err))
 	}
 	return rsp, nil
 }
@@ -83,11 +83,11 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 //   entry to the cache.
 func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	if req.ActionDigest == nil {
-		return nil, util_status.InvalidArgumentError("ActionDigest is a required field")
+		return nil, status.InvalidArgumentError("ActionDigest is a required field")
 	}
 
 	if req.ActionResult == nil {
-		return nil, util_status.InvalidArgumentError("ActionResult is a required field")
+		return nil, status.InvalidArgumentError("ActionResult is a required field")
 	}
 
 	hash, err := digest.Validate(req.ActionDigest)

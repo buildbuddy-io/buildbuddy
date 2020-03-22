@@ -7,10 +7,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/database"
-	"github.com/buildbuddy-io/buildbuddy/server/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/simplesearcher"
 	"github.com/buildbuddy-io/buildbuddy/server/slack"
+	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 )
 
 // The environment struct allows for easily injecting many of buildbuddy's core

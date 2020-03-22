@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util_status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	repb "proto/remote_execution"
 )
 
@@ -24,17 +24,17 @@ var (
 func Validate(digest *repb.Digest) (string, error) {
 	if digest.SizeBytes == int64(0) {
 		if digest.Hash == EmptySha256 {
-			return "", util_status.OK()
+			return "", status.OK()
 		}
-		return "", util_status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
+		return "", status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
 	}
 
 	if len(digest.Hash) != hashKeyLength {
-		return "", util_status.InvalidArgumentError(fmt.Sprintf("Hash length was %d, expected %d", len(digest.Hash), hashKeyLength))
+		return "", status.InvalidArgumentError(fmt.Sprintf("Hash length was %d, expected %d", len(digest.Hash), hashKeyLength))
 	}
 
 	if !hashKeyRegex.MatchString(digest.Hash) {
-		return "", util_status.InvalidArgumentError("Malformed hash")
+		return "", status.InvalidArgumentError("Malformed hash")
 	}
 	return digest.Hash, nil
 }
