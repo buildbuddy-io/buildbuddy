@@ -4,18 +4,6 @@ load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 package(default_visibility = ["//visibility:public"])
 
 go_library(
-    name = "blobstore",
-    srcs = ["blobstore.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/blobstore",
-    deps = [
-        ":config",
-        ":interfaces",
-        "@com_google_cloud_go_storage//:go_default_library",
-        "@org_golang_google_api//option:go_default_library",
-    ],
-)
-
-go_library(
     name = "buildbuddy_server",
     srcs = ["buildbuddy_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server",
@@ -39,32 +27,16 @@ go_library(
 )
 
 go_library(
-    name = "database",
-    srcs = [
-        "database.go",
-    ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/database",
-    deps = [
-        ":config",
-        ":tables",
-        "@com_github_jinzhu_gorm//:go_default_library",
-        "@com_github_jinzhu_gorm//dialects/mysql:go_default_library",
-        "@com_github_jinzhu_gorm//dialects/postgres:go_default_library",
-        "@com_github_jinzhu_gorm//dialects/sqlite:go_default_library",
-    ],
-)
-
-go_library(
     name = "environment",
     srcs = ["environment.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/environment",
     deps = [
-        ":blobstore",
         ":config",
-        ":database",
         ":interfaces",
-        ":simplesearcher",
-        ":slack",
+        "//server/backends:blobstore",
+        "//server/backends:database",
+        "//server/backends:simplesearcher",
+        "//server/backends:slack",
         "//server/build_event_protocol:build_event_proxy",
         "//server/util:healthcheck",
     ],
@@ -76,10 +48,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/janitor",
     deps = [
         ":config",
-        ":database",
         ":environment",
         ":interfaces",
         ":tables",
+        "//server/backends:database",
     ],
 )
 
@@ -89,26 +61,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/interfaces",
     deps = [
         ":tables",
-        "//proto:invocation_go_proto",
-    ],
-)
-
-go_library(
-    name = "simplesearcher",
-    srcs = ["simplesearcher.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/simplesearcher",
-    deps = [
-        ":database",
-        ":tables",
-        "//proto:invocation_go_proto",
-    ],
-)
-
-go_library(
-    name = "slack",
-    srcs = ["slack.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/slack",
-    deps = [
         "//proto:invocation_go_proto",
     ],
 )

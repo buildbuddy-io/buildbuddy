@@ -3,13 +3,13 @@ package environment
 import (
 	"log"
 
-	"github.com/buildbuddy-io/buildbuddy/server/blobstore"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/database"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/simplesearcher"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
-	"github.com/buildbuddy-io/buildbuddy/server/database"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/simplesearcher"
-	"github.com/buildbuddy-io/buildbuddy/server/slack"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 )
 

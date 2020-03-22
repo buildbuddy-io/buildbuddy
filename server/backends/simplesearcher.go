@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/database"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/database"
 	inpb "proto/invocation"
 )
 
