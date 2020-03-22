@@ -16,63 +16,15 @@ go_library(
 )
 
 go_library(
-    name = "build_event_handler",
-    srcs = ["build_event_handler.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_handler",
-    deps = [
-        ":config",
-        ":environment",
-        ":event_parser",
-        ":interfaces",
-        ":tables",
-        "//proto:build_event_stream_go_proto",
-        "//proto:build_events_go_proto",
-        "//proto:invocation_go_proto",
-        "//proto:publish_build_event_go_proto",
-        "//server/util:protofile",
-        "@com_github_golang_protobuf//proto:go_default_library",
-        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
-    ],
-)
-
-go_library(
-    name = "build_event_proxy",
-    srcs = ["build_event_proxy.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_proxy",
-    deps = [
-        "//proto:publish_build_event_go_proto",
-        "@org_golang_google_grpc//:go_default_library",
-    ],
-)
-
-go_library(
-    name = "build_event_server",
-    srcs = ["build_event_server.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_server",
-    deps = [
-        ":build_event_handler",
-        ":environment",
-        "//proto:build_event_stream_go_proto",
-        "//proto:build_events_go_proto",
-        "//proto:invocation_go_proto",
-        "//proto:publish_build_event_go_proto",
-        "@com_github_golang_protobuf//proto:go_default_library",
-        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
-        "@io_bazel_rules_go//proto/wkt:empty_go_proto",
-        "@org_golang_google_grpc//:go_default_library",
-    ],
-)
-
-go_library(
     name = "buildbuddy_server",
     srcs = ["buildbuddy_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server",
     deps = [
-        ":build_event_handler",
         ":environment",
         ":interfaces",
         "//proto:buildbuddy_service_go_proto",
         "//proto:invocation_go_proto",
+        "//server/build_event_protocol:build_event_handler",
         "@com_github_golang_protobuf//proto:go_default_library",
     ],
 )
@@ -108,27 +60,13 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/environment",
     deps = [
         ":blobstore",
-        ":build_event_proxy",
         ":config",
         ":database",
         ":interfaces",
         ":simplesearcher",
         ":slack",
+        "//server/build_event_protocol:build_event_proxy",
         "//server/util:healthcheck",
-    ],
-)
-
-go_library(
-    name = "event_parser",
-    srcs = [
-        "event_parser.go",
-    ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/event_parser",
-    deps = [
-        "//proto:build_event_stream_go_proto",
-        "//proto:command_line_go_proto",
-        "//proto:invocation_go_proto",
-        "@org_golang_x_crypto//ssh/terminal:go_default_library",
     ],
 )
 
@@ -203,13 +141,13 @@ go_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/libmain",
     deps = [
-        ":build_event_server",
         ":buildbuddy_server",
         ":environment",
         ":static",
         "//proto:buildbuddy_service_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",
+        "//server/build_event_protocol:build_event_server",
         "//server/http:filters",
         "//server/http:protolet",
         "//server/remote_cache:action_cache_server",

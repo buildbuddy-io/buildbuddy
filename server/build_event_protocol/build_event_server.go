@@ -6,7 +6,7 @@ import (
 	"log"
 	"sort"
 
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"

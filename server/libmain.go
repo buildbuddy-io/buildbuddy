@@ -7,7 +7,7 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_server"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/filters"

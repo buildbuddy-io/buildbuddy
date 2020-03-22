@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"github.com/buildbuddy-io/buildbuddy/server/blobstore"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_proxy"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/database"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
