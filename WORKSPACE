@@ -134,19 +134,3 @@ protobuf_deps()
 load(":deps.bzl", "install_buildbuddy_dependencies")
 
 install_buildbuddy_dependencies()
-
-http_archive(
-    name = "com_google_googleapis",
-    sha256 = "136e333508337030e112afe4974e2e595a8f4751e9a1aefc598b7aa7282740db",
-    strip_prefix = "googleapis-a9a9950dc472e7036e05df8dd29597cd19235649",
-    urls = [
-        "https://github.com/googleapis/googleapis/archive/a9a9950dc472e7036e05df8dd29597cd19235649.tar.gz",
-    ],
-)
-
-load("@com_google_googleapis//:repository_rules.bzl", "switched_rules_by_language")
-
-switched_rules_by_language(
-    name = "com_google_googleapis_imports",
-    go = True,
-)

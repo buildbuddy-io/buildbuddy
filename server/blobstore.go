@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -128,6 +129,59 @@ func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	return os.Remove(filepath.Join(d.rootDir, blobName))
 }
 
+func (d *DiskBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
+	_, err := os.Stat(filepath.Join(d.rootDir, blobName))
+	// Verbose for clarity.
+	if os.IsNotExist(err) {
+		return false, nil
+	} else if os.IsExist(err) {
+		return true, nil
+	} else {
+		return false, err
+	}
+}
+
+func (d *DiskBlobStore) BlobReader(ctx context.Context, blobName string, offset, length int64) (io.Reader, error) {
+	f, err := os.Open(filepath.Join(d.rootDir, blobName))
+	if err != nil {
+		return nil, err
+	}
+	f.Seek(offset, 0)
+	if length > 0 {
+		return io.LimitReader(f, length), nil
+	}
+	return f, nil
+}
+
+type writeMover struct {
+	*os.File
+	finalPath string
+}
+
+func (w *writeMover) Close() error {
+	tmpName := w.File.Name()
+	if err := w.File.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, w.finalPath)
+}
+
+func (d *DiskBlobStore) BlobWriter(ctx context.Context, blobName string) (io.WriteCloser, error) {
+	fullPath := filepath.Join(d.rootDir, blobName)
+	if err := ensureDirectoryExists(filepath.Dir(fullPath)); err != nil {
+		return nil, err
+	}
+	tmpFileName := fullPath + ".tmp"
+	f, err := os.OpenFile(tmpFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+	return &writeMover{
+		File:      f,
+		finalPath: fullPath,
+	}, nil
+}
+
 // GCSBlobStore implements the blobstore API on top of the google cloud storage API.
 type GCSBlobStore struct {
 	gcsClient    *storage.Client
@@ -165,6 +219,9 @@ func (g *GCSBlobStore) createBucketIfNotExists(ctx context.Context, bucketName s
 func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
 	reader, err := g.bucketHandle.Object(blobName).NewReader(ctx)
 	if err != nil {
+		if err == storage.ErrObjectNotExist {
+			return nil, os.ErrNotExist
+		}
 		return nil, err
 	}
 	return decompress(ioutil.ReadAll(reader))
@@ -183,4 +240,30 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 
 func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	return g.bucketHandle.Object(blobName).Delete(ctx)
+}
+
+func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
+	_, err := g.bucketHandle.Object(blobName).Attrs(ctx)
+	if err == storage.ErrObjectNotExist {
+		return false, nil
+	} else if err == nil {
+		return true, nil
+	} else {
+		return false, err
+	}
+}
+
+func (g *GCSBlobStore) BlobReader(ctx context.Context, blobName string, offset, length int64) (io.Reader, error) {
+	reader, err := g.bucketHandle.Object(blobName).NewReader(ctx)
+	if err != nil {
+		if err == storage.ErrObjectNotExist {
+			return nil, os.ErrNotExist
+		}
+		return nil, err
+	}
+	return reader, nil
+}
+
+func (g *GCSBlobStore) BlobWriter(ctx context.Context, blobName string) (io.WriteCloser, error) {
+	return g.bucketHandle.Object(blobName).NewWriter(ctx), nil
 }

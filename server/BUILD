@@ -4,6 +4,22 @@ load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 package(default_visibility = ["//visibility:public"])
 
 go_library(
+    name = "action_cache_server",
+    srcs = ["action_cache_server.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/action_cache_server",
+    deps = [
+        ":digest",
+        ":environment",
+        ":util_status",
+        "//proto:remote_execution_go_proto",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_grpc//codes:go_default_library",
+        "@org_golang_google_grpc//status:go_default_library",
+    ],
+)
+
+go_library(
     name = "blobstore",
     srcs = ["blobstore.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/blobstore",
@@ -78,11 +94,49 @@ go_library(
 )
 
 go_library(
+    name = "byte_stream_server",
+    srcs = ["byte_stream_server.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/byte_stream_server",
+    deps = [
+        ":environment",
+        ":interfaces",
+        ":util_status",
+        "@go_googleapis//google/bytestream:bytestream_go_proto",
+    ],
+)
+
+go_library(
+    name = "capabilities_server",
+    srcs = ["capabilities_server.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/capabilities_server",
+    deps = [
+        "//proto:remote_execution_go_proto",
+        "//proto:semver_go_proto",
+    ],
+)
+
+go_library(
     name = "config",
     srcs = ["config.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/config",
     deps = [
         "@in_gopkg_yaml_v2//:go_default_library",
+    ],
+)
+
+go_library(
+    name = "content_addressable_storage_server",
+    srcs = ["content_addressable_storage_server.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/content_addressable_storage_server",
+    deps = [
+        ":digest",
+        ":environment",
+        ":util_status",
+        "//proto:remote_execution_go_proto",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_grpc//codes:go_default_library",
+        "@org_golang_google_grpc//status:go_default_library",
     ],
 )
 
@@ -99,6 +153,18 @@ go_library(
         "@com_github_jinzhu_gorm//dialects/mysql:go_default_library",
         "@com_github_jinzhu_gorm//dialects/postgres:go_default_library",
         "@com_github_jinzhu_gorm//dialects/sqlite:go_default_library",
+    ],
+)
+
+go_library(
+    name = "digest",
+    srcs = [
+        "digest.go",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/digest",
+    deps = [
+        ":util_status",
+        "//proto:remote_execution_go_proto",
     ],
 )
 
@@ -228,20 +294,38 @@ go_library(
 )
 
 go_library(
+    name = "util_status",
+    srcs = [
+        "util_status.go",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/util_status",
+    deps = [
+        "@org_golang_google_grpc//codes:go_default_library",
+        "@org_golang_google_grpc//status:go_default_library",
+    ],
+)
+
+go_library(
     name = "libmain",
     srcs = [
         "libmain.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/libmain",
     deps = [
+        ":action_cache_server",
         ":build_event_server",
         ":buildbuddy_server",
+        ":byte_stream_server",
+        ":capabilities_server",
+        ":content_addressable_storage_server",
         ":environment",
         ":httpfilters",
         ":protolet",
         ":static",
         "//proto:buildbuddy_service_go_proto",
         "//proto:publish_build_event_go_proto",
+        "//proto:remote_execution_go_proto",
+        "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//reflection:go_default_library",
     ],

@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -9,10 +10,17 @@ import (
 )
 
 // A Blobstore must allow for reading, writing, and deleting blobs.
+// Implementations should "os" package type errors, for example, if a file does
+// not exist on Read, the blobstore should return an os.ErrNotExist error.
 type Blobstore interface {
+	BlobExists(ctx context.Context, blobName string) (bool, error)
 	ReadBlob(ctx context.Context, blobName string) ([]byte, error)
 	WriteBlob(ctx context.Context, blobName string, data []byte) error
 	DeleteBlob(ctx context.Context, blobName string) error
+
+	// Low level interface used for seeking and stream-writing.
+	BlobReader(ctx context.Context, blobName string, offset, length int64) (io.Reader, error)
+	BlobWriter(ctx context.Context, blobName string) (io.WriteCloser, error)
 }
 
 // A Database must allow for various object update operations.

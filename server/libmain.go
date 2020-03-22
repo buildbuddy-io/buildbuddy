@@ -7,8 +7,12 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/buildbuddy-io/buildbuddy/server/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
+	"github.com/buildbuddy-io/buildbuddy/server/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/capabilities_server"
+	"github.com/buildbuddy-io/buildbuddy/server/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/httpfilters"
 	"github.com/buildbuddy-io/buildbuddy/server/protolet"
@@ -16,8 +20,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	bbspb "proto/buildbuddy_service"
 	bpb "proto/publish_build_event"
+	repb "proto/remote_execution"
 )
 
 var (
@@ -40,7 +46,7 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Error initializing app server: %s", err)
 	}
 
-	// Initialize our gRPC server (and fail early if not).
+	// Initialize our gRPC server (and fail early if that doesn't happen).
 	gRPCHostAndPort := fmt.Sprintf("%s:%d", *listen, *gRPCPort)
 	log.Printf("gRPC listening on http://%s\n", gRPCHostAndPort)
 
@@ -49,22 +55,59 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Failed to listen: %s", err)
 	}
 	grpcServer := grpc.NewServer()
+
+	// Register to handle build event protocol messages.
 	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env)
 	if err != nil {
 		log.Fatalf("Error initializing BuildEventProtocolServer: %s", err)
 	}
 	bpb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
+
+	// Register to handle content addressable storage (CAS) messages.
+	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
+	if err != nil {
+		log.Fatalf("Error initializing ContentAddressableStorageServer: %s", err)
+	}
+	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
+
+	// Register to handle bytestream (upload and download) messages.
+	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
+	if err != nil {
+		log.Fatalf("Error initializing ByteStreamServer: %s", err)
+	}
+	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
+
+	// Register to handle action cache (upload and download) messages.
+	actionCacheServer, err := action_cache_server.NewActionCacheServer(env)
+	if err != nil {
+		log.Fatalf("Error initializing ActionCacheServer: %s", err)
+	}
+	repb.RegisterActionCacheServer(grpcServer, actionCacheServer)
+
+	// Register to handle GetCapabilities messages, which tell the client
+	// that this server supports CAS functionality.
+	capabilitiesServer := capabilities_server.NewCapabilitiesServer( /*supportCAS=*/ true /*supportRemoteExec=*/, false)
+	repb.RegisterCapabilitiesServer(grpcServer, capabilitiesServer)
+
+	// Support reflection so that tools like grpc-cli (aka stubby) can
+	// enumerate our services and call them.
 	reflection.Register(grpcServer)
+
+	// Register to handle BuildBuddy API messages (over gRPC)
 	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env)
 	if err != nil {
 		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
 	}
+
+	// Generate HTTP (protolet) handlers for the BuildBuddy API too, so it
+	// can be called over HTTP(s).
 	protoHandler, err := protolet.GenerateHTTPHandlers(buildBuddyServer)
 	if err != nil {
 		log.Fatalf("Error initializing RPC over HTTP handlers: %s", err)
 	}
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
+	// Register all of our HTTP handlers on the default mux.
 	http.Handle("/", httpfilters.WrapExternalHandler(staticFileServer))
 	http.Handle("/app/", httpfilters.WrapExternalHandler(http.StripPrefix("/app", afs)))
 	http.Handle("/rpc/BuildBuddyService/", httpfilters.WrapExternalHandler(http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))

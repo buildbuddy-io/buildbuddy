@@ -109,10 +109,10 @@ proto_library(
     srcs = ["remote_execution.proto"],
     deps = [
         ":semver_proto",
-        "@com_google_googleapis//google/longrunning:operations_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@go_googleapis//google/api:annotations_proto",
+        "@go_googleapis//google/longrunning:longrunning_proto",
         "@go_googleapis//google/rpc:status_proto",
     ],
 )
@@ -191,8 +191,8 @@ go_grpc_library(
     proto = ":remote_execution_proto",
     deps = [
         ":semver_go_proto",
-        "@com_google_googleapis//google/longrunning:longrunning_go_proto",
         "@go_googleapis//google/api:annotations_go_proto",
+        "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
     ],
 )
