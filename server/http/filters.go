@@ -1,4 +1,4 @@
-package httpfilters
+package filters
 
 import (
 	"compress/gzip"

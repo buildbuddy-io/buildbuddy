@@ -14,8 +14,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/httpfilters"
-	"github.com/buildbuddy-io/buildbuddy/server/protolet"
+	"github.com/buildbuddy-io/buildbuddy/server/http/filters"
+	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -108,9 +108,9 @@ func StartAndRunServices(env environment.Env) {
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
 	// Register all of our HTTP handlers on the default mux.
-	http.Handle("/", httpfilters.WrapExternalHandler(staticFileServer))
-	http.Handle("/app/", httpfilters.WrapExternalHandler(http.StripPrefix("/app", afs)))
-	http.Handle("/rpc/BuildBuddyService/", httpfilters.WrapExternalHandler(http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))
+	http.Handle("/", filters.WrapExternalHandler(staticFileServer))
+	http.Handle("/app/", filters.WrapExternalHandler(http.StripPrefix("/app", afs)))
+	http.Handle("/rpc/BuildBuddyService/", filters.WrapExternalHandler(http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))
 	http.Handle("/healthz", env.GetHealthChecker())
 
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
