@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/buildbuddy-io/buildbuddy/server/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
