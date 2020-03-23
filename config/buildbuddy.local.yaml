@@ -7,3 +7,6 @@ storage:
   chunk_file_size_bytes: 3000000  # 3 MB
   disk:
     root_directory: /tmp/buildbuddy
+cache:
+  disk:
+    root_directory: /tmp/buildbuddy/cache

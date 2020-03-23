@@ -83,14 +83,14 @@ type Model struct {
 // So, we handle this in go-code and set these to time.Now().UnixNano and store
 // as int64.
 func (m *Model) BeforeCreate(tx *gorm.DB) (err error) {
-	nowInt64 := int64(time.Now().UnixNano())
+	nowInt64 := int64(time.Now().UnixNano() / 1000)
 	m.CreatedAtUsec = nowInt64
 	m.UpdatedAtUsec = nowInt64
 	return nil
 }
 
 func (m *Model) BeforeUpdate(tx *gorm.DB) (err error) {
-	m.UpdatedAtUsec = int64(time.Now().UnixNano())
+	m.UpdatedAtUsec = int64(time.Now().UnixNano() / 1000)
 	return nil
 }
 
@@ -144,6 +144,17 @@ func (i *Invocation) ToProto() *inpb.Invocation {
 	return out
 }
 
+type CacheEntry struct {
+	Model
+	EntryID            string `gorm:"primary_key;"`
+	ExpirationTimeUsec int64
+}
+
+func (c *CacheEntry) TableName() string {
+	return "CacheEntries"
+}
+
 func init() {
 	registerTable("IN", &Invocation{})
+	registerTable("CA", &CacheEntry{})
 }

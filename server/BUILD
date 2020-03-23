@@ -34,6 +34,7 @@ go_library(
         ":config",
         ":interfaces",
         "//server/backends:blobstore",
+        "//server/backends:cache",
         "//server/backends:database",
         "//server/backends:simplesearcher",
         "//server/backends:slack",

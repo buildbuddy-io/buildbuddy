@@ -25,12 +25,16 @@ var (
 )
 
 type ByteStreamServer struct {
-	env environment.Env
+	cache interfaces.Cache
 }
 
 func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
+	cache := env.GetCache()
+	if cache == nil {
+		return nil, fmt.Errorf("A cache is required to enable the ByteStreamServer")
+	}
 	return &ByteStreamServer{
-		env: env,
+		cache: cache,
 	}, nil
 }
 
@@ -66,7 +70,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err != nil {
 		return err
 	}
-	reader, err := s.env.GetBlobstore().BlobReader(stream.Context(), hash, req.ReadOffset, req.ReadLimit)
+	reader, err := s.cache.Reader(stream.Context(), hash, req.ReadOffset, req.ReadLimit)
 	if err != nil {
 		return err
 	}
@@ -141,19 +145,19 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error 
 	return nil
 }
 
-func initStreamState(bs interfaces.Blobstore, ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
+func initStreamState(c interfaces.Cache, ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
 	hash, err := extractHash(req.ResourceName)
 	if err != nil {
 		return nil, err
 	}
-	exists, err := bs.BlobExists(ctx, hash)
+	exists, err := c.Contains(ctx, hash)
 	if err != nil {
 		return nil, err
 	}
 	if exists {
 		return nil, status.FailedPreconditionError(fmt.Sprintf("File %s already exists", hash))
 	}
-	wc, err := bs.BlobWriter(ctx, hash)
+	wc, err := c.Writer(ctx, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +184,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			if err := checkInitialPreconditions(req); err != nil {
 				return err
 			}
-			streamState, err = initStreamState(s.env.GetBlobstore(), stream.Context(), req)
+			streamState, err = initStreamState(s.cache, stream.Context(), req)
 			if err != nil {
 				return err
 			}

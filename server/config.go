@@ -18,6 +18,7 @@ type generalConfig struct {
 	Database        databaseConfig     `yaml:"database"`
 	Storage         storageConfig      `yaml:"storage"`
 	Integrations    integrationsConfig `yaml:"integrations"`
+	Cache           cacheConfig        `yaml:"cache"`
 }
 
 type appConfig struct {
@@ -55,6 +56,13 @@ type integrationsConfig struct {
 
 type SlackConfig struct {
 	WebhookURL string `yaml:"webhook_url"`
+}
+
+type cacheConfig struct {
+	Disk         DiskConfig `yaml:"disk"`
+	GCS          GCSConfig  `yaml:"gcs"`
+	TTLSeconds   int        `yaml:"ttl_seconds"`
+	MaxSizeBytes int64      `yaml:"max_size_bytes"`
 }
 
 func ensureDirectoryExists(dir string) error {
@@ -134,7 +142,7 @@ func (c *Configurator) rereadIfStale() {
 	c.gc = conf
 }
 
-func (c *Configurator) GetStorageTtlSeconds() int {
+func (c *Configurator) GetStorageTTLSeconds() int {
 	return c.gc.Storage.TTLSeconds
 }
 
@@ -170,4 +178,24 @@ func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {
 func (c *Configurator) GetBuildEventProxyHosts() []string {
 	c.rereadIfStale()
 	return c.gc.BuildEventProxy.Hosts
+}
+
+func (c *Configurator) GetCacheTTLSeconds() int {
+	c.rereadIfStale()
+	return c.gc.Cache.TTLSeconds
+}
+
+func (c *Configurator) GetCacheMaxSizeBytes() int64 {
+	c.rereadIfStale()
+	return c.gc.Cache.MaxSizeBytes
+}
+
+func (c *Configurator) GetCacheDiskRootDir() string {
+	c.rereadIfStale()
+	return c.gc.Cache.Disk.RootDirectory
+}
+
+func (c *Configurator) GetCacheGCSConfig() *GCSConfig {
+	c.rereadIfStale()
+	return &c.gc.Cache.GCS
 }

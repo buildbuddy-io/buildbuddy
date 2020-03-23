@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
@@ -13,12 +14,16 @@ import (
 )
 
 type ActionCacheServer struct {
-	env environment.Env
+	cache interfaces.Cache
 }
 
 func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
+	cache := env.GetCache()
+	if cache == nil {
+		return nil, fmt.Errorf("A cache is required to enable the ActionCacheServer")
+	}
 	return &ActionCacheServer{
-		env: env,
+		cache: cache,
 	}, nil
 }
 
@@ -49,7 +54,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	}
 
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
-	blob, err := s.env.GetBlobstore().ReadBlob(ctx, hash)
+	blob, err := s.cache.Get(ctx, hash)
 	if err != nil {
 		return nil, status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", hash, err))
 		return nil, err
@@ -100,7 +105,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return nil, err
 	}
 
-	if err := s.env.GetBlobstore().WriteBlob(ctx, hash, blob); err != nil {
+	if err := s.cache.Set(ctx, hash, blob); err != nil {
 		return nil, err
 	}
 	return req.ActionResult, nil

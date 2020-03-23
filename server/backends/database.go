@@ -31,7 +31,7 @@ func NewDatabase(dialect string, args ...interface{}) (*Database, error) {
 		return nil, err
 	}
 	gdb.SingularTable(true)
-	gdb.LogMode(true)
+	gdb.LogMode(false)
 	if *autoMigrateDB {
 		gdb.AutoMigrate(tables.GetAllTables()...)
 	}
@@ -83,7 +83,7 @@ func (d *Database) LookupInvocation(ctx context.Context, invocationID string) (*
 }
 
 func (d *Database) LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error) {
-	cutoffUsec := cutoffTime.UnixNano()
+	cutoffUsec := cutoffTime.UnixNano() / 1000
 	rows, err := d.gormDB.Raw(`SELECT * FROM Invocations as i
                                    WHERE i.created_at_usec < ?
                                    LIMIT ?`, cutoffUsec, limit).Rows()
@@ -127,4 +127,23 @@ func (d *Database) RawQueryInvocations(ctx context.Context, sql string, values .
 		invocations = append(invocations, &i)
 	}
 	return invocations, nil
+}
+
+// CACHE API
+func (d *Database) InsertOrUpdateCacheEntry(ctx context.Context, c *tables.CacheEntry) error {
+	return d.gormDB.Transaction(func(tx *gorm.DB) error {
+		var existing tables.CacheEntry
+		if err := tx.Where("entry_id = ?", c.EntryID).First(&existing).Error; err != nil {
+			if gorm.IsRecordNotFoundError(err) {
+				tx.Create(c)
+			}
+		} else {
+			tx.Model(&existing).Where("entry_id = ?", c.EntryID).Updates(c)
+		}
+		return nil
+	})
+}
+func (d *Database) DeleteCacheEntry(ctx context.Context, key string) error {
+	c := &tables.CacheEntry{EntryID: key}
+	return d.gormDB.Delete(c).Error
 }

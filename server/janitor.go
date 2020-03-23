@@ -27,7 +27,7 @@ type Janitor struct {
 func NewJanitor(env environment.Env) *Janitor {
 	return &Janitor{
 		env: env,
-		ttl: time.Duration(env.GetConfigurator().GetStorageTtlSeconds()) * time.Second,
+		ttl: time.Duration(env.GetConfigurator().GetStorageTTLSeconds()) * time.Second,
 	}
 }
 

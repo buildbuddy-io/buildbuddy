@@ -2,8 +2,10 @@ package environment
 
 import (
 	"log"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/database"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/simplesearcher"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
@@ -39,6 +41,7 @@ type Env interface {
 	GetWebhooks() []interfaces.Webhook
 	GetSearcher() interfaces.Searcher
 	GetBuildEventProxyClients() []*build_event_proxy.BuildEventProxyClient
+	GetCache() interfaces.Cache
 }
 
 type RealEnv struct {
@@ -50,6 +53,7 @@ type RealEnv struct {
 	webhooks               []interfaces.Webhook
 	searcher               interfaces.Searcher
 	buildEventProxyClients []*build_event_proxy.BuildEventProxyClient
+	cache                  interfaces.Cache
 }
 
 func (r *RealEnv) GetConfigurator() *config.Configurator {
@@ -102,6 +106,13 @@ func (r *RealEnv) SetBuildEventProxyClients(clients []*build_event_proxy.BuildEv
 	r.buildEventProxyClients = clients
 }
 
+func (r *RealEnv) GetCache() interfaces.Cache {
+	return r.cache
+}
+func (r *RealEnv) SetCache(c interfaces.Cache) {
+	r.cache = c
+}
+
 // Normally this code would live in main.go -- we put it here for now because
 // the environments used by the open-core version and the enterprise version are
 // not substantially different enough yet to warrant the extra complexity of
@@ -116,14 +127,23 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 		log.Fatalf("Error configuring database: %s", err)
 	}
 
-	searcher := simplesearcher.NewSimpleSearcher(rawDB)
-	appURL := configurator.GetAppBuildBuddyURL()
+	realEnv := &RealEnv{
+		// REQUIRED
+		c:  configurator,
+		bs: bs,
+		db: rawDB,
+		h:  checker,
+	}
+
+	realEnv.SetSearcher(simplesearcher.NewSimpleSearcher(rawDB))
 	webhooks := make([]interfaces.Webhook, 0)
+	appURL := configurator.GetAppBuildBuddyURL()
 	if sc := configurator.GetIntegrationsSlackConfig(); sc != nil {
 		if sc.WebhookURL != "" {
 			webhooks = append(webhooks, slack.NewSlackWebhook(sc.WebhookURL, appURL))
 		}
 	}
+	realEnv.SetWebhooks(webhooks)
 
 	buildEventProxyClients := make([]*build_event_proxy.BuildEventProxyClient, 0)
 	for _, target := range configurator.GetBuildEventProxyHosts() {
@@ -132,17 +152,20 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 		buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(target))
 		log.Printf("Proxy: forwarding build events to: %s", target)
 	}
+	realEnv.SetBuildEventProxyClients(buildEventProxyClients)
 
-	return &RealEnv{
-		// REQUIRED
-		c:  configurator,
-		bs: bs,
-		db: rawDB,
-		h:  checker,
-
-		// OPTIONAL
-		webhooks:               webhooks,
-		searcher:               searcher,
-		buildEventProxyClients: buildEventProxyClients,
+	cacheBlobstore, err := blobstore.GetOptionalCacheBlobstore(configurator)
+	if err != nil {
+		log.Fatalf("Error configuring cache blobstore: %s", err)
 	}
+	if cacheBlobstore != nil {
+		ttl := time.Duration(configurator.GetCacheTTLSeconds()) * time.Second
+		cache, err := cache.NewCache(cacheBlobstore, rawDB, ttl, configurator.GetCacheMaxSizeBytes())
+		if err != nil {
+			log.Fatalf("Error configuring cache: %s", err)
+		}
+		realEnv.SetCache(cache)
+		log.Printf("Cache: BuildBuddy cache API enabled!")
+	}
+	return realEnv
 }

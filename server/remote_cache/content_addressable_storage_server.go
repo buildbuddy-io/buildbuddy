@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/genproto/googleapis/rpc/status"
@@ -15,12 +16,16 @@ import (
 )
 
 type ContentAddressableStorageServer struct {
-	env environment.Env
+	cache interfaces.Cache
 }
 
 func NewContentAddressableStorageServer(env environment.Env) (*ContentAddressableStorageServer, error) {
+	cache := env.GetCache()
+	if cache == nil {
+		return nil, fmt.Errorf("A cache is required to enable the ContentAddressableStorageServer")
+	}
 	return &ContentAddressableStorageServer{
-		env: env,
+		cache: cache,
 	}, nil
 }
 
@@ -40,7 +45,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		if hash == digest.EmptySha256 {
 			continue
 		}
-		exists, err := s.env.GetBlobstore().BlobExists(ctx, hash)
+		exists, err := s.cache.Contains(ctx, hash)
 		if err != nil {
 			return nil, err
 		}
@@ -86,7 +91,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		if hash == digest.EmptySha256 {
 			continue
 		}
-		if err := s.env.GetBlobstore().WriteBlob(ctx, uploadRequest.Digest.Hash, uploadRequest.Data); err != nil {
+		if err := s.cache.Set(ctx, uploadRequest.Digest.Hash, uploadRequest.Data); err != nil {
 			return nil, err
 		}
 		rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
@@ -126,7 +131,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			return nil, err
 		}
 		blobRsp := &repb.BatchReadBlobsResponse_Response{Digest: readDigest}
-		blob, err := s.env.GetBlobstore().ReadBlob(ctx, hash)
+		blob, err := s.cache.Get(ctx, hash)
 		if err == nil {
 			blobRsp.Data = blob
 			blobRsp.Status = &status.Status{Code: int32(codes.OK)}
@@ -173,7 +178,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 		// Fetch the "Directory" object which enumerates all the blobs in the directory
-		blob, err := s.env.GetBlobstore().ReadBlob(stream.Context(), hash)
+		blob, err := s.cache.Get(stream.Context(), hash)
 		if err != nil {
 			return nil, err
 		}

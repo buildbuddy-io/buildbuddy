@@ -23,7 +23,7 @@ func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error
 	if c.GetStorageDiskRootDir() != "" {
 		return NewDiskBlobStore(c.GetStorageDiskRootDir()), nil
 	}
-	if gcsConfig := c.GetStorageGCSConfig(); gcsConfig != nil {
+	if gcsConfig := c.GetStorageGCSConfig(); gcsConfig != nil && gcsConfig.Bucket != "" {
 		opts := make([]option.ClientOption, 0)
 		if gcsConfig.CredentialsFile != "" {
 			opts = append(opts, option.WithCredentialsFile(gcsConfig.CredentialsFile))
@@ -31,6 +31,20 @@ func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error
 		return NewGCSBlobStore(gcsConfig.Bucket, gcsConfig.ProjectID, opts...)
 	}
 	return nil, fmt.Errorf("No storage backend configured -- please specify at least one in the config")
+}
+
+func GetOptionalCacheBlobstore(c *config.Configurator) (interfaces.Blobstore, error) {
+	if c.GetCacheDiskRootDir() != "" {
+		return NewDiskBlobStore(c.GetCacheDiskRootDir()), nil
+	} else if gcsConfig := c.GetCacheGCSConfig(); gcsConfig != nil && gcsConfig.Bucket != "" {
+		log.Printf("setting up cache GCS: %+v")
+		opts := make([]option.ClientOption, 0)
+		if gcsConfig.CredentialsFile != "" {
+			opts = append(opts, option.WithCredentialsFile(gcsConfig.CredentialsFile))
+		}
+		return NewGCSBlobStore(gcsConfig.Bucket, gcsConfig.ProjectID, opts...)
+	}
+	return nil, nil
 }
 
 func ensureDirectoryExists(dir string) error {
