@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	readBufSizeBytes = 30000000 // 3 MB
+	// Keep under the limit of ~4MB (1024 * 1024 * 4).
+	readBufSizeBytes = (1024 * 1024 * 4) - 100
 )
 
 var (
