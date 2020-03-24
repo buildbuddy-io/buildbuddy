@@ -113,26 +113,26 @@ func compress(in []byte) ([]byte, error) {
 	return ioutil.ReadAll(&buf)
 }
 
-func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) error {
+func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
 	// Probably could be more careful here but we are generating these ourselves
 	// for now.
 	if strings.Contains(blobName, "..") {
-		return fmt.Errorf("blobName (%s) must not contain ../", blobName)
+		return 0, fmt.Errorf("blobName (%s) must not contain ../", blobName)
 	}
 	fullPath := filepath.Join(d.rootDir, blobName)
 	if err := ensureDirectoryExists(filepath.Dir(fullPath)); err != nil {
-		return err
+		return 0, err
 	}
 	tmpFileName := fullPath + ".tmp"
 
 	compressedData, err := compress(data)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if err := ioutil.WriteFile(tmpFileName, compressedData, 0644); err != nil {
-		return err
+		return 0, err
 	}
-	return os.Rename(tmpFileName, fullPath)
+	return len(compressedData), os.Rename(tmpFileName, fullPath)
 }
 
 func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
@@ -241,15 +241,14 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 	return decompress(ioutil.ReadAll(reader))
 }
 
-func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) error {
+func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
 	writer := g.bucketHandle.Object(blobName).NewWriter(ctx)
 	defer writer.Close()
 	compressedData, err := compress(data)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	_, err = writer.Write(compressedData)
-	return err
+	return writer.Write(compressedData)
 }
 
 func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {

@@ -148,6 +148,8 @@ type CacheEntry struct {
 	Model
 	EntryID            string `gorm:"primary_key;"`
 	ExpirationTimeUsec int64
+	SizeBytes          int64
+	ReadCount          int64
 }
 
 func (c *CacheEntry) TableName() string {

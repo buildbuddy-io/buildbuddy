@@ -13,6 +13,7 @@ import (
 // additionally it is responsible for deleting data that is past TTL to keep to
 // a manageable size.
 type Cache interface {
+	// Normal cache-like operations.
 	Contains(ctx context.Context, key string) (bool, error)
 	Get(ctx context.Context, key string) ([]byte, error)
 	Set(ctx context.Context, key string, data []byte) error
@@ -23,7 +24,9 @@ type Cache interface {
 	Writer(ctx context.Context, key string) (io.WriteCloser, error)
 
 	// Begin garbage collection and any other necessary background tasks.
-	Start() error
+	Start() erro
+	// Stop garbage collection etc.r
+	Stop() error
 }
 
 // A Blobstore must allow for reading, writing, and deleting blobs.
@@ -33,7 +36,7 @@ type Cache interface {
 type Blobstore interface {
 	BlobExists(ctx context.Context, blobName string) (bool, error)
 	ReadBlob(ctx context.Context, blobName string) ([]byte, error)
-	WriteBlob(ctx context.Context, blobName string, data []byte) error
+	WriteBlob(ctx context.Context, blobName string, data []byte) (int, error)
 	DeleteBlob(ctx context.Context, blobName string) error
 
 	// TODO(tylerw): remove this once stuff is switched over to cache API.
@@ -52,7 +55,10 @@ type Database interface {
 
 	// CACHE ENTRY API
 	InsertOrUpdateCacheEntry(ctx context.Context, c *tables.CacheEntry) error
+	IncrementEntryReadCount(ctx context.Context, key string) error
 	DeleteCacheEntry(ctx context.Context, key string) error
+	SumCacheEntrySizes(ctx context.Context) (int64, error)
+	RawQueryCacheEntries(ctx context.Context, sql string, values ...interface{}) ([]*tables.CacheEntry, error)
 }
 
 // A searcher allows finding various objects given a query.

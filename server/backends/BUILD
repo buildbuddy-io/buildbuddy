@@ -22,6 +22,7 @@ go_library(
     deps = [
         "//server:interfaces",
         "//server:tables",
+        "//server/util:status",
         "@com_google_cloud_go_storage//:go_default_library",
         "@org_golang_google_api//option:go_default_library",
     ],

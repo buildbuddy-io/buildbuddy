@@ -4,11 +4,22 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
+
+const (
+	cacheFullCutoffPercentage     = .98
+	cacheEvictionCutoffPercentage = .8
+)
+
+// TODO(tylerw): Perf: Support inlining small blobs directly into the DB row
+// TODO(tylerw): Perf: Support contains checks directly from the DB
 
 // Blobstore is *almost* sufficient here, but some blobstore implementations
 // don't support automatic TTL-ing of items, so we keep k/v style records in
@@ -20,6 +31,12 @@ type Cache struct {
 
 	ttl          time.Duration
 	maxSizeBytes int64
+
+	// ATOMIC INT
+	totalSizeBytesAtomic int64
+
+	ticker *time.Ticker
+	quit   chan struct{}
 }
 
 // NB: ttl is a positive valued duration
@@ -35,21 +52,40 @@ func NewCache(bs interfaces.Blobstore, db interfaces.Database, ttl time.Duration
 	}, nil
 }
 
+func (c *Cache) checkOverSize(n int) error {
+	newSize := atomic.LoadInt64(&c.totalSizeBytesAtomic) + int64(n)
+	if newSize > c.maxSizeBytes {
+		return status.ResourceExhaustedError(fmt.Sprintf("Cache size: %d bytes would exceed max: %d bytes", newSize, c.maxSizeBytes))
+	}
+	return nil
+}
+
 func (c *Cache) Contains(ctx context.Context, key string) (bool, error) {
 	return c.bs.BlobExists(ctx, key)
 }
 
 func (c *Cache) Get(ctx context.Context, key string) ([]byte, error) {
+	err := c.db.IncrementEntryReadCount(ctx, key)
+	if err != nil {
+		return nil, err
+	}
 	return c.bs.ReadBlob(ctx, key)
 }
 
 func (c *Cache) Set(ctx context.Context, key string, data []byte) error {
-	if err := c.bs.WriteBlob(ctx, key, data); err != nil {
+	if err := c.checkOverSize(len(data)); err != nil {
 		return err
 	}
+
+	n, err := c.bs.WriteBlob(ctx, key, data)
+	if err != nil {
+		return err
+	}
+	atomic.AddInt64(&c.totalSizeBytesAtomic, int64(n))
 	return c.db.InsertOrUpdateCacheEntry(ctx, &tables.CacheEntry{
 		EntryID:            key,
 		ExpirationTimeUsec: int64(time.Now().Add(c.ttl).UnixNano() / 1000),
+		SizeBytes:          int64(n),
 	})
 }
 
@@ -61,20 +97,36 @@ func (c *Cache) Delete(ctx context.Context, key string) error {
 }
 
 func (c *Cache) Reader(ctx context.Context, key string, offset, length int64) (io.Reader, error) {
+	err := c.db.IncrementEntryReadCount(ctx, key)
+	if err != nil {
+		return nil, err
+	}
 	return c.bs.BlobReader(ctx, key, offset, length)
 }
 
-type dbCloseFn func() error
+type dbCloseFn func(totalBytesWritten int64) error
+type checkOversizeFn func(n int) error
 type dbWriteOnClose struct {
 	io.WriteCloser
-	closeFn dbCloseFn
+	checkFn      checkOversizeFn
+	closeFn      dbCloseFn
+	bytesWritten int64
+}
+
+func (d *dbWriteOnClose) Write(data []byte) (int, error) {
+	if err := d.checkFn(len(data)); err != nil {
+		return 0, err
+	}
+	n, err := d.WriteCloser.Write(data)
+	d.bytesWritten += int64(n)
+	return n, err
 }
 
 func (d *dbWriteOnClose) Close() error {
 	if err := d.WriteCloser.Close(); err != nil {
 		return err
 	}
-	return d.closeFn()
+	return d.closeFn(d.bytesWritten)
 }
 
 func (c *Cache) Writer(ctx context.Context, key string) (io.WriteCloser, error) {
@@ -84,15 +136,100 @@ func (c *Cache) Writer(ctx context.Context, key string) (io.WriteCloser, error) 
 	}
 	return &dbWriteOnClose{
 		WriteCloser: blobWriter,
-		closeFn: func() error {
+		checkFn:     func(n int) error { return c.checkOverSize(n) },
+		closeFn: func(totalBytesWritten int64) error {
+			atomic.AddInt64(&c.totalSizeBytesAtomic, totalBytesWritten)
 			return c.db.InsertOrUpdateCacheEntry(ctx, &tables.CacheEntry{
 				EntryID:            key,
 				ExpirationTimeUsec: int64(time.Now().Add(c.ttl).UnixNano() / 1000),
+				SizeBytes:          totalBytesWritten,
 			})
 		},
 	}, nil
 }
 
+func (c *Cache) deleteCacheEntries(ctx context.Context, entries []*tables.CacheEntry) {
+	for _, entry := range entries {
+		err := c.db.DeleteCacheEntry(ctx, entry.EntryID)
+		if err != nil {
+			log.Printf("error deleting expired cache entry: %s: %s", entry, err)
+		}
+	}
+}
+
+func (c *Cache) evictExpiredEntries(ctx context.Context) {
+	cutoffUsec := time.Now().Add(-1*c.ttl).UnixNano() / 1000
+	expiredEntries, err := c.db.RawQueryCacheEntries(ctx,
+		`SELECT * FROM CacheEntries as ce WHERE ce.created_at_usec < ?`,
+		cutoffUsec)
+	if err != nil {
+		log.Printf("error querying expired cache entries: %s", err)
+	}
+	c.deleteCacheEntries(ctx, expiredEntries)
+}
+
+func (c *Cache) recalculateSizeAndExpireEntries(ctx context.Context) {
+	sizeFn := func() int64 {
+		sum, err := c.db.SumCacheEntrySizes(ctx)
+		if err != nil {
+			log.Printf("Error calculating cache size: %s", err)
+		}
+		atomic.StoreInt64(&c.totalSizeBytesAtomic, sum)
+		return sum
+	}
+
+	currentSize := sizeFn()
+
+	// Only trigger if the cache is ~full~.
+	fullCutoff := int64(cacheFullCutoffPercentage * float64(c.maxSizeBytes))
+	if currentSize < fullCutoff {
+		return
+	}
+
+	stopDeleteCutoff := int64(cacheEvictionCutoffPercentage * float64(c.maxSizeBytes))
+	// Delete entries until we reach 90% capacity.
+	for {
+		leastUsedEntries, err := c.db.RawQueryCacheEntries(ctx,
+			`SELECT * FROM CacheEntries as ce ORDER BY read_count ASC LIMIT 10`)
+		if err != nil {
+			log.Printf("error querying oldest cache entries: %s", err)
+		}
+		c.deleteCacheEntries(ctx, leastUsedEntries)
+		currentSize = sizeFn()
+		if currentSize < stopDeleteCutoff {
+			return
+		}
+	}
+}
+
 func (c *Cache) Start() error {
+	c.ticker = time.NewTicker(1 * time.Second)
+	c.quit = make(chan struct{})
+
+	if c.ttl == 0 {
+		log.Printf("configured TTL was 0; disabling cache expiry")
+		return nil
+	}
+
+	go func() {
+		for {
+			select {
+			case <-c.ticker.C:
+				ctx := context.Background()
+				c.recalculateSizeAndExpireEntries(ctx)
+				c.evictExpiredEntries(ctx)
+			case <-c.quit:
+				log.Printf("Cleanup task %d exiting.", 0)
+				break
+			}
+		}
+	}()
+
+	return nil
+}
+
+func (c *Cache) Stop() error {
+	close(c.quit)
+	c.ticker.Stop()
 	return nil
 }

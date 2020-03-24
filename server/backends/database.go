@@ -68,15 +68,9 @@ func (d *Database) InsertOrUpdateInvocation(ctx context.Context, ti *tables.Invo
 
 func (d *Database) LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error) {
 	ti := &tables.Invocation{}
-	err := d.gormDB.Transaction(func(tx *gorm.DB) error {
-		existingRow := tx.Raw(`SELECT * FROM Invocations as i
-                                       WHERE i.invocation_id = ?`, invocationID)
-		if err := existingRow.Scan(ti).Error; err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
+	existingRow := d.gormDB.Raw(`SELECT * FROM Invocations as i
+                               WHERE i.invocation_id = ?`, invocationID)
+	if err := existingRow.Scan(ti).Error; err != nil {
 		return nil, err
 	}
 	return ti, nil
@@ -143,7 +137,46 @@ func (d *Database) InsertOrUpdateCacheEntry(ctx context.Context, c *tables.Cache
 		return nil
 	})
 }
+
+func (d *Database) IncrementEntryReadCount(ctx context.Context, key string) error {
+	return d.gormDB.Exec(`UPDATE CacheEntries as ce SET ce.read_count = ce.read_count + 1
+                              WHERE ce.entry_id = ?`, key).Error
+}
+
 func (d *Database) DeleteCacheEntry(ctx context.Context, key string) error {
 	c := &tables.CacheEntry{EntryID: key}
 	return d.gormDB.Delete(c).Error
+}
+
+func (d *Database) SumCacheEntrySizes(ctx context.Context) (int64, error) {
+	result := struct {
+		// NB: field name must be camelcase because gorm will
+		// de-c-stringify the sql field name to determine this one, and
+		// if it does not find a matching field it will silently drop
+		// the data.
+		TotalSizeBytes int64
+	}{}
+	qr := d.gormDB.Raw(`SELECT SUM(ce.size_bytes) as total_size_bytes FROM CacheEntries as ce`)
+	if err := qr.Scan(&result).Error; err != nil {
+		return 0, err
+	}
+	return result.TotalSizeBytes, nil
+}
+
+func (d *Database) RawQueryCacheEntries(ctx context.Context, sql string, values ...interface{}) ([]*tables.CacheEntry, error) {
+	rows, err := d.gormDB.Raw(sql, values...).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	entries := make([]*tables.CacheEntry, 0)
+	var ce tables.CacheEntry
+	for rows.Next() {
+		if err := d.gormDB.ScanRows(rows, &ce); err != nil {
+			return nil, err
+		}
+		i := ce
+		entries = append(entries, &i)
+	}
+	return entries, nil
 }

@@ -77,7 +77,8 @@ func (e *EventChannel) writeCompletedBlob(ctx context.Context, blobID string, in
 	if err != nil {
 		return err
 	}
-	return e.env.GetBlobstore().WriteBlob(ctx, blobID, protoBytes)
+	_, err = e.env.GetBlobstore().WriteBlob(ctx, blobID, protoBytes)
+	return err
 }
 
 func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error {

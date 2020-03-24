@@ -75,7 +75,7 @@ func (w *BufferedProtoWriter) internalFlush(ctx context.Context) error {
 	}
 
 	tmpFilePath := chunkName(w.streamID, w.writeSequenceNumber)
-	if err := w.bs.WriteBlob(ctx, tmpFilePath, w.writeBuf.Bytes()); err != nil {
+	if _, err := w.bs.WriteBlob(ctx, tmpFilePath, w.writeBuf.Bytes()); err != nil {
 		return err
 	}
 
