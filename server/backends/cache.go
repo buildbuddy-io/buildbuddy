@@ -189,7 +189,7 @@ func (c *Cache) recalculateSizeAndExpireEntries(ctx context.Context) {
 
 	var fullWarningMsg string
 	fullWarningMsg += fmt.Sprintf("Cache is ~full~ (%d bytes of %d)\n", currentSize, c.maxSizeBytes)
-	fullWarningMsg += fmt.Sprintf("Deleting least used items until we reach %f percent capacity...\n", (cacheEvictionCutoffPercentage*100))
+	fullWarningMsg += fmt.Sprintf("Deleting least used items until we reach %f percent capacity...\n", (cacheEvictionCutoffPercentage * 100))
 	fullWarningMsg += "You may want to consider allocating more space or reducing your TTL\n"
 	fullWarningMsg += "(Or not! It's perfectly OK to let this one ride if you know what's going on)"
 
