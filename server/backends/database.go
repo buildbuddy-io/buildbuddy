@@ -139,8 +139,8 @@ func (d *Database) InsertOrUpdateCacheEntry(ctx context.Context, c *tables.Cache
 }
 
 func (d *Database) IncrementEntryReadCount(ctx context.Context, key string) error {
-	return d.gormDB.Exec(`UPDATE CacheEntries as ce SET ce.read_count = ce.read_count + 1
-                              WHERE ce.entry_id = ?`, key).Error
+	return d.gormDB.Exec(`UPDATE CacheEntries SET read_count = read_count + 1
+                              WHERE entry_id = ?`, key).Error
 }
 
 func (d *Database) DeleteCacheEntry(ctx context.Context, key string) error {
