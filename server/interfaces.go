@@ -24,7 +24,7 @@ type Cache interface {
 	Writer(ctx context.Context, key string) (io.WriteCloser, error)
 
 	// Begin garbage collection and any other necessary background tasks.
-	Start() erro
+	Start() error
 	// Stop garbage collection etc.r
 	Stop() error
 }
