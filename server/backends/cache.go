@@ -55,7 +55,8 @@ func NewCache(bs interfaces.Blobstore, db interfaces.Database, ttl time.Duration
 func (c *Cache) checkOverSize(n int) error {
 	newSize := atomic.LoadInt64(&c.totalSizeBytesAtomic) + int64(n)
 	if newSize > c.maxSizeBytes {
-		return status.ResourceExhaustedError(fmt.Sprintf("Cache size: %d bytes would exceed max: %d bytes", newSize, c.maxSizeBytes))
+		errMsg := fmt.Sprintf("Cache size: %d bytes would exceed max: %d bytes", newSize, c.maxSizeBytes)
+		return status.ResourceExhaustedError(errMsg)
 	}
 	return nil
 }
@@ -186,6 +187,14 @@ func (c *Cache) recalculateSizeAndExpireEntries(ctx context.Context) {
 		return
 	}
 
+	var fullWarningMsg string
+	fullWarningMsg += fmt.Sprintf("Cache is ~full~ (%d bytes of %d)\n", currentSize, c.maxSizeBytes)
+	fullWarningMsg += fmt.Sprintf("Deleting least used items until we reach %f percent capacity...\n", (cacheEvictionCutoffPercentage*100))
+	fullWarningMsg += "You may want to consider allocating more space or reducing your TTL\n"
+	fullWarningMsg += "(Or not! It's perfectly OK to let this one ride if you know what's going on)"
+
+	log.Printf(fullWarningMsg)
+
 	stopDeleteCutoff := int64(cacheEvictionCutoffPercentage * float64(c.maxSizeBytes))
 	// Delete entries until we reach 90% capacity.
 	for {
@@ -197,6 +206,7 @@ func (c *Cache) recalculateSizeAndExpireEntries(ctx context.Context) {
 		c.deleteCacheEntries(ctx, leastUsedEntries)
 		currentSize = sizeFn()
 		if currentSize < stopDeleteCutoff {
+			log.Printf("Deleted least used items from cache. (%d bytes of %d)", currentSize, c.maxSizeBytes)
 			return
 		}
 	}

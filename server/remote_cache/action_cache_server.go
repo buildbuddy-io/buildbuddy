@@ -27,8 +27,57 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func (s *ActionCacheServer) validateActionResult(r *repb.ActionResult) error {
-	// TODO
+func (s *ActionCacheServer) checkFileExists(ctx context.Context, hash string) error {
+	ok, err := s.cache.Contains(ctx, hash)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return status.NotFoundError(fmt.Sprintf("ActionResult output file: '%s' not found in cache", hash))
+	}
+	return nil
+}
+
+func (s *ActionCacheServer) checkDirExists(ctx context.Context, dir *repb.Directory) error {
+	for _, f := range dir.GetFiles() {
+		if f.Digest == nil {
+			continue
+		}
+		if err := s.checkFileExists(ctx, f.Digest.Hash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *ActionCacheServer) validateActionResult(ctx context.Context, r *repb.ActionResult) error {
+	for _, f := range r.OutputFiles {
+		if len(f.Contents) > 0 && f.GetDigest().GetSizeBytes() > 0 {
+			if err := s.checkFileExists(ctx, f.Digest.Hash); err != nil {
+				return err
+			}
+		}
+	}
+
+	for _, d := range r.OutputDirectories {
+		blob, err := s.cache.Get(ctx, d.GetTreeDigest().Hash)
+		if err != nil {
+			return err
+		}
+		tree := &repb.Tree{}
+		if err := proto.Unmarshal(blob, tree); err != nil {
+			return err
+		}
+		if err := s.checkDirExists(ctx, tree.Root); err != nil {
+			return err
+		}
+
+		for _, childDir := range tree.GetChildren() {
+			if err := s.checkDirExists(ctx, childDir); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -64,7 +113,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := proto.Unmarshal(blob, rsp); err != nil {
 		return nil, err
 	}
-	if err := s.validateActionResult(rsp); err != nil {
+	if err := s.validateActionResult(ctx, rsp); err != nil {
 		return nil, status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", hash, err))
 	}
 	return rsp, nil
