@@ -59,10 +59,11 @@ type SlackConfig struct {
 }
 
 type cacheConfig struct {
-	Disk         DiskConfig `yaml:"disk"`
-	GCS          GCSConfig  `yaml:"gcs"`
-	TTLSeconds   int        `yaml:"ttl_seconds"`
-	MaxSizeBytes int64      `yaml:"max_size_bytes"`
+	Disk         *DiskConfig `yaml:"disk"`
+	GCS          *GCSConfig  `yaml:"gcs"`
+	InMemory     bool        `yaml:"in_memory"`
+	TTLSeconds   int         `yaml:"ttl_seconds"`
+	MaxSizeBytes int64       `yaml:"max_size_bytes"`
 }
 
 func ensureDirectoryExists(dir string) error {
@@ -190,12 +191,17 @@ func (c *Configurator) GetCacheMaxSizeBytes() int64 {
 	return c.gc.Cache.MaxSizeBytes
 }
 
-func (c *Configurator) GetCacheDiskRootDir() string {
+func (c *Configurator) GetCacheDiskConfig() *DiskConfig {
 	c.rereadIfStale()
-	return c.gc.Cache.Disk.RootDirectory
+	return c.gc.Cache.Disk
 }
 
 func (c *Configurator) GetCacheGCSConfig() *GCSConfig {
 	c.rereadIfStale()
-	return &c.gc.Cache.GCS
+	return c.gc.Cache.GCS
+}
+
+func (c *Configurator) GetCacheInMemory() bool {
+	c.rereadIfStale()
+	return c.gc.Cache.InMemory
 }

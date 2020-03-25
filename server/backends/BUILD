@@ -45,6 +45,15 @@ go_library(
 )
 
 go_library(
+    name = "memory_cache",
+    srcs = ["memory_cache.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache",
+    deps = [
+        "//server/util:status",
+    ],
+)
+
+go_library(
     name = "simplesearcher",
     srcs = ["simplesearcher.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/simplesearcher",

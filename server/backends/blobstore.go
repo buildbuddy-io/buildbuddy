@@ -34,10 +34,9 @@ func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error
 }
 
 func GetOptionalCacheBlobstore(c *config.Configurator) (interfaces.Blobstore, error) {
-	if c.GetCacheDiskRootDir() != "" {
-		return NewDiskBlobStore(c.GetCacheDiskRootDir()), nil
-	} else if gcsConfig := c.GetCacheGCSConfig(); gcsConfig != nil && gcsConfig.Bucket != "" {
-		log.Printf("setting up cache GCS: %+v")
+	if dc := c.GetCacheDiskConfig(); dc != nil {
+		return NewDiskBlobStore(dc.RootDirectory), nil
+	} else if gcsConfig := c.GetCacheGCSConfig(); gcsConfig != nil {
 		opts := make([]option.ClientOption, 0)
 		if gcsConfig.CredentialsFile != "" {
 			opts = append(opts, option.WithCredentialsFile(gcsConfig.CredentialsFile))

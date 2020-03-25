@@ -5,8 +5,9 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/database"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/simplesearcher"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
@@ -154,16 +155,31 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 	}
 	realEnv.SetBuildEventProxyClients(buildEventProxyClients)
 
-	cacheBlobstore, err := blobstore.GetOptionalCacheBlobstore(configurator)
-	if err != nil {
-		log.Fatalf("Error configuring cache blobstore: %s", err)
-	}
-	if cacheBlobstore != nil {
+	// If configured, enable the cache.
+	var cache interfaces.Cache
+	if configurator.GetCacheInMemory() {
+		maxSizeBytes := configurator.GetCacheMaxSizeBytes()
+		if maxSizeBytes == 0 {
+			log.Fatalf("Cache size must be greater than 0 if in_memory cache is enabled!")
+		}
+		c, err := memory_cache.NewMemoryCache(maxSizeBytes)
+		if err != nil {
+			log.Fatalf("Error configuring in-memory cache: %s", err)
+		}
+		cache = c
+	} else if configurator.GetCacheDiskConfig() != nil || configurator.GetCacheGCSConfig() != nil {
+		cacheBlobstore, err := blobstore.GetOptionalCacheBlobstore(configurator)
+		if err != nil {
+			log.Fatalf("Error configuring cache blobstore: %s", err)
+		}
 		ttl := time.Duration(configurator.GetCacheTTLSeconds()) * time.Second
-		cache, err := disk_cache.NewDiskCache(cacheBlobstore, rawDB, ttl, configurator.GetCacheMaxSizeBytes())
+		c, err := disk_cache.NewDiskCache(cacheBlobstore, rawDB, ttl, configurator.GetCacheMaxSizeBytes())
 		if err != nil {
 			log.Fatalf("Error configuring cache: %s", err)
 		}
+		cache = c
+	}
+	if cache != nil {
 		cache.Start()
 		realEnv.SetCache(cache)
 		log.Printf("Cache: BuildBuddy cache API enabled!")
