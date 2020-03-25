@@ -1,6 +1,7 @@
 # Build with --config=local to send build logs to your local server
 build:local --bes_results_url=http://localhost:8080/invocation/
 build:local --bes_backend=grpc://localhost:1985
+build:local --remote_cache=grpc://localhost:1985
 
 # Build with --config=dev to send build logs to the dev server
 build:dev --bes_results_url=https://app.buildbuddy.dev/invocation/
