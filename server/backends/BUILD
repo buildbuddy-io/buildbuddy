@@ -16,9 +16,9 @@ go_library(
 )
 
 go_library(
-    name = "cache",
-    srcs = ["cache.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/cache",
+    name = "disk_cache",
+    srcs = ["disk_cache.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache",
     deps = [
         "//server:interfaces",
         "//server:tables",

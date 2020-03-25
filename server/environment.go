@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/cache"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/database"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/simplesearcher"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
@@ -160,7 +160,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 	}
 	if cacheBlobstore != nil {
 		ttl := time.Duration(configurator.GetCacheTTLSeconds()) * time.Second
-		cache, err := cache.NewCache(cacheBlobstore, rawDB, ttl, configurator.GetCacheMaxSizeBytes())
+		cache, err := disk_cache.NewDiskCache(cacheBlobstore, rawDB, ttl, configurator.GetCacheMaxSizeBytes())
 		if err != nil {
 			log.Fatalf("Error configuring cache: %s", err)
 		}
