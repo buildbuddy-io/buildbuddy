@@ -112,6 +112,7 @@ func StartAndRunServices(env environment.Env) {
 	http.Handle("/", filters.WrapExternalHandler(staticFileServer))
 	http.Handle("/app/", filters.WrapExternalHandler(http.StripPrefix("/app", afs)))
 	http.Handle("/rpc/BuildBuddyService/", filters.WrapExternalHandler(http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))
+	http.Handle("/file/download", filters.WrapExternalHandler(buildBuddyServer))
 	http.Handle("/healthz", env.GetHealthChecker())
 
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)

@@ -18,12 +18,14 @@ export default class ArtifactsCardComponent extends React.Component {
     numPages: 1
   }
 
-  handleArtifactClicked(outputUri: string) {
+  handleArtifactClicked(outputUri: string, outputFilename: string) {
     if (!outputUri) return;
+
     if (outputUri.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", outputUri);
-    } else {
-      window.open(outputUri, '_blank');
+    } else if (outputUri.startsWith("bytestream://")) {
+       let downloadUri = "/file/download?" + "filename=" + outputFilename + "&bytestream_url=" + outputUri;
+       window.open(downloadUri);
     }
   }
 
@@ -52,7 +54,7 @@ export default class ArtifactsCardComponent extends React.Component {
                     completed.id.targetCompleted.label.toLowerCase().includes(this.props.filter.toLowerCase()) ||
                     output.name.toLowerCase().includes(this.props.filter.toLowerCase()))
                   .map(output =>
-                    <div className="artifact-name" onClick={this.handleArtifactClicked.bind(this, output.uri)}>
+                    <div className="artifact-name" onClick={this.handleArtifactClicked.bind(this, output.uri, output.name)}>
                       {output.name}
                     </div>
                   )}

@@ -14,6 +14,8 @@ go_library(
         "//proto:invocation_go_proto",
         "//server/build_event_protocol:build_event_handler",
         "@com_github_golang_protobuf//proto:go_default_library",
+        "@go_googleapis//google/bytestream:bytestream_go_proto",
+        "@org_golang_google_grpc//:go_default_library",
     ],
 )
 
