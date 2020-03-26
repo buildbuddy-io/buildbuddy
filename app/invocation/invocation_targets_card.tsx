@@ -37,8 +37,9 @@ export default class TargetsCardComponent extends React.Component {
     }
     if (log.startsWith("file://")) {
       window.prompt("Copy test log path to clipboard: Cmd+C, Enter", log);
-    } else {
-      window.open(log, '_blank');
+    } else if (log.startsWith("bytestream://")) {
+       let downloadUri = "/file/download?" + "bytestream_url=" + log;
+       window.open(downloadUri);
     }
   }
 
