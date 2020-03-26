@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"cloud.google.com/go/storage"
@@ -112,6 +113,13 @@ func compress(in []byte) ([]byte, error) {
 	return ioutil.ReadAll(&buf)
 }
 
+func deleteLocalFileIfExists(filename string) {
+	_, err := os.Stat(filename)
+	if os.IsExist(err) {
+		os.Remove(filename)
+	}
+}
+
 func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
 	// Probably could be more careful here but we are generating these ourselves
 	// for now.
@@ -122,7 +130,12 @@ func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []b
 	if err := ensureDirectoryExists(filepath.Dir(fullPath)); err != nil {
 		return 0, err
 	}
+
 	tmpFileName := fullPath + ".tmp"
+	// We defer a cleanup function that would delete our tempfile here --
+	// that way if the write is truncated (say, because it's too big) we
+	// still remove the tmp file.
+	defer deleteLocalFileIfExists(tmpFileName)
 
 	compressedData, err := compress(data)
 	if err != nil {
@@ -189,10 +202,15 @@ func (d *DiskBlobStore) BlobWriter(ctx context.Context, blobName string) (io.Wri
 	if err != nil {
 		return nil, err
 	}
-	return &writeMover{
+	wm := &writeMover{
 		File:      f,
 		finalPath: fullPath,
-	}, nil
+	}
+	// Ensure that the temp file is cleaned up here too!
+	runtime.SetFinalizer(wm, func(m *writeMover) {
+		deleteLocalFileIfExists(tmpFileName)
+	})
+	return wm, nil
 }
 
 // GCSBlobStore implements the blobstore API on top of the google cloud storage API.

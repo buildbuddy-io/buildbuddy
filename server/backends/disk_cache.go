@@ -169,7 +169,7 @@ func (c *DiskCache) evictExpiredEntries(ctx context.Context) {
 	c.deleteCacheEntries(ctx, expiredEntries)
 }
 
-func (c *DiskCache) recalculateSizeAndExpireEntries(ctx context.Context) {
+func (c *DiskCache) recalculateSizeAndEvictEntries(ctx context.Context) {
 	sizeFn := func() int64 {
 		sum, err := c.db.SumCacheEntrySizes(ctx)
 		if err != nil {
@@ -226,7 +226,7 @@ func (c *DiskCache) Start() error {
 			select {
 			case <-c.ticker.C:
 				ctx := context.Background()
-				c.recalculateSizeAndExpireEntries(ctx)
+				c.recalculateSizeAndEvictEntries(ctx)
 				c.evictExpiredEntries(ctx)
 			case <-c.quit:
 				log.Printf("Cleanup task %d exiting.", 0)
