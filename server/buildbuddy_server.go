@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -26,7 +27,10 @@ func NewBuildBuddyServer(env environment.Env) (*BuildBuddyServer, error) {
 }
 
 func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvocationRequest) (*inpb.GetInvocationResponse, error) {
-	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.Lookup.InvocationId)
+	if req.GetLookup().GetInvocationId() == "" {
+		return nil, status.InvalidArgumentErrorf("GetInvocationRequest must contain a valid invocation_id")
+	}
+	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetLookup().GetInvocationId())
 	if err != nil {
 		return nil, err
 	}
@@ -38,6 +42,9 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 }
 
 func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {
+	if req == nil {
+		return nil, status.InvalidArgumentErrorf("SearchInvocationRequest cannot be empty")
+	}
 	searcher := s.env.GetSearcher()
 	if searcher == nil {
 		return nil, fmt.Errorf("No searcher was configured")
