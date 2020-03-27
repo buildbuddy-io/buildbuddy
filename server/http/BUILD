@@ -15,4 +15,7 @@ go_library(
     name = "filters",
     srcs = ["filters.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/http/filters",
+    deps = [
+        "//server:environment",
+    ],
 )

@@ -64,31 +64,34 @@ func StartAndRunServices(env environment.Env) {
 	}
 	bpb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
 
-	// Register to handle content addressable storage (CAS) messages.
-	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
-	if err != nil {
-		log.Fatalf("Error initializing ContentAddressableStorageServer: %s", err)
-	}
-	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
+	// OPTIONAL CACHE API -- only enable if configured.
+	if env.GetCache() != nil {
+		// Register to handle content addressable storage (CAS) messages.
+		casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
+		if err != nil {
+			log.Fatalf("Error initializing ContentAddressableStorageServer: %s", err)
+		}
+		repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 
-	// Register to handle bytestream (upload and download) messages.
-	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
-	if err != nil {
-		log.Fatalf("Error initializing ByteStreamServer: %s", err)
-	}
-	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
+		// Register to handle bytestream (upload and download) messages.
+		byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
+		if err != nil {
+			log.Fatalf("Error initializing ByteStreamServer: %s", err)
+		}
+		bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 
-	// Register to handle action cache (upload and download) messages.
-	actionCacheServer, err := action_cache_server.NewActionCacheServer(env)
-	if err != nil {
-		log.Fatalf("Error initializing ActionCacheServer: %s", err)
-	}
-	repb.RegisterActionCacheServer(grpcServer, actionCacheServer)
+		// Register to handle action cache (upload and download) messages.
+		actionCacheServer, err := action_cache_server.NewActionCacheServer(env)
+		if err != nil {
+			log.Fatalf("Error initializing ActionCacheServer: %s", err)
+		}
+		repb.RegisterActionCacheServer(grpcServer, actionCacheServer)
 
-	// Register to handle GetCapabilities messages, which tell the client
-	// that this server supports CAS functionality.
-	capabilitiesServer := capabilities_server.NewCapabilitiesServer( /*supportCAS=*/ true /*supportRemoteExec=*/, false)
-	repb.RegisterCapabilitiesServer(grpcServer, capabilitiesServer)
+		// Register to handle GetCapabilities messages, which tell the client
+		// that this server supports CAS functionality.
+		capabilitiesServer := capabilities_server.NewCapabilitiesServer( /*supportCAS=*/ true /*supportRemoteExec=*/, false)
+		repb.RegisterCapabilitiesServer(grpcServer, capabilitiesServer)
+	}
 
 	// Support reflection so that tools like grpc-cli (aka stubby) can
 	// enumerate our services and call them.
@@ -109,10 +112,10 @@ func StartAndRunServices(env environment.Env) {
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
 	// Register all of our HTTP handlers on the default mux.
-	http.Handle("/", filters.WrapExternalHandler(staticFileServer))
-	http.Handle("/app/", filters.WrapExternalHandler(http.StripPrefix("/app", afs)))
-	http.Handle("/rpc/BuildBuddyService/", filters.WrapExternalHandler(http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))
-	http.Handle("/file/download", filters.WrapExternalHandler(buildBuddyServer))
+	http.Handle("/", filters.WrapExternalHandler(env, staticFileServer))
+	http.Handle("/app/", filters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
+	http.Handle("/rpc/BuildBuddyService/", filters.WrapExternalHandler(env, http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))
+	http.Handle("/file/download", filters.WrapExternalHandler(env, buildBuddyServer))
 	http.Handle("/healthz", env.GetHealthChecker())
 
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)

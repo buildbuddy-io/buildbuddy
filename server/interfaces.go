@@ -3,11 +3,38 @@ package interfaces
 import (
 	"context"
 	"io"
+	"net/http"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	inpb "proto/invocation"
 )
+
+type UserInfo interface {
+	ID() string
+	Name() string
+	Groups() []string
+}
+
+type Authenticator interface {
+	AuthenticateRequest(w http.ResponseWriter, r *http.Request) (context.Context, error)
+	GetUser(ctx context.Context) UserInfo
+}
+
+// A Blobstore must allow for reading, writing, and deleting blobs.
+// Implementations should return "os"-compatible package type errors, for
+// example, if a file does not exist on Read, the blobstore should return an
+// "os.ErrNotExist" error.
+type Blobstore interface {
+	BlobExists(ctx context.Context, blobName string) (bool, error)
+	ReadBlob(ctx context.Context, blobName string) ([]byte, error)
+	WriteBlob(ctx context.Context, blobName string, data []byte) (int, error)
+	DeleteBlob(ctx context.Context, blobName string) error
+
+	// Low level interface used for seeking and stream-writing.
+	BlobReader(ctx context.Context, blobName string, offset, length int64) (io.Reader, error)
+	BlobWriter(ctx context.Context, blobName string) (io.WriteCloser, error)
+}
 
 // Similar to a blobstore, a cache allows for reading and writing data, but
 // additionally it is responsible for deleting data that is past TTL to keep to
@@ -27,22 +54,6 @@ type Cache interface {
 	Start() error
 	// Stop garbage collection etc.r
 	Stop() error
-}
-
-// A Blobstore must allow for reading, writing, and deleting blobs.
-// Implementations should return "os"-compatible package type errors, for
-// example, if a file does not exist on Read, the blobstore should return an
-// "os.ErrNotExist" error.
-type Blobstore interface {
-	BlobExists(ctx context.Context, blobName string) (bool, error)
-	ReadBlob(ctx context.Context, blobName string) ([]byte, error)
-	WriteBlob(ctx context.Context, blobName string, data []byte) (int, error)
-	DeleteBlob(ctx context.Context, blobName string) error
-
-	// TODO(tylerw): remove this once stuff is switched over to cache API.
-	// Low level interface used for seeking and stream-writing.
-	BlobReader(ctx context.Context, blobName string, offset, length int64) (io.Reader, error)
-	BlobWriter(ctx context.Context, blobName string) (io.WriteCloser, error)
 }
 
 // A Database must allow for various object modification operations.

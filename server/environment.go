@@ -4,6 +4,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/database"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -36,6 +37,7 @@ type Env interface {
 	GetBlobstore() interfaces.Blobstore
 	GetDatabase() interfaces.Database
 	GetHealthChecker() *healthcheck.HealthChecker
+	GetAuthenticator() interfaces.Authenticator
 
 	// Optional dependencies below here. For example: enterprise-only things,
 	// or services that may not always be configured, like webhooks.
@@ -50,6 +52,7 @@ type RealEnv struct {
 	bs interfaces.Blobstore
 	db interfaces.Database
 	h  *healthcheck.HealthChecker
+	a  interfaces.Authenticator
 
 	webhooks               []interfaces.Webhook
 	searcher               interfaces.Searcher
@@ -114,6 +117,13 @@ func (r *RealEnv) SetCache(c interfaces.Cache) {
 	r.cache = c
 }
 
+func (r *RealEnv) GetAuthenticator() interfaces.Authenticator {
+	return r.a
+}
+func (r *RealEnv) SetAuthenticator(a interfaces.Authenticator) {
+	r.a = a
+}
+
 // Normally this code would live in main.go -- we put it here for now because
 // the environments used by the open-core version and the enterprise version are
 // not substantially different enough yet to warrant the extra complexity of
@@ -134,6 +144,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 		bs: bs,
 		db: rawDB,
 		h:  checker,
+		a:  &auth.NullAuthenticator{},
 	}
 
 	realEnv.SetSearcher(simplesearcher.NewSimpleSearcher(rawDB))

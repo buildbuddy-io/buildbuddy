@@ -4,6 +4,15 @@ load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 package(default_visibility = ["//visibility:public"])
 
 go_library(
+    name = "auth",
+    srcs = ["auth.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/auth",
+    deps = [
+        ":interfaces",
+    ],
+)
+
+go_library(
     name = "buildbuddy_server",
     srcs = ["buildbuddy_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server",
@@ -33,6 +42,7 @@ go_library(
     srcs = ["environment.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/environment",
     deps = [
+        ":auth",
         ":config",
         ":interfaces",
         "//server/backends:blobstore",

@@ -2,15 +2,34 @@ package filters
 
 import (
 	"compress/gzip"
+	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
+
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 )
+
+func printHeaders(r *http.Request) {
+	// Loop through headers
+	headers := make([]string, 0)
+	for name, hkv := range r.Header {
+		name = strings.ToLower(name)
+		for _, h := range hkv {
+			headers = append(headers, fmt.Sprintf("%v: %v", name, h))
+		}
+	}
+	sort.Strings(headers)
+	log.Printf("\n\n" + strings.Join(headers, "\n") + "\n\n")
+}
 
 func RedirectHTTPS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// printHeaders(r)
 		protocol := r.Header.Get("X-Forwarded-Proto") // Set by load balancer
 		if protocol == "http" {
 			http.Redirect(w, r, "https://"+r.Host+r.URL.String(), http.StatusMovedPermanently)
@@ -63,6 +82,30 @@ func Gzip(next http.Handler) http.Handler {
 	})
 }
 
-func WrapExternalHandler(next http.Handler) http.Handler {
-	return RedirectHTTPS(Gzip(next))
+func Authenticate(env environment.Env, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, err := env.GetAuthenticator().AuthenticateRequest(w, r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+type wrapFn func(http.Handler) http.Handler
+
+func WrapExternalHandler(env environment.Env, next http.Handler) http.Handler {
+	// NB: These are called in reverse order, so the 0th element will be
+	// called last before the handler itself is called.
+	wrapFns := []wrapFn{
+		Gzip,
+		func(h http.Handler) http.Handler { return Authenticate(env, h) },
+		RedirectHTTPS,
+	}
+	handler := next
+	for _, fn := range wrapFns {
+		handler = fn(handler)
+	}
+	return handler
 }
