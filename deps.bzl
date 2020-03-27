@@ -494,3 +494,24 @@ def install_buildbuddy_dependencies():
 	sum = "h1:/atklqdjdhuosWIl6AIbOeHJjicWYPqR9bpxqxYG2pA=",
 	version = "v0.0.0-20191011141410-1b5146add898",
     )
+
+    go_repository(
+	name = "com_github_pquerna_cachecontrol",
+	importpath = "github.com/pquerna/cachecontrol",
+	sum = "h1:J9b7z+QKAmPf4YLrFg6oQUotqHQeUNWwkvo7jZp1GLU=",
+	version = "v0.0.0-20180517163645-1555304b9b35",
+    )
+
+    go_repository(
+	name = "in_gopkg_square_go_jose_v2",
+	importpath = "gopkg.in/square/go-jose.v2",
+	sum = "h1:H0TmLt7/KmzlrDOpa1F+zr0Tk90PbJYBfsVUmRLrf9Y=",
+	version = "v2.4.1",
+    )
+
+    go_repository(
+	name = "com_github_coreos_go_oidc",
+	importpath = "github.com/coreos/go-oidc",
+	sum = "h1:mh48q/BqXqgjVHpy2ZY7WnWAbenxRjsz9N1i1YxjHAk=",
+	version = "v2.2.1+incompatible",
+    )
