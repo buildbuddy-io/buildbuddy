@@ -4,7 +4,6 @@ import (
 	"log"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/database"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -14,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 )
 
@@ -144,7 +144,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 		bs: bs,
 		db: rawDB,
 		h:  checker,
-		a:  &auth.NullAuthenticator{},
+		a:  &nullauth.NullAuthenticator{},
 	}
 
 	realEnv.SetSearcher(simplesearcher.NewSimpleSearcher(rawDB))

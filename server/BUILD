@@ -4,15 +4,6 @@ load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 package(default_visibility = ["//visibility:public"])
 
 go_library(
-    name = "auth",
-    srcs = ["auth.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/auth",
-    deps = [
-        ":interfaces",
-    ],
-)
-
-go_library(
     name = "buildbuddy_server",
     srcs = ["buildbuddy_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server",
@@ -43,9 +34,9 @@ go_library(
     srcs = ["environment.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/environment",
     deps = [
-        ":auth",
         ":config",
         ":interfaces",
+        ":nullauth",
         "//server/backends:blobstore",
         "//server/backends:database",
         "//server/backends:disk_cache",
@@ -54,6 +45,16 @@ go_library(
         "//server/backends:slack",
         "//server/build_event_protocol:build_event_proxy",
         "//server/util:healthcheck",
+    ],
+)
+
+go_library(
+    name = "interfaces",
+    srcs = ["interfaces.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/interfaces",
+    deps = [
+        ":tables",
+        "//proto:invocation_go_proto",
     ],
 )
 
@@ -71,12 +72,11 @@ go_library(
 )
 
 go_library(
-    name = "interfaces",
-    srcs = ["interfaces.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/interfaces",
+    name = "nullauth",
+    srcs = ["nullauth.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/nullauth",
     deps = [
-        ":tables",
-        "//proto:invocation_go_proto",
+        ":interfaces",
     ],
 )
 
