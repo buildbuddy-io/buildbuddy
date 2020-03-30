@@ -29,7 +29,7 @@ func printHeaders(r *http.Request) {
 
 func RedirectHTTPS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// printHeaders(r)
+		//printHeaders(r)
 		protocol := r.Header.Get("X-Forwarded-Proto") // Set by load balancer
 		if protocol == "http" {
 			http.Redirect(w, r, "https://"+r.Host+r.URL.String(), http.StatusMovedPermanently)

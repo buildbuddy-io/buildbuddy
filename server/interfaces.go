@@ -10,15 +10,36 @@ import (
 	inpb "proto/invocation"
 )
 
-type UserInfo interface {
+// An interface representing a registered User object.
+type User interface {
 	ID() string
 	Name() string
 	Groups() []string
 }
 
+// An interface representing the user info gleaned from an authorization header.
+type UserToken interface {
+	GetIssuer() string
+	GetSubscriberID() string
+}
+
 type Authenticator interface {
+	// Called by the authentication handler to authenticate a request. An error should
+	// only be returned when unexpected behavior occurs. In all other cases, the
+	// request context should be returned unchanged with no error set.
 	AuthenticateRequest(w http.ResponseWriter, r *http.Request) (context.Context, error)
-	GetUser(ctx context.Context) UserInfo
+
+	// Returns the UserToken extracted from any authorization headers
+	// present in the requst. This does not guarantee the user has been
+	// registered -- it only indicates they were authenticating using some
+	// auth provider.
+	//
+	// To check if a user is registered, use GetUser!
+	GetUserToken(ctx context.Context) UserToken
+
+	// GetUser *may* do a database read and will return the registered
+	// user's information, or nil of no user was found.
+	GetUser(ctx context.Context) User
 }
 
 // A Blobstore must allow for reading, writing, and deleting blobs.

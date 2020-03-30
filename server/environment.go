@@ -38,6 +38,7 @@ type Env interface {
 	GetDatabase() interfaces.Database
 	GetHealthChecker() *healthcheck.HealthChecker
 	GetAuthenticator() interfaces.Authenticator
+	SetAuthenticator(a interfaces.Authenticator)
 
 	// Optional dependencies below here. For example: enterprise-only things,
 	// or services that may not always be configured, like webhooks.
