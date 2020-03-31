@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/invocation.proto";
+import "proto/user.proto";
 
 package buildbuddy.service;
 
@@ -10,4 +11,10 @@ service BuildBuddyService {
 
   rpc SearchInvocation(invocation.SearchInvocationRequest)
       returns (invocation.SearchInvocationResponse);
+
+  rpc GetUser(user.GetUserRequest)
+      returns (user.GetUserResponse);
+
+  rpc ModifyUser(user.ModifyUserRequest)
+      returns (user.ModifyUserResponse);
 }

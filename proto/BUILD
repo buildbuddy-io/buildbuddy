@@ -92,10 +92,17 @@ proto_library(
 )
 
 proto_library(
+    name = "user_proto",
+    srcs = ["user.proto"],
+    deps = [],
+)
+
+proto_library(
     name = "buildbuddy_service_proto",
     srcs = ["buildbuddy_service.proto"],
     deps = [
         ":invocation_proto",
+        ":user_proto",
     ],
 )
 
@@ -176,6 +183,7 @@ go_grpc_library(
     proto = ":buildbuddy_service_proto",
     deps = [
         ":invocation_go_proto",
+        ":user_go_proto",
     ],
 )
 
@@ -183,6 +191,12 @@ go_proto_library(
     name = "semver_go_proto",
     importpath = "proto/semver",
     proto = ":semver_proto",
+)
+
+go_proto_library(
+    name = "user_go_proto",
+    importpath = "proto/user",
+    proto = ":user_proto",
 )
 
 go_grpc_library(
@@ -212,6 +226,11 @@ ts_proto_library(
 ts_proto_library(
     name = "invocation_ts_proto",
     deps = [":invocation_proto"],
+)
+
+ts_proto_library(
+    name = "user_ts_proto",
+    deps = [":user_proto"],
 )
 
 ts_proto_library(

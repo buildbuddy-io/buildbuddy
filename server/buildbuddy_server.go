@@ -14,6 +14,7 @@ import (
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	inpb "proto/invocation"
+	uspb "proto/user"
 )
 
 type BuildBuddyServer struct {
@@ -53,6 +54,14 @@ func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.Searc
 		return nil, fmt.Errorf("A query must be provided")
 	}
 	return searcher.QueryInvocations(ctx, req)
+}
+
+func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest) (*uspb.GetUserResponse, error) {
+	return nil, status.UnimplementedError("Not Implemented")
+}
+
+func (s *BuildBuddyServer) ModifyUser(ctx context.Context, req *uspb.ModifyUserRequest) (*uspb.ModifyUserResponse, error) {
+	return nil, status.UnimplementedError("Not Implemented")
 }
 
 type bsLookup struct {
