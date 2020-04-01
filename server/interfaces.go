@@ -10,17 +10,13 @@ import (
 	inpb "proto/invocation"
 )
 
-// An interface representing a registered User object.
-type User interface {
-	ID() string
-	Name() string
-	Groups() []string
-}
-
 // An interface representing the user info gleaned from an authorization header.
 type UserToken interface {
 	GetIssuer() string
-	GetSubscriberID() string
+	GetSubscriber() string
+
+	// Returns a fq string usable as an ID for this issuer + subscriber.
+	GetSubID() string
 }
 
 type Authenticator interface {
@@ -30,16 +26,16 @@ type Authenticator interface {
 	AuthenticateRequest(w http.ResponseWriter, r *http.Request) (context.Context, error)
 
 	// Returns the UserToken extracted from any authorization headers
-	// present in the requst. This does not guarantee the user has been
-	// registered -- it only indicates they were authenticating using some
+	// present in the request. This does not guarantee the user has been
+	// registered -- it only indicates they were authenticated using some
 	// auth provider.
 	//
-	// To check if a user is registered, use GetUser!
-	GetUserToken(ctx context.Context) UserToken
+	// To check if a user is registered, use UserDB.GetUser!
+	GetUserToken(ctx context.Context) (UserToken, error)
 
-	// GetUser *may* do a database read and will return the registered
-	// user's information, or nil of no user was found.
-	GetUser(ctx context.Context) User
+	// FillUser may be used to construct an initial tables.User object. It
+	// is filled based on information from the authenticator's JWT.
+	FillUser(ctx context.Context, user *tables.User) error
 }
 
 // A Blobstore must allow for reading, writing, and deleting blobs.
@@ -77,20 +73,33 @@ type Cache interface {
 	Stop() error
 }
 
-// A Database must allow for various object modification operations.
-type Database interface {
-	// INVOCATIONS API
+type InvocationDB interface {
+	// Invocations API
 	InsertOrUpdateInvocation(ctx context.Context, in *tables.Invocation) error
 	LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error)
 	LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error)
 	DeleteInvocation(ctx context.Context, invocationID string) error
+	RawQueryInvocations(ctx context.Context, sql string, values ...interface{}) ([]*tables.Invocation, error)
+}
 
-	// CACHE ENTRY API
+type CacheDB interface {
+	// Cache Entry API
 	InsertOrUpdateCacheEntry(ctx context.Context, c *tables.CacheEntry) error
 	IncrementEntryReadCount(ctx context.Context, key string) error
 	DeleteCacheEntry(ctx context.Context, key string) error
 	SumCacheEntrySizes(ctx context.Context) (int64, error)
 	RawQueryCacheEntries(ctx context.Context, sql string, values ...interface{}) ([]*tables.CacheEntry, error)
+}
+
+type UserDB interface {
+	// User API
+	InsertOrUpdateUser(ctx context.Context, u *tables.User) error
+	// GetUser *may* do a database read and will return the registered
+	// user's information, or nil if no user was found. It requires
+	// that a valid authenticator is present in the environment and will
+	// return a UserToken given the provided context.
+	GetUser(ctx context.Context, userID *string) (*tables.User, error)
+	DeleteUser(ctx context.Context, userID string) error
 }
 
 // A searcher allows finding various objects given a query.

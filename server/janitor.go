@@ -38,7 +38,7 @@ func (j *Janitor) deleteInvocation(invocation *tables.Invocation) {
 	}
 
 	// Try to delete the row too, even if blob deletion failed.
-	if err := j.env.GetDatabase().DeleteInvocation(ctx, invocation.InvocationID); err != nil && *logDeletionErrors {
+	if err := j.env.GetInvocationDB().DeleteInvocation(ctx, invocation.InvocationID); err != nil && *logDeletionErrors {
 		log.Printf("Error deleting invocation (%s): %s", invocation.InvocationID, err)
 	}
 }
@@ -46,7 +46,7 @@ func (j *Janitor) deleteInvocation(invocation *tables.Invocation) {
 func (j *Janitor) deleteExpiredInvocations() {
 	ctx := context.Background()
 	cutoff := time.Now().Add(-1 * j.ttl)
-	expired, err := j.env.GetDatabase().LookupExpiredInvocations(ctx, cutoff, 10)
+	expired, err := j.env.GetInvocationDB().LookupExpiredInvocations(ctx, cutoff, 10)
 	if err != nil && *logDeletionErrors {
 		log.Printf("Error finding expired deletions: %s", err)
 		return

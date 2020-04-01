@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/backends/database"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	inpb "proto/invocation"
 )
 
@@ -22,12 +22,12 @@ func DefaultSortParams() *inpb.InvocationSort {
 }
 
 type SimpleSearcher struct {
-	rawDB *database.Database
+	iDB interfaces.InvocationDB
 }
 
-func NewSimpleSearcher(rawDB *database.Database) *SimpleSearcher {
+func NewSimpleSearcher(iDB interfaces.InvocationDB) *SimpleSearcher {
 	return &SimpleSearcher{
-		rawDB: rawDB,
+		iDB: iDB,
 	}
 }
 
@@ -106,7 +106,7 @@ func (s *SimpleSearcher) QueryInvocations(ctx context.Context, req *inpb.SearchI
 	}
 	qString += fmt.Sprintf(" LIMIT %d", limitSize)
 
-	tableInvocations, err := s.rawDB.RawQueryInvocations(ctx, qString, qArgs...)
+	tableInvocations, err := s.iDB.RawQueryInvocations(ctx, qString, qArgs...)
 	if err != nil {
 		return nil, err
 	}

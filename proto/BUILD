@@ -87,14 +87,26 @@ proto_library(
     deps = [
         ":build_event_stream_proto",
         ":command_line_proto",
+        ":context_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
 proto_library(
     name = "user_proto",
-    srcs = ["user.proto"],
+    srcs = [
+        "user.proto",
+        "user_id.proto",
+    ],
     deps = [],
+)
+
+proto_library(
+    name = "context_proto",
+    srcs = ["context.proto"],
+    deps = [
+        "user_proto",
+    ],
 )
 
 proto_library(
@@ -174,6 +186,7 @@ go_proto_library(
     deps = [
         ":build_event_stream_go_proto",
         ":command_line_go_proto",
+        ":context_go_proto",
     ],
 )
 
@@ -197,6 +210,15 @@ go_proto_library(
     name = "user_go_proto",
     importpath = "proto/user",
     proto = ":user_proto",
+)
+
+go_proto_library(
+    name = "context_go_proto",
+    importpath = "proto/context",
+    proto = ":context_proto",
+    deps = [
+        ":user_go_proto",
+    ],
 )
 
 go_grpc_library(

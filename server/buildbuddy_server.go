@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 
@@ -57,11 +58,34 @@ func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.Searc
 }
 
 func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest) (*uspb.GetUserResponse, error) {
-	return nil, status.UnimplementedError("Not Implemented")
+	if s.env.GetUserDB() == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	var uid *string
+	if req.GetUserId().GetId() != "" {
+		uid = &req.GetUserId().Id
+	}
+	tu, err := s.env.GetUserDB().GetUser(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	return &uspb.GetUserResponse{
+		DisplayUser: tu.ToProto(),
+	}, nil
 }
 
-func (s *BuildBuddyServer) ModifyUser(ctx context.Context, req *uspb.ModifyUserRequest) (*uspb.ModifyUserResponse, error) {
-	return nil, status.UnimplementedError("Not Implemented")
+func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserRequest) (*uspb.CreateUserResponse, error) {
+	if s.env.GetAuthenticator() == nil || s.env.GetUserDB() == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	tu := &tables.User{}
+	if err := s.env.GetAuthenticator().FillUser(ctx, tu); err != nil {
+		return nil, err
+	}
+	if err := s.env.GetUserDB().InsertOrUpdateUser(ctx, tu); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
 
 type bsLookup struct {

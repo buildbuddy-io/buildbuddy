@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package user;
+
+message UserId {
+  // The user's ID according to BuildBuddy.
+  string id = 1;
+}
+
+// The user's name, usually pulled (initially) from the authentication provider.
+message Name {
+  string full = 1;
+
+  string first = 2;
+  string last = 3;
+}
+
+// DisplayUser can be freely nested within other protos to indicate ownership.
+// It only contains data useful across most APIs.
+message DisplayUser {
+  UserId user_id = 1;
+  Name name = 2;
+  string profile_image_url = 3;
+}

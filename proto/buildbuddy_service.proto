@@ -12,9 +12,9 @@ service BuildBuddyService {
   rpc SearchInvocation(invocation.SearchInvocationRequest)
       returns (invocation.SearchInvocationResponse);
 
+  rpc CreateUser(user.CreateUserRequest)
+      returns (user.CreateUserResponse);
+
   rpc GetUser(user.GetUserRequest)
       returns (user.GetUserResponse);
-
-  rpc ModifyUser(user.ModifyUserRequest)
-      returns (user.ModifyUserResponse);
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/jinzhu/gorm"
 	inpb "proto/invocation"
+	uspb "proto/user"
 )
 
 type tableDescriptor struct {
@@ -156,7 +157,57 @@ func (c *CacheEntry) TableName() string {
 	return "CacheEntries"
 }
 
+type Group struct {
+	Model
+	GroupID string `gorm:"primary_key;"`
+	Name    string
+}
+
+func (g *Group) TableName() string {
+	return "Groups"
+}
+
+type User struct {
+	Model
+
+	// The buildbuddy user ID.
+	UserID string `gorm:"primary_key;"`
+
+	// The subscriber ID, a concatenated string of the
+	// auth Issuer ID and the subcriber ID string.
+	SubID string `gorm:"index:sub_id_index"`
+
+	// Groups are used to determine read/write permissions
+	// for everything.
+	Groups []Group `gorm:"many2many:user_groups;"`
+
+	// Profile information etc.
+	FirstName string
+	LastName  string
+	ImageURL  string
+}
+
+func (u *User) TableName() string {
+	return "Users"
+}
+
+func (u *User) ToProto() *uspb.DisplayUser {
+	return &uspb.DisplayUser{
+		UserId: &uspb.UserId{
+			Id: u.UserID,
+		},
+		Name: &uspb.Name{
+			Full:  u.FirstName + " " + u.LastName,
+			First: u.FirstName,
+			Last:  u.LastName,
+		},
+		ProfileImageUrl: u.ImageURL,
+	}
+}
+
 func init() {
 	registerTable("IN", &Invocation{})
 	registerTable("CA", &CacheEntry{})
+	registerTable("US", &User{})
+	registerTable("GR", &Group{})
 }

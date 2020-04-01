@@ -16,6 +16,20 @@ go_library(
 )
 
 go_library(
+    name = "cachedb",
+    srcs = [
+        "cachedb.go",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/cachedb",
+    deps = [
+        "//server:tables",
+        "//server/util:db",
+        "//server/util:status",
+        "@com_github_jinzhu_gorm//:go_default_library",
+    ],
+)
+
+go_library(
     name = "disk_cache",
     srcs = ["disk_cache.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache",
@@ -29,18 +43,16 @@ go_library(
 )
 
 go_library(
-    name = "database",
+    name = "invocationdb",
     srcs = [
-        "database.go",
+        "invocationdb.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/database",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb",
     deps = [
-        "//server:config",
         "//server:tables",
+        "//server/util:db",
+        "//server/util:status",
         "@com_github_jinzhu_gorm//:go_default_library",
-        "@com_github_jinzhu_gorm//dialects/mysql:go_default_library",
-        "@com_github_jinzhu_gorm//dialects/postgres:go_default_library",
-        "@com_github_jinzhu_gorm//dialects/sqlite:go_default_library",
     ],
 )
 
@@ -59,8 +71,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/simplesearcher",
     deps = [
         "//proto:invocation_go_proto",
+        "//server:interfaces",
         "//server:tables",
-        "//server/backends:database",
+        "//server/backends:invocationdb",
     ],
 )
 

@@ -1,26 +1,8 @@
 syntax = "proto3";
 
+import "proto/user_id.proto";
+
 package user;
-
-// The user's ID according to BuildBuddy.
-message UserId {
-  string user_id = 1;
-}
-
-// The user's name, usually pulled initially from the authentication provider.
-message Name {
-  string name = 1;
-  string first = 2;
-  string last = 3;
-}
-
-// DisplayUser can be freely nested within other protos to indicate ownership.
-// It only contains data useful across most APIs.
-message DisplayUser {
-  UserId user_id = 1;
-  Name name = 2;
-  string profile_image_url = 3;
-}
 
 message GetUserRequest {
   UserId user_id = 1;
@@ -28,22 +10,15 @@ message GetUserRequest {
 
 message GetUserResponse {
   DisplayUser display_user = 1;
-
-  // Other non-common stuff goes here.
 }
 
-message ModifyUserRequest {
-  // If the user ID is set, the server will modify the specified user.
-  // If unset, a new user will be created. (Assuming it matches the
-  // request context and a user does not already exist).
-
-  // Any *set* field in this request will update
-  // the data in the database.
-  Name name = 2;
+message CreateUserRequest {
+  // User sub ID is inferred from the (required) side-channel token.
+  // UserID (buildbuddy) is generated.
+  // Other values (like name, etc) will have initial values that are pulled
+  // from the authentication provider response.
 }
 
-message ModifyUserResponse {
-  DisplayUser display_user = 1;
-
-  // Other non-common stuff goes here.
+message CreateUserResponse {
+   DisplayUser display_user = 1;
 }

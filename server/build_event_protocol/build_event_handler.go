@@ -94,7 +94,7 @@ func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error
 
 	ti := &tables.Invocation{}
 	ti.FromProtoAndBlobID(invocation, iid)
-	if err := e.env.GetDatabase().InsertOrUpdateInvocation(ctx, ti); err != nil {
+	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 		return err
 	}
 
@@ -143,7 +143,7 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 			InvocationID:     iid,
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
 		}
-		if err := e.env.GetDatabase().InsertOrUpdateInvocation(ctx, ti); err != nil {
+		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 			return err
 		}
 	}
@@ -180,7 +180,7 @@ func OpenChannel(env environment.Env, ctx context.Context, iid string) *EventCha
 }
 
 func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {
-	ti, err := env.GetDatabase().LookupInvocation(ctx, iid)
+	ti, err := env.GetInvocationDB().LookupInvocation(ctx, iid)
 	if err != nil {
 		return nil, err
 	}

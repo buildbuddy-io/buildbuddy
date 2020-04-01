@@ -5,8 +5,9 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/database"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/cachedb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/simplesearcher"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 )
 
@@ -35,7 +37,8 @@ type Env interface {
 	// The following dependencies are required.
 	GetConfigurator() *config.Configurator
 	GetBlobstore() interfaces.Blobstore
-	GetDatabase() interfaces.Database
+	GetInvocationDB() interfaces.InvocationDB
+	GetCacheDB() interfaces.CacheDB
 	GetHealthChecker() *healthcheck.HealthChecker
 	GetAuthenticator() interfaces.Authenticator
 	SetAuthenticator(a interfaces.Authenticator)
@@ -46,19 +49,23 @@ type Env interface {
 	GetSearcher() interfaces.Searcher
 	GetBuildEventProxyClients() []*build_event_proxy.BuildEventProxyClient
 	GetCache() interfaces.Cache
+	GetUserDB() interfaces.UserDB
 }
 
 type RealEnv struct {
-	c  *config.Configurator
-	bs interfaces.Blobstore
-	db interfaces.Database
-	h  *healthcheck.HealthChecker
-	a  interfaces.Authenticator
+	c            *config.Configurator
+	dbHandle     *db.DBHandle
+	bs           interfaces.Blobstore
+	invocationDB interfaces.InvocationDB
+	cacheDB      interfaces.CacheDB
+	h            *healthcheck.HealthChecker
+	a            interfaces.Authenticator
 
 	webhooks               []interfaces.Webhook
 	searcher               interfaces.Searcher
 	buildEventProxyClients []*build_event_proxy.BuildEventProxyClient
 	cache                  interfaces.Cache
+	userDB                 interfaces.UserDB
 }
 
 func (r *RealEnv) GetConfigurator() *config.Configurator {
@@ -66,6 +73,9 @@ func (r *RealEnv) GetConfigurator() *config.Configurator {
 }
 func (r *RealEnv) SetConfigurator(c *config.Configurator) {
 	r.c = c
+}
+func (r *RealEnv) GetDBHandle() *db.DBHandle {
+	return r.dbHandle
 }
 
 func (r *RealEnv) GetHealthChecker() *healthcheck.HealthChecker {
@@ -82,11 +92,18 @@ func (r *RealEnv) SetBlobstore(bs interfaces.Blobstore) {
 	r.bs = bs
 }
 
-func (r *RealEnv) GetDatabase() interfaces.Database {
-	return r.db
+func (r *RealEnv) GetInvocationDB() interfaces.InvocationDB {
+	return r.invocationDB
 }
-func (r *RealEnv) SetDatabase(db interfaces.Database) {
-	r.db = db
+func (r *RealEnv) SetInvocationDB(idb interfaces.InvocationDB) {
+	r.invocationDB = idb
+}
+
+func (r *RealEnv) GetCacheDB() interfaces.CacheDB {
+	return r.cacheDB
+}
+func (r *RealEnv) SetCacheDB(cdb interfaces.CacheDB) {
+	r.cacheDB = cdb
 }
 
 func (r *RealEnv) GetWebhooks() []interfaces.Webhook {
@@ -125,6 +142,13 @@ func (r *RealEnv) SetAuthenticator(a interfaces.Authenticator) {
 	r.a = a
 }
 
+func (r *RealEnv) GetUserDB() interfaces.UserDB {
+	return r.userDB
+}
+func (r *RealEnv) SetUserDB(udb interfaces.UserDB) {
+	r.userDB = udb
+}
+
 // Normally this code would live in main.go -- we put it here for now because
 // the environments used by the open-core version and the enterprise version are
 // not substantially different enough yet to warrant the extra complexity of
@@ -134,21 +158,23 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}
-	rawDB, err := database.GetConfiguredDatabase(configurator)
+	dbHandle, err := db.GetConfiguredDatabase(configurator)
 	if err != nil {
 		log.Fatalf("Error configuring database: %s", err)
 	}
 
 	realEnv := &RealEnv{
 		// REQUIRED
-		c:  configurator,
-		bs: bs,
-		db: rawDB,
-		h:  checker,
-		a:  &nullauth.NullAuthenticator{},
+		c:            configurator,
+		dbHandle:     dbHandle,
+		bs:           bs,
+		cacheDB:      cachedb.NewCacheDB(dbHandle),
+		invocationDB: invocationdb.NewInvocationDB(dbHandle),
+		h:            checker,
+		a:            &nullauth.NullAuthenticator{},
 	}
 
-	realEnv.SetSearcher(simplesearcher.NewSimpleSearcher(rawDB))
+	realEnv.SetSearcher(simplesearcher.NewSimpleSearcher(realEnv.invocationDB))
 	webhooks := make([]interfaces.Webhook, 0)
 	appURL := configurator.GetAppBuildBuddyURL()
 	if sc := configurator.GetIntegrationsSlackConfig(); sc != nil {
@@ -185,7 +211,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 			log.Fatalf("Error configuring cache blobstore: %s", err)
 		}
 		ttl := time.Duration(configurator.GetCacheTTLSeconds()) * time.Second
-		c, err := disk_cache.NewDiskCache(cacheBlobstore, rawDB, ttl, configurator.GetCacheMaxSizeBytes())
+		c, err := disk_cache.NewDiskCache(cacheBlobstore, realEnv.cacheDB, ttl, configurator.GetCacheMaxSizeBytes())
 		if err != nil {
 			log.Fatalf("Error configuring cache: %s", err)
 		}

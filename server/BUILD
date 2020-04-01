@@ -10,6 +10,7 @@ go_library(
     deps = [
         ":environment",
         ":interfaces",
+        ":tables",
         "//proto:buildbuddy_service_go_proto",
         "//proto:invocation_go_proto",
         "//proto:user_go_proto",
@@ -39,12 +40,14 @@ go_library(
         ":interfaces",
         ":nullauth",
         "//server/backends:blobstore",
-        "//server/backends:database",
+        "//server/backends:cachedb",
         "//server/backends:disk_cache",
+        "//server/backends:invocationdb",
         "//server/backends:memory_cache",
         "//server/backends:simplesearcher",
         "//server/backends:slack",
         "//server/build_event_protocol:build_event_proxy",
+        "//server/util:db",
         "//server/util:healthcheck",
     ],
 )
@@ -68,7 +71,6 @@ go_library(
         ":environment",
         ":interfaces",
         ":tables",
-        "//server/backends:database",
     ],
 )
 
@@ -78,6 +80,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/nullauth",
     deps = [
         ":interfaces",
+        ":tables",
+        "//server/util:status",
     ],
 )
 
@@ -98,6 +102,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/tables",
     deps = [
         "//proto:invocation_go_proto",
+        "//proto:user_go_proto",
         "@com_github_jinzhu_gorm//:go_default_library",
     ],
 )

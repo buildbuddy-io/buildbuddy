@@ -27,7 +27,7 @@ const (
 // the total cache size.
 type DiskCache struct {
 	bs interfaces.Blobstore
-	db interfaces.Database
+	db interfaces.CacheDB
 
 	ttl          time.Duration
 	maxSizeBytes int64
@@ -40,7 +40,7 @@ type DiskCache struct {
 }
 
 // NB: ttl is a positive valued duration
-func NewDiskCache(bs interfaces.Blobstore, db interfaces.Database, ttl time.Duration, maxSizeBytes int64) (*DiskCache, error) {
+func NewDiskCache(bs interfaces.Blobstore, db interfaces.CacheDB, ttl time.Duration, maxSizeBytes int64) (*DiskCache, error) {
 	if ttl < 0 {
 		return nil, fmt.Errorf("ttl must be positive valued")
 	}

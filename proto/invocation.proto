@@ -2,6 +2,7 @@ syntax = "proto3";
 
 import "proto/build_event_stream.proto";
 import "proto/command_line.proto";
+import "proto/context.proto";
 import "google/protobuf/timestamp.proto";
 
 package invocation;
@@ -71,11 +72,15 @@ message InvocationLookup {
 }
 
 message GetInvocationRequest {
-    InvocationLookup lookup = 1;
+    context.RequestContext request_context = 1;
+
+    InvocationLookup lookup = 2;
 }
 
 message GetInvocationResponse {
-    repeated Invocation invocation = 1;
+    context.ResponseContext response_context = 1;
+
+    repeated Invocation invocation = 2;
 }
 
 message InvocationQuery {
@@ -104,24 +109,28 @@ message InvocationSort {
 }
 
 message SearchInvocationRequest {
+    context.RequestContext request_context = 1;
+
     // Query params that determine which invocations will be matched. Required.
-    InvocationQuery query = 1;
+    InvocationQuery query = 2;
 
     // Sort parameters that determine result ordering. Optional.
     // If unset, the server will determine sort order.
-    InvocationSort sort = 2;
+    InvocationSort sort = 3;
 
     // The number of results to return. Optional.
     // If unset, the server will pick a reasonable page size.
-    int32 count = 3;
+    int32 count = 4;
 
     // TODO(tylerw): Pagination.
 }
 
 message SearchInvocationResponse {
+    context.ResponseContext response_context = 1;
+
     // Note: For now, the invocations returned will not have the "event" field
     // set because it's a large amount of data. Clients that want to display
     // the full invocation should link to it or call GetInvocation directly on
     // the invocation they want to display.
-    repeated Invocation invocation = 1;
+    repeated Invocation invocation = 2;
 }

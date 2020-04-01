@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+import "proto/user_id.proto";
+
+package context;
+
+message RequestContext {
+  user.UserId user_id = 1;
+}
+
+message ResponseContext {
+  // Nada. Zip. Zilch.
+}
