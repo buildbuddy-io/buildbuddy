@@ -95,7 +95,21 @@ func Authenticate(env environment.Env, next http.Handler) http.Handler {
 
 type wrapFn func(http.Handler) http.Handler
 
-func WrapExternalHandler(env environment.Env, next http.Handler) http.Handler {
+func WrapExternalHandler(next http.Handler) http.Handler {
+	// NB: These are called in reverse order, so the 0th element will be
+	// called last before the handler itself is called.
+	wrapFns := []wrapFn{
+		Gzip,
+		RedirectHTTPS,
+	}
+	handler := next
+	for _, fn := range wrapFns {
+		handler = fn(handler)
+	}
+	return handler
+}
+
+func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) http.Handler {
 	// NB: These are called in reverse order, so the 0th element will be
 	// called last before the handler itself is called.
 	wrapFns := []wrapFn{

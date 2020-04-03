@@ -37,7 +37,7 @@ var (
 )
 
 func StartAndRunServices(env environment.Env) {
-	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, []string{"/auth/", "/invocation/", "/history/"})
+	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, []string{"/invocation/", "/history/"})
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)
 	}
@@ -112,11 +112,18 @@ func StartAndRunServices(env environment.Env) {
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
 	// Register all of our HTTP handlers on the default mux.
-	http.Handle("/", filters.WrapExternalHandler(env, staticFileServer))
-	http.Handle("/app/", filters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
-	http.Handle("/rpc/BuildBuddyService/", filters.WrapExternalHandler(env, http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))
-	http.Handle("/file/download", filters.WrapExternalHandler(env, buildBuddyServer))
+	http.Handle("/", filters.WrapExternalHandler(staticFileServer))
+	http.Handle("/app/", filters.WrapExternalHandler(http.StripPrefix("/app", afs)))
+	http.Handle("/rpc/BuildBuddyService/", filters.WrapAuthenticatedExternalHandler(env,
+		http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))
+	http.Handle("/file/download", filters.WrapExternalHandler(buildBuddyServer))
 	http.Handle("/healthz", env.GetHealthChecker())
+
+	if auth := env.GetAuthenticator(); auth != nil {
+		http.Handle("/login/", filters.RedirectHTTPS(http.HandlerFunc(auth.Login)))
+		http.Handle("/auth/", filters.RedirectHTTPS(http.HandlerFunc(auth.Auth)))
+		http.Handle("/logout/", filters.RedirectHTTPS(http.HandlerFunc(auth.Logout)))
+	}
 
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
 	log.Printf("HTTP listening on http://%s\n", hostAndPort)

@@ -20,6 +20,13 @@ type UserToken interface {
 }
 
 type Authenticator interface {
+	// Redirect to configured authentication provider.
+	Login(w http.ResponseWriter, r *http.Request)
+	// Clear any logout state.
+	Logout(w http.ResponseWriter, r *http.Request)
+	// Handle a callback from authentication provider.
+	Auth(w http.ResponseWriter, r *http.Request)
+
 	// Called by the authentication handler to authenticate a request. An error should
 	// only be returned when unexpected behavior occurs. In all other cases, the
 	// request context should be returned unchanged with no error set.
@@ -89,6 +96,11 @@ type CacheDB interface {
 	DeleteCacheEntry(ctx context.Context, key string) error
 	SumCacheEntrySizes(ctx context.Context) (int64, error)
 	RawQueryCacheEntries(ctx context.Context, sql string, values ...interface{}) ([]*tables.CacheEntry, error)
+}
+
+type AuthDB interface {
+	InsertOrUpdateUserToken(ctx context.Context, subID string, token *tables.Token) error
+	ReadToken(ctx context.Context, subID string) (*tables.Token, error)
 }
 
 type UserDB interface {

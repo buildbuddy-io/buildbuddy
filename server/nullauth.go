@@ -22,3 +22,15 @@ func (a *NullAuthenticator) GetUserToken(ctx context.Context) (interfaces.UserTo
 func (a *NullAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
 	return nil
 }
+
+func (a *NullAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/", 301)
+}
+
+func (a *NullAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/", 301)
+}
+
+func (a *NullAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/", 301)
+}

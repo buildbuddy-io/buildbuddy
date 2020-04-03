@@ -50,6 +50,7 @@ type Env interface {
 	GetBuildEventProxyClients() []*build_event_proxy.BuildEventProxyClient
 	GetCache() interfaces.Cache
 	GetUserDB() interfaces.UserDB
+	GetAuthDB() interfaces.AuthDB
 }
 
 type RealEnv struct {
@@ -66,6 +67,7 @@ type RealEnv struct {
 	buildEventProxyClients []*build_event_proxy.BuildEventProxyClient
 	cache                  interfaces.Cache
 	userDB                 interfaces.UserDB
+	authDB                 interfaces.AuthDB
 }
 
 func (r *RealEnv) GetConfigurator() *config.Configurator {
@@ -147,6 +149,13 @@ func (r *RealEnv) GetUserDB() interfaces.UserDB {
 }
 func (r *RealEnv) SetUserDB(udb interfaces.UserDB) {
 	r.userDB = udb
+}
+
+func (r *RealEnv) GetAuthDB() interfaces.AuthDB {
+	return r.authDB
+}
+func (r *RealEnv) SetAuthDB(adb interfaces.AuthDB) {
+	r.authDB = adb
 }
 
 // Normally this code would live in main.go -- we put it here for now because

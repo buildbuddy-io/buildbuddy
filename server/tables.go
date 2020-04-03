@@ -205,9 +205,24 @@ func (u *User) ToProto() *uspb.DisplayUser {
 	}
 }
 
+type Token struct {
+	Model
+	// The subscriber ID, a concatenated string of the
+	// auth Issuer ID and the subcriber ID string.
+	SubID        string `gorm:"primary_key"`
+	AccessToken  string
+	RefreshToken string
+	ExpiryUsec   int64
+}
+
+func (t *Token) TableName() string {
+	return "Tokens"
+}
+
 func init() {
 	registerTable("IN", &Invocation{})
 	registerTable("CA", &CacheEntry{})
 	registerTable("US", &User{})
 	registerTable("GR", &Group{})
+	registerTable("TO", &Token{})
 }
