@@ -30,7 +30,7 @@ type Authenticator interface {
 	// Called by the authentication handler to authenticate a request. An error should
 	// only be returned when unexpected behavior occurs. In all other cases, the
 	// request context should be returned unchanged with no error set.
-	AuthenticateRequest(w http.ResponseWriter, r *http.Request) (context.Context, error)
+	AuthenticateRequest(w http.ResponseWriter, r *http.Request) context.Context
 
 	// Returns the UserToken extracted from any authorization headers
 	// present in the request. This does not guarantee the user has been

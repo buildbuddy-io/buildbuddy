@@ -11,8 +11,8 @@ import (
 
 type NullAuthenticator struct{}
 
-func (a *NullAuthenticator) AuthenticateRequest(w http.ResponseWriter, r *http.Request) (context.Context, error) {
-	return r.Context(), nil
+func (a *NullAuthenticator) AuthenticateRequest(w http.ResponseWriter, r *http.Request) context.Context {
+	return r.Context()
 }
 
 func (a *NullAuthenticator) GetUserToken(ctx context.Context) (interfaces.UserToken, error) {

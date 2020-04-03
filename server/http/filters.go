@@ -84,11 +84,7 @@ func Gzip(next http.Handler) http.Handler {
 
 func Authenticate(env environment.Env, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, err := env.GetAuthenticator().AuthenticateRequest(w, r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
+		ctx := env.GetAuthenticator().AuthenticateRequest(w, r)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
