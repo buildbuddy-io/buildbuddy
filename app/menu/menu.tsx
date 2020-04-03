@@ -1,11 +1,12 @@
 import React from 'react';
-import authService, { User } from '../auth/auth_service';
+import authService from '../auth/auth_service';
 import capabilities from '../capabilities/capabilities';
+import { user } from '../../proto/user_ts_proto';
 
 interface Props {
   denseModeEnabled: boolean;
   handleDenseModeToggled: VoidFunction;
-  user: User;
+  user: user.DisplayUser;
 }
 interface State {
   menuExpanded: boolean;
@@ -42,8 +43,8 @@ export default class MenuComponent extends React.Component {
             <div>
               <a href="/"><div className="title"><img src="/image/logo_white.svg" /></div></a>
             </div>
-            {(!capabilities.auth || !this.props.user?.profilePhotoUrl) && <img onClick={this.handleMenuClicked.bind(this)} className="icon" src="/image/menu.svg" />}
-            {(capabilities.auth && this.props.user?.profilePhotoUrl) && <img onClick={this.handleMenuClicked.bind(this)} className="profile-photo" src={this.props.user.profilePhotoUrl} />}
+            {(!capabilities.auth || !this.props.user?.profileImageUrl) && <img onClick={this.handleMenuClicked.bind(this)} className="icon" src="/image/menu.svg" />}
+            {(capabilities.auth && this.props.user?.profileImageUrl) && <img onClick={this.handleMenuClicked.bind(this)} className="profile-photo" src={this.props.user?.profileImageUrl} />}
             {this.state.menuExpanded &&
               <div className="side-menu">
                 <ul>

@@ -1,69 +1,53 @@
 import events from 'fbemitter';
-import oidc from 'oidc-client';
-import googleAuth from './google_auth';
-
-export class User {
-  name: string;
-  email: string;
-  profilePhotoUrl: string;
-}
+import rpcService from '../service/rpc_service';
+import { user } from '../../proto/user_ts_proto';
+import capabilities from '../capabilities/capabilities'
 
 export class AuthService {
-  user: User = null;
+  user: user.DisplayUser = null;
   userStream = new events.EventEmitter();
-
-  userManager = googleAuth;
 
   static userEventName = "user";
 
   constructor() {
-    oidc.Log.logger = console;
-    this.handleRedirectStateIfPresent();
-    window.addEventListener("storage", (event) => {
-      this.userManager.getUser().then((user) => {
-        this.emitUser(user);
-      });
+  }
+
+  register() {
+    if (!capabilities.auth) return;
+    let request = new user.GetUserRequest();
+    rpcService.service.getUser(request).then((response: user.GetUserResponse) => {
+      this.emitUser(response.displayUser as user.DisplayUser);
+    }).catch((error: any) => {
+      console.log(error);
+      // TODO(siggisim): make this more robust.
+      if (error.includes("User not found")) {
+        this.createUser();
+      }
     });
-    this.userManager.getUser().then((user) => {
-      this.emitUser(user);
+  }
+
+  createUser() {
+    let request = new user.CreateUserRequest();
+    rpcService.service.createUser(request).then((response: user.CreateUserResponse) => {
+      this.emitUser(response.displayUser as user.DisplayUser);
+    }).catch((error: any) => {
+      console.log(error);
+      // TODO(siggisim): figure out what we should do in this case.
     });
+
   }
 
-  handleRedirectStateIfPresent() {
-    if (window.location.pathname.startsWith("/auth/")) {
-      this.userManager.signinRedirectCallback(window.location.href).then((user) => {
-        this.emitUser(user);
-      });
-      var newUrl = window.location.protocol + "//" + window.location.host;
-      window.history.pushState({ path: newUrl }, '', newUrl);
-    }
-  }
-
-  handleUserLoaded() {
-    console.log("User loaded", this.userManager.getUser());
-  }
-
-  emitUser(oidcUser: oidc.User) {
-    console.log("User", oidcUser);
-    if (!oidcUser) {
-      this.userStream.emit(AuthService.userEventName, null);
-      return;
-    }
-    this.user = new User();
-    this.user.email = oidcUser.profile.email;
-    this.user.name = oidcUser.profile.name;
-    this.user.profilePhotoUrl = oidcUser.profile.picture;
-    this.userStream.emit(AuthService.userEventName, this.user);
+  emitUser(displayUser: user.DisplayUser) {
+    console.log("User", displayUser);
+    this.userStream.emit(AuthService.userEventName, displayUser);
   }
 
   login() {
-    this.userManager.signinRedirect();
+    window.location.href = `/login/?redirect_url=${encodeURIComponent(window.location.href)}&issuer_url=${encodeURIComponent(capabilities.auth)}`;
   }
 
   logout() {
-    this.userManager.removeUser().then(() => {
-      this.emitUser(null);
-    });
+    window.location.href = `/logout/`;
   }
 }
 

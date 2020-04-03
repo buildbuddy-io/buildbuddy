@@ -10,6 +10,7 @@ ts_library(
         "//app/capabilities",
         "//app/service",
         "//proto:invocation_ts_proto",
+        "//proto:user_ts_proto",
         "@npm//@types/react",
         "@npm//protobufjs",
         "@npm//react",

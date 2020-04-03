@@ -4,13 +4,14 @@ import InvocationComponent from '../invocation/invocation';
 import HomeComponent from '../home/home';
 import capabilities from '../capabilities/capabilities'
 import router, { Path } from '../router/router';
-import authService, { AuthService, User } from '../auth/auth_service';
+import authService, { AuthService } from '../auth/auth_service';
+import { user } from '../../proto/user_ts_proto';
 
 const denseModeKey = "VIEW_MODE";
 const denseModeValue = "DENSE";
 
 interface State {
-  user: User;
+  user: user.DisplayUser;
   hash: string;
   path: string;
   search: URLSearchParams;
@@ -28,8 +29,9 @@ export default class RootComponent extends React.Component {
 
   componentWillMount() {
     capabilities.register("BuildBuddy Community Edition", [Path.invocationPath]);
+    authService.register();
     router.register(this.handlePathChange.bind(this));
-    authService.userStream.addListener(AuthService.userEventName, (user: User) => {
+    authService.userStream.addListener(AuthService.userEventName, (user: user.DisplayUser) => {
       this.setState({ ...this.state, user })
     })
   }

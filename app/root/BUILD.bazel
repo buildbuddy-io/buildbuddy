@@ -13,6 +13,7 @@ ts_library(
         "//app/menu",
         "//app/router",
         "//app/service",
+        "//proto:user_ts_proto",
         "@npm//@types/react",
         "@npm//protobufjs",
         "@npm//react",

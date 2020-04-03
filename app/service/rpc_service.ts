@@ -1,6 +1,5 @@
 import { buildbuddy } from '../../proto/buildbuddy_service_ts_proto';
 import events from 'fbemitter';
-import auth_service from '../auth/auth_service';
 
 class RpcService {
   service: buildbuddy.service.BuildBuddyService;
@@ -31,17 +30,7 @@ class RpcService {
       callback('Error: Connection error');
     };
 
-    // Make sure we get a fresh user so the id token isn't expired.
-    auth_service.userManager.getUser().then((user) => {
-      console.log("User", user);
-      if (user) {
-        request.setRequestHeader('Authorization', user.id_token);
-        request.setRequestHeader('X-Authorization-Authority', auth_service.userManager.settings.authority);
-      }
-      request.send(requestData);
-    }).catch((error) => {
-      console.error("Authentication error", error)
-    });
+    request.send(requestData);
   };
 }
 
