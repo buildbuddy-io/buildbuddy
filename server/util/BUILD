@@ -35,6 +35,12 @@ go_library(
 )
 
 go_library(
+    name = "random",
+    srcs = ["random.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/random",
+)
+
+go_library(
     name = "status",
     srcs = [
         "status.go",

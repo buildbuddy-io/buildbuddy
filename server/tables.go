@@ -2,13 +2,12 @@ package tables
 
 import (
 	"fmt"
-	"log"
-	"math/rand"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/jinzhu/gorm"
+
 	inpb "proto/invocation"
 	uspb "proto/user"
 )
@@ -29,7 +28,6 @@ type Table interface {
 // All tables the DB knows about. If it's not here it doesn't count.
 var (
 	allTables []tableDescriptor
-	once      sync.Once
 )
 
 func GetAllTables() []interface{} {
@@ -40,19 +38,10 @@ func GetAllTables() []interface{} {
 	return tableSlice
 }
 
-func randUint64() uint64 {
-	once.Do(func() {
-		rand.Seed(time.Now().UnixNano())
-		log.Printf("Seeded random with current time!")
-	})
-
-	return rand.Uint64()
-}
-
 func PrimaryKeyForTable(tableName string) (string, error) {
 	for _, d := range allTables {
 		if d.name == tableName {
-			return fmt.Sprintf("%s%d", d.prefix, randUint64()), nil
+			return fmt.Sprintf("%s%d", d.prefix, random.RandUint64()), nil
 		}
 	}
 	return "", fmt.Errorf("Unknown table: %s", tableName)

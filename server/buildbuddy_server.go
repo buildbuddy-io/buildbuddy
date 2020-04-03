@@ -87,7 +87,7 @@ func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserR
 	}
 	return &uspb.CreateUserResponse{
 		DisplayUser: tu.ToProto(),
-	} , nil
+	}, nil
 }
 
 type bsLookup struct {

@@ -103,6 +103,7 @@ go_library(
     deps = [
         "//proto:invocation_go_proto",
         "//proto:user_go_proto",
+        "//server/util:random",
         "@com_github_jinzhu_gorm//:go_default_library",
     ],
 )
