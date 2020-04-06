@@ -2,9 +2,11 @@ package buildbuddy_server
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -91,8 +93,60 @@ func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserR
 	}, nil
 }
 
+func makeConfigOption(lifecycle, flagName, flagValue string) *bzpb.ConfigOption {
+	return &bzpb.ConfigOption{
+		Body:            fmt.Sprintf("%s --%s=%s", lifecycle, flagName, flagValue),
+		OptionLifecycle: lifecycle,
+		FlagName:        flagName,
+		FlagValue:       flagValue,
+	}
+}
+
+func assembleURL(baseURL *url.URL, scheme, port, relPath string) string {
+	baseURL.Scheme = scheme
+	baseURL.Host = baseURL.Hostname() + ":" + port
+	rel, _ := url.Parse(relPath)
+	u := baseURL.ResolveReference(rel)
+	return u.String()
+}
+
+func getIntFlag(flagName string, defaultVal string) string {
+	f := flag.Lookup(flagName)
+	if f == nil {
+		return defaultVal
+	}
+	return f.Value.String()
+}
+
 func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBazelConfigRequest) (*bzpb.GetBazelConfigResponse, error) {
-	return &bzpb.GetBazelConfigResponse{}, nil
+	targetURL, err := url.Parse(s.env.GetConfigurator().GetAppBuildBuddyURL())
+	if err != nil {
+		targetURL, _ = url.Parse("http://SET_BUILD_BUDDY_URL_IN_YOUR_CONFIG/")
+	}
+	configOptions := make([]*bzpb.ConfigOption, 0)
+
+	port := getIntFlag("port", "8080")
+	configOptions = append(configOptions, makeConfigOption("build", "bes_results_url", assembleURL(targetURL, targetURL.Scheme, port, "/invocation/")))
+
+	eventsAPIURL := s.env.GetConfigurator().GetAppEventsAPIURL()
+	if eventsAPIURL == "" {
+		grpcPort := getIntFlag("grpc_port", "1985")
+		eventsAPIURL = assembleURL(targetURL, "grpc", grpcPort, "")
+	}
+	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", eventsAPIURL))
+
+	if s.env.GetCache() != nil {
+		cacheAPIURL := s.env.GetConfigurator().GetAppCacheAPIURL()
+		if cacheAPIURL == "" {
+			grpcPort := getIntFlag("grpc_port", "1985")
+			cacheAPIURL = assembleURL(targetURL, "grpc", grpcPort, "")
+		}
+		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", cacheAPIURL))
+
+	}
+	return &bzpb.GetBazelConfigResponse{
+		ConfigOption: configOptions,
+	}, nil
 }
 
 type bsLookup struct {
