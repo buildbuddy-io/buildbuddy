@@ -30,7 +30,7 @@ export default class InvocationOverviewComponent extends React.Component {
           {this.props.model.getStatusIcon()}
           {this.props.model.getStatus()}
         </div>
-        <div className="detail" title={this.props.model.getDuractionSeconds()}>
+        <div className="detail" title={this.props.model.getDurationSeconds()}>
           <img className="icon" src="/image/clock-regular.svg" />
           {this.props.model.getTiming()}
         </div>

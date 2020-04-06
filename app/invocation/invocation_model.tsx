@@ -179,8 +179,12 @@ export default class InvocationModel {
     return format.durationSec(elapsedTime);
   }
 
-  getDuractionSeconds() {
+  getDurationSeconds() {
     return `${this.toolLogMap.get('elapsed time')} seconds`
+  }
+
+  getDurationMicros() {
+    return +this.toolLogMap.get('elapsed time') * 1000000;
   }
 
   getTiming() {
