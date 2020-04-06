@@ -152,10 +152,10 @@ type Group struct {
 
 	GroupID string `gorm:"primary_key;"`
 	// The user that OWNS this group. Only this user may modify it.
-	UserID  string
+	UserID string
 
 	// The group name. This may be displayed to users.
-	Name    string
+	Name string
 
 	// The group access token. This token allows writing data for this
 	// group.
