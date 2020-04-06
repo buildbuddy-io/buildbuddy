@@ -148,8 +148,18 @@ func (c *CacheEntry) TableName() string {
 
 type Group struct {
 	Model
+	// The group ID -- a unique ID.
+
 	GroupID string `gorm:"primary_key;"`
-	Name    string
+	// The user that OWNS this group. Only this user may modify it.
+	UserID string
+
+	// The group name. This may be displayed to users.
+	Name string
+
+	// The group access token. This token allows writing data for this
+	// group.
+	WriteToken string
 }
 
 func (g *Group) TableName() string {

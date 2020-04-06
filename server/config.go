@@ -23,8 +23,8 @@ type generalConfig struct {
 
 type appConfig struct {
 	BuildBuddyURL string `yaml:"build_buddy_url"`
-	EventsAPIURL string `yaml:"events_api_url"`
-	CacheAPIURL string `yaml:"cache_api_url"`
+	EventsAPIURL  string `yaml:"events_api_url"`
+	CacheAPIURL   string `yaml:"cache_api_url"`
 }
 
 type buildEventProxy struct {
