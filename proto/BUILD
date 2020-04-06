@@ -265,6 +265,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "context_ts_proto",
+    deps = [":context_proto"],
+)
+
+ts_proto_library(
     name = "invocation_ts_proto",
     deps = [":invocation_proto"],
 )
