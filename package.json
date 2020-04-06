@@ -15,6 +15,7 @@
   "dependencies": {
     "@types/fbemitter": "^2.0.32",
     "@types/moment": "^2.13.0",
+    "@types/pako": "^1.0.1",
     "@types/react": "^16.8.17",
     "@types/react-dom": "^16.8.4",
     "chalk": "^2.4.2",
@@ -27,6 +28,7 @@
     "minimist": "^1.2.0",
     "moment": "^2.24.0",
     "oidc-client": "^1.10.1",
+    "pako": "^1.0.11",
     "protobufjs": "^6.8.8",
     "react": "^16.8.6",
     "react-dom": "^16.8.6",

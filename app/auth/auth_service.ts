@@ -1,6 +1,7 @@
 import events from 'fbemitter';
 import rpcService from '../service/rpc_service';
 import { user } from '../../proto/user_ts_proto';
+import { context } from '../../proto/context_ts_proto';
 import capabilities from '../capabilities/capabilities'
 
 export class AuthService {
@@ -40,6 +41,16 @@ export class AuthService {
   emitUser(displayUser: user.DisplayUser) {
     console.log("User", displayUser);
     this.userStream.emit(AuthService.userEventName, displayUser);
+  }
+
+  getRequestContext() {
+    let cookieName = "userId";
+    let match = document.cookie.match('(^|[^;]+)\\s*' + cookieName + '\\s*=\\s*([^;]+)');
+    let userIdFromCookie = match ? match.pop() : '';
+    let requestContext = new context.RequestContext();
+    requestContext.userId = new user.UserId();
+    requestContext.userId.id = userIdFromCookie;
+    return requestContext;
   }
 
   login() {
