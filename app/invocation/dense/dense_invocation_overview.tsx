@@ -26,7 +26,7 @@ export default class DenseInvocationOverviewComponent extends React.Component {
       <div className={this.props.model.getStatus() == "Succeeded" ? `dense-invocation-status-bar succeeded` : `dense-invocation-status-bar failed`}>
         <div>
           {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"} evaluated on&nbsp;
-          {this.props.model.getStartDate()} at {this.props.model.getStartTime()} for <span title={this.props.model.getDuractionSeconds()}>{this.props.model.getTiming()}</span>
+          {this.props.model.getStartDate()} at {this.props.model.getStartTime()} for <span title={this.props.model.getDurationSeconds()}>{this.props.model.getTiming()}</span>
         </div>
         <div>
           Evaluation started by <b onClick={this.handleUserClicked.bind(this)} className="clickable">{this.props.model.getUser()}</b> on <b onClick={this.handleHostClicked.bind(this)} className="clickable">{this.props.model.getHost()}</b>

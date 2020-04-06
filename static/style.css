@@ -722,6 +722,10 @@ a {
   padding: 0;
 }
 
+.dense .history-overview.container {
+  padding: 16px;
+}
+
 .dense .state-page .container,
 .dense .home .container {
   padding: 0 32px;

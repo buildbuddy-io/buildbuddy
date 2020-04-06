@@ -21,6 +21,9 @@ export default class DenseInvocationTabsComponent extends React.Component {
       <a href="#artifacts" className={`tab ${this.props.hash == '#artifacts' && 'selected'}`}>
         ARTIFACTS
       </a>
+      <a href="#timing" className={`tab ${this.props.hash == '#timing' && 'selected'}`}>
+        TIMING
+      </a>
       <a href="#raw" className={`tab ${this.props.hash == '#raw' && 'selected'}`}>
         RAW LOG
       </a>
