@@ -85,7 +85,7 @@ func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserR
 	if err := s.env.GetAuthenticator().FillUser(ctx, tu); err != nil {
 		return nil, err
 	}
-	if err := s.env.GetUserDB().InsertOrUpdateUser(ctx, tu); err != nil {
+	if err := s.env.GetUserDB().InsertUser(ctx, tu); err != nil {
 		return nil, err
 	}
 	return &uspb.CreateUserResponse{

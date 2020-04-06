@@ -105,7 +105,7 @@ type AuthDB interface {
 
 type UserDB interface {
 	// User API
-	InsertOrUpdateUser(ctx context.Context, u *tables.User) error
+	InsertUser(ctx context.Context, u *tables.User) error
 	// GetUser *may* do a database read and will return the registered
 	// user's information, or nil if no user was found. It requires
 	// that a valid authenticator is present in the environment and will
