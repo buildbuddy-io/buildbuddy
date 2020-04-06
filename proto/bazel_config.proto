@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package bazel_config;
+
+message ConfigOption {
+  // The full configuration line as it would be written in a config file.
+  // Ex. build:local --remote_cache=grpc://localhost:1985
+  string body = 1;
+
+  // When this option is applied in the bazel lifecycle. For example:
+  //   "build:local"
+  //   "test:ci"
+  //   "build"
+  string option_lifecycle = 2;
+
+  // The config flag name. Ex. "remote_cache"
+  string flag_name = 3;
+
+  // The flag value. Ex. "grpc://localhost:1985"
+  string flag_value = 4;
+}
+
+message GetBazelConfigRequest { context.RequestContext request_context = 1; }
+
+message GetBazelConfigResponse {
+  context.ResponseContext response_context = 1;
+
+  // The BazelConfig for the requesting user and this buildbuddy instance.
+  repeated ConfigOption config_option = 2;
+}
