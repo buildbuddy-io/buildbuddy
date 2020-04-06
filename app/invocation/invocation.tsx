@@ -2,6 +2,7 @@ import React from 'react';
 import moment from 'moment';
 
 import rpcService from '../service/rpc_service'
+import authService from '../auth/auth_service';
 
 import InvocationModel from './invocation_model'
 
@@ -17,6 +18,7 @@ import ErrorCardComponent from './invocation_error_card';
 import InvocationDetailsCardComponent from './invocation_details_card'
 import ArtifactsCardComponent from './invocation_artifacts_card'
 import RawLogsCardComponent from './invocation_raw_logs_card'
+import TimingCardComponent from './invocation_timing_card'
 import TargetsComponent from './invocation_targets'
 
 import DenseInvocationOverviewComponent from './dense/dense_invocation_overview'
@@ -63,11 +65,10 @@ export default class InvocationComponent extends React.Component {
 
   fetchInvocation() {
     let request = new invocation.GetInvocationRequest();
+    request.requestContext = authService.getRequestContext();
     request.lookup = new invocation.InvocationLookup();
     request.lookup.invocationId = this.props.invocationId;
     rpcService.service.getInvocation(request).then((response) => {
-      console.log(response);
-
       var showInProgressScreen = false;
       if (response.invocation.length && response.invocation[0].invocationStatus ==
         invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS) {
@@ -149,6 +150,7 @@ export default class InvocationComponent extends React.Component {
               filter={this.props.search.get("artifactFilter")}
               pageSize={this.props.hash ? largePageSize : smallPageSize} />}
 
+          {(this.props.hash == "#timing") && <TimingCardComponent model={this.state.model} />}
           {(this.props.hash == "#raw") && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
         </div>
       </div>

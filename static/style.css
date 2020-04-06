@@ -427,6 +427,61 @@ a {
   color: #aaa;
 }
 
+.list-title {
+  margin: 32px 0 8px 0;
+  font-weight: 700;
+  display: flex;
+  font-size: 20px;
+}
+
+
+.list-percent {
+  background-color: #8BC34A;
+  height: 6px;
+  min-width: 1px;
+  max-width: 100%;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  position: relative;
+}
+
+.list-percent:after {
+  content: attr(data-percent);
+  font-size: 8px;
+  color: #888;
+  font-weight: 300;
+  display: block;
+  position: absolute;
+  right: -104px;
+  top: -8px;
+  width: 100px;
+}
+
+.sort-control {
+  color: #888;
+  margin-top: 4px;
+}
+
+.sort-control .selected {
+  color: #000;
+  font-weight: 600;
+}
+
+.empty-state {
+  margin-top: 16px;
+  font-size: 16px;
+}
+
+.empty-state code {
+  margin-top: 16px;
+  display: block;
+  width: 100%;
+  background-color: #fafafa;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 16px;
+}
+
 .target {
   display: flex;
   align-self: center;

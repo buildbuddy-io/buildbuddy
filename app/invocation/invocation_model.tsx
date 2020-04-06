@@ -28,6 +28,7 @@ export default class InvocationModel {
   started: build_event_stream.BuildStarted;
   expanded: build_event_stream.BuildEvent;
   buildMetrics: build_event_stream.BuildMetrics;
+  buildToolLogs: build_event_stream.BuildToolLogs;
 
   workspaceStatusMap = new Map<string, string>();
   toolLogMap = new Map<string, string>();
@@ -69,6 +70,7 @@ export default class InvocationModel {
         if (buildEvent.workspaceInfo) model.workspaceConfig = buildEvent.workspaceInfo as build_event_stream.WorkspaceConfig;
         if (buildEvent.optionsParsed) model.optionsParsed = buildEvent.optionsParsed as build_event_stream.OptionsParsed;
         if (buildEvent.buildMetrics) model.buildMetrics = buildEvent.buildMetrics as build_event_stream.BuildMetrics;
+        if (buildEvent.buildToolLogs) model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         if (buildEvent.unstructuredCommandLine) model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
       }
     }

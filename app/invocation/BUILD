@@ -6,6 +6,7 @@ ts_library(
     name = "invocation",
     srcs = glob(["**/*.tsx"]),
     deps = [
+        "//app/auth",
         "//app/format",
         "//app/router",
         "//app/service",
@@ -15,10 +16,13 @@ ts_library(
         "//proto:invocation_ts_proto",
         "@npm//@types/long",
         "@npm//@types/moment",
+        "@npm//@types/pako",
         "@npm//@types/react",
         "@npm//long",
         "@npm//moment",
+        "@npm//pako",
         "@npm//protobufjs",
         "@npm//react",
+        "@npm//tslib",
     ],
 )
