@@ -113,6 +113,7 @@ proto_library(
     name = "buildbuddy_service_proto",
     srcs = ["buildbuddy_service.proto"],
     deps = [
+        ":bazel_config_proto",
         ":invocation_proto",
         ":user_proto",
     ],
@@ -133,6 +134,14 @@ proto_library(
         "@go_googleapis//google/api:annotations_proto",
         "@go_googleapis//google/longrunning:longrunning_proto",
         "@go_googleapis//google/rpc:status_proto",
+    ],
+)
+
+proto_library(
+    name = "bazel_config_proto",
+    srcs = ["bazel_config.proto"],
+    deps = [
+        ":context_proto",
     ],
 )
 
@@ -195,6 +204,7 @@ go_grpc_library(
     importpath = "proto/buildbuddy_service",
     proto = ":buildbuddy_service_proto",
     deps = [
+        ":bazel_config_go_proto",
         ":invocation_go_proto",
         ":user_go_proto",
     ],
@@ -218,6 +228,15 @@ go_proto_library(
     proto = ":context_proto",
     deps = [
         ":user_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "bazel_config_go_proto",
+    importpath = "proto/bazel_config",
+    proto = ":bazel_config_proto",
+    deps = [
+        ":context_go_proto",
     ],
 )
 
