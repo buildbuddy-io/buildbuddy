@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	bzpb "proto/bazel_config"
 	inpb "proto/invocation"
 	uspb "proto/user"
 )
@@ -88,6 +89,10 @@ func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserR
 	return &uspb.CreateUserResponse{
 		DisplayUser: tu.ToProto(),
 	}, nil
+}
+
+func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBazelConfigRequest) (*bzpb.GetBazelConfigResponse, error) {
+	return &bzpb.GetBazelConfigResponse{}, nil
 }
 
 type bsLookup struct {

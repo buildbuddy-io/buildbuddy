@@ -11,6 +11,7 @@ go_library(
         ":environment",
         ":interfaces",
         ":tables",
+        "//proto:bazel_config_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:invocation_go_proto",
         "//proto:user_go_proto",
