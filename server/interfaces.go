@@ -114,6 +114,14 @@ type UserDB interface {
 	DeleteUser(ctx context.Context, userID string) error
 }
 
+type GroupDB interface {
+	// Groups API
+	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) error
+	GetGroup(ctx context.Context, groupID string) (*tables.User, error)
+	GetGroupByDomain(ctx context.Context, domain string) (*tables.User, error)
+	DeleteGroup(ctx context.Context, groupID string) error
+}
+
 // A searcher allows finding various objects given a query.
 type Searcher interface {
 	IndexInvocation(ctx context.Context, invocation *inpb.Invocation) error
