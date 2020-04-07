@@ -58,7 +58,7 @@ export default class ArtifactsCardComponent extends React.Component {
               User
             </div>
             <div>
-              {this.props.model.getUser()}
+              {this.props.model.getUser(false)}
             </div>
           </div>
           <div className="invocation-section">
@@ -81,7 +81,7 @@ export default class ArtifactsCardComponent extends React.Component {
             <div className="invocation-section-title">
               Pattern
             </div>
-            <div>
+            <div title={this.props.model.getAllPatterns()}>
               {this.props.model.getPattern()}
             </div>
           </div>
