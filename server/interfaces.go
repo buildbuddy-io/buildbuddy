@@ -105,13 +105,21 @@ type AuthDB interface {
 
 type UserDB interface {
 	// User API
-	InsertOrUpdateUser(ctx context.Context, u *tables.User) error
+	InsertUser(ctx context.Context, u *tables.User) error
 	// GetUser *may* do a database read and will return the registered
 	// user's information, or nil if no user was found. It requires
 	// that a valid authenticator is present in the environment and will
 	// return a UserToken given the provided context.
 	GetUser(ctx context.Context, userID *string) (*tables.User, error)
 	DeleteUser(ctx context.Context, userID string) error
+}
+
+type GroupDB interface {
+	// Groups API
+	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) error
+	GetGroup(ctx context.Context, groupID string) (*tables.User, error)
+	GetGroupByDomain(ctx context.Context, domain string) (*tables.User, error)
+	DeleteGroup(ctx context.Context, groupID string) error
 }
 
 // A searcher allows finding various objects given a query.

@@ -25,7 +25,7 @@
     "fbemitter": "^2.1.1",
     "glob": "^7.1.4",
     "jsdoc": "^3.6.2",
-    "minimist": "^1.2.0",
+    "minimist": "^1.2.3",
     "moment": "^2.24.0",
     "oidc-client": "^1.10.1",
     "pako": "^1.0.11",
