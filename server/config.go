@@ -22,9 +22,13 @@ type generalConfig struct {
 }
 
 type appConfig struct {
-	BuildBuddyURL string `yaml:"build_buddy_url"`
-	EventsAPIURL  string `yaml:"events_api_url"`
-	CacheAPIURL   string `yaml:"cache_api_url"`
+	BuildBuddyURL              string `yaml:"build_buddy_url"`
+	EventsAPIURL               string `yaml:"events_api_url"`
+	CacheAPIURL                string `yaml:"cache_api_url"`
+	DontAddUsersToDefaultGroup bool   `yaml:"dont_add_users_to_default_group"`
+	NoDefaultUserGroup         bool   `yaml:"no_default_user_group"`
+	CreateGroupPerUser         bool   `yaml:"create_group_per_user"`
+	AddUserToDomainGroup       bool   `yaml:"add_user_to_domain_group"`
 }
 
 type buildEventProxy struct {
@@ -181,6 +185,21 @@ func (c *Configurator) GetAppEventsAPIURL() string {
 func (c *Configurator) GetAppCacheAPIURL() string {
 	c.rereadIfStale()
 	return c.gc.App.CacheAPIURL
+}
+
+func (c *Configurator) GetAppNoDefaultUserGroup() bool {
+	c.rereadIfStale()
+	return c.gc.App.NoDefaultUserGroup
+}
+
+func (c *Configurator) GetAppCreateGroupPerUser() bool {
+	c.rereadIfStale()
+	return c.gc.App.CreateGroupPerUser
+}
+
+func (c *Configurator) GetAppAddUserToDomainGroup() bool {
+	c.rereadIfStale()
+	return c.gc.App.AddUserToDomainGroup
 }
 
 func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {

@@ -157,6 +157,11 @@ type Group struct {
 	// The group name. This may be displayed to users.
 	Name string
 
+	// The "owned" domain. In enterprise/cloud version, we create a
+	// group for a customer's domain, and new users that sign up with an
+	// email belonging to that domain may be added to this group.
+	OwnedDomain string `gorm:"index:owned_domain_index"`
+
 	// The group access token. This token allows writing data for this
 	// group.
 	WriteToken string
@@ -178,11 +183,12 @@ type User struct {
 
 	// Groups are used to determine read/write permissions
 	// for everything.
-	Groups []Group `gorm:"many2many:user_groups;"`
+	Groups []*Group `gorm:"many2many:user_groups;"`
 
 	// Profile information etc.
 	FirstName string
 	LastName  string
+	Email     string
 	ImageURL  string
 }
 

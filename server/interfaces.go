@@ -112,13 +112,14 @@ type UserDB interface {
 	// return a UserToken given the provided context.
 	GetUser(ctx context.Context, userID *string) (*tables.User, error)
 	DeleteUser(ctx context.Context, userID string) error
-}
 
-type GroupDB interface {
+	// Creates the DEFAULT group, for on-prem usage where there is only
+	// one group and all users are implicitly a part of it.
+	CreateDefaultGroup(ctx context.Context) error
+
 	// Groups API
 	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) error
-	GetGroup(ctx context.Context, groupID string) (*tables.User, error)
-	GetGroupByDomain(ctx context.Context, domain string) (*tables.User, error)
+	GetDomainOwnerGroup(ctx context.Context, domain string) (*tables.Group, error)
 	DeleteGroup(ctx context.Context, groupID string) error
 }
 
