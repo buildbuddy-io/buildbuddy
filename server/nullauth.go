@@ -11,8 +11,12 @@ import (
 
 type NullAuthenticator struct{}
 
-func (a *NullAuthenticator) AuthenticateRequest(w http.ResponseWriter, r *http.Request) context.Context {
+func (a *NullAuthenticator) AuthenticateHTTPRequest(w http.ResponseWriter, r *http.Request) context.Context {
 	return r.Context()
+}
+
+func (a *NullAuthenticator) AuthenticateGRPCRequest(ctx context.Context) context.Context {
+	return ctx
 }
 
 func (a *NullAuthenticator) GetUserToken(ctx context.Context) (interfaces.UserToken, error) {

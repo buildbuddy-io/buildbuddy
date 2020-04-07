@@ -129,6 +129,7 @@ go_library(
         "//server/remote_cache:byte_stream_server",
         "//server/remote_cache:capabilities_server",
         "//server/remote_cache:content_addressable_storage_server",
+        "//server/rpc:filters",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//encoding/gzip:go_default_library",

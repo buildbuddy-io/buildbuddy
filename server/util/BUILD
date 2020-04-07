@@ -25,6 +25,12 @@ go_library(
 )
 
 go_library(
+    name = "perms",
+    srcs = ["perms.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/perms",
+)
+
+go_library(
     name = "protofile",
     srcs = ["protofile.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/protofile",

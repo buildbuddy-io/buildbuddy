@@ -19,6 +19,13 @@ type UserToken interface {
 	GetSubID() string
 }
 
+// An interface representing the user info gleaned from http basic auth, which is
+// often set for GRPC requests.
+type BasicAuthToken interface {
+	GetUser() string
+	GetPassword() string
+}
+
 type Authenticator interface {
 	// Redirect to configured authentication provider.
 	Login(w http.ResponseWriter, r *http.Request)
@@ -27,10 +34,15 @@ type Authenticator interface {
 	// Handle a callback from authentication provider.
 	Auth(w http.ResponseWriter, r *http.Request)
 
-	// Called by the authentication handler to authenticate a request. An error should
-	// only be returned when unexpected behavior occurs. In all other cases, the
-	// request context should be returned unchanged with no error set.
-	AuthenticateRequest(w http.ResponseWriter, r *http.Request) context.Context
+	// Called by the authentication handler to authenticate a request. If a
+	// user was authenticated, a new context will be returned that contains
+	// a UserToken.
+	AuthenticateHTTPRequest(w http.ResponseWriter, r *http.Request) context.Context
+
+	// Called by the authentication handler to authenticate a request. If a
+	// user was authenticated, a new context will be returned that contains
+	// a BasicAuthToken.
+	AuthenticateGRPCRequest(ctx context.Context) context.Context
 
 	// Returns the UserToken extracted from any authorization headers
 	// present in the request. This does not guarantee the user has been

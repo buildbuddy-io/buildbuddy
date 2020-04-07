@@ -87,6 +87,9 @@ func (m *Model) BeforeUpdate(tx *gorm.DB) (err error) {
 type Invocation struct {
 	Model
 	InvocationID     string `gorm:"primary_key;"`
+	UserID           string `gorm:"index:user_id"`
+	GroupID          string `gorm:"index:group_id"`
+	Perms            int    `gorm:"index:perms"`
 	Success          bool
 	User             string `gorm:"index:user_index"`
 	DurationUsec     int64

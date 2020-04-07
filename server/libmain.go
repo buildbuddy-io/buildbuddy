@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/http/filters"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
@@ -18,9 +17,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"google.golang.org/grpc"
-	_ "google.golang.org/grpc/encoding/gzip"
+	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 	"google.golang.org/grpc/reflection"
 
+	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
+	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	bbspb "proto/buildbuddy_service"
 	bpb "proto/publish_build_event"
@@ -55,7 +56,7 @@ func StartAndRunServices(env environment.Env) {
 	if err != nil {
 		log.Fatalf("Failed to listen: %s", err)
 	}
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(rpcfilters.GetUnaryInterceptor(env), rpcfilters.GetStreamInterceptor(env))
 
 	// Register to handle build event protocol messages.
 	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env)
@@ -112,17 +113,17 @@ func StartAndRunServices(env environment.Env) {
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
 	// Register all of our HTTP handlers on the default mux.
-	http.Handle("/", filters.WrapExternalHandler(staticFileServer))
-	http.Handle("/app/", filters.WrapExternalHandler(http.StripPrefix("/app", afs)))
-	http.Handle("/rpc/BuildBuddyService/", filters.WrapAuthenticatedExternalHandler(env,
+	http.Handle("/", httpfilters.WrapExternalHandler(staticFileServer))
+	http.Handle("/app/", httpfilters.WrapExternalHandler(http.StripPrefix("/app", afs)))
+	http.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalHandler(env,
 		http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))
-	http.Handle("/file/download", filters.WrapExternalHandler(buildBuddyServer))
+	http.Handle("/file/download", httpfilters.WrapExternalHandler(buildBuddyServer))
 	http.Handle("/healthz", env.GetHealthChecker())
 
 	if auth := env.GetAuthenticator(); auth != nil {
-		http.Handle("/login/", filters.RedirectHTTPS(http.HandlerFunc(auth.Login)))
-		http.Handle("/auth/", filters.RedirectHTTPS(http.HandlerFunc(auth.Auth)))
-		http.Handle("/logout/", filters.RedirectHTTPS(http.HandlerFunc(auth.Logout)))
+		http.Handle("/login/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Login)))
+		http.Handle("/auth/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Auth)))
+		http.Handle("/logout/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Logout)))
 	}
 
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
