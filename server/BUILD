@@ -161,9 +161,9 @@ go_binary(
     ],
     deps = [
         ":config",
-        ":real_environment",
         ":janitor",
         ":libmain",
+        ":real_environment",
         "//server/util:healthcheck",
     ],
 )

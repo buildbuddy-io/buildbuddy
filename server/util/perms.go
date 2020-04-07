@@ -28,14 +28,14 @@ func AnonymousUserPermissions() *UserGroupPerm {
 	return &UserGroupPerm{
 		UserID:  "",
 		GroupID: "",
-		Perms: OTHERS_READ,
+		Perms:   OTHERS_READ,
 	}
 }
 
 func GroupAuthPermissions(g *tables.Group) *UserGroupPerm {
 	return &UserGroupPerm{
-		UserID: g.GroupID,
+		UserID:  g.GroupID,
 		GroupID: g.GroupID,
-		Perms: GROUP_READ | GROUP_WRITE,
+		Perms:   GROUP_READ | GROUP_WRITE,
 	}
 }

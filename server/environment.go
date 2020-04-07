@@ -40,5 +40,3 @@ type Env interface {
 	GetUserDB() interfaces.UserDB
 	GetAuthDB() interfaces.AuthDB
 }
-
-

@@ -15,13 +15,13 @@ import (
 
 type InvocationDB struct {
 	env environment.Env
-	h *db.DBHandle
+	h   *db.DBHandle
 }
 
 func NewInvocationDB(env environment.Env, h *db.DBHandle) *InvocationDB {
 	return &InvocationDB{
 		env: env,
-		h: h,
+		h:   h,
 	}
 }
 
