@@ -23,6 +23,10 @@ func (a *NullAuthenticator) GetUserToken(ctx context.Context) (interfaces.UserTo
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (a *NullAuthenticator) GetBasicAuthToken(ctx context.Context) (interfaces.BasicAuthToken, error) {
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (a *NullAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
 	return nil
 }

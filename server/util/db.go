@@ -29,7 +29,7 @@ func NewDBHandle(dialect string, args ...interface{}) (*DBHandle, error) {
 		return nil, err
 	}
 	gdb.SingularTable(true)
-	gdb.LogMode(false)
+	gdb.LogMode(true)
 	if *autoMigrateDB {
 		gdb.AutoMigrate(tables.GetAllTables()...)
 	}

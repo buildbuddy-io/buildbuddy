@@ -49,7 +49,9 @@ go_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb",
     deps = [
+        "//server:environment",
         "//server:tables",
+        "//server/util:perms",
         "//server/util:db",
         "//server/util:status",
         "@com_github_jinzhu_gorm//:go_default_library",

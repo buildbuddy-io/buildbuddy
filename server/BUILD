@@ -39,16 +39,7 @@ go_library(
     deps = [
         ":config",
         ":interfaces",
-        ":nullauth",
-        "//server/backends:blobstore",
-        "//server/backends:cachedb",
-        "//server/backends:disk_cache",
-        "//server/backends:invocationdb",
-        "//server/backends:memory_cache",
-        "//server/backends:simplesearcher",
-        "//server/backends:slack",
         "//server/build_event_protocol:build_event_proxy",
-        "//server/util:db",
         "//server/util:healthcheck",
     ],
 )
@@ -83,6 +74,27 @@ go_library(
         ":interfaces",
         ":tables",
         "//server/util:status",
+    ],
+)
+
+go_library(
+    name = "real_environment",
+    srcs = ["real_environment.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/real_environment",
+    deps = [
+        ":config",
+        ":interfaces",
+        ":nullauth",
+        "//server/backends:blobstore",
+        "//server/backends:cachedb",
+        "//server/backends:disk_cache",
+        "//server/backends:invocationdb",
+        "//server/backends:memory_cache",
+        "//server/backends:simplesearcher",
+        "//server/backends:slack",
+        "//server/build_event_protocol:build_event_proxy",
+        "//server/util:db",
+        "//server/util:healthcheck",
     ],
 )
 
@@ -149,7 +161,7 @@ go_binary(
     ],
     deps = [
         ":config",
-        ":environment",
+        ":real_environment",
         ":janitor",
         ":libmain",
         "//server/util:healthcheck",

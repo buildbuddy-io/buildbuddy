@@ -1,5 +1,9 @@
 package perms
 
+import (
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
+)
+
 const (
 	NONE         = 0o0
 	OWNER_READ   = 0o0400
@@ -20,10 +24,18 @@ type UserGroupPerm struct {
 	Perms   int
 }
 
-func AnonymousUserPerms() *UserGroupPerm {
+func AnonymousUserPermissions() *UserGroupPerm {
 	return &UserGroupPerm{
 		UserID:  "",
 		GroupID: "",
-		Perms:   OTHERS_READ,
+		Perms: OTHERS_READ,
+	}
+}
+
+func GroupAuthPermissions(g *tables.Group) *UserGroupPerm {
+	return &UserGroupPerm{
+		UserID: g.GroupID,
+		GroupID: g.GroupID,
+		Perms: GROUP_READ | GROUP_WRITE,
 	}
 }

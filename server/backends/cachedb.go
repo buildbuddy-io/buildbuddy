@@ -21,12 +21,11 @@ func (d *CacheDB) InsertOrUpdateCacheEntry(ctx context.Context, c *tables.CacheE
 		var existing tables.CacheEntry
 		if err := tx.Where("entry_id = ?", c.EntryID).First(&existing).Error; err != nil {
 			if gorm.IsRecordNotFoundError(err) {
-				tx.Create(c)
+				return tx.Create(c).Error
 			}
-		} else {
-			tx.Model(&existing).Where("entry_id = ?", c.EntryID).Updates(c)
+			return err
 		}
-		return nil
+		return tx.Model(&existing).Where("entry_id = ?", c.EntryID).Updates(c).Error
 	})
 }
 

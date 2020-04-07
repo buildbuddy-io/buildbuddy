@@ -49,8 +49,16 @@ type Authenticator interface {
 	// registered -- it only indicates they were authenticated using some
 	// auth provider.
 	//
-	// To check if a user is registered, use UserDB.GetUser!
+	// To check if a user is registered, use UserDB!
 	GetUserToken(ctx context.Context) (UserToken, error)
+
+	// Returns the BasicAuthToken extracted from any user/password set on
+	// the RPC request. This does not guarantee the user has been
+	// registered -- it only indicates they were authenticated using the
+	// BASIC auth provider.
+	//
+	// To check if a user or group registered, use UserDB!
+	GetBasicAuthToken(ctx context.Context) (BasicAuthToken, error)
 
 	// FillUser may be used to construct an initial tables.User object. It
 	// is filled based on information from the authenticator's JWT.
@@ -132,6 +140,7 @@ type UserDB interface {
 	// Groups API
 	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) error
 	GetDomainOwnerGroup(ctx context.Context, domain string) (*tables.Group, error)
+	GetGroupForAuthToken(ctx context.Context, bat BasicAuthToken) (*tables.Group, error)
 	DeleteGroup(ctx context.Context, groupID string) error
 }
 

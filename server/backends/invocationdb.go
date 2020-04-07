@@ -2,19 +2,50 @@ package invocationdb
 
 import (
 	"context"
+	"log"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jinzhu/gorm"
 )
 
 type InvocationDB struct {
+	env environment.Env
 	h *db.DBHandle
 }
 
-func NewInvocationDB(h *db.DBHandle) *InvocationDB {
-	return &InvocationDB{h: h}
+func NewInvocationDB(env environment.Env, h *db.DBHandle) *InvocationDB {
+	return &InvocationDB{
+		env: env,
+		h: h,
+	}
+}
+
+func (d *InvocationDB) createInvocation(tx *gorm.DB, ctx context.Context, ti *tables.Invocation) error {
+	permissions := perms.AnonymousUserPermissions()
+	if auth := d.env.GetAuthenticator(); auth != nil {
+		bat, err := auth.GetBasicAuthToken(ctx)
+		if err == nil && bat != nil {
+			userDB := d.env.GetUserDB()
+			if userDB == nil {
+				return status.FailedPreconditionError("UserDB not configured -- can't authorize request")
+			}
+			// Attempt to lookup this group by auth token.
+			g, err := userDB.GetGroupForAuthToken(ctx, bat)
+			if err != nil {
+				return status.UnauthenticatedError("Basic auth credentials were not valid.")
+			}
+			permissions = perms.GroupAuthPermissions(g)
+		}
+	}
+	ti.UserID = permissions.UserID
+	ti.GroupID = permissions.GroupID
+	ti.Perms = permissions.Perms
+	return tx.Create(ti).Error
 }
 
 func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.Invocation) error {
@@ -22,9 +53,10 @@ func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.
 		var existing tables.Invocation
 		if err := tx.Where("invocation_id = ?", ti.InvocationID).First(&existing).Error; err != nil {
 			if gorm.IsRecordNotFoundError(err) {
-				tx.Create(ti)
+				return d.createInvocation(tx, ctx, ti)
 			}
 		} else {
+			log.Printf("updating invocation")
 			tx.Model(&existing).Where("invocation_id = ?", ti.InvocationID).Updates(ti)
 		}
 		return nil

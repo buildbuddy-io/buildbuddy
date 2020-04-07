@@ -167,7 +167,7 @@ type Group struct {
 
 	// The group access token. This token allows writing data for this
 	// group.
-	WriteToken string
+	WriteToken string `gorm:"index:write_token_index"`
 }
 
 func (g *Group) TableName() string {

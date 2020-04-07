@@ -5,7 +5,7 @@ import (
 	"log"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
 	"github.com/buildbuddy-io/buildbuddy/server/libmain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -29,7 +29,7 @@ func main() {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
-	env := environment.GetConfiguredEnvironmentOrDie(configurator, healthChecker)
+	env := real_environment.GetConfiguredEnvironmentOrDie(configurator, healthChecker)
 	cleanupService := janitor.NewJanitor(env)
 	cleanupService.Start()
 	defer cleanupService.Stop()

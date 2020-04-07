@@ -28,6 +28,9 @@ go_library(
     name = "perms",
     srcs = ["perms.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/perms",
+    deps = [
+       "//server:tables",
+    ],
 )
 
 go_library(

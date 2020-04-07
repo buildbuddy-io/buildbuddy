@@ -81,8 +81,8 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		}
 
 		if err := channel.HandleEvent(stream.Context(), in); err != nil {
-			log.Printf("Error handling event; this would break the build command: %s", err)
-			// return err
+			log.Printf("Error handling event; this means a broken build command: %s", err)
+			return err
 		}
 		for _, stream := range forwardingStreams {
 			// Intentionally ignore errors here -- proxying is best effort.
