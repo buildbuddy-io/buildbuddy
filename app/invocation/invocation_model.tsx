@@ -110,12 +110,16 @@ export default class InvocationModel {
     return model;
   }
 
-  getUser() {
+  getUser(posessive: boolean) {
     let username = this.workspaceStatusMap.get('BUILD_USER') || this.clientEnvMap.get('USER');
-    if (!username) {
-      return "Unknown user";
+    if (username == "<REDACTED>") {
+      return "Loading";
     }
-    return username;
+
+    if (!username) {
+      return posessive ? "Unknown user" : "Unknown user";
+    }
+    return posessive ? `${username}'s` : username;
   }
 
   getHost() {
@@ -155,7 +159,15 @@ export default class InvocationModel {
   }
 
   getPattern() {
-    return this.expanded?.id.pattern.pattern.join(", ") || this.aborted?.id.pattern.pattern.join(", ");
+    return this.getAllPatterns(3);
+  }
+
+  getAllPatterns(patternLimit?: number) {
+    let patterns = this.expanded?.id.pattern.pattern || this.aborted?.id.pattern.pattern;
+    if (patternLimit && patterns.length > patternLimit) {
+      return `${patterns.slice(0, patternLimit).join(", ")} and ${patterns.length - 3} more`;
+    }
+    return patterns.join(", ");
   }
 
   getStartTimeNumber() {

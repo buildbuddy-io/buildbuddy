@@ -81,7 +81,7 @@ export default class InvocationComponent extends React.Component {
         model: InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]),
         loading: false
       });
-      document.title = `${this.state.model.getUser()}'s ${this.state.model.getCommand()} ${this.state.model.getPattern()} | Buildbuddy`;
+      document.title = `${this.state.model.getUser(true)} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | Buildbuddy`;
     }).catch((error: any) => {
       this.setState({
         notFound: true,

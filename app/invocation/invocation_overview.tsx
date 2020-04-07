@@ -11,7 +11,7 @@ export default class InvocationOverviewComponent extends React.Component {
   props: Props;
 
   handleUserClicked() {
-    router.navigateToUserHistory(this.props.model.getUser());
+    router.navigateToUserHistory(this.props.model.getUser(false));
   }
 
   handleHostClicked() {
@@ -22,7 +22,7 @@ export default class InvocationOverviewComponent extends React.Component {
     return <div className="container">
       <div className="invocation">Invocation {this.props.invocationId}</div>
       <div className="titles">
-        <div className="title">{format.sentenceCase(this.props.model.getUser())}'s {this.props.model.getCommand()} {this.props.model.getPattern()}</div>
+        <div className="title" title={this.props.model.getAllPatterns()}>{format.sentenceCase(this.props.model.getUser(true))} {this.props.model.getCommand()} {this.props.model.getPattern()}</div>
         <div className="subtitle">{this.props.model.getStartDate()} at {this.props.model.getStartTime()}</div>
       </div>
       <div className="details">
@@ -36,7 +36,7 @@ export default class InvocationOverviewComponent extends React.Component {
         </div>
         <div className="detail clickable" onClick={this.handleUserClicked.bind(this)}>
           <img className="icon" src="/image/user-regular.svg" />
-          {this.props.model.getUser()}
+          {this.props.model.getUser(false)}
         </div>
         <div className="detail clickable" onClick={this.handleHostClicked.bind(this)}>
           <img className="icon" src="/image/hard-drive-regular.svg" />
@@ -46,7 +46,7 @@ export default class InvocationOverviewComponent extends React.Component {
           <img className="icon" src="/image/tool-regular.svg" />
           {this.props.model.getTool()}
         </div>
-        <div className="detail">
+        <div className="detail" title={this.props.model.getAllPatterns()}>
           <img className="icon" src="/image/grid-regular.svg" />
           {this.props.model.getPattern()}
         </div>
