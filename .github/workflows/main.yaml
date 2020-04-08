@@ -50,6 +50,7 @@ jobs:
       run: |
         "${GITHUB_WORKSPACE}/bin/bazel" build //...
 
-    - name: Deploy
-      run: |
-        "${GITHUB_WORKSPACE}/bin/bazel" run deployment:dev.apply
+    # TODO(siggisim): Re-enable deploy with different configuration
+    # - name: Deploy
+    #   run: |
+    #     "${GITHUB_WORKSPACE}/bin/bazel" run deployment:dev.apply
