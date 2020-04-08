@@ -21,7 +21,7 @@ export class AuthService {
     }).catch((error: any) => {
       console.log(error);
       // TODO(siggisim): make this more robust.
-      if (error.includes("User not found")) {
+      if (error.includes("not found")) {
         this.createUser();
       }
     });

@@ -53,6 +53,7 @@ go_library(
         "//server:tables",
         "//server/util:db",
         "//server/util:perms",
+        "//server/util:query_builder",
         "//server/util:status",
         "@com_github_jinzhu_gorm//:go_default_library",
     ],

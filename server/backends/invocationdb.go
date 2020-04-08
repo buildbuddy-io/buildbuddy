@@ -2,13 +2,15 @@ package invocationdb
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jinzhu/gorm"
 )
@@ -56,17 +58,52 @@ func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.
 				return d.createInvocation(tx, ctx, ti)
 			}
 		} else {
-			log.Printf("updating invocation")
 			tx.Model(&existing).Where("invocation_id = ?", ti.InvocationID).Updates(ti)
 		}
 		return nil
 	})
 }
 
+func (d *InvocationDB) addPermissionsCheckToQuery(ctx context.Context, q *query_builder.Query) error {
+	o := query_builder.OrClauses{}
+	o.AddOr("(i.perms & ? != 0)", perms.OTHERS_READ)
+
+	if auth := d.env.GetAuthenticator(); auth != nil {
+		if ut, err := d.env.GetAuthenticator().GetUserToken(ctx); err == nil && ut != nil {
+			// If auth is setup and GetUser returns an error, propogate that up.
+			tu, err := d.env.GetUserDB().GetUser(ctx, nil)
+			if err != nil {
+				return err
+			}
+
+			groupArgs := []interface{}{
+				perms.GROUP_READ,
+			}
+			groupParams := make([]string, 0)
+			for _, g := range tu.Groups {
+				groupArgs = append(groupArgs, g.GroupID)
+				groupParams = append(groupParams, "?")
+			}
+			groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
+			groupQueryStr := fmt.Sprintf("(i.perms & ? != 0 AND i.group_id IN %s)", groupParamString)
+			o.AddOr(groupQueryStr, groupArgs...)
+			o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", perms.OWNER_READ, tu.UserID)
+		}
+	}
+	orQuery, orArgs := o.Build()
+	q = q.AddWhereClause("("+orQuery+")", orArgs...)
+	return nil
+}
+
 func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error) {
 	ti := &tables.Invocation{}
-	existingRow := d.h.Raw(`SELECT * FROM Invocations as i
-                               WHERE i.invocation_id = ?`, invocationID)
+	q := query_builder.NewQuery(`SELECT * FROM Invocations as i`)
+	q = q.AddWhereClause(`i.invocation_id = ?`, invocationID)
+	if err := d.addPermissionsCheckToQuery(ctx, q); err != nil {
+		return nil, err
+	}
+	queryStr, args := q.Build()
+	existingRow := d.h.Raw(queryStr, args...)
 	if err := existingRow.Scan(ti).Error; err != nil {
 		return nil, err
 	}

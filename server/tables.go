@@ -186,7 +186,7 @@ type User struct {
 
 	// Groups are used to determine read/write permissions
 	// for everything.
-	Groups []*Group `gorm:"many2many:user_groups;"`
+	Groups []*Group `gorm:"many2many:UserGroups;"`
 
 	// Profile information etc.
 	FirstName string

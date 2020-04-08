@@ -44,6 +44,12 @@ go_library(
 )
 
 go_library(
+    name = "query_builder",
+    srcs = ["query_builder.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/query_builder",
+)
+
+go_library(
     name = "random",
     srcs = ["random.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/random",
