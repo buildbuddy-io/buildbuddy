@@ -19,16 +19,16 @@ type generalConfig struct {
 	Storage         storageConfig      `yaml:"storage"`
 	Integrations    integrationsConfig `yaml:"integrations"`
 	Cache           cacheConfig        `yaml:"cache"`
+	Auth            authConfig         `yaml:"auth"`
 }
 
 type appConfig struct {
-	BuildBuddyURL              string `yaml:"build_buddy_url"`
-	EventsAPIURL               string `yaml:"events_api_url"`
-	CacheAPIURL                string `yaml:"cache_api_url"`
-	DontAddUsersToDefaultGroup bool   `yaml:"dont_add_users_to_default_group"`
-	NoDefaultUserGroup         bool   `yaml:"no_default_user_group"`
-	CreateGroupPerUser         bool   `yaml:"create_group_per_user"`
-	AddUserToDomainGroup       bool   `yaml:"add_user_to_domain_group"`
+	BuildBuddyURL        string `yaml:"build_buddy_url"`
+	EventsAPIURL         string `yaml:"events_api_url"`
+	CacheAPIURL          string `yaml:"cache_api_url"`
+	NoDefaultUserGroup   bool   `yaml:"no_default_user_group"`
+	CreateGroupPerUser   bool   `yaml:"create_group_per_user"`
+	AddUserToDomainGroup bool   `yaml:"add_user_to_domain_group"`
 }
 
 type buildEventProxy struct {
@@ -70,6 +70,16 @@ type cacheConfig struct {
 	InMemory     bool        `yaml:"in_memory"`
 	TTLSeconds   int         `yaml:"ttl_seconds"`
 	MaxSizeBytes int64       `yaml:"max_size_bytes"`
+}
+
+type authConfig struct {
+	OauthProviders []*OauthProvider `yaml:"oauth_providers"`
+}
+
+type OauthProvider struct {
+	IssuerURL    string `yaml:"issuer_url"`
+	ClientID     string `yaml:"client_id"`
+	ClientSecret string `yaml:"client_secret"`
 }
 
 func ensureDirectoryExists(dir string) error {
@@ -235,4 +245,9 @@ func (c *Configurator) GetCacheGCSConfig() *GCSConfig {
 func (c *Configurator) GetCacheInMemory() bool {
 	c.rereadIfStale()
 	return c.gc.Cache.InMemory
+}
+
+func (c *Configurator) GetAuthOauthProviders() []*OauthProvider {
+	c.rereadIfStale()
+	return c.gc.Auth.OauthProviders
 }
