@@ -98,6 +98,16 @@ proto_library(
         "user.proto",
         "user_id.proto",
     ],
+    deps = [
+        ":group_proto",
+    ],
+)
+
+proto_library(
+    name = "group_proto",
+    srcs = [
+        "grp.proto",
+    ],
     deps = [],
 )
 
@@ -220,6 +230,15 @@ go_proto_library(
     name = "user_go_proto",
     importpath = "proto/user",
     proto = ":user_proto",
+    deps = [
+        ":group_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "group_go_proto",
+    importpath = "proto/group",
+    proto = ":group_proto",
 )
 
 go_proto_library(

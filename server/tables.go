@@ -134,6 +134,8 @@ func (i *Invocation) ToProto() *inpb.Invocation {
 	out.ActionCount = i.ActionCount
 	// BlobID is not present in output client proto.
 	out.InvocationStatus = inpb.Invocation_InvocationStatus(i.InvocationStatus)
+	out.CreatedAtUsec = i.Model.CreatedAtUsec
+	out.UpdatedAtUsec = i.Model.UpdatedAtUsec
 	return out
 }
 

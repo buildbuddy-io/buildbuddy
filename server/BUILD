@@ -13,6 +13,7 @@ go_library(
         ":tables",
         "//proto:bazel_config_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:group_go_proto",
         "//proto:invocation_go_proto",
         "//proto:user_go_proto",
         "//server/build_event_protocol:build_event_handler",

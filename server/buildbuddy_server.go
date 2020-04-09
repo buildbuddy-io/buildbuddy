@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc"
 
 	bzpb "proto/bazel_config"
+	grpb "proto/group"
 	inpb "proto/invocation"
 	uspb "proto/user"
 
@@ -61,6 +62,18 @@ func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.Searc
 	return searcher.QueryInvocations(ctx, req)
 }
 
+func makeGroups(grps []*tables.Group) []*grpb.Group {
+	r := make([]*grpb.Group, 0)
+	for _, g := range grps {
+		r = append(r, &grpb.Group{
+			Id:          g.GroupID,
+			Name:        g.Name,
+			OwnedDomain: g.OwnedDomain,
+		})
+	}
+	return r
+}
+
 func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest) (*uspb.GetUserResponse, error) {
 	if s.env.GetUserDB() == nil {
 		return nil, status.UnimplementedError("Not Implemented")
@@ -75,6 +88,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 	}
 	return &uspb.GetUserResponse{
 		DisplayUser: tu.ToProto(),
+		UserGroup:   makeGroups(tu.Groups),
 	}, nil
 }
 

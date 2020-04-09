@@ -52,6 +52,12 @@ message Invocation {
   // sensitive information (like raw environment variables for non-logged-in
   // users).
   repeated command_line.CommandLine structured_command_line = 12;
+
+  // The time this invocation was created and updated, respectively. Invocations
+  // are created as soon as the first event is received from the client and
+  // updated with subsequent events until they are finalized.
+  int64 created_at_usec = 13;
+  int64 updated_at_usec = 14;
 }
 
 message InvocationEvent {
@@ -92,6 +98,10 @@ message InvocationQuery {
 
   // The host this build was executed on.
   string host = 2;
+
+  // The group to search. The user must be a member of all named groups or an
+  // error will be returned.
+  string group_id = 3;
 }
 
 message InvocationSort {

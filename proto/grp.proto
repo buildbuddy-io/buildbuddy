@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package grp;
+
+message Group {
+  // The unique ID of this group.
+  // Ex. "GR4576963743584254779"
+  string id = 1;
+
+  // The name of this group (may be displayed to users).
+  // Ex. "Tyler Williams Group"
+  string name = 2;
+
+  // Optional. The domains owned by this group.
+  // Ex. "iterationinc.com"
+  string owned_domain = 3;
+}
