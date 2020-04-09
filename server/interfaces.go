@@ -106,7 +106,6 @@ type InvocationDB interface {
 	LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error)
 	LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error)
 	DeleteInvocation(ctx context.Context, invocationID string) error
-	RawQueryInvocations(ctx context.Context, sql string, values ...interface{}) ([]*tables.Invocation, error)
 }
 
 type CacheDB interface {

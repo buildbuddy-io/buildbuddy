@@ -136,21 +136,3 @@ func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string
 	ti := &tables.Invocation{InvocationID: invocationID}
 	return d.h.Delete(ti).Error
 }
-
-func (d *InvocationDB) RawQueryInvocations(ctx context.Context, sql string, values ...interface{}) ([]*tables.Invocation, error) {
-	rows, err := d.h.Raw(sql, values...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	invocations := make([]*tables.Invocation, 0)
-	var ti tables.Invocation
-	for rows.Next() {
-		if err := d.h.ScanRows(rows, &ti); err != nil {
-			return nil, err
-		}
-		i := ti
-		invocations = append(invocations, &i)
-	}
-	return invocations, nil
-}
