@@ -20,12 +20,13 @@ import (
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 	"google.golang.org/grpc/reflection"
 
-	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
-	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	bbspb "proto/buildbuddy_service"
 	bpb "proto/publish_build_event"
 	repb "proto/remote_execution"
+
+	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
+	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -38,7 +39,7 @@ var (
 )
 
 func StartAndRunServices(env environment.Env) {
-	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, []string{"/invocation/", "/history/"})
+	staticFileServer, err := static.NewStaticFileServer(*staticDirectory, []string{"/invocation/", "/history/", "/docs/"})
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)
 	}
