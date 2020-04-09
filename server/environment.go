@@ -39,4 +39,5 @@ type Env interface {
 	GetCache() interfaces.Cache
 	GetUserDB() interfaces.UserDB
 	GetAuthDB() interfaces.AuthDB
+	GetInvocationStatService() interfaces.InvocationStatService
 }

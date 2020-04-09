@@ -154,3 +154,7 @@ type Searcher interface {
 type Webhook interface {
 	NotifyComplete(ctx context.Context, invocation *inpb.Invocation) error
 }
+
+type InvocationStatService interface {
+	GetInvocationStat(ctx context.Context, req *inpb.GetInvocationStatRequest) (*inpb.GetInvocationStatResponse, error)
+}

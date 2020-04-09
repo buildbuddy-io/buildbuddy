@@ -21,4 +21,7 @@ service BuildBuddyService {
 
   rpc GetBazelConfig(bazel_config.GetBazelConfigRequest)
       returns (bazel_config.GetBazelConfigResponse);
+
+  rpc GetInvocationStat(invocation.GetInvocationStatRequest)
+      returns (invocation.GetInvocationStatResponse);
 }

@@ -34,6 +34,7 @@ type RealEnv struct {
 	cache                  interfaces.Cache
 	userDB                 interfaces.UserDB
 	authDB                 interfaces.AuthDB
+	invocationStatService  interfaces.InvocationStatService
 }
 
 func (r *RealEnv) GetConfigurator() *config.Configurator {
@@ -122,6 +123,13 @@ func (r *RealEnv) GetAuthDB() interfaces.AuthDB {
 }
 func (r *RealEnv) SetAuthDB(adb interfaces.AuthDB) {
 	r.authDB = adb
+}
+
+func (r *RealEnv) GetInvocationStatService() interfaces.InvocationStatService {
+	return r.invocationStatService
+}
+func (r *RealEnv) SetInvocationStatService(iss interfaces.InvocationStatService) {
+	r.invocationStatService = iss
 }
 
 // Normally this code would live in main.go -- we put it here for now because

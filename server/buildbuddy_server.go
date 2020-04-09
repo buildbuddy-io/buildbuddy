@@ -166,6 +166,13 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 	}, nil
 }
 
+func (s *BuildBuddyServer) GetInvocationStat(ctx context.Context, req *inpb.GetInvocationStatRequest) (*inpb.GetInvocationStatResponse, error) {
+	if iss := s.env.GetInvocationStatService(); iss != nil {
+		return iss.GetInvocationStat(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 type bsLookup struct {
 	HostPort string
 	Blob     string
