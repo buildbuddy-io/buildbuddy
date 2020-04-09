@@ -69,18 +69,6 @@ go_library(
 )
 
 go_library(
-    name = "simplesearcher",
-    srcs = ["simplesearcher.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/simplesearcher",
-    deps = [
-        "//proto:invocation_go_proto",
-        "//server:interfaces",
-        "//server:tables",
-        "//server/backends:invocationdb",
-    ],
-)
-
-go_library(
     name = "slack",
     srcs = ["slack.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/slack",

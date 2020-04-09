@@ -51,7 +51,7 @@ func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.Searc
 	if req == nil {
 		return nil, status.InvalidArgumentErrorf("SearchInvocationRequest cannot be empty")
 	}
-	searcher := s.env.GetSearcher()
+	searcher := s.env.GetInvocationSearchService()
 	if searcher == nil {
 		return nil, fmt.Errorf("No searcher was configured")
 	}

@@ -144,17 +144,18 @@ type UserDB interface {
 	DeleteGroup(ctx context.Context, groupID string) error
 }
 
-// A searcher allows finding various objects given a query.
-type Searcher interface {
-	IndexInvocation(ctx context.Context, invocation *inpb.Invocation) error
-	QueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error)
-}
-
 // A webhook can be called when a build is completed.
 type Webhook interface {
 	NotifyComplete(ctx context.Context, invocation *inpb.Invocation) error
 }
 
+// Allows aggregating invocation statistics.
 type InvocationStatService interface {
 	GetInvocationStat(ctx context.Context, req *inpb.GetInvocationStatRequest) (*inpb.GetInvocationStatResponse, error)
+}
+
+// Allows searching invocations.
+type InvocationSearchService interface {
+	IndexInvocation(ctx context.Context, invocation *inpb.Invocation) error
+	QueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error)
 }

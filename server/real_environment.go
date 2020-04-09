@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/simplesearcher"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -28,13 +27,13 @@ type RealEnv struct {
 	h            *healthcheck.HealthChecker
 	a            interfaces.Authenticator
 
-	webhooks               []interfaces.Webhook
-	searcher               interfaces.Searcher
-	buildEventProxyClients []*build_event_proxy.BuildEventProxyClient
-	cache                  interfaces.Cache
-	userDB                 interfaces.UserDB
-	authDB                 interfaces.AuthDB
-	invocationStatService  interfaces.InvocationStatService
+	webhooks                []interfaces.Webhook
+	buildEventProxyClients  []*build_event_proxy.BuildEventProxyClient
+	cache                   interfaces.Cache
+	userDB                  interfaces.UserDB
+	authDB                  interfaces.AuthDB
+	invocationSearchService interfaces.InvocationSearchService
+	invocationStatService   interfaces.InvocationStatService
 }
 
 func (r *RealEnv) GetConfigurator() *config.Configurator {
@@ -82,11 +81,11 @@ func (r *RealEnv) SetWebhooks(wh []interfaces.Webhook) {
 	r.webhooks = wh
 }
 
-func (r *RealEnv) GetSearcher() interfaces.Searcher {
-	return r.searcher
+func (r *RealEnv) GetInvocationSearchService() interfaces.InvocationSearchService {
+	return r.invocationSearchService
 }
-func (r *RealEnv) SetSearcher(s interfaces.Searcher) {
-	r.searcher = s
+func (r *RealEnv) SetInvocationSearchService(s interfaces.InvocationSearchService) {
+	r.invocationSearchService = s
 }
 
 func (r *RealEnv) GetBuildEventProxyClients() []*build_event_proxy.BuildEventProxyClient {
@@ -157,7 +156,6 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 	}
 	realEnv.SetInvocationDB(invocationdb.NewInvocationDB(realEnv, dbHandle))
 
-	realEnv.SetSearcher(simplesearcher.NewSimpleSearcher(realEnv.invocationDB))
 	webhooks := make([]interfaces.Webhook, 0)
 	appURL := configurator.GetAppBuildBuddyURL()
 	if sc := configurator.GetIntegrationsSlackConfig(); sc != nil {

@@ -90,7 +90,6 @@ go_library(
         "//server/backends:disk_cache",
         "//server/backends:invocationdb",
         "//server/backends:memory_cache",
-        "//server/backends:simplesearcher",
         "//server/backends:slack",
         "//server/build_event_protocol:build_event_proxy",
         "//server/util:db",

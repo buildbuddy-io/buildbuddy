@@ -108,9 +108,9 @@ func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error
 			}
 		}()
 	}
-	if e.env.GetSearcher() != nil {
+	if searcher := e.env.GetInvocationSearchService(); searcher != nil {
 		go func() {
-			if err := e.env.GetSearcher().IndexInvocation(context.Background(), invocation); err != nil {
+			if err := searcher.IndexInvocation(context.Background(), invocation); err != nil {
 				log.Printf("Error indexing invocation: %s", err)
 			}
 		}()

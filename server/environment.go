@@ -34,10 +34,10 @@ type Env interface {
 	// Optional dependencies below here. For example: enterprise-only things,
 	// or services that may not always be configured, like webhooks.
 	GetWebhooks() []interfaces.Webhook
-	GetSearcher() interfaces.Searcher
 	GetBuildEventProxyClients() []*build_event_proxy.BuildEventProxyClient
 	GetCache() interfaces.Cache
 	GetUserDB() interfaces.UserDB
 	GetAuthDB() interfaces.AuthDB
 	GetInvocationStatService() interfaces.InvocationStatService
+	GetInvocationSearchService() interfaces.InvocationSearchService
 }
