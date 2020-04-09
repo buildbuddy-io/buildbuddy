@@ -44,8 +44,8 @@ export default class SetupComponent extends React.Component {
           <p>
             <b>.bazelrc</b>
             <code>
-            {this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "bes_results_url").body}<br/>
-            {this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "bes_backend").body}<br/>
+            {this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "bes_results_url")?.body}<br/>
+            {this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "bes_backend")?.body}<br/>
             </code>
           </p>
           <p>
@@ -68,7 +68,7 @@ export default class SetupComponent extends React.Component {
           <p>
             If you'd like to enable caching, which makes build artifacts clickable and enables the timing tab - you can add the following additional line to your .bazelrc:
             <code>
-            {this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_cache").body}
+            {this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_cache")?.body || "Caching disabled on this BuildBuddy instance"}
             </code>
           </p>
           <p>
