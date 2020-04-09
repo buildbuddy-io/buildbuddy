@@ -186,17 +186,18 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	}
 	invocation := ti.ToProto()
 	pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), iid)
+	buildEvents := make([]*inpb.InvocationEvent, 0)
 	for {
 		event := &inpb.InvocationEvent{}
 		err := pr.ReadProto(ctx, event)
 		if err == nil {
-			invocation.Event = append(invocation.Event, event)
+			buildEvents = append(buildEvents, event)
 		} else if err == io.EOF {
 			break
 		} else {
 			return nil, err
 		}
 	}
-	event_parser.FillInvocationFromEvents(invocation.Event, invocation)
+	event_parser.FillInvocationFromEvents(buildEvents, invocation)
 	return invocation, nil
 }

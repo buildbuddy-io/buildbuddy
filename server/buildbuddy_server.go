@@ -35,6 +35,7 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 	if req.GetLookup().GetInvocationId() == "" {
 		return nil, status.InvalidArgumentErrorf("GetInvocationRequest must contain a valid invocation_id")
 	}
+
 	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetLookup().GetInvocationId())
 	if err != nil {
 		return nil, err
