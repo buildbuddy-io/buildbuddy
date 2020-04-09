@@ -7,6 +7,7 @@ interface Props {
   denseModeEnabled: boolean;
   handleDenseModeToggled: VoidFunction;
   user: user.DisplayUser;
+  showHamburger: boolean;
 }
 interface State {
   menuExpanded: boolean;
@@ -43,8 +44,8 @@ export default class MenuComponent extends React.Component {
             <div>
               <a href="/"><div className="title"><img src="/image/logo_white.svg" /></div></a>
             </div>
-            {(!capabilities.auth || !this.props.user?.profileImageUrl) && <img onClick={this.handleMenuClicked.bind(this)} className="icon" src="/image/menu.svg" />}
-            {(capabilities.auth && this.props.user?.profileImageUrl) && <img onClick={this.handleMenuClicked.bind(this)} className="profile-photo" src={this.props.user?.profileImageUrl} />}
+            {(this.props.showHamburger && (!capabilities.auth || !this.props.user)) && <img onClick={this.handleMenuClicked.bind(this)} className="icon" src="/image/menu.svg" />}
+            {(this.props.showHamburger && capabilities.auth && this.props.user) && <img onClick={this.handleMenuClicked.bind(this)} className={`profile-photo ${this.props.user?.profileImageUrl ? "" : "default-photo"}`} src={this.props.user?.profileImageUrl || "/image/user-regular.svg"} />}
             {this.state.menuExpanded &&
               <div className="side-menu">
                 <ul>

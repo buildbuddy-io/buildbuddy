@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -15,10 +14,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	bzpb "proto/bazel_config"
 	inpb "proto/invocation"
 	uspb "proto/user"
+
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 type BuildBuddyServer struct {
@@ -102,12 +102,24 @@ func makeConfigOption(lifecycle, flagName, flagValue string) *bzpb.ConfigOption 
 	}
 }
 
-func assembleURL(baseURL *url.URL, scheme, port, relPath string) string {
-	baseURL.Scheme = scheme
-	baseURL.Host = baseURL.Hostname() + ":" + port
-	rel, _ := url.Parse(relPath)
-	u := baseURL.ResolveReference(rel)
-	return u.String()
+func assembleURL(host, scheme, port string) string {
+	// Strip any existing port from host if we're setting a port.
+	components := strings.Split(host, ":")
+	if len(components) > 1 && port != "" {
+		host = components[0]
+	}
+
+	url := scheme + "//" + host
+
+	// Only append port if it's set and not 80.
+	if port != "" && port != "80" {
+		url = url + ":" + port
+	}
+	return url
+}
+
+func addWriteKey(rawURL, writeKey string) string {
+	return strings.Replace(rawURL, "://", "://"+writeKey+"@", 1)
 }
 
 func getIntFlag(flagName string, defaultVal string) string {
@@ -119,28 +131,32 @@ func getIntFlag(flagName string, defaultVal string) string {
 }
 
 func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBazelConfigRequest) (*bzpb.GetBazelConfigResponse, error) {
-	targetURL, err := url.Parse(s.env.GetConfigurator().GetAppBuildBuddyURL())
-	if err != nil {
-		targetURL, _ = url.Parse("http://SET_BUILD_BUDDY_URL_IN_YOUR_CONFIG/")
-	}
 	configOptions := make([]*bzpb.ConfigOption, 0)
 
-	port := getIntFlag("port", "8080")
-	configOptions = append(configOptions, makeConfigOption("build", "bes_results_url", assembleURL(targetURL, targetURL.Scheme, port, "/invocation/")))
+	// Use config urls if they're set and fall back to host & protocol from request if not.
+	resultsURL := s.env.GetConfigurator().GetAppBuildBuddyURL()
+	if resultsURL == "" {
+		resultsURL = assembleURL(req.Host, req.Protocol, "")
+	}
+	configOptions = append(configOptions, makeConfigOption("build", "bes_results_url", resultsURL+"/invocation/"))
 
 	eventsAPIURL := s.env.GetConfigurator().GetAppEventsAPIURL()
 	if eventsAPIURL == "" {
 		grpcPort := getIntFlag("grpc_port", "1985")
-		eventsAPIURL = assembleURL(targetURL, "grpc", grpcPort, "")
+		eventsAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 	}
+	// TODO(tylerw): Populate this write key
+	// eventsAPIURL = addWriteKey(resultsURL, "foo")
 	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", eventsAPIURL))
 
 	if s.env.GetCache() != nil {
 		cacheAPIURL := s.env.GetConfigurator().GetAppCacheAPIURL()
 		if cacheAPIURL == "" {
 			grpcPort := getIntFlag("grpc_port", "1985")
-			cacheAPIURL = assembleURL(targetURL, "grpc", grpcPort, "")
+			cacheAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
+		// TODO(tylerw): Populate this write key
+		// cacheAPIURL = addWriteKey(cacheAPIURL, "foo")
 		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", cacheAPIURL))
 
 	}

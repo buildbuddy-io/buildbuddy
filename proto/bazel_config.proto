@@ -22,7 +22,15 @@ message ConfigOption {
   string flag_value = 4;
 }
 
-message GetBazelConfigRequest { context.RequestContext request_context = 1; }
+message GetBazelConfigRequest {
+  context.RequestContext request_context = 1;
+
+  // The host of the page making the request. Ex: "localhost"
+  string host = 2;
+
+  // The protocol of the page making the request. Ex: "https"
+  string protocol = 3;
+}
 
 message GetBazelConfigResponse {
   context.ResponseContext response_context = 1;

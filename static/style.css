@@ -23,11 +23,22 @@ body {
 #app {
   display: flex;
   flex-direction: column;
+  min-height: 100vh;
+}
+
+.root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 a {
   text-decoration: none;
   color: inherit;
+}
+
+button {
+  outline: 0;
 }
 
 /** Container **/
@@ -43,8 +54,7 @@ a {
 /** Menu **/
 
 .menu {
-  box-shadow: 0px 1px 4px rgba(0, 0, 0, .15);
-  height: 64px;
+  height: 72px;
   display: flex;
   align-items: center;
   box-sizing: border-box;
@@ -87,6 +97,12 @@ a {
   height: 40px;
   border-radius: 20px;
   cursor: pointer;
+  background-color: #fff;
+}
+
+.menu .default-photo {
+  padding: 8px;
+  box-sizing: border-box;
 }
 
 .menu-control {
@@ -114,7 +130,6 @@ a {
   background-color: rgba(38,50,56 ,1);
   color: #fff;
   padding: 8px 32px 32px 32px;
-  box-shadow: 0px 1px 4px rgba(0, 0, 0, .15);
   border-bottom-left-radius: 8px;
   border-bottom-right-radius: 8px;
   z-index: 1;
@@ -313,7 +328,7 @@ a {
 
 .home {
   margin-top: 32px;
-  margin-bottom: 64px;
+  margin-bottom: 72px;
 }
 
 .home .title {
@@ -568,6 +583,68 @@ a {
   font-weight: 600;
   cursor: pointer;
   margin-top: 4px;
+}
+
+.login {
+  background-color: #263238;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.login .container {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-grow: 1;
+  flex-wrap: wrap;
+}
+
+.login-hero {
+  border-right: 1px solid rgba(255, 255, 255, .5);
+  padding-right: 32px;
+  margin-right: 32px;
+  color: rgba(255, 255, 255, .7);
+  max-width: 40%;
+  line-height: 1.6em;
+}
+
+.login-hero b {
+  font-size: 36px;
+  color: #fff;
+  line-height: 1.3em;
+  margin-bottom: -16px;
+  display: block;
+}
+
+.login-buttons button {
+  display: block;
+  width: 100%;
+  padding: 20px 32px;
+  font-weight: 600;
+  border: 0;
+  border-radius: 100px;
+  margin-bottom: 16px;
+  font-size: 20px;
+  cursor: pointer;
+  border: 4px solid rgba(255, 255, 255, .9);
+  background-color: transparent;
+  color: #fff;
+  min-width: 360px;
+}
+
+.login-buttons button:last-of-type {
+  border: 4px solid rgba(255, 255, 255, .4);
+  color: rgba(255, 255, 255, .4);
+  background-color: transparent;
+  margin-bottom: 0;
+}
+
+@media(max-width: 800px) {
+  .login-hero {
+    display: none;
+  }
 }
 
 

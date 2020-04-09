@@ -23,6 +23,8 @@ export class AuthService {
       // TODO(siggisim): make this more robust.
       if (error.includes("not found")) {
         this.createUser();
+      } else {
+        this.emitUser(null);
       }
     });
   }
@@ -33,6 +35,7 @@ export class AuthService {
       this.emitUser(response.displayUser as user.DisplayUser);
     }).catch((error: any) => {
       console.log(error);
+      this.emitUser(null);
       // TODO(siggisim): figure out what we should do in this case.
     });
 

@@ -8,7 +8,7 @@ ts_library(
     deps = [
         "//app/auth",
         "//app/capabilities",
-        "//app/home",
+        "//app/docs",
         "//app/invocation",
         "//app/menu",
         "//app/router",

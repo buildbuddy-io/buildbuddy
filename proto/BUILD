@@ -255,6 +255,11 @@ go_grpc_library(
 # TypeScript proto rules below here
 
 ts_proto_library(
+    name = "bazel_config_ts_proto",
+    deps = [":bazel_config_proto"],
+)
+
+ts_proto_library(
     name = "build_event_stream_ts_proto",
     deps = [":build_event_stream_proto"],
 )
