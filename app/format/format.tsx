@@ -1,7 +1,8 @@
 import Long from "long";
+import moment from 'moment';
 
 export function percent(percent: number | Long) {
-  return `${((+percent) * 100).toFixed(0)}%`;
+  return `${((+percent) * 100).toFixed(0)}`;
 }
 
 export function durationUsec(duration: number | Long) {
@@ -21,19 +22,32 @@ export function durationSec(duration: number | Long) {
     return `${(seconds / (60 * 60 * 24 * 7)).toPrecision(3)} weeks`;
   }
   if (seconds > 60 * 60 * 24) {
-    return `${(seconds / (60 * 60 * 24)).toPrecision(3)} days`;
+    return `${(seconds / (60 * 60 * 24)).toPrecision(3)} d`;
   }
   if (seconds > 60 * 60) {
-    return `${(seconds / (60 * 60)).toPrecision(3)} hours`;
+    return `${(seconds / (60 * 60)).toPrecision(3)} h`;
   }
   if (seconds > 60) {
-    return `${(seconds / 60).toPrecision(3)} minutes`;
+    return `${(seconds / 60).toPrecision(3)} m`;
   }
-  return `${seconds.toPrecision(3)} seconds`;
+  return `${seconds.toPrecision(3)} s`;
 }
 
 export function sentenceCase(string: string) {
+  if (!string) return "";
   return string[0].toUpperCase() + string.slice(1);
 }
 
-export default { durationSec, durationUsec, sentenceCase, percent };
+export function truncateList(list: string[]) {
+  if (list.length > 3) {
+    return `${list.slice(0, 3).join(", ")} and ${list.length - 3} more`;
+  }
+  return list.join(", ");
+}
+
+export function formatTimestampUsec(timestamp: number | Long) {
+  return `${moment(+timestamp / 1000).format('MMMM Do, YYYY')} at ${moment(+timestamp / 1000).format('h:mm:ss a')}`;
+}
+
+
+export default { durationSec, durationUsec, sentenceCase, percent, truncateList, formatTimestampUsec };

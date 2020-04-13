@@ -5,13 +5,13 @@ import SetupComponent from '../docs/setup';
 import capabilities from '../capabilities/capabilities'
 import router, { Path } from '../router/router';
 import authService, { AuthService } from '../auth/auth_service';
-import { user } from '../../proto/user_ts_proto';
+import { User } from '../auth/auth_service';
 
 const denseModeKey = "VIEW_MODE";
 const denseModeValue = "DENSE";
 
 interface State {
-  user: user.DisplayUser;
+  user: User;
   hash: string;
   path: string;
   search: URLSearchParams;
@@ -31,7 +31,7 @@ export default class RootComponent extends React.Component {
     capabilities.register("BuildBuddy Community Edition", [Path.invocationPath]);
     authService.register();
     router.register(this.handlePathChange.bind(this));
-    authService.userStream.addListener(AuthService.userEventName, (user: user.DisplayUser) => {
+    authService.userStream.addListener(AuthService.userEventName, (user: User) => {
       this.setState({ ...this.state, user })
     })
   }

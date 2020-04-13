@@ -7,6 +7,7 @@ ts_library(
     srcs = glob(["**/*.tsx"]),
     deps = [
         "//app/auth",
+        "//app/docs",
         "//app/format",
         "//app/router",
         "//app/service",
@@ -14,6 +15,7 @@ ts_library(
         "//proto:build_event_stream_ts_proto",
         "//proto:command_line_ts_proto",
         "//proto:invocation_ts_proto",
+        "//proto:user_ts_proto",
         "@npm//@types/long",
         "@npm//@types/moment",
         "@npm//@types/pako",

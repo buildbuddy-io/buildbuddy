@@ -2,13 +2,19 @@ import React from 'react';
 import InvocationModel from './invocation_model'
 import router from '../router/router';
 import format from '../format/format';
+import { User } from '../auth/auth_service';
 
 interface Props {
   model: InvocationModel,
   invocationId: string
+  user?: User,
 }
 export default class InvocationOverviewComponent extends React.Component {
   props: Props;
+
+  handleOrganizationClicked() {
+    router.navigateHome();
+  }
 
   handleUserClicked() {
     router.navigateToUserHistory(this.props.model.getUser(false));
@@ -20,7 +26,11 @@ export default class InvocationOverviewComponent extends React.Component {
 
   render() {
     return <div className="container">
-      <div className="invocation">Invocation {this.props.invocationId}</div>
+      <div className="breadcrumbs">
+        {this.props.user && <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">{this.props.user?.selectedGroupName()}</span>}
+        {this.props.user && <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">Builds</span>}
+        <span>Invocation {this.props.invocationId}</span>
+      </div>
       <div className="titles">
         <div className="title" title={this.props.model.getAllPatterns()}>{format.sentenceCase(this.props.model.getUser(true))} {this.props.model.getCommand()} {this.props.model.getPattern()}</div>
         <div className="subtitle">{this.props.model.getStartDate()} at {this.props.model.getStartTime()}</div>

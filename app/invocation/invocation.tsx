@@ -2,7 +2,7 @@ import React from 'react';
 import moment from 'moment';
 
 import rpcService from '../service/rpc_service'
-import authService from '../auth/auth_service';
+import authService, { User } from '../auth/auth_service';
 
 import InvocationModel from './invocation_model'
 
@@ -35,6 +35,7 @@ interface State {
 }
 
 interface Props {
+  user?: User,
   invocationId: string,
   hash: string,
   search: URLSearchParams,
@@ -117,7 +118,7 @@ export default class InvocationComponent extends React.Component {
         <div className="shelf">
           {this.props.denseMode ?
             <DenseInvocationOverviewComponent invocationId={this.props.invocationId} model={this.state.model} /> :
-            <InvocationOverviewComponent invocationId={this.props.invocationId} model={this.state.model} />}
+            <InvocationOverviewComponent invocationId={this.props.invocationId} model={this.state.model} user={this.props.user} />}
 
         </div>
         <div className="container">

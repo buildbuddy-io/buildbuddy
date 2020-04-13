@@ -1,12 +1,12 @@
 import React from 'react';
-import authService from '../auth/auth_service';
+import authService, { User } from '../auth/auth_service';
 import capabilities from '../capabilities/capabilities';
-import { user } from '../../proto/user_ts_proto';
 
 interface Props {
+  children?: any;
   denseModeEnabled: boolean;
   handleDenseModeToggled: VoidFunction;
-  user: user.DisplayUser;
+  user: User;
   showHamburger: boolean;
 }
 interface State {
@@ -19,6 +19,10 @@ export default class MenuComponent extends React.Component {
   state: State = {
     menuExpanded: false
   };
+
+  handleShadeClicked() {
+    this.setState({ menuExpanded: false });
+  }
 
   handleMenuClicked() {
     this.setState({ menuExpanded: !this.state.menuExpanded });
@@ -39,16 +43,18 @@ export default class MenuComponent extends React.Component {
   render() {
     return (
       <div>
+        {this.state.menuExpanded && <div className="side-menu-shade" onClick={this.handleShadeClicked.bind(this)}></div>}
         <div className="menu">
           <div className="container">
             <div>
               <a href="/"><div className="title"><img src="/image/logo_white.svg" /></div></a>
             </div>
             {(this.props.showHamburger && (!capabilities.auth || !this.props.user)) && <img onClick={this.handleMenuClicked.bind(this)} className="icon" src="/image/menu.svg" />}
-            {(this.props.showHamburger && capabilities.auth && this.props.user) && <img onClick={this.handleMenuClicked.bind(this)} className={`profile-photo ${this.props.user?.profileImageUrl ? "" : "default-photo"}`} src={this.props.user?.profileImageUrl || "/image/user-regular.svg"} />}
+            {(this.props.showHamburger && capabilities.auth && this.props.user) && <img onClick={this.handleMenuClicked.bind(this)} className={`profile-photo ${this.props.user?.displayUser?.profileImageUrl ? "" : "default-photo"}`} src={this.props.user?.displayUser?.profileImageUrl || "/image/user-regular.svg"} />}
             {this.state.menuExpanded &&
               <div className="side-menu">
                 <ul>
+                  {this.props.children && <li>{this.props.children}</li>}
                   <li><a target="_blank" href="https://github.com/buildbuddy-io/buildbuddy/issues/new">Report an issue</a></li>
                   <li><a target="_blank" href="https://github.com/buildbuddy-io/buildbuddy">Github repo</a></li>
                   <li>
@@ -56,6 +62,7 @@ export default class MenuComponent extends React.Component {
                       {this.props.denseModeEnabled ? "Disable" : "Enable"} dense mode
                 </a>
                   </li>
+                  <li><a href="/docs/setup">Setup instructions</a></li>
                   <li><a href="mailto:hello@buildbuddy.io">Contact us</a></li>
                   {(capabilities.auth && !this.props.user) && <li onClick={this.handleLoginClicked.bind(this)}>Login</li>}
                   {(capabilities.auth && this.props.user) && <li onClick={this.handleLogoutClicked.bind(this)}>Logout</li>}

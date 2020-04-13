@@ -1,11 +1,22 @@
 import events from 'fbemitter';
 import rpcService from '../service/rpc_service';
 import { user } from '../../proto/user_ts_proto';
+import { grp } from '../../proto/group_ts_proto';
 import { context } from '../../proto/context_ts_proto';
 import capabilities from '../capabilities/capabilities'
 
+export class User {
+  displayUser: user.DisplayUser;
+  groups: grp.Group[];
+  selectedGroup: grp.Group;
+
+  selectedGroupName() {
+    return this.selectedGroup?.name;
+  }
+}
+
 export class AuthService {
-  user: user.DisplayUser = null;
+  user: User = null;
   userStream = new events.EventEmitter();
 
   static userEventName = "user";
@@ -17,7 +28,7 @@ export class AuthService {
     if (!capabilities.auth) return;
     let request = new user.GetUserRequest();
     rpcService.service.getUser(request).then((response: user.GetUserResponse) => {
-      this.emitUser(response.displayUser as user.DisplayUser);
+      this.emitUser(this.userFromResponse(response));
     }).catch((error: any) => {
       console.log(error);
       // TODO(siggisim): make this more robust.
@@ -32,18 +43,27 @@ export class AuthService {
   createUser() {
     let request = new user.CreateUserRequest();
     rpcService.service.createUser(request).then((response: user.CreateUserResponse) => {
-      this.emitUser(response.displayUser as user.DisplayUser);
+      this.register();
     }).catch((error: any) => {
       console.log(error);
       this.emitUser(null);
       // TODO(siggisim): figure out what we should do in this case.
     });
-
   }
 
-  emitUser(displayUser: user.DisplayUser) {
-    console.log("User", displayUser);
-    this.userStream.emit(AuthService.userEventName, displayUser);
+  userFromResponse(response: user.GetUserResponse) {
+    let user = new User();
+    user.displayUser = response.displayUser as user.DisplayUser;
+    user.groups = response.userGroup as grp.Group[];
+    if (user.groups.length > 0) {
+      user.selectedGroup = user.groups[0];
+    }
+    return user;
+  }
+
+  emitUser(user: User) {
+    console.log("User", user);
+    this.userStream.emit(AuthService.userEventName, user);
   }
 
   getRequestContext() {

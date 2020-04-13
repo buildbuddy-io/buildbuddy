@@ -7,6 +7,8 @@ ts_library(
     srcs = glob(["*.tsx"]),
     deps = [
         "@npm//@types/long",
+        "@npm//@types/moment",
         "@npm//long",
+        "@npm//moment",
     ],
 )

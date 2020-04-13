@@ -299,6 +299,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "group_ts_proto",
+    deps = [":group_proto"],
+)
+
+ts_proto_library(
     name = "user_ts_proto",
     deps = [":user_proto"],
 )

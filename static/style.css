@@ -97,7 +97,7 @@ button {
   height: 40px;
   border-radius: 20px;
   cursor: pointer;
-  background-color: #fff;
+  background-color: rgba(255, 255, 255, .95);
 }
 
 .menu .default-photo {
@@ -123,6 +123,19 @@ button {
 
 /** Side menu **/
 
+.side-menu-container {
+  position: absolute;
+}
+
+.side-menu-shade {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
 .side-menu {
   position: absolute;
   top: 46px;
@@ -147,7 +160,7 @@ button {
 .shelf {
   background-color: #f8f8f8;
   border-bottom: 1px solid #eaeaea;
-  padding: 48px 0;
+  padding: 32px 0;
   font-size: 14px;
 }
 
@@ -175,10 +188,21 @@ button {
   margin-bottom: 8px;
 }
 
-.shelf .invocation {
+.breadcrumbs {
   font-size: 16px;
   color: #aaa;
   margin-bottom: 8px;
+}
+
+.breadcrumbs span:after {
+  content: '›';
+  padding: 0 8px;
+  color: #ccc;
+  font-weight: 600;
+}
+
+.breadcrumbs span:last-of-type:after {
+  content: '';
 }
 
 .shelf .details {
@@ -279,7 +303,7 @@ button {
 /** Card **/
 
 .card {
-  box-shadow: 0px 1px 4px rgba(0, 0, 0, .15);
+  box-shadow: 0px 1px 4px rgba(0, 0, 0, .10), 0px 1px 6px rgba(0, 0, 0, .05);
   margin: 32px 0;
   padding: 32px;
   border-radius: 8px;
@@ -287,12 +311,58 @@ button {
   display: flex;
   align-items: flex-start;
   overflow: hidden;
+  background-color: #fff;
+}
+
+.card.card-hovered,
+.card:hover {
+    box-shadow: 0px 2px 6px rgba(0, 0, 0, .10), 0px 1px 10px rgba(0, 0, 0, .05);
+}
+
+.card.card-success {
+  border-left: 6px solid #8BC34A;
+}
+
+.card.card-failure {
+  border-left: 6px solid #f44336;
 }
 
 .card.dark {
   /* background-color: #263238; */
   background-color: #222;
   color: #fff;
+}
+
+.grid-block:hover .card-hover {
+  display: flex;
+}
+
+.card-hovered.card-success {
+  border-left: 6px solid #7CB342;
+}
+
+.card-hovered.card-failure {
+  border-left: 6px solid #e53935;
+}
+
+.card-hover {
+  display: none;
+  position: absolute;
+  width: 30vw;
+  height: 60px;
+  top: 100%;
+  left: 0;
+  z-index: 1;
+  margin: 8px 0;
+}
+
+.card.card-hover .title {
+  font-size: 20px;
+  margin-right: 16px;
+}
+
+.card.card-hover .subtitle {
+  font-size: 16px;
 }
 
 .card .icon {
@@ -367,10 +437,20 @@ button {
   margin: 32px 0;
 }
 
+.card .titles {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
 .history .card .title {
   font-size: 24px;
-  flex-grow: 1;
   flex-shrink: 0;
+  margin-right: 16px;
+}
+
+.card .subtitle {
+  color: #aaa;
 }
 
 .history .card .content {
@@ -647,6 +727,43 @@ button {
   }
 }
 
+.grid {
+  margin-top: 24px;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.grid-grow .grid-block {
+  flex-grow: 1;
+}
+
+.grid-block {
+  display: block;
+  min-width: 16px;
+  height: 16px;
+  margin-right: 2px;
+  margin-bottom: 2px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.grid-block-success {
+  background-color: #8BC34A;
+}
+
+.grid-block-failure {
+  background-color: #f44336;
+}
+
+.grid-block-success.grid-block-hover {
+  background-color: #7CB342;
+}
+
+.grid-block-failure.grid-block-hover {
+  background-color: #e53935;
+}
 
 /**
  *  Default styles for xterm.js
@@ -797,6 +914,12 @@ button {
 
 .dense .shelf {
   padding: 0;
+}
+
+.dense .grid {
+  padding: 0 16px;
+  margin-top: 0px;
+  margin-bottom: 8px;
 }
 
 .dense .history-overview.container {

@@ -25,6 +25,9 @@ class Router {
     window.history.pushState({ path: newUrl }, '', newUrl);
   }
 
+  navigateHome(hash?: string) {
+    this.navigateTo('/' + (hash || ""));
+  }
 
   navigateToInvocation(invocationId: string) {
     if (!capabilities.canNavigateToPath(Path.invocationPath)) {

@@ -1,6 +1,7 @@
 import React from 'react';
 import pako from 'pako';
 import InvocationModel from './invocation_model';
+import CacheCodeComponent from '../docs/cache_code';
 
 interface Props {
   model: InvocationModel,
@@ -131,9 +132,7 @@ export default class ArtifactsCardComponent extends React.Component {
         {!this.state.timingEnabled &&
           <div className="empty-state">
             Profiling isn't enabled for this invocation.<br /><br />To enable profiling you must add GRPC remote caching. You can do so by adding the following line to your <b>.bazelrc</b> and re-run your invocation:
-            <code>
-              build --remote_cache=grpc://{window.location.hostname.replace("app.", "events.")}:1985
-            </code>
+            <CacheCodeComponent />
           </div>
         }
         <div className="details">

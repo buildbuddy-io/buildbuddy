@@ -1,6 +1,12 @@
 import React from 'react';
 import rpcService from '../service/rpc_service';
 import { bazel_config } from '../../proto/bazel_config_ts_proto';
+import CacheCodeComponent from './cache_code';
+import SetupCodeComponent from './setup_code';
+
+interface Props {
+  title?: string;
+}
 
 interface State {
   menuExpanded: boolean;
@@ -8,6 +14,8 @@ interface State {
 }
 
 export default class SetupComponent extends React.Component {
+  props: Props;
+
   state: State = {
     menuExpanded: false,
     bazelConfigResponse: null
@@ -34,19 +42,14 @@ export default class SetupComponent extends React.Component {
     return (
       <div className="home">
         <div className="container">
-          <div className="title">Getting Started with BuildBuddy</div>
-          <p>
-          BuildBuddy is an open source Bazel build event viewer. It helps you collect, view, share and debug build events in a user-friendly web UI.
-          </p>
+          {!this.props.title && <div className="title">Getting Started with BuildBuddy</div>}
+          {this.props.title && <p><b>{this.props.title}</b></p>}
           <p>
             To get started, add the following two lines to your .bazelrc file. If you don't have a .bazelrc file - create one in the same directory as your Bazel WORKSPACE file with the two following lines:
           </p>
           <p>
             <b>.bazelrc</b>
-            <code>
-            {this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "bes_results_url")?.body}<br/>
-            {this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "bes_backend")?.body}<br/>
-            </code>
+            {this.state.bazelConfigResponse && <SetupCodeComponent bazelConfigResponse={this.state.bazelConfigResponse} />}
           </p>
           <p>
             Once you've added those two lines to your .bazelrc - you'll get a BuildBuddy url printed at the beginning and the end of every Bazel invocation like this:
@@ -67,9 +70,7 @@ export default class SetupComponent extends React.Component {
           </p>
           <p>
             If you'd like to enable caching, which makes build artifacts clickable and enables the timing tab - you can add the following additional line to your .bazelrc:
-            <code>
-            {this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_cache")?.body || "Caching disabled on this BuildBuddy instance"}
-            </code>
+            {this.state.bazelConfigResponse && <CacheCodeComponent bazelConfigResponse={this.state.bazelConfigResponse} />}
           </p>
           <p>
             Feel free to reach out to <a href="mailto:hello@buildbuddy.io">hello@buildbuddy.io</a> if you have any questions or feature requests.
