@@ -11,7 +11,7 @@ export default class InvocationLoadingComponent extends React.Component {
     return <div className="state-page">
       <div className="shelf">
         <div className="container">
-          <div className="invocation">Invocation {this.props.invocationId}</div>
+          <div className="breadcrumbs">Invocation {this.props.invocationId}</div>
           <div className="titles">
             <div className="title">Loading...</div>
           </div>

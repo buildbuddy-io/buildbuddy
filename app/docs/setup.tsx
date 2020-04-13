@@ -4,18 +4,12 @@ import { bazel_config } from '../../proto/bazel_config_ts_proto';
 import CacheCodeComponent from './cache_code';
 import SetupCodeComponent from './setup_code';
 
-interface Props {
-  title?: string;
-}
-
 interface State {
   menuExpanded: boolean;
   bazelConfigResponse: bazel_config.GetBazelConfigResponse;
 }
 
 export default class SetupComponent extends React.Component {
-  props: Props;
-
   state: State = {
     menuExpanded: false,
     bazelConfigResponse: null
@@ -42,8 +36,7 @@ export default class SetupComponent extends React.Component {
     return (
       <div className="home">
         <div className="container">
-          {!this.props.title && <div className="title">Getting Started with BuildBuddy</div>}
-          {this.props.title && <p><b>{this.props.title}</b></p>}
+          <div className="title">Getting Started with BuildBuddy</div>
           <p>
             To get started, add the following two lines to your .bazelrc file. If you don't have a .bazelrc file - create one in the same directory as your Bazel WORKSPACE file with the two following lines:
           </p>

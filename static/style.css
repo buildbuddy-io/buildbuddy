@@ -575,6 +575,17 @@ button {
   border: 1px solid #eee;
   border-radius: 8px;
   padding: 16px;
+  line-height: 1.6em;
+}
+
+.empty-state h2 {
+  margin-top: 32px;
+  margin-bottom: 48px;
+}
+
+.empty-state .link {
+  font-weight: bold;
+  text-decoration: underline;
 }
 
 .target {
