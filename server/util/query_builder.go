@@ -6,11 +6,11 @@ import (
 )
 
 const (
-	whereSQLKeyword = "WHERE"
+	whereSQLKeyword  = "WHERE"
 	orderBySQLPhrase = "ORDER BY"
-	limitSQLKeyword = "LIMIT"
-	andQueryJoiner  = "AND"
-	orQueryJoiner   = "OR"
+	limitSQLKeyword  = "LIMIT"
+	andQueryJoiner   = "AND"
+	orQueryJoiner    = "OR"
 )
 
 func pad(clause string) string {
