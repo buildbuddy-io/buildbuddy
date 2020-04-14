@@ -1,108 +1,218 @@
 package disk_cache
 
 import (
+	"container/list"
 	"context"
-	"fmt"
 	"io"
 	"log"
-	"sync/atomic"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 const (
-	cacheFullCutoffPercentage     = .98
 	cacheEvictionCutoffPercentage = .8
 )
 
-// TODO(tylerw): Perf: Support inlining small blobs directly into the DB row
-// TODO(tylerw): Perf: Support contains checks directly from the DB
-
-// Blobstore is *almost* sufficient here, but some blobstore implementations
-// don't support automatic TTL-ing of items, so we keep k/v style records in
-// our DB that allow us to garbage collect expired blobs and keep an eye on
-// the total cache size.
+// Blobstore is *almost* sufficient here, but blobstore doesn't handle record
+// expirations in a way that make sense for a cache. So we keep a record (in
+// memory) of file atime (Last Access Time) and size, and then when our cache
+// reaches fullness we remove the most stale files. Rather than serialize this
+// ledger, we regenerate it from scratch on startup by looking at the
+// filesystem itself.
 type DiskCache struct {
-	bs interfaces.Blobstore
-	db interfaces.CacheDB
-
-	ttl          time.Duration
+	rootDir      string
 	maxSizeBytes int64
 
-	// ATOMIC INT
-	totalSizeBytesAtomic int64
-
-	ticker *time.Ticker
-	quit   chan struct{}
+	lock      sync.RWMutex // PROTECTS: evictList, entries, sizeBytes
+	evictList *list.List
+	entries   map[string]*list.Element
+	sizeBytes int64
 }
 
-// NB: ttl is a positive valued duration
-func NewDiskCache(bs interfaces.Blobstore, db interfaces.CacheDB, ttl time.Duration, maxSizeBytes int64) (*DiskCache, error) {
-	if ttl < 0 {
-		return nil, fmt.Errorf("ttl must be positive valued")
+type fileRecord struct {
+	key       string
+	sizeBytes int64
+	lastUse   time.Time
+}
+
+func getLastUse(info os.FileInfo) time.Time {
+	stat := info.Sys().(*syscall.Stat_t)
+	return time.Unix(stat.Atim.Sec, stat.Atim.Nsec)
+}
+
+func makeRecord(fullPath string, info os.FileInfo) *fileRecord {
+	return &fileRecord{
+		key:       fullPath,
+		sizeBytes: info.Size(),
+		lastUse:   getLastUse(info),
 	}
-	return &DiskCache{
-		bs:           bs,
-		db:           db,
-		ttl:          ttl,
+}
+
+func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
+	c := &DiskCache{
+		rootDir:      rootDir,
 		maxSizeBytes: maxSizeBytes,
-	}, nil
+	}
+	if err := c.initializeCache(); err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
-func (c *DiskCache) checkOverSize(n int) error {
-	newSize := atomic.LoadInt64(&c.totalSizeBytesAtomic) + int64(n)
-	if newSize > c.maxSizeBytes {
-		errMsg := fmt.Sprintf("Cache size: %d bytes would exceed max: %d bytes", newSize, c.maxSizeBytes)
-		return status.ResourceExhaustedError(errMsg)
+func (c *DiskCache) initializeCache() error {
+	records := make([]*fileRecord, 0)
+	walkFn := func(path string, info os.FileInfo, err error) error {
+		if !info.IsDir() {
+			records = append(records, makeRecord(path, info))
+		}
+		return nil
 	}
+	if err := filepath.Walk(c.rootDir, walkFn); err != nil {
+		return err
+	}
+
+	// Sort entries by ascending ATime.
+	sort.Slice(records, func(i, j int) bool { return records[i].lastUse.Before(records[j].lastUse) })
+
+	// Populate our state tracking datastructures.
+	c.evictList = list.New()
+	c.entries = make(map[string]*list.Element, len(records))
+	for _, record := range records {
+		c.addEntry(record)
+		c.sizeBytes += record.sizeBytes
+	}
+	log.Printf("Initialized disk cache. Current size: %d (max: %d) bytes", c.sizeBytes, c.maxSizeBytes)
 	return nil
 }
 
+func (c *DiskCache) addEntry(record *fileRecord) {
+	c.lock.Lock()
+	listElement := c.evictList.PushFront(record)
+	c.entries[record.key] = listElement
+	c.lock.Unlock()
+}
+
+func (c *DiskCache) removeEntry(key string) {
+	c.lock.Lock()
+	if listElement, ok := c.entries[key]; ok {
+		c.evictList.Remove(listElement)
+		record := listElement.Value.(*fileRecord)
+		c.sizeBytes -= record.sizeBytes
+	}
+	c.lock.Unlock()
+}
+
+func (c *DiskCache) useEntry(key string) bool {
+	c.lock.Lock()
+	listElement, ok := c.entries[key]
+	if ok {
+		c.evictList.MoveToFront(listElement)
+		listElement.Value.(*fileRecord).lastUse = time.Now()
+	}
+	c.lock.Unlock()
+	return ok
+}
+
+func (c *DiskCache) checkSizeAndEvict(ctx context.Context, n int64) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	newSize := c.sizeBytes + n
+	stopDeleteCutoff := int64(cacheEvictionCutoffPercentage * float64(c.maxSizeBytes))
+
+	if newSize > c.maxSizeBytes {
+		for c.sizeBytes+n > stopDeleteCutoff {
+			listElement := c.evictList.Back()
+			if listElement != nil {
+				c.evictList.Remove(listElement)
+				record := listElement.Value.(*fileRecord)
+				c.sizeBytes -= record.sizeBytes
+				if err := disk.DeleteFile(ctx, record.key); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (c *DiskCache) blobPath(blobName string) (string, error) {
+	// Probably could be more careful here but we are generating these ourselves
+	// for now.
+	if strings.Contains(blobName, "..") {
+		return "", status.InvalidArgumentErrorf("blobName (%s) must not contain ../", blobName)
+	}
+	return filepath.Join(c.rootDir, blobName), nil
+}
+
 func (c *DiskCache) Contains(ctx context.Context, key string) (bool, error) {
-	return c.bs.BlobExists(ctx, key)
+	fullPath, err := c.blobPath(key)
+	if err != nil {
+		return false, err
+	}
+	// Bazel does frequent "contains" checks, so we want to make this fast.
+	// We could check the disk and see if the file exists, because it's
+	// possible the file has been deleted out from under us, but in the
+	// interest of performance we just check our local records.
+	return c.useEntry(fullPath), nil
 }
 
 func (c *DiskCache) Get(ctx context.Context, key string) ([]byte, error) {
-	err := c.db.IncrementEntryReadCount(ctx, key)
+	fullPath, err := c.blobPath(key)
 	if err != nil {
 		return nil, err
 	}
-	return c.bs.ReadBlob(ctx, key)
+	c.useEntry(fullPath)
+	return disk.ReadFile(ctx, fullPath)
 }
 
 func (c *DiskCache) Set(ctx context.Context, key string, data []byte) error {
-	if err := c.checkOverSize(len(data)); err != nil {
-		return err
-	}
-
-	n, err := c.bs.WriteBlob(ctx, key, data)
+	fullPath, err := c.blobPath(key)
 	if err != nil {
 		return err
 	}
-	atomic.AddInt64(&c.totalSizeBytesAtomic, int64(n))
-	return c.db.InsertOrUpdateCacheEntry(ctx, &tables.CacheEntry{
-		EntryID:            key,
-		ExpirationTimeUsec: int64(time.Now().Add(c.ttl).UnixNano() / 1000),
-		SizeBytes:          int64(n),
+	if err := c.checkSizeAndEvict(ctx, int64(len(data))); err != nil {
+		return err
+	}
+	n, err := disk.WriteFile(ctx, fullPath, data)
+	if err != nil {
+		// If we had an error writing the file, just return that.
+		return err
+	}
+	c.addEntry(&fileRecord{
+		key:       fullPath,
+		sizeBytes: int64(n),
+		lastUse:   time.Now(),
 	})
+	return err
+
 }
 
 func (c *DiskCache) Delete(ctx context.Context, key string) error {
-	if err := c.bs.DeleteBlob(ctx, key); err != nil {
+	fullPath, err := c.blobPath(key)
+	if err != nil {
 		return err
 	}
-	return c.db.DeleteCacheEntry(ctx, key)
+	c.removeEntry(fullPath)
+	return disk.DeleteFile(ctx, fullPath)
 }
 
 func (c *DiskCache) Reader(ctx context.Context, key string, offset, length int64) (io.Reader, error) {
-	err := c.db.IncrementEntryReadCount(ctx, key)
+	fullPath, err := c.blobPath(key)
 	if err != nil {
 		return nil, err
 	}
-	return c.bs.BlobReader(ctx, key, offset, length)
+	c.useEntry(fullPath)
+	return disk.FileReader(ctx, fullPath, offset, length)
 }
 
 type dbCloseFn func(totalBytesWritten int64) error
@@ -131,115 +241,35 @@ func (d *dbWriteOnClose) Close() error {
 }
 
 func (c *DiskCache) Writer(ctx context.Context, key string) (io.WriteCloser, error) {
-	blobWriter, err := c.bs.BlobWriter(ctx, key)
+	fullPath, err := c.blobPath(key)
+	if err != nil {
+		return nil, err
+	}
+	writeCloser, err := disk.FileWriter(ctx, fullPath)
 	if err != nil {
 		return nil, err
 	}
 	return &dbWriteOnClose{
-		WriteCloser: blobWriter,
-		checkFn:     func(n int) error { return c.checkOverSize(n) },
+		WriteCloser: writeCloser,
+		checkFn:     func(n int) error { return c.checkSizeAndEvict(ctx, int64(n)) },
 		closeFn: func(totalBytesWritten int64) error {
-			atomic.AddInt64(&c.totalSizeBytesAtomic, totalBytesWritten)
-			return c.db.InsertOrUpdateCacheEntry(ctx, &tables.CacheEntry{
-				EntryID:            key,
-				ExpirationTimeUsec: int64(time.Now().Add(c.ttl).UnixNano() / 1000),
-				SizeBytes:          totalBytesWritten,
+			if err := c.checkSizeAndEvict(ctx, totalBytesWritten); err != nil {
+				return err
+			}
+			c.addEntry(&fileRecord{
+				key:       fullPath,
+				sizeBytes: totalBytesWritten,
+				lastUse:   time.Now(),
 			})
+			return nil
 		},
 	}, nil
 }
 
-func (c *DiskCache) deleteCacheEntries(ctx context.Context, entries []*tables.CacheEntry) {
-	for _, entry := range entries {
-		err := c.db.DeleteCacheEntry(ctx, entry.EntryID)
-		if err != nil {
-			log.Printf("error deleting expired cache entry: %s: %s", entry, err)
-		}
-	}
-}
-
-func (c *DiskCache) evictExpiredEntries(ctx context.Context) {
-	cutoffUsec := time.Now().Add(-1*c.ttl).UnixNano() / 1000
-	expiredEntries, err := c.db.RawQueryCacheEntries(ctx,
-		`SELECT * FROM CacheEntries as ce WHERE ce.created_at_usec < ?`,
-		cutoffUsec)
-	if err != nil {
-		log.Printf("error querying expired cache entries: %s", err)
-	}
-	c.deleteCacheEntries(ctx, expiredEntries)
-}
-
-func (c *DiskCache) recalculateSizeAndEvictEntries(ctx context.Context) {
-	sizeFn := func() int64 {
-		sum, err := c.db.SumCacheEntrySizes(ctx)
-		if err != nil {
-			log.Printf("Error calculating cache size: %s", err)
-		}
-		atomic.StoreInt64(&c.totalSizeBytesAtomic, sum)
-		return sum
-	}
-
-	currentSize := sizeFn()
-
-	// Only trigger if the cache is ~full~.
-	fullCutoff := int64(cacheFullCutoffPercentage * float64(c.maxSizeBytes))
-	if currentSize < fullCutoff {
-		return
-	}
-
-	var fullWarningMsg string
-	fullWarningMsg += fmt.Sprintf("Cache is ~full~ (%d bytes of %d)\n", currentSize, c.maxSizeBytes)
-	fullWarningMsg += fmt.Sprintf("Deleting least used items until we reach %f percent capacity...\n", (cacheEvictionCutoffPercentage * 100))
-	fullWarningMsg += "You may want to consider allocating more space or reducing your TTL\n"
-	fullWarningMsg += "(Or not! It's perfectly OK to let this one ride if you know what's going on)"
-
-	log.Printf(fullWarningMsg)
-
-	stopDeleteCutoff := int64(cacheEvictionCutoffPercentage * float64(c.maxSizeBytes))
-	// Delete entries until we reach 90% capacity.
-	for {
-		leastUsedEntries, err := c.db.RawQueryCacheEntries(ctx,
-			`SELECT * FROM CacheEntries as ce ORDER BY read_count ASC LIMIT 10`)
-		if err != nil {
-			log.Printf("error querying oldest cache entries: %s", err)
-		}
-		c.deleteCacheEntries(ctx, leastUsedEntries)
-		currentSize = sizeFn()
-		if currentSize < stopDeleteCutoff {
-			log.Printf("Deleted least used items from cache. (%d bytes of %d)", currentSize, c.maxSizeBytes)
-			return
-		}
-	}
-}
-
 func (c *DiskCache) Start() error {
-	c.ticker = time.NewTicker(1 * time.Second)
-	c.quit = make(chan struct{})
-
-	if c.ttl == 0 {
-		log.Printf("configured TTL was 0; disabling cache expiry")
-		return nil
-	}
-
-	go func() {
-		for {
-			select {
-			case <-c.ticker.C:
-				ctx := context.Background()
-				c.recalculateSizeAndEvictEntries(ctx)
-				c.evictExpiredEntries(ctx)
-			case <-c.quit:
-				log.Printf("Cleanup task %d exiting.", 0)
-				break
-			}
-		}
-	}()
-
 	return nil
 }
 
 func (c *DiskCache) Stop() error {
-	close(c.quit)
-	c.ticker.Stop()
 	return nil
 }

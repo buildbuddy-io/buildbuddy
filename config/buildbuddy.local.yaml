@@ -9,4 +9,6 @@ storage:
     root_directory: /tmp/buildbuddy
 cache:
   max_size_bytes: 1000000000  # 1 GB
-  in_memory: true
+  #in_memory: true
+  disk:
+    root_directory: /tmp/buildbuddy_cache

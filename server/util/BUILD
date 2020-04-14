@@ -19,6 +19,12 @@ go_library(
 )
 
 go_library(
+    name = "disk",
+    srcs = ["disk.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/disk",
+)
+
+go_library(
     name = "healthcheck",
     srcs = ["healthcheck.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/healthcheck",

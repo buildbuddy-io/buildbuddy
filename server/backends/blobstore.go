@@ -10,12 +10,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"cloud.google.com/go/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"google.golang.org/api/option"
 )
 
@@ -32,26 +32,6 @@ func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error
 		return NewGCSBlobStore(gcsConfig.Bucket, gcsConfig.ProjectID, opts...)
 	}
 	return nil, fmt.Errorf("No storage backend configured -- please specify at least one in the config")
-}
-
-func GetOptionalCacheBlobstore(c *config.Configurator) (interfaces.Blobstore, error) {
-	if dc := c.GetCacheDiskConfig(); dc != nil {
-		return NewDiskBlobStore(dc.RootDirectory), nil
-	} else if gcsConfig := c.GetCacheGCSConfig(); gcsConfig != nil {
-		opts := make([]option.ClientOption, 0)
-		if gcsConfig.CredentialsFile != "" {
-			opts = append(opts, option.WithCredentialsFile(gcsConfig.CredentialsFile))
-		}
-		return NewGCSBlobStore(gcsConfig.Bucket, gcsConfig.ProjectID, opts...)
-	}
-	return nil, nil
-}
-
-func ensureDirectoryExists(dir string) error {
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return os.MkdirAll(dir, 0755)
-	}
-	return nil
 }
 
 // A Disk-based blob storage implementation that reads and writes blobs to/from
@@ -113,70 +93,58 @@ func compress(in []byte) ([]byte, error) {
 	return ioutil.ReadAll(&buf)
 }
 
-func deleteLocalFileIfExists(filename string) {
-	_, err := os.Stat(filename)
-	if os.IsExist(err) {
-		os.Remove(filename)
-	}
-}
-
-func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
+func (d *DiskBlobStore) blobPath(blobName string) (string, error) {
 	// Probably could be more careful here but we are generating these ourselves
 	// for now.
 	if strings.Contains(blobName, "..") {
-		return 0, fmt.Errorf("blobName (%s) must not contain ../", blobName)
+		return "", fmt.Errorf("blobName (%s) must not contain ../", blobName)
 	}
-	fullPath := filepath.Join(d.rootDir, blobName)
-	if err := ensureDirectoryExists(filepath.Dir(fullPath)); err != nil {
+	return filepath.Join(d.rootDir, blobName), nil
+}
+
+func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
+	fullPath, err := d.blobPath(blobName)
+	if err != nil {
 		return 0, err
 	}
-
-	tmpFileName := fullPath + ".tmp"
-	// We defer a cleanup function that would delete our tempfile here --
-	// that way if the write is truncated (say, because it's too big) we
-	// still remove the tmp file.
-	defer deleteLocalFileIfExists(tmpFileName)
 
 	compressedData, err := compress(data)
 	if err != nil {
 		return 0, err
 	}
-	if err := ioutil.WriteFile(tmpFileName, compressedData, 0644); err != nil {
-		return 0, err
-	}
-	return len(compressedData), os.Rename(tmpFileName, fullPath)
+	return disk.WriteFile(ctx, fullPath, compressedData)
 }
 
 func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
-	return decompress(ioutil.ReadFile(filepath.Join(d.rootDir, blobName)))
-}
-
-func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
-	return os.Remove(filepath.Join(d.rootDir, blobName))
-}
-
-func (d *DiskBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
-	_, err := os.Stat(filepath.Join(d.rootDir, blobName))
-	// Verbose for clarity.
-	if os.IsNotExist(err) {
-		return false, nil
-	} else if os.IsExist(err) {
-		return true, nil
-	} else {
-		return false, err
-	}
-}
-
-func (d *DiskBlobStore) BlobReader(ctx context.Context, blobName string, offset, length int64) (io.Reader, error) {
-	f, err := os.Open(filepath.Join(d.rootDir, blobName))
+	fullPath, err := d.blobPath(blobName)
 	if err != nil {
 		return nil, err
 	}
-	f.Seek(offset, 0)
-	if length > 0 {
-		return io.LimitReader(f, length), nil
+	return decompress(disk.ReadFile(ctx, fullPath))
+}
+
+func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
+	fullPath, err := d.blobPath(blobName)
+	if err != nil {
+		return err
 	}
-	return f, nil
+	return disk.DeleteFile(ctx, fullPath)
+}
+
+func (d *DiskBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
+	fullPath, err := d.blobPath(blobName)
+	if err != nil {
+		return false, err
+	}
+	return disk.FileExists(ctx, fullPath)
+}
+
+func (d *DiskBlobStore) BlobReader(ctx context.Context, blobName string, offset, length int64) (io.Reader, error) {
+	fullPath, err := d.blobPath(blobName)
+	if err != nil {
+		return nil, err
+	}
+	return disk.FileReader(ctx, fullPath, offset, length)
 }
 
 type writeMover struct {
@@ -193,24 +161,11 @@ func (w *writeMover) Close() error {
 }
 
 func (d *DiskBlobStore) BlobWriter(ctx context.Context, blobName string) (io.WriteCloser, error) {
-	fullPath := filepath.Join(d.rootDir, blobName)
-	if err := ensureDirectoryExists(filepath.Dir(fullPath)); err != nil {
-		return nil, err
-	}
-	tmpFileName := fullPath + ".tmp"
-	f, err := os.OpenFile(tmpFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	fullPath, err := d.blobPath(blobName)
 	if err != nil {
 		return nil, err
 	}
-	wm := &writeMover{
-		File:      f,
-		finalPath: fullPath,
-	}
-	// Ensure that the temp file is cleaned up here too!
-	runtime.SetFinalizer(wm, func(m *writeMover) {
-		deleteLocalFileIfExists(tmpFileName)
-	})
-	return wm, nil
+	return disk.FileWriter(ctx, fullPath)
 }
 
 // GCSBlobStore implements the blobstore API on top of the google cloud storage API.

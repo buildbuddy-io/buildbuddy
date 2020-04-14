@@ -2,7 +2,6 @@ package real_environment
 
 import (
 	"log"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/cachedb"
@@ -186,13 +185,9 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 			log.Fatalf("Error configuring in-memory cache: %s", err)
 		}
 		cache = c
-	} else if configurator.GetCacheDiskConfig() != nil || configurator.GetCacheGCSConfig() != nil {
-		cacheBlobstore, err := blobstore.GetOptionalCacheBlobstore(configurator)
-		if err != nil {
-			log.Fatalf("Error configuring cache blobstore: %s", err)
-		}
-		ttl := time.Duration(configurator.GetCacheTTLSeconds()) * time.Second
-		c, err := disk_cache.NewDiskCache(cacheBlobstore, realEnv.cacheDB, ttl, configurator.GetCacheMaxSizeBytes())
+	} else if configurator.GetCacheDiskConfig() != nil {
+		diskConfig := configurator.GetCacheDiskConfig()
+		c, err := disk_cache.NewDiskCache(diskConfig.RootDirectory, configurator.GetCacheMaxSizeBytes())
 		if err != nil {
 			log.Fatalf("Error configuring cache: %s", err)
 		}
