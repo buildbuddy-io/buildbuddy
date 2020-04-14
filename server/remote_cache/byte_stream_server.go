@@ -44,6 +44,9 @@ func extractHash(resourceName string) (string, error) {
 	if len(parts) != 2 {
 		return "", fmt.Errorf("Unparsable resource name: %s", resourceName)
 	}
+	if parts[1] == "" {
+		return "", fmt.Errorf("Unparsable resource name (empty hash?): %s", resourceName)
+	}
 	return parts[1], nil
 }
 
