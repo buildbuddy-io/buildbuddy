@@ -88,7 +88,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		if err != nil {
 			return nil, err
 		}
-		if hash == digest.EmptySha256 {
+		if hash == digest.EmptyHash {
 			continue
 		}
 		if err := s.cache.Set(ctx, uploadRequest.Digest.Hash, uploadRequest.Data); err != nil {
