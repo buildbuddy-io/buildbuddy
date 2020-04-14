@@ -580,7 +580,7 @@ button {
 
 .empty-state h2 {
   margin-top: 32px;
-  margin-bottom: 48px;
+  margin-bottom: 16px;
 }
 
 .empty-state .link {
@@ -931,6 +931,10 @@ button {
   padding: 0 16px;
   margin-top: 0px;
   margin-bottom: 8px;
+}
+
+.dense .empty-state {
+  padding: 0 16px;
 }
 
 .dense .history-overview.container {
