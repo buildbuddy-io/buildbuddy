@@ -75,16 +75,16 @@ func makeGroups(grps []*tables.Group) []*grpb.Group {
 }
 
 func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest) (*uspb.GetUserResponse, error) {
-	if s.env.GetUserDB() == nil {
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	var uid *string
-	if req.GetUserId().GetId() != "" {
-		uid = &req.GetUserId().Id
-	}
-	tu, err := s.env.GetUserDB().GetUser(ctx, uid)
+	tu, err := userDB.GetUser(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if tu == nil {
+		return nil, status.UnauthenticatedError("User not found")
 	}
 	return &uspb.GetUserResponse{
 		DisplayUser: tu.ToProto(),
@@ -93,14 +93,16 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 }
 
 func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserRequest) (*uspb.CreateUserResponse, error) {
-	if s.env.GetAuthenticator() == nil || s.env.GetUserDB() == nil {
+	auth := s.env.GetAuthenticator()
+	userDB := s.env.GetUserDB()
+	if auth == nil || userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	tu := &tables.User{}
-	if err := s.env.GetAuthenticator().FillUser(ctx, tu); err != nil {
+	if err := auth.FillUser(ctx, tu); err != nil {
 		return nil, err
 	}
-	if err := s.env.GetUserDB().InsertUser(ctx, tu); err != nil {
+	if err := userDB.InsertUser(ctx, tu); err != nil {
 		return nil, err
 	}
 	return &uspb.CreateUserResponse{

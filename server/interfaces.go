@@ -125,11 +125,11 @@ type AuthDB interface {
 type UserDB interface {
 	// User API
 	InsertUser(ctx context.Context, u *tables.User) error
-	// GetUser *may* do a database read and will return the registered
-	// user's information, or nil if no user was found. It requires
-	// that a valid authenticator is present in the environment and will
-	// return a UserToken given the provided context.
-	GetUser(ctx context.Context, userID *string) (*tables.User, error)
+	// GetUser will return the registered user's information or
+	// an error if no registered user was found. It requires that a
+	// valid authenticator is present in the environment and will return
+	// a UserToken given the provided context.
+	GetUser(ctx context.Context) (*tables.User, error)
 	DeleteUser(ctx context.Context, userID string) error
 
 	// Creates the DEFAULT group, for on-prem usage where there is only
@@ -139,7 +139,7 @@ type UserDB interface {
 	// Groups API
 	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) error
 	GetDomainOwnerGroup(ctx context.Context, domain string) (*tables.Group, error)
-	GetGroupForAuthToken(ctx context.Context, bat BasicAuthToken) (*tables.Group, error)
+	GetBasicAuthGroup(ctx context.Context) (*tables.Group, error)
 	DeleteGroup(ctx context.Context, groupID string) error
 }
 

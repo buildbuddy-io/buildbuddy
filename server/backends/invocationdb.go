@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jinzhu/gorm"
 )
 
@@ -29,18 +28,12 @@ func NewInvocationDB(env environment.Env, h *db.DBHandle) *InvocationDB {
 
 func (d *InvocationDB) createInvocation(tx *gorm.DB, ctx context.Context, ti *tables.Invocation) error {
 	permissions := perms.AnonymousUserPermissions()
-	if auth := d.env.GetAuthenticator(); auth != nil {
-		bat, err := auth.GetBasicAuthToken(ctx)
-		if err == nil && bat != nil {
-			userDB := d.env.GetUserDB()
-			if userDB == nil {
-				return status.FailedPreconditionError("UserDB not configured -- can't authorize request")
-			}
-			// Attempt to lookup this group by auth token.
-			g, err := userDB.GetGroupForAuthToken(ctx, bat)
-			if err != nil {
-				return status.UnauthenticatedError("Basic auth credentials were not valid.")
-			}
+	if userDB := d.env.GetUserDB(); userDB != nil {
+		g, err := userDB.GetBasicAuthGroup(ctx)
+		if err != nil {
+			return err
+		}
+		if g != nil {
 			permissions = perms.GroupAuthPermissions(g)
 		}
 	}
@@ -71,7 +64,7 @@ func (d *InvocationDB) addPermissionsCheckToQuery(ctx context.Context, q *query_
 	if auth := d.env.GetAuthenticator(); auth != nil {
 		if ut, err := d.env.GetAuthenticator().GetUserToken(ctx); err == nil && ut != nil {
 			// If auth is setup and GetUser returns an error, propogate that up.
-			tu, err := d.env.GetUserDB().GetUser(ctx, nil)
+			tu, err := d.env.GetUserDB().GetUser(ctx)
 			if err != nil {
 				return err
 			}
