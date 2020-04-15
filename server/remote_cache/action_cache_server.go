@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 
@@ -14,6 +15,7 @@ import (
 )
 
 type ActionCacheServer struct {
+	env   environment.Env
 	cache interfaces.Cache
 }
 
@@ -23,12 +25,17 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 		return nil, fmt.Errorf("A cache is required to enable the ActionCacheServer")
 	}
 	return &ActionCacheServer{
+		env:   env,
 		cache: cache,
 	}, nil
 }
 
 func (s *ActionCacheServer) checkFileExists(ctx context.Context, hash string) error {
-	ok, err := s.cache.Contains(ctx, hash)
+	ck, err := perms.UserPrefixCacheKey(ctx, s.env, hash)
+	if err != nil {
+		return err
+	}
+	ok, err := s.cache.Contains(ctx, ck)
 	if err != nil {
 		return err
 	}
@@ -59,8 +66,14 @@ func (s *ActionCacheServer) validateActionResult(ctx context.Context, r *repb.Ac
 		}
 	}
 
+	// Compute the user prefix just once, rather than in a loop, below.
+	userPrefix, err := perms.UserPrefixCacheKey(ctx, s.env, "")
+	if err != nil {
+		return err
+	}
+
 	for _, d := range r.OutputDirectories {
-		blob, err := s.cache.Get(ctx, d.GetTreeDigest().Hash)
+		blob, err := s.cache.Get(ctx, userPrefix+d.GetTreeDigest().Hash)
 		if err != nil {
 			return err
 		}
@@ -102,11 +115,14 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		return nil, err
 	}
 
+	ck, err := perms.UserPrefixCacheKey(ctx, s.env, hash)
+	if err != nil {
+		return nil, err
+	}
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
-	blob, err := s.cache.Get(ctx, hash)
+	blob, err := s.cache.Get(ctx, ck)
 	if err != nil {
 		return nil, status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", hash, err))
-		return nil, err
 	}
 
 	rsp := &repb.ActionResult{}
@@ -154,7 +170,12 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return nil, err
 	}
 
-	if err := s.cache.Set(ctx, hash, blob); err != nil {
+	ck, err := perms.UserPrefixCacheKey(ctx, s.env, hash)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.cache.Set(ctx, ck, blob); err != nil {
 		return nil, err
 	}
 	return req.ActionResult, nil

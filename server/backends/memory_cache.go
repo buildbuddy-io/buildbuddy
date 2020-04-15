@@ -165,41 +165,61 @@ func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
 	}, nil
 }
 
+func (m *MemoryCache) PrefixKey(ctx context.Context, key string) (string, error) {
+	return key, nil
+}
+
 // Normal cache-like operations.
 func (m *MemoryCache) Contains(ctx context.Context, key string) (bool, error) {
+	fullKey, err := m.PrefixKey(ctx, key)
+	if err != nil {
+		return false, err
+	}
 	m.lock.Lock()
-	contains := m.l.Contains(key)
+	contains := m.l.Contains(fullKey)
 	m.lock.Unlock()
 	return contains, nil
 }
 
 func (m *MemoryCache) Get(ctx context.Context, key string) ([]byte, error) {
+	fullKey, err := m.PrefixKey(ctx, key)
+	if err != nil {
+		return nil, err
+	}
 	m.lock.Lock()
-	value, ok := m.l.Get(key)
+	value, ok := m.l.Get(fullKey)
 	m.lock.Unlock()
 	if !ok {
-		return nil, status.NotFoundError(fmt.Sprintf("Key %s not found", key))
+		return nil, status.NotFoundError(fmt.Sprintf("Key %s not found", fullKey))
 	}
 	return value, nil
 }
 
 func (m *MemoryCache) Set(ctx context.Context, key string, data []byte) error {
+	fullKey, err := m.PrefixKey(ctx, key)
+	if err != nil {
+		return err
+	}
 	m.lock.Lock()
-	m.l.Add(key, data)
+	m.l.Add(fullKey, data)
 	m.lock.Unlock()
 	return nil
 }
 
 func (m *MemoryCache) Delete(ctx context.Context, key string) error {
+	fullKey, err := m.PrefixKey(ctx, key)
+	if err != nil {
+		return err
+	}
 	m.lock.Lock()
-	m.l.Remove(key)
+	m.l.Remove(fullKey)
 	m.lock.Unlock()
 	return nil
 }
 
 // Low level interface used for seeking and stream-writing.
 func (m *MemoryCache) Reader(ctx context.Context, key string, offset, length int64) (io.Reader, error) {
-	// Locking is handled in Get.
+	// Locking and key prefixing are handled in Get.
 	buf, err := m.Get(ctx, key)
 	if err != nil {
 		return nil, err
@@ -227,7 +247,7 @@ func (m *MemoryCache) Writer(ctx context.Context, key string) (io.WriteCloser, e
 	return &setOnClose{
 		Buffer: &buffer,
 		c: func(b *bytes.Buffer) error {
-			// Locking is handled in Set.
+			// Locking and key prefixing are handled in Set.
 			return m.Set(ctx, key, b.Bytes())
 		},
 	}, nil

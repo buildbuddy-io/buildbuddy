@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
@@ -16,6 +17,7 @@ import (
 )
 
 type ContentAddressableStorageServer struct {
+	env   environment.Env
 	cache interfaces.Cache
 }
 
@@ -25,6 +27,7 @@ func NewContentAddressableStorageServer(env environment.Env) (*ContentAddressabl
 		return nil, fmt.Errorf("A cache is required to enable the ContentAddressableStorageServer")
 	}
 	return &ContentAddressableStorageServer{
+		env:   env,
 		cache: cache,
 	}, nil
 }
@@ -45,7 +48,11 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		if hash == digest.EmptySha256 {
 			continue
 		}
-		exists, err := s.cache.Contains(ctx, hash)
+		ck, err := perms.UserPrefixCacheKey(ctx, s.env, hash)
+		if err != nil {
+			return nil, err
+		}
+		exists, err := s.cache.Contains(ctx, ck)
 		if err != nil {
 			return nil, err
 		}
@@ -91,7 +98,11 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		if hash == digest.EmptyHash {
 			continue
 		}
-		if err := s.cache.Set(ctx, uploadRequest.Digest.Hash, uploadRequest.Data); err != nil {
+		ck, err := perms.UserPrefixCacheKey(ctx, s.env, uploadRequest.Digest.Hash)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.cache.Set(ctx, ck, uploadRequest.Data); err != nil {
 			return nil, err
 		}
 		rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
@@ -125,13 +136,17 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
 	rsp := &repb.BatchReadBlobsResponse{}
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
+	prefix, err := perms.UserPrefixCacheKey(ctx, s.env, "")
+	if err != nil {
+		return nil, err
+	}
 	for _, readDigest := range req.Digests {
 		hash, err := digest.Validate(readDigest)
 		if err != nil {
 			return nil, err
 		}
 		blobRsp := &repb.BatchReadBlobsResponse_Response{Digest: readDigest}
-		blob, err := s.cache.Get(ctx, hash)
+		blob, err := s.cache.Get(ctx, prefix+hash)
 		if err == nil {
 			blobRsp.Data = blob
 			blobRsp.Status = &status.Status{Code: int32(codes.OK)}
@@ -172,13 +187,17 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if req.RootDigest == nil {
 		return fmt.Errorf("RootDigest is required to GetTree")
 	}
+	prefix, err := perms.UserPrefixCacheKey(stream.Context(), s.env, "")
+	if err != nil {
+		return err
+	}
 	fetchDir := func(reqDigest *repb.Digest) (*repb.Directory, error) {
 		hash, err := digest.Validate(reqDigest)
 		if err != nil {
 			return nil, err
 		}
 		// Fetch the "Directory" object which enumerates all the blobs in the directory
-		blob, err := s.cache.Get(stream.Context(), hash)
+		blob, err := s.cache.Get(stream.Context(), prefix+hash)
 		if err != nil {
 			return nil, err
 		}

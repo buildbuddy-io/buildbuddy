@@ -96,7 +96,7 @@ type Cache interface {
 
 	// Begin garbage collection and any other necessary background tasks.
 	Start() error
-	// Stop garbage collection etc.r
+	// Stop garbage collection etc.
 	Stop() error
 }
 
@@ -106,15 +106,6 @@ type InvocationDB interface {
 	LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error)
 	LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error)
 	DeleteInvocation(ctx context.Context, invocationID string) error
-}
-
-type CacheDB interface {
-	// Cache Entry API
-	InsertOrUpdateCacheEntry(ctx context.Context, c *tables.CacheEntry) error
-	IncrementEntryReadCount(ctx context.Context, key string) error
-	DeleteCacheEntry(ctx context.Context, key string) error
-	SumCacheEntrySizes(ctx context.Context) (int64, error)
-	RawQueryCacheEntries(ctx context.Context, sql string, values ...interface{}) ([]*tables.CacheEntry, error)
 }
 
 type AuthDB interface {

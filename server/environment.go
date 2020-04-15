@@ -26,7 +26,6 @@ type Env interface {
 	GetConfigurator() *config.Configurator
 	GetBlobstore() interfaces.Blobstore
 	GetInvocationDB() interfaces.InvocationDB
-	GetCacheDB() interfaces.CacheDB
 	GetHealthChecker() *healthcheck.HealthChecker
 	GetAuthenticator() interfaces.Authenticator
 	SetAuthenticator(a interfaces.Authenticator)

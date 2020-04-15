@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -26,6 +27,7 @@ var (
 )
 
 type ByteStreamServer struct {
+	env   environment.Env
 	cache interfaces.Cache
 }
 
@@ -35,6 +37,7 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 		return nil, fmt.Errorf("A cache is required to enable the ByteStreamServer")
 	}
 	return &ByteStreamServer{
+		env:   env,
 		cache: cache,
 	}, nil
 }
@@ -74,7 +77,11 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err != nil {
 		return err
 	}
-	reader, err := s.cache.Reader(stream.Context(), hash, req.ReadOffset, req.ReadLimit)
+	ck, err := perms.UserPrefixCacheKey(stream.Context(), s.env, hash)
+	if err != nil {
+		return err
+	}
+	reader, err := s.cache.Reader(stream.Context(), ck, req.ReadOffset, req.ReadLimit)
 	if err != nil {
 		return err
 	}
@@ -149,19 +156,23 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error 
 	return nil
 }
 
-func initStreamState(c interfaces.Cache, ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
+func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
 	hash, err := extractHash(req.ResourceName)
 	if err != nil {
 		return nil, err
 	}
-	exists, err := c.Contains(ctx, hash)
+	ck, err := perms.UserPrefixCacheKey(ctx, s.env, hash)
+	if err != nil {
+		return nil, err
+	}
+	exists, err := s.cache.Contains(ctx, ck)
 	if err != nil {
 		return nil, err
 	}
 	if exists {
-		return nil, status.FailedPreconditionError(fmt.Sprintf("File %s already exists", hash))
+		return nil, status.FailedPreconditionError(fmt.Sprintf("File %s already exists (ck: %s)", hash, ck))
 	}
-	wc, err := c.Writer(ctx, hash)
+	wc, err := s.cache.Writer(ctx, ck)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +199,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			if err := checkInitialPreconditions(req); err != nil {
 				return err
 			}
-			streamState, err = initStreamState(s.cache, stream.Context(), req)
+			streamState, err = s.initStreamState(stream.Context(), req)
 			if err != nil {
 				return err
 			}

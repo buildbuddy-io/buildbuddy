@@ -11,6 +11,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server:environment",
         "//server:interfaces",
+        "//server/util:perms",
         "//server/util:status",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@go_googleapis//google/rpc:status_go_proto",
@@ -26,6 +27,7 @@ go_library(
     deps = [
         "//server:environment",
         "//server:interfaces",
+        "//server/util:perms",
         "//server/util:status",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
     ],
@@ -50,6 +52,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server:environment",
         "//server:interfaces",
+        "//server/util:perms",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@go_googleapis//google/rpc:status_go_proto",
         "@org_golang_google_grpc//codes:go_default_library",

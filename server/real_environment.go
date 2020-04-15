@@ -4,7 +4,6 @@ import (
 	"log"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/cachedb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
@@ -22,7 +21,6 @@ type RealEnv struct {
 	dbHandle     *db.DBHandle
 	bs           interfaces.Blobstore
 	invocationDB interfaces.InvocationDB
-	cacheDB      interfaces.CacheDB
 	h            *healthcheck.HealthChecker
 	a            interfaces.Authenticator
 
@@ -64,13 +62,6 @@ func (r *RealEnv) GetInvocationDB() interfaces.InvocationDB {
 }
 func (r *RealEnv) SetInvocationDB(idb interfaces.InvocationDB) {
 	r.invocationDB = idb
-}
-
-func (r *RealEnv) GetCacheDB() interfaces.CacheDB {
-	return r.cacheDB
-}
-func (r *RealEnv) SetCacheDB(cdb interfaces.CacheDB) {
-	r.cacheDB = cdb
 }
 
 func (r *RealEnv) GetWebhooks() []interfaces.Webhook {
@@ -149,7 +140,6 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 		c:        configurator,
 		dbHandle: dbHandle,
 		bs:       bs,
-		cacheDB:  cachedb.NewCacheDB(dbHandle),
 		h:        checker,
 		a:        &nullauth.NullAuthenticator{},
 	}

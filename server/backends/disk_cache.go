@@ -68,6 +68,9 @@ func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
 }
 
 func (c *DiskCache) initializeCache() error {
+	if err := disk.EnsureDirectoryExists(c.rootDir); err != nil {
+		return err
+	}
 	records := make([]*fileRecord, 0)
 	walkFn := func(path string, info os.FileInfo, err error) error {
 		if !info.IsDir() {
@@ -145,7 +148,7 @@ func (c *DiskCache) checkSizeAndEvict(ctx context.Context, n int64) error {
 	return nil
 }
 
-func (c *DiskCache) blobPath(blobName string) (string, error) {
+func (c *DiskCache) PrefixKey(ctx context.Context, blobName string) (string, error) {
 	// Probably could be more careful here but we are generating these ourselves
 	// for now.
 	if strings.Contains(blobName, "..") {
@@ -155,7 +158,7 @@ func (c *DiskCache) blobPath(blobName string) (string, error) {
 }
 
 func (c *DiskCache) Contains(ctx context.Context, key string) (bool, error) {
-	fullPath, err := c.blobPath(key)
+	fullPath, err := c.PrefixKey(ctx, key)
 	if err != nil {
 		return false, err
 	}
@@ -163,11 +166,20 @@ func (c *DiskCache) Contains(ctx context.Context, key string) (bool, error) {
 	// We could check the disk and see if the file exists, because it's
 	// possible the file has been deleted out from under us, but in the
 	// interest of performance we just check our local records.
+
+	// Why do we "use" the entry? (AKA mark it as not ready for eviction)
+	// From the protocol description:
+	// Implementations SHOULD ensure that any blobs referenced from the
+	// [ContentAddressableStorage][build.bazel.remote.execution.v2.ContentAddressableStorage]
+	// are available at the time of returning the
+	// [ActionResult][build.bazel.remote.execution.v2.ActionResult] and will be
+	// for some period of time afterwards. The TTLs of the referenced blobs SHOULD be increased
+	// if necessary and applicable.
 	return c.useEntry(fullPath), nil
 }
 
 func (c *DiskCache) Get(ctx context.Context, key string) ([]byte, error) {
-	fullPath, err := c.blobPath(key)
+	fullPath, err := c.PrefixKey(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +188,7 @@ func (c *DiskCache) Get(ctx context.Context, key string) ([]byte, error) {
 }
 
 func (c *DiskCache) Set(ctx context.Context, key string, data []byte) error {
-	fullPath, err := c.blobPath(key)
+	fullPath, err := c.PrefixKey(ctx, key)
 	if err != nil {
 		return err
 	}
@@ -198,7 +210,7 @@ func (c *DiskCache) Set(ctx context.Context, key string, data []byte) error {
 }
 
 func (c *DiskCache) Delete(ctx context.Context, key string) error {
-	fullPath, err := c.blobPath(key)
+	fullPath, err := c.PrefixKey(ctx, key)
 	if err != nil {
 		return err
 	}
@@ -207,7 +219,7 @@ func (c *DiskCache) Delete(ctx context.Context, key string) error {
 }
 
 func (c *DiskCache) Reader(ctx context.Context, key string, offset, length int64) (io.Reader, error) {
-	fullPath, err := c.blobPath(key)
+	fullPath, err := c.PrefixKey(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +253,7 @@ func (d *dbWriteOnClose) Close() error {
 }
 
 func (c *DiskCache) Writer(ctx context.Context, key string) (io.WriteCloser, error) {
-	fullPath, err := c.blobPath(key)
+	fullPath, err := c.PrefixKey(ctx, key)
 	if err != nil {
 		return nil, err
 	}

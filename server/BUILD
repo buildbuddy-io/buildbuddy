@@ -87,7 +87,6 @@ go_library(
         ":interfaces",
         ":nullauth",
         "//server/backends:blobstore",
-        "//server/backends:cachedb",
         "//server/backends:disk_cache",
         "//server/backends:invocationdb",
         "//server/backends:memory_cache",
