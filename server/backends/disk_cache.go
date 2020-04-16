@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -45,7 +46,17 @@ type fileRecord struct {
 
 func getLastUse(info os.FileInfo) time.Time {
 	stat := info.Sys().(*syscall.Stat_t)
-	return time.Unix(stat.Atim.Sec, stat.Atim.Nsec)
+	// Super Gross! https://github.com/golang/go/issues/31735
+	value := reflect.ValueOf(stat)
+	var ts syscall.Timespec
+	if timeField := value.Elem().FieldByName("Atimespec"); timeField.IsValid() {
+		ts = timeField.Interface().(syscall.Timespec)
+	} else if timeField := value.Elem().FieldByName("Atim"); timeField.IsValid() {
+		ts = timeField.Interface().(syscall.Timespec)
+	} else {
+		ts = syscall.Timespec{}
+	}
+	return time.Unix(ts.Sec, ts.Nsec)
 }
 
 func makeRecord(fullPath string, info os.FileInfo) *fileRecord {
