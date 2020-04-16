@@ -135,7 +135,28 @@ func assembleURL(host, scheme, port string) string {
 	return url
 }
 
-func addWriteKey(rawURL, writeKey string) string {
+func (s *BuildBuddyServer) getGroupLoginPW(ctx context.Context) (string, string) {
+	l := ""
+	p := ""
+	if userDB := s.env.GetUserDB(); userDB != nil {
+		if tu, _ := userDB.GetUser(ctx); tu != nil {
+			parts := strings.Split(tu.Email, "@")
+			if len(parts) == 2 {
+				if dg, err := userDB.GetDomainOwnerGroup(ctx, parts[1]); err == nil {
+					l = dg.GroupID
+					p = dg.WriteToken
+				}
+			}
+		}
+	}
+	return l, p
+}
+
+func insertPasswork(rawURL, username, password string) string {
+	if username == "" && password == "" {
+		return rawURL
+	}
+	writeKey := username + ":" + password
 	return strings.Replace(rawURL, "://", "://"+writeKey+"@", 1)
 }
 
@@ -162,8 +183,8 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		grpcPort := getIntFlag("grpc_port", "1985")
 		eventsAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 	}
-	// TODO(tylerw): Populate this write key
-	// eventsAPIURL = addWriteKey(resultsURL, "foo")
+	username, pw := s.getGroupLoginPW(ctx)
+	eventsAPIURL = insertPasswork(resultsURL, username, pw)
 	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", eventsAPIURL))
 
 	if s.env.GetCache() != nil {
@@ -172,11 +193,11 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 			grpcPort := getIntFlag("grpc_port", "1985")
 			cacheAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		// TODO(tylerw): Populate this write key
-		// cacheAPIURL = addWriteKey(cacheAPIURL, "foo")
+		username, pw := s.getGroupLoginPW(ctx)
+		cacheAPIURL = insertPasswork(cacheAPIURL, username, pw)
 		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", cacheAPIURL))
-
 	}
+
 	return &bzpb.GetBazelConfigResponse{
 		ConfigOption: configOptions,
 	}, nil
