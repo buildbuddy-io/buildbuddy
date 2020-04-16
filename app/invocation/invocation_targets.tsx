@@ -7,6 +7,7 @@ interface Props {
   model: InvocationModel,
   pageSize: number,
   filter: string,
+  mode: string
 }
 
 export default class TargetsComponent extends React.Component {
@@ -14,7 +15,7 @@ export default class TargetsComponent extends React.Component {
 
   render() {
     return <div>
-      {!!this.props.model.failed.length &&
+      {!!this.props.model.failed.length && this.props.mode != "passing" &&
         <TargetsCardComponent
           buildEvents={this.props.model.failed}
           iconPath="/image/x-circle.svg"
@@ -25,7 +26,7 @@ export default class TargetsComponent extends React.Component {
           pageSize={this.props.pageSize}
         />}
 
-      {!!this.props.model.broken.length &&
+      {!!this.props.model.broken.length && this.props.mode != "passing" &&
         <TargetsCardComponent
           buildEvents={this.props.model.broken}
           iconPath="/image/x-circle.svg"
@@ -36,7 +37,7 @@ export default class TargetsComponent extends React.Component {
           pageSize={this.props.pageSize}
         />}
 
-      {!!this.props.model.flaky.length &&
+      {!!this.props.model.flaky.length && this.props.mode != "passing" &&
         <TargetsCardComponent
           buildEvents={this.props.model.flaky}
           iconPath="/image/x-circle.svg"
@@ -47,7 +48,7 @@ export default class TargetsComponent extends React.Component {
           pageSize={this.props.pageSize}
         />}
 
-      {!!this.props.model.succeeded.length &&
+      {!!this.props.model.succeeded.length && this.props.mode != "failing" &&
         <TargetsCardComponent
           buildEvents={this.props.model.succeeded}
           iconPath="/image/check-circle.svg"
