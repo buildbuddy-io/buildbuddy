@@ -154,7 +154,7 @@ func (s *BuildBuddyServer) getGroupLoginPW(ctx context.Context) (string, string)
 	return "", ""
 }
 
-func insertPasswork(rawURL, username, password string) string {
+func insertPassword(rawURL, username, password string) string {
 	if username == "" && password == "" {
 		return rawURL
 	}
@@ -186,7 +186,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		eventsAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 	}
 	username, pw := s.getGroupLoginPW(ctx)
-	eventsAPIURL = insertPasswork(resultsURL, username, pw)
+	eventsAPIURL = insertPassword(eventsAPIURL, username, pw)
 	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", eventsAPIURL))
 
 	if s.env.GetCache() != nil {
@@ -196,7 +196,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 			cacheAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
 		username, pw := s.getGroupLoginPW(ctx)
-		cacheAPIURL = insertPasswork(cacheAPIURL, username, pw)
+		cacheAPIURL = insertPassword(cacheAPIURL, username, pw)
 		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", cacheAPIURL))
 	}
 
