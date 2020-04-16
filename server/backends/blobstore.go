@@ -53,8 +53,8 @@ func decompress(in []byte, err error) ([]byte, error) {
 
 	var buf bytes.Buffer
 	// Write instead of using NewBuffer because if this is not a gzip file
-	// we want to return "in" directly later, and NewBuffer takes ownership
-	// of it.
+	// we want to return "in" directly later, and NewBuffer would take
+	// ownership of it.
 	if _, err := buf.Write(in); err != nil {
 		return nil, err
 	}
