@@ -136,20 +136,22 @@ func assembleURL(host, scheme, port string) string {
 }
 
 func (s *BuildBuddyServer) getGroupLoginPW(ctx context.Context) (string, string) {
-	l := ""
-	p := ""
 	if userDB := s.env.GetUserDB(); userDB != nil {
 		if tu, _ := userDB.GetUser(ctx); tu != nil {
-			parts := strings.Split(tu.Email, "@")
-			if len(parts) == 2 {
-				if dg, err := userDB.GetDomainOwnerGroup(ctx, parts[1]); err == nil {
-					l = dg.GroupID
-					p = dg.WriteToken
+			for _, g := range tu.Groups {
+				if g.OwnedDomain != "" {
+					return g.GroupID, g.WriteToken
+				}
+			}
+			// Still here? This user might have a self-owned group, let's check for that.
+			for _, g := range tu.Groups {
+				if g.GroupID == strings.Replace(tu.UserID, "US", "GR", 1) {
+					return g.GroupID, g.WriteToken
 				}
 			}
 		}
 	}
-	return l, p
+	return "", ""
 }
 
 func insertPasswork(rawURL, username, password string) string {
