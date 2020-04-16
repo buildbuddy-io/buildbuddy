@@ -142,7 +142,7 @@ func (s *BuildBuddyServer) getGroupLoginPW(ctx context.Context) (string, string)
 		if tu, _ := userDB.GetUser(ctx); tu != nil {
 			parts := strings.Split(tu.Email, "@")
 			if len(parts) == 2 {
-				if dg, err := userDB.GetDomainOwnerGroup(ctx, parts[1]); err == nil {
+				if dg, err := userDB.GetDomainOwnerGroup(ctx, parts[1]); err == nil && dg != nil {
 					l = dg.GroupID
 					p = dg.WriteToken
 				}
