@@ -10,6 +10,11 @@ export function durationUsec(duration: number | Long) {
   return durationSec(seconds);
 }
 
+export function durationMillis(duration: number | Long) {
+  let seconds = (+duration) / 1000;
+  return durationSec(seconds);
+}
+
 export function durationSec(duration: number | Long) {
   let seconds = +duration;
   if (seconds > 60 * 60 * 24 * 365) {
@@ -46,8 +51,12 @@ export function truncateList(list: string[]) {
 }
 
 export function formatTimestampUsec(timestamp: number | Long) {
-  return `${moment(+timestamp / 1000).format('MMMM Do, YYYY')} at ${moment(+timestamp / 1000).format('h:mm:ss a')}`;
+  return formatTimestampMillis(+timestamp / 1000);
+}
+
+export function formatTimestampMillis(timestamp: number | Long) {
+  return `${moment(+timestamp).format('MMMM Do, YYYY')} at ${moment(+timestamp).format('h:mm:ss a')}`;
 }
 
 
-export default { durationSec, durationUsec, sentenceCase, percent, truncateList, formatTimestampUsec };
+export default { durationSec, durationMillis, durationUsec, sentenceCase, percent, truncateList, formatTimestampUsec, formatTimestampMillis };

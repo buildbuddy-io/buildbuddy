@@ -11,6 +11,7 @@ ts_library(
         "//app/format",
         "//app/router",
         "//app/service",
+        "//app/target",
         "//app/terminal",
         "//proto:build_event_stream_ts_proto",
         "//proto:command_line_ts_proto",

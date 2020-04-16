@@ -25,6 +25,11 @@ class Router {
     window.history.pushState({ path: newUrl }, '', newUrl);
   }
 
+  navigateToQueryParam(key: string, value: string) {
+    let targetUrl = `?${key}=${value}`;
+    window.history.pushState({ path: targetUrl }, '', targetUrl);
+  }
+
   navigateHome(hash?: string) {
     this.navigateTo('/' + (hash || ""));
   }

@@ -35,7 +35,8 @@ export default class InvocationModel {
   clientEnvMap = new Map<string, string>();
   configuredMap = new Map<string, invocation.InvocationEvent>();
   completedMap = new Map<string, invocation.InvocationEvent>();
-  testResultMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
+  testResultMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
+  testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
 
   static modelFromInvocations(invocations: invocation.Invocation[]) {
     let model = new InvocationModel();
@@ -58,7 +59,12 @@ export default class InvocationModel {
           model.completedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
         }
         if (buildEvent.testResult) {
-          model.testResultMap.set(buildEvent.id.testResult.label, event as invocation.InvocationEvent);
+          let results = model.testResultMap.get(buildEvent.id.testResult.label) || [];
+          results.push(event as invocation.InvocationEvent);
+          model.testResultMap.set(buildEvent.id.testResult.label, results);
+        }
+        if (buildEvent.testSummary) {
+          model.testSummaryMap.set(buildEvent.id.testSummary.label, event as invocation.InvocationEvent);
         }
         if (buildEvent.started) model.started = buildEvent.started as build_event_stream.BuildStarted;
         if (buildEvent.expanded) model.expanded = buildEvent as build_event_stream.BuildEvent;
@@ -77,12 +83,12 @@ export default class InvocationModel {
 
     for (let label of model.completedMap.keys()) {
       let buildEvent = model.completedMap.get(label)?.buildEvent;
-      let testResult = model.testResultMap.get(label)?.buildEvent.testResult;
-      if (testResult && testResult.status == build_event_stream.TestStatus.FLAKY) {
+      let testResult = model.testSummaryMap.get(label)?.buildEvent.testSummary;
+      if (testResult && testResult.overallStatus == build_event_stream.TestStatus.FLAKY) {
         model.flaky.push(buildEvent as build_event_stream.BuildEvent);
-      } else if (testResult && testResult.status == build_event_stream.TestStatus.FAILED_TO_BUILD) {
+      } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.FAILED_TO_BUILD) {
         model.broken.push(buildEvent as build_event_stream.BuildEvent);
-      } else if (!buildEvent.completed.success || (testResult && testResult.status != build_event_stream.TestStatus.PASSED)) {
+      } else if (!buildEvent.completed.success || (testResult && testResult.overallStatus != build_event_stream.TestStatus.PASSED)) {
         model.failed.push(buildEvent as build_event_stream.BuildEvent);
       } else {
         model.succeeded.push(buildEvent as build_event_stream.BuildEvent);
@@ -163,7 +169,7 @@ export default class InvocationModel {
   }
 
   getAllPatterns(patternLimit?: number) {
-    let patterns = this.expanded?.id.pattern.pattern || this.aborted?.id.pattern.pattern;
+    let patterns = this.expanded?.id.pattern.pattern || this.aborted?.id.pattern.pattern || [];
     if (patternLimit && patterns.length > patternLimit) {
       return `${patterns.slice(0, patternLimit).join(", ")} and ${patterns.length - 3} more`;
     }
@@ -240,18 +246,10 @@ export default class InvocationModel {
     return `${((+completionTime.seconds) - (+beginTime.seconds) + nanos).toFixed(3)}`;
   }
 
-  getTestResultLog(label: string) {
-    let testResult = this.testResultMap.get(label)?.buildEvent.testResult;
-    if (!testResult || !testResult.testActionOutput.length) {
-      return
-    }
-    return testResult.testActionOutput[0].uri;
-  }
-
   getRuntime(label: string) {
-    let testResult = this.testResultMap.get(label)?.buildEvent.testResult;
+    let testResult = this.testSummaryMap.get(label)?.buildEvent.testSummary;
     if (testResult) {
-      return +testResult.testAttemptDurationMillis / 1000 + " seconds";
+      return +testResult.totalRunDurationMillis / 1000 + " seconds";
     }
     return this.getDuration(
       this.completedMap.get(label)?.eventTime,

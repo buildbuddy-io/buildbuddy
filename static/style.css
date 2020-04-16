@@ -615,6 +615,19 @@ button {
   margin-top: 8px;
 }
 
+.test-log {
+  white-space: pre-wrap;
+  font-family: 'Source Code Pro', monospace;
+  line-height: 1.4em;
+  margin-top: 16px;
+  word-break: break-word;
+}
+
+.test-subtitle {
+  margin-top: 4px;
+  color: #aaa;
+}
+
 .invocation-section {
   display: flex;
 }

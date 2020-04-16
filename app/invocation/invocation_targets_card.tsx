@@ -1,5 +1,6 @@
 import React from 'react';
 import InvocationModel from './invocation_model';
+import router from '../router/router';
 import { build_event_stream } from '../../proto/build_event_stream_ts_proto';
 
 interface Props {
@@ -28,19 +29,7 @@ export default class TargetsCardComponent extends React.Component {
   }
 
   handleTargetClicked(label: string) {
-    let log = this.props.model.getTestResultLog(label);
-    if (!log) {
-      let filterParam = '?artifactFilter=' + encodeURIComponent(label);
-      var newurl = window.location.protocol + "//" + window.location.host + window.location.pathname + filterParam + "#artifacts";
-      window.history.pushState({ path: newurl }, '', newurl);
-      return;
-    }
-    if (log.startsWith("file://")) {
-      window.prompt("Copy test log path to clipboard: Cmd+C, Enter", log);
-    } else if (log.startsWith("bytestream://")) {
-       let downloadUri = "/file/download?" + "bytestream_url=" + log;
-       window.open(downloadUri);
-    }
+    router.navigateToQueryParam("target", label);
   }
 
   render() {
