@@ -6,6 +6,7 @@ ts_library(
     name = "docs",
     srcs = glob(["*.tsx"]),
     deps = [
+        "//app/capabilities",
         "//app/service",
         "//proto:bazel_config_ts_proto",
         "@npm//@types/react",

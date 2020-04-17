@@ -72,12 +72,12 @@ export default class ArtifactsCardComponent extends React.Component {
       if (this.status >= 200 && this.status < 400) {
         card.updateProfile(JSON.parse(pako.inflate(this.response, { to: 'string' })));
       } else {
-        console.error("Error loading by bystream timing profile!");
+        console.error("Error loading bytestream timing profile!");
       }
     };
 
     request.onerror = function () {
-      console.error("Error loading by bystream timing profile!");
+      console.error("Error loading bytestream timing profile!");
     };
 
     request.send();

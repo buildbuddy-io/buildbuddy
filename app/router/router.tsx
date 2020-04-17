@@ -44,7 +44,7 @@ class Router {
 
   navigateToUserHistory(user: string) {
     if (!capabilities.canNavigateToPath(Path.userHistoryPath)) {
-      alert(`User history is not available in ${capabilities.name}`);
+      alert(`User history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`);
       return;
     }
     this.navigateTo(Path.userHistoryPath + user);
@@ -52,7 +52,7 @@ class Router {
 
   navigateToHostHistory(host: string) {
     if (!capabilities.canNavigateToPath(Path.hostHistoryPath)) {
-      alert(`Host history is not available in ${capabilities.name}`);
+      alert(`Host history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`);
       return;
     }
     this.navigateTo(Path.hostHistoryPath + host);
