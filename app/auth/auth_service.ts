@@ -11,7 +11,12 @@ export class User {
   selectedGroup: grp.Group;
 
   selectedGroupName() {
+    if (this.selectedGroup?.name == "DEFAULT_GROUP") return "Organization";
     return this.selectedGroup?.name;
+  }
+
+  isInDefaultGroup() {
+    return this.selectedGroup?.id == "GR0000000000000000000";
   }
 }
 
