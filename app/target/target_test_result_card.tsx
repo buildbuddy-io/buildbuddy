@@ -34,7 +34,7 @@ export default class TargetTestResultCardComponent extends React.Component {
   }
 
   fetchTestLog() {
-    let testLogUrl = this.props.testResult.buildEvent.testResult.testActionOutput.find((log: any) => log.name == "test.log").uri;
+    let testLogUrl = this.props.testResult.buildEvent.testResult.testActionOutput.find((log: any) => log.name == "test.log")?.uri;
 
     if (!testLogUrl) {
       return;
@@ -70,7 +70,7 @@ export default class TargetTestResultCardComponent extends React.Component {
   }
 
   handleArtifactClicked() {
-    let testLogUrl = this.props.testResult.buildEvent.testResult.testActionOutput.find((log: any) => log.name == "test.log").uri;
+    let testLogUrl = this.props.testResult.buildEvent.testResult.testActionOutput.find((log: any) => log.name == "test.log")?.uri;
 
     if (testLogUrl.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", testLogUrl);

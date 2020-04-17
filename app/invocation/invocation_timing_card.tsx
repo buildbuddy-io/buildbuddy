@@ -46,7 +46,7 @@ export default class ArtifactsCardComponent extends React.Component {
   }
 
   fetchProfile() {
-    let profileUrl = this.props.model.buildToolLogs?.log.find((log: any) => log.name == "command.profile.gz").uri;
+    let profileUrl = this.props.model.buildToolLogs?.log.find((log: any) => log.name == "command.profile.gz")?.uri;
 
     if (!profileUrl) {
       this.setState({ ...this.state, buildInProgress: true });
