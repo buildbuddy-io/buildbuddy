@@ -55,6 +55,7 @@ export default class MenuComponent extends React.Component {
               <div className="side-menu">
                 <ul>
                   {this.props.children && <li>{this.props.children}</li>}
+                  {this.props.user && !this.props.user?.selectedGroup.ownedDomain && <li><a target="_blank" href="https://buildbuddy.typeform.com/to/PFjD5A">Create organization</a></li>}
                   <li><a target="_blank" href="https://github.com/buildbuddy-io/buildbuddy/issues/new">Report an issue</a></li>
                   <li><a target="_blank" href="https://github.com/buildbuddy-io/buildbuddy">Github repo</a></li>
                   <li>
@@ -63,6 +64,7 @@ export default class MenuComponent extends React.Component {
                 </a>
                   </li>
                   <li><a href="/docs/setup">Setup instructions</a></li>
+                  {!capabilities.auth && <li><a target="_blank" href="https://buildbuddy.typeform.com/to/wIXFIA">Upgrade to Enterprise</a></li>}
                   <li><a href="mailto:hello@buildbuddy.io">Contact us</a></li>
                   {(capabilities.auth && !this.props.user) && <li onClick={this.handleLoginClicked.bind(this)}>Login</li>}
                   {(capabilities.auth && this.props.user) && <li onClick={this.handleLogoutClicked.bind(this)}>Logout</li>}

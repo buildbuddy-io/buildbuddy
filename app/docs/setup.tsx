@@ -3,6 +3,7 @@ import rpcService from '../service/rpc_service';
 import { bazel_config } from '../../proto/bazel_config_ts_proto';
 import CacheCodeComponent from './cache_code';
 import SetupCodeComponent from './setup_code';
+import capabilities from '../capabilities/capabilities';
 
 interface State {
   menuExpanded: boolean;
@@ -37,37 +38,32 @@ export default class SetupComponent extends React.Component {
       <div className="home">
         <div className="container">
           <div className="title">Getting Started with BuildBuddy</div>
-          <p>
             To get started, add the following two lines to your .bazelrc file. If you don't have a .bazelrc file - create one in the same directory as your Bazel WORKSPACE file with the two following lines:
-          </p>
-          <p>
-            <b>.bazelrc</b>
+
+            <h2>.bazelrc</h2>
             {this.state.bazelConfigResponse && <SetupCodeComponent bazelConfigResponse={this.state.bazelConfigResponse} />}
-          </p>
-          <p>
             Once you've added those two lines to your .bazelrc - you'll get a BuildBuddy url printed at the beginning and the end of every Bazel invocation like this:
-          </p>
-          <p>
-            <b>Bazel invocation</b>
+
+            <h2>Bazel invocation</h2>
             <code>
             $ bazel build //...<br/>
             INFO: Streaming build results to: {window.location.protocol}//{window.location.host}/invocation/7bedd84e-525e-4b93-a5f5-53517d57752b<br/>
             ...
             </code>
-          </p>
-          <p>
             Now you can command click / double click on these urls to see the results of your build!
-          </p>
-          <p>
-            <b>Optional: Caching, artifact uploads, and profiling</b>
-          </p>
-          <p>
-            If you'd like to enable caching, which makes build artifacts clickable and enables the timing tab - you can add the following additional line to your .bazelrc:
+
+            <h2>Optional: Caching, artifact uploads, and profiling</h2>
+            If you'd like to enable caching, which makes build artifacts clickable, enables the timing tab, and viewing of test logs - you can add the following additional line to your .bazelrc:
             {this.state.bazelConfigResponse && <CacheCodeComponent bazelConfigResponse={this.state.bazelConfigResponse} />}
-          </p>
-          <p>
-            Feel free to reach out to <a href="mailto:hello@buildbuddy.io">hello@buildbuddy.io</a> if you have any questions or feature requests.
-          </p>
+
+            {!capabilities.auth && <div>
+              <h2>Enterprise BuildBuddy</h2>
+                Want enterprise features like SSO, organization build history, user build history, and more?<br/><br/>
+                <b><a target="_blank" href="https://buildbuddy.typeform.com/to/wIXFIA">Click here</a></b> to upgrade to enterprise BuildBuddy.
+            </div>}
+
+            <h2>Get in touch!</h2>
+            Reach out to <a href="mailto:hello@buildbuddy.io">hello@buildbuddy.io</a> if you have any questions or feature requests!
         </div>
       </div>
     );

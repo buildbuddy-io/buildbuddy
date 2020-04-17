@@ -128,7 +128,7 @@ button {
 }
 
 .side-menu-shade {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   right: 0;
@@ -300,6 +300,16 @@ button {
   color: #aaa;
 }
 
+.org-button {
+  float: right;
+  background-color: rgba(38,50,56 ,1);
+  padding: 8px 16px;
+  border-radius: 32px;
+  margin-top: -6px;
+  color: #fff;
+  font-weight: 600;
+}
+
 /** Card **/
 
 .card {
@@ -404,7 +414,13 @@ button {
 
 .home .title {
   font-size: 32px;
-  font-weight: 700;  
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.home h2 {
+  margin-top: 32px;
+  margin-bottom: 16px;
 }
 
 .home code {
@@ -413,6 +429,7 @@ button {
   border: 1px solid #eee;
   border-radius: 8px;
   margin-top: 16px;
+  margin-bottom: 16px;
   background-color: #fafafa;
   font-family: 'Source Code Pro', monospace;
   line-height: 1.6em;

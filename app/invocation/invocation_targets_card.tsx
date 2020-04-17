@@ -11,6 +11,7 @@ interface Props {
   presentVerb: string,
   pageSize: number,
   filter: string,
+  className: string,
 }
 
 interface State {
@@ -36,7 +37,7 @@ export default class TargetsCardComponent extends React.Component {
     let events = this.props.buildEvents
       .filter(target => !this.props.filter || target.id.targetCompleted.label.toLowerCase().includes(this.props.filter.toLowerCase()));
 
-    return <div className="card">
+    return <div className={`card ${this.props.className}`}>
       <img className="icon" src={this.props.iconPath} />
       <div className="content">
         <div className="title">

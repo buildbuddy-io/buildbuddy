@@ -56,14 +56,14 @@ export default class TargetTestResultCardComponent extends React.Component {
     let card = this;
     request.onload = function () {
       if (this.status >= 200 && this.status < 400) {
-        card.updateTestLog(this.response);
+        card.setState({...card.state, testLog: this.response});
       } else {
-        console.error("Error loading by bystream timing profile!");
+        card.setState({...card.state, testLog: "Error loading bytestream test log!"});
       }
     };
 
     request.onerror = function () {
-      console.error("Error loading by bystream timing profile!");
+      card.setState({...card.state, testLog: "Error loading bytestream test log!"});
     };
 
     request.send();
@@ -78,11 +78,6 @@ export default class TargetTestResultCardComponent extends React.Component {
        let downloadUri = "/file/download?" + "filename=test.log&bytestream_url=" + testLogUrl;
        window.open(downloadUri);
     }
-  }
-
-  updateTestLog(testLog: string) {
-    this.state.testLog = testLog;
-    this.setState(this.state);
   }
 
   getStatusTitle(status: build_event_stream.TestStatus) {
