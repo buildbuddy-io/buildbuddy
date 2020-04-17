@@ -64,12 +64,19 @@ type SlackConfig struct {
 	WebhookURL string `yaml:"webhook_url"`
 }
 
+type GCSCacheConfig struct {
+       Bucket          string `yaml:"bucket"`
+       CredentialsFile string `yaml:"credentials_file"`
+       ProjectID       string `yaml:"project_id"`
+       TTLDays         int64  `yaml:"ttl_days"`
+}
+
 type cacheConfig struct {
-	Disk         *DiskConfig `yaml:"disk"`
-	GCS          *GCSConfig  `yaml:"gcs"`
-	InMemory     bool        `yaml:"in_memory"`
-	TTLSeconds   int         `yaml:"ttl_seconds"`
-	MaxSizeBytes int64       `yaml:"max_size_bytes"`
+       Disk         *DiskConfig     `yaml:"disk"`
+       GCS          *GCSCacheConfig `yaml:"gcs"`
+       InMemory     bool            `yaml:"in_memory"`
+       TTLSeconds   int             `yaml:"ttl_seconds"`
+       MaxSizeBytes int64           `yaml:"max_size_bytes"`
 }
 
 type authConfig struct {
@@ -237,7 +244,7 @@ func (c *Configurator) GetCacheDiskConfig() *DiskConfig {
 	return c.gc.Cache.Disk
 }
 
-func (c *Configurator) GetCacheGCSConfig() *GCSConfig {
+func (c *Configurator) GetCacheGCSConfig() *GCSCacheConfig {
 	c.rereadIfStale()
 	return c.gc.Cache.GCS
 }

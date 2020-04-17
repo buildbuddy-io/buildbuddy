@@ -165,13 +165,14 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if err != nil {
 		return nil, err
 	}
-	exists, err := s.cache.Contains(ctx, ck)
-	if err != nil {
-		return nil, err
-	}
-	if exists {
-		return nil, status.FailedPreconditionError(fmt.Sprintf("File %s already exists (ck: %s)", hash, ck))
-	}
+	// The protocol says it is optional to allow overwriting. Skip it for now.
+	// exists, err := s.cache.Contains(ctx, ck)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// if exists {
+	// 	return nil, status.FailedPreconditionError(fmt.Sprintf("File %s already exists (ck: %s)", hash, ck))
+	// }
 	wc, err := s.cache.Writer(ctx, ck)
 	if err != nil {
 		return nil, err
