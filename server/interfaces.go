@@ -129,7 +129,6 @@ type UserDB interface {
 
 	// Groups API
 	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) error
-	GetDomainOwnerGroup(ctx context.Context, domain string) (*tables.Group, error)
 	GetBasicAuthGroup(ctx context.Context) (*tables.Group, error)
 	DeleteGroup(ctx context.Context, groupID string) error
 }
