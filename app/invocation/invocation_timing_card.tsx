@@ -67,10 +67,16 @@ export default class ArtifactsCardComponent extends React.Component {
     request.responseType = "arraybuffer";
     request.open('GET', "/file/download?filename=trace.gz&bytestream_url=" + encodeURIComponent(profileUrl), true);
 
+    // TODO(siggisim): Do something more robust here
+    var isSafari = /constructor/i.test(window.HTMLElement as any) || (function (p) { return p.toString() === "[object SafariRemoteNotification]"; })(!(window as any).safari || (typeof (window as any).safari !== 'undefined' && (window as any).safari.pushNotification));
+
     let card = this;
     request.onload = function () {
       if (this.status >= 200 && this.status < 400) {
-        card.updateProfile(JSON.parse(pako.inflate(this.response, { to: 'string' })));
+        // Safari doesn't automatically ungzip 1 layer like Chrome and Firefox do for some reason.
+        let response = isSafari ? pako.inflate(new Uint8Array(this.response)) : this.response;
+        let decompressedResponse = pako.inflate(response, { to: 'string' });
+        card.updateProfile(JSON.parse(decompressedResponse));
       } else {
         console.error("Error loading bytestream timing profile!");
       }
