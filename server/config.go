@@ -65,18 +65,18 @@ type SlackConfig struct {
 }
 
 type GCSCacheConfig struct {
-       Bucket          string `yaml:"bucket"`
-       CredentialsFile string `yaml:"credentials_file"`
-       ProjectID       string `yaml:"project_id"`
-       TTLDays         int64  `yaml:"ttl_days"`
+	Bucket          string `yaml:"bucket"`
+	CredentialsFile string `yaml:"credentials_file"`
+	ProjectID       string `yaml:"project_id"`
+	TTLDays         int64  `yaml:"ttl_days"`
 }
 
 type cacheConfig struct {
-       Disk         *DiskConfig     `yaml:"disk"`
-       GCS          *GCSCacheConfig `yaml:"gcs"`
-       InMemory     bool            `yaml:"in_memory"`
-       TTLSeconds   int             `yaml:"ttl_seconds"`
-       MaxSizeBytes int64           `yaml:"max_size_bytes"`
+	Disk         *DiskConfig     `yaml:"disk"`
+	GCS          *GCSCacheConfig `yaml:"gcs"`
+	InMemory     bool            `yaml:"in_memory"`
+	TTLSeconds   int             `yaml:"ttl_seconds"`
+	MaxSizeBytes int64           `yaml:"max_size_bytes"`
 }
 
 type authConfig struct {

@@ -54,7 +54,7 @@ func filterUnstructuredCommandLine(in *build_event_stream.UnstructuredCommandLin
 		if strings.HasPrefix(arg, envVarPrefix+envVarOptionName) {
 			parts := strings.Split(arg, envVarSeparator)
 			if len(parts) < 2 {
-				continue;
+				continue
 			}
 			out.Args[i] = envVarPrefix + envVarOptionName + envVarSeparator + parts[1] + envVarSeparator + envVarRedactedPlaceholder
 		}

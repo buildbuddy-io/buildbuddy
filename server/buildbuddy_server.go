@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -20,6 +21,10 @@ import (
 	uspb "proto/user"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+)
+
+const (
+	bytestreamProtocolPrefix = "bytestream://"
 )
 
 type BuildBuddyServer struct {
@@ -213,40 +218,36 @@ func (s *BuildBuddyServer) GetInvocationStat(ctx context.Context, req *inpb.GetI
 }
 
 type bsLookup struct {
-	HostPort string
-	Blob     string
+	URL      *url.URL
 	Filename string
 }
 
-func filenameFromBlobname(blobname string) string {
-	parts := strings.Split(blobname, "/")
-	if len(parts) == 3 {
-		return parts[1]
+func getBestFilename(filename, blobname string) string {
+	// First try to use the filename parameter
+	parts := strings.Split(filename, "/")
+	name := parts[len(parts)-1]
+	if name != "" {
+		return name
 	}
+	// Next try to extract a reasonable name from the blob name.
+	parts = strings.Split(blobname, "/")
+	if len(parts) == 4 {
+		return parts[2]
+	}
+	// Finally, just return the blobname.
 	return blobname
 }
 
-func parseFilename(filename string) string {
-	parts := strings.Split(filename, "/")
-	return parts[len(parts)-1]
-}
-
 func parseByteStreamURL(bsURL, filename string) (*bsLookup, error) {
-	bsPrefix := "bytestream://"
-	if strings.HasPrefix(bsURL, bsPrefix) {
-		hostBlobString := strings.TrimPrefix(bsURL, bsPrefix)
-		parts := strings.SplitN(hostBlobString, "/", 2)
-		if len(parts) == 2 {
-			bsl := &bsLookup{
-				HostPort: parts[0],
-				Blob:     parts[1],
-				Filename: parseFilename(filename),
-			}
-			if bsl.Filename == "" {
-				bsl.Filename = filenameFromBlobname(bsl.Blob)
-			}
-			return bsl, nil
+	if strings.HasPrefix(bsURL, bytestreamProtocolPrefix) {
+		u, err := url.Parse(bsURL)
+		if err != nil {
+			return nil, err
 		}
+		return &bsLookup{
+			URL:      u,
+			Filename: getBestFilename(filename, u.RequestURI()),
+		}, nil
 	}
 	return nil, fmt.Errorf("unparsable bytestream URL: '%s'", bsURL)
 }
@@ -261,8 +262,15 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optionally, configure HTTP basic-auth.
+	dialOptions := make([]grpc.DialOption, 0)
+	if lookup.URL.User != nil {
+		dialOptions = append(dialOptions, grpc.WithAuthority(lookup.URL.User.String()))
+	}
+	dialOptions = append(dialOptions, grpc.WithInsecure())
+
 	// Connect to host/port and create a new client
-	conn, err := grpc.Dial(lookup.HostPort, grpc.WithInsecure())
+	conn, err := grpc.Dial(lookup.URL.Host, dialOptions...)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -272,9 +280,9 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Request the file bytestream
 	req := &bspb.ReadRequest{
-		ResourceName: lookup.Blob,
-		ReadOffset:   0, // started from the bottom now we here
-		ReadLimit:    0, // no limit
+		ResourceName: strings.TrimPrefix(lookup.URL.RequestURI(), "/"), // trim leading "/"
+		ReadOffset:   0,                                                // started from the bottom now we here
+		ReadLimit:    0,                                                // no limit
 	}
 	stream, err := client.Read(r.Context(), req)
 	if err != nil {
