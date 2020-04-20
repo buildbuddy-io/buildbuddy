@@ -94,6 +94,12 @@ func (s *ActionCacheServer) validateActionResult(ctx context.Context, r *repb.Ac
 	return nil
 }
 
+func setWorkerMetadata(ar *repb.ActionResult) {
+	ar.ExecutionMetadata = &repb.ExecutedActionMetadata{
+		Worker: "worker",
+	}
+}
+
 // Retrieve a cached execution result.
 //
 // Implementations SHOULD ensure that any blobs referenced from the
@@ -164,6 +170,10 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if err != nil {
 		return nil, err
 	}
+
+	// Context: https://github.com/bazelbuild/remote-apis/pull/131
+	// More: https://github.com/buchgr/bazel-remote/commit/7de536f47bf163fb96bc1e38ffd5e444e2bcaa00
+	setWorkerMetadata(req.ActionResult)
 
 	blob, err := proto.Marshal(req.ActionResult)
 	if err != nil {
