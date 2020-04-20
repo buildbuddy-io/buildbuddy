@@ -13,6 +13,7 @@ import (
 )
 
 const (
+	envVarPrefix              = "--"
 	envVarOptionName          = "client_env"
 	envVarSeparator           = "="
 	envVarRedactedPlaceholder = "<REDACTED>"
@@ -32,11 +33,30 @@ func filterCommandLine(in *command_line.CommandLine) *command_line.CommandLine {
 					if option.OptionName == envVarOptionName {
 						parts := strings.Split(option.OptionValue, envVarSeparator)
 						option.OptionValue = strings.Join([]string{parts[0], envVarRedactedPlaceholder}, envVarSeparator)
+						option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + envVarRedactedPlaceholder
 					}
 				}
 			}
 		default:
 			continue
+		}
+	}
+	return &out
+}
+
+func filterUnstructuredCommandLine(in *build_event_stream.UnstructuredCommandLine) *build_event_stream.UnstructuredCommandLine {
+	if in == nil {
+		return nil
+	}
+	var out build_event_stream.UnstructuredCommandLine
+	out = *in
+	for i, arg := range out.Args {
+		if strings.HasPrefix(arg, envVarPrefix+envVarOptionName) {
+			parts := strings.Split(arg, envVarSeparator)
+			if len(parts) < 2 {
+				continue;
+			}
+			out.Args[i] = envVarPrefix + envVarOptionName + envVarSeparator + parts[1] + envVarSeparator + envVarRedactedPlaceholder
 		}
 	}
 	return &out
@@ -77,6 +97,7 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 			}
 		case *build_event_stream.BuildEvent_UnstructuredCommandLine:
 			{
+				p.UnstructuredCommandLine = filterUnstructuredCommandLine(p.UnstructuredCommandLine)
 			}
 		case *build_event_stream.BuildEvent_StructuredCommandLine:
 			{
