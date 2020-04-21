@@ -730,7 +730,6 @@ button {
   color: rgba(255, 255, 255, .7);
   max-width: 40%;
   line-height: 1.6em;
-  min-height: 240px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -747,18 +746,17 @@ button {
 .login-box {
   display: flex;
   justify-content: center;
-  justify-content: center;
 }
 
 .login-buttons button {
   display: block;
   width: 100%;
-  padding: 20px 32px;
+  padding: 16px 32px;
   font-weight: 600;
   border: 0;
   border-radius: 100px;
-  margin-bottom: 16px;
-  font-size: 20px;
+  margin-bottom: 12px;
+  font-size: 18px;
   cursor: pointer;
   border: 3px solid rgba(255, 255, 255, .9);
   background-color: transparent;
