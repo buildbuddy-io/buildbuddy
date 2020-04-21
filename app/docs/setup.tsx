@@ -38,7 +38,7 @@ export default class SetupComponent extends React.Component {
       <div className="home">
         <div className="container">
           <div className="title">Getting Started with BuildBuddy</div>
-            To get started, add the following two lines to your .bazelrc file. If you don't have a .bazelrc file - create one in the same directory as your Bazel WORKSPACE file with the two following lines:
+            To get started, add the following two lines to your <b>.bazelrc</b> file. If you don't have a .bazelrc file - create one in the same directory as your Bazel WORKSPACE file with the two following lines:
 
             <h2>.bazelrc</h2>
             {this.state.bazelConfigResponse && <SetupCodeComponent bazelConfigResponse={this.state.bazelConfigResponse} />}
@@ -52,8 +52,8 @@ export default class SetupComponent extends React.Component {
             </code>
             Now you can command click / double click on these urls to see the results of your build!
 
-            <h2>Optional: Caching, artifact uploads, and profiling</h2>
-            If you'd like to enable caching, which makes build artifacts clickable, enables the timing tab, and viewing of test logs - you can add the following additional line to your .bazelrc:
+            <h2>Optional: Artifact uploads, test logs, and profiling</h2>
+            If you'd like to configure a remote cache, which makes build artifacts clickable, enables the timing tab, and viewing of test logs - you can add the following additional line to your <b>.bazelrc</b>:
             {this.state.bazelConfigResponse && <CacheCodeComponent bazelConfigResponse={this.state.bazelConfigResponse} />}
 
             {!capabilities.auth && <div>

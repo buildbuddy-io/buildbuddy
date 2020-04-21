@@ -433,11 +433,18 @@ button {
   background-color: #fafafa;
   font-family: 'Source Code Pro', monospace;
   line-height: 1.6em;
+  white-space: nowrap;
   overflow-y: auto;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .code {
   font-family: 'Source Code Pro', monospace;
+}
+
+code .comment {
+  color: #888;
 }
 
 .home p {
@@ -594,6 +601,10 @@ button {
   border-radius: 8px;
   padding: 16px;
   line-height: 1.6em;
+  white-space: nowrap;
+  overflow-y: auto;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .empty-state h2 {

@@ -56,14 +56,14 @@ export default class TargetTestResultCardComponent extends React.Component {
     let card = this;
     request.onload = function () {
       if (this.status >= 200 && this.status < 400) {
-        card.setState({...card.state, testLog: this.response});
+        card.setState({ ...card.state, testLog: this.response });
       } else {
-        card.setState({...card.state, testLog: "Error loading bytestream test log!"});
+        card.setState({ ...card.state, testLog: "Error loading bytestream test log!" });
       }
     };
 
     request.onerror = function () {
-      card.setState({...card.state, testLog: "Error loading bytestream test log!"});
+      card.setState({ ...card.state, testLog: "Error loading bytestream test log!" });
     };
 
     request.send();
@@ -75,8 +75,8 @@ export default class TargetTestResultCardComponent extends React.Component {
     if (testLogUrl.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", testLogUrl);
     } else if (testLogUrl.startsWith("bytestream://")) {
-       let downloadUri = "/file/download?" + "filename=test.log&bytestream_url=" + testLogUrl;
-       window.open(downloadUri);
+      let downloadUri = "/file/download?" + "filename=test.log&bytestream_url=" + testLogUrl;
+      window.open(downloadUri);
     }
   }
 
@@ -109,10 +109,10 @@ export default class TargetTestResultCardComponent extends React.Component {
       <div className="content">
         <div className="title">Test log</div>
         <div className="test-subtitle">{this.getStatusTitle(this.props.testResult.buildEvent.testResult.status)} in {format.durationMillis(this.props.testResult.buildEvent.testResult.testAttemptDurationMillis)} on Shard {this.props.testResult.buildEvent.id.testResult.shard} (Run {this.props.testResult.buildEvent.id.testResult.run}, Attempt {this.props.testResult.buildEvent.id.testResult.attempt})</div>
-        {!this.state.cacheEnabled && 
+        {!this.state.cacheEnabled &&
           <div className="empty-state">
             Test log uploading isn't enabled for this invocation.<br /><br />
-            To enable test log uploading you must add GRPC remote caching. You can do so by adding the following line to your <b>.bazelrc</b> and re-run your invocation:
+            To enable test log uploading you must add GRPC remote caching. You can do so by adding the following line to your <b>.bazelrc</b> and re-running your invocation:
             <CacheCodeComponent />
           </div>}
         <div className="test-log">{this.state.testLog}</div>
