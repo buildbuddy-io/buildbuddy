@@ -205,7 +205,9 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 		} else { // Subsequent messages
-			checkSubsequentPreconditions(req, streamState)
+			if err := checkSubsequentPreconditions(req, streamState); err != nil {
+				return err
+			}
 		}
 
 		n, err := streamState.writer.Write(req.Data)
