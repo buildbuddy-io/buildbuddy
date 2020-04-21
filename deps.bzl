@@ -515,3 +515,10 @@ def install_buildbuddy_dependencies():
 	sum = "h1:mh48q/BqXqgjVHpy2ZY7WnWAbenxRjsz9N1i1YxjHAk=",
 	version = "v2.2.1+incompatible",
     )
+
+    go_repository(
+	name = "com_github_logrusorgru_aurora",
+	importpath = "github.com/logrusorgru/aurora",
+	sum = "h1:bqDmpDG49ZRnB5PcgP0RXtQvnMSgIF14M7CBd2shtXs=",
+	version = "v0.0.0-20200102142835-e9ef32dff381",
+    )
