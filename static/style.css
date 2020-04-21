@@ -720,7 +720,7 @@ button {
   align-items: center;
   justify-content: center;
   flex-grow: 1;
-  flex-wrap: wrap;
+  flex-direction: column;
 }
 
 .login-hero {
@@ -730,6 +730,10 @@ button {
   color: rgba(255, 255, 255, .7);
   max-width: 40%;
   line-height: 1.6em;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .login-hero b {
@@ -738,6 +742,12 @@ button {
   line-height: 1.3em;
   margin-bottom: -16px;
   display: block;
+}
+
+.login-box {
+  display: flex;
+  justify-content: center;
+  justify-content: center;
 }
 
 .login-buttons button {
@@ -750,17 +760,36 @@ button {
   margin-bottom: 16px;
   font-size: 20px;
   cursor: pointer;
-  border: 4px solid rgba(255, 255, 255, .9);
+  border: 3px solid rgba(255, 255, 255, .9);
   background-color: transparent;
   color: #fff;
   min-width: 360px;
 }
 
 .login-buttons button:last-of-type {
-  border: 4px solid rgba(255, 255, 255, .4);
+  border: 3px solid rgba(255, 255, 255, .4);
   color: rgba(255, 255, 255, .4);
   background-color: transparent;
   margin-bottom: 0;
+}
+
+.login-buttons button:first-of-type {
+  border: 3px solid rgba(255, 255, 255, .4);
+  color: rgba(38,50,56 ,1);
+  background-color: #fff;
+}
+
+.login .on-prem {
+  width: 100%;
+  text-align: center;
+  color: #fff;
+  color: rgba(255, 255, 255, .5);
+  margin-top: 64px;
+}
+
+.login .on-prem a {
+  text-decoration: underline;
+  color: rgba(255, 255, 255, .7);
 }
 
 @media(max-width: 800px) {
