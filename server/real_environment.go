@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
+	"github.com/buildbuddy-io/buildbuddy/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 )
@@ -31,6 +32,7 @@ type RealEnv struct {
 	authDB                  interfaces.AuthDB
 	invocationSearchService interfaces.InvocationSearchService
 	invocationStatService   interfaces.InvocationStatService
+	splashPrinter           interfaces.SplashPrinter
 }
 
 func (r *RealEnv) GetConfigurator() *config.Configurator {
@@ -121,6 +123,14 @@ func (r *RealEnv) SetInvocationStatService(iss interfaces.InvocationStatService)
 	r.invocationStatService = iss
 }
 
+func (r *RealEnv) SetSplashPrinter(p interfaces.SplashPrinter) {
+	r.splashPrinter = p
+}
+
+func (r *RealEnv) GetSplashPrinter() interfaces.SplashPrinter {
+	return r.splashPrinter
+}
+
 // Normally this code would live in main.go -- we put it here for now because
 // the environments used by the open-core version and the enterprise version are
 // not substantially different enough yet to warrant the extra complexity of
@@ -188,5 +198,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 		realEnv.SetCache(cache)
 		log.Printf("Cache: BuildBuddy cache API enabled!")
 	}
+
+	realEnv.SetSplashPrinter(&splash.Printer{})
 	return realEnv
 }
