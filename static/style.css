@@ -788,6 +788,40 @@ code .comment {
   background-color: #fff;
 }
 
+.login-interstitial,
+.login-interstitial .container,
+.login-interstitial .login-box {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-interstitial .login-buttons {
+  border: 1px solid #eee;
+  padding: 32px;
+  border-radius: 16px;
+}
+
+.login-interstitial .login-buttons h2 {
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+
+.login-interstitial .login-buttons button {
+  border: 3px solid rgba(38,50,56 ,1);
+  background-color: transparent;
+  color: rgba(38,50,56 ,1);
+}
+
+.login-interstitial .login-buttons button:first-of-type {
+  border: 3px solid rgba(38,50,56 ,1);
+  color: white;
+  background-color: rgba(38,50,56 ,1);
+}
+
 .login .on-prem {
   width: 100%;
   text-align: center;

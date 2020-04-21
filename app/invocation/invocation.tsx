@@ -3,6 +3,7 @@ import moment from 'moment';
 
 import rpcService from '../service/rpc_service'
 import authService, { User } from '../auth/auth_service';
+import capabilities from '../capabilities/capabilities';
 
 import InvocationModel from './invocation_model'
 
@@ -107,7 +108,7 @@ export default class InvocationComponent extends React.Component {
     }
 
     if (this.state.notFound) {
-      return <InvocationNotFoundComponent invocationId={this.props.invocationId} />;
+      return <InvocationNotFoundComponent invocationId={this.props.invocationId} authorized={!capabilities.auth || !!this.props.user} />;
     }
 
     if (this.state.inProgress) {
