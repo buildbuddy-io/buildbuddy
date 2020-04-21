@@ -86,6 +86,7 @@ go_library(
         ":config",
         ":interfaces",
         ":nullauth",
+        ":splash",
         "//server/backends:blobstore",
         "//server/backends:disk_cache",
         "//server/backends:invocationdb",
@@ -146,6 +147,12 @@ go_library(
         "@org_golang_google_grpc//encoding/gzip:go_default_library",
         "@org_golang_google_grpc//reflection:go_default_library",
     ],
+)
+
+go_library(
+    name = "splash",
+    srcs = ["splash.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/splash",
 )
 
 # Use the go_binary rule to create an executable from our main file. Depend on

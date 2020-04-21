@@ -148,3 +148,7 @@ type InvocationSearchService interface {
 	IndexInvocation(ctx context.Context, invocation *inpb.Invocation) error
 	QueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error)
 }
+
+type SplashPrinter interface {
+	PrintSplashScreen(port, grpcPort int)
+}
