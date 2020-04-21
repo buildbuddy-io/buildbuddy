@@ -265,7 +265,8 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Optionally, configure HTTP basic-auth.
 	dialOptions := make([]grpc.DialOption, 0)
 	if lookup.URL.User != nil {
-		dialOptions = append(dialOptions, grpc.WithAuthority(lookup.URL.User.String()))
+		authStr := lookup.URL.User.String() + "@" + lookup.URL.Host
+		dialOptions = append(dialOptions, grpc.WithAuthority(authStr))
 	}
 	dialOptions = append(dialOptions, grpc.WithInsecure())
 
