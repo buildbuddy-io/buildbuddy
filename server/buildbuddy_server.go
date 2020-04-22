@@ -103,6 +103,10 @@ func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserR
 	if auth == nil || userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
+	// If null authenticator is installed creating will fail so exit early.
+	if ut, err := auth.GetUserToken(ctx); ut == nil || err != nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
 	tu := &tables.User{}
 	if err := auth.FillUser(ctx, tu); err != nil {
 		return nil, err
