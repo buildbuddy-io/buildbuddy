@@ -451,6 +451,12 @@ code .comment {
   margin-top: 32px;
 }
 
+.home p.callout {
+  background-color: #FFE082;
+  padding: 16px 32px;
+  border-radius: 8px;
+}
+
 .home a {
   text-decoration: underline;
 }

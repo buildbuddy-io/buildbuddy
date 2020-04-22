@@ -34,6 +34,7 @@ export default class SetupComponent extends React.Component {
       <div className="home">
         <div className="container">
           <div className="title">Getting Started with BuildBuddy</div>
+            {this.props.children}
             To get started, add the following two lines to your <b>.bazelrc</b> file. If you don't have a .bazelrc file - create one in the same directory as your Bazel WORKSPACE file with the two following lines:
 
             <h2>.bazelrc</h2>

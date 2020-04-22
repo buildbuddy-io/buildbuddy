@@ -12,7 +12,7 @@ export class User {
 
   selectedGroupName() {
     if (this.selectedGroup?.name == "DEFAULT_GROUP") return "Organization";
-    return this.selectedGroup?.name;
+    return this.selectedGroup?.name?.trim();
   }
 
   isInDefaultGroup() {
