@@ -101,8 +101,13 @@ go_library(
 go_library(
     name = "static",
     srcs = ["static.go"],
+    data = [
+        "//:VERSION",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/static",
     deps = [
+        ":environment",
+        "//proto:config_go_proto",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )

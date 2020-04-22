@@ -7,9 +7,10 @@ export class Capabilities {
 
   auth: string;
 
-  register(name: string, version: string, paths: Array<string>) {
+  register(name: string, paths: Array<string>) {
     this.name = name;
-    this.version = version;
+    this.version = window.buildbuddyConfig && window.buildbuddyConfig.version;
+    this.auth = window.buildbuddyConfig && window.buildbuddyConfig.configured_issuers && window.buildbuddyConfig.configured_issuers.length && window.buildbuddyConfig.configured_issuers[0];
     this.paths = new Set(paths);
     window.gtag('set', {
       'app_name': this.name,

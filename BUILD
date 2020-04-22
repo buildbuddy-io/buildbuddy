@@ -9,6 +9,7 @@ exports_files([
     "tsconfig.json",
     "package.json",
     "yarn.lock",
+    "VERSION",
 ])
 
 filegroup(

@@ -1,9 +1,15 @@
 package static
 
 import (
+	"html/template"
+	"io/ioutil"
 	"net/http"
 	"path/filepath"
 	"strings"
+
+	cfgpb "proto/config"
+
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 )
@@ -14,9 +20,12 @@ type StaticFileServer struct {
 	handler http.Handler
 }
 
+var indexTemplateFilename = "index.html"
+var versionFilename = "VERSION"
+
 // NewStaticFileServer returns a new static file server that will serve the
 // content in relpath, optionally stripping the prefix.
-func NewStaticFileServer(relPath string, rootPaths []string) (*StaticFileServer, error) {
+func NewStaticFileServer(env environment.Env, relPath string, rootPaths []string) (*StaticFileServer, error) {
 	// Figure out where our runfiles (static content bundled with the binary) live.
 	rfp, err := bazel.RunfilesPath()
 	if err != nil {
@@ -26,7 +35,16 @@ func NewStaticFileServer(relPath string, rootPaths []string) (*StaticFileServer,
 	pkgStaticDir := filepath.Join(rfp, relPath)
 	handler := http.FileServer(http.Dir(pkgStaticDir))
 	if len(rootPaths) > 0 {
-		handler = handleRootPaths(rootPaths, handler)
+		template, err := template.ParseFiles(filepath.Join(pkgStaticDir, indexTemplateFilename))
+		if err != nil {
+			return nil, err
+		}
+		versionBytes, err := ioutil.ReadFile(filepath.Join(rfp, versionFilename))
+		if err != nil {
+			return nil, err
+		}
+
+		handler = handleRootPaths(env, relPath, rootPaths, template, string(versionBytes), handler)
 	}
 	return &StaticFileServer{
 		handler: handler,
@@ -38,7 +56,7 @@ func (s *StaticFileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
 }
 
-func handleRootPaths(rootPaths []string, h http.Handler) http.Handler {
+func handleRootPaths(env environment.Env, relPath string, rootPaths []string, template *template.Template, version string, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for _, rootPath := range rootPaths {
 			if strings.HasPrefix(r.URL.Path, rootPath) {
@@ -46,6 +64,25 @@ func handleRootPaths(rootPaths []string, h http.Handler) http.Handler {
 			}
 		}
 
+		if r.URL.Path == "/" {
+			serveIndexTemplate(env, template, version, w)
+			return
+		}
+
 		h.ServeHTTP(w, r)
 	})
+}
+
+func serveIndexTemplate(env environment.Env, template *template.Template, version string, w http.ResponseWriter) {
+	issuers := make([]string, 0)
+	for _, provider := range env.GetConfigurator().GetAuthOauthProviders() {
+		issuers = append(issuers, provider.IssuerURL)
+	}
+	err := template.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendConfig{
+		Version:           version,
+		ConfiguredIssuers: issuers,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
