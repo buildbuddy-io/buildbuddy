@@ -53,7 +53,7 @@ export default class SetupComponent extends React.Component {
             If you'd like to configure a remote cache, which makes build artifacts clickable, enables the timing tab, and viewing of test logs - you can add the following additional line to your <b>.bazelrc</b>:
             {this.state.bazelConfigResponse && <CacheCodeComponent bazelConfigResponse={this.state.bazelConfigResponse} />}
 
-            {!capabilities.auth && <div>
+            {!capabilities.enterprise && <div>
               <h2>Enterprise BuildBuddy</h2>
                 Want enterprise features like SSO, organization build history, user build history, and more?<br/><br/>
                 <b><a target="_blank" href="https://buildbuddy.typeform.com/to/wIXFIA">Click here</a></b> to upgrade to enterprise BuildBuddy.

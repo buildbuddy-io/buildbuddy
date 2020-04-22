@@ -64,7 +64,7 @@ export default class MenuComponent extends React.Component {
                 </a>
                   </li>
                   <li><a href="/docs/setup">Setup instructions</a></li>
-                  {!capabilities.auth && <li><a target="_blank" href="https://buildbuddy.typeform.com/to/wIXFIA">Upgrade to Enterprise</a></li>}
+                  {!capabilities.enterprise && <li><a target="_blank" href="https://buildbuddy.typeform.com/to/wIXFIA">Upgrade to Enterprise</a></li>}
                   <li><a href="mailto:hello@buildbuddy.io">Contact us</a></li>
                   {(capabilities.auth && !this.props.user) && <li onClick={this.handleLoginClicked.bind(this)}>Login</li>}
                   {(capabilities.auth && this.props.user) && <li onClick={this.handleLogoutClicked.bind(this)}>Logout</li>}

@@ -28,7 +28,7 @@ export default class RootComponent extends React.Component {
   };
 
   componentWillMount() {
-    capabilities.register("BuildBuddy Community Edition", [Path.invocationPath]);
+    capabilities.register("BuildBuddy Community Edition", false, [Path.invocationPath]);
     authService.register();
     router.register(this.handlePathChange.bind(this));
     authService.userStream.addListener(AuthService.userEventName, (user: User) => {
