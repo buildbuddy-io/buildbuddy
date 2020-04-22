@@ -28,12 +28,12 @@ export default class RootComponent extends React.Component {
   };
 
   componentWillMount() {
-    capabilities.register("BuildBuddy Community Edition", [Path.invocationPath]);
+    capabilities.register("BuildBuddy Community Edition", "v1", [Path.invocationPath]);
     authService.register();
     router.register(this.handlePathChange.bind(this));
     authService.userStream.addListener(AuthService.userEventName, (user: User) => {
       this.setState({ ...this.state, user })
-    })
+    });
   }
 
   handlePathChange() {
@@ -42,6 +42,7 @@ export default class RootComponent extends React.Component {
       path: window.location.pathname,
       search: new URLSearchParams(window.location.search)
     });
+    capabilities.didNavigateToPath();
   }
 
   handleToggleDenseClicked() {

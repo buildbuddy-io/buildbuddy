@@ -8,13 +8,10 @@ ts_library(
     deps = [
         "//app/capabilities",
         "//app/service",
-        "//proto:buildbuddy_service_ts_proto",
         "//proto:context_ts_proto",
         "//proto:group_ts_proto",
         "//proto:user_ts_proto",
         "@npm//@types/fbemitter",
         "@npm//fbemitter",
-        "@npm//oidc-client",
-        "@npm//protobufjs",
     ],
 )

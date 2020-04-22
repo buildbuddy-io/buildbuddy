@@ -29,10 +29,6 @@ export default class SetupComponent extends React.Component {
     
   }
 
-  handleMenuClicked() {
-    this.setState({ menuExpanded: !this.state.menuExpanded });
-  }
-
   render() {
     return (
       <div className="home">
