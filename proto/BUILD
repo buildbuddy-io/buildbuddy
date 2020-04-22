@@ -27,6 +27,13 @@ proto_library(
 )
 
 proto_library(
+    name = "config_proto",
+    srcs = [
+        "config.proto",
+    ],
+)
+
+proto_library(
     name = "publish_build_event_proto",
     srcs = [
         "publish_build_event.proto",
@@ -74,6 +81,12 @@ go_proto_library(
     deps = [
         ":build_status_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "config_go_proto",
+    importpath = "proto/config",
+    proto = ":config_proto",
 )
 
 proto_library(

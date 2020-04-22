@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package config;
+
+message FrontendConfig {
+  // The version of this buildbuddy instance.
+  string version = 1;
+
+  // The issuers configured by the backend.
+  repeated string configured_issuers = 2;
+}
