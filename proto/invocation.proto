@@ -174,14 +174,11 @@ message InvocationStat {
   // The time (in usec since epoch) of the latest green build by this entity.
   int64 last_green_build_usec = 7;
 
-  // The average of all invocation durations for this entity.
-  int64 average_build_time_usec = 8;
-
   // The total number of invocations completed successfully by this entity.
-  int64 total_num_sucessful_builds = 9;
+  int64 total_num_sucessful_builds = 8;
 
   // The total number of invocations completed unsuccessfully by this entity.
-  int64 total_num_failing_builds = 10;
+  int64 total_num_failing_builds = 9;
 }
 
 message GetInvocationStatRequest {
