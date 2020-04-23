@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 
 package(default_visibility = ["//visibility:public"])
@@ -182,7 +183,17 @@ go_binary(
 
 # Build a docker image similar to the go_binary above, but use the "go_image"
 # rule from @io_bazel_rules_docker instead, which creates a docker image.
+
+container_image(
+    name = "base_image",
+    base = "@go_image_base//image",
+    symlinks = {
+        "config.yaml": "app/server/buildbuddy.runfiles/buildbuddy/config/buildbuddy.release.yaml",
+    },
+)
+
 go_image(
     name = "buildbuddy_image",
     binary = ":buildbuddy",
+    base = ":base_image",
 )
