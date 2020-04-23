@@ -148,7 +148,7 @@ func (s *BuildBuddyServer) getGroupLoginPW(ctx context.Context) (string, string)
 	if userDB := s.env.GetUserDB(); userDB != nil {
 		if tu, _ := userDB.GetUser(ctx); tu != nil {
 			for _, g := range tu.Groups {
-				if g.OwnedDomain != "" && g.WriteToken != ""{
+				if g.OwnedDomain != "" && g.WriteToken != "" {
 					return g.GroupID, g.WriteToken
 				}
 			}
