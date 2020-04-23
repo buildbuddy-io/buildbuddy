@@ -148,6 +148,7 @@ enum AggType {
   UNKNOWN_AGGREGATION_TYPE = 0;
   USER_AGGREGATION_TYPE = 1;
   HOSTNAME_AGGREGATION_TYPE = 2;
+  GROUP_ID_AGGREGATION_TYPE = 3;
 }
 
 message InvocationStat {
@@ -172,6 +173,15 @@ message InvocationStat {
 
   // The time (in usec since epoch) of the latest green build by this entity.
   int64 last_green_build_usec = 7;
+
+  // The average of all invocation durations for this entity.
+  int64 average_build_time_usec = 8;
+
+  // The total number of invocations completed successfully by this entity.
+  int64 total_num_sucessful_builds = 9;
+
+  // The total number of invocations completed unsuccessfully by this entity.
+  int64 total_num_failing_builds = 10;
 }
 
 message GetInvocationStatRequest {
