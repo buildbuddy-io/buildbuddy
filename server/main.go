@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	configFile = flag.String("config_file", "config/buildbuddy.local.yaml", "The path to a buildbuddy config file")
+	configFile = flag.String("config_file", "config/buildbuddy.release.yaml", "The path to a buildbuddy config file")
 	serverType = flag.String("server_type", "dev-buildbuddy-server", "The server type to match on health checks")
 )
 

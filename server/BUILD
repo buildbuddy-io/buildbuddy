@@ -165,6 +165,7 @@ go_library(
 go_binary(
     name = "buildbuddy",
     srcs = ["main.go"],
+    args = ["--config_file=config/buildbuddy.local.yaml"],
     data = [
         "//:config_files",
         "//app:app_bundle.min",
