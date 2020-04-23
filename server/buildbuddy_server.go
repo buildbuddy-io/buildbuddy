@@ -158,7 +158,7 @@ func (s *BuildBuddyServer) getGroupLoginPW(ctx context.Context) (string, string)
 					return g.GroupID, g.WriteToken
 				}
 			}
-			// Finally, fall back to any group with a password. This will be the
+			// Finally, fall back to any group with a WriteToken. This will be the
 			// default group for on-prem use cases.
 			for _, g := range tu.Groups {
 				if g.WriteToken != "" {
