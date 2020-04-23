@@ -148,13 +148,20 @@ func (s *BuildBuddyServer) getGroupLoginPW(ctx context.Context) (string, string)
 	if userDB := s.env.GetUserDB(); userDB != nil {
 		if tu, _ := userDB.GetUser(ctx); tu != nil {
 			for _, g := range tu.Groups {
-				if g.OwnedDomain != "" || !s.env.GetConfigurator().GetAppNoDefaultUserGroup() {
+				if g.OwnedDomain != "" && g.WriteToken != ""{
 					return g.GroupID, g.WriteToken
 				}
 			}
 			// Still here? This user might have a self-owned group, let's check for that.
 			for _, g := range tu.Groups {
-				if g.GroupID == strings.Replace(tu.UserID, "US", "GR", 1) {
+				if g.GroupID == strings.Replace(tu.UserID, "US", "GR", 1) && g.WriteToken != "" {
+					return g.GroupID, g.WriteToken
+				}
+			}
+			// Finally, fall back to any group with a password. This will be the
+			// default group for on-prem use cases.
+			for _, g := range tu.Groups {
+				if g.WriteToken != "" {
 					return g.GroupID, g.WriteToken
 				}
 			}
