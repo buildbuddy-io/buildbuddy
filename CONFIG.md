@@ -1,5 +1,5 @@
 # BuildBuddy Config File
-Buildbuddy is configured using a yaml-formatted configuration file. On startup, BuildBuddy reads this config file which is specified using the ```--config_file``` flag. This file is read at startup and then periodically re-read, althought some options like enabling or disabling a cache require a restart to take effect.
+Buildbuddy is configured using a yaml-formatted configuration file. On startup, BuildBuddy reads this config file which is specified using the ```--config_file``` flag. The config file is periodically re-read, although some options like enabling or disabling a cache require a restart to take effect.
 
 You can edit this file with a text editor to configure BuildBuddy's behavior. Here are some sample configuration files that we've used in the past, and below that a detailed list of the config options and what they do.
 
