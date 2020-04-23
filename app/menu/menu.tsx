@@ -55,7 +55,7 @@ export default class MenuComponent extends React.Component {
               <div className="side-menu">
                 <ul>
                   {this.props.children && <li>{this.props.children}</li>}
-                  {this.props.user && !this.props.user?.selectedGroup.ownedDomain && <li><a target="_blank" href="https://buildbuddy.typeform.com/to/PFjD5A">Create organization</a></li>}
+                  {this.props.user && !this.props.user?.selectedGroup.ownedDomain && !this.props.user?.isInDefaultGroup() && <li><a target="_blank" href="https://buildbuddy.typeform.com/to/PFjD5A">Create organization</a></li>}
                   <li><a target="_blank" href="https://github.com/buildbuddy-io/buildbuddy/issues/new">Report an issue</a></li>
                   <li><a target="_blank" href="https://github.com/buildbuddy-io/buildbuddy">Github repo</a></li>
                   <li>
