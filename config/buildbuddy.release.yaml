@@ -1,7 +1,7 @@
 # N.B. This file is bundled and distributed in the enterprise docker image.
 # It should not contain any secrets. Test the image if you change it!
 app:
-  build_buddy_url: "https://localhost:8080"
+  build_buddy_url: "http://localhost:8080"
   events_api_url: "grpc://localhost:1985"
   cache_api_url: "grpc://localhost:1985"
 database:
