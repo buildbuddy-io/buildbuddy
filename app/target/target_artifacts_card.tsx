@@ -15,7 +15,7 @@ export default class ArtifactsCardComponent extends React.Component {
     if (outputUri.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", outputUri);
     } else if (outputUri.startsWith("bytestream://")) {
-       let downloadUri = "/file/download?" + "filename=" + outputFilename + "&bytestream_url=" + outputUri;
+       let downloadUri = "/file/download?" + "filename=" + encodeURI(outputFilename) + "&bytestream_url=" + encodeURI(outputUri);
        window.open(downloadUri);
     }
   }
