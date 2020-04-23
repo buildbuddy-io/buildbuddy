@@ -95,6 +95,7 @@ button {
 
 .menu .profile-photo {
   height: 40px;
+  width: 40px;
   border-radius: 20px;
   cursor: pointer;
   background-color: rgba(255, 255, 255, .95);
