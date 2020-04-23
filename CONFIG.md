@@ -61,9 +61,9 @@ auth:
 
 There are three types of config flags: *Required*, *Recommended*, and *Optional*.
 
-* *Required* BuildBuddy will not run without these.
-* *Recommended* BuildBuddy will run without them but may produce undefined output.
-* *Optional* They configure optional functionality. BuildBuddy will happily run without them.
+* *Required* - BuildBuddy will not run without these.
+* *Recommended* - BuildBuddy will run without them but may produce undefined output.
+* *Optional* - They configure optional functionality. BuildBuddy will happily run without them.
 
 # Configuration File Options
 
