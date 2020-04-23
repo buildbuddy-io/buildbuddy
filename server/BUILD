@@ -194,6 +194,6 @@ container_image(
 
 go_image(
     name = "buildbuddy_image",
-    binary = ":buildbuddy",
     base = ":base_image",
+    binary = ":buildbuddy",
 )
