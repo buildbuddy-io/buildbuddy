@@ -38,7 +38,7 @@ cache:
   in_memory: true
 ```
 
-## Running with your own Auth provider (OIDC)
+## Running with your own Auth provider (OIDC) [ENTERPRISE VERSION]
 ```
 app:
   build_buddy_url: "http://acme.corp"
@@ -59,13 +59,14 @@ auth:
       client_secret: "sEcRetKeYgOeShErE"
 ```
 
+# Configuration File Options
+
 There are three types of config flags: *Required*, *Recommended*, and *Optional*.
 
 * *Required* - BuildBuddy will not run without these.
 * *Recommended* - BuildBuddy will run without them but may produce undefined output.
 * *Optional* - They configure optional functionality. BuildBuddy will happily run without them.
 
-# Configuration File Options
 
 ## App
 
@@ -195,7 +196,7 @@ integrations:
 ```root_directory``` *Optional* The root directory to store cache data in, if using the disk cache. This directory must be readable and writable by the BuildBuddy process. THe directory will be created if it does not exist.
 
 
-## Auth
+## Auth [ENTERPRISE]
 ```auth:``` *Optional* The Auth section enables BuildBuddy authentication using an OpenID Connect provider that you specify.
 
 #### OauthProviders
