@@ -14,7 +14,13 @@ exports_files([
 
 filegroup(
     name = "config_files",
-    srcs = glob([
-        "config/**",
-    ]),
+    srcs = select({
+        ":release_build": ["config/buildbuddy.release.yaml"],
+        "//conditions:default": glob(["config/**"]),
+    }),
+)
+
+config_setting(
+    name = "release_build",
+    values = {"define": "release=true"},
 )
