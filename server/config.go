@@ -75,7 +75,6 @@ type cacheConfig struct {
 	Disk         *DiskConfig     `yaml:"disk"`
 	GCS          *GCSCacheConfig `yaml:"gcs"`
 	InMemory     bool            `yaml:"in_memory"`
-	TTLSeconds   int             `yaml:"ttl_seconds"`
 	MaxSizeBytes int64           `yaml:"max_size_bytes"`
 }
 
@@ -227,11 +226,6 @@ func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {
 func (c *Configurator) GetBuildEventProxyHosts() []string {
 	c.rereadIfStale()
 	return c.gc.BuildEventProxy.Hosts
-}
-
-func (c *Configurator) GetCacheTTLSeconds() int {
-	c.rereadIfStale()
-	return c.gc.Cache.TTLSeconds
 }
 
 func (c *Configurator) GetCacheMaxSizeBytes() int64 {
