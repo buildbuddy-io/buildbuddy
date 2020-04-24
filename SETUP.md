@@ -63,7 +63,7 @@ We publish a [Docker](https://www.docker.com/) image with every release that con
 docker pull gcr.io/flame-public/buildbuddy-app-onprem:latest && docker run -p 1985:1985 -p 8080:8080 gcr.io/flame-public/buildbuddy-app-onprem:latest
 ```
 
-If you'd like to pass a custom configuration file to BuildBuddy running in a Docker imaage - see the [config docs](https://github.com/buildbuddy-io/buildbuddy/blob/master/CONFIG.md) on using Docker's [-v](https://docs.docker.com/storage/volumes/) command.
+If you'd like to pass a custom configuration file to BuildBuddy running in a Docker image - see the [config docs](https://github.com/buildbuddy-io/buildbuddy/blob/master/CONFIG.md) on using Docker's [-v](https://docs.docker.com/storage/volumes/) command.
 
 ## Kubernetes
 
