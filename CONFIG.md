@@ -1,7 +1,7 @@
 # BuildBuddy Config File
 Buildbuddy is configured using a yaml-formatted configuration file. On startup, BuildBuddy reads this config file which is specified using the ```--config_file``` flag. The config file is periodically re-read, although some options like enabling or disabling a cache require a restart to take effect.
 
-If you're running BuildBuddy in a Docker image - you can use Docker's [-v flag](https://docs.docker.com/storage/volumes/) to map a custom local config file to ```/config.yaml``` in the Docker image.
+If you're running BuildBuddy in a Docker image - you can use Docker's [-v flag](https://docs.docker.com/storage/volumes/) to map a custom local config file to ```/config.yaml``` in the Docker image:
 ```
 docker pull gcr.io/flame-public/buildbuddy-app-onprem:latest && docker run -p 1985:1985 -p 8080:8080 -v /PATH_TO_YOUR_LOCAL_CONFIG/config.yaml:/config.yaml gcr.io/flame-public/buildbuddy-app-onprem:latest
 ```
