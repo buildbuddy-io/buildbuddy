@@ -53,7 +53,7 @@ The simplest method of running BuildBuddy on your own computer is to download an
   ```
   cd buildbuddy && bazel run -c opt server:buildbuddy
   ```
-We recommend you use a tool like [Bazelisk](https://github.com/bazelbuild/bazelisk) that respects the repo's [.bazelversion](https://github.com/buildbuddy-io/buildbuddy/blob/master/.bazelversion) file.
+We recommend using a tool like [Bazelisk](https://github.com/bazelbuild/bazelisk) that respects the repo's [.bazelversion](https://github.com/buildbuddy-io/buildbuddy/blob/master/.bazelversion) file.
 
 ## Docker Image
 
