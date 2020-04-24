@@ -53,7 +53,7 @@ The simplest method of running BuildBuddy on your own computer is to download an
   ```
   cd buildbuddy && bazel run -c opt server:buildbuddy
   ```
-We recommend you use a tool like [Bazelisk](https://github.com/bazelbuild/bazelisk) that respects the repo's [.bazelversion](https://github.com/buildbuddy-io/buildbuddy/blob/master/.bazelversion) file.
+We recommend using a tool like [Bazelisk](https://github.com/bazelbuild/bazelisk) that respects the repo's [.bazelversion](https://github.com/buildbuddy-io/buildbuddy/blob/master/.bazelversion) file.
 
 ## Docker Image
 
@@ -62,6 +62,8 @@ We publish a [Docker](https://www.docker.com/) image with every release that con
 ```
 docker pull gcr.io/flame-public/buildbuddy-app-onprem:latest && docker run -p 1985:1985 -p 8080:8080 gcr.io/flame-public/buildbuddy-app-onprem:latest
 ```
+
+If you'd like to pass a custom configuration file to BuildBuddy running in a Docker image - see the [config docs](https://github.com/buildbuddy-io/buildbuddy/blob/master/CONFIG.md) on using Docker's [-v](https://docs.docker.com/storage/volumes/) command.
 
 ## Kubernetes
 
