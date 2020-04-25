@@ -189,6 +189,19 @@ button {
   margin-bottom: 8px;
 }
 
+.shelf .actions {
+  margin-top: 16px;
+}
+
+.shelf .actions button {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background-color: #eee;
+  cursor: pointer;
+  border: 1px solid #ccc;
+  font-weight: 600;
+}
+
 .breadcrumbs {
   font-size: 16px;
   color: #aaa;

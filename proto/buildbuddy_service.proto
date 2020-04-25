@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "proto/assistance.proto";
 import "proto/bazel_config.proto";
 import "proto/invocation.proto";
 import "proto/user.proto";
@@ -24,4 +25,7 @@ service BuildBuddyService {
 
   rpc GetInvocationStat(invocation.GetInvocationStatRequest)
       returns (invocation.GetInvocationStatResponse);
+
+  rpc RequestAssistance(assistance.RequestAssistanceRequest)
+      returns (assistance.RequestAssistanceResponse);
 }

@@ -81,6 +81,7 @@ func serveIndexTemplate(env environment.Env, template *template.Template, versio
 	err := template.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendConfig{
 		Version:           version,
 		ConfiguredIssuers: issuers,
+		AssistanceEnabled: env.GetConfigurator().GetIntegrationsSlackConfig().HelpWebhookURL != "",
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

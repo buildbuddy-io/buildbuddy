@@ -39,5 +39,6 @@ type Env interface {
 	GetAuthDB() interfaces.AuthDB
 	GetInvocationStatService() interfaces.InvocationStatService
 	GetInvocationSearchService() interfaces.InvocationSearchService
+	GetAssistanceService() interfaces.AssistanceService
 	GetSplashPrinter() interfaces.SplashPrinter
 }

@@ -232,6 +232,10 @@ export default class InvocationModel {
     return this.finished.exitCode.code == 0 ? <img className="icon" src="/image/check-circle.svg" /> : <img className="icon" src="/image/x-circle.svg" />;
   }
 
+  getSucceeded() {
+    return this.finished.exitCode.code == 0;
+  }
+
   getCPU() {
     return this.configuration?.makeVariable.TARGET_CPU || "Unknown CPU";
   }

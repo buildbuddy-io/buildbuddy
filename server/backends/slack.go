@@ -70,20 +70,22 @@ func (attachment *Attachment) AddAction(action Action) *Attachment {
 }
 
 type SlackWebhook struct {
+	trigger				string
 	callbackURL   string
 	buildBuddyURL string
 	client        *http.Client
 }
 
-func NewSlackWebhook(callbackURL string, bbURL string) *SlackWebhook {
+func NewSlackWebhook(trigger string, callbackURL string, bbURL string) *SlackWebhook {
 	return &SlackWebhook{
+		trigger: trigger,
 		callbackURL:   callbackURL,
 		buildBuddyURL: bbURL,
 		client:        &http.Client{},
 	}
 }
 
-func (w *SlackWebhook) slackPayloadFromInvocation(invocation *inpb.Invocation) *Payload {
+func (w *SlackWebhook) slackCompletedBuildPayloadFromInvocation(invocation *inpb.Invocation) *Payload {
 	a := Attachment{}
 
 	statusText := ""
@@ -109,8 +111,45 @@ func (w *SlackWebhook) slackPayloadFromInvocation(invocation *inpb.Invocation) *
 	}
 }
 
+func (w *SlackWebhook) slackAssistancePayloadFromInvocation(invocation *inpb.Invocation) *Payload {
+	a := Attachment{}
+
+	statusText := ""
+	if invocation.Success {
+		statusText = "✅ Succeeded"
+	} else {
+		statusText = "❌ Failed"
+	}
+	a.AddField(Field{
+		Title: "Status",
+		Value: statusText,
+	})
+	a.AddAction(Action{
+		Type:  "button",
+		Text:  "Help Debug",
+		Url:   w.buildBuddyURL + "/invocation/" + invocation.InvocationId,
+		Style: "primary",
+	})
+	return &Payload{
+		Text:        "Can someone help me debug this build?",
+		Attachments: []Attachment{a},
+	}
+}
+
+func (w *SlackWebhook) GetTrigger() string {
+	return w.trigger
+}
+
 func (w *SlackWebhook) NotifyComplete(ctx context.Context, invocation *inpb.Invocation) error {
-	payload := w.slackPayloadFromInvocation(invocation)
+	payload := w.slackCompletedBuildPayloadFromInvocation(invocation)
+	buf := new(bytes.Buffer)
+	json.NewEncoder(buf).Encode(payload)
+	_, err := http.Post(w.callbackURL, "application/json; charset=utf-8", buf)
+	return err
+}
+
+func (w *SlackWebhook) RequestAssistance(ctx context.Context, invocation *inpb.Invocation) error {
+	payload := w.slackAssistancePayloadFromInvocation(invocation)
 	buf := new(bytes.Buffer)
 	json.NewEncoder(buf).Encode(payload)
 	_, err := http.Post(w.callbackURL, "application/json; charset=utf-8", buf)

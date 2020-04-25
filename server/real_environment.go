@@ -32,6 +32,7 @@ type RealEnv struct {
 	authDB                  interfaces.AuthDB
 	invocationSearchService interfaces.InvocationSearchService
 	invocationStatService   interfaces.InvocationStatService
+	assistanceService  			interfaces.AssistanceService
 	splashPrinter           interfaces.SplashPrinter
 }
 
@@ -123,6 +124,14 @@ func (r *RealEnv) SetInvocationStatService(iss interfaces.InvocationStatService)
 	r.invocationStatService = iss
 }
 
+func (r *RealEnv) GetAssistanceService() interfaces.AssistanceService {
+	return r.assistanceService
+}
+func (r *RealEnv) SetAssistanceService(as interfaces.AssistanceService) {
+	r.assistanceService = as
+}
+
+
 func (r *RealEnv) SetSplashPrinter(p interfaces.SplashPrinter) {
 	r.splashPrinter = p
 }
@@ -159,7 +168,10 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, checker *h
 	appURL := configurator.GetAppBuildBuddyURL()
 	if sc := configurator.GetIntegrationsSlackConfig(); sc != nil {
 		if sc.WebhookURL != "" {
-			webhooks = append(webhooks, slack.NewSlackWebhook(sc.WebhookURL, appURL))
+			webhooks = append(webhooks, slack.NewSlackWebhook("completed", sc.WebhookURL, appURL, ))
+		}
+		if sc.HelpWebhookURL != "" {
+			webhooks = append(webhooks, slack.NewSlackWebhook("assistance", sc.HelpWebhookURL, appURL))
 		}
 	}
 	realEnv.SetWebhooks(webhooks)

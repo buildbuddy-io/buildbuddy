@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+import "proto/invocation.proto";
+
+package assistance;
+
+message RequestAssistanceRequest {
+  context.RequestContext request_context = 1;
+
+  invocation.InvocationLookup lookup = 2;
+}
+
+message RequestAssistanceResponse { context.ResponseContext response_context = 1; }

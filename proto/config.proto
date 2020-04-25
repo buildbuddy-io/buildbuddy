@@ -8,4 +8,7 @@ message FrontendConfig {
 
   // The issuers configured by the backend.
   repeated string configured_issuers = 2;
+
+  // True if the backend supports requests for assistance.
+  bool assistance_enabled = 3;
 }

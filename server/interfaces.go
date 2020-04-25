@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	inpb "proto/invocation"
+	asspb "proto/assistance"
 )
 
 // An interface representing the user info gleaned from an authorization header.
@@ -135,7 +136,9 @@ type UserDB interface {
 
 // A webhook can be called when a build is completed.
 type Webhook interface {
+	GetTrigger() string
 	NotifyComplete(ctx context.Context, invocation *inpb.Invocation) error
+	RequestAssistance(ctx context.Context, invocation *inpb.Invocation) error
 }
 
 // Allows aggregating invocation statistics.
@@ -147,6 +150,11 @@ type InvocationStatService interface {
 type InvocationSearchService interface {
 	IndexInvocation(ctx context.Context, invocation *inpb.Invocation) error
 	QueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error)
+}
+
+// Allows requests for assistance.
+type AssistanceService interface {
+	RequestAssistance(ctx context.Context, req *asspb.RequestAssistanceRequest) (*asspb.RequestAssistanceResponse, error)
 }
 
 type SplashPrinter interface {

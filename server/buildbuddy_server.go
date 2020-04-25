@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 
+	asspb "proto/assistance"
 	bzpb "proto/bazel_config"
 	grpb "proto/group"
 	inpb "proto/invocation"
@@ -219,6 +220,20 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 	return &bzpb.GetBazelConfigResponse{
 		ConfigOption: configOptions,
 	}, nil
+}
+
+func (s *BuildBuddyServer) RequestAssistance(ctx context.Context, req *asspb.RequestAssistanceRequest) (*asspb.RequestAssistanceResponse, error) {
+	if req == nil {
+		return nil, status.InvalidArgumentErrorf("RequestAssistanceRequest cannot be empty")
+	}
+	assistanceService := s.env.GetAssistanceService()
+	if assistanceService == nil {
+		return nil, fmt.Errorf("No assistance service was configured")
+	}
+	if req.Lookup == nil {
+		return nil, fmt.Errorf("A lookup must be provided")
+	}
+	return assistanceService.RequestAssistance(ctx, req)
 }
 
 func (s *BuildBuddyServer) GetInvocationStat(ctx context.Context, req *inpb.GetInvocationStatRequest) (*inpb.GetInvocationStatResponse, error) {

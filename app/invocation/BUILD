@@ -16,6 +16,7 @@ ts_library(
         "//app/terminal",
         "//proto:build_event_stream_ts_proto",
         "//proto:command_line_ts_proto",
+        "//proto:assistance_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto:user_ts_proto",
         "@npm//@types/long",

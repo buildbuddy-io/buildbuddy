@@ -12,6 +12,7 @@ go_library(
         ":environment",
         ":interfaces",
         ":tables",
+        "//proto:assistance_go_proto",
         "//proto:bazel_config_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:group_go_proto",
@@ -52,6 +53,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/interfaces",
     deps = [
         ":tables",
+        "//proto:assistance_go_proto",
         "//proto:invocation_go_proto",
     ],
 )

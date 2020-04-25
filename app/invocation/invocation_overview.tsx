@@ -2,7 +2,13 @@ import React from 'react';
 import InvocationModel from './invocation_model'
 import router from '../router/router';
 import format from '../format/format';
+import capabilities from '../capabilities/capabilities';
 import { User } from '../auth/auth_service';
+
+import rpcService from '../service/rpc_service'
+
+import { assistance } from '../../proto/assistance_ts_proto';
+import { invocation } from '../../proto/invocation_ts_proto';
 
 interface Props {
   model: InvocationModel,
@@ -22,6 +28,16 @@ export default class InvocationOverviewComponent extends React.Component {
 
   handleHostClicked() {
     router.navigateToHostHistory(this.props.model.getHost());
+  }
+
+  handleHelpClicked() {
+    let request = new assistance.RequestAssistanceRequest();
+    request.lookup = new invocation.InvocationLookup();
+    request.lookup.invocationId = this.props.invocationId;
+    rpcService.service.requestAssistance(request).then((response) => {
+      console.log(response);
+      alert("Help request sent to Slack channel!");
+    });
   }
 
   render() {
@@ -81,6 +97,10 @@ export default class InvocationOverviewComponent extends React.Component {
           {this.props.model.getMode()}
         </div>
       </div>
+      <div className="actions">
+        {capabilities.assistanceEnabled && !this.props.model.getSucceeded() && <button onClick={this.handleHelpClicked.bind(this)}>Get Help Debugging</button>}
+      </div>
+
     </div>
   }
 }

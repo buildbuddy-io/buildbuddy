@@ -6,12 +6,14 @@ export class Capabilities {
   paths: Set<string>;
   enterprise: boolean;
   auth: string;
+  assistanceEnabled: boolean;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
     this.version = window.buildbuddyConfig && window.buildbuddyConfig.version;
     this.auth = window.buildbuddyConfig && window.buildbuddyConfig.configured_issuers && window.buildbuddyConfig.configured_issuers.length && window.buildbuddyConfig.configured_issuers[0];
-    this.enterprise = enterprise;
+    this.auth = window.buildbuddyConfig && window.buildbuddyConfig.configured_issuers && window.buildbuddyConfig.configured_issuers.length && window.buildbuddyConfig.configured_issuers[0];
+    this.assistanceEnabled = window.buildbuddyConfig && window.buildbuddyConfig.assistance_enabled;
     this.paths = new Set(paths);
     window.gtag('set', {
       'app_name': this.name,

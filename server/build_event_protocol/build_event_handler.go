@@ -100,6 +100,9 @@ func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error
 
 	// Notify our webhooks, if we have any.
 	for _, hook := range e.env.GetWebhooks() {
+		if hook.GetTrigger() != "completed" {
+			continue;
+		}
 		go func() {
 			// We use context background here because the request context will
 			// be closed soon and we don't want to block while calling webhooks.

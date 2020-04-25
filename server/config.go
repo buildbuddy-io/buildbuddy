@@ -61,7 +61,8 @@ type integrationsConfig struct {
 }
 
 type SlackConfig struct {
-	WebhookURL string `yaml:"webhook_url"`
+	WebhookURL     string `yaml:"webhook_url"`
+	HelpWebhookURL string `yaml:"help_webhook_url"`
 }
 
 type GCSCacheConfig struct {

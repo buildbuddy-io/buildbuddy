@@ -5,6 +5,17 @@ load("//rules:typescript_proto_library.bzl", "ts_proto_library")
 package(default_visibility = ["//visibility:public"])
 
 proto_library(
+    name = "assistance_proto",
+    srcs = [
+        "assistance.proto",
+    ],
+    deps = [
+        ":context_proto",
+        ":invocation_proto",
+    ],
+)
+
+proto_library(
     name = "build_status_proto",
     srcs = [
         "build_status.proto",
@@ -136,6 +147,7 @@ proto_library(
     name = "buildbuddy_service_proto",
     srcs = ["buildbuddy_service.proto"],
     deps = [
+        ":assistance_proto",
         ":bazel_config_proto",
         ":invocation_proto",
         ":user_proto",
@@ -169,6 +181,16 @@ proto_library(
 )
 
 # Go proto rules below here
+
+go_proto_library(
+    name = "assistance_go_proto",
+    importpath = "proto/assistance",
+    proto = ":assistance_proto",
+    deps = [
+    ":context_go_proto",
+    ":invocation_go_proto",
+    ],
+)
 
 go_grpc_library(
     name = "publish_build_event_go_proto",
@@ -227,6 +249,7 @@ go_grpc_library(
     importpath = "proto/buildbuddy_service",
     proto = ":buildbuddy_service_proto",
     deps = [
+        ":assistance_go_proto",
         ":bazel_config_go_proto",
         ":invocation_go_proto",
         ":user_go_proto",
@@ -285,6 +308,11 @@ go_grpc_library(
 )
 
 # TypeScript proto rules below here
+
+ts_proto_library(
+    name = "assistance_ts_proto",
+    deps = [":assistance_proto"],
+)
 
 ts_proto_library(
     name = "bazel_config_ts_proto",
