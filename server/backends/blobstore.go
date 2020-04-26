@@ -12,6 +12,12 @@ import (
 	"strings"
 
 	"cloud.google.com/go/storage"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -29,6 +35,10 @@ func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error
 			opts = append(opts, option.WithCredentialsFile(gcsConfig.CredentialsFile))
 		}
 		return NewGCSBlobStore(gcsConfig.Bucket, gcsConfig.ProjectID, opts...)
+	}
+
+	if awsConfig := c.GetStorageAWSS3Config(); awsConfig != nil && awsConfig.Bucket != "" {
+		return NewAwsS3BlobStore(awsConfig)
 	}
 	return nil, fmt.Errorf("No storage backend configured -- please specify at least one in the config")
 }
@@ -206,4 +216,125 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 	} else {
 		return false, err
 	}
+}
+
+// AWS stuff
+type AwsS3BlobStore struct {
+	s3         *s3.S3
+	bucket     *string
+	downloader *s3manager.Downloader
+	uploader   *s3manager.Uploader
+}
+
+func NewAwsS3BlobStore(awsConfig *config.AwsS3Config) (*AwsS3BlobStore, error) {
+	ctx := context.Background()
+
+	var creds *credentials.Credentials
+
+	// See https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html#specifying-credentials
+	if awsConfig.CredentialsProfile != "" {
+		creds = credentials.NewSharedCredentials("", awsConfig.CredentialsProfile)
+	}
+
+	sess, err := session.NewSession(&aws.Config{
+		Region:      aws.String(awsConfig.Region),
+		Credentials: creds,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Create S3 service client
+	svc := s3.New(sess)
+
+	awsBlobStore := &AwsS3BlobStore{
+		s3:         svc,
+		bucket:     aws.String(awsConfig.Bucket),
+		downloader: s3manager.NewDownloader(sess),
+		uploader:   s3manager.NewUploader(sess),
+	}
+
+	if err := awsBlobStore.createBucketIfNotExists(ctx, awsConfig.Bucket); err != nil {
+		return nil, err
+	}
+
+	return awsBlobStore, nil
+}
+
+func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName string) error {
+	// HeadBucket call will return 404 or 403
+	if _, err := a.s3.HeadBucketWithContext(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucketName)}); err != nil {
+		aerr := err.(awserr.Error)
+		// AWS returns codes as strings
+		// https://github.com/aws/aws-sdk-go/blob/master/service/s3/s3manager/bucket_region_test.go#L70
+		if aerr.Code() != "NotFound" {
+			return err
+		}
+
+		log.Printf("Creating storage bucket: %s", bucketName)
+		if _, err := a.s3.CreateBucketWithContext(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)}); err != nil {
+			return err
+		}
+		return a.s3.WaitUntilBucketExistsWithContext(ctx, &s3.HeadBucketInput{
+			Bucket: aws.String(bucketName),
+		})
+	}
+	return nil
+}
+
+func (a *AwsS3BlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
+	buff := &aws.WriteAtBuffer{}
+
+	_, err := a.downloader.DownloadWithContext(ctx, buff,
+		&s3.GetObjectInput{
+			Bucket: a.bucket,
+			Key:    aws.String(blobName),
+		})
+
+	return decompress(buff.Bytes(), err)
+}
+
+func (a *AwsS3BlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
+	compressedData, err := compress(data)
+	if err != nil {
+		return 0, err
+	}
+	uploadParams := &s3manager.UploadInput{
+		Bucket: a.bucket,
+		Key:    aws.String(blobName),
+		Body:   bytes.NewReader(compressedData)}
+	if _, err := a.uploader.UploadWithContext(ctx, uploadParams); err != nil {
+		return -1, err
+	}
+	return len(compressedData), nil
+}
+
+func (a *AwsS3BlobStore) DeleteBlob(ctx context.Context, blobName string) error {
+	deleteParams := &s3.DeleteObjectInput{
+		Bucket: a.bucket,
+		Key:    aws.String(blobName)}
+
+	if _, err := a.s3.DeleteObjectWithContext(ctx, deleteParams); err != nil {
+		return err
+	}
+
+	return a.s3.WaitUntilObjectNotExistsWithContext(ctx, &s3.HeadObjectInput{
+		Bucket: a.bucket,
+		Key:    aws.String(blobName),
+	})
+}
+
+func (a *AwsS3BlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
+
+	params := &s3.HeadObjectInput{
+		Bucket: a.bucket,
+		Key:    aws.String(blobName),
+	}
+
+	if _, err := a.s3.HeadObjectWithContext(ctx, params); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
