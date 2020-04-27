@@ -286,11 +286,10 @@ func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName
 func (a *AwsS3BlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
 	buff := &aws.WriteAtBuffer{}
 
-	_, err := a.downloader.DownloadWithContext(ctx, buff,
-		&s3.GetObjectInput{
-			Bucket: a.bucket,
-			Key:    aws.String(blobName),
-		})
+	_, err := a.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
+		Bucket: a.bucket,
+		Key:    aws.String(blobName),
+	})
 
 	return decompress(buff.Bytes(), err)
 }
@@ -303,7 +302,8 @@ func (a *AwsS3BlobStore) WriteBlob(ctx context.Context, blobName string, data []
 	uploadParams := &s3manager.UploadInput{
 		Bucket: a.bucket,
 		Key:    aws.String(blobName),
-		Body:   bytes.NewReader(compressedData)}
+		Body:   bytes.NewReader(compressedData),
+	}
 	if _, err := a.uploader.UploadWithContext(ctx, uploadParams); err != nil {
 		return -1, err
 	}
@@ -313,7 +313,8 @@ func (a *AwsS3BlobStore) WriteBlob(ctx context.Context, blobName string, data []
 func (a *AwsS3BlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	deleteParams := &s3.DeleteObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobName)}
+		Key:    aws.String(blobName),
+	}
 
 	if _, err := a.s3.DeleteObjectWithContext(ctx, deleteParams); err != nil {
 		return err
