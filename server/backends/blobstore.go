@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -139,35 +138,6 @@ func (d *DiskBlobStore) BlobExists(ctx context.Context, blobName string) (bool, 
 	return disk.FileExists(ctx, fullPath)
 }
 
-func (d *DiskBlobStore) BlobReader(ctx context.Context, blobName string, offset, length int64) (io.Reader, error) {
-	fullPath, err := d.blobPath(blobName)
-	if err != nil {
-		return nil, err
-	}
-	return disk.FileReader(ctx, fullPath, offset, length)
-}
-
-type writeMover struct {
-	*os.File
-	finalPath string
-}
-
-func (w *writeMover) Close() error {
-	tmpName := w.File.Name()
-	if err := w.File.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, w.finalPath)
-}
-
-func (d *DiskBlobStore) BlobWriter(ctx context.Context, blobName string) (io.WriteCloser, error) {
-	fullPath, err := d.blobPath(blobName)
-	if err != nil {
-		return nil, err
-	}
-	return disk.FileWriter(ctx, fullPath)
-}
-
 // GCSBlobStore implements the blobstore API on top of the google cloud storage API.
 type GCSBlobStore struct {
 	gcsClient    *storage.Client
@@ -236,19 +206,4 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 	} else {
 		return false, err
 	}
-}
-
-func (g *GCSBlobStore) BlobReader(ctx context.Context, blobName string, offset, length int64) (io.Reader, error) {
-	reader, err := g.bucketHandle.Object(blobName).NewReader(ctx)
-	if err != nil {
-		if err == storage.ErrObjectNotExist {
-			return nil, os.ErrNotExist
-		}
-		return nil, err
-	}
-	return reader, nil
-}
-
-func (g *GCSBlobStore) BlobWriter(ctx context.Context, blobName string) (io.WriteCloser, error) {
-	return g.bucketHandle.Object(blobName).NewWriter(ctx), nil
 }

@@ -74,10 +74,6 @@ type Blobstore interface {
 	ReadBlob(ctx context.Context, blobName string) ([]byte, error)
 	WriteBlob(ctx context.Context, blobName string, data []byte) (int, error)
 	DeleteBlob(ctx context.Context, blobName string) error
-
-	// Low level interface used for seeking and stream-writing.
-	BlobReader(ctx context.Context, blobName string, offset, length int64) (io.Reader, error)
-	BlobWriter(ctx context.Context, blobName string) (io.WriteCloser, error)
 }
 
 // Similar to a blobstore, a cache allows for reading and writing data, but
