@@ -356,6 +356,20 @@ def install_buildbuddy_dependencies():
     )
 
     go_repository(
+        name = "com_github_aws_aws_sdk_go",
+        importpath = "github.com/aws/aws-sdk-go",
+        version = "v1.30.14",
+        sum = "h1:vZfX2b/fknc9wKcytbLWykM7in5k6dbQ8iHTJDUP1Ng="
+    )
+
+    go_repository(
+        name="com_github_jmespath_go_jmespath",
+        importpath = "github.com/jmespath/go-jmespath",
+        version = "v0.3.0",
+        sum = "h1:OS12ieG61fsCg5+qLJ+SsW9NicxNkg3b25OyT2yCeUc="
+    )
+
+    go_repository(
 	name = "com_google_cloud_go_bigquery",
 	importpath = "cloud.google.com/go/bigquery",
 	sum = "h1:sAbMqjY1PEQKZBWfbu6Y6bsupJ9c4QdHnzg/VvYTLcE=",

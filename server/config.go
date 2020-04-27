@@ -40,10 +40,11 @@ type databaseConfig struct {
 }
 
 type storageConfig struct {
-	Disk               DiskConfig `yaml:"disk"`
-	GCS                GCSConfig  `yaml:"gcs"`
-	TTLSeconds         int        `yaml:"ttl_seconds"`
-	ChunkFileSizeBytes int        `yaml:"chunk_file_size_bytes"`
+	Disk               DiskConfig  `yaml:"disk"`
+	GCS                GCSConfig   `yaml:"gcs"`
+	AwsS3              AwsS3Config `yaml:"aws_s3"`
+	TTLSeconds         int         `yaml:"ttl_seconds"`
+	ChunkFileSizeBytes int         `yaml:"chunk_file_size_bytes"`
 }
 
 type DiskConfig struct {
@@ -54,6 +55,12 @@ type GCSConfig struct {
 	Bucket          string `yaml:"bucket"`
 	CredentialsFile string `yaml:"credentials_file"`
 	ProjectID       string `yaml:"project_id"`
+}
+
+type AwsS3Config struct {
+	Region             string `yaml:"region"`
+	Bucket             string `yaml:"bucket"`
+	CredentialsProfile string `yaml:"credentials_profile"`
 }
 
 type integrationsConfig struct {
@@ -181,6 +188,11 @@ func (c *Configurator) GetStorageDiskRootDir() string {
 func (c *Configurator) GetStorageGCSConfig() *GCSConfig {
 	c.rereadIfStale()
 	return &c.gc.Storage.GCS
+}
+
+func (c *Configurator) GetStorageAWSS3Config() *AwsS3Config {
+	c.rereadIfStale()
+	return &c.gc.Storage.AwsS3
 }
 
 func (c *Configurator) GetDBDataSource() string {

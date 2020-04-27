@@ -147,6 +147,19 @@ database:
 ##### ProjectID
 ```project_id``` *Optional* The Google Cloud project ID of the project owning the above credentials and GCS bucket.
 
+#### AWS
+```aws_s3:``` *Optional* The AWS section configures AWS S3 storage.
+
+##### Region
+```region``` *Required* The AWS region
+
+##### Bucket
+```bucket``` *Required* The AWS S3 bucket (will be created automatically)
+
+##### Credentials Profile
+```credentials_profile```  *Optional* If a profile other than default is chosen, use that one.
+
+By default, the S3 blobstore will rely on environment variables, shared credentials, or IAM roles. See https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html#specifying-credentials for more information.
 
 Example Storage section: (disk)
 ```
@@ -169,6 +182,18 @@ storage:
     credentials_file: "enterprise/config/my-cool-project-7a9d15f66e69.json"
 ```
 
+Example Storage section: (aws_s3)
+
+```
+storage:
+  aws_s3:
+     # required
+     region: "us-west-2"
+     bucket: "buddybuild-bucket"
+     # optional
+     credentials_profile: "other-profile"
+``
+`
 ## Integrations
 ```integrations:``` *Optional* A section configuring optional external services BuildBuddy can integrate with, like Slack.
 
