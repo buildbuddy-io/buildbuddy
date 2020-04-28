@@ -8,7 +8,8 @@ interface Props {
 }
 
 interface State {
-  numPages: number;
+  threadNumPages: number;
+  threadToNumEventPagesMap: Map<number, number>,
   profile: any;
   threadMap: Map<number, Thread>;
   sortFunction: (a: string, b: string) => number;
@@ -23,11 +24,15 @@ interface Thread {
   events: any[];
 }
 
+const threadPageSize = 10;
+const eventPageSize = 100;
+
 export default class ArtifactsCardComponent extends React.Component {
   props: Props;
 
   state: State = {
-    numPages: 1,
+    threadNumPages: 1,
+    threadToNumEventPagesMap: new Map<number, number>(),
     profile: null,
     threadMap: new Map<number, Thread>(),
     sortFunction: this.sortTimeAsc,
@@ -120,6 +125,15 @@ export default class ArtifactsCardComponent extends React.Component {
     return a.ts - b.ts;
   }
 
+  handleMoreEventsClicked(threadId: number) {
+    this.state.threadToNumEventPagesMap.set(threadId, this.getNumPagesForThread(threadId) + 1)
+    this.setState({ ...this.state, threadToNumEventPagesMap: this.state.threadToNumEventPagesMap })
+  }
+
+  handleMoreThreadsClicked() {
+    this.setState({ ...this.state, threadNumPages: this.state.threadNumPages + 1 })
+  }
+
   handleStartTimeClicked() {
     this.setState({ ...this.state, sortFunction: this.sortTimeAsc });
   }
@@ -128,7 +142,12 @@ export default class ArtifactsCardComponent extends React.Component {
     this.setState({ ...this.state, sortFunction: this.sortDurationDesc });
   }
 
+  getNumPagesForThread(threadId: number) {
+    return this.state.threadToNumEventPagesMap.get(threadId) || 1;
+  }
+
   render() {
+    let threads = Array.from(this.state.threadMap.values());
     return <div className="card artifacts">
       <img className="icon" src="/image/clock-regular.svg" />
       <div className="content">
@@ -142,13 +161,13 @@ export default class ArtifactsCardComponent extends React.Component {
           </div>
         }
         <div className="details">
-          {Array.from(this.state.threadMap.values()).sort(this.sortIdAsc).map((thread: Thread) =>
+          {threads.sort(this.sortIdAsc).slice(0, this.state.threadNumPages * threadPageSize).map((thread: Thread) =>
             <div>
               <div className="list-title">
                 <div>{thread.name}</div>
               </div>
               <ul>
-                {thread.events.sort(this.state.sortFunction).map((event) =>
+                {thread.events.sort(this.state.sortFunction).slice(0, eventPageSize * this.getNumPagesForThread(thread.id)).map((event) =>
                   <li>
                     <div className="list-grid">
                       <div>{event.name}</div>
@@ -158,9 +177,13 @@ export default class ArtifactsCardComponent extends React.Component {
                   </li>
                 )}
               </ul>
+              {thread.events.length > (eventPageSize * this.getNumPagesForThread(thread.id)) && !!eventPageSize &&
+              <div className="more" onClick={this.handleMoreEventsClicked.bind(this, thread.id)}>See more events</div>}
             </div>
           )}
         </div>
+        {threads.length > (threadPageSize * this.state.threadNumPages) && !!threadPageSize &&
+              <div className="more" onClick={this.handleMoreThreadsClicked.bind(this)}>See more threads</div>}
       </div>
     </div>
   }
