@@ -38,27 +38,7 @@ var (
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
 )
 
-func StartAndRunServices(env environment.Env) {
-	staticFileServer, err := static.NewStaticFileServer(env, *staticDirectory, []string{"/invocation/", "/history/", "/docs/"})
-	if err != nil {
-		log.Fatalf("Error initializing static file server: %s", err)
-	}
-
-	afs, err := static.NewStaticFileServer(env, *appDirectory, []string{})
-	if err != nil {
-		log.Fatalf("Error initializing app server: %s", err)
-	}
-
-	// Initialize our gRPC server (and fail early if that doesn't happen).
-	gRPCHostAndPort := fmt.Sprintf("%s:%d", *listen, *gRPCPort)
-	log.Printf("gRPC listening on http://%s\n", gRPCHostAndPort)
-
-	lis, err := net.Listen("tcp", gRPCHostAndPort)
-	if err != nil {
-		log.Fatalf("Failed to listen: %s", err)
-	}
-	grpcServer := grpc.NewServer(rpcfilters.GetUnaryInterceptor(env), rpcfilters.GetStreamInterceptor(env))
-
+func StartBuildEventServices(env environment.Env, grpcServer *grpc.Server) {
 	// Register to handle build event protocol messages.
 	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env)
 	if err != nil {
@@ -94,16 +74,40 @@ func StartAndRunServices(env environment.Env) {
 		capabilitiesServer := capabilities_server.NewCapabilitiesServer( /*supportCAS=*/ true /*supportRemoteExec=*/, false)
 		repb.RegisterCapabilitiesServer(grpcServer, capabilitiesServer)
 	}
+}
+
+func StartAndRunServices(env environment.Env) {
+	staticFileServer, err := static.NewStaticFileServer(env, *staticDirectory, []string{"/invocation/", "/history/", "/docs/"})
+	if err != nil {
+		log.Fatalf("Error initializing static file server: %s", err)
+	}
+
+	afs, err := static.NewStaticFileServer(env, *appDirectory, []string{})
+	if err != nil {
+		log.Fatalf("Error initializing app server: %s", err)
+	}
+
+	// Initialize our gRPC server (and fail early if that doesn't happen).
+	gRPCHostAndPort := fmt.Sprintf("%s:%d", *listen, *gRPCPort)
+	log.Printf("gRPC listening on http://%s\n", gRPCHostAndPort)
+
+	lis, err := net.Listen("tcp", gRPCHostAndPort)
+	if err != nil {
+		log.Fatalf("Failed to listen: %s", err)
+	}
+	grpcServer := grpc.NewServer(rpcfilters.GetUnaryInterceptor(env), rpcfilters.GetStreamInterceptor(env))
 
 	// Support reflection so that tools like grpc-cli (aka stubby) can
 	// enumerate our services and call them.
 	reflection.Register(grpcServer)
 
+	StartBuildEventServices(env, grpcServer)
 	// Register to handle BuildBuddy API messages (over gRPC)
 	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env)
 	if err != nil {
 		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
 	}
+	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
 	// Generate HTTP (protolet) handlers for the BuildBuddy API too, so it
 	// can be called over HTTP(s).
@@ -111,7 +115,6 @@ func StartAndRunServices(env environment.Env) {
 	if err != nil {
 		log.Fatalf("Error initializing RPC over HTTP handlers: %s", err)
 	}
-	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
 	// Register all of our HTTP handlers on the default mux.
 	http.Handle("/", httpfilters.WrapExternalHandler(staticFileServer))
@@ -134,8 +137,6 @@ func StartAndRunServices(env environment.Env) {
 		sp.PrintSplashScreen(*port, *gRPCPort)
 	}
 
-	// Run the HTTP server in a goroutine because we still want to start a gRPC
-	// server below.
 	go func() {
 		log.Fatal(http.ListenAndServe(hostAndPort, nil))
 	}()
