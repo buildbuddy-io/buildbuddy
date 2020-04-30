@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"google.golang.org/grpc"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
@@ -32,6 +33,7 @@ import (
 var (
 	listen   = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port     = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
+	sslPort  = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
 	gRPCPort = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
 
 	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
@@ -95,13 +97,27 @@ func StartAndRunServices(env environment.Env) {
 	if err != nil {
 		log.Fatalf("Failed to listen: %s", err)
 	}
-	grpcServer := grpc.NewServer(rpcfilters.GetUnaryInterceptor(env), rpcfilters.GetStreamInterceptor(env))
+	grpcOptions := []grpc.ServerOption{
+		rpcfilters.GetUnaryInterceptor(env),
+		rpcfilters.GetStreamInterceptor(env),
+	}
+	if ssl.IsEnabled(env) {
+		creds, err := ssl.GetGRPCSTLSCreds(env)
+		if err != nil {
+			log.Fatal(err)
+		}
+		grpcOptions = append(grpcOptions, grpc.Creds(creds))
+	}
+
+	grpcServer := grpc.NewServer(grpcOptions...)
 
 	// Support reflection so that tools like grpc-cli (aka stubby) can
 	// enumerate our services and call them.
 	reflection.Register(grpcServer)
 
+	// Start Build-Event-Protocol and Remote-Cache services.
 	StartBuildEventServices(env, grpcServer)
+
 	// Register to handle BuildBuddy API messages (over gRPC)
 	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env)
 	if err != nil {
@@ -116,30 +132,53 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Error initializing RPC over HTTP handlers: %s", err)
 	}
 
+	mux := http.NewServeMux()
 	// Register all of our HTTP handlers on the default mux.
-	http.Handle("/", httpfilters.WrapExternalHandler(staticFileServer))
-	http.Handle("/app/", httpfilters.WrapExternalHandler(http.StripPrefix("/app", afs)))
-	http.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalHandler(env,
+	mux.Handle("/", httpfilters.WrapExternalHandler(staticFileServer))
+	mux.Handle("/app/", httpfilters.WrapExternalHandler(http.StripPrefix("/app", afs)))
+	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalHandler(env,
 		http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))
-	http.Handle("/file/download", httpfilters.WrapExternalHandler(buildBuddyServer))
-	http.Handle("/healthz", env.GetHealthChecker())
+	mux.Handle("/file/download", httpfilters.WrapExternalHandler(buildBuddyServer))
+	mux.Handle("/healthz", env.GetHealthChecker())
 
 	if auth := env.GetAuthenticator(); auth != nil {
-		http.Handle("/login/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Login)))
-		http.Handle("/auth/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Auth)))
-		http.Handle("/logout/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Logout)))
+		mux.Handle("/login/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Login)))
+		mux.Handle("/auth/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Auth)))
+		mux.Handle("/logout/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Logout)))
 	}
-
-	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
-	log.Printf("HTTP listening on http://%s\n", hostAndPort)
 
 	if sp := env.GetSplashPrinter(); sp != nil {
 		sp.PrintSplashScreen(*port, *gRPCPort)
 	}
 
-	go func() {
-		log.Fatal(http.ListenAndServe(hostAndPort, nil))
-	}()
+	server := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
+		Handler: mux,
+	}
+
+	if ssl.IsEnabled(env) {
+		tlsConfig, handler, err := ssl.ConfigureTLS(env, mux)
+		if err != nil {
+			log.Fatal(err)
+		}
+		sslServer := &http.Server{
+			Addr:      fmt.Sprintf("%s:%d", *listen, *sslPort),
+			Handler:   mux,
+			TLSConfig: tlsConfig,
+		}
+		go func() {
+			log.Fatal(sslServer.ListenAndServeTLS("", ""))
+		}()
+		log.Printf("Listening for SSL traffic on port: %d", *sslPort)
+		go func() {
+			log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), handler))
+		}()
+	} else {
+		// If no SSL is enabled, we'll just serve things as-is.
+		go func() {
+			log.Fatal(server.ListenAndServe())
+		}()
+	}
 	go func() {
 		log.Fatal(grpcServer.Serve(lis))
 	}()
