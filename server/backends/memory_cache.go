@@ -247,7 +247,7 @@ func (m *MemoryCache) Writer(ctx context.Context, key string) (io.WriteCloser, e
 	return &setOnClose{
 		Buffer: &buffer,
 		c: func(b *bytes.Buffer) error {
-			// Locking and key prefixing are handled in Put.
+			// Locking and key prefixing are handled in Set.
 			return m.Set(ctx, key, b.Bytes())
 		},
 	}, nil
