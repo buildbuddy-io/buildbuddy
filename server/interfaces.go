@@ -84,7 +84,7 @@ type Cache interface {
 	// Normal cache-like operations.
 	Contains(ctx context.Context, key string) (bool, error)
 	Get(ctx context.Context, key string) ([]byte, error)
-	Put(ctx context.Context, key string, data []byte) error
+	Set(ctx context.Context, key string, data []byte) error
 	Delete(ctx context.Context, key string) error
 
 	// Low level interface used for seeking and stream-writing.

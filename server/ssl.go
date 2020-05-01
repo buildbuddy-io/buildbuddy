@@ -1,16 +1,44 @@
 package ssl
 
 import (
+	"context"
 	"crypto/tls"
 	"net/http"
 	"net/url"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 	"google.golang.org/grpc/credentials"
 )
+
+type CertCache struct {
+	cache interfaces.Cache
+}
+
+func (c *CertCache) Get(ctx context.Context, key string) ([]byte, error) {
+	bytes, err := c.cache.Get(ctx, key)
+	if err != nil {
+		return nil, autocert.ErrCacheMiss
+	}
+	return bytes, nil
+}
+
+func (c *CertCache) Put(ctx context.Context, key string, data []byte) error {
+	return c.cache.Set(ctx, key, data)
+}
+
+func (c *CertCache) Delete(ctx context.Context, key string) error {
+	return c.cache.Delete(ctx, key)
+}
+
+func NewCertCache(cache interfaces.Cache) *CertCache {
+	return &CertCache{
+		cache: cache,
+	}
+}
 
 func getTLSConfig(env environment.Env, mux *http.ServeMux) (*tls.Config, http.Handler, error) {
 	sslConf := env.GetConfigurator().GetSSLConfig()
@@ -31,18 +59,29 @@ func getTLSConfig(env environment.Env, mux *http.ServeMux) (*tls.Config, http.Ha
 	} else if sslConf.UseACME {
 		appURL := env.GetConfigurator().GetAppBuildBuddyURL()
 		if appURL == "" {
-			return nil, nil, status.FailedPreconditionError("No buildbuddy app URL set")
+			return nil, nil, status.FailedPreconditionError("No buildbuddy app URL set - unable to use ACME")
 		}
 
 		url, err := url.Parse(appURL)
 		if err != nil {
 			return nil, nil, err
 		}
-		_ = url
+		hosts := []string{url.Hostname()}
+
+		cacheURL := env.GetConfigurator().GetAppCacheAPIURL()
+		if url, err = url.Parse(cacheURL); cacheURL != "" && err == nil {
+			hosts = append(hosts, url.Hostname())
+		}
+
+		eventsURL := env.GetConfigurator().GetAppEventsAPIURL()
+		if url, err = url.Parse(eventsURL); eventsURL != "" && err == nil {
+			hosts = append(hosts, url.Hostname())
+		}
+
 		manager := autocert.Manager{
 			Prompt:     autocert.AcceptTOS,
-			Cache:      env.GetCache(),
-			HostPolicy: autocert.HostWhitelist("app.buildbuddy.dev", "cache.buildbuddy.dev", "events.buildbuddy.dev", "buildbuddy.dev"),
+			Cache:      NewCertCache(env.GetCache()),
+			HostPolicy: autocert.HostWhitelist(hosts...),
 		}
 		tlsConfig.GetCertificate = manager.GetCertificate
 		tlsConfig.NextProtos = append(tlsConfig.NextProtos, acme.ALPNProto)

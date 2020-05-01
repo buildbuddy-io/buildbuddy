@@ -195,7 +195,7 @@ func (m *MemoryCache) Get(ctx context.Context, key string) ([]byte, error) {
 	return value, nil
 }
 
-func (m *MemoryCache) Put(ctx context.Context, key string, data []byte) error {
+func (m *MemoryCache) Set(ctx context.Context, key string, data []byte) error {
 	fullKey, err := m.PrefixKey(ctx, key)
 	if err != nil {
 		return err
@@ -248,7 +248,7 @@ func (m *MemoryCache) Writer(ctx context.Context, key string) (io.WriteCloser, e
 		Buffer: &buffer,
 		c: func(b *bytes.Buffer) error {
 			// Locking and key prefixing are handled in Put.
-			return m.Put(ctx, key, b.Bytes())
+			return m.Set(ctx, key, b.Bytes())
 		},
 	}, nil
 }
