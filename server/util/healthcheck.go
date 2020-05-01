@@ -22,7 +22,6 @@ func (h *HealthChecker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reqServerType := r.Header.Get("server-type")
 	if reqServerType == h.serverType {
 		w.Write([]byte("OK"))
-		log.Printf("Healthcheck returned OK")
 		return
 	}
 	err := fmt.Errorf("Server type: '%s' unknown (did not match: '%s'", reqServerType, h.serverType)
