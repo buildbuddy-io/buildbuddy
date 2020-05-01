@@ -198,7 +198,7 @@ func (c *DiskCache) Get(ctx context.Context, key string) ([]byte, error) {
 	return disk.ReadFile(ctx, fullPath)
 }
 
-func (c *DiskCache) Set(ctx context.Context, key string, data []byte) error {
+func (c *DiskCache) Put(ctx context.Context, key string, data []byte) error {
 	fullPath, err := c.PrefixKey(ctx, key)
 	if err != nil {
 		return err

@@ -185,7 +185,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return nil, err
 	}
 
-	if err := s.cache.Set(ctx, ck, blob); err != nil {
+	if err := s.cache.Put(ctx, ck, blob); err != nil {
 		return nil, err
 	}
 	return req.ActionResult, nil

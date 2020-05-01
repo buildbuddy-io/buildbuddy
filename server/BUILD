@@ -161,9 +161,11 @@ go_library(
     srcs = ["ssl.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/ssl",
     deps = [
+        ":interfaces",
         "//server:environment",
         "//server/util:status",
         "@org_golang_google_grpc//credentials:go_default_library",
+        "@org_golang_x_crypto//acme:go_default_library",
         "@org_golang_x_crypto//acme/autocert:go_default_library",
     ],
 )

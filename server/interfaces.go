@@ -6,8 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	inpb "proto/invocation"
+
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 )
 
 // An interface representing the user info gleaned from an authorization header.
@@ -83,7 +84,7 @@ type Cache interface {
 	// Normal cache-like operations.
 	Contains(ctx context.Context, key string) (bool, error)
 	Get(ctx context.Context, key string) ([]byte, error)
-	Set(ctx context.Context, key string, data []byte) error
+	Put(ctx context.Context, key string, data []byte) error
 	Delete(ctx context.Context, key string) error
 
 	// Low level interface used for seeking and stream-writing.

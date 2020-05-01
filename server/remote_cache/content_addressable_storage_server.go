@@ -102,7 +102,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		if err != nil {
 			return nil, err
 		}
-		if err := s.cache.Set(ctx, ck, uploadRequest.Data); err != nil {
+		if err := s.cache.Put(ctx, ck, uploadRequest.Data); err != nil {
 			return nil, err
 		}
 		rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{

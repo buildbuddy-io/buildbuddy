@@ -31,10 +31,11 @@ import (
 )
 
 var (
-	listen   = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
-	port     = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	sslPort  = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
-	gRPCPort = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
+	listen    = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	port      = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
+	sslPort   = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
+	gRPCPort  = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
+	gRPCSPort = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 
 	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
@@ -78,6 +79,41 @@ func StartBuildEventServices(env environment.Env, grpcServer *grpc.Server) {
 	}
 }
 
+func StartGRPCService(env environment.Env, buildBuddyServer *buildbuddy_server.BuildBuddyServer, port *int, credentialOption grpc.ServerOption) {
+	// Initialize our gRPC server (and fail early if that doesn't happen).
+	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
+
+	lis, err := net.Listen("tcp", hostAndPort)
+	if err != nil {
+		log.Fatalf("Failed to listen: %s", err)
+	}
+	grpcOptions := []grpc.ServerOption{
+		rpcfilters.GetUnaryInterceptor(env),
+		rpcfilters.GetStreamInterceptor(env),
+	}
+
+	if credentialOption != nil {
+		grpcOptions = append(grpcOptions, credentialOption)
+		log.Printf("gRPCS listening on http://%s\n", hostAndPort)
+	} else {
+		log.Printf("gRPC listening on http://%s\n", hostAndPort)
+	}
+
+	grpcServer := grpc.NewServer(grpcOptions...)
+
+	// Support reflection so that tools like grpc-cli (aka stubby) can
+	// enumerate our services and call them.
+	reflection.Register(grpcServer)
+
+	// Start Build-Event-Protocol and Remote-Cache services.
+	StartBuildEventServices(env, grpcServer)
+	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
+
+	go func() {
+		log.Fatal(grpcServer.Serve(lis))
+	}()
+}
+
 func StartAndRunServices(env environment.Env) {
 	staticFileServer, err := static.NewStaticFileServer(env, *staticDirectory, []string{"/invocation/", "/history/", "/docs/"})
 	if err != nil {
@@ -89,47 +125,28 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Error initializing app server: %s", err)
 	}
 
-	// Initialize our gRPC server (and fail early if that doesn't happen).
-	gRPCHostAndPort := fmt.Sprintf("%s:%d", *listen, *gRPCPort)
-	log.Printf("gRPC listening on http://%s\n", gRPCHostAndPort)
-
-	lis, err := net.Listen("tcp", gRPCHostAndPort)
-	if err != nil {
-		log.Fatalf("Failed to listen: %s", err)
-	}
-	grpcOptions := []grpc.ServerOption{
-		rpcfilters.GetUnaryInterceptor(env),
-		rpcfilters.GetStreamInterceptor(env),
-	}
-	if ssl.IsEnabled(env) {
-		creds, err := ssl.GetGRPCSTLSCreds(env)
-		if err != nil {
-			log.Fatal(err)
-		}
-		grpcOptions = append(grpcOptions, grpc.Creds(creds))
-	}
-
-	grpcServer := grpc.NewServer(grpcOptions...)
-
-	// Support reflection so that tools like grpc-cli (aka stubby) can
-	// enumerate our services and call them.
-	reflection.Register(grpcServer)
-
-	// Start Build-Event-Protocol and Remote-Cache services.
-	StartBuildEventServices(env, grpcServer)
-
 	// Register to handle BuildBuddy API messages (over gRPC)
 	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env)
 	if err != nil {
 		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
 	}
-	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
 	// Generate HTTP (protolet) handlers for the BuildBuddy API too, so it
 	// can be called over HTTP(s).
 	protoHandler, err := protolet.GenerateHTTPHandlers(buildBuddyServer)
 	if err != nil {
 		log.Fatalf("Error initializing RPC over HTTP handlers: %s", err)
+	}
+
+	StartGRPCService(env, buildBuddyServer, gRPCPort, nil)
+
+	if ssl.IsEnabled(env) {
+		creds, err := ssl.GetGRPCSTLSCreds(env)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		StartGRPCService(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
 	}
 
 	mux := http.NewServeMux()
@@ -179,8 +196,5 @@ func StartAndRunServices(env environment.Env) {
 			log.Fatal(server.ListenAndServe())
 		}()
 	}
-	go func() {
-		log.Fatal(grpcServer.Serve(lis))
-	}()
 	select {}
 }

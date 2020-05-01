@@ -2,26 +2,26 @@ package ssl
 
 import (
 	"crypto/tls"
-	"log"
 	"net/http"
 	"net/url"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 	"google.golang.org/grpc/credentials"
 )
 
 func getTLSConfig(env environment.Env, mux *http.ServeMux) (*tls.Config, http.Handler, error) {
 	sslConf := env.GetConfigurator().GetSSLConfig()
+	tlsConfig := &tls.Config{
+		NextProtos:               []string{"http/1.1"},
+		MinVersion:               tls.VersionTLS10,
+		SessionTicketsDisabled:   true,
+		PreferServerCipherSuites: true,
+	}
+
 	if sslConf.KeyFile != "" && sslConf.CertFile != "" {
-		log.Printf("Returning SSL based on cert and key")
-		tlsConfig := &tls.Config{
-			NextProtos:               []string{"http/1.1"},
-			MinVersion:               tls.VersionTLS10,
-			SessionTicketsDisabled:   true,
-			PreferServerCipherSuites: true,
-		}
 		certPair, err := tls.LoadX509KeyPair(sslConf.CertFile, sslConf.KeyFile)
 		if err != nil {
 			return nil, nil, err
@@ -41,10 +41,13 @@ func getTLSConfig(env environment.Env, mux *http.ServeMux) (*tls.Config, http.Ha
 		_ = url
 		manager := autocert.Manager{
 			Prompt:     autocert.AcceptTOS,
-			Cache:      autocert.DirCache("/devdata/certs"),
-			HostPolicy: autocert.HostWhitelist("buildbuddy.dev"),
+			Cache:      env.GetCache(),
+			HostPolicy: autocert.HostWhitelist("app.buildbuddy.dev", "cache.buildbuddy.dev", "events.buildbuddy.dev", "buildbuddy.dev"),
 		}
-		return manager.TLSConfig(), manager.HTTPHandler(mux), nil
+		tlsConfig.GetCertificate = manager.GetCertificate
+		tlsConfig.NextProtos = append(tlsConfig.NextProtos, acme.ALPNProto)
+
+		return tlsConfig, manager.HTTPHandler(mux), nil
 	}
 	return nil, nil, status.AbortedError("SSL disabled by config")
 }
@@ -55,12 +58,10 @@ func IsEnabled(env environment.Env) bool {
 }
 
 func ConfigureTLS(env environment.Env, mux *http.ServeMux) (*tls.Config, http.Handler, error) {
-	log.Printf("Configure TLS called")
 	return getTLSConfig(env, mux)
 }
 
 func GetGRPCSTLSCreds(env environment.Env) (credentials.TransportCredentials, error) {
-	log.Printf("GetTLSConfigForGRPC called!")
 	if !IsEnabled(env) {
 		return nil, status.AbortedError("SSL disabled by config")
 	}
@@ -69,5 +70,4 @@ func GetGRPCSTLSCreds(env environment.Env) (credentials.TransportCredentials, er
 		return nil, err
 	}
 	return credentials.NewTLS(tlsConfig), nil
-
 }
