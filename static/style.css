@@ -18,6 +18,7 @@ body {
   font-family: 'Open Sans', sans-serif;
   display: flex;
   flex-direction: column;
+  word-break: break-word;
 }
 
 #app {
