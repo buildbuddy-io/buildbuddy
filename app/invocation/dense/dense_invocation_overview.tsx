@@ -55,7 +55,7 @@ export default class DenseInvocationOverviewComponent extends React.Component {
             Broken
           </div>
           <div className="dense-invocation-overview-grid-value">
-            {this.props.model.broken.length}
+            {this.props.model.brokenTest.length}
           </div>
         </div>
         <div className="dense-invocation-overview-grid-chunk">
@@ -71,7 +71,7 @@ export default class DenseInvocationOverviewComponent extends React.Component {
             Flaky
           </div>
           <div className="dense-invocation-overview-grid-value">
-            {this.props.model.flaky.length}
+            {this.props.model.flakyTest.length}
           </div>
         </div>
         <div className="dense-invocation-overview-grid-chunk">

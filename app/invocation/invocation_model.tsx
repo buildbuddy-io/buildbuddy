@@ -12,9 +12,11 @@ export default class InvocationModel {
   progress = new Array<build_event_stream.Progress>();
   targets: build_event_stream.BuildEvent[] = [];
   succeeded: build_event_stream.BuildEvent[] = [];
-  broken: build_event_stream.BuildEvent[] = [];
   failed: build_event_stream.BuildEvent[] = [];
-  flaky: build_event_stream.BuildEvent[] = [];
+  succeededTest: build_event_stream.BuildEvent[] = [];
+  failedTest: build_event_stream.BuildEvent[] = [];
+  brokenTest: build_event_stream.BuildEvent[] = [];
+  flakyTest: build_event_stream.BuildEvent[] = [];
   files: build_event_stream.NamedSetOfFiles[] = [];
   structuredCommandLine: command_line.CommandLine[] = [];
   finished: build_event_stream.BuildFinished;
@@ -85,13 +87,19 @@ export default class InvocationModel {
       let buildEvent = model.completedMap.get(label)?.buildEvent;
       let testResult = model.testSummaryMap.get(label)?.buildEvent.testSummary;
       if (testResult && testResult.overallStatus == build_event_stream.TestStatus.FLAKY) {
-        model.flaky.push(buildEvent as build_event_stream.BuildEvent);
+        model.flakyTest.push(buildEvent as build_event_stream.BuildEvent);
       } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.FAILED_TO_BUILD) {
-        model.broken.push(buildEvent as build_event_stream.BuildEvent);
-      } else if (!buildEvent.completed.success || (testResult && testResult.overallStatus != build_event_stream.TestStatus.PASSED)) {
-        model.failed.push(buildEvent as build_event_stream.BuildEvent);
-      } else {
+        model.brokenTest.push(buildEvent as build_event_stream.BuildEvent);
+      } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.PASSED) {
+        model.succeededTest.push(buildEvent as build_event_stream.BuildEvent);
+      } else if (testResult) {
+        model.failedTest.push(buildEvent as build_event_stream.BuildEvent);
+      }
+
+      if (buildEvent.completed.success) {
         model.succeeded.push(buildEvent as build_event_stream.BuildEvent);
+      } else {
+        model.failed.push(buildEvent as build_event_stream.BuildEvent);
       }
     }
 
