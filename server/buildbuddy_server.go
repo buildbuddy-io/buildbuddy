@@ -281,6 +281,13 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	dialOptions = append(dialOptions, grpc.WithInsecure())
 
+	// TODO(siggisim): Support GRPCS caches.
+	grpcPort := getIntFlag("grpc_port", "1985")
+	grpcsPort := getIntFlag("grpcs_port", "1986")
+	if lookup.URL.Port() == grpcsPort {
+		lookup.URL.Host = lookup.URL.Hostname() + ":" + grpcPort
+	}
+
 	// Connect to host/port and create a new client
 	conn, err := grpc.Dial(lookup.URL.Host, dialOptions...)
 	if err != nil {
