@@ -17,7 +17,7 @@ You can view a [sample .bazelrc](https://github.com/buildbuddy-io/buildbuddy/blo
 
 ```
 build --bes_results_url=https://app.buildbuddy.io/invocation/
-build --bes_backend=grpc://events.buildbuddy.io:1985
+build --bes_backend=grpcs://events.buildbuddy.io:1986
 ```
 
 Now, when you build or test with bazel, it will print a url where you can view your build or test results. For example:

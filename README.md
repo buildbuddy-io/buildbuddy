@@ -17,7 +17,7 @@ Getting started with Buildbuddy is simple. Just add these **two lines** to your 
 **.bazelrc**
 ```
 build --bes_results_url=https://app.buildbuddy.io/invocation/
-build --bes_backend=grpc://events.buildbuddy.io:1985
+build --bes_backend=grpcs://events.buildbuddy.io:1986
 ```
 
 This will print a **Buildbuddy url** containing your build results at the beginning and end of every Bazel invocation. You can command click / double click on these to open the results in a browser.
