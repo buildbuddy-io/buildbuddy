@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+
 	inpb "proto/invocation"
 )
 

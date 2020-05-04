@@ -20,6 +20,7 @@ type generalConfig struct {
 	Integrations    integrationsConfig `yaml:"integrations"`
 	Cache           cacheConfig        `yaml:"cache"`
 	Auth            authConfig         `yaml:"auth"`
+	SSL             *SSLConfig         `yaml:"ssl"`
 }
 
 type appConfig struct {
@@ -93,6 +94,13 @@ type OauthProvider struct {
 	IssuerURL    string `yaml:"issuer_url"`
 	ClientID     string `yaml:"client_id"`
 	ClientSecret string `yaml:"client_secret"`
+}
+
+type SSLConfig struct {
+	EnableSSL bool   `yaml:"enable_ssl"`
+	UseACME   bool   `yaml:"use_acme"`
+	CertFile  string `yaml:"cert_file"`
+	KeyFile   string `yaml:"key_file"`
 }
 
 func ensureDirectoryExists(dir string) error {
@@ -263,4 +271,9 @@ func (c *Configurator) GetCacheInMemory() bool {
 func (c *Configurator) GetAuthOauthProviders() []*OauthProvider {
 	c.rereadIfStale()
 	return c.gc.Auth.OauthProviders
+}
+
+func (c *Configurator) GetSSLConfig() *SSLConfig {
+	c.rereadIfStale()
+	return c.gc.SSL
 }

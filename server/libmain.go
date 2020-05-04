@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"google.golang.org/grpc"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
@@ -30,9 +31,11 @@ import (
 )
 
 var (
-	listen   = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
-	port     = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	gRPCPort = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
+	listen    = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	port      = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
+	sslPort   = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
+	gRPCPort  = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
+	gRPCSPort = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 
 	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
@@ -76,6 +79,41 @@ func StartBuildEventServices(env environment.Env, grpcServer *grpc.Server) {
 	}
 }
 
+func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_server.BuildBuddyServer, port *int, credentialOption grpc.ServerOption) {
+	// Initialize our gRPC server (and fail early if that doesn't happen).
+	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
+
+	lis, err := net.Listen("tcp", hostAndPort)
+	if err != nil {
+		log.Fatalf("Failed to listen: %s", err)
+	}
+	grpcOptions := []grpc.ServerOption{
+		rpcfilters.GetUnaryInterceptor(env),
+		rpcfilters.GetStreamInterceptor(env),
+	}
+
+	if credentialOption != nil {
+		grpcOptions = append(grpcOptions, credentialOption)
+		log.Printf("gRPCS listening on http://%s\n", hostAndPort)
+	} else {
+		log.Printf("gRPC listening on http://%s\n", hostAndPort)
+	}
+
+	grpcServer := grpc.NewServer(grpcOptions...)
+
+	// Support reflection so that tools like grpc-cli (aka stubby) can
+	// enumerate our services and call them.
+	reflection.Register(grpcServer)
+
+	// Start Build-Event-Protocol and Remote-Cache services.
+	StartBuildEventServices(env, grpcServer)
+	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
+
+	go func() {
+		log.Fatal(grpcServer.Serve(lis))
+	}()
+}
+
 func StartAndRunServices(env environment.Env) {
 	staticFileServer, err := static.NewStaticFileServer(env, *staticDirectory, []string{"/invocation/", "/history/", "/docs/"})
 	if err != nil {
@@ -87,27 +125,11 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Error initializing app server: %s", err)
 	}
 
-	// Initialize our gRPC server (and fail early if that doesn't happen).
-	gRPCHostAndPort := fmt.Sprintf("%s:%d", *listen, *gRPCPort)
-	log.Printf("gRPC listening on http://%s\n", gRPCHostAndPort)
-
-	lis, err := net.Listen("tcp", gRPCHostAndPort)
-	if err != nil {
-		log.Fatalf("Failed to listen: %s", err)
-	}
-	grpcServer := grpc.NewServer(rpcfilters.GetUnaryInterceptor(env), rpcfilters.GetStreamInterceptor(env))
-
-	// Support reflection so that tools like grpc-cli (aka stubby) can
-	// enumerate our services and call them.
-	reflection.Register(grpcServer)
-
-	StartBuildEventServices(env, grpcServer)
 	// Register to handle BuildBuddy API messages (over gRPC)
 	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env)
 	if err != nil {
 		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
 	}
-	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
 	// Generate HTTP (protolet) handlers for the BuildBuddy API too, so it
 	// can be called over HTTP(s).
@@ -116,32 +138,62 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Error initializing RPC over HTTP handlers: %s", err)
 	}
 
-	// Register all of our HTTP handlers on the default mux.
-	http.Handle("/", httpfilters.WrapExternalHandler(staticFileServer))
-	http.Handle("/app/", httpfilters.WrapExternalHandler(http.StripPrefix("/app", afs)))
-	http.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalHandler(env,
-		http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))
-	http.Handle("/file/download", httpfilters.WrapExternalHandler(buildBuddyServer))
-	http.Handle("/healthz", env.GetHealthChecker())
+	StartGRPCServiceOrDie(env, buildBuddyServer, gRPCPort, nil)
 
-	if auth := env.GetAuthenticator(); auth != nil {
-		http.Handle("/login/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Login)))
-		http.Handle("/auth/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Auth)))
-		http.Handle("/logout/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Logout)))
+	if ssl.IsEnabled(env) {
+		creds, err := ssl.GetGRPCSTLSCreds(env)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		StartGRPCServiceOrDie(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
 	}
 
-	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
-	log.Printf("HTTP listening on http://%s\n", hostAndPort)
+	mux := http.NewServeMux()
+	// Register all of our HTTP handlers on the default mux.
+	mux.Handle("/", httpfilters.WrapExternalHandler(staticFileServer))
+	mux.Handle("/app/", httpfilters.WrapExternalHandler(http.StripPrefix("/app", afs)))
+	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalHandler(env,
+		http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))
+	mux.Handle("/file/download", httpfilters.WrapExternalHandler(buildBuddyServer))
+	mux.Handle("/healthz", env.GetHealthChecker())
+
+	if auth := env.GetAuthenticator(); auth != nil {
+		mux.Handle("/login/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Login)))
+		mux.Handle("/auth/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Auth)))
+		mux.Handle("/logout/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Logout)))
+	}
 
 	if sp := env.GetSplashPrinter(); sp != nil {
 		sp.PrintSplashScreen(*port, *gRPCPort)
 	}
 
-	go func() {
-		log.Fatal(http.ListenAndServe(hostAndPort, nil))
-	}()
-	go func() {
-		log.Fatal(grpcServer.Serve(lis))
-	}()
+	server := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
+		Handler: mux,
+	}
+
+	if ssl.IsEnabled(env) {
+		tlsConfig, handler, err := ssl.ConfigureTLS(env, mux)
+		if err != nil {
+			log.Fatal(err)
+		}
+		sslServer := &http.Server{
+			Addr:      fmt.Sprintf("%s:%d", *listen, *sslPort),
+			Handler:   mux,
+			TLSConfig: tlsConfig,
+		}
+		go func() {
+			log.Fatal(sslServer.ListenAndServeTLS("", ""))
+		}()
+		go func() {
+			log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), handler))
+		}()
+	} else {
+		// If no SSL is enabled, we'll just serve things as-is.
+		go func() {
+			log.Fatal(server.ListenAndServe())
+		}()
+	}
 	select {}
 }
