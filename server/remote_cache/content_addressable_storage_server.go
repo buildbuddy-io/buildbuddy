@@ -218,7 +218,9 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			if err != nil {
 				return err
 			}
-			return fetchDirFn(subDir)
+			if err := fetchDirFn(subDir); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
