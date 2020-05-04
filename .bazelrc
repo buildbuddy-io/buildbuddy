@@ -5,12 +5,21 @@ build:local --remote_cache=grpc://localhost:1985
 
 # Build with --config=dev to send build logs to the dev server
 build:dev --bes_results_url=https://app.buildbuddy.dev/invocation/
-build:dev --bes_backend=grpc://events.buildbuddy.dev:1985
-build:dev --remote_cache=grpc://cache.buildbuddy.dev:1985
+build:dev --bes_backend=grpcs://events.buildbuddy.dev:1986
+
+# Build with --config=dev-cache to send build logs to the dev server with cache
+build:dev-cache --bes_results_url=https://app.buildbuddy.dev/invocation/
+build:dev-cache --bes_backend=grpcs://events.buildbuddy.dev:1986
+build:dev-cache --remote_cache=grpcs://cache.buildbuddy.dev:1986
+
+# Build with --config=cache to send build logs to the production server with cache
+build:cache --bes_results_url=https://app.buildbuddy.io/invocation/
+build:cache --bes_backend=grpcs://events.buildbuddy.io:1986
+build:cache --remote_cache=grpcs://cache.buildbuddy.io:1986
 
 # By default, build logs get sent to the production server
 build --bes_results_url=https://app.buildbuddy.io/invocation/
-build --bes_backend=grpc://events.buildbuddy.io:1985
+build --bes_backend=grpcs://events.buildbuddy.io:1986
 
 # Recommended if connecting to a remote (upload speed constrained) BuildBuddy instance
 build --noremote_upload_local_results # Uploads logs & artifacts without writing to cache
