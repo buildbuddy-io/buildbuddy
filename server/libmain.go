@@ -79,7 +79,7 @@ func StartBuildEventServices(env environment.Env, grpcServer *grpc.Server) {
 	}
 }
 
-func StartGRPCService(env environment.Env, buildBuddyServer *buildbuddy_server.BuildBuddyServer, port *int, credentialOption grpc.ServerOption) {
+func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_server.BuildBuddyServer, port *int, credentialOption grpc.ServerOption) {
 	// Initialize our gRPC server (and fail early if that doesn't happen).
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
 
@@ -138,7 +138,7 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Error initializing RPC over HTTP handlers: %s", err)
 	}
 
-	StartGRPCService(env, buildBuddyServer, gRPCPort, nil)
+	StartGRPCServiceOrDie(env, buildBuddyServer, gRPCPort, nil)
 
 	if ssl.IsEnabled(env) {
 		creds, err := ssl.GetGRPCSTLSCreds(env)
@@ -146,7 +146,7 @@ func StartAndRunServices(env environment.Env) {
 			log.Fatal(err)
 		}
 
-		StartGRPCService(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
+		StartGRPCServiceOrDie(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
 	}
 
 	mux := http.NewServeMux()
@@ -186,7 +186,6 @@ func StartAndRunServices(env environment.Env) {
 		go func() {
 			log.Fatal(sslServer.ListenAndServeTLS("", ""))
 		}()
-		log.Printf("Listening for SSL traffic on port: %d", *sslPort)
 		go func() {
 			log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), handler))
 		}()

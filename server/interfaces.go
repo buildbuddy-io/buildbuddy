@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	inpb "proto/invocation"
-
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+
+	inpb "proto/invocation"
 )
 
 // An interface representing the user info gleaned from an authorization header.
