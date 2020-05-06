@@ -1,5 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("@io_bazel_rules_go//proto:def.bzl", "go_grpc_library", "go_proto_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("//rules:typescript_proto_library.bzl", "ts_proto_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -70,13 +69,13 @@ proto_library(
 
 go_proto_library(
     name = "build_status_go_proto",
-    importpath = "proto/build_status",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/build_status",
     proto = ":build_status_proto",
 )
 
 go_proto_library(
     name = "build_events_go_proto",
-    importpath = "proto/build_events",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/build_events",
     proto = ":build_events_proto",
     deps = [
         ":build_status_go_proto",
@@ -85,7 +84,7 @@ go_proto_library(
 
 go_proto_library(
     name = "config_go_proto",
-    importpath = "proto/config",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/config",
     proto = ":config_proto",
 )
 
@@ -170,9 +169,10 @@ proto_library(
 
 # Go proto rules below here
 
-go_grpc_library(
+go_proto_library(
     name = "publish_build_event_go_proto",
-    importpath = "proto/publish_build_event",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event",
     proto = ":publish_build_event_proto",
     deps = [
         ":build_events_go_proto",
@@ -182,7 +182,7 @@ go_grpc_library(
 
 go_proto_library(
     name = "build_event_stream_go_proto",
-    importpath = "proto/build_event_stream",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream",
     proto = ":build_event_stream_proto",
     deps = [
         ":command_line_go_proto",
@@ -192,13 +192,13 @@ go_proto_library(
 
 go_proto_library(
     name = "invocation_policy_go_proto",
-    importpath = "proto/blaze.invocation_policy",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/blaze.invocation_policy",
     proto = ":invocation_policy_proto",
 )
 
 go_proto_library(
     name = "command_line_go_proto",
-    importpath = "proto/command_line",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/command_line",
     proto = ":command_line_proto",
     deps = [
         ":option_filters_go_proto",
@@ -207,13 +207,13 @@ go_proto_library(
 
 go_proto_library(
     name = "option_filters_go_proto",
-    importpath = "proto/options",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/options",
     proto = ":option_filters_proto",
 )
 
 go_proto_library(
     name = "invocation_go_proto",
-    importpath = "proto/invocation",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/invocation",
     proto = ":invocation_proto",
     deps = [
         ":build_event_stream_go_proto",
@@ -222,9 +222,10 @@ go_proto_library(
     ],
 )
 
-go_grpc_library(
+go_proto_library(
     name = "buildbuddy_service_go_proto",
-    importpath = "proto/buildbuddy_service",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service",
     proto = ":buildbuddy_service_proto",
     deps = [
         ":bazel_config_go_proto",
@@ -235,13 +236,13 @@ go_grpc_library(
 
 go_proto_library(
     name = "semver_go_proto",
-    importpath = "proto/semver",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/semver",
     proto = ":semver_proto",
 )
 
 go_proto_library(
     name = "user_go_proto",
-    importpath = "proto/user",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/user",
     proto = ":user_proto",
     deps = [
         ":group_go_proto",
@@ -250,13 +251,13 @@ go_proto_library(
 
 go_proto_library(
     name = "group_go_proto",
-    importpath = "proto/group",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/group",
     proto = ":group_proto",
 )
 
 go_proto_library(
     name = "context_go_proto",
-    importpath = "proto/context",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/context",
     proto = ":context_proto",
     deps = [
         ":user_go_proto",
@@ -265,16 +266,17 @@ go_proto_library(
 
 go_proto_library(
     name = "bazel_config_go_proto",
-    importpath = "proto/bazel_config",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/bazel_config",
     proto = ":bazel_config_proto",
     deps = [
         ":context_go_proto",
     ],
 )
 
-go_grpc_library(
+go_proto_library(
     name = "remote_execution_go_proto",
-    importpath = "proto/remote_execution",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_execution",
     proto = ":remote_execution_proto",
     deps = [
         ":semver_go_proto",
