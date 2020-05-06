@@ -1,7 +1,9 @@
 package digest
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -23,6 +25,9 @@ var (
 )
 
 func Validate(digest *repb.Digest) (string, error) {
+	if digest == nil {
+		return "", status.InvalidArgumentError("Invalid (nil) Digest")
+	}
 	if digest.SizeBytes == int64(0) {
 		if digest.Hash == EmptySha256 {
 			return "", status.OK()
@@ -38,4 +43,17 @@ func Validate(digest *repb.Digest) (string, error) {
 		return "", status.InvalidArgumentError("Malformed hash")
 	}
 	return digest.Hash, nil
+}
+
+func Compute(in io.Reader) (*repb.Digest, error) {
+	h := sha256.New()
+	// Read file in 32KB chunks (default)
+	n, err := io.Copy(h, in)
+	if err != nil {
+		return nil, err
+	}
+	return &repb.Digest{
+		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
+		SizeBytes: n,
+	}, nil
 }
