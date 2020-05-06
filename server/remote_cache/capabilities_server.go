@@ -2,6 +2,7 @@ package capabilities_server
 
 import (
 	"context"
+	"math"
 
 	repb "proto/remote_execution"
 	smpb "proto/semver"
@@ -43,6 +44,16 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 			SymlinkAbsolutePathStrategy: repb.SymlinkAbsolutePathStrategy_ALLOWED,
 		}
 	}
-	// TODO(tylerw): Support remote execution capabilities here.
+	if s.supportRemoteExec {
+		c.ExecutionCapabilities = &repb.ExecutionCapabilities{
+			DigestFunction: repb.DigestFunction_SHA256,
+			ExecEnabled:    true,
+			ExecutionPriorityCapabilities: &repb.PriorityCapabilities{
+				Priorities: []*repb.PriorityCapabilities_PriorityRange{
+					{MinPriority: math.MinInt32, MaxPriority: math.MaxInt32},
+				},
+			},
+		}
+	}
 	return &c, nil
 }
