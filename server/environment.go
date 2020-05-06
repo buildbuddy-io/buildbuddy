@@ -5,6 +5,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+
+	bspb "google.golang.org/genproto/googleapis/bytestream"
+	repb "proto/remote_execution"
 )
 
 // The environment struct allows for easily injecting many of buildbuddy's core
@@ -40,4 +43,8 @@ type Env interface {
 	GetInvocationStatService() interfaces.InvocationStatService
 	GetInvocationSearchService() interfaces.InvocationSearchService
 	GetSplashPrinter() interfaces.SplashPrinter
+	GetActionCacheClient() repb.ActionCacheClient
+	GetByteStreamClient() bspb.ByteStreamClient
+	GetContentAddressableStorageClient() repb.ContentAddressableStorageClient
+	GetExecutionClient() repb.ExecutionClient
 }

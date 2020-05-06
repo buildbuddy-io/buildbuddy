@@ -7,16 +7,30 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_execution/execution_server"
+	"github.com/buildbuddy-io/buildbuddy/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"google.golang.org/grpc"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 	"google.golang.org/grpc/reflection"
@@ -41,7 +55,75 @@ var (
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
 )
 
-func StartBuildEventServices(env environment.Env, grpcServer *grpc.Server) {
+// Normally this code would live in main.go -- we put it here for now because
+// the environments used by the open-core version and the enterprise version are
+// not substantially different enough yet to warrant the extra complexity of
+// always updating both main files.
+func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
+	bs, err := blobstore.GetConfiguredBlobstore(configurator)
+	if err != nil {
+		log.Fatalf("Error configuring blobstore: %s", err)
+	}
+	dbHandle, err := db.GetConfiguredDatabase(configurator)
+	if err != nil {
+		log.Fatalf("Error configuring database: %s", err)
+	}
+
+	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
+	realEnv.SetDBHandle(dbHandle)
+	realEnv.SetBlobstore(bs)
+	realEnv.SetInvocationDB(invocationdb.NewInvocationDB(realEnv, dbHandle))
+	realEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
+
+	webhooks := make([]interfaces.Webhook, 0)
+	appURL := configurator.GetAppBuildBuddyURL()
+	if sc := configurator.GetIntegrationsSlackConfig(); sc != nil {
+		if sc.WebhookURL != "" {
+			webhooks = append(webhooks, slack.NewSlackWebhook(sc.WebhookURL, appURL))
+		}
+	}
+	realEnv.SetWebhooks(webhooks)
+
+	buildEventProxyClients := make([]*build_event_proxy.BuildEventProxyClient, 0)
+	for _, target := range configurator.GetBuildEventProxyHosts() {
+		// NB: This can block for up to a second on connecting. This would be a
+		// great place to have our health checker and mark these as optional.
+		buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(target))
+		log.Printf("Proxy: forwarding build events to: %s", target)
+	}
+	realEnv.SetBuildEventProxyClients(buildEventProxyClients)
+
+	// If configured, enable the cache.
+	var cache interfaces.Cache
+	if configurator.GetCacheInMemory() {
+		maxSizeBytes := configurator.GetCacheMaxSizeBytes()
+		if maxSizeBytes == 0 {
+			log.Fatalf("Cache size must be greater than 0 if in_memory cache is enabled!")
+		}
+		c, err := memory_cache.NewMemoryCache(maxSizeBytes)
+		if err != nil {
+			log.Fatalf("Error configuring in-memory cache: %s", err)
+		}
+		cache = c
+	} else if configurator.GetCacheDiskConfig() != nil {
+		diskConfig := configurator.GetCacheDiskConfig()
+		c, err := disk_cache.NewDiskCache(diskConfig.RootDirectory, configurator.GetCacheMaxSizeBytes())
+		if err != nil {
+			log.Fatalf("Error configuring cache: %s", err)
+		}
+		cache = c
+	}
+	if cache != nil {
+		cache.Start()
+		realEnv.SetCache(cache)
+		log.Printf("Cache: BuildBuddy cache API enabled!")
+	}
+
+	realEnv.SetSplashPrinter(&splash.Printer{})
+	return realEnv
+}
+
+func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) {
 	// Register to handle build event protocol messages.
 	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env)
 	if err != nil {
@@ -49,8 +131,9 @@ func StartBuildEventServices(env environment.Env, grpcServer *grpc.Server) {
 	}
 	bpb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
 
+	enableCache := env.GetCache() != nil
 	// OPTIONAL CACHE API -- only enable if configured.
-	if env.GetCache() != nil {
+	if enableCache {
 		// Register to handle content addressable storage (CAS) messages.
 		casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 		if err != nil {
@@ -72,11 +155,21 @@ func StartBuildEventServices(env environment.Env, grpcServer *grpc.Server) {
 		}
 		repb.RegisterActionCacheServer(grpcServer, actionCacheServer)
 
-		// Register to handle GetCapabilities messages, which tell the client
-		// that this server supports CAS functionality.
-		capabilitiesServer := capabilities_server.NewCapabilitiesServer( /*supportCAS=*/ true /*supportRemoteExec=*/, false)
-		repb.RegisterCapabilitiesServer(grpcServer, capabilitiesServer)
 	}
+
+	enableRemoteExec := env.GetExecutionClient() != nil
+	if enableRemoteExec {
+		executionServer, err := execution_server.NewExecutionServer(env)
+		if err != nil {
+			log.Fatalf("Error initializing ExecutionServer: %s", err)
+		}
+		repb.RegisterExecutionServer(grpcServer, executionServer)
+	}
+
+	// Register to handle GetCapabilities messages, which tell the client
+	// that this server supports CAS functionality.
+	capabilitiesServer := capabilities_server.NewCapabilitiesServer( /*supportCAS=*/ enableCache /*supportRemoteExec=*/, enableRemoteExec)
+	repb.RegisterCapabilitiesServer(grpcServer, capabilitiesServer)
 }
 
 func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_server.BuildBuddyServer, port *int, credentialOption grpc.ServerOption) {
@@ -106,7 +199,7 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 	reflection.Register(grpcServer)
 
 	// Start Build-Event-Protocol and Remote-Cache services.
-	StartBuildEventServices(env, grpcServer)
+	StartBuildEventServicesOrDie(env, grpcServer)
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
 	go func() {
