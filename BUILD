@@ -2,7 +2,11 @@ package(default_visibility = ["//visibility:public"])
 
 load("@bazel_gazelle//:def.bzl", "gazelle")
 
-# gazelle:prefix github.com/tryflame/buildbuddy
+# Ignore the node_modules dir
+# gazelle:exclude node_modules
+# Prefer generated BUILD files to be called BUILD over BUILD.bazel
+# gazelle:build_file_name BUILD,BUILD.bazel
+# gazelle:prefix github.com/buildbuddy-io/buildbuddy
 gazelle(name = "gazelle")
 
 exports_files([
