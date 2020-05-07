@@ -13,14 +13,16 @@ import (
 // When adding new storage fields, always be explicit about their yaml field
 // name.
 type generalConfig struct {
-	App             appConfig          `yaml:"app"`
-	BuildEventProxy buildEventProxy    `yaml:"build_event_proxy"`
-	Database        databaseConfig     `yaml:"database"`
-	Storage         storageConfig      `yaml:"storage"`
-	Integrations    integrationsConfig `yaml:"integrations"`
-	Cache           cacheConfig        `yaml:"cache"`
-	Auth            authConfig         `yaml:"auth"`
-	SSL             *SSLConfig         `yaml:"ssl"`
+	App             appConfig              `yaml:"app"`
+	BuildEventProxy buildEventProxy        `yaml:"build_event_proxy"`
+	Database        databaseConfig         `yaml:"database"`
+	Storage         storageConfig          `yaml:"storage"`
+	Integrations    integrationsConfig     `yaml:"integrations"`
+	Cache           cacheConfig            `yaml:"cache"`
+	Auth            authConfig             `yaml:"auth"`
+	SSL             *SSLConfig             `yaml:"ssl"`
+	RemoteExecution *RemoteExecutionConfig `yaml:"remote_execution"`
+	Executor        *ExecutorConfig        `yaml:"executor"`
 }
 
 type appConfig struct {
@@ -101,6 +103,15 @@ type SSLConfig struct {
 	UseACME   bool   `yaml:"use_acme"`
 	CertFile  string `yaml:"cert_file"`
 	KeyFile   string `yaml:"key_file"`
+}
+
+type RemoteExecutionConfig struct {
+	Backends map[string]string `yaml:"backends"`
+}
+
+type ExecutorConfig struct {
+	RootDirectory              string `yaml:"root_directory"`
+	MaxExecutionTimeoutSeconds int64  `yaml:"max_execution_timeout_seconds"`
 }
 
 func ensureDirectoryExists(dir string) error {
@@ -276,4 +287,14 @@ func (c *Configurator) GetAuthOauthProviders() []*OauthProvider {
 func (c *Configurator) GetSSLConfig() *SSLConfig {
 	c.rereadIfStale()
 	return c.gc.SSL
+}
+
+func (c *Configurator) GetRemoteExecutionConfig() *RemoteExecutionConfig {
+	c.rereadIfStale()
+	return c.gc.RemoteExecution
+}
+
+func (c *Configurator) GetExecutorConfig() *ExecutorConfig {
+	c.rereadIfStale()
+	return c.gc.Executor
 }
