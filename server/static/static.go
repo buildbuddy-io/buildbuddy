@@ -7,11 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
-
+	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
+	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
 )
 
 // StaticFileServer implements a static file http server that serves static
@@ -31,6 +30,7 @@ func NewStaticFileServer(env environment.Env, relPath string, rootPaths []string
 	if err != nil {
 		return nil, err
 	}
+
 	// Handle "/static/*" requests by serving those static files out of the bundled runfiles.
 	pkgStaticDir := filepath.Join(rfp, relPath)
 	handler := http.FileServer(http.Dir(pkgStaticDir))
