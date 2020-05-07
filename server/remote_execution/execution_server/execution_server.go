@@ -12,17 +12,11 @@ import (
 
 type ExecutionServer struct {
 	env      environment.Env
-	exClient repb.ExecutionClient
 }
 
 func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
-	c := env.GetExecutionClient()
-	if c == nil {
-		return nil, status.FailedPreconditionError("No ExecutionClient found in environment")
-	}
 	return &ExecutionServer{
 		env:      env,
-		exClient: c,
 	}, nil
 }
 
@@ -90,7 +84,12 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 // `Violation` with a `type` of `MISSING` and a `subject` of
 // `"blobs/{hash}/{size}"` indicating the digest of the missing blob.
 func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error {
-	workerStream, err := s.exClient.Execute(stream.Context(), req)
+	exClient := s.env.GetExecutionClient()
+	if exClient == nil {
+		return status.FailedPreconditionError("No ExecutionClient was configured!")
+	}
+
+	workerStream, err := exClient.Execute(stream.Context(), req)
 	if err != nil {
 		return err
 	}
