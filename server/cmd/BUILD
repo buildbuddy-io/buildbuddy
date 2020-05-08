@@ -23,7 +23,7 @@ container_image(
     name = "base_image",
     base = "@go_image_base//image",
     symlinks = {
-        "config.yaml": "app/server/buildbuddy.runfiles/buildbuddy/config/buildbuddy.release.yaml",
+        "config.yaml": "app/server/cmd/buildbuddy.runfiles/buildbuddy/config/buildbuddy.release.yaml",
     },
     visibility = ["//visibility:public"],
 )
