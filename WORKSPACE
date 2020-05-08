@@ -133,4 +133,5 @@ protobuf_deps()
 
 load(":deps.bzl", "install_buildbuddy_dependencies")
 
+# gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
 install_buildbuddy_dependencies()
