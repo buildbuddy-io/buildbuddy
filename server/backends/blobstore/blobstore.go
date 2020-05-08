@@ -255,8 +255,15 @@ func NewAwsS3BlobStore(awsConfig *config.AwsS3Config) (*AwsS3BlobStore, error) {
 		uploader:   s3manager.NewUploader(sess),
 	}
 
-	if err := awsBlobStore.createBucketIfNotExists(ctx, awsConfig.Bucket); err != nil {
-		return nil, err
+	// S3 access points can't modify or delete buckets
+	// https://github.com/awsdocs/amazon-s3-developer-guide/blob/master/doc_source/access-points.md
+	const s3AccessPointPrefix = "arn:aws:s3"
+	if strings.HasPrefix(awsConfig.Bucket, s3AccessPointPrefix) {
+		log.Printf("Encountered an S3 access point %s...not creating bucket", awsConfig.Bucket)
+	} else {
+		if err := awsBlobStore.createBucketIfNotExists(ctx, awsConfig.Bucket); err != nil {
+			return nil, err
+		}
 	}
 
 	return awsBlobStore, nil
