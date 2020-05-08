@@ -11,12 +11,12 @@ import (
 )
 
 type ExecutionServer struct {
-	env      environment.Env
+	env environment.Env
 }
 
 func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 	return &ExecutionServer{
-		env:      env,
+		env: env,
 	}, nil
 }
 
