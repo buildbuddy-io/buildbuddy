@@ -523,8 +523,16 @@ code .comment {
   overflow-x: auto;
 }
 
+.terminal a {
+  display: none;
+}
+
+.terminal-line {
+  font-family: 'Source Code Pro', monospace;
+}
+
 .expanded .terminal {
-  height: 1000px;
+  height: calc(100vh - 200px);
 }
 
 .disclaimer {
