@@ -665,6 +665,12 @@ code .comment {
   line-height: 1.4em;
   margin-top: 16px;
   word-break: break-word;
+  height: calc(100vh - 160px);
+  box-sizing: border-box;
+}
+
+.test-log .terminal {
+  height: 100%;
 }
 
 .test-subtitle {
