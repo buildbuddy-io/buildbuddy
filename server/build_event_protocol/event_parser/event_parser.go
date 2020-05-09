@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/ssh/terminal"
-
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/server/terminal"
+
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
@@ -66,8 +66,7 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 	startTimeMillis := int64(-1)
 	endTimeMillis := int64(-1)
 
-	var rwBuf bytes.Buffer
-	t := terminal.NewTerminal(&rwBuf, "")
+	var consoleBuffer bytes.Buffer
 
 	for _, event := range buildEvents {
 		invocation.Event = append(invocation.Event, event)
@@ -75,8 +74,11 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 		switch p := event.BuildEvent.Payload.(type) {
 		case *build_event_stream.BuildEvent_Progress:
 			{
-				t.Write([]byte(p.Progress.Stderr))
-				t.Write([]byte(p.Progress.Stdout))
+				consoleBuffer.Write([]byte(p.Progress.Stderr))
+				consoleBuffer.Write([]byte(p.Progress.Stdout))
+				// Clear progress event values as we've got them via ConsoleBuffer and they take up a lot of space.
+				p.Progress.Stderr = ""
+				p.Progress.Stdout = ""
 			}
 		case *build_event_stream.BuildEvent_Aborted:
 			{
@@ -173,5 +175,6 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 
 	buildDuration := time.Duration((endTimeMillis - startTimeMillis) * int64(time.Millisecond))
 	invocation.DurationUsec = buildDuration.Microseconds()
-	invocation.ConsoleBuffer = string(rwBuf.Bytes())
+	// TODO(siggisim): Do this rendering once on write, rather than on every read.
+	invocation.ConsoleBuffer = string(terminal.RenderAsANSI(consoleBuffer.Bytes()))
 }
