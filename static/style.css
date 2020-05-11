@@ -36,6 +36,7 @@ body {
 a {
   text-decoration: none;
   color: inherit;
+  outline: 0;
 }
 
 button {
