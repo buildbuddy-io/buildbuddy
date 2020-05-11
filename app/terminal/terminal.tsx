@@ -17,6 +17,7 @@ export default class TerminalComponent extends React.Component<TerminalProps> {
       <LazyLog
         selectableLines={true}
         caseInsensitive={true}
+        rowHeight={20}
         lineClassName="terminal-line"
         follow={true}
         text={this.props.value} />

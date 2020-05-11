@@ -528,7 +528,9 @@ code .comment {
 }
 
 .terminal-line {
+  font-size: 14px;
   font-family: 'Source Code Pro', monospace;
+  color: #fff;
 }
 
 .expanded .terminal {
@@ -821,7 +823,6 @@ code .comment {
 }
 
 .login-interstitial .login-buttons {
-  border: 1px solid #eee;
   padding: 32px;
   border-radius: 16px;
 }
