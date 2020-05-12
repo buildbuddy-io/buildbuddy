@@ -10,6 +10,7 @@ ts_library(
         "//app/docs",
         "//app/format",
         "//app/router",
+        "//app/service",
         "//app/terminal",
         "//proto:build_event_stream_ts_proto",
         "//proto:invocation_ts_proto",

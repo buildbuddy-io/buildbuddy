@@ -1,6 +1,7 @@
 import React from 'react';
 
-import TargetTestResultCardComponent from './target_test_result_card';
+import TargetTestLogCardComponent from './target_test_log_card';
+import TargetTestDocumentCardComponent from './target_test_document_card';
 import TargetArtifactsCardComponent from './target_artifacts_card';
 import router from '../router/router';
 import format from '../format/format';
@@ -13,6 +14,7 @@ interface Props {
   invocationId: string;
   user?: User;
   targetLabel: string;
+  hash: string;
 
   configuredEvent: invocation.InvocationEvent;
   completedEvent: invocation.InvocationEvent;
@@ -71,7 +73,7 @@ export default class TargetComponent extends React.Component {
   }
 
   getTestSize(size: build_event_stream.TestSize) {
-      switch (size) {
+    switch (size) {
       case build_event_stream.TestSize.SMALL:
         return "Small test";
       case build_event_stream.TestSize.MEDIUM:
@@ -80,10 +82,27 @@ export default class TargetComponent extends React.Component {
         return "Large test";
       case build_event_stream.TestSize.ENORMOUS:
         return "Enormous test";
-      }
+    }
+  }
+
+  resultSort(a: invocation.InvocationEvent, b: invocation.InvocationEvent) {
+    let statusDiff = b.buildEvent.testResult.status - a.buildEvent.testResult.status
+    if (statusDiff != 0) {
+      return statusDiff;
+    }
+    let shardDiff = a.buildEvent.id.testResult.shard - b.buildEvent.id.testResult.shard;
+    if (shardDiff != 0) {
+      return shardDiff;
+    }
+    let runDiff = a.buildEvent.id.testResult.run - b.buildEvent.id.testResult.run;
+    if (runDiff != 0) {
+      return runDiff;
+    }
+    return a.buildEvent.id.testResult.attempt - b.buildEvent.id.testResult.attempt;
   }
 
   render() {
+    let resultEvents = this.props.testResultEvents?.sort(this.resultSort);
     return (
       <div>
         <div className="shelf">
@@ -99,7 +118,7 @@ export default class TargetComponent extends React.Component {
                 {this.props.targetLabel}
               </div>
               <div className="subtitle">
-                {this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis ? format.formatTimestampMillis(this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis) : format.formatTimestampMillis(+this.props?.completedEvent?.eventTime.seconds * 1000) }
+                {this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis ? format.formatTimestampMillis(this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis) : format.formatTimestampMillis(+this.props?.completedEvent?.eventTime.seconds * 1000)}
               </div>
             </div>
             <div className="details">
@@ -108,8 +127,8 @@ export default class TargetComponent extends React.Component {
                 {this.getStatusTitle(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
               </div>}
               {!this.props?.testSummaryEvent && <div className="detail">
-                <img className="icon" src={this.props?.completedEvent?.buildEvent?.completed?.success ? "/image/check-circle.svg": "/image/x-circle.svg"} />
-                {this.props?.completedEvent?.buildEvent?.completed?.success ? "Succeeded": "Failed"}
+                <img className="icon" src={this.props?.completedEvent?.buildEvent?.completed?.success ? "/image/check-circle.svg" : "/image/x-circle.svg"} />
+                {this.props?.completedEvent?.buildEvent?.completed?.success ? "Succeeded" : "Failed"}
               </div>}
               {this.props?.testSummaryEvent && <div className="detail">
                 <img className="icon" src="/image/hash.svg" />
@@ -127,10 +146,18 @@ export default class TargetComponent extends React.Component {
           </div>
         </div>
         <div className="container">
-          {this.props.testResultEvents?.sort((a, b) => b.buildEvent.testResult.status - a.buildEvent.testResult.status).map((result) => 
-            <TargetTestResultCardComponent testResult={result} />
+          {resultEvents.length > 1 && <div className="tabs">
+            {resultEvents.map((result, index) => <a href={`#${index + 1}`} className={`tab ${((this.props.hash || "#1") == `#${index + 1}`) && 'selected'}`}>
+              Run {result.buildEvent.id.testResult.run} (Attempt {result.buildEvent.id.testResult.attempt}, Shard {result.buildEvent.id.testResult.shard}) - {this.getStatusTitle(result.buildEvent.testResult.status)}
+            </a>)}
+          </div>}
+          {resultEvents.filter((value, index) => `#${index + 1}` == (this.props.hash || '#1')).map((result) =>
+            <span>
+              <TargetTestDocumentCardComponent testResult={result} />
+              <TargetTestLogCardComponent testResult={result} />
+            </span>
           )}
-          <TargetArtifactsCardComponent files={this.props?.completedEvent?.buildEvent?.completed.importantOutput as build_event_stream.File[]}/>
+          <TargetArtifactsCardComponent files={this.props?.completedEvent?.buildEvent?.completed.importantOutput as build_event_stream.File[]} />
         </div>
       </div>
     );
