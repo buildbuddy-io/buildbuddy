@@ -10,8 +10,8 @@ import "proto/api/v1/target.proto";
 // from BuildBuddy.
 //
 // Requests can be made over gRPC connecting on port 1985, gRPCS connecting on
-// port 1986, or REST by making a POST request to /api/ENDPOINT_NAME.
-// Example: /api/GetTarget
+// port 1986, or REST by making a POST request to /api/v1/ENDPOINT_NAME.
+// Example: /api/v1/GetTarget
 //
 // Requests require setting an api key using the header X-Api-Key: YOUR_API_KEY
 // which can be set in your config.yaml file for on-prem BuildBuddy, or
