@@ -28,7 +28,6 @@ message GetTargetResponse {
 
 // Each Target represents data for a given target in a given Invocation.
 message Target {
-
   // The resource ID components that identify the Target.
   TargetId id = 1;
 
