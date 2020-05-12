@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package api.v1;
+
+import "proto/api/v1/action.proto";
+import "proto/api/v1/file.proto";
+import "proto/api/v1/target.proto";
+
+// This is the public interface used to programatically retrieve information
+// from BuildBuddy.
+//
+// Requests can be made over gRPC connecting on port 1985, gRPCS connecting on
+// port 1986, or REST by making a POST request to /api/ENDPOINT_NAME.
+// Example: /api/GetTarget
+//
+// Requests require setting an api key using the header X-Api-Key: YOUR_API_KEY
+// which can be set in your config.yaml file for on-prem BuildBuddy, or
+// retreived by emailing developers@buildbuddy.io if using the buildbuddy.io
+// cloud hosted service.
+//
+// API access is available to BuildBuddy Enterprise customers. Email
+// enterprise@buildbuddy.io for information on BuildBuddy Enterprise.
+//
+// If there's information you'd like to access programatically that's not
+// included in this api, email developers@buildbuddy.io
+service ApiService {
+  // Retrieves targets matching the given request.
+  rpc GetTarget(GetTargetRequest) returns (GetTargetResponse);
+
+  // Retrieves actions matching the given request.
+  rpc GetAction(GetActionRequest) returns (GetActionResponse);
+
+  // Retrieves files matching the given request.
+  rpc GetFile(GetFileRequest) returns (GetFileResponse);
+}

@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package api.v1;
+
+import "proto/api/v1/common.proto";
+
+// Request passed into GetTarget
+message GetTargetRequest {
+  // The id of the target(s) to retrieve. If TargetId.target_id is unset,
+  // all matching actions from the invocation will be returned.
+  // TargetId.invocation_id is required.
+  TargetId id = 1;
+
+  // The next_page_token value returned from a previous request, if any.
+  string page_token = 3;
+}
+
+// Response from calling GetTarget
+message GetTargetResponse {
+  // Targets matching the request invocation, possibly capped by a
+  // server limit.
+  repeated Target target = 1;
+
+  // Token to retrieve the next page of results, or empty if there are no
+  // more results in the list.
+  string next_page_token = 2;
+}
+
+// Each Target represents data for a given target in a given Invocation.
+message Target {
+
+  // The resource ID components that identify the Target.
+  TargetId id = 1;
+
+  // The label of the target Ex: //server/test:foo
+  string label = 2;
+
+  // The aggregate status of the target.
+  Status status = 3;
+
+  // When this target started and its duration.
+  Timing timing = 4;
+
+  // The type of the target rule Ex: java_binary
+  string rule_type = 5;
+}
+
+// The resource ID components that identify the Target.
+message TargetId {
+  // The Invocation ID.
+  string invocation_id = 1;
+
+  // The Target ID.
+  string target_id = 2;
+}
