@@ -7,7 +7,7 @@ import "proto/api/v1/common.proto";
 // Request passed into GetTarget
 message GetTargetRequest {
   // The selector defining which target(s) to retrieve.
-  TargetSelector id = 1;
+  TargetSelector selector = 1;
 
   // The next_page_token value returned from a previous request, if any.
   string page_token = 3;
