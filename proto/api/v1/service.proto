@@ -24,10 +24,12 @@ import "proto/api/v1/target.proto";
 // If there's information you'd like to access programatically that's not
 // included in this api, email developers@buildbuddy.io
 service ApiService {
-  // Retrieves targets matching the given request.
+  // Retrieves a list of targets or a specific target matching the given
+  // request.
   rpc GetTarget(GetTargetRequest) returns (GetTargetResponse);
 
-  // Retrieves actions matching the given request.
+  // Retrieves a list of targets or a specific target matching the given
+  // request.
   rpc GetAction(GetActionRequest) returns (GetActionResponse);
 
   // Retrieves files matching the given request.

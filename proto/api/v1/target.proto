@@ -6,10 +6,8 @@ import "proto/api/v1/common.proto";
 
 // Request passed into GetTarget
 message GetTargetRequest {
-  // The id of the target(s) to retrieve. If TargetId.target_id is unset,
-  // all matching actions from the invocation will be returned.
-  // TargetId.invocation_id is required.
-  TargetId id = 1;
+  // The selector defining which target(s) to retrieve.
+  TargetSelector id = 1;
 
   // The next_page_token value returned from a previous request, if any.
   string page_token = 3;
@@ -29,6 +27,15 @@ message GetTargetResponse {
 // Each Target represents data for a given target in a given Invocation.
 message Target {
   // The resource ID components that identify the Target.
+  message Id {
+    // The Invocation ID.
+    string invocation_id = 1;
+
+    // The Target ID.
+    string target_id = 2;
+  }
+
+  // The resource ID components that identify the Target.
   TargetId id = 1;
 
   // The label of the target Ex: //server/test:foo
@@ -44,11 +51,13 @@ message Target {
   string rule_type = 5;
 }
 
-// The resource ID components that identify the Target.
-message TargetId {
-  // The Invocation ID.
+// The selector used to specify which targets to return.
+message TargetSelector {
+  // Required: The Invocation ID.
+  // All actions returned will be scoped to this invocation.
   string invocation_id = 1;
 
-  // The Target ID.
+  // Optional: The Target ID.
+  // If set, only the target with this target id will be returned.
   string target_id = 2;
 }
