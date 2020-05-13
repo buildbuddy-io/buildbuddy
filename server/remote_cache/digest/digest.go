@@ -24,25 +24,25 @@ var (
 	hashKeyRegex = regexp.MustCompile("^[a-f0-9]{64}$")
 )
 
-func Validate(digest *repb.Digest) (string, error) {
-	if digest == nil {
-		return "", status.InvalidArgumentError("Invalid (nil) Digest")
+func Validate(d *repb.Digest) (string, error) {
+	if d == nil {
+		return "", status.InvalidArgumentError("Invalid (nil) D")
 	}
-	if digest.SizeBytes == int64(0) {
-		if digest.Hash == EmptySha256 {
+	if d.SizeBytes == int64(0) {
+		if d.Hash == EmptySha256 {
 			return "", status.OK()
 		}
 		return "", status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
 	}
 
-	if len(digest.Hash) != hashKeyLength {
-		return "", status.InvalidArgumentError(fmt.Sprintf("Hash length was %d, expected %d", len(digest.Hash), hashKeyLength))
+	if len(d.Hash) != hashKeyLength {
+		return "", status.InvalidArgumentError(fmt.Sprintf("Hash length was %d, expected %d", len(d.Hash), hashKeyLength))
 	}
 
-	if !hashKeyRegex.MatchString(digest.Hash) {
+	if !hashKeyRegex.MatchString(d.Hash) {
 		return "", status.InvalidArgumentError("Malformed hash")
 	}
-	return digest.Hash, nil
+	return d.Hash, nil
 }
 
 func Compute(in io.Reader) (*repb.Digest, error) {
@@ -56,4 +56,8 @@ func Compute(in io.Reader) (*repb.Digest, error) {
 		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
 		SizeBytes: n,
 	}, nil
+}
+
+func GetResourceName(d *repb.Digest) string {
+	return fmt.Sprintf("/blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
 }
