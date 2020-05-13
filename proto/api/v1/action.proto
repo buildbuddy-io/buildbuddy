@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package api.v1;
 
-import "proto/api/v1/common.proto";
 import "proto/api/v1/file.proto";
 
 // Request passed into GetAction
