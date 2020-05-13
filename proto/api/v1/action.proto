@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package api.v1;
+
+import "proto/api/v1/common.proto";
+import "proto/api/v1/file.proto";
+
+// Request passed into GetAction
+message GetActionRequest {
+  // The id of the action(s) to retrieve. If some ActionId fields are unset, all
+  // matching actions will be returned. ActionId.invocation_id is required.
+  ActionId id = 1;
+
+  // The next_page_token value returned from a previous request, if any.
+  string page_token = 2;
+}
+
+// Response from calling GetAction
+message GetActionResponse {
+  // Actions matching the request, possibly capped a server limit.
+  repeated Action action = 1;
+
+  // Token to retrieve the next page of results, or empty if there are no
+  // more results in the list.
+  string next_page_token = 2;
+}
+
+// An action that happened as part of a configured target. This action could be
+// a build, a test, or another type of action.
+message Action {
+  // The resource ID components that identify the Action.
+  ActionId id = 1;
+
+  // A list of file references for action level files.
+  repeated File file = 2;
+}
+
+// The resource ID components that identify the Action.
+message ActionId {
+  // The Invocation ID.
+  string invocation_id = 1;
+
+  // The Target ID.
+  string target_id = 2;
+
+  // The Configuration ID.
+  string configuration_id = 3;
+
+  // The Action ID.
+  string action_id = 4;
+}
