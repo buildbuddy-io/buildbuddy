@@ -7,8 +7,10 @@ ts_library(
     srcs = glob(["*.tsx"]),
     deps = [
         "@npm//@types/react",
+        "@npm//@types/react-lazylog",
+        "@npm//@types/react-virtualized",
         "@npm//react",
-        "@npm//xterm",
-        "@npm//xterm-addon-fit",
+        "@npm//react-lazylog",
+        "@npm//react-virtualized",
     ],
 )

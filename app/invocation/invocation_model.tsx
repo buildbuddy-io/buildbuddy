@@ -9,7 +9,6 @@ export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
 
   consoleBuffer: string;
-  progress = new Array<build_event_stream.Progress>();
   targets: build_event_stream.BuildEvent[] = [];
   succeeded: build_event_stream.BuildEvent[] = [];
   failed: build_event_stream.BuildEvent[] = [];
@@ -51,7 +50,6 @@ export default class InvocationModel {
 
       for (let event of invocation.event) {
         let buildEvent = event.buildEvent;
-        if (buildEvent.progress) model.progress.push(buildEvent.progress as build_event_stream.Progress);
         if (buildEvent.namedSetOfFiles) model.files.push(buildEvent.namedSetOfFiles as build_event_stream.NamedSetOfFiles);
         if (buildEvent.configured) model.targets.push(buildEvent as build_event_stream.BuildEvent);
         if (buildEvent.configured) {

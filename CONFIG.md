@@ -192,8 +192,8 @@ storage:
      bucket: "buddybuild-bucket"
      # optional
      credentials_profile: "other-profile"
-``
-`
+```
+
 ## Integrations
 ```integrations:``` *Optional* A section configuring optional external services BuildBuddy can integrate with, like Slack.
 
@@ -224,6 +224,21 @@ integrations:
 
 ##### RootDirectory
 ```root_directory``` *Optional* The root directory to store cache data in, if using the disk cache. This directory must be readable and writable by the BuildBuddy process. THe directory will be created if it does not exist.
+
+## SSL
+```ssl:``` *Optional* The SSL section enables SSL/TLS on build event protocol and remote cache gRPC connections (gRPCS).
+
+#### EnableSSL
+```enable_ssl:``` *Optional* Whether or not to enable SSL/TLS on gRPC connections (gRPCS).
+
+#### UseACME
+```use_acme:``` *Optional* Whether or not to automatically configure SSL certs using [ACME](https://en.wikipedia.org/wiki/Automated_Certificate_Management_Environment). If ACME is enabled, cert_file and key_file should not be set.
+
+#### CertFile
+```cert_file:``` *Optional* Path to a PEM encoded certificate file to use for TLS if not using ACME.
+
+#### KeyFile
+```key_file:``` *Optional* Path to a PEM encoded key file to use for TLS if not using ACME.
 
 
 ## Auth [ENTERPRISE]

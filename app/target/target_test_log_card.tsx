@@ -4,6 +4,8 @@ import CacheCodeComponent from '../docs/cache_code'
 
 import { invocation } from '../../proto/invocation_ts_proto';
 import { build_event_stream } from '../../proto/build_event_stream_ts_proto';
+import { TerminalComponent } from '../terminal/terminal'
+import rpcService from '../service/rpc_service';
 
 
 interface Props {
@@ -15,7 +17,7 @@ interface State {
   cacheEnabled: boolean;
 }
 
-export default class TargetTestResultCardComponent extends React.Component {
+export default class TargetTestLogCardComponent extends React.Component {
   props: Props;
 
   state: State = {
@@ -45,39 +47,11 @@ export default class TargetTestResultCardComponent extends React.Component {
       return;
     }
 
-    if (this.state.testLog) {
-      // Already fetched
-      return;
-    }
-
-    var request = new XMLHttpRequest();
-    request.open('GET', "/file/download?filename=test.log&bytestream_url=" + encodeURIComponent(testLogUrl), true);
-
-    let card = this;
-    request.onload = function () {
-      if (this.status >= 200 && this.status < 400) {
-        card.setState({ ...card.state, testLog: this.response });
-      } else {
-        card.setState({ ...card.state, testLog: "Error loading bytestream test log!" });
-      }
-    };
-
-    request.onerror = function () {
-      card.setState({ ...card.state, testLog: "Error loading bytestream test log!" });
-    };
-
-    request.send();
-  }
-
-  handleArtifactClicked() {
-    let testLogUrl = this.props.testResult.buildEvent.testResult.testActionOutput.find((log: any) => log.name == "test.log")?.uri;
-
-    if (testLogUrl.startsWith("file://")) {
-      window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", testLogUrl);
-    } else if (testLogUrl.startsWith("bytestream://")) {
-      let downloadUri = "/file/download?" + "filename=test.log&bytestream_url=" + testLogUrl;
-      window.open(downloadUri);
-    }
+    rpcService.fetchBytestreamFile(testLogUrl).then((contents: string) => {
+      this.setState({ ...this.state, testLog: contents });
+    }).catch(() => {
+      this.setState({ ...this.state, testLog: "Error loading bytestream test.log!" });
+    });
   }
 
   getStatusTitle(status: build_event_stream.TestStatus) {
@@ -104,8 +78,8 @@ export default class TargetTestResultCardComponent extends React.Component {
   }
 
   render() {
-    return <div className={`card artifacts ${this.props.testResult.buildEvent.testResult.status == build_event_stream.TestStatus.PASSED ? "card-success" : "card-failure"}`}>
-      <img className="icon" src="/image/log-circle.svg" />
+    return <div className={`card ${this.state.cacheEnabled && "dark"} ${this.props.testResult.buildEvent.testResult.status == build_event_stream.TestStatus.PASSED ? "card-success" : "card-failure"}`}>
+      <img className="icon" src="/image/log-circle-light.svg" />
       <div className="content">
         <div className="title">Test log</div>
         <div className="test-subtitle">{this.getStatusTitle(this.props.testResult.buildEvent.testResult.status)} in {format.durationMillis(this.props.testResult.buildEvent.testResult.testAttemptDurationMillis)} on Shard {this.props.testResult.buildEvent.id.testResult.shard} (Run {this.props.testResult.buildEvent.id.testResult.run}, Attempt {this.props.testResult.buildEvent.id.testResult.attempt})</div>
@@ -115,7 +89,8 @@ export default class TargetTestResultCardComponent extends React.Component {
             To enable test log uploading you must add GRPC remote caching. You can do so by adding the following line to your <b>.bazelrc</b> and re-running your invocation:
             <CacheCodeComponent />
           </div>}
-        <div className="test-log">{this.state.testLog}</div>
+        {this.state.cacheEnabled && this.state.testLog && <div className="test-log"><TerminalComponent value={this.state.testLog} /></div>}
+        {this.state.cacheEnabled && !this.state.testLog && <span><br />Loading...</span>}
       </div>
     </div>
   }

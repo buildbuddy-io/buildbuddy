@@ -10,6 +10,28 @@ class RpcService {
     this.events = new events.EventEmitter();
   }
 
+  fetchBytestreamFile(bytestreamURL: string) {
+    return this.fetchFile("/file/download?bytestream_url=" + encodeURIComponent(bytestreamURL));
+  }
+
+  fetchFile(fileURL: string) {
+    return new Promise((resolve, reject) => {
+      var request = new XMLHttpRequest();
+      request.open('GET', fileURL, true);
+      request.onload = function () {
+        if (this.status >= 200 && this.status < 400) {
+          resolve(this.response);
+        } else {
+          reject("Error loading file");
+        }
+      };
+      request.onerror = function () {
+        reject("Error loading file");
+      };
+      request.send();
+    });
+  }
+
   rpc(method: any, requestData: any, callback: any) {
     var request = new XMLHttpRequest();
     request.open('POST', `/rpc/BuildBuddyService/${method.name}`, true);

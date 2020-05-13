@@ -36,6 +36,7 @@ body {
 a {
   text-decoration: none;
   color: inherit;
+  outline: 0;
 }
 
 button {
@@ -45,7 +46,7 @@ button {
 /** Container **/
 
 .container {
-  max-width: 1000px;
+  max-width: 1200px;
   margin: 0 auto;
   width: 100%;
   padding: 0 32px;
@@ -253,6 +254,7 @@ button {
   flex-shrink: 0;
   font-size: 12px;
   font-weight: 600;
+  text-transform: uppercase;
 }
 
 .tab.selected {
@@ -337,6 +339,14 @@ button {
 
 .card.card-failure {
   border-left: 6px solid #f44336;
+}
+
+.card.card-broken {
+  border-left: 6px solid #000;
+}
+
+.card.card-neutral {
+  border-left: 6px solid #888;
 }
 
 .card.dark {
@@ -523,8 +533,18 @@ code .comment {
   overflow-x: auto;
 }
 
+.terminal a {
+  display: none;
+}
+
+.terminal-line {
+  font-size: 14px;
+  font-family: 'Source Code Pro', monospace;
+  color: #fff;
+}
+
 .expanded .terminal {
-  height: 1000px;
+  height: calc(100vh - 200px);
 }
 
 .disclaimer {
@@ -651,17 +671,89 @@ code .comment {
   margin-top: 8px;
 }
 
+.stat-cards {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.stat-cards .card {
+  margin-right: 16px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0;
+  padding: 16px 32px;
+  flex-grow: 1;
+  flex-shrink: 0;
+}
+
+.stat-cards .stat {
+  font-size: 32px;
+  font-weight: 600;
+}
+
 .test-log {
   white-space: pre-wrap;
   font-family: 'Source Code Pro', monospace;
   line-height: 1.4em;
   margin-top: 16px;
   word-break: break-word;
+  height: calc(100vh - 160px);
+  box-sizing: border-box;
+}
+
+.test-log .terminal {
+  height: 100%;
 }
 
 .test-subtitle {
   margin-top: 4px;
   color: #aaa;
+}
+
+.test-suite-metrics {
+  display: flex;
+}
+
+.test-case {
+  display: flex;
+  color: #888;
+  line-height: 1.8em;
+}
+
+.test-case div:first-of-type {
+  width: 1px;
+  flex-grow: 2;
+  color: #444;
+  font-weight: 600;
+}
+
+.test-case div {
+  width: 1px;
+  flex-grow: 1;
+}
+
+.test-case div:last-of-type {
+  text-align: right;
+  color: #aaa;
+}
+
+.test-case-info {
+  padding-left: 16px;
+  border-left: 4px solid #eee;
+}
+
+.test-case-message {
+  font-weight: 700;
+}
+
+.test-case-contents {
+  white-space: pre-wrap;
+  font-family: 'Source Code Pro', monospace;
+}
+
+.test-class {
+  font-weight: 300;
 }
 
 .invocation-section {
@@ -807,7 +899,6 @@ code .comment {
 }
 
 .login-interstitial .login-buttons {
-  border: 1px solid #eee;
   padding: 32px;
   border-radius: 16px;
 }

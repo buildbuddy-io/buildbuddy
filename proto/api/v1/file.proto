@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package api.v1;
+
+// Request object for GetFile
+message GetFileRequest {
+  // This corresponds to the uri field in the File message.
+  string uri = 1;
+}
+
+// Response object for GetFile
+message GetFileResponse {
+  // The file data.
+  bytes data = 1;
+}
+
+// A file associated with a BuildBuddy build.
+message File {
+  string name = 1;
+  string uri = 2;
+}

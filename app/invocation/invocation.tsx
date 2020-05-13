@@ -118,6 +118,7 @@ export default class InvocationComponent extends React.Component {
     let targetLabel = this.props.search.get("target");
     if (targetLabel) {
       return <TargetComponent invocationId={this.props.invocationId}
+        hash={this.props.hash}
         configuredEvent={this.state.model.configuredMap.get(targetLabel)}
         completedEvent={this.state.model.completedMap.get(targetLabel)}
         testResultEvents={this.state.model.testResultMap.get(targetLabel)}
