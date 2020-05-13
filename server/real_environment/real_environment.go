@@ -1,15 +1,30 @@
 package real_environment
 
 import (
+	"time"
+
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
+
+type executionClientConfig struct {
+	client      repb.ExecutionClient
+	maxDuration time.Duration
+}
+
+func (cc *executionClientConfig) GetExecutionClient() repb.ExecutionClient {
+	return cc.client
+}
+func (cc *executionClientConfig) GetMaxDuration() time.Duration {
+	return cc.maxDuration
+}
 
 type RealEnv struct {
 	configurator  *config.Configurator
@@ -30,13 +45,16 @@ type RealEnv struct {
 	actionCacheClient               repb.ActionCacheClient
 	byteStreamClient                bspb.ByteStreamClient
 	contentAddressableStorageClient repb.ContentAddressableStorageClient
-	remoteExecutionClient           repb.ExecutionClient
+	executionClients                map[string]*executionClientConfig
+	executionDB                     interfaces.ExecutionDB
 }
 
 func NewRealEnv(c *config.Configurator, h *healthcheck.HealthChecker) *RealEnv {
 	return &RealEnv{
 		configurator:  c,
 		healthChecker: h,
+
+		executionClients: make(map[string]*executionClientConfig, 0),
 	}
 }
 
@@ -155,9 +173,29 @@ func (r *RealEnv) GetContentAddressableStorageClient() repb.ContentAddressableSt
 	return r.contentAddressableStorageClient
 }
 
-func (r *RealEnv) SetExecutionClient(e repb.ExecutionClient) {
-	r.remoteExecutionClient = e
+func (r *RealEnv) AddExecutionClient(propString string, c repb.ExecutionClient, maxDuration time.Duration) error {
+	// Don't allow duplicate clients.
+	_, ok := r.executionClients[propString]
+	if ok {
+		return status.FailedPreconditionErrorf("Duplicate execution client for properties: %q", propString)
+	}
+	r.executionClients[propString] = &executionClientConfig{
+		client:      c,
+		maxDuration: maxDuration,
+	}
+	return nil
 }
-func (r *RealEnv) GetExecutionClient() repb.ExecutionClient {
-	return r.remoteExecutionClient
+func (r *RealEnv) GetExecutionClient(propString string) (interfaces.ExecutionClientConfig, error) {
+	c, ok := r.executionClients[propString]
+	if !ok {
+		return nil, status.FailedPreconditionErrorf("No client found that matches properties: %q", propString)
+	}
+	return c, nil
+}
+
+func (r *RealEnv) SetExecutionDB(edb interfaces.ExecutionDB) {
+	r.executionDB = edb
+}
+func (r *RealEnv) GetExecutionDB() interfaces.ExecutionDB {
+	return r.executionDB
 }

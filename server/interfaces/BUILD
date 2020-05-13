@@ -7,6 +7,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:invocation_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/tables:go_default_library",
+        "@go_googleapis//google/longrunning:longrunning_go_proto",
     ],
 )

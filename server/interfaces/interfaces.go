@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"google.golang.org/genproto/googleapis/longrunning"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 // An interface representing the user info gleaned from an authorization header.
@@ -130,6 +132,11 @@ type UserDB interface {
 	DeleteGroup(ctx context.Context, groupID string) error
 }
 
+type ExecutionDB interface {
+	InsertOrUpdateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, op *longrunning.Operation) error
+	ReadExecution(ctx context.Context, executionID string) (*tables.Execution, error)
+}
+
 // A webhook can be called when a build is completed.
 type Webhook interface {
 	NotifyComplete(ctx context.Context, invocation *inpb.Invocation) error
@@ -148,4 +155,9 @@ type InvocationSearchService interface {
 
 type SplashPrinter interface {
 	PrintSplashScreen(port, grpcPort int)
+}
+
+type ExecutionClientConfig interface {
+	GetExecutionClient() repb.ExecutionClient
+	GetMaxDuration() time.Duration
 }
