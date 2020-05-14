@@ -22,6 +22,14 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	durationpb "github.com/golang/protobuf/ptypes/duration"
+	tspb "github.com/golang/protobuf/ptypes/timestamp"
+)
+
+const (
+	// 7 days? Forever. This is the duration returned when no max duration
+	// has been set in the config and no timeout was set in the client
+	// request. It's basically the same as "no-timeout".
+	infiniteDuration = time.Hour * 24 * 7
 )
 
 func getPlatformKey(platform *repb.Platform) string {
@@ -32,12 +40,41 @@ func getPlatformKey(platform *repb.Platform) string {
 	return HashProperties(props)
 }
 
+func diffTimeProtos(startPb, endPb *tspb.Timestamp) time.Duration {
+	start, _ := ptypes.Timestamp(startPb)
+	end, _ := ptypes.Timestamp(endPb)
+	return end.Sub(start)
+}
+
+func logActionResult(d *repb.Digest, md *repb.ExecutedActionMetadata) {
+	qTime := diffTimeProtos(md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp())
+	workTime := diffTimeProtos(md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
+	fetchTime := diffTimeProtos(md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
+	execTime := diffTimeProtos(md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
+	uploadTime := diffTimeProtos(md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
+	log.Printf("%q completed action '%s/%d' [q: %02dms work: %02dms, fetch: %02dms, exec: %02dms, upload: %02dms]",
+		md.GetWorker(), d.GetHash(), d.GetSizeBytes(), qTime.Milliseconds(), workTime.Milliseconds(),
+		fetchTime.Milliseconds(), execTime.Milliseconds(), uploadTime.Milliseconds())
+}
+
 func extractStage(op *longrunning.Operation) repb.ExecutionStage_Value {
 	md := &repb.ExecuteOperationMetadata{}
 	if err := ptypes.UnmarshalAny(op.GetMetadata(), md); err != nil {
 		return repb.ExecutionStage_UNKNOWN
 	}
 	return md.GetStage()
+}
+
+func extractActionResult(op *longrunning.Operation) *repb.ActionResult {
+	er := &repb.ExecuteResponse{}
+	if result := op.GetResult(); result != nil {
+		if response, ok := result.(*longrunning.Operation_Response); ok {
+			if err := ptypes.UnmarshalAny(response.Response, er); err == nil {
+				return er.GetResult()
+			}
+		}
+	}
+	return nil
 }
 
 func HashProperties(props map[string]string) string {
@@ -88,13 +125,16 @@ type finalizerFn func()
 
 func parseTimeout(timeout *durationpb.Duration, maxDuration time.Duration) (time.Duration, error) {
 	if timeout == nil {
+		if maxDuration == 0 {
+			return infiniteDuration, nil
+		}
 		return maxDuration, nil
 	}
 	requestDuration, err := ptypes.Duration(timeout)
 	if err != nil {
 		return 0, err
 	}
-	if requestDuration > maxDuration {
+	if maxDuration != 0 && requestDuration > maxDuration {
 		return 0, status.FailedPreconditionErrorf("Specified timeout (%s) longer than server max (%s).", requestDuration, maxDuration)
 	}
 	return requestDuration, nil
@@ -175,6 +215,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	//
 	// WaitExecution and GetOperation requests are handled by reading the
 	// state from the DB.
+	requestStartTimePb := ptypes.TimestampNow()
 	action := &repb.Action{}
 	if err := s.readProtoFromCache(stream.Context(), req.GetActionDigest(), action); err != nil {
 		return status.FailedPreconditionErrorf("Error reading action: %s", err)
@@ -195,12 +236,6 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	ctx, cancel := context.WithTimeout(stream.Context(), duration)
 	defer cancel()
 
-	// Possible stages:
-	// UNKNOWN = 0; // Invalid value.
-	// CACHE_CHECK = 1; // Checking the result against the cache.
-	// QUEUED = 2; // Currently idle, awaiting a free machine to execute.
-	// EXECUTING = 3; // Currently being executed by a worker.
-	// COMPLETED = 4; // Finished execution.
 	actionDigestName := digest.GetResourceName(req.GetActionDigest())
 	// writeProgressFn writes progress to our stream (if open) else the DB.
 	writeProgressFn := func(stage repb.ExecutionStage_Value, op *longrunning.Operation) error {
@@ -237,21 +272,29 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 
 	for {
 		op, readErr := workerStream.Recv()
-		//log.Printf("BuildBuddy got back from worker: %+v, %s", op, readErr)
 		if readErr == io.EOF {
 			break
 		}
 		if readErr != nil {
-			log.Printf("ReadErr was not nil: %s", readErr)
+			log.Printf("Worker encountered err: %s", readErr)
 			return err
 		}
 		stage := extractStage(op)
 		if stage == repb.ExecutionStage_COMPLETED {
-			log.Printf("Worker completed task!")
+			// Little gnarly: rewrite the operation to include the
+			// correct "queued" timestamp.
+			actionResult := extractActionResult(op)
+			md := actionResult.GetExecutionMetadata()
+			md.QueuedTimestamp = requestStartTimePb
+			logActionResult(req.GetActionDigest(), md)
+			_, rewrittenOp, err := operation.Assemble(stage, req.GetActionDigest(), codes.OK, actionResult)
+			if err != nil {
+				return err
+			}
+			op = rewrittenOp
 			finalizer = nil
 		}
 		if err := writeProgressFn(stage, op); err != nil {
-			log.Printf("Propagate Progress err: %s", err)
 			return err
 		}
 	}
@@ -282,13 +325,12 @@ func (s *ExecutionServer) WaitExecution(req *repb.WaitExecutionRequest, stream r
 			return err // If some other err happened; bail out.
 		}
 		stage := extractStage(op)
-		log.Printf("WaitExecution (%s): stage: %s", req.GetName(), stage)
 		if stage == repb.ExecutionStage_COMPLETED {
 			break // If the operation is complete, bail out.
 		}
 
 		// Sleep for a little while before checking the DB again.
-		time.Sleep(5 * time.Second)
+		time.Sleep(1 * time.Second)
 	}
 	return nil
 }

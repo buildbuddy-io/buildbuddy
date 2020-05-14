@@ -133,9 +133,6 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 				log.Fatalf("Error connecting to remote execution backend: %s", err)
 			}
 			client := repb.NewExecutionClient(conn)
-			if remoteExecTarget.MaxExecutionTimeoutSeconds == 0 {
-				remoteExecTarget.MaxExecutionTimeoutSeconds = 60
-			}
 			maxExecutionDuration := time.Second * time.Duration(remoteExecTarget.MaxExecutionTimeoutSeconds)
 			if err := realEnv.AddExecutionClient(propertyString, client, maxExecutionDuration); err != nil {
 				log.Fatal(err)
