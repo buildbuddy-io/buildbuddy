@@ -6,9 +6,11 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/executiondb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
@@ -30,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"google.golang.org/grpc"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
@@ -75,6 +78,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	realEnv.SetBlobstore(bs)
 	realEnv.SetInvocationDB(invocationdb.NewInvocationDB(realEnv, dbHandle))
 	realEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
+	realEnv.SetExecutionDB(executiondb.NewExecutionDB(dbHandle))
 
 	webhooks := make([]interfaces.Webhook, 0)
 	appURL := configurator.GetAppBuildBuddyURL()
@@ -121,6 +125,21 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	}
 
 	realEnv.SetSplashPrinter(&splash.Printer{})
+
+	if remoteExecConfig := configurator.GetRemoteExecutionConfig(); remoteExecConfig != nil {
+		for _, remoteExecTarget := range remoteExecConfig.RemoteExecutionTargets {
+			propertyString := execution_server.HashProperties(remoteExecTarget.Properties)
+			conn, err := grpc_client.DialTarget(remoteExecTarget.Target)
+			if err != nil {
+				log.Fatalf("Error connecting to remote execution backend: %s", err)
+			}
+			client := repb.NewExecutionClient(conn)
+			maxExecutionDuration := time.Second * time.Duration(remoteExecTarget.MaxExecutionTimeoutSeconds)
+			if err := realEnv.AddExecutionClient(propertyString, client, maxExecutionDuration); err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
 	return realEnv
 }
 
@@ -157,16 +176,22 @@ func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) 
 		repb.RegisterActionCacheServer(grpcServer, actionCacheServer)
 
 	}
+	enableRemoteExec := false
 
-	enableRemoteExec := env.GetExecutionClient() != nil
-	if enableRemoteExec {
+	// If there is a remote client registered into the environment, we'll
+	// register our own server which calls that client and maintains state
+	// in the database.
+	if remoteExecConfig := env.GetConfigurator().GetRemoteExecutionConfig(); remoteExecConfig != nil {
+		// Make sure capabilities server reflect that we're running
+		// remote execution.
+		enableRemoteExec = true
+		log.Printf("Enabling remote execution!")
 		executionServer, err := execution_server.NewExecutionServer(env)
 		if err != nil {
 			log.Fatalf("Error initializing ExecutionServer: %s", err)
 		}
 		repb.RegisterExecutionServer(grpcServer, executionServer)
 	}
-
 	// Register to handle GetCapabilities messages, which tell the client
 	// that this server supports CAS functionality.
 	capabilitiesServer := capabilities_server.NewCapabilitiesServer( /*supportCAS=*/ enableCache /*supportRemoteExec=*/, enableRemoteExec)

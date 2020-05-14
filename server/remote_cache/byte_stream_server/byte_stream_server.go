@@ -26,6 +26,11 @@ var (
 	uploadRegex = regexp.MustCompile("^.*blobs/([a-f0-9]{64})/.*$")
 )
 
+// This must match what the CAS API does. They refer to the same cache.
+func prefixKey(ctx context.Context, key string) string {
+	return perms.UserPrefixFromContext(ctx) + key
+}
+
 type ByteStreamServer struct {
 	env   environment.Env
 	cache interfaces.Cache

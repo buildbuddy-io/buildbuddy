@@ -1,23 +1,143 @@
 package execution_server
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"log"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_execution/operation"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
+	"google.golang.org/genproto/googleapis/longrunning"
+	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	durationpb "github.com/golang/protobuf/ptypes/duration"
+	tspb "github.com/golang/protobuf/ptypes/timestamp"
 )
 
+const (
+	// 7 days? Forever. This is the duration returned when no max duration
+	// has been set in the config and no timeout was set in the client
+	// request. It's basically the same as "no-timeout".
+	infiniteDuration = time.Hour * 24 * 7
+)
+
+func getPlatformKey(platform *repb.Platform) string {
+	props := make(map[string]string, len(platform.GetProperties()))
+	for _, property := range platform.GetProperties() {
+		props[property.GetName()] = property.GetValue()
+	}
+	return HashProperties(props)
+}
+
+func diffTimeProtos(startPb, endPb *tspb.Timestamp) time.Duration {
+	start, _ := ptypes.Timestamp(startPb)
+	end, _ := ptypes.Timestamp(endPb)
+	return end.Sub(start)
+}
+
+func logActionResult(d *repb.Digest, md *repb.ExecutedActionMetadata) {
+	qTime := diffTimeProtos(md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp())
+	workTime := diffTimeProtos(md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
+	fetchTime := diffTimeProtos(md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
+	execTime := diffTimeProtos(md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
+	uploadTime := diffTimeProtos(md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
+	log.Printf("%q completed action '%s/%d' [q: %02dms work: %02dms, fetch: %02dms, exec: %02dms, upload: %02dms]",
+		md.GetWorker(), d.GetHash(), d.GetSizeBytes(), qTime.Milliseconds(), workTime.Milliseconds(),
+		fetchTime.Milliseconds(), execTime.Milliseconds(), uploadTime.Milliseconds())
+}
+
+func extractStage(op *longrunning.Operation) repb.ExecutionStage_Value {
+	md := &repb.ExecuteOperationMetadata{}
+	if err := ptypes.UnmarshalAny(op.GetMetadata(), md); err != nil {
+		return repb.ExecutionStage_UNKNOWN
+	}
+	return md.GetStage()
+}
+
+func extractActionResult(op *longrunning.Operation) *repb.ActionResult {
+	er := &repb.ExecuteResponse{}
+	if result := op.GetResult(); result != nil {
+		if response, ok := result.(*longrunning.Operation_Response); ok {
+			if err := ptypes.UnmarshalAny(response.Response, er); err == nil {
+				return er.GetResult()
+			}
+		}
+	}
+	return nil
+}
+
+func HashProperties(props map[string]string) string {
+	pairs := make([]string, 0, len(props))
+	for k, v := range props {
+		pairs = append(pairs, fmt.Sprintf("%s=%s", strings.ToLower(k), strings.ToLower(v)))
+	}
+	sort.Strings(pairs)
+	return strings.Join(pairs, "###")
+}
+
 type ExecutionServer struct {
-	env environment.Env
+	env   environment.Env
+	cache interfaces.Cache
+	exDB  interfaces.ExecutionDB
 }
 
 func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
+	cache := env.GetCache()
+	if cache == nil {
+		return nil, fmt.Errorf("A cache is required to enable the RemoteExecutionServer")
+	}
+	exDB := env.GetExecutionDB()
+	if exDB == nil {
+		return nil, fmt.Errorf("An executionDB is required to enable the RemoteExecutionServer")
+	}
 	return &ExecutionServer{
-		env: env,
+		env:   env,
+		cache: cache,
+		exDB:  exDB,
 	}, nil
+}
+
+func (s *ExecutionServer) readProtoFromCache(ctx context.Context, d *repb.Digest, msg proto.Message) error {
+	ck, err := perms.UserPrefixCacheKey(ctx, s.env, d.GetHash())
+	if err != nil {
+		return err
+	}
+
+	data, err := s.cache.Get(ctx, ck)
+	if err != nil {
+		return err
+	}
+	return proto.Unmarshal(data, msg)
+}
+
+type finalizerFn func()
+
+func parseTimeout(timeout *durationpb.Duration, maxDuration time.Duration) (time.Duration, error) {
+	if timeout == nil {
+		if maxDuration == 0 {
+			return infiniteDuration, nil
+		}
+		return maxDuration, nil
+	}
+	requestDuration, err := ptypes.Duration(timeout)
+	if err != nil {
+		return 0, err
+	}
+	if maxDuration != 0 && requestDuration > maxDuration {
+		return 0, status.FailedPreconditionErrorf("Specified timeout (%s) longer than server max (%s).", requestDuration, maxDuration)
+	}
+	return requestDuration, nil
 }
 
 // Execute an action remotely.
@@ -84,30 +204,99 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 // `Violation` with a `type` of `MISSING` and a `subject` of
 // `"blobs/{hash}/{size}"` indicating the digest of the missing blob.
 func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error {
-	exClient := s.env.GetExecutionClient()
-	if exClient == nil {
-		return status.FailedPreconditionError("No ExecutionClient was configured!")
+	// The way this API is designed; clients can send a request and then
+	// hang up, and check on responses using the WaitExecution API or
+	// GetOperation (longrunning operation) API.
+	//
+	// The way we handle this is -- we open a connection to the worker which
+	// remains open until the worker finishes or we timeout. Upon receiving
+	// state updates from the worker, we write them to the DB, and send them
+	// back to the calling client (bazel), if it remains connected.
+	//
+	// WaitExecution and GetOperation requests are handled by reading the
+	// state from the DB.
+	requestStartTimePb := ptypes.TimestampNow()
+	action := &repb.Action{}
+	if err := s.readProtoFromCache(stream.Context(), req.GetActionDigest(), action); err != nil {
+		return status.FailedPreconditionErrorf("Error reading action: %s", err)
+	}
+	cmd := &repb.Command{}
+	if err := s.readProtoFromCache(stream.Context(), action.GetCommandDigest(), cmd); err != nil {
+		return status.FailedPreconditionErrorf("Error reading command: %s (action: %v)", err, action)
+	}
+	execClientConfig, err := s.env.GetExecutionClient(getPlatformKey(cmd.GetPlatform()))
+	if err != nil {
+		return status.FailedPreconditionErrorf("No worker enabled for platform %v: %s", cmd.GetPlatform(), err)
+	}
+	exClient := execClientConfig.GetExecutionClient()
+	duration, err := parseTimeout(action.Timeout, execClientConfig.GetMaxDuration())
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(stream.Context(), duration)
+	defer cancel()
+
+	actionDigestName := digest.GetResourceName(req.GetActionDigest())
+	// writeProgressFn writes progress to our stream (if open) else the DB.
+	writeProgressFn := func(stage repb.ExecutionStage_Value, op *longrunning.Operation) error {
+		err := stream.Send(op)
+		if err != nil {
+			log.Printf("Error updating execution state over stream -- did caller hang up? (%s)", err)
+			if err := s.exDB.InsertOrUpdateExecution(ctx, actionDigestName, stage, op); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 
-	workerStream, err := exClient.Execute(stream.Context(), req)
+	workerStream, err := exClient.Execute(ctx, req)
 	if err != nil {
 		return err
 	}
 	defer workerStream.CloseSend()
+
+	// This little var will be called by the anonymous function below --
+	// if it's not nilled out first in the success case.
+	var finalizer finalizerFn = func() {
+		stage := repb.ExecutionStage_COMPLETED
+		if op, err := operation.AssembleFailed(stage, req.GetActionDigest(), codes.Internal); err == nil {
+			log.Printf("Calling finalizer on %s (returning code INTERNAL)", req.GetActionDigest())
+			writeProgressFn(stage, op)
+		}
+	}
+	defer func() {
+		if finalizer != nil {
+			finalizer()
+		}
+	}()
+
 	for {
 		op, readErr := workerStream.Recv()
 		if readErr == io.EOF {
 			break
 		}
 		if readErr != nil {
+			log.Printf("Worker encountered err: %s", readErr)
 			return err
 		}
-		writeErr := stream.Send(op)
-		if writeErr != nil {
-			log.Printf("Execution client hung up -- ignoring")
+		stage := extractStage(op)
+		if stage == repb.ExecutionStage_COMPLETED {
+			// Little gnarly: rewrite the operation to include the
+			// correct "queued" timestamp.
+			actionResult := extractActionResult(op)
+			md := actionResult.GetExecutionMetadata()
+			md.QueuedTimestamp = requestStartTimePb
+			logActionResult(req.GetActionDigest(), md)
+			_, rewrittenOp, err := operation.Assemble(stage, req.GetActionDigest(), codes.OK, actionResult)
+			if err != nil {
+				return err
+			}
+			op = rewrittenOp
+			finalizer = nil
 		}
-		// TODO(tylerw): Write operation to DB.
-		log.Printf("BuildBuddy got operation back from worker: %+v", op)
+		if err := writeProgressFn(stage, op); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -119,7 +308,29 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 // server MAY choose to stream additional updates as execution progresses,
 // such as to provide an update as to the state of the execution.
 func (s *ExecutionServer) WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error {
-	log.Printf("BuildBuddy: WaitExecution called: %+v", req)
-	// TODO(tylerw): Read operation from DB.
+	for {
+		execution, err := s.exDB.ReadExecution(stream.Context(), req.GetName())
+		if err != nil {
+			return err
+		}
+		op := &longrunning.Operation{}
+		if err := proto.Unmarshal(execution.SerializedOperation, op); err != nil {
+			return err
+		}
+		err = stream.Send(op)
+		if err == io.EOF {
+			break // If the caller hung-up, bail out.
+		}
+		if err != nil {
+			return err // If some other err happened; bail out.
+		}
+		stage := extractStage(op)
+		if stage == repb.ExecutionStage_COMPLETED {
+			break // If the operation is complete, bail out.
+		}
+
+		// Sleep for a little while before checking the DB again.
+		time.Sleep(1 * time.Second)
+	}
 	return nil
 }

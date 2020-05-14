@@ -16,6 +16,11 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+// This must match what the ByteStream API does. They refer to the same cache.
+func prefixKey(ctx context.Context, key string) string {
+	return perms.UserPrefixFromContext(ctx) + key
+}
+
 type ContentAddressableStorageServer struct {
 	env   environment.Env
 	cache interfaces.Cache
@@ -40,6 +45,7 @@ func NewContentAddressableStorageServer(env environment.Env) (*ContentAddressabl
 // There are no method-specific errors.
 func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	rsp := &repb.FindMissingBlobsResponse{}
+	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
 	for _, blobDigest := range req.BlobDigests {
 		hash, err := digest.Validate(blobDigest)
 		if err != nil {
@@ -48,11 +54,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		if hash == digest.EmptySha256 {
 			continue
 		}
-		ck, err := perms.UserPrefixCacheKey(ctx, s.env, hash)
-		if err != nil {
-			return nil, err
-		}
-		exists, err := s.cache.Contains(ctx, ck)
+		exists, err := s.cache.Contains(ctx, prefixKey(ctx, hash))
 		if err != nil {
 			return nil, err
 		}
@@ -89,6 +91,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 // provided data.
 func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	rsp := &repb.BatchUpdateBlobsResponse{}
+	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
 	rsp.Responses = make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(req.Requests))
 	for _, uploadRequest := range req.Requests {
 		hash, err := digest.Validate(uploadRequest.Digest)
@@ -98,11 +101,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		if hash == digest.EmptyHash {
 			continue
 		}
-		ck, err := perms.UserPrefixCacheKey(ctx, s.env, uploadRequest.Digest.Hash)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.cache.Set(ctx, ck, uploadRequest.Data); err != nil {
+		if err := s.cache.Set(ctx, prefixKey(ctx, uploadRequest.Digest.Hash), uploadRequest.Data); err != nil {
 			return nil, err
 		}
 		rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
@@ -135,18 +134,15 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 // status.
 func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
 	rsp := &repb.BatchReadBlobsResponse{}
+	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
-	prefix, err := perms.UserPrefixCacheKey(ctx, s.env, "")
-	if err != nil {
-		return nil, err
-	}
 	for _, readDigest := range req.Digests {
 		hash, err := digest.Validate(readDigest)
 		if err != nil {
 			return nil, err
 		}
 		blobRsp := &repb.BatchReadBlobsResponse_Response{Digest: readDigest}
-		blob, err := s.cache.Get(ctx, prefix+hash)
+		blob, err := s.cache.Get(ctx, prefixKey(ctx, hash))
 		if err == nil {
 			blobRsp.Data = blob
 			blobRsp.Status = &status.Status{Code: int32(codes.OK)}
@@ -187,17 +183,14 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if req.RootDigest == nil {
 		return fmt.Errorf("RootDigest is required to GetTree")
 	}
-	prefix, err := perms.UserPrefixCacheKey(stream.Context(), s.env, "")
-	if err != nil {
-		return err
-	}
+	ctx := perms.AttachUserPrefixToContext(stream.Context(), s.env)
 	fetchDir := func(reqDigest *repb.Digest) (*repb.Directory, error) {
 		hash, err := digest.Validate(reqDigest)
 		if err != nil {
 			return nil, err
 		}
 		// Fetch the "Directory" object which enumerates all the blobs in the directory
-		blob, err := s.cache.Get(stream.Context(), prefix+hash)
+		blob, err := s.cache.Get(ctx, prefixKey(ctx, hash))
 		if err != nil {
 			return nil, err
 		}

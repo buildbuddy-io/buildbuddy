@@ -233,10 +233,24 @@ func (t *Token) TableName() string {
 	return "Tokens"
 }
 
+type Execution struct {
+	Model
+	// The subscriber ID, a concatenated string of the
+	// auth Issuer ID and the subcriber ID string.
+	ExecutionID         string `gorm:"primary_key"`
+	Stage               int64
+	SerializedOperation []byte
+}
+
+func (t *Execution) TableName() string {
+	return "Executions"
+}
+
 func init() {
 	registerTable("IN", &Invocation{})
 	registerTable("CA", &CacheEntry{})
 	registerTable("US", &User{})
 	registerTable("GR", &Group{})
 	registerTable("TO", &Token{})
+	registerTable("EX", &Execution{})
 }

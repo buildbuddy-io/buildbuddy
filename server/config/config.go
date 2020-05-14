@@ -106,13 +106,19 @@ type SSLConfig struct {
 	KeyFile   string `yaml:"key_file"`
 }
 
+type RemoteExecutionTarget struct {
+	Target                     string            `yaml:"target"`
+	Properties                 map[string]string `yaml:"properties"`
+	MaxExecutionTimeoutSeconds int64             `yaml:"max_execution_timeout_seconds"`
+}
+
 type RemoteExecutionConfig struct {
-	Backends map[string]string `yaml:"backends"`
+	RemoteExecutionTargets []RemoteExecutionTarget `yaml:"remote_execution_targets"`
 }
 
 type ExecutorConfig struct {
-	RootDirectory              string `yaml:"root_directory"`
-	MaxExecutionTimeoutSeconds int64  `yaml:"max_execution_timeout_seconds"`
+	RootDirectory string `yaml:"root_directory"`
+	CacheTarget   string `yaml:"cache_target"`
 }
 
 type APIConfig struct {

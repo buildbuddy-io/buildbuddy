@@ -14,6 +14,10 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+const (
+	acCachePrefix = "ac-"
+)
+
 type ActionCacheServer struct {
 	env   environment.Env
 	cache interfaces.Cache
@@ -30,12 +34,12 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
+func prefixKey(ctx context.Context, key string) string {
+	return perms.UserPrefixFromContext(ctx) + acCachePrefix + key
+}
+
 func (s *ActionCacheServer) checkFileExists(ctx context.Context, hash string) error {
-	ck, err := perms.UserPrefixCacheKey(ctx, s.env, hash)
-	if err != nil {
-		return err
-	}
-	ok, err := s.cache.Contains(ctx, ck)
+	ok, err := s.cache.Contains(ctx, prefixKey(ctx, hash))
 	if err != nil {
 		return err
 	}
@@ -66,14 +70,8 @@ func (s *ActionCacheServer) validateActionResult(ctx context.Context, r *repb.Ac
 		}
 	}
 
-	// Compute the user prefix just once, rather than in a loop, below.
-	userPrefix, err := perms.UserPrefixCacheKey(ctx, s.env, "")
-	if err != nil {
-		return err
-	}
-
 	for _, d := range r.OutputDirectories {
-		blob, err := s.cache.Get(ctx, userPrefix+d.GetTreeDigest().Hash)
+		blob, err := s.cache.Get(ctx, prefixKey(ctx, d.GetTreeDigest().Hash))
 		if err != nil {
 			return err
 		}
@@ -120,13 +118,10 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err != nil {
 		return nil, err
 	}
+	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
 
-	ck, err := perms.UserPrefixCacheKey(ctx, s.env, hash)
-	if err != nil {
-		return nil, err
-	}
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
-	blob, err := s.cache.Get(ctx, ck)
+	blob, err := s.cache.Get(ctx, prefixKey(ctx, hash))
 	if err != nil {
 		return nil, status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", hash, err))
 	}
@@ -161,15 +156,14 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if req.ActionDigest == nil {
 		return nil, status.InvalidArgumentError("ActionDigest is a required field")
 	}
-
 	if req.ActionResult == nil {
 		return nil, status.InvalidArgumentError("ActionResult is a required field")
 	}
-
 	hash, err := digest.Validate(req.ActionDigest)
 	if err != nil {
 		return nil, err
 	}
+	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131
 	// More: https://github.com/buchgr/bazel-remote/commit/7de536f47bf163fb96bc1e38ffd5e444e2bcaa00
@@ -180,12 +174,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return nil, err
 	}
 
-	ck, err := perms.UserPrefixCacheKey(ctx, s.env, hash)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.cache.Set(ctx, ck, blob); err != nil {
+	if err := s.cache.Set(ctx, prefixKey(ctx, hash), blob); err != nil {
 		return nil, err
 	}
 	return req.ActionResult, nil
