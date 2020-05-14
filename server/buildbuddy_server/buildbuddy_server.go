@@ -4,23 +4,20 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/grpc"
 
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
-
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -264,7 +261,7 @@ func parseByteStreamURL(bsURL, filename string) (*bsLookup, error) {
 }
 
 // Handle requests for build logs and artifacts by looking them up in from our
-// cache server using the bytestream API.
+// cache servers using the bytestream API.
 func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	params := r.URL.Query()
 	lookup, err := parseByteStreamURL(params.Get("bytestream_url"), params.Get("filename"))
@@ -273,54 +270,11 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optionally, configure HTTP basic-auth.
-	dialOptions := make([]grpc.DialOption, 0)
-	if lookup.URL.User != nil {
-		authStr := lookup.URL.User.String() + "@" + lookup.URL.Host
-		dialOptions = append(dialOptions, grpc.WithAuthority(authStr))
-	}
-	dialOptions = append(dialOptions, grpc.WithInsecure())
-
-	// TODO(siggisim): Support GRPCS caches.
-	grpcPort := getIntFlag("grpc_port", "1985")
-	grpcsPort := getIntFlag("grpcs_port", "1986")
-	if lookup.URL.Port() == grpcsPort {
-		lookup.URL.Host = lookup.URL.Hostname() + ":" + grpcPort
-	}
-
-	// Connect to host/port and create a new client
-	conn, err := grpc.Dial(lookup.URL.Host, dialOptions...)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		return
-	}
-	defer conn.Close()
-	client := bspb.NewByteStreamClient(conn)
-
-	// Request the file bytestream
-	req := &bspb.ReadRequest{
-		ResourceName: strings.TrimPrefix(lookup.URL.RequestURI(), "/"), // trim leading "/"
-		ReadOffset:   0,                                                // started from the bottom now we here
-		ReadLimit:    0,                                                // no limit
-	}
-	stream, err := client.Read(r.Context(), req)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
 	// Stream the file back to our client
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 	w.Header().Set("Content-Type", "application/octet-stream")
-	for {
-		rsp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Write(rsp.Data)
-	}
+
+	bytestream.StreamBytestreamFile(r.Context(), params.Get("bytestream_url"), func(data []byte) {
+		w.Write(data)
+	})
 }

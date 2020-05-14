@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
@@ -52,6 +53,14 @@ type Authenticator interface {
 	//
 	// To check if a user is registered, use UserDB!
 	GetUserToken(ctx context.Context) (UserToken, error)
+
+	// Returns the APIKey extracted from any authorization headers
+	// present in the request. This does not guarantee the api key is
+	// valid -- it only indicates that an API key was present in the
+	// request
+	//
+	// To check if the key is valid, use UserDB.GetAPIKeyAuthGroup!
+	GetAPIKey(ctx context.Context) (string, error)
 
 	// Returns the BasicAuthToken extracted from any user/password set on
 	// the RPC request. This does not guarantee the user has been
@@ -127,6 +136,7 @@ type UserDB interface {
 	// Groups API
 	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) error
 	GetBasicAuthGroup(ctx context.Context) (*tables.Group, error)
+	GetAPIKeyAuthGroup(ctx context.Context) (*tables.Group, error)
 	DeleteGroup(ctx context.Context, groupID string) error
 }
 
@@ -144,6 +154,11 @@ type InvocationStatService interface {
 type InvocationSearchService interface {
 	IndexInvocation(ctx context.Context, invocation *inpb.Invocation) error
 	QueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error)
+}
+
+type ApiService interface {
+	apipb.ApiServiceServer
+	http.Handler
 }
 
 type SplashPrinter interface {

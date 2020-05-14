@@ -31,6 +31,7 @@ type RealEnv struct {
 	byteStreamClient                bspb.ByteStreamClient
 	contentAddressableStorageClient repb.ContentAddressableStorageClient
 	remoteExecutionClient           repb.ExecutionClient
+	APIService                      interfaces.ApiService
 }
 
 func NewRealEnv(c *config.Configurator, h *healthcheck.HealthChecker) *RealEnv {
@@ -160,4 +161,11 @@ func (r *RealEnv) SetExecutionClient(e repb.ExecutionClient) {
 }
 func (r *RealEnv) GetExecutionClient() repb.ExecutionClient {
 	return r.remoteExecutionClient
+}
+
+func (r *RealEnv) SetAPIService(s interfaces.ApiService) {
+	r.APIService = s
+}
+func (r *RealEnv) GetAPIService() interfaces.ApiService {
+	return r.APIService
 }

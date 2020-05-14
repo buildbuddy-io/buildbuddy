@@ -5,5 +5,8 @@ go_library(
     srcs = ["protolet.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/http/protolet",
     visibility = ["//visibility:public"],
-    deps = ["@com_github_golang_protobuf//proto:go_default_library"],
+    deps = [
+        "@com_github_golang_protobuf//jsonpb:go_default_library_gen",
+        "@com_github_golang_protobuf//proto:go_default_library",
+    ],
 )

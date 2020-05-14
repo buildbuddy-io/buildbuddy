@@ -23,6 +23,7 @@ type generalConfig struct {
 	SSL             *SSLConfig             `yaml:"ssl"`
 	RemoteExecution *RemoteExecutionConfig `yaml:"remote_execution"`
 	Executor        *ExecutorConfig        `yaml:"executor"`
+	API             *APIConfig             `yaml:"api"`
 }
 
 type appConfig struct {
@@ -112,6 +113,11 @@ type RemoteExecutionConfig struct {
 type ExecutorConfig struct {
 	RootDirectory              string `yaml:"root_directory"`
 	MaxExecutionTimeoutSeconds int64  `yaml:"max_execution_timeout_seconds"`
+}
+
+type APIConfig struct {
+	EnableAPI bool   `yaml:"enable_api"`
+	APIKey    string `yaml:"api_key"`
 }
 
 func ensureDirectoryExists(dir string) error {
@@ -297,4 +303,9 @@ func (c *Configurator) GetRemoteExecutionConfig() *RemoteExecutionConfig {
 func (c *Configurator) GetExecutorConfig() *ExecutorConfig {
 	c.rereadIfStale()
 	return c.gc.Executor
+}
+
+func (c *Configurator) GetAPIConfig() *APIConfig {
+	c.rereadIfStale()
+	return c.gc.API
 }

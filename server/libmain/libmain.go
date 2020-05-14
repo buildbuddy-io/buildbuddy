@@ -35,6 +35,7 @@ import (
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 	"google.golang.org/grpc/reflection"
 
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	bpb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -202,6 +203,12 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 	StartBuildEventServicesOrDie(env, grpcServer)
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 
+	// Register API Server as a gRPC service.
+	apiConfig := env.GetConfigurator().GetAPIConfig()
+	if api := env.GetAPIService(); apiConfig != nil && apiConfig.EnableAPI && api != nil {
+		apipb.RegisterApiServiceServer(grpcServer, api)
+	}
+
 	go func() {
 		log.Fatal(grpcServer.Serve(lis))
 	}()
@@ -224,11 +231,11 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
 	}
 
-	// Generate HTTP (protolet) handlers for the BuildBuddy API too, so it
+	// Generate HTTP (protolet) handlers for the BuildBuddy API, so it
 	// can be called over HTTP(s).
-	protoHandler, err := protolet.GenerateHTTPHandlers(buildBuddyServer)
+	buildBuddyProtoHandler, err := protolet.GenerateHTTPHandlers(buildBuddyServer)
 	if err != nil {
-		log.Fatalf("Error initializing RPC over HTTP handlers: %s", err)
+		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
 	}
 
 	StartGRPCServiceOrDie(env, buildBuddyServer, gRPCPort, nil)
@@ -247,7 +254,7 @@ func StartAndRunServices(env environment.Env) {
 	mux.Handle("/", httpfilters.WrapExternalHandler(staticFileServer))
 	mux.Handle("/app/", httpfilters.WrapExternalHandler(http.StripPrefix("/app", afs)))
 	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalHandler(env,
-		http.StripPrefix("/rpc/BuildBuddyService/", protoHandler)))
+		http.StripPrefix("/rpc/BuildBuddyService/", buildBuddyProtoHandler)))
 	mux.Handle("/file/download", httpfilters.WrapExternalHandler(buildBuddyServer))
 	mux.Handle("/healthz", env.GetHealthChecker())
 
@@ -255,6 +262,19 @@ func StartAndRunServices(env environment.Env) {
 		mux.Handle("/login/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Login)))
 		mux.Handle("/auth/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Auth)))
 		mux.Handle("/logout/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Logout)))
+	}
+
+	// Register API as an HTTP service.
+	apiConfig := env.GetConfigurator().GetAPIConfig()
+	if api := env.GetAPIService(); apiConfig != nil && apiConfig.EnableAPI && api != nil {
+		apiProtoHandler, err := protolet.GenerateHTTPHandlers(api)
+		if err != nil {
+			log.Fatalf("Error initializing RPC over HTTP handlers for API: %s", err)
+		}
+		mux.Handle("/api/v1/", httpfilters.WrapAuthenticatedExternalHandler(env,
+			http.StripPrefix("/api/v1/", apiProtoHandler)))
+		// Protolet doesn't currently support streaming RPCs, so we'll register a regular old http handler.
+		mux.Handle("/api/v1/GetFile", httpfilters.WrapAuthenticatedExternalHandler(env, api))
 	}
 
 	if sp := env.GetSplashPrinter(); sp != nil {

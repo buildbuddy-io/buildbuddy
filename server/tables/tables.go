@@ -170,6 +170,10 @@ type Group struct {
 	// The group access token. This token allows writing data for this
 	// group.
 	WriteToken string `gorm:"index:write_token_index"`
+
+	// The group's api key. This allows members of the group to make
+	// API requests on the group's behalf.
+	APIKey string `gorm:"index:api_key_index"`
 }
 
 func (g *Group) TableName() string {
