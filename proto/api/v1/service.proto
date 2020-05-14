@@ -9,20 +9,22 @@ import "proto/api/v1/target.proto";
 // This is the public interface used to programatically retrieve information
 // from BuildBuddy.
 //
-// Requests can be made over gRPC connecting on port 1985, gRPCS connecting on
-// port 1986, or REST by making a POST request to /api/v1/ENDPOINT_NAME.
-// Example: /api/v1/GetTarget
+// Requests can be made over:
+// - gRPC connecting on port 1985
+// - gRPCS connecting on port 1986
+// - REST by making a POST request to /api/v1/ENDPOINT_NAME
+//   Example: /api/v1/GetTarget
 //
-// Requests require setting an api key using the header (for HTTP requests) or
-// metadata (for GRPC requests) x-api-key: YOUR_API_KEY which can be set in your
-// config.yaml file for on-prem BuildBuddy, or retreived by emailing
-// developers@buildbuddy.io if using the buildbuddy.io cloud hosted service.
+// Requests require setting an API key using the header (or metadata for GRPC
+// requests) x-api-key: YOUR_API_KEY which can be set in your config.yaml file
+// for on-prem BuildBuddy, or retreived by emailing developers@buildbuddy.io if
+// using the buildbuddy.io cloud hosted service.
 //
 // API access is available to BuildBuddy Enterprise customers. Email
 // enterprise@buildbuddy.io for information on BuildBuddy Enterprise.
 //
 // If there's information you'd like to access programatically that's not
-// included in this api, email developers@buildbuddy.io
+// included in this API, email developers@buildbuddy.io
 service ApiService {
   // Retrieves a list of targets or a specific target matching the given
   // request selector.
@@ -33,7 +35,7 @@ service ApiService {
   rpc GetAction(GetActionRequest) returns (GetActionResponse);
 
   // Streams the File with the given uri.
-  // Over gRPC this returns a stream of bytes to be stitched together in order.
-  // Over HTTP this simply returns the requested file.
+  // - Over gRPC returns a stream of bytes to be stitched together in order.
+  // - Over HTTP this simply returns the requested file.
   rpc GetFile(GetFileRequest) returns (stream GetFileResponse);
 }
