@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
@@ -21,7 +22,6 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	durationpb "github.com/golang/protobuf/ptypes/duration"
-	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
 func getPlatformKey(platform *repb.Platform) string {
@@ -38,44 +38,6 @@ func extractStage(op *longrunning.Operation) repb.ExecutionStage_Value {
 		return repb.ExecutionStage_UNKNOWN
 	}
 	return md.GetStage()
-}
-
-func assembleOperation(stage repb.ExecutionStage_Value, d *repb.Digest, c codes.Code, r *repb.ActionResult) (string, *longrunning.Operation, error) {
-	name := digest.GetResourceName(d)
-	metadata, err := ptypes.MarshalAny(&repb.ExecuteOperationMetadata{
-		Stage:        stage,
-		ActionDigest: d,
-	})
-	if err != nil {
-		return name, nil, err
-	}
-	operation := &longrunning.Operation{
-		Name:     name,
-		Metadata: metadata,
-	}
-	if r != nil {
-		er := &repb.ExecuteResponse{
-			Status: &statuspb.Status{Code: int32(c)},
-		}
-		if c == codes.OK {
-			er.Result = r
-		}
-		result, err := ptypes.MarshalAny(er)
-		if err != nil {
-			return name, nil, err
-		}
-		operation.Result = &longrunning.Operation_Response{Response: result}
-	}
-	if stage == repb.ExecutionStage_COMPLETED {
-		operation.Done = true
-	}
-	return name, operation, nil
-}
-
-func failedOperationWithCode(stage repb.ExecutionStage_Value, d *repb.Digest, c codes.Code) (*longrunning.Operation, error) {
-	emptyActionResult := &repb.ActionResult{}
-	_, op, err := assembleOperation(stage, d, c, emptyActionResult)
-	return op, err
 }
 
 func HashProperties(props map[string]string) string {
@@ -262,7 +224,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	// if it's not nilled out first in the success case.
 	var finalizer finalizerFn = func() {
 		stage := repb.ExecutionStage_COMPLETED
-		if op, err := failedOperationWithCode(stage, req.GetActionDigest(), codes.Internal); err == nil {
+		if op, err := operation.AssembleFailed(stage, req.GetActionDigest(), codes.Internal); err == nil {
 			log.Printf("Calling finalizer on %s (returning code INTERNAL)", req.GetActionDigest())
 			writeProgressFn(stage, op)
 		}

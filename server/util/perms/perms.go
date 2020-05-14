@@ -19,6 +19,8 @@ const (
 	OTHERS_WRITE = 0o02
 	OTHERS_EXEC  = 0o01
 	ALL          = 0o0777
+
+	userPrefix = "user:"
 )
 
 type UserGroupPerm struct {
@@ -69,4 +71,21 @@ func UserPrefixCacheKey(ctx context.Context, env environment.Env, key string) (s
 		}
 	}
 	return addPrefix("ANON", key), nil
+}
+
+func AttachUserPrefixToContext(ctx context.Context, env environment.Env) context.Context {
+	prefix, err := UserPrefixCacheKey(ctx, env, "")
+	prefixVal := ""
+	if err == nil {
+		prefixVal = prefix
+	}
+	return context.WithValue(ctx, userPrefix, prefixVal)
+}
+
+func UserPrefixFromContext(ctx context.Context) string {
+	prefixVal := ""
+	if v := ctx.Value(userPrefix); v != nil {
+		prefixVal = v.(string)
+	}
+	return prefixVal
 }
