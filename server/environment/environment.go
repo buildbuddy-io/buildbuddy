@@ -46,7 +46,6 @@ type Env interface {
 	GetActionCacheClient() repb.ActionCacheClient
 	GetByteStreamClient() bspb.ByteStreamClient
 	GetContentAddressableStorageClient() repb.ContentAddressableStorageClient
-	GetExecutionClient() repb.ExecutionClient
 	GetExecutionClient(propString string) (interfaces.ExecutionClientConfig, error)
 	GetExecutionDB() interfaces.ExecutionDB
 	GetAPIService() interfaces.ApiService
