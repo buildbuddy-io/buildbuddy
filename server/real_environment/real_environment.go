@@ -45,7 +45,6 @@ type RealEnv struct {
 	actionCacheClient               repb.ActionCacheClient
 	byteStreamClient                bspb.ByteStreamClient
 	contentAddressableStorageClient repb.ContentAddressableStorageClient
-	remoteExecutionClient           repb.ExecutionClient
 	executionClients                map[string]*executionClientConfig
 	executionDB                     interfaces.ExecutionDB
 	APIService                      interfaces.ApiService
