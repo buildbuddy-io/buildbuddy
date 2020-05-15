@@ -1,6 +1,7 @@
 package protolet
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"reflect"
 
+	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 )
 
@@ -35,33 +37,30 @@ func isRPCMethod(m reflect.Method) bool {
 	return true
 }
 
-func readRequestToProto(r *http.Request, req proto.Message) error {
+func ReadRequestToProto(r *http.Request, req proto.Message) error {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		return err
 	}
 
 	switch ct := r.Header.Get("Content-Type"); ct {
-	case "":
-		fallthrough
+	case "", "application/json":
+		return jsonpb.Unmarshal(bytes.NewReader(body), req)
 	case "application/proto", "application/protobuf":
 		return proto.Unmarshal(body, req)
 	case "application/protobuf-text":
 		return proto.UnmarshalText(string(body), req)
 	default:
-		return fmt.Errorf("Unknown Content-Type: %s, expected application/protobuf", ct)
+		return fmt.Errorf("Unknown Content-Type: %s, expected application/json or application/protobuf", ct)
 	}
 }
 
-func writeProtoToResponse(rsp proto.Message, w http.ResponseWriter, r *http.Request) error {
+func WriteProtoToResponse(rsp proto.Message, w http.ResponseWriter, r *http.Request) error {
 	switch ct := r.Header.Get("Content-Type"); ct {
-	case "":
-		protoBytes, err := proto.Marshal(rsp)
-		if err != nil {
-			return err
-		}
-		w.Write(protoBytes)
-		w.Header().Set("Content-Type", "application/protobuf")
+	case "", "application/json":
+		marshaler := jsonpb.Marshaler{}
+		marshaler.Marshal(w, rsp)
+		w.Header().Set("Content-Type", "application/json")
 		return nil
 	case "application/proto", "application/protobuf":
 		protoBytes, err := proto.Marshal(rsp)
@@ -72,11 +71,10 @@ func writeProtoToResponse(rsp proto.Message, w http.ResponseWriter, r *http.Requ
 		w.Header().Set("Content-Type", ct)
 		return nil
 	case "application/protobuf-text":
-		return proto.MarshalText(w, rsp)
 		w.Header().Set("Content-Type", ct)
-		return nil
+		return proto.MarshalText(w, rsp)
 	default:
-		return fmt.Errorf("Unknown Content-Type: %s, expected application/protobuf", ct)
+		return fmt.Errorf("Unknown Content-Type: %s, expected application/json or application/protobuf", ct)
 	}
 }
 
@@ -102,14 +100,14 @@ func GenerateHTTPHandlers(server interface{}) (http.HandlerFunc, error) {
 			http.Error(w, fmt.Sprintf("Method '%s' not found.", r.URL.Path), http.StatusNotFound)
 			return
 		}
+
 		methodType := method.Type()
 		reqVal := reflect.New(methodType.In(2).Elem())
 		req := reqVal.Interface().(proto.Message)
-		if err := readRequestToProto(r, req); err != nil {
+		if err := ReadRequestToProto(r, req); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
 		args := []reflect.Value{reflect.ValueOf(server), reflect.ValueOf(r.Context()), reqVal}
 		rspArr := method.Call(args)
 		if rspArr[1].Interface() != nil {
@@ -120,7 +118,7 @@ func GenerateHTTPHandlers(server interface{}) (http.HandlerFunc, error) {
 
 		rspVal := rspArr[0]
 		rsp := rspVal.Interface().(proto.Message)
-		if err := writeProtoToResponse(rsp, w, r); err != nil {
+		if err := WriteProtoToResponse(rsp, w, r); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

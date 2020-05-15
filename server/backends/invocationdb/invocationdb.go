@@ -62,6 +62,19 @@ func (d *InvocationDB) addPermissionsCheckToQuery(ctx context.Context, q *query_
 	o.AddOr("(i.perms & ? != 0)", perms.OTHERS_READ)
 
 	if auth := d.env.GetAuthenticator(); auth != nil {
+		if ak, err := d.env.GetAuthenticator().GetAPIKey(ctx); err == nil && ak != "" {
+			ag, err := d.env.GetUserDB().GetAPIKeyAuthGroup(ctx)
+			if err != nil {
+				return err
+			}
+
+			groupArgs := []interface{}{
+				perms.GROUP_READ,
+				ag.GroupID,
+			}
+			o.AddOr("(i.perms & ? != 0 AND i.group_id = ?)", groupArgs...)
+		}
+
 		if ut, err := d.env.GetAuthenticator().GetUserToken(ctx); err == nil && ut != nil {
 			// If auth is setup and GetUser returns an error, propogate that up.
 			tu, err := d.env.GetUserDB().GetUser(ctx)

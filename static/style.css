@@ -605,10 +605,26 @@ code .comment {
   width: 100px;
 }
 
+.sort-controls {
+  display: flex;
+  flex-wrap: wrap;
+}
+
 .sort-control {
   color: #888;
   margin-top: 4px;
+  margin-right: 12px;
 }
+
+.sort-control:after {
+  content: '◦';
+  margin-left: 12px;
+}
+
+.sort-control:last-of-type:after {
+  display: none;
+}
+
 
 .sort-control .selected {
   color: #000;

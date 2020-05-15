@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:invocation_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto/api/v1:go_default_library",
         "//server/tables:go_default_library",
         "@go_googleapis//google/longrunning:longrunning_go_proto",
     ],

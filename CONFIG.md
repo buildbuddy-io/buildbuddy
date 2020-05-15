@@ -252,6 +252,15 @@ integrations:
 ``` client_id: ``` The oauth client ID.
 ``` client_secret: ``` The oauth client secret.
 
+## API [ENTERPRISE]
+```api:``` *Optional* The Auth section enables the BuildBuddy API over both gRPC(s) and REST HTTP(s).
+
+#### EnableAPI
+```enable_api:``` *Optional* Whether or not to enable the BuildBuddy API.
+
+#### APIKey
+```api_key:``` *Optional* The default API key to use for on-prem enterprise deploys with a single organization/group.
+
 
 # BuildBuddy Flags
 
