@@ -107,6 +107,11 @@ service Execution {
     option (google.api.http) = { post: "/v2/{instance_name=**}/actions:execute" body: "*" };
   }
 
+  // HACK(tylerw): A little trick to allow unary RPC based Execute calls.
+  rpc SyncExecute(ExecuteRequest) returns (SyncExecuteResponse) {
+    option (google.api.http) = { post: "/v2/{instance_name=**}/actions:syncExecute" body: "*" };
+  }
+
   // Wait for an execution operation to complete. When the client initially
   // makes the request, the server immediately responds with the current status
   // of the execution. The server will leave the request stream open until the
@@ -351,6 +356,11 @@ service Capabilities {
       get: "/v2/{instance_name=**}/capabilities"
     };
   }
+}
+
+// HACK(tylerw): A little hack to allow unary RPC based Execute calls.
+message SyncExecuteResponse {
+	repeated google.longrunning.Operation operations = 1;
 }
 
 // An `Action` captures all the information about an execution which is required

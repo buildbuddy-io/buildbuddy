@@ -11,6 +11,15 @@ cache:
   max_size_bytes: 1000000000  # 1 GB
   in_memory: true
 remote_execution:
-  remote_execution_targets:
+    remote_execution_targets:
     - target: "grpc://localhost:1987"
+      properties:
+        "OSFamily": "Linux"
+        "container-image": "docker://marketplace.gcr.io/google/rbe-ubuntu16-04@sha256:ac36d37616b044ee77813fc7cd36607a6dc43c65357f3e2ca39f3ad723e426f6"
+    - target: "grpc://localhost:1987"
+      properties:
+        "container-image": "docker://gcr.io/grakn-dev/rbe_platform@sha256:435403f84a20db7ac779bf2688dce6bd6463d62608c0731cfb944cd0b74b35d8"
+        "dockerNetwork": "standard"
+    - target: "grpc://localhost:1987"
+      disable_streaming: true
       properties:

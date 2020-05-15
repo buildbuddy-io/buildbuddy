@@ -5,5 +5,8 @@ go_library(
     srcs = ["grpc_client.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/grpc_client",
     visibility = ["//visibility:public"],
-    deps = ["@org_golang_google_grpc//:go_default_library"],
+    deps = [
+        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//credentials/google:go_default_library",
+    ],
 )
