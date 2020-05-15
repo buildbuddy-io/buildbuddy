@@ -9,6 +9,7 @@ go_library(
         "//proto:buildbuddy_service_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto/api/v1:go_default_library",
         "//server/backends/blobstore:go_default_library",
         "//server/backends/disk_cache:go_default_library",
         "//server/backends/executiondb:go_default_library",

@@ -48,4 +48,5 @@ type Env interface {
 	GetContentAddressableStorageClient() repb.ContentAddressableStorageClient
 	GetExecutionClient(propString string) (interfaces.ExecutionClientConfig, error)
 	GetExecutionDB() interfaces.ExecutionDB
+	GetAPIService() interfaces.ApiService
 }
