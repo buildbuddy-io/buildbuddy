@@ -12,9 +12,12 @@ interface State {
   threadToNumEventPagesMap: Map<number, number>,
   profile: any;
   threadMap: Map<number, Thread>;
-  sortFunction: (a: string, b: string) => number;
   timingEnabled: boolean;
   buildInProgress: boolean;
+  sortBy: string;
+  groupBy: string;
+  threadPageSize: number;
+  eventPageSize: number;
 }
 
 interface Thread {
@@ -24,10 +27,16 @@ interface Thread {
   events: any[];
 }
 
-const threadPageSize = 10;
-const eventPageSize = 100;
+const sortByStorageKey = 'InvocationTimingCardComponent.sortBy';
+const groupByStorageKey = 'InvocationTimingCardComponent.groupBy';
+const threadPageSizeStorageKey = 'InvocationTimingCardComponent.threadPageSize';
+const eventPageSizeStorageKey = 'InvocationTimingCardComponent.eventPageSize';
+const sortByTimeAscStorageValue = 'time-asc';
+const sortByDurationDescStorageValue = 'duration-desc';
+const groupByThreadStorageValue = 'thread';
+const groupByAllStorageValue = 'all';
 
-export default class ArtifactsCardComponent extends React.Component {
+export default class InvocationTimingCardComponent extends React.Component {
   props: Props;
 
   state: State = {
@@ -35,9 +44,12 @@ export default class ArtifactsCardComponent extends React.Component {
     threadToNumEventPagesMap: new Map<number, number>(),
     profile: null,
     threadMap: new Map<number, Thread>(),
-    sortFunction: this.sortTimeAsc,
     timingEnabled: true,
-    buildInProgress: false
+    buildInProgress: false,
+    sortBy: window.localStorage[sortByStorageKey] || sortByTimeAscStorageValue,
+    groupBy: window.localStorage[groupByStorageKey] || groupByThreadStorageValue,
+    threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
+    eventPageSize: window.localStorage[eventPageSizeStorageKey] || 100,
   }
 
   componentDidMount() {
@@ -134,12 +146,24 @@ export default class ArtifactsCardComponent extends React.Component {
     this.setState({ ...this.state, threadNumPages: this.state.threadNumPages + 1 })
   }
 
-  handleStartTimeClicked() {
-    this.setState({ ...this.state, sortFunction: this.sortTimeAsc });
+  handleSortByClicked(sortBy: string) {
+    window.localStorage[sortByStorageKey] = sortBy;
+    this.setState({ ...this.state, sortBy: sortBy });
   }
 
-  handleDurationClicked() {
-    this.setState({ ...this.state, sortFunction: this.sortDurationDesc });
+  handleGroupByClicked(groupBy: string) {
+    window.localStorage[groupByStorageKey] = groupBy;
+    this.setState({ ...this.state, groupBy: groupBy });
+  }
+
+  handleThreadPageSizeClicked(pageSize: number) {
+    window.localStorage[threadPageSizeStorageKey] = pageSize;
+    this.setState({ ...this.state, threadPageSize: pageSize });
+  }
+
+  handleEventPageSizeClicked(pageSize: number) {
+    window.localStorage[eventPageSizeStorageKey] = pageSize;
+    this.setState({ ...this.state, eventPageSize: pageSize });
   }
 
   getNumPagesForThread(threadId: number) {
@@ -152,7 +176,31 @@ export default class ArtifactsCardComponent extends React.Component {
       <img className="icon" src="/image/clock-regular.svg" />
       <div className="content">
         <div className="title">Timing</div>
-        <div className="sort-control">Order by <u onClick={this.handleStartTimeClicked.bind(this)} className={`clickable ${this.state.sortFunction == this.sortTimeAsc && 'selected'}`}>start time</u> | <u onClick={this.handleDurationClicked.bind(this)} className={`clickable ${this.state.sortFunction == this.sortDurationDesc && 'selected'}`}>duration</u></div>
+        <div className="sort-controls">
+          <div className="sort-control">
+            Sort by&nbsp;
+            <u onClick={this.handleSortByClicked.bind(this, sortByTimeAscStorageValue)} className={`clickable ${this.state.sortBy == sortByTimeAscStorageValue && 'selected'}`}>start time</u> |&nbsp;
+            <u onClick={this.handleSortByClicked.bind(this, sortByDurationDescStorageValue)} className={`clickable ${this.state.sortBy == sortByDurationDescStorageValue && 'selected'}`}>duration</u>
+          </div>
+          <div className="sort-control">
+            Group by&nbsp;
+            <u onClick={this.handleGroupByClicked.bind(this, groupByThreadStorageValue)} className={`clickable ${this.state.groupBy == "thread" && 'selected'}`}>thread</u> |&nbsp;
+            <u onClick={this.handleGroupByClicked.bind(this, groupByAllStorageValue)} className={`clickable ${this.state.groupBy == groupByAllStorageValue && 'selected'}`}>flat</u>
+          </div>
+          <div className="sort-control">
+            Threads&nbsp;
+            <u onClick={this.handleThreadPageSizeClicked.bind(this, 10)} className={`clickable ${this.state.threadPageSize == 10 && 'selected'}`}>10</u> |&nbsp;
+            <u onClick={this.handleThreadPageSizeClicked.bind(this, 100)} className={`clickable ${this.state.threadPageSize == 100 && 'selected'}`}>100</u> |&nbsp;
+            <u onClick={this.handleThreadPageSizeClicked.bind(this, 1000)} className={`clickable ${this.state.threadPageSize == 1000 && 'selected'}`}>1000</u> |&nbsp;
+            <u onClick={this.handleThreadPageSizeClicked.bind(this, 10000)} className={`clickable ${this.state.threadPageSize == 10000 && 'selected'}`}>10000</u></div>
+          <div className="sort-control">
+            Events&nbsp;
+            <u onClick={this.handleEventPageSizeClicked.bind(this, 10)} className={`clickable ${this.state.eventPageSize == 10 && 'selected'}`}>10</u> |&nbsp;
+            <u onClick={this.handleEventPageSizeClicked.bind(this, 100)} className={`clickable ${this.state.eventPageSize == 100 && 'selected'}`}>100</u> |&nbsp;
+            <u onClick={this.handleEventPageSizeClicked.bind(this, 1000)} className={`clickable ${this.state.eventPageSize == 1000 && 'selected'}`}>1000</u> |&nbsp;
+            <u onClick={this.handleEventPageSizeClicked.bind(this, 10000)} className={`clickable ${this.state.eventPageSize == 10000 && 'selected'}`}>10000</u>
+          </div>
+        </div>
         {this.state.buildInProgress && <div className="empty-state">Build is in progress...</div>}
         {!this.state.timingEnabled &&
           <div className="empty-state">
@@ -160,14 +208,42 @@ export default class ArtifactsCardComponent extends React.Component {
             <CacheCodeComponent />
           </div>
         }
-        <div className="details">
-          {threads.sort(this.sortIdAsc).slice(0, this.state.threadNumPages * threadPageSize).map((thread: Thread) =>
+        {this.state.groupBy == groupByThreadStorageValue && <div className="details">
+          {threads.sort(this.sortIdAsc).slice(0, this.state.threadNumPages * this.state.threadPageSize).map((thread: Thread) =>
             <div>
               <div className="list-title">
                 <div>{thread.name}</div>
               </div>
               <ul>
-                {thread.events.sort(this.state.sortFunction).slice(0, eventPageSize * this.getNumPagesForThread(thread.id)).map((event) =>
+                {thread.events
+                  .sort(this.state.sortBy == sortByTimeAscStorageValue ? this.sortTimeAsc : this.sortDurationDesc)
+                  .slice(0, this.state.eventPageSize * this.getNumPagesForThread(thread.id))
+                  .map((event) =>
+                    <li>
+                      <div className="list-grid">
+                        <div>{event.name}</div>
+                        <div>{(event.dur / 1000000).toPrecision(3)} seconds</div>
+                      </div>
+                      <div className="list-percent" data-percent={`${(100 * (event.dur / this.props.model.getDurationMicros())).toFixed(0)}%`} style={{ width: `${(100 * (event.dur / this.props.model.getDurationMicros())).toPrecision(3)}%` }}></div>
+                    </li>
+                  )}
+              </ul>
+              {thread.events.length > (this.state.eventPageSize * this.getNumPagesForThread(thread.id)) && !!this.state.eventPageSize &&
+                <div className="more" onClick={this.handleMoreEventsClicked.bind(this, thread.id)}>See more events</div>}
+            </div>
+          )}
+        </div>}
+        {this.state.groupBy == groupByAllStorageValue && <div className="details">
+          <div>
+            <div className="list-title">
+              <div>All events</div>
+            </div>
+            <ul>
+              {threads
+                .flatMap((thread: Thread) => thread.events)
+                .sort(this.state.sortBy == sortByTimeAscStorageValue ? this.sortTimeAsc : this.sortDurationDesc)
+                .slice(0, this.state.eventPageSize * this.getNumPagesForThread(0))
+                .map((event) =>
                   <li>
                     <div className="list-grid">
                       <div>{event.name}</div>
@@ -176,14 +252,13 @@ export default class ArtifactsCardComponent extends React.Component {
                     <div className="list-percent" data-percent={`${(100 * (event.dur / this.props.model.getDurationMicros())).toFixed(0)}%`} style={{ width: `${(100 * (event.dur / this.props.model.getDurationMicros())).toPrecision(3)}%` }}></div>
                   </li>
                 )}
-              </ul>
-              {thread.events.length > (eventPageSize * this.getNumPagesForThread(thread.id)) && !!eventPageSize &&
-              <div className="more" onClick={this.handleMoreEventsClicked.bind(this, thread.id)}>See more events</div>}
-            </div>
-          )}
-        </div>
-        {threads.length > (threadPageSize * this.state.threadNumPages) && !!threadPageSize &&
-              <div className="more" onClick={this.handleMoreThreadsClicked.bind(this)}>See more threads</div>}
+            </ul>
+            {threads.flatMap((thread: Thread) => thread.events).length > (this.state.eventPageSize * this.getNumPagesForThread(0)) && !!this.state.eventPageSize &&
+              <div className="more" onClick={this.handleMoreEventsClicked.bind(this, 0)}>See more events</div>}
+          </div>
+        </div>}
+        {this.state.groupBy == groupByThreadStorageValue && threads.length > (this.state.threadPageSize * this.state.threadNumPages) && !!this.state.threadPageSize &&
+          <div className="more" onClick={this.handleMoreThreadsClicked.bind(this)}>See more threads</div>}
       </div>
     </div>
   }
