@@ -10,3 +10,8 @@ package(
     "base_image",  # container_image
     "buildbuddy_image",  # go_image
 ]]
+
+alias(
+    name = "server",
+    actual = ":buildbuddy",
+)
