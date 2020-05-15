@@ -135,7 +135,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 			}
 			client := repb.NewExecutionClient(conn)
 			maxExecutionDuration := time.Second * time.Duration(remoteExecTarget.MaxExecutionTimeoutSeconds)
-			if err := realEnv.AddExecutionClient(propertyString, client, maxExecutionDuration); err != nil {
+			if err := realEnv.AddExecutionClient(propertyString, client, maxExecutionDuration, remoteExecTarget.DisableStreaming); err != nil {
 				log.Fatal(err)
 			}
 		}

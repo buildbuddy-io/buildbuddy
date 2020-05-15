@@ -110,6 +110,7 @@ type RemoteExecutionTarget struct {
 	Target                     string            `yaml:"target"`
 	Properties                 map[string]string `yaml:"properties"`
 	MaxExecutionTimeoutSeconds int64             `yaml:"max_execution_timeout_seconds"`
+	DisableStreaming           bool              `yaml:"disable_streaming"`
 }
 
 type RemoteExecutionConfig struct {

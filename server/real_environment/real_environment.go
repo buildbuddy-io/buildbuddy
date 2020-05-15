@@ -15,8 +15,9 @@ import (
 )
 
 type executionClientConfig struct {
-	client      repb.ExecutionClient
-	maxDuration time.Duration
+	client           repb.ExecutionClient
+	maxDuration      time.Duration
+	disableStreaming bool
 }
 
 func (cc *executionClientConfig) GetExecutionClient() repb.ExecutionClient {
@@ -24,6 +25,9 @@ func (cc *executionClientConfig) GetExecutionClient() repb.ExecutionClient {
 }
 func (cc *executionClientConfig) GetMaxDuration() time.Duration {
 	return cc.maxDuration
+}
+func (cc *executionClientConfig) DisableStreaming() bool {
+	return cc.disableStreaming
 }
 
 type RealEnv struct {
@@ -174,15 +178,16 @@ func (r *RealEnv) GetContentAddressableStorageClient() repb.ContentAddressableSt
 	return r.contentAddressableStorageClient
 }
 
-func (r *RealEnv) AddExecutionClient(propString string, c repb.ExecutionClient, maxDuration time.Duration) error {
+func (r *RealEnv) AddExecutionClient(propString string, c repb.ExecutionClient, maxDuration time.Duration, disableStreaming bool) error {
 	// Don't allow duplicate clients.
 	_, ok := r.executionClients[propString]
 	if ok {
 		return status.FailedPreconditionErrorf("Duplicate execution client for properties: %q", propString)
 	}
 	r.executionClients[propString] = &executionClientConfig{
-		client:      c,
-		maxDuration: maxDuration,
+		client:           c,
+		maxDuration:      maxDuration,
+		disableStreaming: disableStreaming,
 	}
 	return nil
 }

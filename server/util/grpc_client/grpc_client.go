@@ -4,6 +4,7 @@ import (
 	"net/url"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/google"
 )
 
 // New Client handles some of the logic around detecting the correct GRPC
@@ -18,8 +19,9 @@ func DialTarget(target string) (*grpc.ClientConn, error) {
 		}
 		if u.Scheme != "grpcs" {
 			dialOptions = append(dialOptions, grpc.WithInsecure())
+		} else {
+			dialOptions = append(dialOptions, grpc.WithCredentialsBundle(google.NewDefaultCredentials()))
 		}
-
 		target = u.Host
 	}
 

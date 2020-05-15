@@ -175,4 +175,5 @@ type SplashPrinter interface {
 type ExecutionClientConfig interface {
 	GetExecutionClient() repb.ExecutionClient
 	GetMaxDuration() time.Duration
+	DisableStreaming() bool
 }

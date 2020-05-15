@@ -241,34 +241,66 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	writeProgressFn := func(stage repb.ExecutionStage_Value, op *longrunning.Operation) error {
 		err := stream.Send(op)
 		if err != nil {
-			log.Printf("Error updating execution state over stream -- did caller hang up? (%s)", err)
 			if err := s.exDB.InsertOrUpdateExecution(ctx, actionDigestName, stage, op); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
+	// finalizeOperationFn rewrites the operation to include the correct "queued" timestamp.
+	completeLastOperationFn := func(op *longrunning.Operation) error {
+		actionResult := extractActionResult(op)
+		md := actionResult.GetExecutionMetadata()
+		md.QueuedTimestamp = requestStartTimePb
+		logActionResult(req.GetActionDigest(), md)
+		_, newOp, err := operation.Assemble(repb.ExecutionStage_COMPLETED, req.GetActionDigest(), codes.OK, actionResult)
+		op = newOp
+		return err
+	}
+
+	var finalizer finalizerFn = func() {
+		stage := repb.ExecutionStage_COMPLETED
+		if op, err := operation.AssembleFailed(stage, req.GetActionDigest(), codes.Internal); err == nil {
+			log.Printf("Failed action %s (returning code INTERNAL)", req.GetActionDigest())
+			writeProgressFn(stage, op)
+		}
+	}
+	// Defer a call to the failsafe finalizer if it's not been set to nil.
+	// This will mark the operation as COMPLETE with an INTERNAL error code
+	// so that clients who call WaitExecution do not wait forever.
+	defer func() {
+		if finalizer != nil {
+			finalizer()
+		}
+	}()
+
+	// Synchronous RPC mode
+	if execClientConfig.DisableStreaming() {
+		syncResponse, err := exClient.SyncExecute(ctx, req)
+		if err != nil {
+			return err
+		}
+		for _, op := range syncResponse.GetOperations() {
+			stage := extractStage(op)
+			if stage == repb.ExecutionStage_COMPLETED {
+				if err := completeLastOperationFn(op); err != nil {
+					return err
+				}
+				finalizer = nil
+			}
+			if err := writeProgressFn(stage, op); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	// End Synchronous RPC mode
 
 	workerStream, err := exClient.Execute(ctx, req)
 	if err != nil {
 		return err
 	}
 	defer workerStream.CloseSend()
-
-	// This little var will be called by the anonymous function below --
-	// if it's not nilled out first in the success case.
-	var finalizer finalizerFn = func() {
-		stage := repb.ExecutionStage_COMPLETED
-		if op, err := operation.AssembleFailed(stage, req.GetActionDigest(), codes.Internal); err == nil {
-			log.Printf("Calling finalizer on %s (returning code INTERNAL)", req.GetActionDigest())
-			writeProgressFn(stage, op)
-		}
-	}
-	defer func() {
-		if finalizer != nil {
-			finalizer()
-		}
-	}()
 
 	for {
 		op, readErr := workerStream.Recv()
@@ -281,17 +313,9 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 		}
 		stage := extractStage(op)
 		if stage == repb.ExecutionStage_COMPLETED {
-			// Little gnarly: rewrite the operation to include the
-			// correct "queued" timestamp.
-			actionResult := extractActionResult(op)
-			md := actionResult.GetExecutionMetadata()
-			md.QueuedTimestamp = requestStartTimePb
-			logActionResult(req.GetActionDigest(), md)
-			_, rewrittenOp, err := operation.Assemble(stage, req.GetActionDigest(), codes.OK, actionResult)
-			if err != nil {
+			if err := completeLastOperationFn(op); err != nil {
 				return err
 			}
-			op = rewrittenOp
 			finalizer = nil
 		}
 		if err := writeProgressFn(stage, op); err != nil {
@@ -333,4 +357,8 @@ func (s *ExecutionServer) WaitExecution(req *repb.WaitExecutionRequest, stream r
 		time.Sleep(1 * time.Second)
 	}
 	return nil
+}
+
+func (s *ExecutionServer) SyncExecute(ctx context.Context, req *repb.ExecuteRequest) (*repb.SyncExecuteResponse, error) {
+	return nil, status.UnimplementedErrorf("Not implemented")
 }
