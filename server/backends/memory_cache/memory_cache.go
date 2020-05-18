@@ -181,6 +181,19 @@ func (m *MemoryCache) Contains(ctx context.Context, key string) (bool, error) {
 	return contains, nil
 }
 
+func (m *MemoryCache) ContainsMulti(ctx context.Context, keys []string) (map[string]bool, error) {
+	foundMap := make(map[string]bool, len(keys))
+	// No parallelism here either. Not necessary for an in-memory cache.
+	for _, key := range keys {
+		ok, err := m.Contains(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		foundMap[key] = ok
+	}
+	return foundMap, nil
+}
+
 func (m *MemoryCache) Get(ctx context.Context, key string) ([]byte, error) {
 	fullKey, err := m.PrefixKey(ctx, key)
 	if err != nil {

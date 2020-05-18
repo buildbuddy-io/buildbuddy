@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"regexp"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -86,9 +89,14 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err != nil {
 		return err
 	}
-	reader, err := s.cache.Reader(stream.Context(), ck, req.ReadOffset, req.ReadLimit)
-	if err != nil {
-		return err
+	var reader io.Reader
+	if hash == digest.EmptySha256 {
+		reader = strings.NewReader("")
+	} else {
+		reader, err = s.cache.Reader(stream.Context(), ck, req.ReadOffset, req.ReadLimit)
+		if err != nil {
+			return err
+		}
 	}
 
 	buf := make([]byte, readBufSizeBytes)
@@ -161,6 +169,22 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error 
 	return nil
 }
 
+// A writer that drops anything written to it.
+// Useful when you need an io.Writer but don't intend
+// to actually write bytes to it.
+type discardWriteCloser struct {
+	io.Writer
+}
+
+func NewDiscardWriteCloser() *discardWriteCloser {
+	return &discardWriteCloser{
+		ioutil.Discard,
+	}
+}
+func (discardWriteCloser) Close() error {
+	return nil
+}
+
 func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
 	hash, err := extractHash(req.ResourceName)
 	if err != nil {
@@ -178,10 +202,17 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	// if exists {
 	// 	return nil, status.FailedPreconditionError(fmt.Sprintf("File %s already exists (ck: %s)", hash, ck))
 	// }
-	wc, err := s.cache.Writer(ctx, ck)
-	if err != nil {
-		return nil, err
+
+	var wc io.WriteCloser
+	if hash != digest.EmptySha256 {
+		wc, err = s.cache.Writer(ctx, ck)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		wc = NewDiscardWriteCloser()
 	}
+
 	return &writeState{
 		activeResourceName: req.ResourceName,
 		writer:             wc,

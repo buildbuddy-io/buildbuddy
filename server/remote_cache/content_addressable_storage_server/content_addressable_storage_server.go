@@ -4,21 +4,27 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
-	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
 // This must match what the ByteStream API does. They refer to the same cache.
 func prefixKey(ctx context.Context, key string) string {
 	return perms.UserPrefixFromContext(ctx) + key
+}
+
+func unprefixKey(ctx context.Context, key string) string {
+	return strings.TrimPrefix(key, perms.UserPrefixFromContext(ctx))
 }
 
 type ContentAddressableStorageServer struct {
@@ -46,7 +52,10 @@ func NewContentAddressableStorageServer(env environment.Env) (*ContentAddressabl
 func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	rsp := &repb.FindMissingBlobsResponse{}
 	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
-	for _, blobDigest := range req.BlobDigests {
+
+	digestMap := make(map[string]*repb.Digest, len(req.GetBlobDigests()))
+	blobKeys := make([]string, 0, len(req.GetBlobDigests()))
+	for _, blobDigest := range req.GetBlobDigests() {
 		hash, err := digest.Validate(blobDigest)
 		if err != nil {
 			return nil, err
@@ -54,12 +63,27 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		if hash == digest.EmptySha256 {
 			continue
 		}
-		exists, err := s.cache.Contains(ctx, prefixKey(ctx, hash))
-		if err != nil {
-			return nil, err
+		if hash == digest.EmptyHash {
+			continue
 		}
-		if !exists {
-			rsp.MissingBlobDigests = append(rsp.MissingBlobDigests, blobDigest)
+		key := prefixKey(ctx, hash)
+		digestMap[key] = blobDigest
+		blobKeys = append(blobKeys, key)
+	}
+	if len(blobKeys) == 0 {
+		return rsp, nil
+	}
+	foundMap, err := s.cache.ContainsMulti(ctx, blobKeys)
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range blobKeys {
+		found, ok := foundMap[key]
+		if !ok {
+			return nil, status.InternalErrorf("CAS Inconsistent result from cache.ContainsMulti (missing %q)", key)
+		}
+		if !found {
+			rsp.MissingBlobDigests = append(rsp.MissingBlobDigests, digestMap[key])
 		}
 	}
 	return rsp, nil
@@ -106,7 +130,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		}
 		rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 			Digest: uploadRequest.Digest,
-			Status: &status.Status{Code: int32(codes.OK)},
+			Status: &statuspb.Status{Code: int32(codes.OK)},
 		})
 	}
 	return rsp, nil
@@ -145,11 +169,11 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		blob, err := s.cache.Get(ctx, prefixKey(ctx, hash))
 		if err == nil {
 			blobRsp.Data = blob
-			blobRsp.Status = &status.Status{Code: int32(codes.OK)}
+			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}
 		} else if os.IsNotExist(err) {
-			blobRsp.Status = &status.Status{Code: int32(codes.NotFound)}
+			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
 		} else {
-			blobRsp.Status = &status.Status{Code: int32(codes.Internal)}
+			blobRsp.Status = &statuspb.Status{Code: int32(codes.Internal)}
 		}
 		rsp.Responses = append(rsp.Responses, blobRsp)
 	}

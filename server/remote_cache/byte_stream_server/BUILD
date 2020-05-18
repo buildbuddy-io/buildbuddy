@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/environment:go_default_library",
         "//server/interfaces:go_default_library",
+        "//server/remote_cache/digest:go_default_library",
         "//server/util/perms:go_default_library",
         "//server/util/status:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
