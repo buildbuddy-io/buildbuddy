@@ -1,19 +1,10 @@
 package ssl
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
-	"io/ioutil"
-	"math/big"
 	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -49,187 +40,73 @@ func NewCertCache(cache interfaces.Cache) *CertCache {
 	}
 }
 
-type SSLService struct {
-	env             environment.Env
-	mux             *http.ServeMux
-	tlsConfig       *tls.Config
-	autocertManager *autocert.Manager
-	AuthorityCert   *x509.Certificate
-	AuthorityKey    *rsa.PrivateKey
-}
-
-func NewSSLService(env environment.Env) (*SSLService, error) {
-	sslService := &SSLService{
-		env: env,
-	}
-
-	if !sslService.IsEnabled() {
-		return sslService, nil
-	}
-
-	err := sslService.populateTLSConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	return sslService, nil
-}
-
-func (s *SSLService) populateTLSConfig() error {
-	clientCACertPool := x509.NewCertPool()
-
-	sslConf := s.env.GetConfigurator().GetSSLConfig()
-	if sslConf.ClientCACertFile != "" && sslConf.ClientCAKeyFile != "" {
-		cert, key, err := loadX509KeyPair(sslConf.ClientCACertFile, sslConf.ClientCAKeyFile)
-		if err != nil {
-			return err
-		}
-		s.AuthorityCert = cert
-		s.AuthorityKey = key
-	}
-
-	if s.AuthorityCert != nil {
-		clientCACertPool.AddCert(s.AuthorityCert)
-	}
-
+func getTLSConfig(env environment.Env, mux *http.ServeMux) (*tls.Config, http.Handler, error) {
+	sslConf := env.GetConfigurator().GetSSLConfig()
 	tlsConfig := &tls.Config{
 		NextProtos:               []string{"http/1.1"},
 		MinVersion:               tls.VersionTLS10,
 		SessionTicketsDisabled:   true,
 		PreferServerCipherSuites: true,
-		ClientAuth:               tls.VerifyClientCertIfGiven,
-		ClientCAs:                clientCACertPool,
 	}
 
 	if sslConf.KeyFile != "" && sslConf.CertFile != "" {
 		certPair, err := tls.LoadX509KeyPair(sslConf.CertFile, sslConf.KeyFile)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		tlsConfig.Certificates = []tls.Certificate{certPair}
-		s.tlsConfig = tlsConfig
+		return tlsConfig, mux, nil
 	} else if sslConf.UseACME {
-		appURL := s.env.GetConfigurator().GetAppBuildBuddyURL()
+		appURL := env.GetConfigurator().GetAppBuildBuddyURL()
 		if appURL == "" {
-			return status.FailedPreconditionError("No buildbuddy app URL set - unable to use ACME")
+			return nil, nil, status.FailedPreconditionError("No buildbuddy app URL set - unable to use ACME")
 		}
 
 		url, err := url.Parse(appURL)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		hosts := []string{url.Hostname()}
 
-		cacheURL := s.env.GetConfigurator().GetAppCacheAPIURL()
+		cacheURL := env.GetConfigurator().GetAppCacheAPIURL()
 		if url, err = url.Parse(cacheURL); cacheURL != "" && err == nil {
 			hosts = append(hosts, url.Hostname())
 		}
 
-		eventsURL := s.env.GetConfigurator().GetAppEventsAPIURL()
+		eventsURL := env.GetConfigurator().GetAppEventsAPIURL()
 		if url, err = url.Parse(eventsURL); eventsURL != "" && err == nil {
 			hosts = append(hosts, url.Hostname())
 		}
 
-		s.autocertManager = &autocert.Manager{
+		manager := autocert.Manager{
 			Prompt:     autocert.AcceptTOS,
-			Cache:      NewCertCache(s.env.GetCache()),
+			Cache:      NewCertCache(env.GetCache()),
 			HostPolicy: autocert.HostWhitelist(hosts...),
 		}
-		tlsConfig.GetCertificate = s.autocertManager.GetCertificate
+		tlsConfig.GetCertificate = manager.GetCertificate
 		tlsConfig.NextProtos = append(tlsConfig.NextProtos, acme.ALPNProto)
 
-		s.tlsConfig = tlsConfig
+		return tlsConfig, manager.HTTPHandler(mux), nil
 	}
-	return nil
+	return nil, nil, status.AbortedError("SSL disabled by config")
 }
 
-func (s *SSLService) IsEnabled() bool {
-	sslConf := s.env.GetConfigurator().GetSSLConfig()
+func IsEnabled(env environment.Env) bool {
+	sslConf := env.GetConfigurator().GetSSLConfig()
 	return sslConf != nil && sslConf.EnableSSL
 }
 
-func (s *SSLService) ConfigureTLS(mux *http.ServeMux) (*tls.Config, http.Handler) {
-	if s.autocertManager == nil {
-		return s.tlsConfig, mux
-	}
-	return s.tlsConfig, s.autocertManager.HTTPHandler(s.mux)
-
+func ConfigureTLS(env environment.Env, mux *http.ServeMux) (*tls.Config, http.Handler, error) {
+	return getTLSConfig(env, mux)
 }
 
-func (s *SSLService) GetGRPCSTLSCreds() (credentials.TransportCredentials, error) {
-	if !s.IsEnabled() {
+func GetGRPCSTLSCreds(env environment.Env) (credentials.TransportCredentials, error) {
+	if !IsEnabled(env) {
 		return nil, status.AbortedError("SSL disabled by config")
 	}
-	return credentials.NewTLS(s.tlsConfig), nil
-}
-
-func (s *SSLService) GenerateCerts(apiKey string) (string, string, error) {
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	tlsConfig, _, err := getTLSConfig(env, nil)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
-	notBefore := time.Now()
-	notAfter := notBefore.Add(100 * 365 * 24 * time.Hour)
-
-	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
-	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
-	if err != nil {
-		return "", "", err
-	}
-
-	template := x509.Certificate{
-		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			CommonName: apiKey,
-		},
-		NotBefore:             notBefore,
-		NotAfter:              notAfter,
-		BasicConstraintsValid: true,
-	}
-
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, s.AuthorityCert, &priv.PublicKey, s.AuthorityKey)
-	if err != nil {
-		return "", "", err
-	}
-	certBuffer := new(bytes.Buffer)
-	if err := pem.Encode(certBuffer, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes}); err != nil {
-		return "", "", err
-	}
-
-	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
-	if err != nil {
-		return "", "", err
-	}
-	keyBuffer := new(bytes.Buffer)
-	if err := pem.Encode(keyBuffer, &pem.Block{Type: "PRIVATE KEY", Bytes: privBytes}); err != nil {
-		return "", "", err
-	}
-
-	return certBuffer.String(), keyBuffer.String(), nil
-}
-
-func loadX509KeyPair(certFile, keyFile string) (*x509.Certificate, *rsa.PrivateKey, error) {
-	cf, err := ioutil.ReadFile(certFile)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	kf, err := ioutil.ReadFile(keyFile)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	cpb, _ := pem.Decode(cf)
-	kpb, _ := pem.Decode(kf)
-	crt, err := x509.ParseCertificate(cpb.Bytes)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	key, err := x509.ParsePKCS8PrivateKey(kpb.Bytes)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return crt, key.(*rsa.PrivateKey), nil
+	return credentials.NewTLS(tlsConfig), nil
 }

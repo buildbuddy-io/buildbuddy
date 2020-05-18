@@ -136,7 +136,6 @@ proto_library(
     srcs = ["buildbuddy_service.proto"],
     deps = [
         ":bazel_config_proto",
-        ":credentials_proto",
         ":invocation_proto",
         ":user_proto",
     ],
@@ -166,11 +165,6 @@ proto_library(
     deps = [
         ":context_proto",
     ],
-)
-
-proto_library(
-    name = "credentials_proto",
-    srcs = ["credentials.proto"],
 )
 
 # Go proto rules below here
@@ -235,7 +229,6 @@ go_proto_library(
     proto = ":buildbuddy_service_proto",
     deps = [
         ":bazel_config_go_proto",
-        ":credentials_go_proto",
         ":invocation_go_proto",
         ":user_go_proto",
     ],
@@ -278,12 +271,6 @@ go_proto_library(
     deps = [
         ":context_go_proto",
     ],
-)
-
-go_proto_library(
-    name = "credentials_go_proto",
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/credentials",
-    proto = ":credentials_proto",
 )
 
 go_proto_library(
@@ -334,11 +321,6 @@ ts_proto_library(
 ts_proto_library(
     name = "user_ts_proto",
     deps = [":user_proto"],
-)
-
-ts_proto_library(
-    name = "credentials_ts_proto",
-    deps = [":credentials_proto"],
 )
 
 ts_proto_library(

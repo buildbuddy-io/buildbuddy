@@ -29,7 +29,7 @@ func NewInvocationDB(env environment.Env, h *db.DBHandle) *InvocationDB {
 func (d *InvocationDB) createInvocation(tx *gorm.DB, ctx context.Context, ti *tables.Invocation) error {
 	permissions := perms.AnonymousUserPermissions()
 	if userDB := d.env.GetUserDB(); userDB != nil {
-		g, err := userDB.GetAuthGroup(ctx)
+		g, err := userDB.GetBasicAuthGroup(ctx)
 		if err != nil {
 			return err
 		}

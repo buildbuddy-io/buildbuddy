@@ -5,7 +5,7 @@ load("@npm_bazel_terser//:index.bzl", "terser_minified")
 package(default_visibility = ["//visibility:public"])
 
 rollup_bundle(
-    name = "app_bundle.min",
+    name = "app_bundle",
     config_file = "rollup.config.js",
     entry_point = "app.tsx",
     deps = [
@@ -16,10 +16,10 @@ rollup_bundle(
     ],
 )
 
-# terser_minified(
-#     name = "app_bundle.min",
-#     src = ":app_bundle",
-# )
+terser_minified(
+    name = "app_bundle.min",
+    src = ":app_bundle",
+)
 
 ts_library(
     name = "app",

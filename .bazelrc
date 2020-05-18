@@ -3,36 +3,6 @@ build:local --bes_results_url=http://localhost:8080/invocation/
 build:local --bes_backend=grpc://localhost:1985
 build:local --remote_cache=grpc://localhost:1985
 
-build:local-grpcs --bes_results_url=http://localhost:8080/invocation/
-build:local-grpcs --bes_backend=grpcs://localhost:1986/
-build:local-grpcs --remote_cache=grpcs://localhost:1986/
-build:local-grpcs --tls_certificate=/Users/siggi/Desktop/ca.crt
-build:local-grpcs --tls_client_certificate=/Users/siggi/Desktop/client.crt
-build:local-grpcs --tls_client_key=/Users/siggi/Desktop/client.pem
-
-
-build:local-header --bes_results_url=http://localhost:8080/invocation/
-build:local-header --bes_backend=grpc://localhost:1985/
-build:local-header --remote_cache=grpc://localhost:1985/
-
-# Authenticated urls
-# try-import ~/.bazelrc
-build:local-header --bes_backend=grpc://fooboink@localhost:1985/
-build:local-header --remote_cache=grpc://fooboink@localhost:1985/
-
-# Authentication via certificates
-#build:local-grpcs --tls_client_certificate=/Users/siggi/Desktop/client.crt
-#build:local-grpcs --tls_client_key=/Users/siggi/Desktop/client.pem
-
-# This command works
-# bazel build --config=local-grpcs server
-# TODO:
-# - Call GetCredentials on UI side and display/download
-# - Instructions on how to configure this
-# - Consolidate SSLService creation into one spot - probably store in environment
-# - Store API key maybe in a field that's not CommonName
-# - Add route for API key that's not certificate based
-
 # Build with --config=dev to send build logs to the dev server
 build:dev --bes_results_url=https://app.buildbuddy.dev/invocation/
 build:dev --bes_backend=grpcs://events.buildbuddy.dev:1986
