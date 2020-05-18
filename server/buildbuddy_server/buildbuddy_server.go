@@ -11,10 +11,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
+	crpb "github.com/buildbuddy-io/buildbuddy/proto/credentials"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
@@ -223,6 +225,25 @@ func (s *BuildBuddyServer) GetInvocationStat(ctx context.Context, req *inpb.GetI
 		return iss.GetInvocationStat(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetCredentials(ctx context.Context, req *crpb.GetCredentialsRequest) (*crpb.GetCredentialsResponse, error) {
+	sslService, err := ssl.NewSSLService(s.env) // todo get this from env
+	if err != nil {
+		return nil, err
+	}
+
+	certString, keyString, err := sslService.GenerateCerts("fooboink")
+	if err != nil {
+		return nil, err
+	}
+	return &crpb.GetCredentialsResponse{
+		Credentials: &crpb.Credentials {
+			Cert: certString,
+			Key: keyString,
+		},
+	}, nil
+
 }
 
 type bsLookup struct {

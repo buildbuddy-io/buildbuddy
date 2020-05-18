@@ -36,12 +36,12 @@ func StreamBytestreamFile(ctx context.Context, uri string, callback func([]byte)
 	}
 	dialOptions = append(dialOptions, grpc.WithInsecure())
 
-	// TODO(siggisim): Support GRPCS caches.
-	grpcPort := getIntFlag("grpc_port", "1985")
-	grpcsPort := getIntFlag("grpcs_port", "1986")
-	if parsedURL.Port() == grpcsPort {
-		parsedURL.Host = parsedURL.Hostname() + ":" + grpcPort
-	}
+	// // TODO(siggisim): Support GRPCS caches.
+	// grpcPort := getIntFlag("grpc_port", "1985")
+	// grpcsPort := getIntFlag("grpcs_port", "1986")
+	// if parsedURL.Port() == grpcsPort {
+	// 	parsedURL.Host = parsedURL.Hostname() + ":" + grpcPort
+	// }
 
 	// Connect to host/port and create a new client
 	conn, err := grpc.Dial(parsedURL.Host, dialOptions...)

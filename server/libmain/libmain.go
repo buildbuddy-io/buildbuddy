@@ -265,8 +265,12 @@ func StartAndRunServices(env environment.Env) {
 
 	StartGRPCServiceOrDie(env, buildBuddyServer, gRPCPort, nil)
 
-	if ssl.IsEnabled(env) {
-		creds, err := ssl.GetGRPCSTLSCreds(env)
+	sslService, err := ssl.NewSSLService(env) // todo consolidate
+	if err != nil {
+		log.Fatalf("Error configuring SSL: %s", err)
+	}
+	if sslService.IsEnabled() {
+		creds, err := sslService.GetGRPCSTLSCreds()
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -311,8 +315,8 @@ func StartAndRunServices(env environment.Env) {
 		Handler: mux,
 	}
 
-	if ssl.IsEnabled(env) {
-		tlsConfig, handler, err := ssl.ConfigureTLS(env, mux)
+	if sslService.IsEnabled() {
+		tlsConfig, handler := sslService.ConfigureTLS(mux)
 		if err != nil {
 			log.Fatal(err)
 		}
