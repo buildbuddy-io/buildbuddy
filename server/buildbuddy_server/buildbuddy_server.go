@@ -144,30 +144,30 @@ func assembleURL(host, scheme, port string) string {
 	return url
 }
 
-func (s *BuildBuddyServer) getGroup(ctx context.Context) *tables.Group {
+func (s *BuildBuddyServer) getGroupAPIKey(ctx context.Context) string {
 	if userDB := s.env.GetUserDB(); userDB != nil {
 		if tu, _ := userDB.GetUser(ctx); tu != nil {
 			for _, g := range tu.Groups {
-				if g.OwnedDomain != "" && g.WriteToken != "" {
-					return g
+				if g.OwnedDomain != "" && g.APIKey != "" {
+					return g.APIKey
 				}
 			}
 			// Still here? This user might have a self-owned group, let's check for that.
 			for _, g := range tu.Groups {
-				if g.GroupID == strings.Replace(tu.UserID, "US", "GR", 1) && g.WriteToken != "" {
-					return g
+				if g.GroupID == strings.Replace(tu.UserID, "US", "GR", 1) && g.APIKey != "" {
+					return g.APIKey
 				}
 			}
 			// Finally, fall back to any group with a WriteToken. This will be the
 			// default group for on-prem use cases.
 			for _, g := range tu.Groups {
-				if g.WriteToken != "" {
-					return g
+				if g.APIKey != "" {
+					return g.APIKey
 				}
 			}
 		}
 	}
-	return nil
+	return ""
 }
 
 func insertPassword(rawURL, password string) string {
@@ -200,11 +200,8 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		grpcPort := getIntFlag("grpc_port", "1985")
 		eventsAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 	}
-	group := s.getGroup(ctx)
-	if group == nil {
-		return nil, fmt.Errorf("No group found")
-	}
-	eventsAPIURL = insertPassword(eventsAPIURL, group.APIKey)
+	groupAPIKey := s.getGroupAPIKey(ctx)
+	eventsAPIURL = insertPassword(eventsAPIURL, groupAPIKey)
 	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", eventsAPIURL))
 
 	if s.env.GetCache() != nil {
@@ -213,13 +210,13 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 			grpcPort := getIntFlag("grpc_port", "1985")
 			cacheAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		cacheAPIURL = insertPassword(cacheAPIURL, group.APIKey)
+		cacheAPIURL = insertPassword(cacheAPIURL, groupAPIKey)
 		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", cacheAPIURL))
 	}
 
 	cerificate := &bzpb.Certificate{}
 	if req.GetIncludeCertificate() && s.sslService.IsCertGenerationEnabled() {
-		cert, key, err := s.sslService.GenerateCerts(group.APIKey)
+		cert, key, err := s.sslService.GenerateCerts(groupAPIKey)
 		if err != nil {
 			return nil, fmt.Errorf("Error generating cert: %+v", err)
 		}

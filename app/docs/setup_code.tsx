@@ -1,6 +1,7 @@
 import React from 'react';
 import rpcService from '../service/rpc_service';
 import { bazel_config } from '../../proto/bazel_config_ts_proto';
+import capabilities from '../capabilities/capabilities';
 
 interface Props {
   bazelConfigResponse?: bazel_config.GetBazelConfigResponse;
@@ -88,6 +89,10 @@ export default class SetupCodeComponent extends React.Component {
     </div>
   }
 
+  isAuthEnabled() {
+    return !!capabilities.auth;
+  }
+
   isCacheEnabled() {
     return !!this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_cache");
   }
@@ -116,7 +121,7 @@ export default class SetupCodeComponent extends React.Component {
       <div className="setup">
         <div className="setup-controls">
           <span className="group-title">Options</span>
-          <span className="group">
+          {this.isAuthEnabled() && <span className="group">
             <input id="auth-none"
               checked={this.state.auth == "none"}
               onChange={this.handleInputChange.bind(this)}
@@ -134,7 +139,7 @@ export default class SetupCodeComponent extends React.Component {
                 value="cert" name="auth" type="radio" />
               <label htmlFor="auth-cert">Certificate</label>
             </span>}
-          </span>
+          </span>}
 
           {this.isCacheEnabled() && <span>
             <input id="cache"
@@ -170,12 +175,15 @@ export default class SetupCodeComponent extends React.Component {
             type="checkbox" />
           <label htmlFor="execution"><span>Enable remote execution</span></label> */}
 
-          <input id="split"
-            checked={this.state.separateAuth}
-            onChange={this.handleCheckboxChange.bind(this)}
-            name="separateAuth"
-            type="checkbox" />
-          <label htmlFor="split"><span>Separate auth file</span></label>
+          {this.isAuthEnabled() && <span>
+            <input id="split"
+              checked={this.state.separateAuth}
+              onChange={this.handleCheckboxChange.bind(this)}
+              name="separateAuth"
+              type="checkbox" />
+            <label htmlFor="split"><span>Separate auth file</span></label>
+          </span>
+          }
         </div>
         <code data-header=".bazelrc">
           <div className="contents">

@@ -437,7 +437,7 @@ button {
 
 code {
   display: block;
-  padding: 16px 32px;
+  padding: 24px 32px;
   border: 1px solid #eee;
   border-radius: 8px;
   margin-top: 16px;
@@ -470,7 +470,7 @@ code button {
 }
 
 code[data-header] {
-  padding: 40px 32px 16px 32px;
+  padding: 40px 32px 24px 32px;
 }
 
 code[data-header]:before {
@@ -513,6 +513,7 @@ code .comment {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
+  min-height: 48px;
 }
 
 .setup-controls > * {
