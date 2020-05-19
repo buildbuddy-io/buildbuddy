@@ -565,7 +565,7 @@ code .comment {
   cursor: pointer;
 }
 
-.setup-controls .group label:last-of-type {
+.setup-controls .group .group-section label {
   border-right: 0;
 }
 
