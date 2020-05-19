@@ -39,7 +39,7 @@ export default class SetupComponent extends React.Component {
             {this.state.bazelConfigResponse && <SetupCodeComponent bazelConfigResponse={this.state.bazelConfigResponse} />}
 
             <h2>Bazel invocation</h2>
-            Once you've added those lines to your .bazelrc - you'll get a BuildBuddy url printed at the beginning and the end of every Bazel invocation like this:
+            Once you've added those lines to your .bazelrc you'll get a BuildBuddy url printed at the beginning and the end of every Bazel invocation like this:
             <code>
             $ bazel build //...<br/>
             INFO: Streaming build results to: {window.location.protocol}//{window.location.host}/invocation/7bedd84e-525e-4b93-a5f5-53517d57752b<br/>

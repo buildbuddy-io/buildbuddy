@@ -203,7 +203,7 @@ export default class SetupCodeComponent extends React.Component {
             {this.getResponse()?.certificate?.cert && <div><a download="buildbuddy-cert.pem" href={window.URL.createObjectURL(new Blob([this.getResponse()?.certificate?.cert], { type: 'text/plain' }))}>Download buildbuddy-cert.pem</a></div>}
             {this.getResponse()?.certificate?.key && <div><a download="buildbuddy-key.pem" href={window.URL.createObjectURL(new Blob([this.getResponse()?.certificate?.key], { type: 'text/plain' }))}>Download buildbuddy-key.pem</a></div>}
           </div>
-          To use certificate based auth. Download the two files above an place them in your workspace directory. If you place them outside of your workspace - make sure to update the paths in your .bazelrc file to point to the correct location.
+          To use certificate based auth. Download the two files above and place them in your workspace directory. If you place them outside of your workspace - make sure to update the paths in your .bazelrc file to point to the correct location.
         </div>}
       </div>
     );
