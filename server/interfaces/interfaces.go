@@ -112,6 +112,7 @@ type InvocationDB interface {
 	// Invocations API
 	InsertOrUpdateInvocation(ctx context.Context, in *tables.Invocation) error
 	LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error)
+	LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error)
 	LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error)
 	DeleteInvocation(ctx context.Context, invocationID string) error
 }
@@ -137,7 +138,7 @@ type UserDB interface {
 
 	// Groups API
 	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) error
-	GetBasicAuthGroup(ctx context.Context) (*tables.Group, error)
+	GetAuthGroup(ctx context.Context) (*tables.Group, error)
 	GetAPIKeyAuthGroup(ctx context.Context) (*tables.Group, error)
 	DeleteGroup(ctx context.Context, groupID string) error
 }

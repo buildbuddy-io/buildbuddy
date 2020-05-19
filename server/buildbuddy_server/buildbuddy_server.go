@@ -270,11 +270,16 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	group, err := s.env.GetInvocationDB().LookupGroupFromInvocation(r.Context(), params.Get("invocation_id"))
+	if err == nil && group != nil && lookup.URL.User == nil {
+		lookup.URL.User = url.User(group.APIKey)
+	}
+
 	// Stream the file back to our client
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	bytestream.StreamBytestreamFile(r.Context(), params.Get("bytestream_url"), func(data []byte) {
+	bytestream.StreamBytestreamFile(r.Context(), lookup.URL, func(data []byte) {
 		w.Write(data)
 	})
 }
