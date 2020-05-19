@@ -251,8 +251,13 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Error initializing app server: %s", err)
 	}
 
+	sslService, err := ssl.NewSSLService(env)
+	if err != nil {
+		log.Fatalf("Error configuring SSL: %s", err)
+	}
+
 	// Register to handle BuildBuddy API messages (over gRPC)
-	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env)
+	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env, sslService)
 	if err != nil {
 		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
 	}
@@ -266,8 +271,8 @@ func StartAndRunServices(env environment.Env) {
 
 	StartGRPCServiceOrDie(env, buildBuddyServer, gRPCPort, nil)
 
-	if ssl.IsEnabled(env) {
-		creds, err := ssl.GetGRPCSTLSCreds(env)
+	if sslService.IsEnabled() {
+		creds, err := sslService.GetGRPCSTLSCreds()
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -281,7 +286,7 @@ func StartAndRunServices(env environment.Env) {
 	mux.Handle("/app/", httpfilters.WrapExternalHandler(http.StripPrefix("/app", afs)))
 	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalHandler(env,
 		http.StripPrefix("/rpc/BuildBuddyService/", buildBuddyProtoHandler)))
-	mux.Handle("/file/download", httpfilters.WrapExternalHandler(buildBuddyServer))
+	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, buildBuddyServer))
 	mux.Handle("/healthz", env.GetHealthChecker())
 
 	if auth := env.GetAuthenticator(); auth != nil {
@@ -312,8 +317,8 @@ func StartAndRunServices(env environment.Env) {
 		Handler: mux,
 	}
 
-	if ssl.IsEnabled(env) {
-		tlsConfig, handler, err := ssl.ConfigureTLS(env, mux)
+	if sslService.IsEnabled() {
+		tlsConfig, handler := sslService.ConfigureTLS(mux)
 		if err != nil {
 			log.Fatal(err)
 		}

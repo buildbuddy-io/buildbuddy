@@ -53,7 +53,7 @@ func addPrefix(prefix, key string) string {
 func UserPrefixCacheKey(ctx context.Context, env environment.Env, key string) (string, error) {
 	if userDB := env.GetUserDB(); userDB != nil {
 		// Try group-based auth? (most common for grpc)
-		g, err := userDB.GetBasicAuthGroup(ctx)
+		g, err := userDB.GetAuthGroup(ctx)
 		if err != nil {
 			return "", err
 		}

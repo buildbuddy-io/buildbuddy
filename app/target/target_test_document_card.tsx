@@ -7,6 +7,7 @@ import TargetLogCardComponent from './target_log_card';
 
 interface Props {
   testResult: invocation.InvocationEvent,
+  invocationId: string,
 }
 
 interface State {
@@ -46,7 +47,7 @@ export default class TargetTestDocumentCardComponent extends React.Component {
       return;
     }
 
-    rpcService.fetchBytestreamFile(testXMLUrl).then((contents: string) => {
+    rpcService.fetchBytestreamFile(testXMLUrl, this.props.invocationId).then((contents: string) => {
       let parser = new DOMParser();
       let xmlDoc = parser.parseFromString(contents, "text/xml");
       this.setState({ ...this.state, testDocument: xmlDoc });

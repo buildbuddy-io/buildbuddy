@@ -29,7 +29,7 @@ func NewInvocationDB(env environment.Env, h *db.DBHandle) *InvocationDB {
 func (d *InvocationDB) createInvocation(tx *gorm.DB, ctx context.Context, ti *tables.Invocation) error {
 	permissions := perms.AnonymousUserPermissions()
 	if userDB := d.env.GetUserDB(); userDB != nil {
-		g, err := userDB.GetBasicAuthGroup(ctx)
+		g, err := userDB.GetAuthGroup(ctx)
 		if err != nil {
 			return err
 		}
@@ -104,6 +104,21 @@ func (d *InvocationDB) addPermissionsCheckToQuery(ctx context.Context, q *query_
 func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error) {
 	ti := &tables.Invocation{}
 	q := query_builder.NewQuery(`SELECT * FROM Invocations as i`)
+	q = q.AddWhereClause(`i.invocation_id = ?`, invocationID)
+	if err := d.addPermissionsCheckToQuery(ctx, q); err != nil {
+		return nil, err
+	}
+	queryStr, args := q.Build()
+	existingRow := d.h.Raw(queryStr, args...)
+	if err := existingRow.Scan(ti).Error; err != nil {
+		return nil, err
+	}
+	return ti, nil
+}
+
+func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error) {
+	ti := &tables.Group{}
+	q := query_builder.NewQuery(`SELECT * FROM Groups as g JOIN Invocations as i ON g.group_id = i.group_id`)
 	q = q.AddWhereClause(`i.invocation_id = ?`, invocationID)
 	if err := d.addPermissionsCheckToQuery(ctx, q); err != nil {
 		return nil, err

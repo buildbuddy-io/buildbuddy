@@ -2,6 +2,7 @@ package event_parser
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 	"time"
 
@@ -17,12 +18,14 @@ const (
 	envVarOptionName          = "client_env"
 	envVarSeparator           = "="
 	envVarRedactedPlaceholder = "<REDACTED>"
+	urlSecretRegexString      = `\:\/\/.*\@`
 )
 
 func filterCommandLine(in *command_line.CommandLine) *command_line.CommandLine {
 	if in == nil {
 		return nil
 	}
+	urlSecretRegex := regexp.MustCompile(urlSecretRegexString)
 	var out command_line.CommandLine
 	out = *in
 	for _, section := range out.Sections {
@@ -30,6 +33,10 @@ func filterCommandLine(in *command_line.CommandLine) *command_line.CommandLine {
 		case *command_line.CommandLineSection_OptionList:
 			{
 				for _, option := range p.OptionList.Option {
+					if strings.Contains(option.OptionValue, "@") {
+						option.OptionValue = urlSecretRegex.ReplaceAllString(option.OptionValue, "://"+envVarRedactedPlaceholder+"@")
+						option.CombinedForm = urlSecretRegex.ReplaceAllString(option.CombinedForm, "://"+envVarRedactedPlaceholder+"@")
+					}
 					if option.OptionName == envVarOptionName {
 						parts := strings.Split(option.OptionValue, envVarSeparator)
 						option.OptionValue = strings.Join([]string{parts[0], envVarRedactedPlaceholder}, envVarSeparator)
@@ -48,9 +55,13 @@ func filterUnstructuredCommandLine(in *build_event_stream.UnstructuredCommandLin
 	if in == nil {
 		return nil
 	}
+	urlSecretRegex := regexp.MustCompile(urlSecretRegexString)
 	var out build_event_stream.UnstructuredCommandLine
 	out = *in
 	for i, arg := range out.Args {
+		if strings.Contains(arg, "@") {
+			out.Args[i] = urlSecretRegex.ReplaceAllString(arg, "://"+envVarRedactedPlaceholder+"@")
+		}
 		if strings.HasPrefix(arg, envVarPrefix+envVarOptionName) {
 			parts := strings.Split(arg, envVarSeparator)
 			if len(parts) < 2 {

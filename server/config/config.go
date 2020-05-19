@@ -104,6 +104,8 @@ type SSLConfig struct {
 	UseACME   bool   `yaml:"use_acme"`
 	CertFile  string `yaml:"cert_file"`
 	KeyFile   string `yaml:"key_file"`
+	ClientCACertFile  string `yaml:"client_ca_cert_file"`
+	ClientCAKeyFile   string `yaml:"client_ca_key_file"`
 }
 
 type RemoteExecutionTarget struct {

@@ -1,7 +1,8 @@
 import React from 'react';
 import pako from 'pako';
 import InvocationModel from './invocation_model';
-import CacheCodeComponent from '../docs/cache_code';
+import SetupCodeComponent from '../docs/setup_code';
+import rpcService from '../service/rpc_service';
 
 interface Props {
   model: InvocationModel,
@@ -80,30 +81,12 @@ export default class InvocationTimingCardComponent extends React.Component {
       return;
     }
 
-    var request = new XMLHttpRequest();
-    request.responseType = "arraybuffer";
-    request.open('GET', "/file/download?filename=trace.gz&bytestream_url=" + encodeURIComponent(profileUrl), true);
-
-    // TODO(siggisim): Do something more robust here
-    var isSafari = /constructor/i.test(window.HTMLElement as any) || (function (p) { return p.toString() === "[object SafariRemoteNotification]"; })(!(window as any).safari || (typeof (window as any).safari !== 'undefined' && (window as any).safari.pushNotification));
-
-    let card = this;
-    request.onload = function () {
-      if (this.status >= 200 && this.status < 400) {
-        // Safari doesn't automatically ungzip 1 layer like Chrome and Firefox do for some reason.
-        let response = isSafari ? pako.inflate(new Uint8Array(this.response)) : this.response;
-        let decompressedResponse = pako.inflate(response, { to: 'string' });
-        card.updateProfile(JSON.parse(decompressedResponse));
-      } else {
-        console.error("Error loading bytestream timing profile!");
-      }
-    };
-
-    request.onerror = function () {
+    rpcService.fetchBytestreamFile(profileUrl, this.props.model.getId(), "arraybuffer").then((contents: Uint8Array) => {
+      let decompressedResponse = pako.inflate(contents, { to: 'string' });
+      this.updateProfile(JSON.parse(decompressedResponse));
+    }).catch(() => {
       console.error("Error loading bytestream timing profile!");
-    };
-
-    request.send();
+    });
   }
 
   updateProfile(profile: any) {
@@ -204,8 +187,8 @@ export default class InvocationTimingCardComponent extends React.Component {
         {this.state.buildInProgress && <div className="empty-state">Build is in progress...</div>}
         {!this.state.timingEnabled &&
           <div className="empty-state">
-            Profiling isn't enabled for this invocation.<br /><br />To enable profiling you must add GRPC remote caching. You can do so by adding the following line to your <b>.bazelrc</b> and re-running your invocation:
-            <CacheCodeComponent />
+            Profiling isn't enabled for this invocation.<br /><br />To enable profiling you must add GRPC remote caching. You can do so by checking <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your invocation:
+            <SetupCodeComponent />
           </div>
         }
         {this.state.groupBy == groupByThreadStorageValue && <div className="details">

@@ -10,13 +10,18 @@ class RpcService {
     this.events = new events.EventEmitter();
   }
 
-  fetchBytestreamFile(bytestreamURL: string) {
-    return this.fetchFile("/file/download?bytestream_url=" + encodeURIComponent(bytestreamURL));
+  downloadBytestreamFile(filename: string, bytestreamURL: string, invocationId: string) {
+    window.open(`/file/download?filename=${encodeURI(filename)}&bytestream_url=${encodeURIComponent(bytestreamURL)}&invocation_id=${invocationId}`);
   }
 
-  fetchFile(fileURL: string) {
+  fetchBytestreamFile(bytestreamURL: string, invocationId: string, responseType?: "arraybuffer" | "json" | "text" | undefined) {
+    return this.fetchFile(`/file/download?bytestream_url=${encodeURIComponent(bytestreamURL)}&invocation_id=${invocationId}`, responseType || "");
+  }
+
+  fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | "") {
     return new Promise((resolve, reject) => {
       var request = new XMLHttpRequest();
+      request.responseType = responseType;
       request.open('GET', fileURL, true);
       request.onload = function () {
         if (this.status >= 200 && this.status < 400) {

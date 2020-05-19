@@ -435,9 +435,9 @@ button {
   margin-bottom: 16px;
 }
 
-.home code {
+code {
   display: block;
-  padding: 32px;
+  padding: 24px 32px;
   border: 1px solid #eee;
   border-radius: 8px;
   margin-top: 16px;
@@ -449,6 +449,42 @@ button {
   overflow-y: auto;
   max-width: 100%;
   box-sizing: border-box;
+  position: relative;
+}
+
+code button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 2px 16px;
+  border: 0;
+  background-color: #eee;
+  border-radius: 8px;
+  font-size: .6em;
+  font-weight: bold;
+  outline: 0;
+  box-shadow: 0;
+  cursor: pointer;
+  line-height: inherit;
+  text-transform: uppercase;
+}
+
+code[data-header] {
+  padding: 40px 32px 24px 32px;
+}
+
+code[data-header]:before {
+  content: attr(data-header);
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 2px 32px;
+  border-right: 1px solid #eee;
+  border-bottom: 1px solid #eee;
+  border-bottom-right-radius: 8px;
+  font-size: .8em;
+  font-weight: bold;
+  pointer-events: none;
 }
 
 .code {
@@ -471,6 +507,98 @@ code .comment {
 
 .home a {
   text-decoration: underline;
+}
+
+.setup-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-height: 48px;
+}
+
+.setup-controls > * {
+  margin-top: 16px;
+}
+
+.setup-controls input[type=radio] {
+  display: none;
+}
+
+.setup-controls input[type=checkbox] {
+  display: none;
+}
+
+.setup-controls input[type=checkbox]+label:before {
+  display: inline-block;
+  content: ' ';
+  width: 24px;
+  height: 24px;
+  border: 1px solid #eee;
+  margin-left: 16px;
+  margin-right: 8px;
+  border-radius: 8px;
+  box-sizing: border-box;
+  background-color: #fafafa;
+}
+
+.setup-controls input[type=checkbox]:checked+label:before {
+  content: '×';
+  color: #fff;
+  background-color: #263238;
+  text-align: center;
+}
+
+.setup-controls input[type=checkbox]+label {
+  display: inline-flex;
+  align-items: center;
+}
+
+.setup-controls input[type=radio]:checked+label {
+  background-color: #263238;
+  color: #fff;
+}
+
+.setup-controls .group label {
+  border-right: 1px solid #eee;
+  padding: 4px 16px;
+  box-sizing: border-box;
+  margin: 0;
+  cursor: pointer;
+}
+
+.setup-controls .group .group-section label {
+  border-right: 0;
+}
+
+.setup-controls .group {
+  border: 1px solid #eee;
+  display: inline-flex;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-left: 16px;
+}
+
+.setup .downloads {
+  display: flex;
+  margin-top: 16px;
+  margin-bottom: 16px;
+}
+
+.setup .downloads a {
+  background-color: #263238;
+  color: #fff;
+  padding: 7px 16px;
+  margin-right: 8px;
+  border-radius: 8px;
+  text-decoration: none;
+}
+
+.group-title {
+  font-weight: 700;
+}
+
+.group-section {
+  display: flex;
 }
 
 /** History **/
@@ -634,21 +762,6 @@ code .comment {
 .empty-state {
   margin-top: 16px;
   font-size: 16px;
-}
-
-.empty-state code {
-  margin-top: 16px;
-  display: block;
-  width: 100%;
-  background-color: #fafafa;
-  border: 1px solid #eee;
-  border-radius: 8px;
-  padding: 16px;
-  line-height: 1.6em;
-  white-space: nowrap;
-  overflow-y: auto;
-  max-width: 100%;
-  box-sizing: border-box;
 }
 
 .empty-state h2 {

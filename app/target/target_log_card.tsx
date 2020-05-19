@@ -1,6 +1,4 @@
 import React from 'react';
-import format from '../format/format'
-import CacheCodeComponent from '../docs/cache_code'
 
 import { invocation } from '../../proto/invocation_ts_proto';
 import { build_event_stream } from '../../proto/build_event_stream_ts_proto';
