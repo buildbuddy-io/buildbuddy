@@ -1,5 +1,6 @@
 import React from 'react';
 import InvocationModel from './invocation_model'
+import rpcService from '../service/rpc_service';
 
 interface Props {
   model: InvocationModel,
@@ -18,14 +19,13 @@ export default class ArtifactsCardComponent extends React.Component {
     numPages: 1
   }
 
-  handleArtifactClicked(outputUri: string, outputFilename: string) {
+  handleArtifactClicked(outputUri: string, outputFilename: string, invocationId: string) {
     if (!outputUri) return;
 
     if (outputUri.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", outputUri);
     } else if (outputUri.startsWith("bytestream://")) {
-       let downloadUri = "/file/download?" + "filename=" + encodeURI(outputFilename) + "&bytestream_url=" + encodeURI(outputUri);
-       window.open(downloadUri);
+      rpcService.downloadBytestreamFile(outputFilename, outputUri, this.props.model.getId())
     }
   }
 

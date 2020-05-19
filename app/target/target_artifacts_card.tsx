@@ -1,9 +1,11 @@
 import React from 'react';
 
 import { build_event_stream } from '../../proto/build_event_stream_ts_proto';
+import rpcService from '../service/rpc_service';
 
 interface Props {
   files: build_event_stream.File[],
+  invocationId: string,
 }
 
 export default class TargetArtifactsCardComponent extends React.Component {
@@ -15,8 +17,7 @@ export default class TargetArtifactsCardComponent extends React.Component {
     if (outputUri.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", outputUri);
     } else if (outputUri.startsWith("bytestream://")) {
-      let downloadUri = "/file/download?" + "filename=" + encodeURI(outputFilename) + "&bytestream_url=" + encodeURI(outputUri);
-      window.open(downloadUri);
+      rpcService.downloadBytestreamFile(outputFilename, outputUri, this.props.invocationId)
     }
   }
 

@@ -153,11 +153,11 @@ export default class TargetComponent extends React.Component {
           </div>}
           {resultEvents.filter((value, index) => `#${index + 1}` == (this.props.hash || '#1')).map((result) =>
             <span>
-              <TargetTestDocumentCardComponent testResult={result} />
-              <TargetTestLogCardComponent testResult={result} />
+              <TargetTestDocumentCardComponent invocationId={this.props.invocationId} testResult={result} />
+              <TargetTestLogCardComponent invocationId={this.props.invocationId} testResult={result} />
             </span>
           )}
-          <TargetArtifactsCardComponent files={this.props?.completedEvent?.buildEvent?.completed.importantOutput as build_event_stream.File[]} />
+          <TargetArtifactsCardComponent invocationId={this.props.invocationId} files={this.props?.completedEvent?.buildEvent?.completed.importantOutput as build_event_stream.File[]} />
         </div>
       </div>
     );

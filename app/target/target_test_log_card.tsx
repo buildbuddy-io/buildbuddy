@@ -10,6 +10,7 @@ import rpcService from '../service/rpc_service';
 
 interface Props {
   testResult: invocation.InvocationEvent,
+  invocationId: string,
 }
 
 interface State {
@@ -47,7 +48,7 @@ export default class TargetTestLogCardComponent extends React.Component {
       return;
     }
 
-    rpcService.fetchBytestreamFile(testLogUrl).then((contents: string) => {
+    rpcService.fetchBytestreamFile(testLogUrl, this.props.invocationId).then((contents: string) => {
       this.setState({ ...this.state, testLog: contents });
     }).catch(() => {
       this.setState({ ...this.state, testLog: "Error loading bytestream test.log!" });

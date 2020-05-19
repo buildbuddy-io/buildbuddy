@@ -134,6 +134,10 @@ export default class InvocationModel {
     return posessive ? `${username}'s` : username;
   }
 
+  getId() {
+    return this.invocations.find(() => true)?.invocationId;
+  }
+
   getHost() {
     return this.workspaceStatusMap.get('BUILD_HOST') || "Unknown host";
   }
