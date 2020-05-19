@@ -102,7 +102,7 @@ export default class TargetComponent extends React.Component {
   }
 
   render() {
-    let resultEvents = this.props.testResultEvents?.sort(this.resultSort);
+    let resultEvents = this.props.testResultEvents?.sort(this.resultSort) || [];
     return (
       <div>
         <div className="shelf">
