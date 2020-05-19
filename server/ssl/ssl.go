@@ -147,6 +147,10 @@ func (s *SSLService) IsEnabled() bool {
 	return sslConf != nil && sslConf.EnableSSL
 }
 
+func (s *SSLService) IsCertGenerationEnabled() bool {
+	return s.IsEnabled() && s.AuthorityCert != nil && s.AuthorityKey != nil
+}
+
 func (s *SSLService) ConfigureTLS(mux *http.ServeMux) (*tls.Config, http.Handler) {
 	if s.autocertManager == nil {
 		return s.tlsConfig, mux
@@ -162,6 +166,10 @@ func (s *SSLService) GetGRPCSTLSCreds() (credentials.TransportCredentials, error
 }
 
 func (s *SSLService) GenerateCerts(apiKey string) (string, string, error) {
+	if s.AuthorityCert == nil || s.AuthorityKey == nil {
+		return "", "", status.FailedPreconditionError("Cert authority must be setup in order to generate certificiates")
+	}
+
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return "", "", err
@@ -178,7 +186,8 @@ func (s *SSLService) GenerateCerts(apiKey string) (string, string, error) {
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			CommonName: apiKey,
+			CommonName:   "BuildBuddy API Key",
+			SerialNumber: apiKey,
 		},
 		NotBefore:             notBefore,
 		NotAfter:              notAfter,

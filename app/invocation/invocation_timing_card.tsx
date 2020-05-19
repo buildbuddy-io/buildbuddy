@@ -1,7 +1,7 @@
 import React from 'react';
 import pako from 'pako';
 import InvocationModel from './invocation_model';
-import CacheCodeComponent from '../docs/cache_code';
+import SetupCodeComponent from '../docs/setup_code';
 import rpcService from '../service/rpc_service';
 
 interface Props {
@@ -187,8 +187,8 @@ export default class InvocationTimingCardComponent extends React.Component {
         {this.state.buildInProgress && <div className="empty-state">Build is in progress...</div>}
         {!this.state.timingEnabled &&
           <div className="empty-state">
-            Profiling isn't enabled for this invocation.<br /><br />To enable profiling you must add GRPC remote caching. You can do so by adding the following line to your <b>.bazelrc</b> and re-running your invocation:
-            <CacheCodeComponent />
+            Profiling isn't enabled for this invocation.<br /><br />To enable profiling you must add GRPC remote caching. You can do so by checking <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your invocation:
+            <SetupCodeComponent />
           </div>
         }
         {this.state.groupBy == groupByThreadStorageValue && <div className="details">

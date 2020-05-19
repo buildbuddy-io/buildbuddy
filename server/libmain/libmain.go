@@ -255,7 +255,7 @@ func StartAndRunServices(env environment.Env) {
 	}
 
 	// Register to handle BuildBuddy API messages (over gRPC)
-	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env)
+	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env, sslService)
 	if err != nil {
 		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
 	}

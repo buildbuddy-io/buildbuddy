@@ -1,7 +1,6 @@
 import React from 'react';
 import rpcService from '../service/rpc_service';
 import { bazel_config } from '../../proto/bazel_config_ts_proto';
-import CacheCodeComponent from './cache_code';
 import SetupCodeComponent from './setup_code';
 import capabilities from '../capabilities/capabilities';
 
@@ -22,11 +21,11 @@ export default class SetupComponent extends React.Component {
     let request = new bazel_config.GetBazelConfigRequest();
     request.host = window.location.host;
     request.protocol = window.location.protocol;
+    request.includeCertificate = true;
     rpcService.service.getBazelConfig(request).then((response: bazel_config.GetBazelConfigResponse) => {
       console.log(response);
       this.setState({...this.state, bazelConfigResponse: response})
     });
-    
   }
 
   render() {
@@ -35,23 +34,18 @@ export default class SetupComponent extends React.Component {
         <div className="container">
           <div className="title">Getting Started with BuildBuddy</div>
             {this.props.children}
-            To get started, add the following two lines to your <b>.bazelrc</b> file. If you don't have a .bazelrc file - create one in the same directory as your Bazel WORKSPACE file with the two following lines:
+            To get started, add the following lines to your <b>.bazelrc</b> file. If you don't have a .bazelrc file - create one in the same directory as your Bazel WORKSPACE file with the following lines:
 
-            <h2>.bazelrc</h2>
             {this.state.bazelConfigResponse && <SetupCodeComponent bazelConfigResponse={this.state.bazelConfigResponse} />}
-            Once you've added those two lines to your .bazelrc - you'll get a BuildBuddy url printed at the beginning and the end of every Bazel invocation like this:
 
             <h2>Bazel invocation</h2>
+            Once you've added those lines to your .bazelrc - you'll get a BuildBuddy url printed at the beginning and the end of every Bazel invocation like this:
             <code>
             $ bazel build //...<br/>
             INFO: Streaming build results to: {window.location.protocol}//{window.location.host}/invocation/7bedd84e-525e-4b93-a5f5-53517d57752b<br/>
             ...
             </code>
             Now you can command click / double click on these urls to see the results of your build!
-
-            <h2>Optional: Artifact uploads, test logs, and profiling</h2>
-            If you'd like to configure a remote cache, which makes build artifacts clickable, enables the timing tab, and viewing of test logs - you can add the following additional line to your <b>.bazelrc</b>:
-            {this.state.bazelConfigResponse && <CacheCodeComponent bazelConfigResponse={this.state.bazelConfigResponse} />}
 
             {!capabilities.enterprise && <div>
               <h2>Enterprise BuildBuddy</h2>

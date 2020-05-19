@@ -30,6 +30,9 @@ message GetBazelConfigRequest {
 
   // The protocol of the page making the request. Ex: "https"
   string protocol = 3;
+
+  // Set to true to receive certificate information.
+  bool include_certificate = 4;
 }
 
 message GetBazelConfigResponse {
@@ -37,4 +40,15 @@ message GetBazelConfigResponse {
 
   // The BazelConfig for the requesting user and this buildbuddy instance.
   repeated ConfigOption config_option = 2;
+
+  // The certificate info used for certificate based authentication.
+  Certificate certificate = 3;
+}
+
+message Certificate {
+  // String representation of certificate file.
+  string cert = 1;
+
+  // String representation of key file.
+  string key = 2;
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -25,12 +26,14 @@ const (
 )
 
 type BuildBuddyServer struct {
-	env environment.Env
+	env        environment.Env
+	sslService *ssl.SSLService
 }
 
-func NewBuildBuddyServer(env environment.Env) (*BuildBuddyServer, error) {
+func NewBuildBuddyServer(env environment.Env, sslService *ssl.SSLService) (*BuildBuddyServer, error) {
 	return &BuildBuddyServer{
-		env: env,
+		env:        env,
+		sslService: sslService,
 	}, nil
 }
 
@@ -141,38 +144,37 @@ func assembleURL(host, scheme, port string) string {
 	return url
 }
 
-func (s *BuildBuddyServer) getGroupLoginPW(ctx context.Context) (string, string) {
+func (s *BuildBuddyServer) getGroup(ctx context.Context) *tables.Group {
 	if userDB := s.env.GetUserDB(); userDB != nil {
 		if tu, _ := userDB.GetUser(ctx); tu != nil {
 			for _, g := range tu.Groups {
 				if g.OwnedDomain != "" && g.WriteToken != "" {
-					return g.GroupID, g.WriteToken
+					return g
 				}
 			}
 			// Still here? This user might have a self-owned group, let's check for that.
 			for _, g := range tu.Groups {
 				if g.GroupID == strings.Replace(tu.UserID, "US", "GR", 1) && g.WriteToken != "" {
-					return g.GroupID, g.WriteToken
+					return g
 				}
 			}
 			// Finally, fall back to any group with a WriteToken. This will be the
 			// default group for on-prem use cases.
 			for _, g := range tu.Groups {
 				if g.WriteToken != "" {
-					return g.GroupID, g.WriteToken
+					return g
 				}
 			}
 		}
 	}
-	return "", ""
+	return nil
 }
 
-func insertPassword(rawURL, username, password string) string {
-	if username == "" && password == "" {
+func insertPassword(rawURL, password string) string {
+	if password == "" {
 		return rawURL
 	}
-	writeKey := username + ":" + password
-	return strings.Replace(rawURL, "://", "://"+writeKey+"@", 1)
+	return strings.Replace(rawURL, "://", "://"+password+"@", 1)
 }
 
 func getIntFlag(flagName string, defaultVal string) string {
@@ -198,8 +200,11 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		grpcPort := getIntFlag("grpc_port", "1985")
 		eventsAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 	}
-	username, pw := s.getGroupLoginPW(ctx)
-	eventsAPIURL = insertPassword(eventsAPIURL, username, pw)
+	group := s.getGroup(ctx)
+	if group == nil {
+		return nil, fmt.Errorf("No group found")
+	}
+	eventsAPIURL = insertPassword(eventsAPIURL, group.APIKey)
 	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", eventsAPIURL))
 
 	if s.env.GetCache() != nil {
@@ -208,13 +213,25 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 			grpcPort := getIntFlag("grpc_port", "1985")
 			cacheAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		username, pw := s.getGroupLoginPW(ctx)
-		cacheAPIURL = insertPassword(cacheAPIURL, username, pw)
+		cacheAPIURL = insertPassword(cacheAPIURL, group.APIKey)
 		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", cacheAPIURL))
+	}
+
+	cerificate := &bzpb.Certificate{}
+	if req.GetIncludeCertificate() && s.sslService.IsCertGenerationEnabled() {
+		cert, key, err := s.sslService.GenerateCerts(group.APIKey)
+		if err != nil {
+			return nil, fmt.Errorf("Error generating cert: %+v", err)
+		}
+		cerificate = &bzpb.Certificate{
+			Cert: cert,
+			Key:  key,
+		}
 	}
 
 	return &bzpb.GetBazelConfigResponse{
 		ConfigOption: configOptions,
+		Certificate:  cerificate,
 	}, nil
 }
 

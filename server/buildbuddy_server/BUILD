@@ -13,6 +13,7 @@ go_library(
         "//server/build_event_protocol/build_event_handler:go_default_library",
         "//server/bytestream:go_default_library",
         "//server/environment:go_default_library",
+        "//server/ssl:go_default_library",
         "//server/tables:go_default_library",
         "//server/util/status:go_default_library",
     ],

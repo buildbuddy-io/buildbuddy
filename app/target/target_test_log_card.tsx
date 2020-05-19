@@ -1,6 +1,6 @@
 import React from 'react';
 import format from '../format/format'
-import CacheCodeComponent from '../docs/cache_code'
+import SetupCodeComponent from '../docs/setup_code'
 
 import { invocation } from '../../proto/invocation_ts_proto';
 import { build_event_stream } from '../../proto/build_event_stream_ts_proto';
@@ -87,8 +87,8 @@ export default class TargetTestLogCardComponent extends React.Component {
         {!this.state.cacheEnabled &&
           <div className="empty-state">
             Test log uploading isn't enabled for this invocation.<br /><br />
-            To enable test log uploading you must add GRPC remote caching. You can do so by adding the following line to your <b>.bazelrc</b> and re-running your invocation:
-            <CacheCodeComponent />
+            To enable test log uploading you must add GRPC remote caching. You can do so by checking <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your invocation:
+            <SetupCodeComponent />
           </div>}
         {this.state.cacheEnabled && this.state.testLog && <div className="test-log"><TerminalComponent value={this.state.testLog} /></div>}
         {this.state.cacheEnabled && !this.state.testLog && <span><br />Loading...</span>}
