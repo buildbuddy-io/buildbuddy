@@ -189,6 +189,21 @@ func (c *DiskCache) Contains(ctx context.Context, key string) (bool, error) {
 	return c.useEntry(fullPath), nil
 }
 
+func (c *DiskCache) ContainsMulti(ctx context.Context, keys []string) (map[string]bool, error) {
+	foundMap := make(map[string]bool, len(keys))
+	// No parallelism here -- we don't know enough about what kind of io
+	// characteristics our disk has anyway. And disk is usually used for
+	// on-prem / small instances where this doesn't matter as much.
+	for _, key := range keys {
+		ok, err := c.Contains(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		foundMap[key] = ok
+	}
+	return foundMap, nil
+}
+
 func (c *DiskCache) Get(ctx context.Context, key string) ([]byte, error) {
 	fullPath, err := c.PrefixKey(ctx, key)
 	if err != nil {

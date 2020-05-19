@@ -185,7 +185,6 @@ func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) 
 		// Make sure capabilities server reflect that we're running
 		// remote execution.
 		enableRemoteExec = true
-		log.Printf("Enabling remote execution!")
 		executionServer, err := execution_server.NewExecutionServer(env)
 		if err != nil {
 			log.Fatalf("Error initializing ExecutionServer: %s", err)

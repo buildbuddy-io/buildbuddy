@@ -3,6 +3,7 @@ package action_cache_server
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -38,36 +39,57 @@ func prefixKey(ctx context.Context, key string) string {
 	return perms.UserPrefixFromContext(ctx) + acCachePrefix + key
 }
 
-func (s *ActionCacheServer) checkFileExists(ctx context.Context, hash string) error {
-	ok, err := s.cache.Contains(ctx, prefixKey(ctx, hash))
+func unprefixKey(ctx context.Context, key string) string {
+	return strings.TrimPrefix(key, perms.UserPrefixFromContext(ctx)+acCachePrefix)
+}
+
+func (s *ActionCacheServer) checkFilesExist(ctx context.Context, digests []*repb.Digest) error {
+	fileKeys := make([]string, 0, len(digests))
+	for _, d := range digests {
+		if d == nil {
+			continue
+		}
+		fileKeys = append(fileKeys, d.Hash)
+	}
+	if len(fileKeys) == 0 {
+		return nil
+	}
+	foundMap, err := s.cache.ContainsMulti(ctx, fileKeys)
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return status.NotFoundError(fmt.Sprintf("ActionResult output file: '%s' not found in cache", hash))
+	for _, key := range fileKeys {
+		found, ok := foundMap[key]
+		if !ok {
+			return status.InternalErrorf("AC Inconsistent result from cache.ContainsMulti (missing %q)", key)
+		}
+		if !found {
+			return status.NotFoundError(fmt.Sprintf("ActionResult output file: '%s' not found in cache", unprefixKey(ctx, key)))
+		}
 	}
 	return nil
 }
 
 func (s *ActionCacheServer) checkDirExists(ctx context.Context, dir *repb.Directory) error {
+	digests := make([]*repb.Digest, 0, len(dir.GetFiles()))
 	for _, f := range dir.GetFiles() {
 		if f.Digest == nil {
 			continue
 		}
-		if err := s.checkFileExists(ctx, f.Digest.Hash); err != nil {
-			return err
-		}
+		digests = append(digests, f.Digest)
 	}
-	return nil
+	return s.checkFilesExist(ctx, digests)
 }
 
 func (s *ActionCacheServer) validateActionResult(ctx context.Context, r *repb.ActionResult) error {
+	outputFileDigests := make([]*repb.Digest, 0, len(r.OutputFiles))
 	for _, f := range r.OutputFiles {
 		if len(f.Contents) > 0 && f.GetDigest().GetSizeBytes() > 0 {
-			if err := s.checkFileExists(ctx, f.Digest.Hash); err != nil {
-				return err
-			}
+			outputFileDigests = append(outputFileDigests, f.GetDigest())
 		}
+	}
+	if err := s.checkFilesExist(ctx, outputFileDigests); err != nil {
+		return err
 	}
 
 	for _, d := range r.OutputDirectories {
