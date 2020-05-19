@@ -145,7 +145,7 @@ func (s *SSLService) populateTLSConfig() error {
 			HostPolicy: autocert.HostWhitelist(hosts...),
 		}
 		httpTLSConfig.GetCertificate = s.autocertManager.GetCertificate
-		grpcTLSConfig.GetCertificate = s.grpcTLSConfig.GetCertificate
+		grpcTLSConfig.GetCertificate = s.autocertManager.GetCertificate
 		httpTLSConfig.NextProtos = append(httpTLSConfig.NextProtos, acme.ALPNProto)
 		grpcTLSConfig.NextProtos = append(grpcTLSConfig.NextProtos, acme.ALPNProto)
 
