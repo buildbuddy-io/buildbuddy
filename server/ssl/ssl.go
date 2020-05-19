@@ -51,7 +51,8 @@ func NewCertCache(cache interfaces.Cache) *CertCache {
 
 type SSLService struct {
 	env             environment.Env
-	tlsConfig       *tls.Config
+	httpTLSConfig   *tls.Config
+	grpcTLSConfig   *tls.Config
 	autocertManager *autocert.Manager
 	AuthorityCert   *x509.Certificate
 	AuthorityKey    *rsa.PrivateKey
@@ -91,7 +92,14 @@ func (s *SSLService) populateTLSConfig() error {
 		clientCACertPool.AddCert(s.AuthorityCert)
 	}
 
-	tlsConfig := &tls.Config{
+	httpTLSConfig := &tls.Config{
+		NextProtos:               []string{"http/1.1"},
+		MinVersion:               tls.VersionTLS10,
+		SessionTicketsDisabled:   true,
+		PreferServerCipherSuites: true,
+	}
+
+	grpcTLSConfig := &tls.Config{
 		NextProtos:               []string{"http/1.1"},
 		MinVersion:               tls.VersionTLS10,
 		SessionTicketsDisabled:   true,
@@ -105,8 +113,10 @@ func (s *SSLService) populateTLSConfig() error {
 		if err != nil {
 			return err
 		}
-		tlsConfig.Certificates = []tls.Certificate{certPair}
-		s.tlsConfig = tlsConfig
+		httpTLSConfig.Certificates = []tls.Certificate{certPair}
+		grpcTLSConfig.Certificates = []tls.Certificate{certPair}
+		s.httpTLSConfig = httpTLSConfig
+		s.grpcTLSConfig = grpcTLSConfig
 	} else if sslConf.UseACME {
 		appURL := s.env.GetConfigurator().GetAppBuildBuddyURL()
 		if appURL == "" {
@@ -134,10 +144,13 @@ func (s *SSLService) populateTLSConfig() error {
 			Cache:      NewCertCache(s.env.GetCache()),
 			HostPolicy: autocert.HostWhitelist(hosts...),
 		}
-		tlsConfig.GetCertificate = s.autocertManager.GetCertificate
-		tlsConfig.NextProtos = append(tlsConfig.NextProtos, acme.ALPNProto)
+		httpTLSConfig.GetCertificate = s.autocertManager.GetCertificate
+		grpcTLSConfig.GetCertificate = s.grpcTLSConfig.GetCertificate
+		httpTLSConfig.NextProtos = append(httpTLSConfig.NextProtos, acme.ALPNProto)
+		grpcTLSConfig.NextProtos = append(grpcTLSConfig.NextProtos, acme.ALPNProto)
 
-		s.tlsConfig = tlsConfig
+		s.httpTLSConfig = httpTLSConfig
+		s.grpcTLSConfig = grpcTLSConfig
 	}
 	return nil
 }
@@ -153,16 +166,16 @@ func (s *SSLService) IsCertGenerationEnabled() bool {
 
 func (s *SSLService) ConfigureTLS(mux *http.ServeMux) (*tls.Config, http.Handler) {
 	if s.autocertManager == nil {
-		return s.tlsConfig, mux
+		return s.httpTLSConfig, mux
 	}
-	return s.tlsConfig, s.autocertManager.HTTPHandler(mux)
+	return s.httpTLSConfig, s.autocertManager.HTTPHandler(mux)
 }
 
 func (s *SSLService) GetGRPCSTLSCreds() (credentials.TransportCredentials, error) {
 	if !s.IsEnabled() {
 		return nil, status.AbortedError("SSL disabled by config")
 	}
-	return credentials.NewTLS(s.tlsConfig), nil
+	return credentials.NewTLS(s.grpcTLSConfig), nil
 }
 
 func (s *SSLService) GenerateCerts(apiKey string) (string, string, error) {
