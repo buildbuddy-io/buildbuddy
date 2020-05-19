@@ -108,7 +108,7 @@ def update_docker_image(new_version):
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
     p = subprocess.Popen(release_notes_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    return "".join(p.stdout.readlines())
+    return json.dumps("".join(p.stdout.readlines()))
 
 def github_make_request(
         auth_token=None,
