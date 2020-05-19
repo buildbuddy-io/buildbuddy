@@ -106,7 +106,7 @@ def update_docker_image(new_version):
     run_or_die(latest_build_cmd)
 
 def generate_release_notes(old_version):
-    release_notes_cmd = 'git log --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
+    release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
     p = subprocess.Popen(release_notes_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     return "".join(p.stdout.readlines())
 
