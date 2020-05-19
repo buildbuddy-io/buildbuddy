@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
@@ -121,6 +122,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	if cache != nil {
 		cache.Start()
 		realEnv.SetCache(cache)
+		realEnv.SetDigestCache(digest.NewDigestCache(cache))
 		log.Printf("Cache: BuildBuddy cache API enabled!")
 	}
 

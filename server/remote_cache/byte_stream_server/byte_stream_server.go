@@ -6,14 +6,15 @@ import (
 	"io"
 	"io/ioutil"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -26,39 +27,39 @@ var (
 	// Matches:
 	// - "blobs/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
 	// - "uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555/blobs/8afb02ca7aace3ae5cd8748ac589e2e33022b1a4bfd22d5d234c5887e270fe9c/17997850"
-	uploadRegex = regexp.MustCompile("^.*blobs/([a-f0-9]{64})/.*$")
+	uploadRegex = regexp.MustCompile("^.*blobs/([a-f0-9]{64})/(\\d+)")
 )
 
-// This must match what the CAS API does. They refer to the same cache.
-func prefixKey(ctx context.Context, key string) string {
-	return perms.UserPrefixFromContext(ctx) + key
-}
-
 type ByteStreamServer struct {
-	env   environment.Env
-	cache interfaces.Cache
+	cache interfaces.DigestCache
 }
 
 func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
-	cache := env.GetCache()
+	cache := env.GetDigestCache()
 	if cache == nil {
 		return nil, fmt.Errorf("A cache is required to enable the ByteStreamServer")
 	}
 	return &ByteStreamServer{
-		env:   env,
 		cache: cache,
 	}, nil
 }
 
-func extractHash(resourceName string) (string, error) {
+func extractDigest(resourceName string) (*repb.Digest, error) {
 	parts := uploadRegex.FindStringSubmatch(resourceName)
-	if len(parts) != 2 {
-		return "", fmt.Errorf("Unparsable resource name: %s", resourceName)
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("Unparsable resource name: %s", resourceName)
 	}
 	if parts[1] == "" {
-		return "", fmt.Errorf("Unparsable resource name (empty hash?): %s", resourceName)
+		return nil, fmt.Errorf("Unparsable resource name (empty hash?): %s", resourceName)
 	}
-	return parts[1], nil
+	sizeBytes, err := strconv.ParseInt(parts[2], 10, 0)
+	if err != nil {
+		return nil, err
+	}
+	return &repb.Digest{
+		Hash:      parts[1],
+		SizeBytes: sizeBytes,
+	}, nil
 }
 
 func checkReadPreconditions(req *bspb.ReadRequest) error {
@@ -81,19 +82,15 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err := checkReadPreconditions(req); err != nil {
 		return err
 	}
-	hash, err := extractHash(req.ResourceName)
-	if err != nil {
-		return err
-	}
-	ck, err := perms.UserPrefixCacheKey(stream.Context(), s.env, hash)
+	d, err := extractDigest(req.ResourceName)
 	if err != nil {
 		return err
 	}
 	var reader io.Reader
-	if hash == digest.EmptySha256 {
+	if d.GetHash() == digest.EmptySha256 {
 		reader = strings.NewReader("")
 	} else {
-		reader, err = s.cache.Reader(stream.Context(), ck, req.ReadOffset, req.ReadLimit)
+		reader, err = s.cache.Reader(stream.Context(), d, req.ReadOffset)
 		if err != nil {
 			return err
 		}
@@ -186,11 +183,7 @@ func (discardWriteCloser) Close() error {
 }
 
 func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
-	hash, err := extractHash(req.ResourceName)
-	if err != nil {
-		return nil, err
-	}
-	ck, err := perms.UserPrefixCacheKey(ctx, s.env, hash)
+	d, err := extractDigest(req.ResourceName)
 	if err != nil {
 		return nil, err
 	}
@@ -204,8 +197,8 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	// }
 
 	var wc io.WriteCloser
-	if hash != digest.EmptySha256 {
-		wc, err = s.cache.Writer(ctx, ck)
+	if d.GetHash() != digest.EmptySha256 {
+		wc, err = s.cache.Writer(ctx, d)
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +210,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 		activeResourceName: req.ResourceName,
 		writer:             wc,
 		bytesWritten:       0,
-		hash:               hash,
+		hash:               d.GetHash(),
 	}, nil
 }
 

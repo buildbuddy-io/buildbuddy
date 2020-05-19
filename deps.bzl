@@ -705,3 +705,9 @@ def install_buildbuddy_dependencies():
         sum = "h1:cJv5/xdbk1NnMPR1VP9+HU6gupuG9MLBoH1r6RHZ2MY=",
         version = "v1.22.0",
     )
+    go_repository(
+        name = "com_github_bradfitz_gomemcache",
+        importpath = "github.com/bradfitz/gomemcache",
+        sum = "h1:L/QXpzIa3pOvUGt1D1lA5KjYhPBAN/3iWdP7xeFS9F0=",
+        version = "v0.0.0-20190913173617-a41fca850d0b",
+    )

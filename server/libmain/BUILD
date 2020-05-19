@@ -30,6 +30,7 @@ go_library(
         "//server/remote_cache/byte_stream_server:go_default_library",
         "//server/remote_cache/capabilities_server:go_default_library",
         "//server/remote_cache/content_addressable_storage_server:go_default_library",
+        "//server/remote_cache/digest:go_default_library",
         "//server/remote_execution/execution_server:go_default_library",
         "//server/rpc/filters:go_default_library",
         "//server/splash:go_default_library",

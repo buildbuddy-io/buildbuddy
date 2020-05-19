@@ -9,6 +9,9 @@ find . -name BUILD -exec buildifier {} \;
 
 # go fmt all .go files
 echo "Formatting .go files..."
-find . -name "*.go" -exec go fmt {} \;
+tldirs=$(find . -name "*.go" | cut -d"/" -f2 | uniq)
+for dir in $tldirs; do
+    gofmt -w "$dir/";
+done;
 
 echo "All Done!"

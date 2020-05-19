@@ -3,7 +3,6 @@ package action_cache_server
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -21,11 +20,11 @@ const (
 
 type ActionCacheServer struct {
 	env   environment.Env
-	cache interfaces.Cache
+	cache interfaces.DigestCache
 }
 
 func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
-	cache := env.GetCache()
+	cache := env.GetDigestCache().WithPrefix(acCachePrefix)
 	if cache == nil {
 		return nil, fmt.Errorf("A cache is required to enable the ActionCacheServer")
 	}
@@ -35,36 +34,18 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func prefixKey(ctx context.Context, key string) string {
-	return perms.UserPrefixFromContext(ctx) + acCachePrefix + key
-}
-
-func unprefixKey(ctx context.Context, key string) string {
-	return strings.TrimPrefix(key, perms.UserPrefixFromContext(ctx)+acCachePrefix)
-}
-
 func (s *ActionCacheServer) checkFilesExist(ctx context.Context, digests []*repb.Digest) error {
-	fileKeys := make([]string, 0, len(digests))
-	for _, d := range digests {
-		if d == nil {
-			continue
-		}
-		fileKeys = append(fileKeys, d.Hash)
-	}
-	if len(fileKeys) == 0 {
-		return nil
-	}
-	foundMap, err := s.cache.ContainsMulti(ctx, fileKeys)
+	foundMap, err := s.cache.ContainsMulti(ctx, digests)
 	if err != nil {
 		return err
 	}
-	for _, key := range fileKeys {
-		found, ok := foundMap[key]
+	for _, d := range digests {
+		found, ok := foundMap[d]
 		if !ok {
-			return status.InternalErrorf("AC Inconsistent result from cache.ContainsMulti (missing %q)", key)
+			return status.InternalErrorf("AC Inconsistent result from cache.ContainsMulti (missing %q)", d)
 		}
 		if !found {
-			return status.NotFoundError(fmt.Sprintf("ActionResult output file: '%s' not found in cache", unprefixKey(ctx, key)))
+			return status.NotFoundErrorf("ActionResult output file: '%s' not found in cache", d)
 		}
 	}
 	return nil
@@ -76,7 +57,7 @@ func (s *ActionCacheServer) checkDirExists(ctx context.Context, dir *repb.Direct
 		if f.Digest == nil {
 			continue
 		}
-		digests = append(digests, f.Digest)
+		digests = append(digests, f.GetDigest())
 	}
 	return s.checkFilesExist(ctx, digests)
 }
@@ -93,7 +74,7 @@ func (s *ActionCacheServer) validateActionResult(ctx context.Context, r *repb.Ac
 	}
 
 	for _, d := range r.OutputDirectories {
-		blob, err := s.cache.Get(ctx, prefixKey(ctx, d.GetTreeDigest().Hash))
+		blob, err := s.cache.Get(ctx, d.GetTreeDigest())
 		if err != nil {
 			return err
 		}
@@ -136,16 +117,17 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if req.ActionDigest == nil {
 		return nil, status.InvalidArgumentError("ActionDigest is a required field")
 	}
-	hash, err := digest.Validate(req.ActionDigest)
+	_, err := digest.Validate(req.ActionDigest)
 	if err != nil {
 		return nil, err
 	}
 	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
 
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
-	blob, err := s.cache.Get(ctx, prefixKey(ctx, hash))
+	d := req.GetActionDigest()
+	blob, err := s.cache.Get(ctx, d)
 	if err != nil {
-		return nil, status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", hash, err))
+		return nil, status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", d, err))
 	}
 
 	rsp := &repb.ActionResult{}
@@ -153,7 +135,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		return nil, err
 	}
 	if err := s.validateActionResult(ctx, rsp); err != nil {
-		return nil, status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", hash, err))
+		return nil, status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", d, err))
 	}
 	return rsp, nil
 }
@@ -181,7 +163,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if req.ActionResult == nil {
 		return nil, status.InvalidArgumentError("ActionResult is a required field")
 	}
-	hash, err := digest.Validate(req.ActionDigest)
+	_, err := digest.Validate(req.GetActionDigest())
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +178,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return nil, err
 	}
 
-	if err := s.cache.Set(ctx, prefixKey(ctx, hash), blob); err != nil {
+	if err := s.cache.Set(ctx, req.GetActionDigest(), blob); err != nil {
 		return nil, err
 	}
 	return req.ActionResult, nil

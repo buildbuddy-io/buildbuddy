@@ -109,6 +109,30 @@ type Cache interface {
 	Stop() error
 }
 
+// Similar to the Cache above, a digest cache allows for more intelligent
+// storing of blob data based on its size.
+type DigestCache interface {
+	// Returns a new DigestCache that will store everything under the prefix
+	// specified by "prefix", ignoring any previously set prefix.
+	WithPrefix(prefix string) DigestCache
+
+	// Normal cache-like operations.
+	Contains(ctx context.Context, d *repb.Digest) (bool, error)
+	ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error)
+	Get(ctx context.Context, d *repb.Digest) ([]byte, error)
+	Set(ctx context.Context, d *repb.Digest, data []byte) error
+	Delete(ctx context.Context, d *repb.Digest) error
+
+	// Low level interface used for seeking and stream-writing.
+	Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error)
+	Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error)
+
+	// Begin garbage collection and any other necessary background tasks.
+	Start() error
+	// Stop garbage collection etc.
+	Stop() error
+}
+
 type InvocationDB interface {
 	// Invocations API
 	InsertOrUpdateInvocation(ctx context.Context, in *tables.Invocation) error

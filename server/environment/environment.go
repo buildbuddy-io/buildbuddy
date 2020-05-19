@@ -38,6 +38,7 @@ type Env interface {
 	GetWebhooks() []interfaces.Webhook
 	GetBuildEventProxyClients() []*build_event_proxy.BuildEventProxyClient
 	GetCache() interfaces.Cache
+	GetDigestCache() interfaces.DigestCache
 	GetUserDB() interfaces.UserDB
 	GetAuthDB() interfaces.AuthDB
 	GetInvocationStatService() interfaces.InvocationStatService

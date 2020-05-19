@@ -6,10 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:remote_execution_go_proto",
         "//server/environment:go_default_library",
         "//server/interfaces:go_default_library",
         "//server/remote_cache/digest:go_default_library",
-        "//server/util/perms:go_default_library",
         "//server/util/status:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
     ],
