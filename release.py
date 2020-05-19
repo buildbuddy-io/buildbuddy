@@ -89,7 +89,7 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     if len(release_notes) > 0:
         commit_message = "\n".join([commit_message, release_notes])
 
-    tag_cmd = 'git tag -a %s -m "%s"' % (new_version, commit_message)
+    tag_cmd = 'git tag -a %s -m "%s"' % (new_version, json.dumps(commit_message))
     run_or_die(tag_cmd)
     push_tag_cmd = 'git push origin %s' % new_version
     run_or_die(push_tag_cmd)
@@ -108,7 +108,7 @@ def update_docker_image(new_version):
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
     p = subprocess.Popen(release_notes_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    return json.dumps("".join(p.stdout.readlines()))
+    return "".join(p.stdout.readlines())
 
 def github_make_request(
         auth_token=None,
