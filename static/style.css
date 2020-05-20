@@ -559,15 +559,10 @@ code .comment {
 }
 
 .setup-controls .group label {
-  border-right: 1px solid #eee;
   padding: 4px 16px;
   box-sizing: border-box;
   margin: 0;
   cursor: pointer;
-}
-
-.setup-controls .group .group-section label {
-  border-right: 0;
 }
 
 .setup-controls .group {
@@ -1419,4 +1414,24 @@ code .comment {
 
 .dense-invocation-overview-grid-value .icon {
   margin-right: 8px;
+}
+
+/* Scrollbars */
+
+.terminal ::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.terminal::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.terminal ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+.terminal ::-webkit-scrollbar-corner {
+  background-color: transparent;
 }
