@@ -68,6 +68,7 @@ export class AuthService {
 
   emitUser(user: User) {
     console.log("User", user);
+    this.user = user;
     this.userStream.emit(AuthService.userEventName, user);
   }
 

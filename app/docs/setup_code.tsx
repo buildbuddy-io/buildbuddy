@@ -2,6 +2,7 @@ import React from 'react';
 import rpcService from '../service/rpc_service';
 import { bazel_config } from '../../proto/bazel_config_ts_proto';
 import capabilities from '../capabilities/capabilities';
+import authService, { AuthService, User } from '../auth/auth_service';
 
 interface Props {
   bazelConfigResponse?: bazel_config.GetBazelConfigResponse;
@@ -9,6 +10,7 @@ interface Props {
 
 interface State {
   bazelConfigResponse: bazel_config.GetBazelConfigResponse;
+  user: User;
 
   auth: string;
   cacheChecked: boolean;
@@ -21,6 +23,7 @@ export default class SetupCodeComponent extends React.Component {
   props: Props;
   state: State = {
     bazelConfigResponse: null,
+    user: authService.user,
 
     auth: "key",
     cacheChecked: false,
@@ -30,6 +33,10 @@ export default class SetupCodeComponent extends React.Component {
   };
 
   componentWillMount() {
+    authService.userStream.addListener(AuthService.userEventName, (user: User) => {
+      this.setState({ ...this.state, user })
+    });
+
     if (this.props.bazelConfigResponse) {
       return;
     }
@@ -90,7 +97,7 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   isAuthEnabled() {
-    return !!capabilities.auth;
+    return !!capabilities.auth && !!this.state.user;
   }
 
   isCacheEnabled() {

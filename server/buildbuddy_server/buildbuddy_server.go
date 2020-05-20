@@ -215,7 +215,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 	}
 
 	cerificate := &bzpb.Certificate{}
-	if req.GetIncludeCertificate() && s.sslService.IsCertGenerationEnabled() {
+	if req.GetIncludeCertificate() && s.sslService.IsCertGenerationEnabled() && groupAPIKey != "" {
 		cert, key, err := s.sslService.GenerateCerts(groupAPIKey)
 		if err != nil {
 			return nil, fmt.Errorf("Error generating cert: %+v", err)
