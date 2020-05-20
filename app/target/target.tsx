@@ -72,6 +72,19 @@ export default class TargetComponent extends React.Component {
     }
   }
 
+  getStatusClass(status: build_event_stream.TestStatus) {
+    switch (status) {
+      case build_event_stream.TestStatus.PASSED:
+        return "test-passed";
+      case build_event_stream.TestStatus.FLAKY:
+        return "test-flaky";
+      case build_event_stream.TestStatus.FAILED:
+        return "test-failed";
+      case build_event_stream.TestStatus.INCOMPLETE:
+        return "test-error";
+    }
+  }
+
   getTestSize(size: build_event_stream.TestSize) {
     switch (size) {
       case build_event_stream.TestSize.SMALL:
@@ -146,10 +159,13 @@ export default class TargetComponent extends React.Component {
           </div>
         </div>
         <div className="container">
-          {resultEvents.length > 1 && <div className="tabs">
-            {resultEvents.map((result, index) => <a href={`#${index + 1}`} className={`tab ${((this.props.hash || "#1") == `#${index + 1}`) && 'selected'}`}>
-              Run {result.buildEvent.id.testResult.run} (Attempt {result.buildEvent.id.testResult.attempt}, Shard {result.buildEvent.id.testResult.shard}) - {this.getStatusTitle(result.buildEvent.testResult.status)}
-            </a>)}
+          {resultEvents.length > 1 && <div className={`runs ${resultEvents.length > 9 && "run-grid"}`}>
+            {resultEvents.map((result, index) =>
+              <a href={`#${index + 1}`}
+                title={`Run ${result.buildEvent.id.testResult.run} (Attempt ${result.buildEvent.id.testResult.attempt}, Shard ${result.buildEvent.id.testResult.shard})`}
+                className={`run ${this.getStatusClass(result.buildEvent.testResult.status)} ${((this.props.hash || "#1") == `#${index + 1}`) && 'selected'}`}>
+                Run {result.buildEvent.id.testResult.run} (Attempt {result.buildEvent.id.testResult.attempt}, Shard {result.buildEvent.id.testResult.shard})
+              </a>)}
           </div>}
           {resultEvents.filter((value, index) => `#${index + 1}` == (this.props.hash || '#1')).map((result) =>
             <span>
