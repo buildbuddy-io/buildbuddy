@@ -83,10 +83,11 @@ type GCSCacheConfig struct {
 }
 
 type cacheConfig struct {
-	Disk         *DiskConfig     `yaml:"disk"`
-	GCS          *GCSCacheConfig `yaml:"gcs"`
-	InMemory     bool            `yaml:"in_memory"`
-	MaxSizeBytes int64           `yaml:"max_size_bytes"`
+	Disk            *DiskConfig     `yaml:"disk"`
+	GCS             *GCSCacheConfig `yaml:"gcs"`
+	InMemory        bool            `yaml:"in_memory"`
+	MaxSizeBytes    int64           `yaml:"max_size_bytes"`
+	MemcacheTargets []string        `yaml:"memcache_targets"`
 }
 
 type authConfig struct {
@@ -100,12 +101,12 @@ type OauthProvider struct {
 }
 
 type SSLConfig struct {
-	EnableSSL bool   `yaml:"enable_ssl"`
-	UseACME   bool   `yaml:"use_acme"`
-	CertFile  string `yaml:"cert_file"`
-	KeyFile   string `yaml:"key_file"`
-	ClientCACertFile  string `yaml:"client_ca_cert_file"`
-	ClientCAKeyFile   string `yaml:"client_ca_key_file"`
+	EnableSSL        bool   `yaml:"enable_ssl"`
+	UseACME          bool   `yaml:"use_acme"`
+	CertFile         string `yaml:"cert_file"`
+	KeyFile          string `yaml:"key_file"`
+	ClientCACertFile string `yaml:"client_ca_cert_file"`
+	ClientCAKeyFile  string `yaml:"client_ca_key_file"`
 }
 
 type RemoteExecutionTarget struct {
@@ -287,6 +288,11 @@ func (c *Configurator) GetCacheDiskConfig() *DiskConfig {
 func (c *Configurator) GetCacheGCSConfig() *GCSCacheConfig {
 	c.rereadIfStale()
 	return c.gc.Cache.GCS
+}
+
+func (c *Configurator) GetCacheMemcacheTargets() []string {
+	c.rereadIfStale()
+	return c.gc.Cache.MemcacheTargets
 }
 
 func (c *Configurator) GetCacheInMemory() bool {
