@@ -42,14 +42,21 @@ func NewContentAddressableStorageServer(env environment.Env) (*ContentAddressabl
 func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	rsp := &repb.FindMissingBlobsResponse{}
 	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
-	foundMap, err := s.cache.ContainsMulti(ctx, req.GetBlobDigests())
-	if err != nil {
-		return nil, err
-	}
+	digestsToLookup := make([]*repb.Digest, 0, len(req.GetBlobDigests()))
 	for _, d := range req.GetBlobDigests() {
 		if d.GetHash() == digest.EmptySha256 {
 			continue
 		}
+		if d.GetHash() == digest.EmptyHash {
+			continue
+		}
+		digestsToLookup = append(digestsToLookup, d)
+	}
+	foundMap, err := s.cache.ContainsMulti(ctx, digestsToLookup)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range digestsToLookup {
 		found, ok := foundMap[d]
 		if !ok {
 			return nil, status.InternalErrorf("CAS Inconsistent result from cache.ContainsMulti (missing %v)", d)

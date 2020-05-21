@@ -247,7 +247,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 		}
 		return nil
 	}
-	// finalizeOperationFn rewrites the operation to include the correct "queued" timestamp.
+	// completeLastOperationFn rewrites the operation to include the correct "queued" timestamp.
 	completeLastOperationFn := func(op *longrunning.Operation) error {
 		actionResult := extractActionResult(op)
 		md := actionResult.GetExecutionMetadata()

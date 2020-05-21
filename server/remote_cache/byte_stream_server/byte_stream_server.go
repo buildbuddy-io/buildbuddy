@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -31,6 +32,7 @@ var (
 )
 
 type ByteStreamServer struct {
+	env environment.Env
 	cache interfaces.DigestCache
 }
 
@@ -40,6 +42,7 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 		return nil, fmt.Errorf("A cache is required to enable the ByteStreamServer")
 	}
 	return &ByteStreamServer{
+		env: env,
 		cache: cache,
 	}, nil
 }
@@ -86,11 +89,12 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err != nil {
 		return err
 	}
+	ctx := perms.AttachUserPrefixToContext(stream.Context(), s.env)
 	var reader io.Reader
 	if d.GetHash() == digest.EmptySha256 {
 		reader = strings.NewReader("")
 	} else {
-		reader, err = s.cache.Reader(stream.Context(), d, req.ReadOffset)
+		reader, err = s.cache.Reader(ctx, d, req.ReadOffset)
 		if err != nil {
 			return err
 		}
@@ -187,6 +191,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if err != nil {
 		return nil, err
 	}
+	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
 	// The protocol says it is optional to allow overwriting. Skip it for now.
 	// exists, err := s.cache.Contains(ctx, ck)
 	// if err != nil {
