@@ -7,7 +7,7 @@ load("@io_bazel_rules_docker//container:push.bzl", "container_push")
 # TODO(tylerw): do the etsy context thing to set dev/prod vars.
 k8s_object(
     name = "buildbuddy_dev_app",
-    cluster = "gke_flame-build_us-west1-a_buildbuddy-dev",
+    cluster = "gke_flame-build_us-west1-a_bb-dev-cluster",
     images = {
         "gcr.io/flame-build/buildbuddy-app-dev:server_image": "//server:buildbuddy_image",
     },

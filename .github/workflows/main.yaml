@@ -7,7 +7,7 @@ on:
 
 env:
   GKE_PROJECT: ${{ secrets.GKE_PROJECT }}
-  GKE_CLUSTER: buildbuddy-dev
+  GKE_CLUSTER: bb-dev-cluster
   GKE_ZONE: us-west1-a
 
 jobs:
