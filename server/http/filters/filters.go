@@ -2,30 +2,17 @@ package filters
 
 import (
 	"compress/gzip"
-	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
-	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 )
-
-func printHeaders(r *http.Request) {
-	// Loop through headers
-	headers := make([]string, 0)
-	for name, hkv := range r.Header {
-		name = strings.ToLower(name)
-		for _, h := range hkv {
-			headers = append(headers, fmt.Sprintf("%v: %v", name, h))
-		}
-	}
-	sort.Strings(headers)
-	log.Printf("\n\n" + strings.Join(headers, "\n") + "\n\n")
-}
 
 func RedirectHTTPS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +79,26 @@ func Authenticate(env environment.Env, next http.Handler) http.Handler {
 	})
 }
 
+func RequestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, err := uuid.SetInContext(r.Context())
+		if err != nil {
+			// Should never happen, but just in case, fail safe.
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func LogRequest(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		log.LogHTTPRequest(r.Context(), r.URL.Path, time.Now().Sub(start), nil)
+	})
+}
+
 type wrapFn func(http.Handler) http.Handler
 
 func WrapExternalHandler(next http.Handler) http.Handler {
@@ -100,6 +107,8 @@ func WrapExternalHandler(next http.Handler) http.Handler {
 	wrapFns := []wrapFn{
 		Gzip,
 		RedirectHTTPS,
+		LogRequest,
+		RequestID,
 	}
 	handler := next
 	for _, fn := range wrapFns {
@@ -115,6 +124,8 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 		Gzip,
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
 		RedirectHTTPS,
+		LogRequest,
+		RequestID,
 	}
 	handler := next
 	for _, fn := range wrapFns {

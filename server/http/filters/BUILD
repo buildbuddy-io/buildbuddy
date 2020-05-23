@@ -5,5 +5,9 @@ go_library(
     srcs = ["filters.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/http/filters",
     visibility = ["//visibility:public"],
-    deps = ["//server/environment:go_default_library"],
+    deps = [
+        "//server/environment:go_default_library",
+        "//server/util/log:go_default_library",
+        "//server/util/uuid:go_default_library",
+    ],
 )

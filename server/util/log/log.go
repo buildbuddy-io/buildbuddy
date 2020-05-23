@@ -6,9 +6,10 @@ import (
 	"log"
 	"path"
 	"time"
-	
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
@@ -26,16 +27,20 @@ func formatDuration(dur time.Duration) string {
 }
 
 func fmtErr(err error) string {
-	return status.Code(err).String()
+	code := status.Code(err)
+	if code == codes.Unknown {
+		return err.Error()
+	}
+	return code.String()
 }
 
 func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, err error) {
-	reqID, _ := uuid.GetFromContext(ctx)  // Ignore error, we're logging anyway.
+	reqID, _ := uuid.GetFromContext(ctx) // Ignore error, we're logging anyway.
 	shortPath := "/" + path.Base(fullMethod)
 	log.Printf("%s %s %q %s [%s]", "gRPC", reqID, shortPath, fmtErr(err), formatDuration(dur))
 }
 
 func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, err error) {
-	reqID, _ := uuid.GetFromContext(ctx)  // Ignore error, we're logging anyway.
+	reqID, _ := uuid.GetFromContext(ctx) // Ignore error, we're logging anyway.
 	log.Printf("%s %s %q %s [%s]", "HTTP", reqID, url, fmtErr(err), formatDuration(dur))
 }

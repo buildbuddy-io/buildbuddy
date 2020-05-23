@@ -32,7 +32,7 @@ var (
 )
 
 type ByteStreamServer struct {
-	env environment.Env
+	env   environment.Env
 	cache interfaces.DigestCache
 }
 
@@ -42,7 +42,7 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 		return nil, fmt.Errorf("A cache is required to enable the ByteStreamServer")
 	}
 	return &ByteStreamServer{
-		env: env,
+		env:   env,
 		cache: cache,
 	}, nil
 }
