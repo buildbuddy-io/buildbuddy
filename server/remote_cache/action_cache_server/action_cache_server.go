@@ -2,6 +2,7 @@ package action_cache_server
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -10,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
+	"github.com/google/uuid"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -97,7 +99,7 @@ func (s *ActionCacheServer) validateActionResult(ctx context.Context, r *repb.Ac
 
 func setWorkerMetadata(ar *repb.ActionResult) {
 	ar.ExecutionMetadata = &repb.ExecutedActionMetadata{
-		Worker: "worker",
+		Worker: base64.StdEncoding.EncodeToString(uuid.NodeID()),
 	}
 }
 
