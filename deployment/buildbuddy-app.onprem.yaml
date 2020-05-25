@@ -23,7 +23,6 @@ spec:
         cloud.google.com/gke-nodepool: default-pool
       containers:
         - name: buildbuddy-app
-          # Bumping this version? Ensure you've built //deployment:release_onprem and pushed a new image!
           image: gcr.io/flame-public/buildbuddy-app-onprem:latest
           imagePullPolicy: Always
           args: ["--config_file=config/buildbuddy.release.yaml"]
