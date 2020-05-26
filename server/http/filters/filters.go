@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"google.golang.org/grpc"
 )
 
 func RedirectHTTPS(next http.Handler) http.Handler {
@@ -132,4 +133,15 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 		handler = fn(handler)
 	}
 	return handler
+}
+
+func ServeGRPCOverHTTPPort(grpcServer *grpc.Server, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(
+			r.Header.Get("Content-Type"), "application/grpc") {
+			grpcServer.ServeHTTP(w, r)
+		} else {
+			next.ServeHTTP(w, r)
+		}
+	})
 }

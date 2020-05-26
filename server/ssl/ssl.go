@@ -164,7 +164,7 @@ func (s *SSLService) IsCertGenerationEnabled() bool {
 	return s.IsEnabled() && s.AuthorityCert != nil && s.AuthorityKey != nil
 }
 
-func (s *SSLService) ConfigureTLS(mux *http.ServeMux) (*tls.Config, http.Handler) {
+func (s *SSLService) ConfigureTLS(mux http.Handler) (*tls.Config, http.Handler) {
 	if s.autocertManager == nil {
 		return s.httpTLSConfig, mux
 	}
