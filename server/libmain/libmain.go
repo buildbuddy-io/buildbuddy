@@ -35,18 +35,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"google.golang.org/grpc"
-	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 	"google.golang.org/grpc/reflection"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	bpb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-
 	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
 var (
@@ -210,6 +212,8 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 	grpcOptions := []grpc.ServerOption{
 		rpcfilters.GetUnaryInterceptor(env),
 		rpcfilters.GetStreamInterceptor(env),
+		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
+		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 	}
 
 	if credentialOption != nil {
@@ -224,6 +228,9 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 	// Support reflection so that tools like grpc-cli (aka stubby) can
 	// enumerate our services and call them.
 	reflection.Register(grpcServer)
+
+	// Support prometheus grpc metrics.
+	grpc_prometheus.Register(grpcServer)
 
 	// Start Build-Event-Protocol and Remote-Cache services.
 	StartBuildEventServicesOrDie(env, grpcServer)
@@ -290,6 +297,7 @@ func StartAndRunServices(env environment.Env) {
 		http.StripPrefix("/rpc/BuildBuddyService/", buildBuddyProtoHandler)))
 	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, buildBuddyServer))
 	mux.Handle("/healthz", env.GetHealthChecker())
+	mux.Handle("/metrics", promhttp.Handler())
 
 	if auth := env.GetAuthenticator(); auth != nil {
 		mux.Handle("/login/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Login)))
