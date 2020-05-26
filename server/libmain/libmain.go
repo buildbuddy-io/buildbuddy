@@ -199,7 +199,7 @@ func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) 
 	repb.RegisterCapabilitiesServer(grpcServer, capabilitiesServer)
 }
 
-func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_server.BuildBuddyServer, port *int, credentialOption grpc.ServerOption) {
+func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_server.BuildBuddyServer, port *int, credentialOption grpc.ServerOption) *grpc.Server {
 	// Initialize our gRPC server (and fail early if that doesn't happen).
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
 
@@ -238,6 +238,8 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 	go func() {
 		log.Fatal(grpcServer.Serve(lis))
 	}()
+
+	return grpcServer
 }
 
 func StartAndRunServices(env environment.Env) {
@@ -269,7 +271,7 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
 	}
 
-	StartGRPCServiceOrDie(env, buildBuddyServer, gRPCPort, nil)
+	grpcServer := StartGRPCServiceOrDie(env, buildBuddyServer, gRPCPort, nil)
 
 	if sslService.IsEnabled() {
 		creds, err := sslService.GetGRPCSTLSCreds()
@@ -308,30 +310,35 @@ func StartAndRunServices(env environment.Env) {
 		mux.Handle("/api/v1/GetFile", httpfilters.WrapAuthenticatedExternalHandler(env, api))
 	}
 
+	handler := http.Handler(mux)
+	if env.GetConfigurator().GetGRPCOverHTTPPortEnabled() {
+		handler = httpfilters.ServeGRPCOverHTTPPort(grpcServer, mux)
+	}
+
 	if sp := env.GetSplashPrinter(); sp != nil {
 		sp.PrintSplashScreen(*port, *gRPCPort)
 	}
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
-		Handler: mux,
+		Handler: handler,
 	}
 
 	if sslService.IsEnabled() {
-		tlsConfig, handler := sslService.ConfigureTLS(mux)
+		tlsConfig, sslHandler := sslService.ConfigureTLS(handler)
 		if err != nil {
 			log.Fatal(err)
 		}
 		sslServer := &http.Server{
 			Addr:      fmt.Sprintf("%s:%d", *listen, *sslPort),
-			Handler:   mux,
+			Handler:   handler,
 			TLSConfig: tlsConfig,
 		}
 		go func() {
 			log.Fatal(sslServer.ListenAndServeTLS("", ""))
 		}()
 		go func() {
-			log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), handler))
+			log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), sslHandler))
 		}()
 	} else {
 		// If no SSL is enabled, we'll just serve things as-is.
