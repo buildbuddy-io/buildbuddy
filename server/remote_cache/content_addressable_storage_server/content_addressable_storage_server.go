@@ -2,8 +2,10 @@ package content_addressable_storage_server
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -160,6 +162,86 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	return rsp, nil
 }
 
+type dirStack struct {
+	lock sync.Mutex
+	dirs []*repb.Directory
+}
+
+func NewDirStack(token string) (*dirStack, error) {
+	newDirStack := &dirStack{
+		lock: sync.Mutex{},
+		dirs: make([]*repb.Directory, 0),
+	}
+	if token != "" {
+		tree := &repb.Tree{}
+		protoBytes, err := base64.StdEncoding.DecodeString(token)
+		if err != nil {
+			return nil, err
+		}
+		if err := proto.Unmarshal(protoBytes, tree); err != nil {
+			return nil, err
+		}
+		if len(tree.GetChildren()) > 0 {
+			newDirStack.dirs = append(newDirStack.dirs, tree.GetChildren()...)
+		}
+	}
+	return newDirStack, nil
+}
+func (d *dirStack) Empty() bool {
+	d.lock.Lock()
+	empty := len(d.dirs) == 0
+	d.lock.Unlock()
+	return empty
+}
+
+func (d *dirStack) Push(dir *repb.Directory) {
+	d.lock.Lock()
+	d.dirs = append(d.dirs, dir)
+	d.lock.Unlock()
+}
+func (d *dirStack) Pop() *repb.Directory {
+	d.lock.Lock()
+	dirsLength := len(d.dirs)
+	if dirsLength == 0 {
+		return nil
+	}
+	lastElementIndex := dirsLength - 1
+	result := d.dirs[lastElementIndex]
+	d.dirs = d.dirs[:lastElementIndex]
+	d.lock.Unlock()
+	return result
+}
+func (d *dirStack) SerializeToToken() (string, error) {
+	tree := &repb.Tree{
+		Children: d.dirs,
+	}
+	protoBytes, err := proto.Marshal(tree)
+	if err != nil {
+		return "", err
+	}
+
+	token := base64.StdEncoding.EncodeToString(protoBytes)
+	return token, nil
+}
+
+func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, reqDigest *repb.Digest) (*repb.Directory, error) {
+	_, err := digest.Validate(reqDigest)
+	if err != nil {
+		return nil, err
+	}
+	// Fetch the "Directory" object which enumerates all the blobs in the directory
+	blob, err := s.cache.Get(ctx, reqDigest)
+	if err != nil {
+		return nil, err
+	}
+
+	dir := &repb.Directory{}
+	if err := proto.Unmarshal(blob, dir); err != nil {
+		return nil, err
+	}
+	return dir, nil
+}
+
 // Fetch the entire directory tree rooted at a node.
 //
 // This request must be targeted at a
@@ -188,48 +270,48 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return fmt.Errorf("RootDigest is required to GetTree")
 	}
 	ctx := perms.AttachUserPrefixToContext(stream.Context(), s.env)
-	fetchDir := func(reqDigest *repb.Digest) (*repb.Directory, error) {
-		_, err := digest.Validate(reqDigest)
-		if err != nil {
-			return nil, err
-		}
-		// Fetch the "Directory" object which enumerates all the blobs in the directory
-		blob, err := s.cache.Get(ctx, reqDigest)
-		if err != nil {
-			return nil, err
-		}
+	dirStack, err := NewDirStack(req.GetPageToken())
+	if err != nil {
+		return status.InvalidArgumentErrorf("Unparseable tree token: %s", err)
+	}
 
-		dir := &repb.Directory{}
-		if err := proto.Unmarshal(blob, dir); err != nil {
-			return nil, err
+	maxPageSize := int32(1000)
+	if req.GetPageSize() < maxPageSize && req.GetPageSize() > 0 {
+		maxPageSize = req.GetPageSize()
+	}
+
+	if dirStack.Empty() {
+		rootDir, err := s.fetchDir(ctx, req.RootDigest)
+		if err != nil {
+			return err
 		}
-		return dir, nil
+		dirStack.Push(rootDir)
 	}
 
 	rsp := &repb.GetTreeResponse{}
-	var fetchDirFn func(dir *repb.Directory) error
-	fetchDirFn = func(dir *repb.Directory) error {
-		rsp.Directories = append(rsp.Directories, dir)
-		for _, dirNode := range dir.Directories {
-			subDir, err := fetchDir(dirNode.Digest)
+	finishPage := func(lastResponse bool) error {
+		if !lastResponse {
+			token, err := dirStack.SerializeToToken()
 			if err != nil {
 				return err
 			}
-			if err := fetchDirFn(subDir); err != nil {
+			rsp.NextPageToken = token
+		}
+		return stream.Send(rsp)
+	}
+
+	for dir := dirStack.Pop(); dir != nil; dir = dirStack.Pop() {
+		rsp.Directories = append(rsp.Directories, dir)
+		for _, dirNode := range dir.Directories {
+			subDir, err := s.fetchDir(ctx, dirNode.Digest)
+			if err != nil {
 				return err
 			}
+			dirStack.Push(subDir)
 		}
-		return nil
+		if int32(len(rsp.Directories)) == maxPageSize {
+			return finishPage(dirStack.Empty())
+		}
 	}
-
-	rootDir, err := fetchDir(req.RootDigest)
-	if err != nil {
-		return err
-	}
-	if err := fetchDirFn(rootDir); err != nil {
-		return err
-	}
-	stream.Send(rsp)
-	return nil
-
+	return finishPage(true)
 }
