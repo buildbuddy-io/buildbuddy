@@ -148,9 +148,10 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			return nil, err
 		}
 		blobRsp := &repb.BatchReadBlobsResponse_Response{Digest: readDigest}
-		blob, err := s.cache.Get(ctx, readDigest)
+		if readDigest.GetHash() != digest.EmptySha256 {
+			blobRsp.Data, err = s.cache.Get(ctx, readDigest)
+		}
 		if err == nil {
-			blobRsp.Data = blob
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}
 		} else if os.IsNotExist(err) {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
