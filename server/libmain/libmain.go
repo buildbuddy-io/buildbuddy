@@ -35,7 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -52,11 +52,12 @@ import (
 )
 
 var (
-	listen    = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
-	port      = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	sslPort   = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
-	gRPCPort  = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
-	gRPCSPort = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
+	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
+	sslPort        = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
+	gRPCPort       = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
+	gRPCSPort      = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
+	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 
 	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
@@ -278,6 +279,8 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
 	}
 
+	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
+
 	grpcServer := StartGRPCServiceOrDie(env, buildBuddyServer, gRPCPort, nil)
 
 	if sslService.IsEnabled() {
@@ -297,7 +300,6 @@ func StartAndRunServices(env environment.Env) {
 		http.StripPrefix("/rpc/BuildBuddyService/", buildBuddyProtoHandler)))
 	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, buildBuddyServer))
 	mux.Handle("/healthz", env.GetHealthChecker())
-	mux.Handle("/metrics", promhttp.Handler())
 
 	if auth := env.GetAuthenticator(); auth != nil {
 		mux.Handle("/login/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Login)))
