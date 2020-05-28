@@ -106,12 +106,12 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		if err != nil && err != io.EOF {
 			return err
 		}
-		rsp := &bspb.ReadResponse{
-			Data: buf[:n],
-		}
-		stream.Send(rsp)
 
-		if err == io.EOF {
+		stream.Send(&bspb.ReadResponse{
+			Data: buf[:n],
+		})
+
+		if err == io.EOF || n == 0 {
 			break
 		}
 	}
