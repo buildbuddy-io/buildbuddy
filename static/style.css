@@ -1495,6 +1495,11 @@ code .comment {
   margin-right: 8px;
 }
 
+.dense .load-more {
+  margin-bottom: 0;
+  border-radius: 0;
+}
+
 /* Scrollbars */
 
 .terminal ::-webkit-scrollbar {
