@@ -35,26 +35,29 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+
 	"google.golang.org/grpc"
-	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 	"google.golang.org/grpc/reflection"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	bpb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-
 	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
 var (
-	listen    = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
-	port      = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	sslPort   = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
-	gRPCPort  = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
-	gRPCSPort = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
+	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
+	sslPort        = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
+	gRPCPort       = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
+	gRPCSPort      = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
+	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 
 	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
@@ -210,6 +213,8 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 	grpcOptions := []grpc.ServerOption{
 		rpcfilters.GetUnaryInterceptor(env),
 		rpcfilters.GetStreamInterceptor(env),
+		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
+		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 	}
 
 	if credentialOption != nil {
@@ -224,6 +229,9 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 	// Support reflection so that tools like grpc-cli (aka stubby) can
 	// enumerate our services and call them.
 	reflection.Register(grpcServer)
+
+	// Support prometheus grpc metrics.
+	grpc_prometheus.Register(grpcServer)
 
 	// Start Build-Event-Protocol and Remote-Cache services.
 	StartBuildEventServicesOrDie(env, grpcServer)
@@ -270,6 +278,8 @@ func StartAndRunServices(env environment.Env) {
 	if err != nil {
 		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
 	}
+
+	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
 	grpcServer := StartGRPCServiceOrDie(env, buildBuddyServer, gRPCPort, nil)
 

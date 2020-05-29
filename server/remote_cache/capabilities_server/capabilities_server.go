@@ -40,7 +40,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 					},
 				},
 			},
-			MaxBatchTotalSizeBytes:      10000000, // 10MB is the max amount you can fetch in one batch request.
+			MaxBatchTotalSizeBytes:      0, // Default to protocol limit.
 			SymlinkAbsolutePathStrategy: repb.SymlinkAbsolutePathStrategy_ALLOWED,
 		}
 	}

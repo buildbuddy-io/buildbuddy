@@ -39,6 +39,8 @@ go_library(
         "//server/util/db:go_default_library",
         "//server/util/grpc_client:go_default_library",
         "//server/util/healthcheck:go_default_library",
+        "//server/util/monitoring:go_default_library",
+        "@com_github_grpc_ecosystem_go_grpc_prometheus//:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//encoding/gzip:go_default_library",

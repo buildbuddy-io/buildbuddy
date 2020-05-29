@@ -1,6 +1,7 @@
 package digest
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	"github.com/golang/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -47,6 +50,14 @@ func Validate(d *repb.Digest) (string, error) {
 		return "", status.InvalidArgumentError("Malformed hash")
 	}
 	return d.Hash, nil
+}
+
+func ComputeForMessage(in proto.Message) (*repb.Digest, error) {
+	data, err := proto.Marshal(in)
+	if err != nil {
+		return nil, err
+	}
+	return Compute(bytes.NewReader(data))
 }
 
 func Compute(in io.Reader) (*repb.Digest, error) {

@@ -6,6 +6,8 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/google"
+
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 )
 
 // DialTarget handles some of the logic around detecting the correct GRPC
@@ -15,7 +17,10 @@ func DialTarget(target string) (*grpc.ClientConn, error) {
 }
 
 func DialTargetWithOptions(target string, grpcsBytestream bool) (*grpc.ClientConn, error) {
-	dialOptions := make([]grpc.DialOption, 0)
+	dialOptions := []grpc.DialOption{
+		grpc.WithUnaryInterceptor(grpc_prometheus.UnaryClientInterceptor),
+		grpc.WithStreamInterceptor(grpc_prometheus.StreamClientInterceptor),
+	}
 	u, err := url.Parse(target)
 	if err == nil {
 		if u.User != nil {
