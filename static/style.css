@@ -709,6 +709,25 @@ code .comment {
   margin-left: 0;
 }
 
+.load-more {
+  width: 100%;
+  padding: 24px 0;
+  background-color: #263238;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: inherit;
+  border: 0;
+  border-radius: 8px;
+  margin-bottom: 32px;
+  cursor: pointer;
+}
+
+.load-more:disabled {
+  background-color: #aaa;
+  color: #fff;
+}
+
 /** Misc **/
 
 .terminal {
