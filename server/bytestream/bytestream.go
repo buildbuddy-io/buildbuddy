@@ -46,6 +46,12 @@ func StreamBytestreamFile(ctx context.Context, url *url.URL, callback func([]byt
 }
 
 func readStreamFromUrl(ctx context.Context, url *url.URL, grpcs bool) (bspb.ByteStream_ReadClient, *grpc.ClientConn, error) {
+	if url.Port() == "" && grpcs {
+		url.Host = url.Hostname() + ":443"
+	} else if url.Port() == "" {
+		url.Host = url.Hostname() + ":80"
+	}
+
 	conn, err := grpc_client.DialTargetWithOptions(url.String(), grpcs)
 
 	if err != nil {
