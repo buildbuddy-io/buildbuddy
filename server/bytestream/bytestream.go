@@ -24,7 +24,7 @@ func StreamBytestreamFile(ctx context.Context, url *url.URL, callback func([]byt
 	// If that fails, try grpc
 	if err != nil || stream == nil {
 		conn.Close()
-		// TODO(siggisim): Temove this fallback by examining flags on invocation.
+		// TODO(siggisim): Remove this fallback by examining flags on invocation.
 		stream, conn, err = readStreamFromUrl(ctx, url, false)
 	}
 	if err != nil || stream == nil || conn == nil {
