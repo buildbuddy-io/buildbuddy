@@ -47,6 +47,13 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	}, nil
 }
 
+func minInt64(a, b int64) int64 {
+    if a < b {
+        return a
+    }
+    return b
+}
+
 func extractDigest(resourceName string) (*repb.Digest, error) {
 	parts := uploadRegex.FindStringSubmatch(resourceName)
 	if len(parts) != 3 {
@@ -78,6 +85,15 @@ func checkReadPreconditions(req *bspb.ReadRequest) error {
 	return nil
 }
 
+type StreamWriter struct {
+	stream bspb.ByteStream_ReadServer
+}
+func (s *StreamWriter) Write(data []byte) (int, error) {
+	return len(data), s.stream.Send(&bspb.ReadResponse{
+		Data: data,
+	})
+}
+
 // `Read()` is used to retrieve the contents of a resource as a sequence
 // of bytes. The bytes are returned in a sequence of responses, and the
 // responses are delivered as the results of a server-side streaming FUNC (S *BYTESTREAMSERVER).
@@ -100,7 +116,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		}
 	}
 
-	buf := make([]byte, readBufSizeBytes)
+	buf := make([]byte, minInt64(int64(readBufSizeBytes), d.GetSizeBytes()))
 	for {
 		n, err := reader.Read(buf)
 		if err != nil && err != io.EOF {
