@@ -252,7 +252,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 		actionResult := extractActionResult(op)
 		md := actionResult.GetExecutionMetadata()
 		md.QueuedTimestamp = requestStartTimePb
-		logActionResult(req.GetActionDigest(), md)
+		// logActionResult(req.GetActionDigest(), md)
 		_, newOp, err := operation.Assemble(repb.ExecutionStage_COMPLETED, req.GetActionDigest(), codes.OK, actionResult)
 		op = newOp
 		return err
