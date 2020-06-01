@@ -9,6 +9,7 @@ const (
 	whereSQLKeyword  = "WHERE"
 	orderBySQLPhrase = "ORDER BY"
 	limitSQLKeyword  = "LIMIT"
+	offsetSQLKeyword = "OFFSET"
 	andQueryJoiner   = "AND"
 	orQueryJoiner    = "OR"
 )
@@ -29,7 +30,8 @@ type Query struct {
 	arguments    []interface{}
 	orderBy      string
 	ascending    bool
-	limit        *int32
+	limit        *int64
+	offset       *int64
 }
 
 func NewQuery(baseQuery string) *Query {
@@ -55,11 +57,15 @@ func (q *Query) SetOrderBy(orderByField string, ascending bool) *Query {
 	return q
 }
 
-func (q *Query) SetLimit(limit int32) *Query {
+func (q *Query) SetLimit(limit int64) *Query {
 	q.limit = &limit
 	return q
 }
 
+func (q *Query) SetOffset(offset int64) *Query {
+	q.offset = &offset
+	return q
+}
 func (q *Query) Build() (string, []interface{}) {
 	// Reference: SELECT foo FROM TABLE WHERE bar = baz ORDER BY ack ASC LIMIT 10
 	fullQuery := q.baseQuery
@@ -77,6 +83,9 @@ func (q *Query) Build() (string, []interface{}) {
 	}
 	if q.limit != nil {
 		fullQuery += pad(limitSQLKeyword) + pad(fmt.Sprintf("%d", *q.limit))
+	}
+	if q.offset != nil {
+		fullQuery += pad(offsetSQLKeyword) + pad(fmt.Sprintf("%d", *q.offset))
 	}
 	return fullQuery, q.arguments
 }

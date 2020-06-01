@@ -153,7 +153,6 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 			}
 		case *build_event_stream.BuildEvent_Completed:
 			{
-				invocation.Success = p.Completed.Success
 			}
 		case *build_event_stream.BuildEvent_TestResult:
 			{
@@ -164,6 +163,7 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 		case *build_event_stream.BuildEvent_Finished:
 			{
 				endTimeMillis = p.Finished.FinishTimeMillis
+				invocation.Success = p.Finished.ExitCode.Code == 0
 			}
 		case *build_event_stream.BuildEvent_BuildToolLogs:
 			{

@@ -131,7 +131,8 @@ message SearchInvocationRequest {
   // If unset, the server will pick a reasonable page size.
   int32 count = 4;
 
-  // TODO(tylerw): Pagination.
+  // The next_page_token value returned from a previous request, if any.
+  string page_token = 5;
 }
 
 message SearchInvocationResponse {
@@ -142,6 +143,10 @@ message SearchInvocationResponse {
   // the full invocation should link to it or call GetInvocation directly on
   // the invocation they want to display.
   repeated Invocation invocation = 2;
+
+  // Token to retrieve the next page of results, or empty if there are no
+  // more results in the list.
+  string next_page_token = 3;
 }
 
 enum AggType {
