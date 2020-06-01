@@ -122,8 +122,10 @@ type RemoteExecutionConfig struct {
 }
 
 type ExecutorConfig struct {
-	RootDirectory string `yaml:"root_directory"`
-	CacheTarget   string `yaml:"cache_target"`
+	RootDirectory       string `yaml:"root_directory"`
+	LocalCacheDirectory string `yaml:"local_cache_directory"`
+	LocalCacheSizeBytes int64  `yaml:"local_cache_size_bytes"`
+	CacheTarget         string `yaml:"cache_target"`
 }
 
 type APIConfig struct {
