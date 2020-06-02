@@ -48,10 +48,10 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 }
 
 func minInt64(a, b int64) int64 {
-    if a < b {
-        return a
-    }
-    return b
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func extractDigest(resourceName string) (*repb.Digest, error) {
@@ -88,6 +88,7 @@ func checkReadPreconditions(req *bspb.ReadRequest) error {
 type StreamWriter struct {
 	stream bspb.ByteStream_ReadServer
 }
+
 func (s *StreamWriter) Write(data []byte) (int, error) {
 	return len(data), s.stream.Send(&bspb.ReadResponse{
 		Data: data,

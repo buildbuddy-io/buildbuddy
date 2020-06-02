@@ -270,6 +270,10 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if req.RootDigest == nil {
 		return fmt.Errorf("RootDigest is required to GetTree")
 	}
+	if req.GetRootDigest().GetHash() == digest.EmptySha256 {
+		return nil
+	}
+
 	ctx := perms.AttachUserPrefixToContext(stream.Context(), s.env)
 	dirStack, err := NewDirStack(req.GetPageToken())
 	if err != nil {
@@ -304,6 +308,9 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	for dir := dirStack.Pop(); dir != nil; dir = dirStack.Pop() {
 		rsp.Directories = append(rsp.Directories, dir)
 		for _, dirNode := range dir.Directories {
+			if dirNode.Digest.GetHash() == digest.EmptySha256 {
+				continue
+			}
 			subDir, err := s.fetchDir(ctx, dirNode.Digest)
 			if err != nil {
 				return err
