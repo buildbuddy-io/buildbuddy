@@ -27,14 +27,13 @@ type generalConfig struct {
 }
 
 type appConfig struct {
-	BuildBuddyURL                string `yaml:"build_buddy_url"`
-	EventsAPIURL                 string `yaml:"events_api_url"`
-	CacheAPIURL                  string `yaml:"cache_api_url"`
-	NoDefaultUserGroup           bool   `yaml:"no_default_user_group"`
-	CreateGroupPerUser           bool   `yaml:"create_group_per_user"`
-	AddUserToDomainGroup         bool   `yaml:"add_user_to_domain_group"`
-	GRPCOverHTTPPortEnabled      bool   `yaml:"grpc_over_http_port_enabled"`
-	BytestreamToLocalhostEnabled bool   `yaml:"bytestream_to_localhost_enabled"`
+	BuildBuddyURL           string `yaml:"build_buddy_url"`
+	EventsAPIURL            string `yaml:"events_api_url"`
+	CacheAPIURL             string `yaml:"cache_api_url"`
+	NoDefaultUserGroup      bool   `yaml:"no_default_user_group"`
+	CreateGroupPerUser      bool   `yaml:"create_group_per_user"`
+	AddUserToDomainGroup    bool   `yaml:"add_user_to_domain_group"`
+	GRPCOverHTTPPortEnabled bool   `yaml:"grpc_over_http_port_enabled"`
 }
 
 type buildEventProxy struct {
@@ -272,11 +271,6 @@ func (c *Configurator) GetAppAddUserToDomainGroup() bool {
 func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {
 	c.rereadIfStale()
 	return c.gc.App.GRPCOverHTTPPortEnabled
-}
-
-func (c *Configurator) GetBytestreamToLocalhostEnabled() bool {
-	c.rereadIfStale()
-	return c.gc.App.BytestreamToLocalhostEnabled
 }
 
 func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {
