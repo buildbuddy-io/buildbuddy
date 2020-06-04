@@ -293,8 +293,8 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	// If we're connecting to the same server, we don't need to use dns.
-	if r.URL.Host == lookup.URL.Host {
+	if s.env.GetConfigurator().GetBytestreamToLocalhostEnabled() && r.URL.Hostname() == lookup.URL.Hostname() {
+		// If we're connecting to the same host, use localhost to skip dns.
 		lookup.URL.Host = "localhost:" + lookup.URL.Port()
 	}
 
