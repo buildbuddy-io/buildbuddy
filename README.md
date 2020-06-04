@@ -24,7 +24,7 @@ This will print a **Buildbuddy url** containing your build results at the beginn
 
 **Want more control?** Want to get your whole team set up? Get up and running fast with the cloud hosted [BuildBuddy.io](https://buildbuddy.io) service.
 
-If you'd like to host your own instance **on-premises** or in the cloud, check out our [getting started](https://github.com/buildbuddy-io/buildbuddy/blob/master/SETUP.md) guide.
+If you'd like to host your own instance **on-premise** or in the cloud, check out our [getting started](https://github.com/buildbuddy-io/buildbuddy/blob/master/SETUP.md) guide.
 
 # Features
 
