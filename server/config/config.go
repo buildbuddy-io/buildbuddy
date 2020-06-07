@@ -34,6 +34,7 @@ type appConfig struct {
 	CreateGroupPerUser      bool   `yaml:"create_group_per_user"`
 	AddUserToDomainGroup    bool   `yaml:"add_user_to_domain_group"`
 	GRPCOverHTTPPortEnabled bool   `yaml:"grpc_over_http_port_enabled"`
+	DefaultToDenseMode      bool   `yaml:"default_to_dense_mode"`
 }
 
 type buildEventProxy struct {
@@ -271,6 +272,11 @@ func (c *Configurator) GetAppAddUserToDomainGroup() bool {
 func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {
 	c.rereadIfStale()
 	return c.gc.App.GRPCOverHTTPPortEnabled
+}
+
+func (c *Configurator) GetDefaultToDenseMode() bool {
+	c.rereadIfStale()
+	return c.gc.App.DefaultToDenseMode
 }
 
 func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {
