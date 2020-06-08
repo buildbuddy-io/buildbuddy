@@ -7,7 +7,9 @@ import router, { Path } from '../router/router';
 import authService, { AuthService } from '../auth/auth_service';
 import { User } from '../auth/auth_service';
 
-const denseModeKey = "DENSE_MODE";
+const viewModeKey = "VIEW_MODE";
+const denseModeValue = "DENSE";
+const comfyModeValue = "COMFY";
 
 declare var window: any;
 
@@ -25,7 +27,7 @@ export default class RootComponent extends React.Component {
     hash: window.location.hash,
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
-    denseMode: denseModeKey in window.localStorage ? JSON.parse(window.localStorage.getItem(denseModeKey)) : window.buildbuddyConfig && window.buildbuddyConfig.default_to_dense_mode
+    denseMode: viewModeKey in window.localStorage ? window.localStorage.getItem(viewModeKey) == denseModeValue : window.buildbuddyConfig && window.buildbuddyConfig.default_to_dense_mode
   };
 
   componentWillMount() {
@@ -49,7 +51,7 @@ export default class RootComponent extends React.Component {
   handleToggleDenseClicked() {
     let newDenseMode = !this.state.denseMode;
     this.setState({ ...this.state, denseMode: newDenseMode });
-    window.localStorage.setItem(denseModeKey, newDenseMode ? "true" : "false");
+    window.localStorage.setItem(viewModeKey, newDenseMode ? denseModeValue : comfyModeValue);
   }
 
   render() {
