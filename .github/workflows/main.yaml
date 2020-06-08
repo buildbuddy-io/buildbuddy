@@ -5,11 +5,6 @@ on:
     branches:
       - master
 
-env:
-  GKE_PROJECT: ${{ secrets.GKE_PROJECT }}
-  GKE_CLUSTER: bb-dev-cluster
-  GKE_ZONE: us-west1-a
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,21 +12,6 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v1
-
-    # Setup gcloud CLI
-    - name: GCloud
-      uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
-      with:
-        version: '270.0.0'
-        service_account_email: ${{ secrets.SA_EMAIL }}
-        service_account_key: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
-
-    # Configure docker to use the gcloud command-line tool as a credential helper
-    - name: Auth
-      run: |
-        gcloud auth configure-docker
-        gcloud container clusters get-credentials $GKE_CLUSTER \
-          --zone $GKE_ZONE --project $GKE_PROJECT
 
     - name: Mount Bazel cache
       uses: actions/cache@v1
@@ -49,8 +29,3 @@ jobs:
     - name: Build
       run: |
         "${GITHUB_WORKSPACE}/bin/bazel" build //...
-
-    # TODO(siggisim): Re-enable deploy with different configuration
-    # - name: Deploy
-    #   run: |
-    #     "${GITHUB_WORKSPACE}/bin/bazel" run deployment:dev.apply
