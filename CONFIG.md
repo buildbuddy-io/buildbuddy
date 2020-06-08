@@ -85,6 +85,8 @@ There are three types of config flags: *Required*, *Recommended*, and *Optional*
 
 ```cache_api_url``` *Optional* Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen. (Does not actually change the server address)
 
+```default_to_dense_mode``` *Optional* Enables Dense UI mode by default.
+
 Example App Section:
 ```
 app:
