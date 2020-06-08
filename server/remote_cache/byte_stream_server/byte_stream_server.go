@@ -28,7 +28,8 @@ var (
 	// Matches:
 	// - "blobs/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
 	// - "uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555/blobs/8afb02ca7aace3ae5cd8748ac589e2e33022b1a4bfd22d5d234c5887e270fe9c/17997850"
-	uploadRegex = regexp.MustCompile("^.*blobs/([a-f0-9]{64})/(\\d+)")
+	uploadRegex   = regexp.MustCompile("^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?blobs/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
+	downloadRegex = regexp.MustCompile("^(?:(?P<instance_name>.*)/)?blobs/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
 )
 
 type ByteStreamServer struct {
@@ -47,6 +48,14 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	}, nil
 }
 
+func (s *ByteStreamServer) getCache(instanceName string) interfaces.DigestCache {
+	c := s.cache
+	if instanceName != "" {
+		c = c.WithPrefix(instanceName)
+	}
+	return c
+}
+
 func minInt64(a, b int64) int64 {
 	if a < b {
 		return a
@@ -54,20 +63,35 @@ func minInt64(a, b int64) int64 {
 	return b
 }
 
-func extractDigest(resourceName string) (*repb.Digest, error) {
-	parts := uploadRegex.FindStringSubmatch(resourceName)
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("Unparsable resource name: %s", resourceName)
+func extractDigest(resourceName string, matcher *regexp.Regexp) (string, *repb.Digest, error) {
+	match := matcher.FindStringSubmatch(resourceName)
+	result := make(map[string]string, len(match))
+	for i, name := range matcher.SubexpNames() {
+		if i != 0 && name != "" && i < len(match) {
+			result[name] = match[i]
+		}
 	}
-	if parts[1] == "" {
-		return nil, fmt.Errorf("Unparsable resource name (empty hash?): %s", resourceName)
+	hash, hashOK := result["hash"]
+	sizeStr, sizeOK := result["size"]
+	if !hashOK || !sizeOK {
+		return "", nil, fmt.Errorf("Unparsable resource name: %s", resourceName)
 	}
-	sizeBytes, err := strconv.ParseInt(parts[2], 10, 0)
+	if hash == "" {
+		return "", nil, fmt.Errorf("Unparsable resource name (empty hash?): %s", resourceName)
+	}
+	sizeBytes, err := strconv.ParseInt(sizeStr, 10, 0)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	return &repb.Digest{
-		Hash:      parts[1],
+
+	// Set the instance name, if one was present.
+	instanceName := ""
+	if in, ok := result["instance_name"]; ok {
+		instanceName = in
+	}
+
+	return instanceName, &repb.Digest{
+		Hash:      hash,
 		SizeBytes: sizeBytes,
 	}, nil
 }
@@ -102,16 +126,17 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err := checkReadPreconditions(req); err != nil {
 		return err
 	}
-	d, err := extractDigest(req.ResourceName)
+	instanceName, d, err := extractDigest(req.ResourceName, downloadRegex)
 	if err != nil {
 		return err
 	}
 	ctx := perms.AttachUserPrefixToContext(stream.Context(), s.env)
+	cache := s.getCache(instanceName)
 	var reader io.Reader
 	if d.GetHash() == digest.EmptySha256 {
 		reader = strings.NewReader("")
 	} else {
-		reader, err = s.cache.Reader(ctx, d, req.ReadOffset)
+		reader, err = cache.Reader(ctx, d, req.ReadOffset)
 		if err != nil {
 			return err
 		}
@@ -204,11 +229,12 @@ func (discardWriteCloser) Close() error {
 }
 
 func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
-	d, err := extractDigest(req.ResourceName)
+	instanceName, d, err := extractDigest(req.ResourceName, uploadRegex)
 	if err != nil {
 		return nil, err
 	}
 	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
+	cache := s.getCache(instanceName)
 	// The protocol says it is optional to allow overwriting. Skip it for now.
 	// exists, err := s.cache.Contains(ctx, ck)
 	// if err != nil {
@@ -220,7 +246,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 
 	var wc io.WriteCloser
 	if d.GetHash() != digest.EmptySha256 {
-		wc, err = s.cache.Writer(ctx, d)
+		wc, err = cache.Writer(ctx, d)
 		if err != nil {
 			return nil, err
 		}

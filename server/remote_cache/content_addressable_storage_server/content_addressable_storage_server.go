@@ -35,6 +35,14 @@ func NewContentAddressableStorageServer(env environment.Env) (*ContentAddressabl
 	}, nil
 }
 
+func (s *ContentAddressableStorageServer) getCache(instanceName string) interfaces.DigestCache {
+	c := s.cache
+	if instanceName != "" {
+		c = c.WithPrefix(instanceName)
+	}
+	return c
+}
+
 // Determine if blobs are present in the CAS.
 //
 // Clients can use this API before uploading blobs to determine which ones are
@@ -44,6 +52,7 @@ func NewContentAddressableStorageServer(env environment.Env) (*ContentAddressabl
 func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	rsp := &repb.FindMissingBlobsResponse{}
 	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
+	cache := s.getCache(req.GetInstanceName())
 	digestsToLookup := make([]*repb.Digest, 0, len(req.GetBlobDigests()))
 	for _, d := range req.GetBlobDigests() {
 		if d.GetHash() == digest.EmptySha256 {
@@ -54,7 +63,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		}
 		digestsToLookup = append(digestsToLookup, d)
 	}
-	foundMap, err := s.cache.ContainsMulti(ctx, digestsToLookup)
+	foundMap, err := cache.ContainsMulti(ctx, digestsToLookup)
 	if err != nil {
 		return nil, err
 	}
@@ -97,6 +106,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	rsp := &repb.BatchUpdateBlobsResponse{}
 	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
+	cache := s.getCache(req.GetInstanceName())
 	rsp.Responses = make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(req.Requests))
 	for _, uploadRequest := range req.Requests {
 		uploadDigest := uploadRequest.GetDigest()
@@ -107,7 +117,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		if uploadDigest.GetHash() == digest.EmptySha256 {
 			continue
 		}
-		if err := s.cache.Set(ctx, uploadDigest, uploadRequest.GetData()); err != nil {
+		if err := cache.Set(ctx, uploadDigest, uploadRequest.GetData()); err != nil {
 			return nil, err
 		}
 		rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
@@ -141,6 +151,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
 	rsp := &repb.BatchReadBlobsResponse{}
 	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
+	cache := s.getCache(req.GetInstanceName())
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	for _, readDigest := range req.GetDigests() {
 		_, err := digest.Validate(readDigest)
@@ -149,7 +160,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		}
 		blobRsp := &repb.BatchReadBlobsResponse_Response{Digest: readDigest}
 		if readDigest.GetHash() != digest.EmptySha256 {
-			blobRsp.Data, err = s.cache.Get(ctx, readDigest)
+			blobRsp.Data, err = cache.Get(ctx, readDigest)
 		}
 		if err == nil {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}
@@ -225,13 +236,13 @@ func (d *dirStack) SerializeToToken() (string, error) {
 	return token, nil
 }
 
-func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, reqDigest *repb.Digest) (*repb.Directory, error) {
+func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, cache interfaces.DigestCache, reqDigest *repb.Digest) (*repb.Directory, error) {
 	_, err := digest.Validate(reqDigest)
 	if err != nil {
 		return nil, err
 	}
 	// Fetch the "Directory" object which enumerates all the blobs in the directory
-	blob, err := s.cache.Get(ctx, reqDigest)
+	blob, err := cache.Get(ctx, reqDigest)
 	if err != nil {
 		return nil, err
 	}
@@ -275,6 +286,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	}
 
 	ctx := perms.AttachUserPrefixToContext(stream.Context(), s.env)
+	cache := s.getCache(req.GetInstanceName())
 	dirStack, err := NewDirStack(req.GetPageToken())
 	if err != nil {
 		return status.InvalidArgumentErrorf("Unparseable tree token: %s", err)
@@ -286,7 +298,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	}
 
 	if dirStack.Empty() {
-		rootDir, err := s.fetchDir(ctx, req.RootDigest)
+		rootDir, err := s.fetchDir(ctx, cache, req.RootDigest)
 		if err != nil {
 			return err
 		}
@@ -311,7 +323,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			if dirNode.Digest.GetHash() == digest.EmptySha256 {
 				continue
 			}
-			subDir, err := s.fetchDir(ctx, dirNode.Digest)
+			subDir, err := s.fetchDir(ctx, cache, dirNode.Digest)
 			if err != nil {
 				return err
 			}

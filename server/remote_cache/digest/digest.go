@@ -101,9 +101,10 @@ func (c *DigestCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 }
 
 func (c *DigestCache) WithPrefix(prefix string) interfaces.DigestCache {
+	newPrefix := c.prefix + "/" + prefix
 	return &DigestCache{
 		cache:  c.cache,
-		prefix: prefix,
+		prefix: newPrefix,
 	}
 }
 

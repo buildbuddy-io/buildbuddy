@@ -113,7 +113,9 @@ type Cache interface {
 // storing of blob data based on its size.
 type DigestCache interface {
 	// Returns a new DigestCache that will store everything under the prefix
-	// specified by "prefix", ignoring any previously set prefix.
+	// specified by "prefix". The prefix specified is concatenated onto the
+	// currently set prefix -- so this is a relative operation, not an
+	// absolute one.
 	WithPrefix(prefix string) DigestCache
 
 	// Normal cache-like operations.

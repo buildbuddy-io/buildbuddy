@@ -26,7 +26,7 @@ type ActionCacheServer struct {
 }
 
 func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
-	cache := env.GetDigestCache().WithPrefix(acCachePrefix)
+	cache := env.GetDigestCache()
 	if cache == nil {
 		return nil, fmt.Errorf("A cache is required to enable the ActionCacheServer")
 	}
@@ -36,8 +36,16 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func (s *ActionCacheServer) checkFilesExist(ctx context.Context, digests []*repb.Digest) error {
-	foundMap, err := s.cache.ContainsMulti(ctx, digests)
+func (s *ActionCacheServer) getCache(instanceName string) interfaces.DigestCache {
+	c := s.cache
+	if instanceName != "" {
+		c = c.WithPrefix(instanceName)
+	}
+	return c.WithPrefix(acCachePrefix)
+}
+
+func (s *ActionCacheServer) checkFilesExist(ctx context.Context, cache interfaces.DigestCache, digests []*repb.Digest) error {
+	foundMap, err := cache.ContainsMulti(ctx, digests)
 	if err != nil {
 		return err
 	}
@@ -53,7 +61,7 @@ func (s *ActionCacheServer) checkFilesExist(ctx context.Context, digests []*repb
 	return nil
 }
 
-func (s *ActionCacheServer) checkDirExists(ctx context.Context, dir *repb.Directory) error {
+func (s *ActionCacheServer) checkDirExists(ctx context.Context, cache interfaces.DigestCache, dir *repb.Directory) error {
 	digests := make([]*repb.Digest, 0, len(dir.GetFiles()))
 	for _, f := range dir.GetFiles() {
 		if f.Digest == nil {
@@ -61,22 +69,22 @@ func (s *ActionCacheServer) checkDirExists(ctx context.Context, dir *repb.Direct
 		}
 		digests = append(digests, f.GetDigest())
 	}
-	return s.checkFilesExist(ctx, digests)
+	return s.checkFilesExist(ctx, cache, digests)
 }
 
-func (s *ActionCacheServer) validateActionResult(ctx context.Context, r *repb.ActionResult) error {
+func (s *ActionCacheServer) validateActionResult(ctx context.Context, cache interfaces.DigestCache, r *repb.ActionResult) error {
 	outputFileDigests := make([]*repb.Digest, 0, len(r.OutputFiles))
 	for _, f := range r.OutputFiles {
 		if len(f.Contents) > 0 && f.GetDigest().GetSizeBytes() > 0 {
 			outputFileDigests = append(outputFileDigests, f.GetDigest())
 		}
 	}
-	if err := s.checkFilesExist(ctx, outputFileDigests); err != nil {
+	if err := s.checkFilesExist(ctx, cache, outputFileDigests); err != nil {
 		return err
 	}
 
 	for _, d := range r.OutputDirectories {
-		blob, err := s.cache.Get(ctx, d.GetTreeDigest())
+		blob, err := cache.Get(ctx, d.GetTreeDigest())
 		if err != nil {
 			return err
 		}
@@ -84,12 +92,12 @@ func (s *ActionCacheServer) validateActionResult(ctx context.Context, r *repb.Ac
 		if err := proto.Unmarshal(blob, tree); err != nil {
 			return err
 		}
-		if err := s.checkDirExists(ctx, tree.Root); err != nil {
+		if err := s.checkDirExists(ctx, cache, tree.Root); err != nil {
 			return err
 		}
 
 		for _, childDir := range tree.GetChildren() {
-			if err := s.checkDirExists(ctx, childDir); err != nil {
+			if err := s.checkDirExists(ctx, cache, childDir); err != nil {
 				return err
 			}
 		}
@@ -124,10 +132,11 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		return nil, err
 	}
 	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
+	cache := s.getCache(req.GetInstanceName())
 
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
-	blob, err := s.cache.Get(ctx, d)
+	blob, err := cache.Get(ctx, d)
 	if err != nil {
 		return nil, status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", d, err))
 	}
@@ -136,7 +145,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := proto.Unmarshal(blob, rsp); err != nil {
 		return nil, err
 	}
-	if err := s.validateActionResult(ctx, rsp); err != nil {
+	if err := s.validateActionResult(ctx, cache, rsp); err != nil {
 		return nil, status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", d, err))
 	}
 	return rsp, nil
@@ -170,6 +179,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return nil, err
 	}
 	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
+	cache := s.getCache(req.GetInstanceName())
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131
 	// More: https://github.com/buchgr/bazel-remote/commit/7de536f47bf163fb96bc1e38ffd5e444e2bcaa00
@@ -180,7 +190,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return nil, err
 	}
 
-	if err := s.cache.Set(ctx, req.GetActionDigest(), blob); err != nil {
+	if err := cache.Set(ctx, req.GetActionDigest(), blob); err != nil {
 		return nil, err
 	}
 	return req.ActionResult, nil
