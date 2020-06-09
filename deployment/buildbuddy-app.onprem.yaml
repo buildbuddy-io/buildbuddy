@@ -25,7 +25,6 @@ spec:
         - name: buildbuddy-app
           image: gcr.io/flame-public/buildbuddy-app-onprem:latest
           imagePullPolicy: Always
-          args: ["--config_file=config/buildbuddy.release.yaml"]
           env:
           - name: ENV
             value: "onprem"
@@ -41,6 +40,13 @@ spec:
           volumeMounts:
             - mountPath: /data
               name: data
+            - mountPath: "/config.yaml"
+              name: config
+              subPath: "config.yaml"
+      volumes:
+        - name: "config"
+          configMap:
+            name: "config"
   volumeClaimTemplates:
       - metadata:
           name: data
