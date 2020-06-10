@@ -126,7 +126,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err := checkReadPreconditions(req); err != nil {
 		return err
 	}
-	instanceName, d, err := extractDigest(req.ResourceName, downloadRegex)
+	instanceName, d, err := extractDigest(req.GetResourceName(), downloadRegex)
 	if err != nil {
 		return err
 	}

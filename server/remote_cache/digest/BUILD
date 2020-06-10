@@ -11,5 +11,6 @@ go_library(
         "//server/util/perms:go_default_library",
         "//server/util/status:go_default_library",
         "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_google_uuid//:go_default_library",
     ],
 )

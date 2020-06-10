@@ -88,12 +88,12 @@ func HashProperties(props map[string]string) string {
 
 type ExecutionServer struct {
 	env   environment.Env
-	cache interfaces.Cache
+	cache interfaces.DigestCache
 	exDB  interfaces.ExecutionDB
 }
 
 func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
-	cache := env.GetCache()
+	cache := env.GetDigestCache()
 	if cache == nil {
 		return nil, fmt.Errorf("A cache is required to enable the RemoteExecutionServer")
 	}
@@ -108,13 +108,12 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 	}, nil
 }
 
-func (s *ExecutionServer) readProtoFromCache(ctx context.Context, d *repb.Digest, msg proto.Message) error {
-	ck, err := perms.UserPrefixCacheKey(ctx, s.env, d.GetHash())
-	if err != nil {
-		return err
+func (s *ExecutionServer) readProtoFromCache(ctx context.Context, d *digest.InstanceNameDigest, msg proto.Message) error {
+	cache := s.cache
+	if d.GetInstanceName() != "" {
+		cache = cache.WithPrefix(d.GetInstanceName())
 	}
-
-	data, err := s.cache.Get(ctx, ck)
+	data, err := cache.Get(ctx, d.Digest)
 	if err != nil {
 		return err
 	}
@@ -216,12 +215,16 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	// WaitExecution and GetOperation requests are handled by reading the
 	// state from the DB.
 	requestStartTimePb := ptypes.TimestampNow()
+	ctx := perms.AttachUserPrefixToContext(stream.Context(), s.env)
+
 	action := &repb.Action{}
-	if err := s.readProtoFromCache(stream.Context(), req.GetActionDigest(), action); err != nil {
+	adInstanceName := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
+	if err := s.readProtoFromCache(ctx, adInstanceName, action); err != nil {
 		return status.FailedPreconditionErrorf("Error reading action: %s", err)
 	}
 	cmd := &repb.Command{}
-	if err := s.readProtoFromCache(stream.Context(), action.GetCommandDigest(), cmd); err != nil {
+	cmdInstanceName := digest.NewInstanceNameDigest(action.GetCommandDigest(), req.GetInstanceName())
+	if err := s.readProtoFromCache(ctx, cmdInstanceName, cmd); err != nil {
 		return status.FailedPreconditionErrorf("Error reading command: %s (action: %v)", err, action)
 	}
 	execClientConfig, err := s.env.GetExecutionClient(getPlatformKey(cmd.GetPlatform()))
@@ -233,10 +236,10 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(stream.Context(), duration)
+	ctx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 
-	actionDigestName := digest.GetResourceName(req.GetActionDigest())
+	actionDigestName := digest.DownloadResourceName(req.GetActionDigest(), req.GetInstanceName())
 	// writeProgressFn writes progress to our stream (if open) else the DB.
 	writeProgressFn := func(stage repb.ExecutionStage_Value, op *longrunning.Operation) error {
 		err := stream.Send(op)
@@ -247,20 +250,21 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 		}
 		return nil
 	}
+	adInstanceDigest := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
 	// completeLastOperationFn rewrites the operation to include the correct "queued" timestamp.
 	completeLastOperationFn := func(op *longrunning.Operation) error {
 		actionResult := extractActionResult(op)
 		md := actionResult.GetExecutionMetadata()
 		md.QueuedTimestamp = requestStartTimePb
 		// logActionResult(req.GetActionDigest(), md)
-		_, newOp, err := operation.Assemble(repb.ExecutionStage_COMPLETED, req.GetActionDigest(), codes.OK, actionResult)
+		_, newOp, err := operation.Assemble(repb.ExecutionStage_COMPLETED, adInstanceDigest, codes.OK, actionResult)
 		op = newOp
 		return err
 	}
 
 	var finalizer finalizerFn = func() {
 		stage := repb.ExecutionStage_COMPLETED
-		if op, err := operation.AssembleFailed(stage, req.GetActionDigest(), codes.Internal); err == nil {
+		if op, err := operation.AssembleFailed(stage, adInstanceDigest, codes.Internal); err == nil {
 			log.Printf("Failed action %s (returning code INTERNAL)", req.GetActionDigest())
 			writeProgressFn(stage, op)
 		}

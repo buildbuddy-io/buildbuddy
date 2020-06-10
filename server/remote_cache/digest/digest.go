@@ -6,15 +6,16 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"path/filepath"
 	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-
 	"github.com/golang/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	guuid "github.com/google/uuid"
 )
 
 const (
@@ -30,6 +31,22 @@ var (
 	//  - a sha256 sum
 	hashKeyRegex = regexp.MustCompile("^[a-f0-9]{64}$")
 )
+
+type InstanceNameDigest struct {
+	*repb.Digest
+	instanceName string
+}
+
+func NewInstanceNameDigest(d *repb.Digest, instanceName string) *InstanceNameDigest {
+	return &InstanceNameDigest{
+		Digest:       d,
+		instanceName: instanceName,
+	}
+}
+
+func (i *InstanceNameDigest) GetInstanceName() string {
+	return i.instanceName
+}
 
 func Validate(d *repb.Digest) (string, error) {
 	if d == nil {
@@ -73,8 +90,27 @@ func Compute(in io.Reader) (*repb.Digest, error) {
 	}, nil
 }
 
-func GetResourceName(d *repb.Digest) string {
-	return fmt.Sprintf("/blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
+func DownloadResourceName(d *repb.Digest, instanceName string) string {
+	// Haven't found docs on what a valid instance name looks like. But generally
+	// seems like a string, possibly separated by "/".
+
+	// Ensure there is no trailing slash and path has components.
+	instanceName = filepath.Join(filepath.SplitList(instanceName)...)
+	return fmt.Sprintf("%s/blobs/%s/%d", instanceName, d.GetHash(), d.GetSizeBytes())
+}
+
+func UploadResourceName(d *repb.Digest, instanceName string) (string, error) {
+	// Haven't found docs on what a valid instance name looks like. But generally
+	// seems like a string, possibly separated by "/".
+
+	// Ensure there is no trailing slash and path has components.
+	instanceName = filepath.Join(filepath.SplitList(instanceName)...)
+
+	u, err := guuid.NewRandom()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/uploads/%s/blobs/%s/%d", instanceName, u.String(), d.GetHash(), d.GetSizeBytes()), nil
 }
 
 // DigestCache is a cache that uses digests as keys instead of strings.
@@ -101,7 +137,11 @@ func (c *DigestCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 }
 
 func (c *DigestCache) WithPrefix(prefix string) interfaces.DigestCache {
-	newPrefix := c.prefix + "/" + prefix
+	newPrefix := filepath.Join(append(filepath.SplitList(c.prefix), prefix)...)
+	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
+		newPrefix += "/"
+	}
+
 	return &DigestCache{
 		cache:  c.cache,
 		prefix: newPrefix,

@@ -10,11 +10,11 @@ import (
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
-func Assemble(stage repb.ExecutionStage_Value, d *repb.Digest, c codes.Code, r *repb.ActionResult) (string, *longrunning.Operation, error) {
-	name := digest.GetResourceName(d)
+func Assemble(stage repb.ExecutionStage_Value, d *digest.InstanceNameDigest, c codes.Code, r *repb.ActionResult) (string, *longrunning.Operation, error) {
+	name := digest.DownloadResourceName(d.Digest, d.GetInstanceName())
 	metadata, err := ptypes.MarshalAny(&repb.ExecuteOperationMetadata{
 		Stage:        stage,
-		ActionDigest: d,
+		ActionDigest: d.Digest,
 	})
 	if err != nil {
 		return name, nil, err
@@ -42,7 +42,7 @@ func Assemble(stage repb.ExecutionStage_Value, d *repb.Digest, c codes.Code, r *
 	return name, operation, nil
 }
 
-func AssembleFailed(stage repb.ExecutionStage_Value, d *repb.Digest, c codes.Code) (*longrunning.Operation, error) {
+func AssembleFailed(stage repb.ExecutionStage_Value, d *digest.InstanceNameDigest, c codes.Code) (*longrunning.Operation, error) {
 	emptyActionResult := &repb.ActionResult{}
 	_, op, err := Assemble(stage, d, c, emptyActionResult)
 	return op, err

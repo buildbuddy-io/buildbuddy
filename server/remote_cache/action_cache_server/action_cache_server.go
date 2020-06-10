@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	acCachePrefix = "ac-"
+	acCachePrefix = "ac"
 )
 
 type ActionCacheServer struct {
