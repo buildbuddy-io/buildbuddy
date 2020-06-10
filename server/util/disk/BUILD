@@ -5,4 +5,7 @@ go_library(
     srcs = ["disk.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/disk",
     visibility = ["//visibility:public"],
+    deps = [
+        "//server/util/random:go_default_library",
+    ],
 )

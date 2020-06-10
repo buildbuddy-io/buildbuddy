@@ -2,11 +2,14 @@ package disk
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 )
 
 func EnsureDirectoryExists(dir string) error {
@@ -28,7 +31,12 @@ func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
 		return 0, err
 	}
 
-	tmpFileName := fullPath + ".tmp"
+	randStr, err := random.RandomString(10)
+	if err != nil {
+		return 0, err
+	}
+
+	tmpFileName := fullPath + fmt.Sprintf(".%s.tmp", randStr)
 	// We defer a cleanup function that would delete our tempfile here --
 	// that way if the write is truncated (say, because it's too big) we
 	// still remove the tmp file.
@@ -89,7 +97,12 @@ func FileWriter(ctx context.Context, fullPath string) (io.WriteCloser, error) {
 	if err := EnsureDirectoryExists(filepath.Dir(fullPath)); err != nil {
 		return nil, err
 	}
-	tmpFileName := fullPath + ".tmp"
+	randStr, err := random.RandomString(10)
+	if err != nil {
+		return nil, err
+	}
+
+	tmpFileName := fullPath + fmt.Sprintf(".%s.tmp", randStr)
 	f, err := os.OpenFile(tmpFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
