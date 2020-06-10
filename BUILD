@@ -7,6 +7,7 @@ load("@bazel_gazelle//:def.bzl", "gazelle")
 # Prefer generated BUILD files to be called BUILD over BUILD.bazel
 # gazelle:build_file_name BUILD,BUILD.bazel
 # gazelle:prefix github.com/buildbuddy-io/buildbuddy
+# gazelle:proto disable
 gazelle(name = "gazelle")
 
 exports_files([

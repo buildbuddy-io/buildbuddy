@@ -1,4 +1,3 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 
 proto_library(
@@ -22,12 +21,5 @@ go_proto_library(
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/api/v1",
     proto = ":api_v1_proto",
-    visibility = ["//visibility:public"],
-)
-
-go_library(
-    name = "go_default_library",
-    embed = [":api_v1_go_proto"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/api/v1",
     visibility = ["//visibility:public"],
 )
