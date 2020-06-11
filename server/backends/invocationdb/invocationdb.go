@@ -156,17 +156,17 @@ func (d *InvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime 
 }
 
 func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat) error {
-	counts := d.h.Raw(fmt.Sprintf(`
+	counts := d.h.Raw(`
 		SELECT 
 			COUNT(DISTINCT invocation_id) as invocation_count,
 			COUNT(DISTINCT host) as bazel_host_count,
 			COUNT(DISTINCT user) as bazel_user_count
 		FROM Invocations as i
 		WHERE 
-			i.created_at_usec >= %s * 1000 AND
-			i.created_at_usec < %s * 1000`,
-		d.h.StartOfDayTimestamp(1),
-		d.h.StartOfDayTimestamp(0)))
+			i.created_at_usec >= ? AND
+			i.created_at_usec < ?`,
+		int64(time.Now().Truncate(24*time.Hour).Add(-24*time.Hour).UnixNano()/1000),
+		int64(time.Now().Truncate(24*time.Hour).UnixNano()/1000))
 
 	if err := counts.Scan(stat).Error; err != nil {
 		return err

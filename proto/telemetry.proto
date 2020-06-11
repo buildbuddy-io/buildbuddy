@@ -48,11 +48,11 @@ message TelemetryLog {
   // The hostname of this BuildBuddy instance.
   string hostname = 7;
 
-  // Daily BuildBuddy usage statistics.
-  TelemetryStat daily_stat = 8;
+  // BuildBuddy usage statistics.
+  TelemetryStat telemetry_stat = 8;
 
   // Information on which BuildBuddy features are enabled.
-  TelemetryFeature feature = 9;
+  TelemetryFeature telemetry_feature = 9;
 }
 
 // Statistics representing BuildBuddy usage.

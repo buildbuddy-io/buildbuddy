@@ -23,6 +23,7 @@ const (
 	unknownFieldValue        = "Unknown"
 	versionFilename          = "VERSION"
 	installationUUIDFilename = "buildbuddy_installation_uuid"
+	maxFailedLogs            = 365
 )
 
 var (
@@ -97,17 +98,17 @@ func (t *TelemetryClient) logTelemetryData() {
 		AppVersion:       t.version,
 		AppUrl:           t.env.GetConfigurator().GetAppBuildBuddyURL(),
 		Hostname:         getHostname(),
-		DailyStat:        &telpb.TelemetryStat{},
-		Feature:          getFeatures(t.env),
+		TelemetryStat:    &telpb.TelemetryStat{},
+		TelemetryFeature: getFeatures(t.env),
 	}
 
 	// Fill invocation related stats
-	if err := t.env.GetInvocationDB().FillCounts(ctx, log.DailyStat); err != nil {
+	if err := t.env.GetInvocationDB().FillCounts(ctx, log.TelemetryStat); err != nil {
 		printIfVerbose("Error getting telemetry invocation counts: %s", err)
 	}
 
 	// Fill user related stats
-	if err := t.env.GetUserDB().FillCounts(ctx, log.DailyStat); err != nil {
+	if err := t.env.GetUserDB().FillCounts(ctx, log.TelemetryStat); err != nil {
 		printIfVerbose("Error getting telemetry invocation counts: %s", err)
 	}
 
@@ -118,6 +119,9 @@ func (t *TelemetryClient) logTelemetryData() {
 	response, err := client.LogTelemetry(ctx, req)
 	if err != nil || response.Status.Code != 0 {
 		printIfVerbose("Error posting telemetry data: %s", err)
+		if len(t.failedLogs) >= maxFailedLogs {
+			t.failedLogs = t.failedLogs[1:]
+		}
 		t.failedLogs = append(t.failedLogs, log)
 		return
 	}
@@ -126,6 +130,7 @@ func (t *TelemetryClient) logTelemetryData() {
 	printIfVerbose("Telemetry data posted: %+v", response)
 }
 
+// TODO(tylerw): use a better logging framework.
 func printIfVerbose(message string, args ...interface{}) {
 	if !*verboseTelemetry {
 		return
@@ -209,7 +214,7 @@ func getLogUUID() string {
 func getHostname() string {
 	hostname, err := os.Hostname()
 	if err != nil {
-		printIfVerbose("Error retrieveing hostname: %s", err)
+		printIfVerbose("Error retrieving hostname: %s", err)
 		return unknownFieldValue
 	}
 	return hostname

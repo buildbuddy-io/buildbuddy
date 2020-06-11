@@ -25,7 +25,6 @@ var (
 
 type DBHandle struct {
 	*gorm.DB
-	dialect string
 }
 
 func NewDBHandle(dialect string, args ...interface{}) (*DBHandle, error) {
@@ -43,8 +42,7 @@ func NewDBHandle(dialect string, args ...interface{}) (*DBHandle, error) {
 		gdb.Exec("PRAGMA journal_mode=WAL;")
 	}
 	return &DBHandle{
-		DB:      gdb,
-		dialect: dialect,
+		DB: gdb,
 	}, nil
 }
 
@@ -56,11 +54,4 @@ func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
 		return NewDBHandle(dialect, connString)
 	}
 	return nil, fmt.Errorf("No database configured -- please specify at least one in the config")
-}
-
-func (d *DBHandle) StartOfDayTimestamp(offset int) string {
-	if d.dialect == sqliteDialect {
-		return fmt.Sprintf(`strftime("%%s",date('now','start of day','-%d day'))`, offset)
-	}
-	return fmt.Sprintf(`UNIX_TIMESTAMP(CURDATE() - INTERVAL %d DAY)`, offset)
 }
