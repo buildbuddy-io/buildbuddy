@@ -12,6 +12,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/jinzhu/gorm"
+
+	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 )
 
 type InvocationDB struct {
@@ -151,6 +153,25 @@ func (d *InvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime 
 		invocations = append(invocations, &i)
 	}
 	return invocations, nil
+}
+
+func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat) error {
+	counts := d.h.Raw(`
+		SELECT 
+			COUNT(DISTINCT invocation_id) as invocation_count,
+			COUNT(DISTINCT host) as bazel_host_count,
+			COUNT(DISTINCT user) as bazel_user_count
+		FROM Invocations as i
+		WHERE 
+			i.created_at_usec >= ? AND
+			i.created_at_usec < ?`,
+		int64(time.Now().Truncate(24*time.Hour).Add(-24*time.Hour).UnixNano()/1000),
+		int64(time.Now().Truncate(24*time.Hour).UnixNano()/1000))
+
+	if err := counts.Scan(stat).Error; err != nil {
+		return err
+	}
+	return nil
 }
 
 func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string) error {

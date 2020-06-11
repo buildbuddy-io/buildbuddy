@@ -263,10 +263,17 @@ integrations:
 #### APIKey
 ```api_key:``` *Optional* The default API key to use for on-prem enterprise deploys with a single organization/group.
 
+# Telemetry
+
+At BuildBuddy, we collect telemetry for the purpose of helping us build a better BuildBuddy. Data about how BuildBuddy is used is collected to better understand what parts of BuildBuddy needs improvement and what features to build next. Telemetry also helps our team better understand the reasons why people use BuildBuddy and with this knowledge we are able to make better product decisions.
+
+The telemetry data we collect is reported once per day and contains only aggregate stats like invocation counts and feature usage information. Our telemetry infrastructure is also used to report when important security updates are available. For a complete picture of the telemetry data we collect, you can see our [telemetry proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/telemetry.proto).
+
+While we encourage users to enable telemetry collection and strive to be fully transparent about the data we collect to improve BuildBuddy, telemetry can be disabled at any time using the flag `--disable_telemetry=true`.
 
 # BuildBuddy Flags
 
-There are several configuration options that are not yet specified in the BuildBuddy configuration file. These are:
+There are several other configuration options that are not yet specified in the BuildBuddy configuration file. These are:
 
 * ```--listen``` The interface that BuildBuddy will listen on. Defaults to 0.0.0.0 (all interfaces)
 * ```--port``` The port to listen for HTTP traffic on. Defaults to 8080.

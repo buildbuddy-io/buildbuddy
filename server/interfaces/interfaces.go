@@ -12,6 +12,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 )
 
 // An interface representing the user info gleaned from an authorization header.
@@ -142,6 +143,7 @@ type InvocationDB interface {
 	LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error)
 	LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error)
 	DeleteInvocation(ctx context.Context, invocationID string) error
+	FillCounts(ctx context.Context, log *telpb.TelemetryStat) error
 }
 
 type AuthDB interface {
@@ -158,6 +160,7 @@ type UserDB interface {
 	// a UserToken given the provided context.
 	GetUser(ctx context.Context) (*tables.User, error)
 	DeleteUser(ctx context.Context, userID string) error
+	FillCounts(ctx context.Context, stat *telpb.TelemetryStat) error
 
 	// Creates the DEFAULT group, for on-prem usage where there is only
 	// one group and all users are implicitly a part of it.

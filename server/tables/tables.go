@@ -246,6 +246,29 @@ func (t *Execution) TableName() string {
 	return "Executions"
 }
 
+type TelemetryLog struct {
+	Model
+	InstallationUUID    string `gorm:"primary_key"`
+	InstanceUUID        string `gorm:"primary_key"`
+	TelemetryLogUUID    string `gorm:"primary_key"`
+	RecordedAtUsec      int64
+	AppVersion          string
+	AppURL              string
+	Hostname            string
+	InvocationCount     int64
+	RegisteredUserCount int64
+	BazelUserCount      int64
+	BazelHostCount      int64
+	FeatureCacheEnabled bool
+	FeatureRBEEnabled   bool
+	FeatureAPIEnabled   bool
+	FeatureAuthEnabled  bool
+}
+
+func (t *TelemetryLog) TableName() string {
+	return "TelemetryLog"
+}
+
 func init() {
 	registerTable("IN", &Invocation{})
 	registerTable("CA", &CacheEntry{})
@@ -253,4 +276,5 @@ func init() {
 	registerTable("GR", &Group{})
 	registerTable("TO", &Token{})
 	registerTable("EX", &Execution{})
+	registerTable("TL", &TelemetryLog{})
 }

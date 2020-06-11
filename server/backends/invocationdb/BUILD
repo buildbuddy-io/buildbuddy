@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:telemetry_go_proto",
         "//server/environment:go_default_library",
         "//server/tables:go_default_library",
         "//server/util/db:go_default_library",

@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+import "google/rpc/status.proto";
+
+package telemetry;
+
+// Request containing telemetry data to log.
+message LogTelemetryRequest {
+  // Telemetry logs to store. Can contain multiple logs if previous requests
+  // failed. If a log with matching UUIDs was previously uploaded, those logs
+  // will be silently ignored.
+  repeated TelemetryLog log = 1;
+}
+
+// Response from logging telemetry containing the status of the log and
+// information about whether or not a BuildBuddy upgrade is available.
+message LogTelemetryResponse {
+  // The status of the log request. If status code is OK (0), logs were
+  // successfully uploaded. Requests should be retried for non-zero statuses.
+  google.rpc.Status status = 3;
+
+  // Information about whether or not a BuildBuddy upgrade is available.
+  UpgradeInfo upgrade_info = 2;
+}
+
+// Represents a single sample of telemetry data.
+message TelemetryLog {
+  // A unique identifier representing the BuildBuddy installation. This
+  // identifier is persisted across runs and shared across instances.
+  string installation_uuid = 1;
+
+  // A unique identifier representing the BuildBuddy instance that made the
+  // request. This identifier is stored in memory and will not survive restarts.
+  string instance_uuid = 2;
+
+  // A unique identifier representing the log used for deduplication.
+  string log_uuid = 3;
+
+  // The client side timestamp in microseconds at which this log was recorded.
+  int64 recorded_at_usec = 4;
+
+  // The BuildBuddy version.
+  string app_version = 5;
+
+  // The URL at which BuildBuddy is running.
+  string app_url = 6;
+
+  // The hostname of this BuildBuddy instance.
+  string hostname = 7;
+
+  // BuildBuddy usage statistics.
+  TelemetryStat telemetry_stat = 8;
+
+  // Information on which BuildBuddy features are enabled.
+  TelemetryFeature telemetry_feature = 9;
+}
+
+// Statistics representing BuildBuddy usage.
+message TelemetryStat {
+  // The number of BuildBuddy invocations created.
+  int64 invocation_count = 1;
+
+  // The number of BuildBuddy registered users created.
+  int64 registered_user_count = 2;
+
+  // The number of Bazel-defined users who uploaded builds.
+  int64 bazel_user_count = 3;
+
+  // The number of Bazel-defined hosts who uploaded builds.
+  int64 bazel_host_count = 4;
+}
+
+// The BuildBuddy features that are currently enabled.
+message TelemetryFeature {
+  // True if BuildBuddy caching functionality is enabled.
+  bool cache_enabled = 1;
+
+  // True if BuildBuddy Remote Build Execution functionality is enabled.
+  bool rbe_enabled = 2;
+
+  // True if the BuildBuddy API enabled.
+  bool api_enabled = 3;
+
+  // True if BuildBuddy authentication is enabled.
+  bool auth_enabled = 4;
+}
+
+// Information on whether or not a BuildBuddy upgrade is available.
+message UpgradeInfo {
+  // True if an upgrade is available.
+  bool upgrade_available = 1;
+
+  // A link for more information on the BuildBuddy upgrade.
+  string upgrade_link = 2;
+
+  // The latest BuildBuddy version which is available.
+  string latest_version = 3;
+}
+
+// Service tha handles posting of telemetry data.
+service Telemetry {
+  // Logs the given telemetry data.
+  rpc LogTelemetry(LogTelemetryRequest) returns (LogTelemetryResponse);
+}

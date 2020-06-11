@@ -167,6 +167,14 @@ proto_library(
     ],
 )
 
+proto_library(
+    name = "telemetry_proto",
+    srcs = ["telemetry.proto"],
+    deps = [
+        "@go_googleapis//google/rpc:status_proto",
+    ],
+)
+
 # Go proto rules below here
 
 go_proto_library(
@@ -282,6 +290,16 @@ go_proto_library(
         ":semver_go_proto",
         "@go_googleapis//google/api:annotations_go_proto",
         "@go_googleapis//google/longrunning:longrunning_go_proto",
+        "@go_googleapis//google/rpc:status_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "telemetry_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/telemetry",
+    proto = ":telemetry_proto",
+    deps = [
         "@go_googleapis//google/rpc:status_go_proto",
     ],
 )

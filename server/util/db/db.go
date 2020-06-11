@@ -15,6 +15,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 )
 
+const (
+	sqliteDialect = "sqlite3"
+)
+
 var (
 	autoMigrateDB = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
 )
@@ -34,7 +38,7 @@ func NewDBHandle(dialect string, args ...interface{}) (*DBHandle, error) {
 		gdb.AutoMigrate(tables.GetAllTables()...)
 	}
 	// SQLITE Special! To avoid "database is locked errors":
-	if dialect == "sqlite3" {
+	if dialect == sqliteDialect {
 		gdb.Exec("PRAGMA journal_mode=WAL;")
 	}
 	return &DBHandle{

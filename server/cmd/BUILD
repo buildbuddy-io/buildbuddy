@@ -44,6 +44,7 @@ go_library(
         "//server/config:go_default_library",
         "//server/janitor:go_default_library",
         "//server/libmain:go_default_library",
+        "//server/telemetry:go_default_library",
         "//server/util/healthcheck:go_default_library",
     ],
 )
