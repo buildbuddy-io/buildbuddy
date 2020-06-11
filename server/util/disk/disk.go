@@ -55,6 +55,8 @@ func FileExists(ctx context.Context, fullPath string) (bool, error) {
 		return false, nil
 	} else if os.IsExist(err) {
 		return true, nil
+	} else if err == nil {
+		return true, nil
 	} else {
 		return false, err
 	}

@@ -15,12 +15,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 )
 
+const (
+	sqliteDialect = "sqlite3"
+)
+
 var (
 	autoMigrateDB = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
 )
 
 type DBHandle struct {
 	*gorm.DB
+	dialect string
 }
 
 func NewDBHandle(dialect string, args ...interface{}) (*DBHandle, error) {
@@ -34,11 +39,12 @@ func NewDBHandle(dialect string, args ...interface{}) (*DBHandle, error) {
 		gdb.AutoMigrate(tables.GetAllTables()...)
 	}
 	// SQLITE Special! To avoid "database is locked errors":
-	if dialect == "sqlite3" {
+	if dialect == sqliteDialect {
 		gdb.Exec("PRAGMA journal_mode=WAL;")
 	}
 	return &DBHandle{
-		DB: gdb,
+		DB:      gdb,
+		dialect: dialect,
 	}, nil
 }
 
@@ -50,4 +56,11 @@ func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
 		return NewDBHandle(dialect, connString)
 	}
 	return nil, fmt.Errorf("No database configured -- please specify at least one in the config")
+}
+
+func (d *DBHandle) StartOfDayTimestamp(offset int) string {
+	if d.dialect == sqliteDialect {
+		return fmt.Sprintf(`strftime("%%s",date('now','start of day','-%d day'))`, offset)
+	}
+	return fmt.Sprintf(`UNIX_TIMESTAMP(CURDATE() - INTERVAL %d DAY)`, offset)
 }
