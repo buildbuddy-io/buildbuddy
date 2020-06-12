@@ -192,6 +192,34 @@ func (c *DigestCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	return c.cache.Get(ctx, k)
 }
 
+func (c *DigestCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	keys := make([]string, 0, len(digests))
+	digestsByKey := make(map[string]*repb.Digest, len(digests))
+	for _, d := range digests {
+		k, err := c.key(ctx, d)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+		digestsByKey[k] = d
+	}
+	foundMap, err := c.cache.GetMulti(ctx, keys)
+	if err != nil {
+		return nil, err
+	}
+
+	response := make(map[*repb.Digest][]byte, len(keys))
+	for _, k := range keys {
+		d := digestsByKey[k]
+		data, ok := foundMap[k]
+		if !ok {
+			return nil, status.InternalError("ContainsMulti inconsistency")
+		}
+		response[d] = data
+	}
+	return response, nil
+}
+
 func (c *DigestCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 	k, err := c.key(ctx, d)
 	if err != nil {

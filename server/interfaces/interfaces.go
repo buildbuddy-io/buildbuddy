@@ -97,6 +97,7 @@ type Cache interface {
 	Contains(ctx context.Context, key string) (bool, error)
 	ContainsMulti(ctx context.Context, keys []string) (map[string]bool, error)
 	Get(ctx context.Context, key string) ([]byte, error)
+	GetMulti(ctx context.Context, keys []string) (map[string][]byte, error)
 	Set(ctx context.Context, key string, data []byte) error
 	Delete(ctx context.Context, key string) error
 
@@ -123,6 +124,7 @@ type DigestCache interface {
 	Contains(ctx context.Context, d *repb.Digest) (bool, error)
 	ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error)
 	Get(ctx context.Context, d *repb.Digest) ([]byte, error)
+	GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)
 	Set(ctx context.Context, d *repb.Digest, data []byte) error
 	Delete(ctx context.Context, d *repb.Digest) error
 

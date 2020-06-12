@@ -213,6 +213,19 @@ func (c *DiskCache) Get(ctx context.Context, key string) ([]byte, error) {
 	return disk.ReadFile(ctx, fullPath)
 }
 
+func (c *DiskCache) GetMulti(ctx context.Context, keys []string) (map[string][]byte, error) {
+	foundMap := make(map[string][]byte, len(keys))
+	// No parallelism here either. Not necessary for an in-memory cache.
+	for _, key := range keys {
+		data, err := c.Get(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		foundMap[key] = data
+	}
+	return foundMap, nil
+}
+
 func (c *DiskCache) Set(ctx context.Context, key string, data []byte) error {
 	fullPath, err := c.PrefixKey(ctx, key)
 	if err != nil {

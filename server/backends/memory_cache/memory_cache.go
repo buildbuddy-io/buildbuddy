@@ -208,6 +208,19 @@ func (m *MemoryCache) Get(ctx context.Context, key string) ([]byte, error) {
 	return value, nil
 }
 
+func (m *MemoryCache) GetMulti(ctx context.Context, keys []string) (map[string][]byte, error) {
+	foundMap := make(map[string][]byte, len(keys))
+	// No parallelism here either. Not necessary for an in-memory cache.
+	for _, key := range keys {
+		data, err := m.Get(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		foundMap[key] = data
+	}
+	return foundMap, nil
+}
+
 func (m *MemoryCache) Set(ctx context.Context, key string, data []byte) error {
 	fullKey, err := m.PrefixKey(ctx, key)
 	if err != nil {

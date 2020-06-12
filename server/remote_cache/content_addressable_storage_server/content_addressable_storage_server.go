@@ -152,15 +152,22 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	rsp := &repb.BatchReadBlobsResponse{}
 	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
 	cache := s.getCache(req.GetInstanceName())
+	cacheRequest := make([]*repb.Digest, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	for _, readDigest := range req.GetDigests() {
 		_, err := digest.Validate(readDigest)
 		if err != nil {
 			return nil, err
 		}
-		blobRsp := &repb.BatchReadBlobsResponse_Response{Digest: readDigest}
 		if readDigest.GetHash() != digest.EmptySha256 {
-			blobRsp.Data, err = cache.Get(ctx, readDigest)
+			cacheRequest = append(cacheRequest, readDigest)
+		}
+	}
+	cacheRsp, err := cache.GetMulti(ctx, cacheRequest)
+	for d, data := range cacheRsp {
+		blobRsp := &repb.BatchReadBlobsResponse_Response{
+			Digest: d,
+			Data:   data,
 		}
 		if err == nil {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}
