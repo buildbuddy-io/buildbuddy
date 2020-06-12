@@ -107,9 +107,11 @@ func (t *TelemetryClient) logTelemetryData() {
 		printIfVerbose("Error getting telemetry invocation counts: %s", err)
 	}
 
-	// Fill user related stats
-	if err := t.env.GetUserDB().FillCounts(ctx, log.TelemetryStat); err != nil {
-		printIfVerbose("Error getting telemetry invocation counts: %s", err)
+	// Fill user related stats.
+	if userDB := t.env.GetUserDB(); userDB != nil {
+		if userDB.FillCounts(ctx, log.TelemetryStat); err != nil {
+			printIfVerbose("Error getting telemetry invocation counts: %s", err)
+		}
 	}
 
 	req := &telpb.LogTelemetryRequest{
