@@ -30,7 +30,7 @@ var (
 	telemetryInterval = flag.Duration("telemetry_interval", 24*time.Hour, "How often telemetry data will be reported")
 	verboseTelemetry  = flag.Bool("verbose_telemetry_client", false, "If true; print telemetry client information")
 	disableTelemetry  = flag.Bool("disable_telemetry", false, "If true; telemetry will be disabled")
-	telemetryEndpoint = flag.String("telemetry_endpoint", "grpcs://t.buildbuddy.io", "The telemetry endpoint to use")
+	telemetryEndpoint = flag.String("telemetry_endpoint", "grpcs://t.buildbuddy.io:443", "The telemetry endpoint to use")
 )
 
 type TelemetryClient struct {
