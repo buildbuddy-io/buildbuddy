@@ -235,17 +235,19 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	}
 	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
 	cache := s.getCache(instanceName)
-	// The protocol says it is optional to allow overwriting. Skip it for now.
-	// exists, err := s.cache.Contains(ctx, ck)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// if exists {
-	// 	return nil, status.FailedPreconditionError(fmt.Sprintf("File %s already exists (ck: %s)", hash, ck))
-	// }
 
+	// The protocol says it is *optional* to allow overwriting, but does
+	// not specify what errors should be returned in that case. We would
+	// like to return an "AlreadyExists" error here, but it causes errors
+	// with parallel actions during remote execution.
+	//
+	// Instead, we'll dump the bytes to /dev/null and call it a day.
+	exists, err := cache.Contains(ctx, d)
+	if err != nil {
+		return nil, err
+	}
 	var wc io.WriteCloser
-	if d.GetHash() != digest.EmptySha256 {
+	if d.GetHash() != digest.EmptySha256 && !exists {
 		wc, err = cache.Writer(ctx, d)
 		if err != nil {
 			return nil, err
