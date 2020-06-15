@@ -2,7 +2,6 @@ package byte_stream_server
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"regexp"
@@ -40,7 +39,7 @@ type ByteStreamServer struct {
 func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	cache := env.GetDigestCache()
 	if cache == nil {
-		return nil, fmt.Errorf("A cache is required to enable the ByteStreamServer")
+		return nil, status.FailedPreconditionError("A cache is required to enable the ByteStreamServer")
 	}
 	return &ByteStreamServer{
 		env:   env,
@@ -74,10 +73,10 @@ func extractDigest(resourceName string, matcher *regexp.Regexp) (string, *repb.D
 	hash, hashOK := result["hash"]
 	sizeStr, sizeOK := result["size"]
 	if !hashOK || !sizeOK {
-		return "", nil, fmt.Errorf("Unparsable resource name: %s", resourceName)
+		return "", nil, status.InvalidArgumentErrorf("Unparsable resource name: %s", resourceName)
 	}
 	if hash == "" {
-		return "", nil, fmt.Errorf("Unparsable resource name (empty hash?): %s", resourceName)
+		return "", nil, status.InvalidArgumentErrorf("Unparsable resource name (empty hash?): %s", resourceName)
 	}
 	sizeBytes, err := strconv.ParseInt(sizeStr, 10, 0)
 	if err != nil {
@@ -119,6 +118,17 @@ func (s *StreamWriter) Write(data []byte) (int, error) {
 	})
 }
 
+type streamWriter struct {
+	stream bspb.ByteStream_ReadServer
+}
+
+func (w *streamWriter) Write(buf []byte) (int, error) {
+	err := w.stream.Send(&bspb.ReadResponse{
+		Data: buf,
+	})
+	return len(buf), err
+}
+
 // `Read()` is used to retrieve the contents of a resource as a sequence
 // of bytes. The bytes are returned in a sequence of responses, and the
 // responses are delivered as the results of a server-side streaming FUNC (S *BYTESTREAMSERVER).
@@ -141,23 +151,9 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 			return err
 		}
 	}
-
 	buf := make([]byte, minInt64(int64(readBufSizeBytes), d.GetSizeBytes()))
-	for {
-		n, err := reader.Read(buf)
-		if err != nil && err != io.EOF {
-			return err
-		}
-
-		stream.Send(&bspb.ReadResponse{
-			Data: buf[:n],
-		})
-
-		if err == io.EOF || n == 0 {
-			break
-		}
-	}
-	return nil
+	_, err = io.CopyBuffer(&streamWriter{stream}, reader, buf)
+	return err
 }
 
 // `Write()` is used to send the contents of a resource as a sequence of
@@ -203,11 +199,11 @@ func checkInitialPreconditions(req *bspb.WriteRequest) error {
 func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error {
 	if req.ResourceName != "" {
 		if req.ResourceName != ws.activeResourceName {
-			return status.InvalidArgumentError(fmt.Sprintf("ResourceName '%s' does not match initial ResourceName: '%s'", req.ResourceName, ws.activeResourceName))
+			return status.InvalidArgumentErrorf("ResourceName '%s' does not match initial ResourceName: '%s'", req.ResourceName, ws.activeResourceName)
 		}
 	}
 	if req.WriteOffset != ws.bytesWritten {
-		return status.InvalidArgumentError(fmt.Sprintf("Incorrect WriteOffset. Expected %d, got %d", ws.bytesWritten, req.WriteOffset))
+		return status.InvalidArgumentErrorf("Incorrect WriteOffset. Expected %d, got %d", ws.bytesWritten, req.WriteOffset)
 	}
 	return nil
 }

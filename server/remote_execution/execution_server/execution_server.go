@@ -220,12 +220,12 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	action := &repb.Action{}
 	adInstanceName := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
 	if err := s.readProtoFromCache(ctx, adInstanceName, action); err != nil {
-		return status.FailedPreconditionErrorf("Error reading action: %s", err)
+		return status.FailedPreconditionErrorf("Error fetching action: %s", err.Error())
 	}
 	cmd := &repb.Command{}
 	cmdInstanceName := digest.NewInstanceNameDigest(action.GetCommandDigest(), req.GetInstanceName())
 	if err := s.readProtoFromCache(ctx, cmdInstanceName, cmd); err != nil {
-		return status.FailedPreconditionErrorf("Error reading command: %s (action: %v)", err, action)
+		return status.FailedPreconditionErrorf("Error fetching command: %s", err.Error())
 	}
 	execClientConfig, err := s.env.GetExecutionClient(getPlatformKey(cmd.GetPlatform()))
 	if err != nil {
