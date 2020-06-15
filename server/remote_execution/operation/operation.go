@@ -8,9 +8,10 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	gstatus "google.golang.org/grpc/status"
 )
 
-func Assemble(stage repb.ExecutionStage_Value, d *digest.InstanceNameDigest, c codes.Code, r *repb.ActionResult) (string, *longrunning.Operation, error) {
+func Assemble(stage repb.ExecutionStage_Value, d *digest.InstanceNameDigest, status error, r *repb.ActionResult) (string, *longrunning.Operation, error) {
 	name := digest.DownloadResourceName(d.Digest, d.GetInstanceName())
 	metadata, err := ptypes.MarshalAny(&repb.ExecuteOperationMetadata{
 		Stage:        stage,
@@ -24,11 +25,14 @@ func Assemble(stage repb.ExecutionStage_Value, d *digest.InstanceNameDigest, c c
 		Metadata: metadata,
 	}
 	if r != nil {
+		c := gstatus.Code(status)
 		er := &repb.ExecuteResponse{
 			Status: &statuspb.Status{Code: int32(c)},
 		}
 		if c == codes.OK {
 			er.Result = r
+		} else {
+			er.Message = status.Error()
 		}
 		result, err := ptypes.MarshalAny(er)
 		if err != nil {
@@ -42,8 +46,8 @@ func Assemble(stage repb.ExecutionStage_Value, d *digest.InstanceNameDigest, c c
 	return name, operation, nil
 }
 
-func AssembleFailed(stage repb.ExecutionStage_Value, d *digest.InstanceNameDigest, c codes.Code) (*longrunning.Operation, error) {
+func AssembleFailed(stage repb.ExecutionStage_Value, d *digest.InstanceNameDigest, status error) (*longrunning.Operation, error) {
 	emptyActionResult := &repb.ActionResult{}
-	_, op, err := Assemble(stage, d, c, emptyActionResult)
+	_, op, err := Assemble(stage, d, status, emptyActionResult)
 	return op, err
 }

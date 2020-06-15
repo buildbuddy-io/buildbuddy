@@ -12,5 +12,6 @@ go_library(
         "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
         "@org_golang_google_grpc//codes:go_default_library",
+        "@org_golang_google_grpc//status:go_default_library",
     ],
 )

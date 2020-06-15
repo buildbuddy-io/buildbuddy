@@ -18,7 +18,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/genproto/googleapis/longrunning"
-	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	durationpb "github.com/golang/protobuf/ptypes/duration"
@@ -120,7 +119,7 @@ func (s *ExecutionServer) readProtoFromCache(ctx context.Context, d *digest.Inst
 	return proto.Unmarshal(data, msg)
 }
 
-type finalizerFn func()
+type finalizerFn func(finalErr error) error
 
 func parseTimeout(timeout *durationpb.Duration, maxDuration time.Duration) (time.Duration, error) {
 	if timeout == nil {
@@ -131,10 +130,10 @@ func parseTimeout(timeout *durationpb.Duration, maxDuration time.Duration) (time
 	}
 	requestDuration, err := ptypes.Duration(timeout)
 	if err != nil {
-		return 0, err
+		return 0, status.InvalidArgumentErrorf("Unparsable timeout: %s", err.Error())
 	}
 	if maxDuration != 0 && requestDuration > maxDuration {
-		return 0, status.FailedPreconditionErrorf("Specified timeout (%s) longer than server max (%s).", requestDuration, maxDuration)
+		return 0, status.InvalidArgumentErrorf("Specified timeout (%s) longer than allowed maximum (%s).", requestDuration, maxDuration)
 	}
 	return requestDuration, nil
 }
@@ -229,11 +228,12 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	}
 	execClientConfig, err := s.env.GetExecutionClient(getPlatformKey(cmd.GetPlatform()))
 	if err != nil {
-		return status.FailedPreconditionErrorf("No worker enabled for platform %v: %s", cmd.GetPlatform(), err)
+		return status.UnimplementedErrorf("No worker enabled for platform %v: %s", cmd.GetPlatform(), err)
 	}
 	exClient := execClientConfig.GetExecutionClient()
 	duration, err := parseTimeout(action.Timeout, execClientConfig.GetMaxDuration())
 	if err != nil {
+		// These errors are failure-specific. Pass through unchanged.
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, duration)
@@ -257,52 +257,64 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 		md := actionResult.GetExecutionMetadata()
 		md.QueuedTimestamp = requestStartTimePb
 		// logActionResult(req.GetActionDigest(), md)
-		_, newOp, err := operation.Assemble(repb.ExecutionStage_COMPLETED, adInstanceDigest, codes.OK, actionResult)
+		_, newOp, err := operation.Assemble(repb.ExecutionStage_COMPLETED, adInstanceDigest, nil, actionResult)
 		op = newOp
 		return err
 	}
 
-	var finalizer finalizerFn = func() {
+	var finalizer finalizerFn = func(finalErr error) error {
 		stage := repb.ExecutionStage_COMPLETED
-		if op, err := operation.AssembleFailed(stage, adInstanceDigest, codes.Internal); err == nil {
-			log.Printf("Failed action %s (returning code INTERNAL)", req.GetActionDigest())
+		if op, err := operation.AssembleFailed(stage, adInstanceDigest, finalErr); err == nil {
+			log.Printf("Failed action %s (returning err: %s)", req.GetActionDigest(), finalErr)
 			writeProgressFn(stage, op)
 		}
+		return finalErr
 	}
+
+	finish := func(finalErr error) error {
+		log.Printf("finish called with finalErr: %s", finalErr)
+		if finalizer != nil {
+			if finalErr != nil {
+				finalErr = finalizer(finalErr)
+			}
+			finalizer = nil
+		}
+		return finalErr
+	}
+
 	// Defer a call to the failsafe finalizer if it's not been set to nil.
 	// This will mark the operation as COMPLETE with an INTERNAL error code
 	// so that clients who call WaitExecution do not wait forever.
-	defer func() {
-		if finalizer != nil {
-			finalizer()
-		}
-	}()
+	//defer finish(status.UnavailableErrorf("Caught unknown error (failsafe)"))
+
+	// NB: BELOW HERE ALL RETURNED ERRORS MUST USE:
+	//   - return finish(err) to return an error or
+	//   - return finish(nil) to return success.
 
 	// Synchronous RPC mode
 	if execClientConfig.DisableStreaming() {
 		syncResponse, err := exClient.SyncExecute(ctx, req)
 		if err != nil {
-			return err
+			return finish(err)
 		}
 		for _, op := range syncResponse.GetOperations() {
 			stage := extractStage(op)
 			if stage == repb.ExecutionStage_COMPLETED {
 				if err := completeLastOperationFn(op); err != nil {
-					return err
+					return finish(err)
 				}
-				finalizer = nil
 			}
 			if err := writeProgressFn(stage, op); err != nil {
-				return err
+				return finish(err)
 			}
 		}
-		return nil
+		return finish(nil)
 	}
 	// End Synchronous RPC mode
 
 	workerStream, err := exClient.Execute(ctx, req)
 	if err != nil {
-		return err
+		return finish(err)
 	}
 	defer workerStream.CloseSend()
 
@@ -313,20 +325,19 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 		}
 		if readErr != nil {
 			log.Printf("Worker encountered err: %s", readErr)
-			return err
+			return finish(readErr)
 		}
 		stage := extractStage(op)
 		if stage == repb.ExecutionStage_COMPLETED {
 			if err := completeLastOperationFn(op); err != nil {
-				return err
+				return finish(err)
 			}
-			finalizer = nil
 		}
 		if err := writeProgressFn(stage, op); err != nil {
-			return err
+			return finish(err)
 		}
 	}
-	return nil
+	return finish(nil)
 }
 
 // Wait for an execution operation to complete. When the client initially
