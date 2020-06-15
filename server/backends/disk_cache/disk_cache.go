@@ -101,7 +101,6 @@ func (c *DiskCache) initializeCache() error {
 	c.entries = make(map[string]*list.Element, len(records))
 	for _, record := range records {
 		c.addEntry(record)
-		c.sizeBytes += record.sizeBytes
 	}
 	log.Printf("Initialized disk cache. Current size: %d (max: %d) bytes", c.sizeBytes, c.maxSizeBytes)
 	return nil
@@ -111,6 +110,7 @@ func (c *DiskCache) addEntry(record *fileRecord) {
 	c.lock.Lock()
 	listElement := c.evictList.PushFront(record)
 	c.entries[record.key] = listElement
+	c.sizeBytes += record.sizeBytes
 	c.lock.Unlock()
 }
 
