@@ -41,6 +41,14 @@ func isFinalEvent(obe *pepb.OrderedBuildEvent) bool {
 	return false
 }
 
+func isWorkspaceStatusEvent(bazelBuildEvent build_event_stream.BuildEvent) bool {
+	switch bazelBuildEvent.Payload.(type) {
+	case *build_event_stream.BuildEvent_WorkspaceStatus:
+		return true
+	}
+	return false
+}
+
 func readBazelEvent(obe *pepb.OrderedBuildEvent, out *build_event_stream.BuildEvent) error {
 	switch buildEvent := obe.Event.Event.(type) {
 	case *bepb.BuildEvent_BazelEvent:
@@ -158,11 +166,11 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 		return err
 	}
 
-	// Small optimization: Flush the event stream after ~15 events or so. Most of the
+	// Small optimization: Flush the event stream after the workspace status event. Most of the
 	// command line options and workspace info has come through by then, so we have
 	// something to show the user. Flushing the proto file here allows that when the
-	// client fetches status for the incomplete build.
-	if seqNo == 15 {
+	// client fetches status for the incomplete build. Also flush if we haven't in over a minute.
+	if isWorkspaceStatusEvent(bazelBuildEvent) || e.pw.TimeSinceLastWrite().Minutes() > 1 {
 		return e.pw.Flush(ctx)
 	}
 	return nil
