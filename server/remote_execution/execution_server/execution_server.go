@@ -231,12 +231,12 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 		return status.UnimplementedErrorf("No worker enabled for platform %v: %s", cmd.GetPlatform(), err)
 	}
 	exClient := execClientConfig.GetExecutionClient()
-	duration, err := parseTimeout(action.Timeout, execClientConfig.GetMaxDuration())
+	execDuration, err := parseTimeout(action.Timeout, execClientConfig.GetMaxDuration())
 	if err != nil {
 		// These errors are failure-specific. Pass through unchanged.
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, duration)
+	ctx, cancel := context.WithTimeout(ctx, execDuration)
 	defer cancel()
 
 	actionDigestName := digest.DownloadResourceName(req.GetActionDigest(), req.GetInstanceName())
