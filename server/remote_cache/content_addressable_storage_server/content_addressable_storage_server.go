@@ -189,15 +189,6 @@ type dirStack struct {
 	dirSizes map[*repb.Directory]int64
 }
 
-/*
-+message SizedDirectory {
-+  Directory directory = 1;
-+  int64 size_bytes = 2;
-+}
-+
-+message TreeToken { repeated SizedDirectory sized_directories = 1; }
-*/
-
 func NewDirStack(token string) (*dirStack, error) {
 	newDirStack := &dirStack{
 		lock:     sync.Mutex{},
