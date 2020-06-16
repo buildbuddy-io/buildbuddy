@@ -1,6 +1,7 @@
 package libmain
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -284,6 +285,11 @@ func StartAndRunServices(env environment.Env) {
 
 	grpcServer := StartGRPCServiceOrDie(env, buildBuddyServer, gRPCPort, nil)
 
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		grpcServer.GracefulStop()
+		return nil
+	})
+
 	if sslService.IsEnabled() {
 		creds, err := sslService.GetGRPCSTLSCreds()
 		if err != nil {
@@ -300,7 +306,8 @@ func StartAndRunServices(env environment.Env) {
 	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalHandler(env,
 		http.StripPrefix("/rpc/BuildBuddyService/", buildBuddyProtoHandler)))
 	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, buildBuddyServer))
-	mux.Handle("/healthz", env.GetHealthChecker())
+	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
+	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
 	if auth := env.GetAuthenticator(); auth != nil {
 		mux.Handle("/login/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Login)))
@@ -335,6 +342,10 @@ func StartAndRunServices(env environment.Env) {
 		Handler: handler,
 	}
 
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		return server.Shutdown(ctx)
+	})
+
 	if sslService.IsEnabled() {
 		tlsConfig, sslHandler := sslService.ConfigureTLS(handler)
 		if err != nil {
@@ -357,5 +368,5 @@ func StartAndRunServices(env environment.Env) {
 			log.Fatal(server.ListenAndServe())
 		}()
 	}
-	select {}
+	env.GetHealthChecker().WaitForGracefulShutdown()
 }
