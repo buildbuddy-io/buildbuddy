@@ -272,7 +272,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	}
 
 	finish := func(finalErr error) error {
-		log.Printf("finish called with finalErr: %s", finalErr)
+		log.Printf("finish %s/%d called with finalErr: %s", req.GetActionDigest().GetHash(), req.GetActionDigest().GetSizeBytes(), finalErr)
 		if finalizer != nil {
 			if finalErr != nil {
 				finalErr = finalizer(finalErr)
@@ -350,7 +350,7 @@ func (s *ExecutionServer) WaitExecution(req *repb.WaitExecutionRequest, stream r
 	for {
 		execution, err := s.exDB.ReadExecution(stream.Context(), req.GetName())
 		if err != nil {
-			return err
+			return status.NotFoundErrorf("WaitExecution: operation %q not found: %s", req.GetName(), err)
 		}
 		op := &longrunning.Operation{}
 		if err := proto.Unmarshal(execution.SerializedOperation, op); err != nil {
