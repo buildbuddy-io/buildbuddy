@@ -299,7 +299,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return status.InvalidArgumentErrorf("Unparseable tree token: %s", err)
 	}
 
-	maxPageSize := int32(1000)
+	maxPageSize := int32(900)
 	if req.GetPageSize() < maxPageSize && req.GetPageSize() > 0 {
 		maxPageSize = req.GetPageSize()
 	}
