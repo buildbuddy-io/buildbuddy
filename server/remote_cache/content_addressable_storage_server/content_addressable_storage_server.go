@@ -19,6 +19,8 @@ import (
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
+const gRPCMaxSize = int64(4194304 - 2000)
+
 type ContentAddressableStorageServer struct {
 	env   environment.Env
 	cache interfaces.DigestCache
@@ -182,17 +184,28 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 }
 
 type dirStack struct {
-	lock sync.Mutex
-	dirs []*repb.Directory
+	lock     sync.Mutex
+	dirs     []*repb.Directory
+	dirSizes map[*repb.Directory]int64
 }
+
+/*
++message SizedDirectory {
++  Directory directory = 1;
++  int64 size_bytes = 2;
++}
++
++message TreeToken { repeated SizedDirectory sized_directories = 1; }
+*/
 
 func NewDirStack(token string) (*dirStack, error) {
 	newDirStack := &dirStack{
-		lock: sync.Mutex{},
-		dirs: make([]*repb.Directory, 0),
+		lock:     sync.Mutex{},
+		dirs:     make([]*repb.Directory, 0),
+		dirSizes: make(map[*repb.Directory]int64, 0),
 	}
 	if token != "" {
-		tree := &repb.Tree{}
+		tree := &repb.TreeToken{}
 		protoBytes, err := base64.StdEncoding.DecodeString(token)
 		if err != nil {
 			return nil, err
@@ -200,8 +213,10 @@ func NewDirStack(token string) (*dirStack, error) {
 		if err := proto.Unmarshal(protoBytes, tree); err != nil {
 			return nil, err
 		}
-		if len(tree.GetChildren()) > 0 {
-			newDirStack.dirs = append(newDirStack.dirs, tree.GetChildren()...)
+		for _, sizedDirectory := range tree.GetSizedDirectories() {
+			sd := sizedDirectory
+			newDirStack.dirs = append(newDirStack.dirs, sd.GetDirectory())
+			newDirStack.dirSizes[sd.GetDirectory()] = sizedDirectory.GetSizeBytes()
 		}
 	}
 	return newDirStack, nil
@@ -213,26 +228,39 @@ func (d *dirStack) Empty() bool {
 	return empty
 }
 
-func (d *dirStack) Push(dir *repb.Directory) {
+func (d *dirStack) Push(dir *repb.Directory, sizeBytes int64) {
 	d.lock.Lock()
 	d.dirs = append(d.dirs, dir)
+	d.dirSizes[dir] = sizeBytes
 	d.lock.Unlock()
 }
-func (d *dirStack) Pop() *repb.Directory {
+func (d *dirStack) Pop() (*repb.Directory, int64) {
 	d.lock.Lock()
 	dirsLength := len(d.dirs)
 	if dirsLength == 0 {
-		return nil
+		return nil, 0
 	}
 	lastElementIndex := dirsLength - 1
 	result := d.dirs[lastElementIndex]
 	d.dirs = d.dirs[:lastElementIndex]
+	sizeBytes, ok := d.dirSizes[result]
+	if !ok {
+		return nil, 0
+	}
 	d.lock.Unlock()
-	return result
+	return result, sizeBytes
 }
 func (d *dirStack) SerializeToToken() (string, error) {
-	tree := &repb.Tree{
-		Children: d.dirs,
+	tree := &repb.TreeToken{}
+	for _, dir := range d.dirs {
+		sizeBytes, ok := d.dirSizes[dir]
+		if !ok {
+			return "", status.InternalError("Unable to serialize tree token")
+		}
+		tree.SizedDirectories = append(tree.SizedDirectories, &repb.SizedDirectory{
+			Directory: dir,
+			SizeBytes: sizeBytes,
+		})
 	}
 	protoBytes, err := proto.Marshal(tree)
 	if err != nil {
@@ -299,20 +327,21 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return status.InvalidArgumentErrorf("Unparseable tree token: %s", err)
 	}
 
-	maxPageSize := int32(900)
+	maxPageSize := int32(500)
 	if req.GetPageSize() < maxPageSize && req.GetPageSize() > 0 {
 		maxPageSize = req.GetPageSize()
 	}
 
 	if dirStack.Empty() {
-		rootDir, err := s.fetchDir(ctx, cache, req.RootDigest)
+		rootDir, err := s.fetchDir(ctx, cache, req.GetRootDigest())
 		if err != nil {
 			return err
 		}
-		dirStack.Push(rootDir)
+		dirStack.Push(rootDir, req.GetRootDigest().GetSizeBytes())
 	}
 
 	rsp := &repb.GetTreeResponse{}
+	rspSizeBytes := int64(0)
 	finishPage := func(lastResponse bool) error {
 		if !lastResponse {
 			token, err := dirStack.SerializeToToken()
@@ -324,17 +353,29 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return stream.Send(rsp)
 	}
 
-	for dir := dirStack.Pop(); dir != nil; dir = dirStack.Pop() {
+	for dir, sizeBytes := dirStack.Pop(); dir != nil; dir, sizeBytes = dirStack.Pop() {
+		if sizeBytes > gRPCMaxSize {
+			return status.InternalError("Directory size exceeds RPC max. Get out!")
+		}
+		if rspSizeBytes+sizeBytes > gRPCMaxSize {
+			// Response is *already* full, so put this dir back on
+			// the stack for the next call to GetTree and finish
+			// this page.
+			dirStack.Push(dir, sizeBytes)
+			return finishPage(dirStack.Empty())
+		}
+		rspSizeBytes += sizeBytes
 		rsp.Directories = append(rsp.Directories, dir)
 		for _, dirNode := range dir.Directories {
-			if dirNode.Digest.GetHash() == digest.EmptySha256 {
+			dig := dirNode.GetDigest()
+			if dig.GetHash() == digest.EmptySha256 {
 				continue
 			}
-			subDir, err := s.fetchDir(ctx, cache, dirNode.Digest)
+			subDir, err := s.fetchDir(ctx, cache, dig)
 			if err != nil {
 				return err
 			}
-			dirStack.Push(subDir)
+			dirStack.Push(subDir, dig.GetSizeBytes())
 		}
 		if int32(len(rsp.Directories)) == maxPageSize {
 			return finishPage(dirStack.Empty())
