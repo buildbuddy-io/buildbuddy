@@ -8,6 +8,7 @@ import (
 	"io"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/golang/protobuf/proto"
@@ -23,9 +24,10 @@ type BufferedProtoWriter struct {
 	maxBufferSizeBytes int
 
 	// Write Variables
-	writeMutex          sync.Mutex // protects(writeBuf), protects(writeSequenceNumber)
+	writeMutex          sync.Mutex // protects(writeBuf), protects(writeSequenceNumber), protects(lastWriteTime)
 	writeBuf            *bytes.Buffer
 	writeSequenceNumber int
+	lastWriteTime       time.Time
 }
 
 // BufferedProtoReader reads the chunks written by BufferedProtoWriter. Callers
@@ -61,6 +63,7 @@ func NewBufferedProtoWriter(bs interfaces.Blobstore, streamID string, bufferSize
 
 		writeBuf:            bytes.NewBuffer(make([]byte, 0, bufferSizeBytes)),
 		writeSequenceNumber: 0,
+		lastWriteTime:       time.Now(),
 	}
 }
 
@@ -80,6 +83,7 @@ func (w *BufferedProtoWriter) internalFlush(ctx context.Context) error {
 	}
 
 	w.writeSequenceNumber += 1
+	w.lastWriteTime = time.Now()
 	w.writeBuf.Reset()
 	return nil
 }
@@ -88,6 +92,10 @@ func (w *BufferedProtoWriter) Flush(ctx context.Context) error {
 	w.writeMutex.Lock()
 	defer w.writeMutex.Unlock()
 	return w.internalFlush(ctx)
+}
+
+func (w *BufferedProtoWriter) TimeSinceLastWrite() time.Duration {
+	return time.Now().Sub(w.lastWriteTime)
 }
 
 func (w *BufferedProtoWriter) WriteProtoToStream(ctx context.Context, msg proto.Message) error {
