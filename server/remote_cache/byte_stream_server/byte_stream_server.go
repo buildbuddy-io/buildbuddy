@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -142,17 +141,18 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 	ctx := perms.AttachUserPrefixToContext(stream.Context(), s.env)
 	cache := s.getCache(instanceName)
-	var reader io.Reader
 	if d.GetHash() == digest.EmptySha256 {
-		reader = strings.NewReader("")
-	} else {
-		reader, err = cache.Reader(ctx, d, req.ReadOffset)
-		if err != nil {
-			return err
-		}
+		return nil
 	}
+	reader, err := cache.Reader(ctx, d, req.ReadOffset)
+	if err != nil {
+		return err
+	}
+
 	buf := make([]byte, minInt64(int64(readBufSizeBytes), d.GetSizeBytes()))
-	_, err = io.CopyBuffer(&streamWriter{stream}, reader, buf)
+	if len(buf) > 0 {  // safety check -- should always be true.
+		_, err = io.CopyBuffer(&streamWriter{stream}, reader, buf)
+	}
 	return err
 }
 
