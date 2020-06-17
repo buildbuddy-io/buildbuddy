@@ -121,7 +121,11 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 		})
 	}
 	err := eg.Wait()
-	newReadinessState := (err == nil)
+	newReadinessState := true
+	if err != nil {
+		newReadinessState = false
+		log.Printf("Checker err: %s", err)
+	}
 
 	h.lock.Lock()
 	previousReadinessState := h.readyToServe
