@@ -33,6 +33,13 @@ proto_library(
 )
 
 proto_library(
+    name = "execution_stats_proto",
+    srcs = [
+        "execution_stats.proto",
+    ],
+)
+
+proto_library(
     name = "publish_build_event_proto",
     srcs = [
         "publish_build_event.proto",
@@ -86,6 +93,12 @@ go_proto_library(
     name = "config_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/config",
     proto = ":config_proto",
+)
+
+go_proto_library(
+    name = "execution_stats_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/execution_stats",
+    proto = ":execution_stats_proto",
 )
 
 proto_library(
