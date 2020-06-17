@@ -5,5 +5,8 @@ go_library(
     srcs = ["healthcheck.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/healthcheck",
     visibility = ["//visibility:public"],
-    deps = ["@org_golang_x_sync//errgroup:go_default_library"],
+    deps = [
+        "//server/util/status:go_default_library",
+        "@org_golang_x_sync//errgroup:go_default_library",
+    ],
 )
