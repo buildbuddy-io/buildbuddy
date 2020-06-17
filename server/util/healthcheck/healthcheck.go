@@ -92,7 +92,7 @@ func (h *HealthChecker) ReadinessHandler() http.Handler {
 			}
 			return
 		}
-		err := fmt.Errorf("Server type: '%s' unknown (did not match: '%s'", reqServerType, h.serverType)
+		err := fmt.Errorf("Server type: '%s' unknown (did not match: %q)", reqServerType, h.serverType)
 		log.Printf("Readiness check returning error: %s", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	})
@@ -105,7 +105,7 @@ func (h *HealthChecker) LivenessHandler() http.Handler {
 			w.Write([]byte("OK"))
 			return
 		}
-		err := fmt.Errorf("Server type: '%s' unknown (did not match: '%s'", reqServerType, h.serverType)
+		err := fmt.Errorf("Server type: '%s' unknown (did not match: %q)", reqServerType, h.serverType)
 		log.Printf("Liveness check returning error: %s", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	})
