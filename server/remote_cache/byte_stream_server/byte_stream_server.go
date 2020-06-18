@@ -150,7 +150,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 
 	buf := make([]byte, minInt64(int64(readBufSizeBytes), d.GetSizeBytes()))
-	if len(buf) > 0 {  // safety check -- should always be true.
+	if len(buf) > 0 { // safety check -- should always be true.
 		_, err = io.CopyBuffer(&streamWriter{stream}, reader, buf)
 	}
 	return err
