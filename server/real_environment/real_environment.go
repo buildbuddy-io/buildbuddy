@@ -53,6 +53,7 @@ type RealEnv struct {
 	executionClients                map[string]*executionClientConfig
 	executionDB                     interfaces.ExecutionDB
 	APIService                      interfaces.ApiService
+	fileCache                       interfaces.FileCache
 }
 
 func NewRealEnv(c *config.Configurator, h *healthcheck.HealthChecker) *RealEnv {
@@ -219,4 +220,10 @@ func (r *RealEnv) SetAPIService(s interfaces.ApiService) {
 }
 func (r *RealEnv) GetAPIService() interfaces.ApiService {
 	return r.APIService
+}
+func (r *RealEnv) SetFileCache(s interfaces.FileCache) {
+	r.fileCache = s
+}
+func (r *RealEnv) GetFileCache() interfaces.FileCache {
+	return r.fileCache
 }

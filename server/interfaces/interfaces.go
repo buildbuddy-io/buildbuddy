@@ -210,3 +210,8 @@ type ExecutionClientConfig interface {
 	GetMaxDuration() time.Duration
 	DisableStreaming() bool
 }
+
+type FileCache interface {
+	FastLinkFile(d *repb.Digest, outputPath string) bool
+	AddFile(d *repb.Digest, existingFilePath string)
+}
