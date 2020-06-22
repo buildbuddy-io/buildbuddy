@@ -135,3 +135,17 @@ load(":deps.bzl", "install_buildbuddy_dependencies")
 
 # gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
 install_buildbuddy_dependencies()
+
+# Support remote execution.
+http_archive(
+    name = "bazel_toolchains",
+    sha256 = "4d348abfaddbcee0c077fc51bb1177065c3663191588ab3d958f027cbfe1818b",
+    strip_prefix = "bazel-toolchains-2.1.0",
+    urls = [
+        "https://github.com/bazelbuild/bazel-toolchains/releases/download/2.1.0/bazel-toolchains-2.1.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/archive/2.1.0.tar.gz",
+    ],
+)
+
+load("@bazel_toolchains//rules:rbe_repo.bzl", "rbe_autoconfig")
+rbe_autoconfig(name = "rbe_default")
