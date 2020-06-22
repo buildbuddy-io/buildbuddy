@@ -2,6 +2,7 @@ package execution_server
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -18,10 +19,13 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/genproto/googleapis/longrunning"
+	"google.golang.org/grpc/codes"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	durationpb "github.com/golang/protobuf/ptypes/duration"
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
 const (
@@ -64,12 +68,12 @@ func extractStage(op *longrunning.Operation) repb.ExecutionStage_Value {
 	return md.GetStage()
 }
 
-func extractActionResult(op *longrunning.Operation) *repb.ActionResult {
+func extractExecuteResponse(op *longrunning.Operation) *repb.ExecuteResponse {
 	er := &repb.ExecuteResponse{}
 	if result := op.GetResult(); result != nil {
 		if response, ok := result.(*longrunning.Operation_Response); ok {
 			if err := ptypes.UnmarshalAny(response.Response, er); err == nil {
-				return er.GetResult()
+				return er
 			}
 		}
 	}
@@ -116,7 +120,7 @@ func (s *ExecutionServer) readProtoFromCache(ctx context.Context, d *digest.Inst
 	if err != nil {
 		return err
 	}
-	return proto.Unmarshal(data, msg)
+	return proto.Unmarshal([]byte(data), msg)
 }
 
 type finalizerFn func(finalErr error) error
@@ -136,6 +140,13 @@ func parseTimeout(timeout *durationpb.Duration, maxDuration time.Duration) (time
 		return 0, status.InvalidArgumentErrorf("Specified timeout (%s) longer than allowed maximum (%s).", requestDuration, maxDuration)
 	}
 	return requestDuration, nil
+}
+
+func executeResponseWithResult(ar *repb.ActionResult) *repb.ExecuteResponse {
+	return &repb.ExecuteResponse{
+		Status: &statuspb.Status{Code: int32(codes.OK)},
+		Result: ar,
+	}
 }
 
 // Execute an action remotely.
@@ -253,11 +264,19 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	adInstanceDigest := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
 	// completeLastOperationFn rewrites the operation to include the correct "queued" timestamp.
 	completeLastOperationFn := func(op *longrunning.Operation) error {
-		actionResult := extractActionResult(op)
-		md := actionResult.GetExecutionMetadata()
+		executeResponse := extractExecuteResponse(op)
+		if msg := executeResponse.GetMessage(); msg != "" {
+			if protoBytes, err := base64.StdEncoding.DecodeString(msg); err == nil {
+				execSummary := &espb.ExecutionSummary{}
+				if err := proto.Unmarshal(protoBytes, execSummary); err == nil {
+					log.Printf("ExecSummary for %s: %v", req.GetActionDigest(), execSummary)
+				}
+			}
+		}
+		md := executeResponse.GetResult().GetExecutionMetadata()
 		md.QueuedTimestamp = requestStartTimePb
 		// logActionResult(req.GetActionDigest(), md)
-		_, newOp, err := operation.Assemble(repb.ExecutionStage_COMPLETED, adInstanceDigest, nil, actionResult)
+		_, newOp, err := operation.Assemble(repb.ExecutionStage_COMPLETED, adInstanceDigest, executeResponseWithResult(executeResponse.GetResult()))
 		op = newOp
 		return err
 	}
