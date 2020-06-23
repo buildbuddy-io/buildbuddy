@@ -41,7 +41,7 @@ continue
 fi
 
 # Convert markdown to HTML using github api
-htmlContents=`curl -u $githubUsername:$githubToken -H "Content-Type: text/plain" --data-binary @$fileName https://api.github.com/markdown/raw | jq -aRs`
+htmlContents=`curl -u $githubUsername:$githubToken -H "Content-Type: text/plain" --data-binary @$fileName https://api.github.com/markdown/raw | jq -aRs '.'`
 
 # TODO(siggisim): Make these rewrites less fragile
 # Rewrite .md links
@@ -74,7 +74,7 @@ curl -X $method "https://api.webflow.com/collections/$collectionId/items$itemId?
   -H "Content-Type: application/json" \
   --data-binary $"{
       \"fields\": $metadata
-    }" >> /dev/null
+    }"
 # Make sure we don't surpass the 1 qps rate limit
 sleep 1
 done
