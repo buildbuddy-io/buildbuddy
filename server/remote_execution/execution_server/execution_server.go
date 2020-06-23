@@ -265,16 +265,25 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	// completeLastOperationFn rewrites the operation to include the correct "queued" timestamp.
 	completeLastOperationFn := func(op *longrunning.Operation) error {
 		executeResponse := extractExecuteResponse(op)
-		if msg := executeResponse.GetMessage(); msg != "" {
-			if protoBytes, err := base64.StdEncoding.DecodeString(msg); err == nil {
-				execSummary := &espb.ExecutionSummary{}
-				if err := proto.Unmarshal(protoBytes, execSummary); err == nil {
-					log.Printf("ExecSummary for %s: %v", req.GetActionDigest(), execSummary)
-				}
-			}
-		}
 		md := executeResponse.GetResult().GetExecutionMetadata()
 		md.QueuedTimestamp = requestStartTimePb
+
+		if msg := executeResponse.GetMessage(); msg != "" {
+			protoBytes, err := base64.StdEncoding.DecodeString(msg)
+			if err != nil {
+				return err
+			}
+
+			execSummary := &espb.ExecutionSummary{}
+			if err := proto.Unmarshal(protoBytes, execSummary); err != nil {
+				return err
+			}
+
+			if err := s.exDB.InsertExecutionSummary(ctx, req.GetActionDigest(), md.GetWorker(), execSummary); err != nil {
+				return err
+			}
+		}
+
 		// logActionResult(req.GetActionDigest(), md)
 		_, newOp, err := operation.Assemble(repb.ExecutionStage_COMPLETED, adInstanceDigest, executeResponseWithResult(executeResponse.GetResult()))
 		op = newOp
