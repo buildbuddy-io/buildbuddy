@@ -1,18 +1,18 @@
 <p align="center">
   <img width="40%" src="https://buildbuddy.io/images/header.png?version=1"><br/>
-  <a href="https://buildbuddy.io">BuildBuddy</a> is an open source Bazel build event viewer<br/><br/>
+  <a href="https://buildbuddy.io">BuildBuddy</a> is an open source Bazel build event viewer, result store, and remote cache.<br/><br/>
   <img src="https://img.shields.io/badge/License-MIT-green.svg" />
   <img src="https://img.shields.io/github/workflow/status/buildbuddy-io/buildbuddy/CI" />
 </p>
 
 # Intro
-BuildBuddy is an open source Bazel build event viewer. It helps you collect, view, share and debug build events in a user-friendly web UI.
+BuildBuddy is an open source Bazel build event viewer, result store, and remote cache. It helps you collect, view, share and debug build events in a user-friendly web UI.
 
 It's written in Golang and React and can be deployed as a Docker image. It's run both as a [cloud hosted service](https://buildbuddy.io) and can be deployed to your cloud provider or run on-prem. BuildBuddy's core is open sourced in this repo under the [MIT License](https://github.com/buildbuddy-io/buildbuddy/blob/master/LICENSE).
 
 # Get started
 
-Getting started with Buildbuddy is simple. Just add these **two lines** to your `.bazelrc` file.
+Getting started with BuildBuddy is simple. Just add these **two lines** to your `.bazelrc` file.
 
 **.bazelrc**
 ```
@@ -20,11 +20,18 @@ build --bes_results_url=https://app.buildbuddy.io/invocation/
 build --bes_backend=grpcs://events.buildbuddy.io:1986
 ```
 
-This will print a **Buildbuddy url** containing your build results at the beginning and end of every Bazel invocation. You can command click / double click on these to open the results in a browser.
+This will print a **BuildBuddy url** containing your build results at the beginning and end of every Bazel invocation. You can command click / double click on these to open the results in a browser.
 
 **Want more control?** Want to get your whole team set up? Get up and running fast with the cloud hosted [BuildBuddy.io](https://buildbuddy.io) service.
 
-If you'd like to host your own instance **on-premise** or in the cloud, check out our [getting started](https://github.com/buildbuddy-io/buildbuddy/blob/master/SETUP.md) guide.
+If you'd like to host your own instance **on-prem** or in the cloud, check out our [documentation](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/introduction.md).
+
+# Documentation
+
+Our [documentation](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/introduction.md) gives you a full look at how to set up and configure BuildBuddy.
+
+# Questions?
+If you have any questions, e-mail us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io) or join the [BuildBuddy Slack channel](https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g). We’d love to chat!
 
 # Features
 
@@ -59,6 +66,3 @@ If you'd like to host your own instance **on-premise** or in the cloud, check ou
 
 - **Slack webhook support** - BuildBuddy allows you to message a Slack channel when builds finish. It's a nice way of getting a quick notification when a long running build completes, or a CI build fails. See the [configuration docs](https://github.com/buildbuddy-io/buildbuddy/blob/master/CONFIG.md#integrations) for more information. 
 ![Slack webhook support](https://buildbuddy.io/preview/slack.png)
-
-# Questions?
-If you have any questions, e-mail us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io) or join the [BuildBuddy Slack channel](https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g). We’d love to chat!

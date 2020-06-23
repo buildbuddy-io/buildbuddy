@@ -1,0 +1,20 @@
+name: Update Docs
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'docs/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v1
+
+    - name: Update
+      run: |
+        ./docs/update.sh ${{ secrets.WEBFLOW_API_TOKEN }} ${{ secrets.WEBFLOW_DOCS_COLLECTION_ID }} ${{ secrets.BUILDBUDDY_GITHUB_USER_NAME }} ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }} 
