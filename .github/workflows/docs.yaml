@@ -17,4 +17,4 @@ jobs:
 
     - name: Update
       run: |
-        ./docs/update_docs.sh ${{ secrets.WEBFLOW_API_TOKEN }} ${{ secrets.WEBFLOW_DOCS_COLLECTION_ID }} ${{ secrets.BUILDBUDDY_GITHUB_USER_NAME }} ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }} 
+        ./docs/update.sh ${{ secrets.WEBFLOW_API_TOKEN }} ${{ secrets.WEBFLOW_DOCS_COLLECTION_ID }} ${{ secrets.BUILDBUDDY_GITHUB_USER_NAME }} ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }} 
