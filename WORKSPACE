@@ -135,3 +135,22 @@ load(":deps.bzl", "install_buildbuddy_dependencies")
 
 # gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
 install_buildbuddy_dependencies()
+
+# Toolchain
+
+# Uncomment and replace http_archive when doing toolchain development.
+
+# local_repository(
+#     name = "io_buildbuddy_toolchain",
+#     path = __workspace_dir__ + "/../toolchain",
+# )
+
+http_archive(
+    name = "io_buildbuddy_toolchain",
+    strip_prefix = "toolchain-master",
+    urls = ["https://github.com/buildbuddy-io/toolchain/archive/master.tar.gz"],
+)
+
+load("@io_buildbuddy_toolchain//:rules.bzl", "register_buildbuddy_toolchain")
+
+register_buildbuddy_toolchain(name = "buildbuddy_toolchain")
