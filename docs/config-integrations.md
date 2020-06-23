@@ -1,7 +1,8 @@
 <!--
 {
   "name": "Integrations",
-  "category": "5eed3e2ace045b343fc0a328"
+  "category": "5eed3e2ace045b343fc0a328",
+  "priority": 300
 }
 -->
 # Integration Configuration
