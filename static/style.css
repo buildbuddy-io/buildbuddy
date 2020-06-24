@@ -56,7 +56,7 @@ button {
 /** Menu **/
 
 .menu {
-  height: 72px;
+  height: 90px;
   display: flex;
   align-items: center;
   box-sizing: border-box;
@@ -81,7 +81,7 @@ button {
 }
 
 .menu .title img {
-  height: 28px;
+  height: 40px;
 }
 
 .menu-child-title {
@@ -654,6 +654,15 @@ code .comment {
 
 .group-section {
   display: flex;
+}
+
+/** Footer **/
+
+.footer {
+  text-align: center;
+  color: #aaa;
+  font-size: .8em;
+  padding: 32px 32px 64px 32px;
 }
 
 /** History **/
