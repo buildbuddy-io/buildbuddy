@@ -1184,12 +1184,20 @@ code .comment {
   background-color: #f44336;
 }
 
+.grid-block-neutral {
+  background-color: #888;
+}
+
 .grid-block-success.grid-block-hover {
   background-color: #7CB342;
 }
 
 .grid-block-failure.grid-block-hover {
   background-color: #e53935;
+}
+
+.grid-block-neutral.grid-block-hover {
+  background-color: #666;
 }
 
 /**
