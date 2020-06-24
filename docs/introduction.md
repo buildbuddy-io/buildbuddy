@@ -21,7 +21,7 @@ There are two main ways to get started with BuildBuddy:
 
 Once you've gotten started with BuildBuddy - there's lots more to check out.
 
-1. [Configuration options](configuration.md): Learn how to to set up BuildBuddy just the way you like it.
+1. [Configuration options](config.md): Learn how to to set up BuildBuddy just the way you like it.
 1. [Remote Build Cache](cache.md): save both engineering time and resources with BuildBuddy's built-in cache.
 1. [Remote Build Execution](remote-build-execution.md): parallelize your builds across thousands of machines.
 1. [BuildBuddy Results API](api.md): get for programatic access to your builds results.-->

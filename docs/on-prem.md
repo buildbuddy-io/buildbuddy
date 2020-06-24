@@ -55,7 +55,7 @@ To run it, use the following command:
 docker pull gcr.io/flame-public/buildbuddy-app-onprem:latest && docker run -p 1985:1985 -p 8080:8080 gcr.io/flame-public/buildbuddy-app-onprem:latest
 ```
 
-If you'd like to pass a custom configuration file to BuildBuddy running in a Docker image - see the [configuration docs](configuration.md) on using Docker's [-v flag](https://docs.docker.com/storage/volumes/).
+If you'd like to pass a custom configuration file to BuildBuddy running in a Docker image - see the [configuration docs](config.md) on using Docker's [-v flag](https://docs.docker.com/storage/volumes/).
 
 ## Kubernetes
 
