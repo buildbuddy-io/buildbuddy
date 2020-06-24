@@ -5,35 +5,70 @@ import (
 	"io"
 	"net/url"
 	"strings"
+	"flag"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/grpc"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-func StreamBytestreamFile(ctx context.Context, url *url.URL, callback func([]byte)) error {
+func StreamBytestreamFile(ctx context.Context, env environment.Env, url *url.URL, callback func([]byte)) error {
 	if url.Scheme != "bytestream" {
 		return status.InvalidArgumentErrorf("Only bytestream:// uris are supported")
 	}
 
-	// Try to connect over grpcs
-	stream, conn, err := readStreamFromUrl(ctx, url, true)
+	err := error(nil)
+	
+	// If we have a cache enabled, try connecting to that first
+	if env.GetCache() != nil {
+		localURL, _ := url.Parse(url.String())
+		localURL.Host = "localhost:"+getIntFlag("grpc_port", "1985")
+		err = streamFromUrl(ctx, localURL, false, callback)
+	}
+
+	// If that fails, try to connect over grpcs
+	if err != nil || env.GetCache() == nil {
+		err = streamFromUrl(ctx, url, true, callback)
+	}
 
 	// If that fails, try grpc
-	if err != nil || stream == nil {
-		conn.Close()
-		// TODO(siggisim): Remove this fallback by examining flags on invocation.
-		stream, conn, err = readStreamFromUrl(ctx, url, false)
+	if err != nil {
+		err = streamFromUrl(ctx, url, false, callback)
 	}
-	if err != nil || stream == nil || conn == nil {
+	
+	return err
+}
+
+func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func([]byte)) (error) {
+	if url.Port() == "" && grpcs {
+		url.Host = url.Hostname() + ":443"
+	} else if url.Port() == "" {
+		url.Host = url.Hostname() + ":80"
+	}
+
+	conn, err := grpc_client.DialTargetWithOptions(url.String(), grpcs)
+
+	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	client := bspb.NewByteStreamClient(conn)
 
+	// Request the file bytestream
+	req := &bspb.ReadRequest{
+		ResourceName: strings.TrimPrefix(url.RequestURI(), "/"), // trim leading "/"
+		ReadOffset:   0,                                         // started from the bottom now we here
+		ReadLimit:    0,                                         // no limit
+	}
+	readClient, err := client.Read(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	defer conn.Close()
 	for {
-		rsp, err := stream.Recv()
+		rsp, err := readClient.Recv()
 		if err == io.EOF {
 			break
 		}
@@ -45,26 +80,10 @@ func StreamBytestreamFile(ctx context.Context, url *url.URL, callback func([]byt
 	return nil
 }
 
-func readStreamFromUrl(ctx context.Context, url *url.URL, grpcs bool) (bspb.ByteStream_ReadClient, *grpc.ClientConn, error) {
-	if url.Port() == "" && grpcs {
-		url.Host = url.Hostname() + ":443"
-	} else if url.Port() == "" {
-		url.Host = url.Hostname() + ":80"
+func getIntFlag(flagName string, defaultVal string) string {
+	f := flag.Lookup(flagName)
+	if f == nil {
+		return defaultVal
 	}
-
-	conn, err := grpc_client.DialTargetWithOptions(url.String(), grpcs)
-
-	if err != nil {
-		return nil, nil, err
-	}
-	client := bspb.NewByteStreamClient(conn)
-
-	// Request the file bytestream
-	req := &bspb.ReadRequest{
-		ResourceName: strings.TrimPrefix(url.RequestURI(), "/"), // trim leading "/"
-		ReadOffset:   0,                                         // started from the bottom now we here
-		ReadLimit:    0,                                         // no limit
-	}
-	readClient, err := client.Read(ctx, req)
-	return readClient, conn, err
+	return f.Value.String()
 }

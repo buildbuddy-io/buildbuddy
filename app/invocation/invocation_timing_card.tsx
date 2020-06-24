@@ -19,6 +19,7 @@ interface State {
   groupBy: string;
   threadPageSize: number;
   eventPageSize: number;
+  error: string;
 }
 
 interface Thread {
@@ -51,6 +52,7 @@ export default class InvocationTimingCardComponent extends React.Component {
     groupBy: window.localStorage[groupByStorageKey] || groupByThreadStorageValue,
     threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
     eventPageSize: window.localStorage[eventPageSizeStorageKey] || 100,
+    error: "",
   }
 
   componentDidMount() {
@@ -86,6 +88,7 @@ export default class InvocationTimingCardComponent extends React.Component {
       this.updateProfile(JSON.parse(decompressedResponse));
     }).catch(() => {
       console.error("Error loading bytestream timing profile!");
+      this.setState({ ...this.state, error: "Error loading timing profile. Make sure your cache is correctly configured." })
     });
   }
 
@@ -105,6 +108,7 @@ export default class InvocationTimingCardComponent extends React.Component {
       this.state.threadMap.set(event.tid, thread);
     }
     this.state.buildInProgress = false;
+    this.state.error = "";
     this.setState(this.state);
   }
 
@@ -191,6 +195,9 @@ export default class InvocationTimingCardComponent extends React.Component {
             <SetupCodeComponent />
           </div>
         }
+        {this.state.error && <div className="empty-state">
+          {this.state.error}
+        </div>}
         {this.state.groupBy == groupByThreadStorageValue && <div className="details">
           {threads.sort(this.sortIdAsc).slice(0, this.state.threadNumPages * this.state.threadPageSize).map((thread: Thread) =>
             <div>

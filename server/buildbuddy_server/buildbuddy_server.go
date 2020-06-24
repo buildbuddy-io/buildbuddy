@@ -293,7 +293,12 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	bytestream.StreamBytestreamFile(r.Context(), lookup.URL, func(data []byte) {
+	err = bytestream.StreamBytestreamFile(r.Context(), s.env, lookup.URL, func(data []byte) {
 		w.Write(data)
 	})
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
 }
