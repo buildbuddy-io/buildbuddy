@@ -208,6 +208,10 @@ export default class InvocationModel {
   }
 
   getDurationSeconds() {
+    if (!this.finished && this.started) {
+      return this.timeSinceStart();
+    }
+
     return `${this.toolLogMap.get('elapsed time')} seconds`
   }
 
