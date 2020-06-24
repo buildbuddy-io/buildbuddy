@@ -10,6 +10,7 @@ import (
 	"google.golang.org/genproto/googleapis/longrunning"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
@@ -178,6 +179,7 @@ type UserDB interface {
 type ExecutionDB interface {
 	InsertOrUpdateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, op *longrunning.Operation) error
 	ReadExecution(ctx context.Context, executionID string) (*tables.Execution, error)
+	InsertExecutionSummary(ctx context.Context, actionDigest *repb.Digest, workerID string, summary *espb.ExecutionSummary) error
 }
 
 // A webhook can be called when a build is completed.

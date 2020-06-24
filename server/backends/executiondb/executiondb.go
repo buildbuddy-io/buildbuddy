@@ -2,22 +2,48 @@ package executiondb
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/jinzhu/gorm"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"google.golang.org/genproto/googleapis/longrunning"
 )
 
 type ExecutionDB struct {
-	h *db.DBHandle
+	env environment.Env
+	h   *db.DBHandle
 }
 
-func NewExecutionDB(h *db.DBHandle) *ExecutionDB {
-	return &ExecutionDB{h: h}
+func NewExecutionDB(env environment.Env, h *db.DBHandle) *ExecutionDB {
+	return &ExecutionDB{
+		env: env,
+		h:   h,
+	}
+}
+
+func (d *ExecutionDB) createExecution(tx *gorm.DB, ctx context.Context, summary *tables.ExecutionSummary) error {
+	permissions := perms.AnonymousUserPermissions()
+	if userDB := d.env.GetUserDB(); userDB != nil {
+		g, err := userDB.GetAuthGroup(ctx)
+		if err != nil {
+			return err
+		}
+		if g != nil {
+			permissions = perms.GroupAuthPermissions(g)
+		}
+	}
+	summary.UserID = permissions.UserID
+	summary.GroupID = permissions.GroupID
+	summary.Perms = permissions.Perms
+	return tx.Create(summary).Error
 }
 
 func (d *ExecutionDB) InsertOrUpdateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, op *longrunning.Operation) error {
@@ -53,4 +79,45 @@ func (d *ExecutionDB) ReadExecution(ctx context.Context, executionID string) (*t
 		return nil, err
 	}
 	return te, nil
+}
+
+func (d *ExecutionDB) InsertExecutionSummary(ctx context.Context, actionDigest *repb.Digest, workerID string, summary *espb.ExecutionSummary) error {
+	pk, err := tables.PrimaryKeyForTable("ExecutionSummaries")
+	if err != nil {
+		return err
+	}
+	tableSummary := &tables.ExecutionSummary{
+		SummaryID:                  pk,
+		ActionDigest:               fmt.Sprintf("%s/%d", actionDigest.GetHash(), actionDigest.GetSizeBytes()),
+		WorkerID:                   workerID,
+		UserCpuTimeUsec:            summary.GetExecutionStats().GetUserCpuTimeUsec(),
+		SysCpuTimeUsec:             summary.GetExecutionStats().GetSysCpuTimeUsec(),
+		MaxResidentSetSizeBytes:    summary.GetExecutionStats().GetMaxResidentSetSizeBytes(),
+		PageReclaims:               summary.GetExecutionStats().GetPageReclaims(),
+		PageFaults:                 summary.GetExecutionStats().GetPageFaults(),
+		Swaps:                      summary.GetExecutionStats().GetSwaps(),
+		BlockInputOperations:       summary.GetExecutionStats().GetBlockInputOperations(),
+		BlockOutputOperations:      summary.GetExecutionStats().GetBlockOutputOperations(),
+		MessagesSent:               summary.GetExecutionStats().GetMessagesSent(),
+		MessagesReceived:           summary.GetExecutionStats().GetMessagesReceived(),
+		SignalsReceived:            summary.GetExecutionStats().GetSignalsReceived(),
+		VoluntaryContextSwitches:   summary.GetExecutionStats().GetVoluntaryContextSwitches(),
+		InvoluntaryContextSwitches: summary.GetExecutionStats().GetInvoluntaryContextSwitches(),
+		FileDownloadCount:          summary.GetIoStats().GetFileDownloadCount(),
+		FileDownloadSizeBytes:      summary.GetIoStats().GetFileDownloadSizeBytes(),
+		FileDownloadDurationUsec:   summary.GetIoStats().GetFileDownloadDurationUsec(),
+		FileUploadCount:            summary.GetIoStats().GetFileUploadCount(),
+		FileUploadSizeBytes:        summary.GetIoStats().GetFileUploadSizeBytes(),
+		FileUploadDurationUsec:     summary.GetIoStats().GetFileUploadDurationUsec(),
+	}
+	return d.h.Transaction(func(tx *gorm.DB) error {
+		var existing tables.ExecutionSummary
+		if err := tx.Where("summary_id = ?", tableSummary.SummaryID).First(&existing).Error; err != nil {
+			if gorm.IsRecordNotFoundError(err) {
+				return d.createExecution(tx, ctx, tableSummary)
+			}
+			return err
+		}
+		return status.FailedPreconditionError("User already exists!")
+	})
 }

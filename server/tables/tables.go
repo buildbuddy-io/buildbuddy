@@ -246,6 +246,51 @@ func (t *Execution) TableName() string {
 	return "Executions"
 }
 
+type ExecutionSummary struct {
+	Model
+	// The SummaryID is a randomly generated identifier.
+	SummaryID string `gorm:"primary_key"`
+
+	// The user/group permissions of the calling user.
+	UserID  string `gorm:"index:user_id"`
+	GroupID string `gorm:"index:group_id"`
+	Perms   int    `gorm:"index:perms"`
+
+	// A "hash/bytes_size" formatted Digest message that
+	// uniquely identifies the Action that was completed.
+	ActionDigest string `gorm:"index:action_digest_index"`
+
+	// A unique worker identifier string, identifying the
+	// machine that completed this execution.
+	WorkerID string
+
+	// Execution metrics (cpu,memory,tx,rx, etc)
+	UserCpuTimeUsec            int64
+	SysCpuTimeUsec             int64
+	MaxResidentSetSizeBytes    int64
+	PageReclaims               int64
+	PageFaults                 int64
+	Swaps                      int64
+	BlockInputOperations       int64
+	BlockOutputOperations      int64
+	MessagesSent               int64
+	MessagesReceived           int64
+	SignalsReceived            int64
+	VoluntaryContextSwitches   int64
+	InvoluntaryContextSwitches int64
+
+	FileDownloadCount        int64
+	FileDownloadSizeBytes    int64
+	FileDownloadDurationUsec int64
+	FileUploadCount          int64
+	FileUploadSizeBytes      int64
+	FileUploadDurationUsec   int64
+}
+
+func (t *ExecutionSummary) TableName() string {
+	return "ExecutionSummaries"
+}
+
 type TelemetryLog struct {
 	Model
 	InstallationUUID    string `gorm:"primary_key"`
@@ -277,4 +322,5 @@ func init() {
 	registerTable("TO", &Token{})
 	registerTable("EX", &Execution{})
 	registerTable("TL", &TelemetryLog{})
+	registerTable("ES", &ExecutionSummary{})
 }

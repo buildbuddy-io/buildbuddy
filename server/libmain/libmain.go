@@ -83,7 +83,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	realEnv.SetBlobstore(bs)
 	realEnv.SetInvocationDB(invocationdb.NewInvocationDB(realEnv, dbHandle))
 	realEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
-	realEnv.SetExecutionDB(executiondb.NewExecutionDB(dbHandle))
+	realEnv.SetExecutionDB(executiondb.NewExecutionDB(realEnv, dbHandle))
 
 	webhooks := make([]interfaces.Webhook, 0)
 	appURL := configurator.GetAppBuildBuddyURL()
