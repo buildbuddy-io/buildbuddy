@@ -58,6 +58,12 @@ message Invocation {
   // updated with subsequent events until they are finalized.
   int64 created_at_usec = 13;
   int64 updated_at_usec = 14;
+
+  // A URL to the git repo this invocation was for.
+  string repo_url = 15;
+
+  // The commit SHA that this invocation was for.
+  string commit_sha = 16;
 }
 
 message InvocationEvent {
@@ -102,6 +108,12 @@ message InvocationQuery {
   // The group to search. The user must be a member of all named groups or an
   // error will be returned.
   string group_id = 3;
+
+  // The git repo the build was for.
+  string repo_url = 4;
+
+  // The commit sha used for the build build.
+  string commit_sha = 5;
 }
 
 message InvocationSort {
@@ -154,6 +166,8 @@ enum AggType {
   USER_AGGREGATION_TYPE = 1;
   HOSTNAME_AGGREGATION_TYPE = 2;
   GROUP_ID_AGGREGATION_TYPE = 3;
+  REPO_URL_AGGREGATION_TYPE = 4;
+  COMMIT_SHA_AGGREGATION_TYPE = 5;
 }
 
 message InvocationStat {

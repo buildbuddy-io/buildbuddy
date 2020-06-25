@@ -1,4 +1,5 @@
 import React from 'react';
+import FooterComponent from '../footer/footer';
 import MenuComponent from '../menu/menu';
 import InvocationComponent from '../invocation/invocation';
 import SetupComponent from '../docs/setup';
@@ -61,6 +62,7 @@ export default class RootComponent extends React.Component {
         <MenuComponent user={this.state.user} showHamburger={true} denseModeEnabled={this.state.denseMode} handleDenseModeToggled={this.handleToggleDenseClicked.bind(this)} />
         {invocationId && <InvocationComponent invocationId={invocationId} hash={this.state.hash} search={this.state.search} denseMode={this.state.denseMode} />}
         {!invocationId && <SetupComponent />}
+        <FooterComponent />
       </div>
     );
   }

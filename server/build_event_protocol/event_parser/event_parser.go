@@ -16,14 +16,17 @@ import (
 const (
 	envVarPrefix              = "--"
 	envVarOptionName          = "client_env"
+	buildMetadataOptionName   = "build_metadata"
 	envVarSeparator           = "="
 	envVarRedactedPlaceholder = "<REDACTED>"
 	urlSecretRegexString      = `\:\/\/.*\@`
 )
 
-func filterCommandLine(in *command_line.CommandLine) *command_line.CommandLine {
+func parseAndFilterCommandLine(in *command_line.CommandLine) (*command_line.CommandLine, map[string]string, map[string]string) {
+	envVarMap := make(map[string]string)
+	buildMetadataMap := make(map[string]string)
 	if in == nil {
-		return nil
+		return nil, envVarMap, buildMetadataMap
 	}
 	urlSecretRegex := regexp.MustCompile(urlSecretRegexString)
 	var out command_line.CommandLine
@@ -37,10 +40,23 @@ func filterCommandLine(in *command_line.CommandLine) *command_line.CommandLine {
 						option.OptionValue = urlSecretRegex.ReplaceAllString(option.OptionValue, "://"+envVarRedactedPlaceholder+"@")
 						option.CombinedForm = urlSecretRegex.ReplaceAllString(option.CombinedForm, "://"+envVarRedactedPlaceholder+"@")
 					}
+					if option.OptionName == "remote_header" ||  option.OptionName == "remote_cache_header" {
+						option.OptionValue = envVarRedactedPlaceholder
+						option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + envVarRedactedPlaceholder
+					}
 					if option.OptionName == envVarOptionName {
 						parts := strings.Split(option.OptionValue, envVarSeparator)
+						if len(parts) == 2 {
+							envVarMap[parts[0]]=parts[1]
+						}
 						option.OptionValue = strings.Join([]string{parts[0], envVarRedactedPlaceholder}, envVarSeparator)
 						option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + envVarRedactedPlaceholder
+					}
+					if option.OptionName == buildMetadataOptionName {
+						parts := strings.Split(option.OptionValue, envVarSeparator)
+						if len(parts) == 2 {
+							buildMetadataMap[parts[0]]=parts[1]
+						}
 					}
 				}
 			}
@@ -48,7 +64,7 @@ func filterCommandLine(in *command_line.CommandLine) *command_line.CommandLine {
 			continue
 		}
 	}
-	return &out
+	return &out, envVarMap, buildMetadataMap
 }
 
 func filterUnstructuredCommandLine(in *build_event_stream.UnstructuredCommandLine) *build_event_stream.UnstructuredCommandLine {
@@ -61,6 +77,12 @@ func filterUnstructuredCommandLine(in *build_event_stream.UnstructuredCommandLin
 	for i, arg := range out.Args {
 		if strings.Contains(arg, "@") {
 			out.Args[i] = urlSecretRegex.ReplaceAllString(arg, "://"+envVarRedactedPlaceholder+"@")
+		}
+		if strings.HasPrefix(arg, envVarPrefix+"remote_header") {
+			out.Args[i] = envVarPrefix + "remote_header" + envVarSeparator + envVarRedactedPlaceholder
+		}
+		if strings.HasPrefix(arg, envVarPrefix+"remote_cache_header") {
+			out.Args[i] = envVarPrefix + "remote_cache_header" + envVarSeparator + envVarRedactedPlaceholder
 		}
 		if strings.HasPrefix(arg, envVarPrefix+envVarOptionName) {
 			parts := strings.Split(arg, envVarSeparator)
@@ -114,9 +136,19 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 			}
 		case *build_event_stream.BuildEvent_StructuredCommandLine:
 			{
-				filteredCL := filterCommandLine(p.StructuredCommandLine)
+				filteredCL, envVarMap, buildMetadataMap := parseAndFilterCommandLine(p.StructuredCommandLine)
 				if filteredCL != nil {
 					invocation.StructuredCommandLine = append(invocation.StructuredCommandLine, filteredCL)
+				}
+
+				invocation.RepoUrl = envVarMap["GITHUB_REPOSITORY"]
+				if url, ok := buildMetadataMap["REPO_URL"]; ok {
+					invocation.RepoUrl = url
+				}
+
+				invocation.CommitSha = envVarMap["GITHUB_SHA"]
+				if sha, ok := buildMetadataMap["COMMIT_SHA"]; ok {
+					invocation.CommitSha = sha
 				}
 			}
 		case *build_event_stream.BuildEvent_OptionsParsed:

@@ -56,7 +56,7 @@ button {
 /** Menu **/
 
 .menu {
-  height: 72px;
+  height: 90px;
   display: flex;
   align-items: center;
   box-sizing: border-box;
@@ -81,7 +81,7 @@ button {
 }
 
 .menu .title img {
-  height: 28px;
+  height: 40px;
 }
 
 .menu-child-title {
@@ -656,6 +656,16 @@ code .comment {
   display: flex;
 }
 
+/** Footer **/
+
+.footer {
+  text-align: center;
+  color: #aaa;
+  font-size: .8em;
+  padding: 32px 32px 64px 32px;
+  height: 32px;
+}
+
 /** History **/
 
 .history .card {
@@ -1026,6 +1036,7 @@ code .comment {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
+  margin-bottom: -128px;
 }
 
 .login .container {
@@ -1173,12 +1184,20 @@ code .comment {
   background-color: #f44336;
 }
 
+.grid-block-neutral {
+  background-color: #888;
+}
+
 .grid-block-success.grid-block-hover {
   background-color: #7CB342;
 }
 
 .grid-block-failure.grid-block-hover {
   background-color: #e53935;
+}
+
+.grid-block-neutral.grid-block-hover {
+  background-color: #666;
 }
 
 /**
