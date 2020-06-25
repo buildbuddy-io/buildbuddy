@@ -162,6 +162,10 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 						invocation.User = item.Value
 					case "BUILD_HOST":
 						invocation.Host = item.Value
+					case "REPO_URL":
+						invocation.RepoUrl = item.Value
+					case "COMMIT_SHA":
+						invocation.CommitSha = item.Value
 					}
 				}
 			}

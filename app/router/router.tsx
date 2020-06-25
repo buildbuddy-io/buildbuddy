@@ -1,4 +1,5 @@
 import capabilities from '../capabilities/capabilities';
+import format from '../format/format';
 
 class Router {
 
@@ -63,6 +64,10 @@ class Router {
       alert(`Repo history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`);
       return;
     }
+    if (repo.startsWith("https://github.com/") && repo.endsWith(".git")) {
+      this.navigateTo(Path.repoHistoryPath + format.formatGitUrl(repo));
+      return;
+    }
     this.navigateTo(Path.repoHistoryPath + btoa(repo));
   }
 
@@ -101,8 +106,11 @@ class Router {
   }
 
   getHistoryRepo(path: string) {
-    let repoBase64 = this.getLastPathComponent(path, Path.repoHistoryPath);
-    return repoBase64 ? atob(repoBase64) : "";
+    let repoComponent = this.getLastPathComponent(path, Path.repoHistoryPath);
+    if (repoComponent?.includes("/")) {
+      return `https://github.com/${repoComponent}.git`
+    }
+    return repoComponent ? atob(repoComponent) : "";
   }
 
   getHistoryCommit(path: string) {

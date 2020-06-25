@@ -24,6 +24,14 @@ export default class InvocationOverviewComponent extends React.Component {
     router.navigateToHostHistory(this.props.model.getHost());
   }
 
+  handleRepoClicked() {
+    router.navigateToRepoHistory(this.props.model.getRepo());
+  }
+
+  handleCommitClicked() {
+    router.navigateToCommitHistory(this.props.model.getCommit());
+  }
+
   render() {
     return <div className="container">
       <div className="breadcrumbs">
@@ -79,6 +87,22 @@ export default class InvocationOverviewComponent extends React.Component {
         <div className="detail">
           <img className="icon" src="/image/zap-regular.svg" />
           {this.props.model.getMode()}
+        </div>
+        {this.props.model.getRepo() && <div className="detail clickable" onClick={this.handleRepoClicked.bind(this)}>
+          <img className="icon" src="/image/github-regular.svg" />
+          {format.formatGitUrl(this.props.model.getRepo())}
+        </div>}
+        {this.props.model.getCommit() && <div className="detail clickable" onClick={this.handleCommitClicked.bind(this)}>
+          <img className="icon" src="/image/git-commit-regular.svg" />
+          {format.formatCommitHash(this.props.model.getCommit())}
+        </div>}
+        <div className="detail">
+          <img className="icon" src="/image/package-regular.svg" />
+          {this.props.model.getCache()}
+        </div>
+        <div className="detail">
+          <img className="icon" src="/image/cloud-regular.svg" />
+          {this.props.model.getRBE()}
         </div>
       </div>
     </div>
