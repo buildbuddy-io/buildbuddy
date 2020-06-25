@@ -33,7 +33,9 @@ export default class InvocationModel {
 
   workspaceStatusMap = new Map<string, string>();
   toolLogMap = new Map<string, string>();
+  optionsMap = new Map<string, string>();
   clientEnvMap = new Map<string, string>();
+  buildMetadataMap = new Map<string, string>();
   configuredMap = new Map<string, invocation.InvocationEvent>();
   completedMap = new Map<string, invocation.InvocationEvent>();
   testResultMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
@@ -110,10 +112,17 @@ export default class InvocationModel {
     for (let commandLine of model.structuredCommandLine || []) {
       for (let section of commandLine.sections || []) {
         for (let option of section.optionList?.option || []) {
+          model.optionsMap.set(option.optionName, option.optionValue);
           if (option.optionName == "client_env") {
             let pair = option.optionValue.split("=");
             if (pair.length == 2) {
               model.clientEnvMap.set(pair[0], pair[1]);
+            }
+          }
+          if (option.optionName == "build_metadata") {
+            let pair = option.optionValue.split("=");
+            if (pair.length == 2) {
+              model.buildMetadataMap.set(pair[0], pair[1]);
             }
           }
         }
@@ -122,16 +131,16 @@ export default class InvocationModel {
     return model;
   }
 
-  getUser(posessive: boolean) {
+  getUser(possessive: boolean) {
     let username = this.workspaceStatusMap.get('BUILD_USER') || this.clientEnvMap.get('USER');
     if (username == "<REDACTED>") {
       return "Loading";
     }
 
     if (!username) {
-      return posessive ? "Unknown user" : "Unknown user";
+      return possessive ? "Unknown user" : "Unknown user";
     }
-    return posessive ? `${username}'s` : username;
+    return possessive ? `${username}'s` : username;
   }
 
   getId() {
@@ -140,6 +149,32 @@ export default class InvocationModel {
 
   getHost() {
     return this.workspaceStatusMap.get('BUILD_HOST') || "Unknown host";
+  }
+
+  getCache() {
+    if (!this.optionsMap.get("remote_cache")) return "Cache off";
+    if (this.optionsMap.get("remote_upload_local_results") == "0") {
+      return "Log upload on";
+    }
+    if (this.optionsMap.get("remote_download_outputs") == "toplevel") {
+      return "Top-level cache";
+    }
+    if (this.optionsMap.get("remote_download_outputs") == "minimal") {
+      return "Minimal cache";
+    }
+    return "Cache on";
+  }
+
+  getRBE() {
+    return this.optionsMap.get("remote_executor") ? "Remote execution on" : "Remote execution off";
+  }
+
+  getRepo() {
+    return this.buildMetadataMap.get('REPO_URL') || this.workspaceStatusMap.get('REPO_URL') || this.getGithubRepo();
+  }
+
+  getCommit() {
+    return this.buildMetadataMap.get('COMMIT_SHA') || this.workspaceStatusMap.get('COMMIT_SHA') || this.getGithubSHA();
   }
 
   getGithubUser() {

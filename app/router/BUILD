@@ -7,5 +7,6 @@ ts_library(
     srcs = glob(["*.tsx"]),
     deps = [
         "//app/capabilities",
+        "//app/format",
     ],
 )

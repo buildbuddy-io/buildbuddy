@@ -58,5 +58,13 @@ export function formatTimestampMillis(timestamp: number | Long) {
   return `${moment(+timestamp).format('MMMM Do, YYYY')} at ${moment(+timestamp).format('h:mm:ss a')}`;
 }
 
+export function formatGitUrl(url: string) {
+  return url?.replace("https://", "").replace(".git", "").replace("github.com/", "");
+}
 
-export default { durationSec, durationMillis, durationUsec, sentenceCase, percent, truncateList, formatTimestampUsec, formatTimestampMillis };
+export function formatCommitHash(commit: string) {
+  return commit?.substring(0, 6);
+}
+
+
+export default { durationSec, durationMillis, durationUsec, sentenceCase, percent, truncateList, formatTimestampUsec, formatTimestampMillis, formatGitUrl, formatCommitHash };
