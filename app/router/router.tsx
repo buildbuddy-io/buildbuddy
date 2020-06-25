@@ -58,6 +58,22 @@ class Router {
     this.navigateTo(Path.hostHistoryPath + host);
   }
 
+  navigateToRepoHistory(repo: string) {
+    if (!capabilities.canNavigateToPath(Path.repoHistoryPath)) {
+      alert(`Repo history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`);
+      return;
+    }
+    this.navigateTo(Path.repoHistoryPath + btoa(repo));
+  }
+
+  navigateToCommitHistory(commit: string) {
+    if (!capabilities.canNavigateToPath(Path.commitHistoryPath)) {
+      alert(`Commit history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`);
+      return;
+    }
+    this.navigateTo(Path.commitHistoryPath + commit);
+  }
+
   updateParams(params: any) {
     let keys = Object.keys(params);
     let queryParam = keys.map(key => `${key}=${params[key]}`).join('&');
@@ -83,11 +99,22 @@ class Router {
   getHistoryHost(path: string) {
     return this.getLastPathComponent(path, Path.hostHistoryPath);
   }
+
+  getHistoryRepo(path: string) {
+    let repoBase64 = this.getLastPathComponent(path, Path.repoHistoryPath);
+    return repoBase64 ? atob(repoBase64) : "";
+  }
+
+  getHistoryCommit(path: string) {
+    return this.getLastPathComponent(path, Path.commitHistoryPath);
+  }
 }
 export class Path {
   static invocationPath = "/invocation/";
   static userHistoryPath = "/history/user/";
   static hostHistoryPath = "/history/host/";
+  static repoHistoryPath = "/history/repo/";
+  static commitHistoryPath = "/history/commit/";
 }
 
 export default new Router();

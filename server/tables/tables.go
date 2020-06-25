@@ -94,6 +94,8 @@ type Invocation struct {
 	User             string `gorm:"index:user_index"`
 	DurationUsec     int64
 	Host             string `gorm:"index:host_index"`
+	RepoURL          string `gorm:"index:repo_url_index"`
+	CommitSHA        string `gorm:"index:commit_sha_index"`
 	Command          string
 	Pattern          string
 	ActionCount      int64
@@ -111,6 +113,8 @@ func (i *Invocation) FromProtoAndBlobID(p *inpb.Invocation, blobID string) {
 	i.User = p.User
 	i.DurationUsec = p.DurationUsec
 	i.Host = p.Host
+	i.RepoURL = p.RepoUrl
+	i.CommitSHA = p.CommitSha
 	i.Command = p.Command
 	if p.Pattern != nil {
 		i.Pattern = strings.Join(p.Pattern, ", ")
@@ -127,6 +131,8 @@ func (i *Invocation) ToProto() *inpb.Invocation {
 	out.User = i.User
 	out.DurationUsec = i.DurationUsec
 	out.Host = i.Host
+	out.RepoUrl = i.RepoURL
+	out.CommitSha = i.CommitSHA
 	out.Command = i.Command
 	if i.Pattern != "" {
 		out.Pattern = strings.Split(i.Pattern, ", ")
