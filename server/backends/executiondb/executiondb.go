@@ -31,13 +31,9 @@ func NewExecutionDB(env environment.Env, h *db.DBHandle) *ExecutionDB {
 
 func (d *ExecutionDB) createExecution(tx *gorm.DB, ctx context.Context, summary *tables.ExecutionSummary) error {
 	permissions := perms.AnonymousUserPermissions()
-	if userDB := d.env.GetUserDB(); userDB != nil {
-		g, err := userDB.GetAuthGroup(ctx)
-		if err != nil {
-			return err
-		}
-		if g != nil {
-			permissions = perms.GroupAuthPermissions(g.GroupID)
+	if auth := d.env.GetAuthenticator(); auth != nil {
+		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
+			permissions = perms.GroupAuthPermissions(u.GetGroupID())
 		}
 	}
 	summary.UserID = permissions.UserID

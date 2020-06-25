@@ -50,23 +50,13 @@ func addPrefix(prefix, key string) string {
 }
 
 func UserPrefixCacheKey(ctx context.Context, env environment.Env, key string) (string, error) {
-	if userDB := env.GetUserDB(); userDB != nil {
-		// Try group-based auth? (most common for grpc)
-		g, err := userDB.GetAuthGroup(ctx)
-		if err != nil {
-			return "", err
-		}
-		if g != nil {
-			return addPrefix(g.GroupID, key), nil
-		}
-
-		// Attempt to lookup this user by auth token?
-		tu, err := userDB.GetUser(ctx)
-		if err != nil {
-			return "", err
-		}
-		if tu != nil {
-			return addPrefix(tu.UserID, key), nil
+	if auth := env.GetAuthenticator(); auth != nil {
+		if u, err := auth.AuthenticatedUser(ctx); err == nil {
+			if u.GetGroupID() != "" {
+				return addPrefix(u.GetGroupID(), key), nil
+			} else if u.GetUserID() != "" {
+				return addPrefix(u.GetUserID(), key), nil
+			}
 		}
 	}
 	return addPrefix("ANON", key), nil

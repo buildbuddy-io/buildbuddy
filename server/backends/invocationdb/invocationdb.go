@@ -30,13 +30,9 @@ func NewInvocationDB(env environment.Env, h *db.DBHandle) *InvocationDB {
 
 func (d *InvocationDB) createInvocation(tx *gorm.DB, ctx context.Context, ti *tables.Invocation) error {
 	permissions := perms.AnonymousUserPermissions()
-	if userDB := d.env.GetUserDB(); userDB != nil {
-		g, err := userDB.GetAuthGroup(ctx)
-		if err != nil {
-			return err
-		}
-		if g != nil {
-			permissions = perms.GroupAuthPermissions(g.GroupID)
+	if auth := d.env.GetAuthenticator(); auth != nil {
+		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
+			permissions = perms.GroupAuthPermissions(u.GetGroupID())
 		}
 	}
 	ti.UserID = permissions.UserID
@@ -64,29 +60,27 @@ func (d *InvocationDB) addPermissionsCheckToQuery(ctx context.Context, q *query_
 	o.AddOr("(i.perms & ? != 0)", perms.OTHERS_READ)
 
 	if auth := d.env.GetAuthenticator(); auth != nil {
-		u, err := auth.AuthenticatedUser(ctx)
-		if err != nil {
-			return err
-		}
-		if u.GetGroupID() != "" {
-			groupArgs := []interface{}{
-				perms.GROUP_READ,
-				u.GetGroupID(),
+		if u, err := auth.AuthenticatedUser(ctx); err == nil {
+			if u.GetGroupID() != "" {
+				groupArgs := []interface{}{
+					perms.GROUP_READ,
+					u.GetGroupID(),
+				}
+				o.AddOr("(i.perms & ? != 0 AND i.group_id = ?)", groupArgs...)
+			} else if u.GetUserID() != "" {
+				groupArgs := []interface{}{
+					perms.GROUP_READ,
+				}
+				groupParams := make([]string, 0)
+				for _, groupID := range u.GetAllowedGroups() {
+					groupArgs = append(groupArgs, groupID)
+					groupParams = append(groupParams, "?")
+				}
+				groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
+				groupQueryStr := fmt.Sprintf("(i.perms & ? != 0 AND i.group_id IN %s)", groupParamString)
+				o.AddOr(groupQueryStr, groupArgs...)
+				o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", perms.OWNER_READ, u.GetUserID())
 			}
-			o.AddOr("(i.perms & ? != 0 AND i.group_id = ?)", groupArgs...)
-		} else if u.GetUserID() != "" {
-			groupArgs := []interface{}{
-				perms.GROUP_READ,
-			}
-			groupParams := make([]string, 0)
-			for _, groupID := range u.GetAllowedGroups() {
-				groupArgs = append(groupArgs, groupID)
-				groupParams = append(groupParams, "?")
-			}
-			groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
-			groupQueryStr := fmt.Sprintf("(i.perms & ? != 0 AND i.group_id IN %s)", groupParamString)
-			o.AddOr(groupQueryStr, groupArgs...)
-			o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", perms.OWNER_READ, u.GetUserID())
 		}
 	}
 	orQuery, orArgs := o.Build()
