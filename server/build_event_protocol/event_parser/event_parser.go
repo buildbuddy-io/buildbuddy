@@ -40,14 +40,14 @@ func parseAndFilterCommandLine(in *command_line.CommandLine) (*command_line.Comm
 						option.OptionValue = urlSecretRegex.ReplaceAllString(option.OptionValue, "://"+envVarRedactedPlaceholder+"@")
 						option.CombinedForm = urlSecretRegex.ReplaceAllString(option.CombinedForm, "://"+envVarRedactedPlaceholder+"@")
 					}
-					if option.OptionName == "remote_header" ||  option.OptionName == "remote_cache_header" {
+					if option.OptionName == "remote_header" || option.OptionName == "remote_cache_header" {
 						option.OptionValue = envVarRedactedPlaceholder
 						option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + envVarRedactedPlaceholder
 					}
 					if option.OptionName == envVarOptionName {
 						parts := strings.Split(option.OptionValue, envVarSeparator)
 						if len(parts) == 2 {
-							envVarMap[parts[0]]=parts[1]
+							envVarMap[parts[0]] = parts[1]
 						}
 						option.OptionValue = strings.Join([]string{parts[0], envVarRedactedPlaceholder}, envVarSeparator)
 						option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + envVarRedactedPlaceholder
@@ -55,7 +55,7 @@ func parseAndFilterCommandLine(in *command_line.CommandLine) (*command_line.Comm
 					if option.OptionName == buildMetadataOptionName {
 						parts := strings.Split(option.OptionValue, envVarSeparator)
 						if len(parts) == 2 {
-							buildMetadataMap[parts[0]]=parts[1]
+							buildMetadataMap[parts[0]] = parts[1]
 						}
 					}
 				}
