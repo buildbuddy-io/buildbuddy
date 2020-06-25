@@ -39,7 +39,7 @@ If you have any questions, e-mail us at [hello@buildbuddy.io](mailto:hello@build
 ![Build summary & logs](https://uploads-ssl.webflow.com/5eeba6a68ba54530ffd09006/5ef50dcad5a75b86b544bb78_invocation.png)
  
 - **Target overview** - quickly see which targets and tests passed / failed and dig into more details about them.
-![Target overview](https://uploads-ssl.webflow.com/5eeba6a68ba54530ffd09006/5ef50dc9d5a75bcaa744bb77_2-targets.png)
+![Target overview](https://uploads-ssl.webflow.com/5eeba6a68ba54530ffd09006/5ef50dc920cf144d738c85dc_targets.png)
 
 - **Detailed timing information** - BuildBuddy invocations include a "Timing" tab - which pulls the Bazel profile logs from your build cache and displays them in a human-readable format.
 ![Detailed timing information](https://uploads-ssl.webflow.com/5eeba6a68ba54530ffd09006/5ef50dcaa74972a17a9321f8_timing.png)
