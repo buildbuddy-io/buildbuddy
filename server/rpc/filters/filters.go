@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 
 	bblog "github.com/buildbuddy-io/buildbuddy/server/util/log"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -204,14 +205,16 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 	)
 }
 
-func GetUnaryClientInterceptor(env environment.Env) grpc.DialOption {
+func GetUnaryClientInterceptor() grpc.DialOption {
 	return grpc.WithChainUnaryInterceptor(
+		grpc_prometheus.UnaryClientInterceptor,
 		setHeadersUnaryClientInterceptor(),
 	)
 }
 
-func GetStreamClientInterceptor(env environment.Env) grpc.DialOption {
+func GetStreamClientInterceptor() grpc.DialOption {
 	return grpc.WithChainStreamInterceptor(
+		grpc_prometheus.StreamClientInterceptor,
 		setHeadersStreamClientInterceptor(),
 	)
 }
