@@ -37,7 +37,7 @@ func (d *ExecutionDB) createExecution(tx *gorm.DB, ctx context.Context, summary 
 			return err
 		}
 		if g != nil {
-			permissions = perms.GroupAuthPermissions(g)
+			permissions = perms.GroupAuthPermissions(g.GroupID)
 		}
 	}
 	summary.UserID = permissions.UserID

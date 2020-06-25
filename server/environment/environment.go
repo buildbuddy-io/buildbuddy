@@ -4,6 +4,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -27,14 +28,15 @@ import (
 type Env interface {
 	// The following dependencies are required.
 	GetConfigurator() *config.Configurator
+
+	// Optional dependencies below here. For example: enterprise-only things,
+	// or services that may not always be configured, like webhooks.
+	GetDBHandle() *db.DBHandle
 	GetBlobstore() interfaces.Blobstore
 	GetInvocationDB() interfaces.InvocationDB
 	GetHealthChecker() *healthcheck.HealthChecker
 	GetAuthenticator() interfaces.Authenticator
 	SetAuthenticator(a interfaces.Authenticator)
-
-	// Optional dependencies below here. For example: enterprise-only things,
-	// or services that may not always be configured, like webhooks.
 	GetWebhooks() []interfaces.Webhook
 	GetBuildEventProxyClients() []*build_event_proxy.BuildEventProxyClient
 	GetCache() interfaces.Cache

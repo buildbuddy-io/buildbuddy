@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
 )
 
 const (
@@ -37,10 +36,10 @@ func AnonymousUserPermissions() *UserGroupPerm {
 	}
 }
 
-func GroupAuthPermissions(g *tables.Group) *UserGroupPerm {
+func GroupAuthPermissions(groupID string) *UserGroupPerm {
 	return &UserGroupPerm{
-		UserID:  g.GroupID,
-		GroupID: g.GroupID,
+		UserID:  groupID,
+		GroupID: groupID,
 		Perms:   GROUP_READ | GROUP_WRITE,
 	}
 }

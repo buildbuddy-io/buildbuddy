@@ -36,7 +36,7 @@ func (d *InvocationDB) createInvocation(tx *gorm.DB, ctx context.Context, ti *ta
 			return err
 		}
 		if g != nil {
-			permissions = perms.GroupAuthPermissions(g)
+			permissions = perms.GroupAuthPermissions(g.GroupID)
 		}
 	}
 	ti.UserID = permissions.UserID
@@ -64,38 +64,29 @@ func (d *InvocationDB) addPermissionsCheckToQuery(ctx context.Context, q *query_
 	o.AddOr("(i.perms & ? != 0)", perms.OTHERS_READ)
 
 	if auth := d.env.GetAuthenticator(); auth != nil {
-		if ak, err := d.env.GetAuthenticator().GetAPIKey(ctx); err == nil && ak != "" {
-			ag, err := d.env.GetUserDB().GetAPIKeyAuthGroup(ctx)
-			if err != nil {
-				return err
-			}
-
+		u, err := auth.AuthenticatedUser(ctx)
+		if err != nil {
+			return err
+		}
+		if u.GetGroupID() != "" {
 			groupArgs := []interface{}{
 				perms.GROUP_READ,
-				ag.GroupID,
+				u.GetGroupID(),
 			}
 			o.AddOr("(i.perms & ? != 0 AND i.group_id = ?)", groupArgs...)
-		}
-
-		if ut, err := d.env.GetAuthenticator().GetUserToken(ctx); err == nil && ut != nil {
-			// If auth is setup and GetUser returns an error, propogate that up.
-			tu, err := d.env.GetUserDB().GetUser(ctx)
-			if err != nil {
-				return err
-			}
-
+		} else if u.GetUserID() != "" {
 			groupArgs := []interface{}{
 				perms.GROUP_READ,
 			}
 			groupParams := make([]string, 0)
-			for _, g := range tu.Groups {
-				groupArgs = append(groupArgs, g.GroupID)
+			for _, groupID := range u.GetAllowedGroups() {
+				groupArgs = append(groupArgs, groupID)
 				groupParams = append(groupParams, "?")
 			}
 			groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
 			groupQueryStr := fmt.Sprintf("(i.perms & ? != 0 AND i.group_id IN %s)", groupParamString)
 			o.AddOr(groupQueryStr, groupArgs...)
-			o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", perms.OWNER_READ, tu.UserID)
+			o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", perms.OWNER_READ, u.GetUserID())
 		}
 	}
 	orQuery, orArgs := o.Build()

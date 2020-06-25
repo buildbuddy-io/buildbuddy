@@ -32,6 +32,12 @@ type BasicAuthToken interface {
 	GetPassword() string
 }
 
+type UserInfo interface {
+	GetUserID() string
+	GetGroupID() string
+	GetAllowedGroups() []string
+}
+
 type Authenticator interface {
 	// Redirect to configured authentication provider.
 	Login(w http.ResponseWriter, r *http.Request)
@@ -50,33 +56,13 @@ type Authenticator interface {
 	// a BasicAuthToken.
 	AuthenticateGRPCRequest(ctx context.Context) context.Context
 
-	// Returns the UserToken extracted from any authorization headers
-	// present in the request. This does not guarantee the user has been
-	// registered -- it only indicates they were authenticated using some
-	// auth provider.
-	//
-	// To check if a user is registered, use UserDB!
-	GetUserToken(ctx context.Context) (UserToken, error)
-
-	// Returns the APIKey extracted from any authorization headers
-	// present in the request. This does not guarantee the api key is
-	// valid -- it only indicates that an API key was present in the
-	// request
-	//
-	// To check if the key is valid, use UserDB.GetAPIKeyAuthGroup!
-	GetAPIKey(ctx context.Context) (string, error)
-
-	// Returns the BasicAuthToken extracted from any user/password set on
-	// the RPC request. This does not guarantee the user has been
-	// registered -- it only indicates they were authenticated using the
-	// BASIC auth provider.
-	//
-	// To check if a user or group registered, use UserDB!
-	GetBasicAuthToken(ctx context.Context) (BasicAuthToken, error)
-
 	// FillUser may be used to construct an initial tables.User object. It
 	// is filled based on information from the authenticator's JWT.
 	FillUser(ctx context.Context, user *tables.User) error
+
+	// Returns the UserInfo extracted from any authorization headers
+	// present in the request.
+	AuthenticatedUser(ctx context.Context) (UserInfo, error)
 }
 
 // A Blobstore must allow for reading, writing, and deleting blobs.
@@ -172,7 +158,6 @@ type UserDB interface {
 	// Groups API
 	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) error
 	GetAuthGroup(ctx context.Context) (*tables.Group, error)
-	GetAPIKeyAuthGroup(ctx context.Context) (*tables.Group, error)
 	DeleteGroup(ctx context.Context, groupID string) error
 }
 

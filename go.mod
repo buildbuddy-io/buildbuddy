@@ -16,6 +16,7 @@ require (
 	github.com/cncf/udpa/go v0.0.0-20200327203949-e8cd3a4bb307 // indirect
 	github.com/creack/pty v1.1.10 // indirect
 	github.com/denisenkom/go-mssqldb v0.0.0-20200428022330-06a60b6afbbc // indirect
+	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/envoyproxy/go-control-plane v0.9.5 // indirect
 	github.com/envoyproxy/protoc-gen-validate v0.3.0 // indirect
 	github.com/go-gl/glfw v0.0.0-20200420212212-258d9bec320e // indirect

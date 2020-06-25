@@ -10,6 +10,7 @@ go_library(
         "//server/build_event_protocol/build_event_proxy:go_default_library",
         "//server/config:go_default_library",
         "//server/interfaces:go_default_library",
+        "//server/util/db:go_default_library",
         "//server/util/healthcheck:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
     ],
