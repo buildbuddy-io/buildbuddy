@@ -26,3 +26,4 @@ build --bes_backend=grpcs://cloud.buildbuddy.io
 
 # Recommended if connecting to a remote (upload speed constrained) BuildBuddy instance
 build --noremote_upload_local_results # Uploads logs & artifacts without writing to cache
+build --workspace_status_command=$(pwd)/workspace_status.sh
