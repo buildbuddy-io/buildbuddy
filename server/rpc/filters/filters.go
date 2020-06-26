@@ -2,7 +2,6 @@ package filters
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -76,12 +75,10 @@ func addRequestIdToContext(ctx context.Context) context.Context {
 }
 
 func copyHeadersToContext(ctx context.Context) context.Context {
-	log.Printf("copyHeadersToContext called")
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		for headerName, contextKey := range headerContextKeys {
 			if headerVals := md.Get(headerName); len(headerVals) > 0 {
 				ctx = context.WithValue(ctx, contextKey, headerVals[0])
-				log.Printf("Set key %q in context to %q (from header: %q)", contextKey, headerVals[0], headerName)
 			}
 		}
 	}
@@ -90,11 +87,9 @@ func copyHeadersToContext(ctx context.Context) context.Context {
 }
 
 func setHeadersFromContext(ctx context.Context) context.Context {
-	log.Printf("setHeadersFromContext called")
 	for headerName, contextKey := range headerContextKeys {
 		if contextVal, ok := ctx.Value(contextKey).(string); ok {
 			ctx = metadata.AppendToOutgoingContext(ctx, headerName, contextVal)
-			log.Printf("Set key %q in header to %q (from context key: %q)", headerName, contextVal, contextKey)
 		}
 	}
 	return ctx
