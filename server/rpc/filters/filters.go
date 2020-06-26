@@ -33,15 +33,6 @@ func (w *wrappedServerStreamWithContext) Context() context.Context {
 	return w.ctx
 }
 
-type wrappedClientStreamWithContext struct {
-	grpc.ClientStream
-	ctx context.Context
-}
-
-func (w *wrappedClientStreamWithContext) Context() context.Context {
-	return w.ctx
-}
-
 // contextReplacingStreamServerInterceptor is a helper to make a stream interceptor that modifies a context.
 func contextReplacingStreamServerInterceptor(ctxFn func(ctx context.Context) context.Context) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
@@ -59,15 +50,11 @@ func contextReplacingUnaryServerInterceptor(ctxFn func(ctx context.Context) cont
 // contextReplacingStreamClientInterceptor is a helper to make a stream interceptor that modifies a context.
 func contextReplacingStreamClientInterceptor(ctxFn func(ctx context.Context) context.Context) grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-		s, err := streamer(ctx, desc, cc, method, opts...)
-		if err != nil {
-			return nil, err
-		}
-		return &wrappedClientStreamWithContext{s, ctxFn(ctx)}, nil
+		return streamer(ctxFn(ctx), desc, cc, method, opts...)
 	}
 }
 
-// contextReplacingStreamClientInterceptor is a helper to make a unary interceptor that modifies a context.
+// contextReplacingUnaryClientInterceptor is a helper to make a unary interceptor that modifies a context.
 func contextReplacingUnaryClientInterceptor(ctxFn func(ctx context.Context) context.Context) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		return invoker(ctxFn(ctx), method, req, reply, cc, opts...)
