@@ -296,7 +296,11 @@ func StartAndRunServices(env environment.Env) {
 			log.Fatal(err)
 		}
 
-		StartGRPCServiceOrDie(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
+		sslgRPCServer := StartGRPCServiceOrDie(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
+		env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+			sslgRPCServer.GracefulStop()
+			return nil
+		})
 	}
 
 	mux := http.NewServeMux()
