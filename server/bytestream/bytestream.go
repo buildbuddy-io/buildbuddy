@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"io"
+	"log"
 	"net/url"
 	"strings"
 
@@ -26,18 +27,22 @@ func StreamBytestreamFile(ctx context.Context, env environment.Env, url *url.URL
 		localURL, _ := url.Parse(url.String())
 		localURL.Host = "localhost:" + getIntFlag("grpc_port", "1985")
 		err = streamFromUrl(ctx, localURL, false, callback)
+		log.Printf("Error E: %+v", err)
 	}
 
 	// If that fails, try to connect over grpcs
 	if err != nil || env.GetCache() == nil {
 		err = streamFromUrl(ctx, url, true, callback)
+		log.Printf("Error D: %+v", err)
 	}
 
 	// If that fails, try grpc
 	if err != nil {
 		err = streamFromUrl(ctx, url, false, callback)
+		log.Printf("Error C: %+v", err)
 	}
 
+	log.Printf("Error B: %+v", err)
 	return err
 }
 
@@ -51,6 +56,7 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 	conn, err := grpc_client.DialTargetWithOptions(url.String(), grpcs)
 
 	if err != nil {
+		log.Printf("Error F: %+v", err)
 		return err
 	}
 	client := bspb.NewByteStreamClient(conn)
@@ -63,6 +69,7 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 	}
 	readClient, err := client.Read(ctx, req)
 	if err != nil {
+		log.Printf("Error H: %+v", err)
 		return err
 	}
 
@@ -73,10 +80,12 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 			break
 		}
 		if err != nil {
+			log.Printf("Error G: %+v", err)
 			return err
 		}
 		callback(rsp.Data)
 	}
+	log.Printf("Error I: %+v", err)
 	return nil
 }
 

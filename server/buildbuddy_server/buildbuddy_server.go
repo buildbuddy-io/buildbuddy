@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -288,12 +289,15 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Stream the file back to our client
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 	w.Header().Set("Content-Type", "application/octet-stream")
+	log.Printf("Headers")
 
 	err = bytestream.StreamBytestreamFile(r.Context(), s.env, lookup.URL, func(data []byte) {
+		log.Printf("Writing")
 		w.Write(data)
 	})
 
 	if err != nil {
+		log.Printf("Error A: %+v", err)
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
