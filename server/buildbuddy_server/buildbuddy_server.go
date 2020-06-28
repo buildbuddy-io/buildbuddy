@@ -289,7 +289,10 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	err = bytestream.StreamBytestreamFile(r.Context(), s.env, lookup.URL, func(data []byte) {
+	// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
+	ctx := context.WithValue(r.Context(), "x-buildbuddy-jwt", nil)
+
+	err = bytestream.StreamBytestreamFile(ctx, s.env, lookup.URL, func(data []byte) {
 		w.Write(data)
 	})
 
