@@ -1347,6 +1347,14 @@ code .comment {
   padding: 0;
 }
 
+.dense .menu {
+  height: 64px;
+}
+
+.dense .menu .title img {
+  height: 32px;
+}
+
 .dense .shelf {
   padding: 0;
 }
@@ -1432,7 +1440,7 @@ code .comment {
 }
 
 .dense .card .details {
-  margin-top: 8px;
+  margin-top: 0px;
 }
 
 .dense .card .icon {
@@ -1517,6 +1525,18 @@ code .comment {
 .dense .load-more {
   margin-bottom: 0;
   border-radius: 0;
+}
+
+.dense .shelf .title {
+
+}
+
+.dense .history .card .title {
+  font-size: 20px;
+}
+
+.dense .detail {
+  margin-top: 4px;
 }
 
 /* Scrollbars */
