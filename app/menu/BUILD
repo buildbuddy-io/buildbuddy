@@ -8,6 +8,7 @@ ts_library(
     deps = [
         "//app/auth",
         "//app/capabilities",
+        "//app/router",
         "//app/service",
         "//proto:invocation_ts_proto",
         "//proto:user_ts_proto",

@@ -35,6 +35,10 @@ class Router {
     this.navigateTo('/' + (hash || ""));
   }
 
+  navigateToSetup() {
+    this.navigateTo(Path.setupPath);
+  }
+
   navigateToInvocation(invocationId: string) {
     if (!capabilities.canNavigateToPath(Path.invocationPath)) {
       alert(`Invocations are not available in ${capabilities.name}`);
@@ -123,6 +127,7 @@ export class Path {
   static hostHistoryPath = "/history/host/";
   static repoHistoryPath = "/history/repo/";
   static commitHistoryPath = "/history/commit/";
+  static setupPath = "/docs/setup/";
 }
 
 export default new Router();

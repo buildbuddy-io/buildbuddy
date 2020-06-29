@@ -32,6 +32,14 @@ export default class InvocationOverviewComponent extends React.Component {
     router.navigateToCommitHistory(this.props.model.getCommit());
   }
 
+  handleCacheClicked() {
+    router.navigateToSetup();
+  }
+
+  handleRBEClicked() {
+    router.navigateToSetup();
+  }
+
   render() {
     return <div className="container">
       <div className="breadcrumbs">
@@ -96,11 +104,11 @@ export default class InvocationOverviewComponent extends React.Component {
           <img className="icon" src="/image/git-commit-regular.svg" />
           {format.formatCommitHash(this.props.model.getCommit())}
         </div>}
-        <div className="detail">
+        <div className="detail clickable" onClick={this.handleCacheClicked.bind(this)}>
           <img className="icon" src="/image/package-regular.svg" />
           {this.props.model.getCache()}
         </div>
-        <div className="detail">
+        <div className="detail clickable" onClick={this.handleRBEClicked.bind(this)}>
           <img className="icon" src="/image/cloud-regular.svg" />
           {this.props.model.getRBE()}
         </div>

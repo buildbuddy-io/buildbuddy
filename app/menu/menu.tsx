@@ -1,6 +1,7 @@
 import React from 'react';
 import authService, { User } from '../auth/auth_service';
 import capabilities from '../capabilities/capabilities';
+import router from '../router/router';
 
 interface Props {
   children?: any;
@@ -30,6 +31,10 @@ export default class MenuComponent extends React.Component {
 
   handleToggleDenseModeClicked() {
     this.props.handleDenseModeToggled();
+  }
+
+  handleSetupClicked() {
+    router.navigateToSetup();
   }
 
   handleLoginClicked() {
@@ -63,7 +68,7 @@ export default class MenuComponent extends React.Component {
                       {this.props.denseModeEnabled ? "Disable" : "Enable"} dense mode
                 </a>
                   </li>
-                  <li><a href="/docs/setup">Setup instructions</a></li>
+                  <li onClick={this.handleSetupClicked.bind(this)}>Setup instructions</li>
                   {!capabilities.enterprise && <li><a target="_blank" href="https://buildbuddy.typeform.com/to/wIXFIA">Upgrade to Enterprise</a></li>}
                   <li><a href="mailto:hello@buildbuddy.io">Contact us</a></li>
                   {(capabilities.auth && !this.props.user) && <li onClick={this.handleLoginClicked.bind(this)}>Login</li>}
