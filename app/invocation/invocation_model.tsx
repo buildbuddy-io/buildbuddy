@@ -132,13 +132,18 @@ export default class InvocationModel {
   }
 
   getUser(possessive: boolean) {
+    let invocationUser = this.invocations.find(() => true)?.user;
+    if (invocationUser) {
+      return possessive ? `${invocationUser}'s` : invocationUser;
+    }
+
     let username = this.workspaceStatusMap.get('BUILD_USER') || this.clientEnvMap.get('USER');
     if (username == "<REDACTED>") {
       return "Loading";
     }
 
     if (!username) {
-      return possessive ? "Unknown user" : "Unknown user";
+      return possessive ? "Unknown user's" : "Unknown user";
     }
     return possessive ? `${username}'s` : username;
   }

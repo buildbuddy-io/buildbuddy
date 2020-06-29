@@ -141,6 +141,10 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 					invocation.StructuredCommandLine = append(invocation.StructuredCommandLine, filteredCL)
 				}
 
+				if user, ok := envVarMap["USER"]; ok {
+					invocation.User = user
+				}
+
 				invocation.RepoUrl = envVarMap["GITHUB_REPOSITORY"]
 				if url, ok := buildMetadataMap["REPO_URL"]; ok {
 					invocation.RepoUrl = url
