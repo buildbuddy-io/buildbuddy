@@ -33,6 +33,8 @@ const (
 	// has been set in the config and no timeout was set in the client
 	// request. It's basically the same as "no-timeout".
 	infiniteDuration = time.Hour * 24 * 7
+	// TODO(siggisim): Figure out why this needs to be so large for small tests.
+	timeoutGracePeriodFactor = 3
 )
 
 func getPlatformKey(platform *repb.Platform) string {
@@ -247,7 +249,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 		// These errors are failure-specific. Pass through unchanged.
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, execDuration)
+	ctx, cancel := context.WithTimeout(ctx, execDuration * timeoutGracePeriodFactor)
 	defer cancel()
 
 	actionDigestName := digest.DownloadResourceName(req.GetActionDigest(), req.GetInstanceName())
