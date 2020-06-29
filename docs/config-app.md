@@ -24,6 +24,8 @@
 
 * ```cache_api_url``` Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen. (Does not actually change the server address)
 
+* ```remote_execution_api_url``` Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen. (Does not actually change the server address)
+
 * ```default_to_dense_mode``` Enables Dense UI mode by default.
 
 ## Example section

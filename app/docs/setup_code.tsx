@@ -89,6 +89,11 @@ export default class SetupCodeComponent extends React.Component {
     return "";
   }
 
+  getRemoteExecution(otherFile?: boolean) {
+    let url = this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_executor")?.body;
+    return this.state.auth == "key" && (!this.state.separateAuth || (this.state.separateAuth && otherFile)) ? url : this.stripAPIKey(url);
+  }
+
   getCredentials() {
     return <div>
       <div>build --tls_client_certificate=buildbuddy-cert.pem</div>
@@ -104,12 +109,20 @@ export default class SetupCodeComponent extends React.Component {
     return !!this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_cache");
   }
 
+  isExecutionEnabled() {
+    return this.isAuthenticated() && !!this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_executor");
+  }
+
   isCertEnabled() {
     return this.getResponse()?.certificate?.cert && this.getResponse()?.certificate?.key;
   }
 
   stripAPIKey(url: string) {
     return url.replace(/\:\/\/.*\@/gi, "://");
+  }
+
+  isAuthenticated() {
+    return this.isAuthEnabled() && this.state.auth != "none";
   }
 
   handleCopyClicked(event: any) {
@@ -175,14 +188,16 @@ export default class SetupCodeComponent extends React.Component {
             <label htmlFor="cache-top">Top level</label>
           </span>}
 
-          {/* <input id="execution"
-            checked={this.state.executionChecked}
-            onChange={this.handleCheckboxChange.bind(this)}
-            name="executionChecked"
-            type="checkbox" />
-          <label htmlFor="execution"><span>Enable remote execution</span></label> */}
+          {this.isExecutionEnabled() && <span>
+            <input id="execution"
+              checked={this.state.executionChecked}
+              onChange={this.handleCheckboxChange.bind(this)}
+              name="executionChecked"
+              type="checkbox" />
+            <label htmlFor="execution"><span>Enable remote execution</span></label>
+          </span>}
 
-          {this.isAuthEnabled() && <span>
+          {this.isAuthenticated() && <span>
             <input id="split"
               checked={this.state.separateAuth}
               onChange={this.handleCheckboxChange.bind(this)}
@@ -198,16 +213,18 @@ export default class SetupCodeComponent extends React.Component {
             <div>{this.getEventStream()}</div>
             {this.state.cacheChecked && <div>{this.getCache()}</div>}
             {this.state.cacheChecked && <div>{this.getCacheOptions()}</div>}
+            {this.state.executionChecked && <div>{this.getRemoteExecution()}</div>}
             {this.state.auth == "cert" && !this.state.separateAuth && <div>{this.getCredentials()}</div>}
           </div>
           <button onClick={this.handleCopyClicked.bind(this)}>Copy</button>
         </code>
-        {this.state.separateAuth && <div>
+        {this.state.separateAuth && this.isAuthenticated() && <div>
           The file below contains your auth credentials - place it in your home directory at <span className="code">~/.bazelrc</span> or place it anywhere you'd like and add <span className="code">try-import /path/to/your/.bazelrc</span> in your primary <span className="code">.bazelrc</span> file.
           <code data-header="~/.bazelrc">
             <div className="contents">
               {this.state.auth != "cert" && <div>{this.getEventStream(true)}</div>}
               {this.state.auth != "cert" && this.state.cacheChecked && <div>{this.getCache(true)}</div>}
+              {this.state.auth != "cert" && this.state.executionChecked && <div>{this.getRemoteExecution(true)}</div>}
               {this.state.auth == "cert" && <div>{this.getCredentials()}</div>}
             </div>
             <button onClick={this.handleCopyClicked.bind(this)}>Copy</button>

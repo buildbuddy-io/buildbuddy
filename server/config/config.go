@@ -30,6 +30,7 @@ type appConfig struct {
 	BuildBuddyURL           string `yaml:"build_buddy_url"`
 	EventsAPIURL            string `yaml:"events_api_url"`
 	CacheAPIURL             string `yaml:"cache_api_url"`
+	RemoteExecutionAPIURL   string `yaml:"remote_execution_api_url"`
 	NoDefaultUserGroup      bool   `yaml:"no_default_user_group"`
 	CreateGroupPerUser      bool   `yaml:"create_group_per_user"`
 	AddUserToDomainGroup    bool   `yaml:"add_user_to_domain_group"`
@@ -252,6 +253,11 @@ func (c *Configurator) GetAppEventsAPIURL() string {
 func (c *Configurator) GetAppCacheAPIURL() string {
 	c.rereadIfStale()
 	return c.gc.App.CacheAPIURL
+}
+
+func (c *Configurator) GetAppRemoteExecutionAPIURL() string {
+	c.rereadIfStale()
+	return c.gc.App.RemoteExecutionAPIURL
 }
 
 func (c *Configurator) GetAppNoDefaultUserGroup() bool {

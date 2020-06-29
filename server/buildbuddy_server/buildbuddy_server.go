@@ -191,9 +191,9 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 	}
 	configOptions = append(configOptions, makeConfigOption("build", "bes_results_url", resultsURL+"/invocation/"))
 
+	grpcPort := getIntFlag("grpc_port", "1985")
 	eventsAPIURL := s.env.GetConfigurator().GetAppEventsAPIURL()
 	if eventsAPIURL == "" {
-		grpcPort := getIntFlag("grpc_port", "1985")
 		eventsAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 	}
 	groupAPIKey := s.getGroupAPIKey(ctx)
@@ -203,11 +203,19 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 	if s.env.GetCache() != nil {
 		cacheAPIURL := s.env.GetConfigurator().GetAppCacheAPIURL()
 		if cacheAPIURL == "" {
-			grpcPort := getIntFlag("grpc_port", "1985")
 			cacheAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
 		cacheAPIURL = insertPassword(cacheAPIURL, groupAPIKey)
 		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", cacheAPIURL))
+	}
+
+	if s.env.GetConfigurator().GetRemoteExecutionConfig() != nil {
+		remoteExecutionAPIURL := s.env.GetConfigurator().GetAppRemoteExecutionAPIURL()
+		if remoteExecutionAPIURL == "" {
+			remoteExecutionAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
+		}
+		remoteExecutionAPIURL = insertPassword(remoteExecutionAPIURL, groupAPIKey)
+		configOptions = append(configOptions, makeConfigOption("build", "remote_executor", remoteExecutionAPIURL))
 	}
 
 	cerificate := &bzpb.Certificate{}
