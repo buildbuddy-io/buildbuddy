@@ -21,8 +21,12 @@ export default class MenuComponent extends React.Component {
     menuExpanded: false
   };
 
-  handleShadeClicked() {
+  dismissMenu() {
     this.setState({ menuExpanded: false });
+  }
+
+  handleShadeClicked() {
+    this.dismissMenu();
   }
 
   handleMenuClicked() {
@@ -31,18 +35,22 @@ export default class MenuComponent extends React.Component {
 
   handleToggleDenseModeClicked() {
     this.props.handleDenseModeToggled();
+    this.dismissMenu();
   }
 
   handleSetupClicked() {
     router.navigateToSetup();
+    this.dismissMenu();
   }
 
   handleLoginClicked() {
     authService.login();
+    this.dismissMenu();
   }
 
   handleLogoutClicked() {
     authService.logout();
+    this.dismissMenu();
   }
 
   render() {
@@ -59,18 +67,14 @@ export default class MenuComponent extends React.Component {
             {this.state.menuExpanded &&
               <div className="side-menu">
                 <ul>
-                  {this.props.children && <li>{this.props.children}</li>}
-                  {this.props.user && !this.props.user?.selectedGroup.ownedDomain && !this.props.user?.isInDefaultGroup() && <li><a target="_blank" href="https://buildbuddy.typeform.com/to/PFjD5A">Create organization</a></li>}
-                  <li><a target="_blank" href="https://github.com/buildbuddy-io/buildbuddy/issues/new">Report an issue</a></li>
-                  <li><a target="_blank" href="https://github.com/buildbuddy-io/buildbuddy">Github repo</a></li>
-                  <li>
-                    <a onClick={this.handleToggleDenseModeClicked.bind(this)}>
-                      {this.props.denseModeEnabled ? "Disable" : "Enable"} dense mode
-                </a>
-                  </li>
+                  {this.props.children && <li onClick={this.dismissMenu.bind(this)}>{this.props.children}</li>}
+                  {this.props.user && !this.props.user?.selectedGroup.ownedDomain && !this.props.user?.isInDefaultGroup() && <li onClick={this.dismissMenu.bind(this)}><a target="_blank" href="https://buildbuddy.typeform.com/to/PFjD5A">Create organization</a></li>}
+                  <li onClick={this.dismissMenu.bind(this)}><a target="_blank" href="https://github.com/buildbuddy-io/buildbuddy/issues/new">Report an issue</a></li>
+                  <li onClick={this.dismissMenu.bind(this)}><a target="_blank" href="https://github.com/buildbuddy-io/buildbuddy">Github repo</a></li>
+                  <li onClick={this.handleToggleDenseModeClicked.bind(this)}>{this.props.denseModeEnabled ? "Disable" : "Enable"} dense mode</li>
                   <li onClick={this.handleSetupClicked.bind(this)}>Setup instructions</li>
-                  {!capabilities.enterprise && <li><a target="_blank" href="https://buildbuddy.typeform.com/to/wIXFIA">Upgrade to Enterprise</a></li>}
-                  <li><a href="mailto:hello@buildbuddy.io">Contact us</a></li>
+                  {!capabilities.enterprise && <li onClick={this.dismissMenu.bind(this)}><a target="_blank" href="https://buildbuddy.typeform.com/to/wIXFIA">Upgrade to Enterprise</a></li>}
+                  <li onClick={this.dismissMenu.bind(this)}><a href="mailto:hello@buildbuddy.io">Contact us</a></li>
                   {(capabilities.auth && !this.props.user) && <li onClick={this.handleLoginClicked.bind(this)}>Login</li>}
                   {(capabilities.auth && this.props.user) && <li onClick={this.handleLogoutClicked.bind(this)}>Logout</li>}
                 </ul>
