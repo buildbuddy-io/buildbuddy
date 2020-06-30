@@ -249,7 +249,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 		// These errors are failure-specific. Pass through unchanged.
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, execDuration * timeoutGracePeriodFactor)
+	ctx, cancel := context.WithTimeout(ctx, execDuration*timeoutGracePeriodFactor)
 	defer cancel()
 
 	actionDigestName := digest.DownloadResourceName(req.GetActionDigest(), req.GetInstanceName())
