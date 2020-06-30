@@ -234,6 +234,16 @@ button {
   margin-left: 0;
 }
 
+.org-button {
+  float: right;
+  background-color: rgba(38,50,56 ,1);
+  padding: 8px 16px;
+  border-radius: 32px;
+  margin-top: -6px;
+  color: #fff;
+  font-weight: 600;
+}
+
 /** Tabs **/
 
 .tabs {
@@ -363,16 +373,6 @@ button {
 
 .filter-input::placeholder {
   color: #aaa;
-}
-
-.org-button {
-  float: right;
-  background-color: rgba(38,50,56 ,1);
-  padding: 8px 16px;
-  border-radius: 32px;
-  margin-top: -6px;
-  color: #fff;
-  font-weight: 600;
 }
 
 /** Card **/
@@ -690,9 +690,6 @@ code .comment {
   color: #aaa;
 }
 
-.history .card .content {
-}
-
 .history .details {
   font-size: 14px;
   line-height: 1.6em;
@@ -838,7 +835,6 @@ code .comment {
   display: none;
 }
 
-
 .sort-control .selected {
   color: #000;
   font-weight: 600;
@@ -906,6 +902,8 @@ code .comment {
   font-weight: 600;
 }
 
+/** Tests **/
+
 .test-log {
   white-space: pre-wrap;
   font-family: 'Source Code Pro', monospace;
@@ -970,6 +968,8 @@ code .comment {
   font-weight: 300;
 }
 
+/** Invocation */
+
 .invocation-section {
   display: flex;
 }
@@ -1031,6 +1031,8 @@ code .comment {
   cursor: pointer;
   margin-top: 4px;
 }
+
+/** Login **/
 
 .login {
   background-color: #263238;
@@ -1155,6 +1157,8 @@ code .comment {
   }
 }
 
+/** Grid **/
+
 .grid {
   margin-top: 24px;
   display: flex;
@@ -1200,146 +1204,6 @@ code .comment {
 .grid-block-neutral.grid-block-hover {
   background-color: #666;
 }
-
-/**
- *  Default styles for xterm.js
- */
-
- .xterm {
-  font-feature-settings: "liga" 0;
-  position: relative;
-  user-select: none;
-  -ms-user-select: none;
-  -webkit-user-select: none;
-}
-
-.xterm.focus,
-.xterm:focus {
-  outline: none;
-}
-
-.xterm .xterm-helpers {
-  position: absolute;
-  top: 0;
-  /**
-   * The z-index of the helpers must be higher than the canvases in order for
-   * IMEs to appear on top.
-   */
-  z-index: 5;
-}
-
-.xterm .xterm-helper-textarea {
-  /*
-   * HACK: to fix IE's blinking cursor
-   * Move textarea out of the screen to the far left, so that the cursor is not visible.
-   */
-  position: absolute;
-  opacity: 0;
-  left: -9999em;
-  top: 0;
-  width: 0;
-  height: 0;
-  z-index: -5;
-  /** Prevent wrapping so the IME appears against the textarea at the correct position */
-  white-space: nowrap;
-  overflow: hidden;
-  resize: none;
-}
-
-.xterm .composition-view {
-  /* TODO: Composition position got messed up somewhere */
-  background: #000;
-  color: #FFF;
-  display: none;
-  position: absolute;
-  white-space: nowrap;
-  z-index: 1;
-}
-
-.xterm .composition-view.active {
-  display: block;
-}
-
-.xterm .xterm-viewport {
-  /* On OS X this is required in order for the scroll bar to appear fully opaque */
-  background-color: #000;
-  overflow-y: scroll;
-  cursor: default;
-  position: absolute;
-  right: 0;
-  left: 0;
-  top: 0;
-  bottom: 0;
-}
-
-.xterm .xterm-screen {
-  position: relative;
-}
-
-.xterm .xterm-screen canvas {
-  position: absolute;
-  left: 0;
-  top: 0;
-}
-
-.xterm .xterm-scroll-area {
-  visibility: hidden;
-}
-
-.xterm-char-measure-element {
-  display: inline-block;
-  visibility: hidden;
-  position: absolute;
-  top: 0;
-  left: -9999em;
-  line-height: normal;
-}
-
-.xterm {
-  cursor: text;
-}
-
-.xterm.enable-mouse-events {
-  /* When mouse events are enabled (eg. tmux), revert to the standard pointer cursor */
-  cursor: default;
-}
-
-.xterm.xterm-cursor-pointer {
-  cursor: pointer;
-}
-
-.xterm.column-select.focus {
-  /* Column selection mode */
-  cursor: crosshair;
-}
-
-.xterm .xterm-accessibility,
-.xterm .xterm-message {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  right: 0;
-  z-index: 10;
-  color: transparent;
-}
-
-.xterm .live-region {
-  position: absolute;
-  left: -9999px;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-}
-
-.xterm-dim {
-  opacity: 0.5;
-}
-
-.xterm-underline {
-  text-decoration: underline;
-}
-
 
 /** Dense mode **/
 
@@ -1436,10 +1300,6 @@ code .comment {
   box-shadow: 0px 1px 4px rgba(0, 0, 0, .10), 0px 1px 6px rgba(0, 0, 0, .05);
 }
 
-.dense .card .list-grid {
-  /* border-top: 1px solid #eee; */
-}
-
 .dense .card .details {
   margin-top: 0px;
 }
@@ -1475,9 +1335,6 @@ code .comment {
   font-size: 12px;
 }
 
-.dense-invocation-invocation-id {
-}
-
 .dense-invocation-status-bar {
   border-top: 4px solid #888;
   background-color: #eee;
@@ -1508,10 +1365,6 @@ code .comment {
   border-right: 1px solid #eee;
 }
 
-.dense-invocation-overview-grid-title {
-
-}
-
 .dense-invocation-overview-grid-value {
   font-size: 20px;
   font-weight: 600;
@@ -1526,10 +1379,6 @@ code .comment {
 .dense .load-more {
   margin-bottom: 0;
   border-radius: 0;
-}
-
-.dense .shelf .title {
-
 }
 
 .dense .history .card .title {
