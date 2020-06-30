@@ -22,7 +22,14 @@ go_test(
     embed = [":go_default_library"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//server/remote_cache/digest:go_default_library",
+        "//server/test_environment:go_default_library",
+        "//server/util/perms:go_default_library",
+        "//server/util/random:go_default_library",
         "//server/util/status:go_default_library",
+        "@go_googleapis//google/bytestream:bytestream_go_proto",
+        "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//status:go_default_library",
+        "@org_golang_google_grpc//test/bufconn:go_default_library",
     ],
 )
