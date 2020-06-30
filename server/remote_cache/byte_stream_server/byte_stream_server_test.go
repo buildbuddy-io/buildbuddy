@@ -13,7 +13,7 @@ import (
 // written in a "table-driven" way -- where you enumerate a list of expected
 // inputs and outputs, often in an anonymous struct, and then exercise a method
 // under test across those cases.
-func TestExtractDigestDownload(t *testing.T) {
+func TestExtractDigest(t *testing.T) {
 	cases := []struct {
 		resourceName     string
 		matcher          *regexp.Regexp
