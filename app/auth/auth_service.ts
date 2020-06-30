@@ -61,7 +61,7 @@ export class AuthService {
     user.displayUser = response.displayUser as user.DisplayUser;
     user.groups = response.userGroup as grp.Group[];
     if (user.groups.length > 0) {
-      user.selectedGroup = user.groups[0];
+      user.selectedGroup = user.groups.find(group => !!group?.ownedDomain) || user.groups[0];
     }
     return user;
   }
