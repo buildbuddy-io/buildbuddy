@@ -18,6 +18,7 @@ go_library(
 
 go_test(
     name = "go_default_test",
+    size = "small",
     srcs = ["byte_stream_server_test.go"],
     embed = [":go_default_library"],
     deps = [

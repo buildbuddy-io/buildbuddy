@@ -79,7 +79,7 @@ func GetTestEnv() (*TestEnv, error) {
 	te := &TestEnv{
 		RealEnv: real_environment.NewRealEnv(configurator, healthChecker),
 	}
-	c, err := memory_cache.NewMemoryCache(1024 * 1024 * 10 /* 10MB */)
+	c, err := memory_cache.NewMemoryCache(1000 * 1000 * 1000 /* 1GB */)
 	if err != nil {
 		return nil, err
 	}
