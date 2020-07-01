@@ -21,7 +21,7 @@ go_binary(
 
 container_image(
     name = "base_image",
-    base = "@go_image_base//image",
+    base = "@buildbuddy_go_image_base//image",
     symlinks = {
         "config.yaml": "app/server/cmd/buildbuddy.runfiles/buildbuddy/config/buildbuddy.release.yaml",
     },

@@ -154,3 +154,11 @@ http_archive(
 load("@io_buildbuddy_toolchain//:rules.bzl", "register_buildbuddy_toolchain")
 
 register_buildbuddy_toolchain(name = "buildbuddy_toolchain")
+
+load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
+container_pull(
+    name = "buildbuddy_go_image_base",
+    registry = "gcr.io",
+    repository = "distroless/base",
+    digest = "sha256:2b0a8e9a13dcc168b126778d9e947a7081b4d2ee1ee122830d835f176d0e2a70",
+)
