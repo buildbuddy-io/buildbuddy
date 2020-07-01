@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"net"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/test_environment"
@@ -15,29 +14,11 @@ import (
 	"testing"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/test/bufconn"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
-
-var (
-	lis *bufconn.Listener
-)
-
-func bufDialer(context.Context, string) (net.Conn, error) {
-	return lis.Dial()
-}
-
-func localGRPCServer() *grpc.Server {
-	lis = bufconn.Listen(1024 * 1024)
-	return grpc.NewServer()
-}
-
-func localGRPCConn(ctx context.Context) (*grpc.ClientConn, error) {
-	return grpc.DialContext(ctx, "bufnet", grpc.WithContextDialer(bufDialer), grpc.WithInsecure())
-}
 
 // This is an example of a pretty simple go unit test: Tests are typically
 // written in a "table-driven" way -- where you enumerate a list of expected
@@ -119,26 +100,23 @@ func TestExtractDigest(t *testing.T) {
 	}
 }
 
-func setupByteStreamServer(ctx context.Context, env *test_environment.TestEnv, t *testing.T) (func(), *grpc.ClientConn) {
+func runByteStreamServer(ctx context.Context, env *test_environment.TestEnv, t *testing.T) *grpc.ClientConn {
 	byteStreamServer, err := NewByteStreamServer(env)
 	if err != nil {
 		t.Error(err)
 	}
 
-	grpcServer := localGRPCServer()
+	grpcServer, runFunc := env.LocalGRPCServer()
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 
-	clientConn, err := localGRPCConn(ctx)
+	go runFunc()
+
+	clientConn, err := env.LocalGRPCConn(ctx)
 	if err != nil {
 		t.Error(err)
 	}
 
-	runFn := func() {
-		if err := grpcServer.Serve(lis); err != nil {
-			t.Error(err)
-		}
-	}
-	return runFn, clientConn
+	return clientConn
 }
 
 func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.InstanceNameDigest, out io.Writer) error {
@@ -171,9 +149,8 @@ func TestRPCRead(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	runFn, clientConn := setupByteStreamServer(ctx, te, t)
+	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
-	go runFn()
 
 	randStr := func(i int) string {
 		rstr, err := random.RandomString(i)
