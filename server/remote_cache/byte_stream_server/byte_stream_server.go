@@ -184,7 +184,6 @@ type writeState struct {
 	hash               string
 	writer             io.WriteCloser
 	bytesWritten       int64
-	alreadyExists      bool
 }
 
 func checkInitialPreconditions(req *bspb.WriteRequest) error {
@@ -233,19 +232,12 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
 	cache := s.getCache(instanceName)
 
-	ws := &writeState{
-		activeResourceName: req.ResourceName,
-		hash:               d.GetHash(),
-	}
-
 	// The protocol says it is *optional* to allow overwriting, but does
 	// not specify what errors should be returned in that case. We would
 	// like to return an "AlreadyExists" error here, but it causes errors
 	// with parallel actions during remote execution.
 	//
-	// Protocol does say that if another parallel write had finished while
-	// this one was ongoing, we can immediately return a response with the
-	// committed size, so we'll just do that.
+	// Instead, we'll dump the bytes to /dev/null and call it a day.
 	exists, err := cache.Contains(ctx, d)
 	if err != nil {
 		return nil, err
@@ -259,15 +251,13 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	} else {
 		wc = NewDiscardWriteCloser()
 	}
-	ws.writer = wc
-	ws.alreadyExists = exists
-	if exists {
-		ws.bytesWritten = d.GetSizeBytes()
-	} else {
-		ws.bytesWritten = 0
-	}
-	return ws, nil
 
+	return &writeState{
+		activeResourceName: req.ResourceName,
+		writer:             wc,
+		bytesWritten:       0,
+		hash:               d.GetHash(),
+	}, nil
 }
 
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
@@ -288,12 +278,6 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			streamState, err = s.initStreamState(stream.Context(), req)
 			if err != nil {
 				return err
-			}
-			if streamState.alreadyExists {
-				stream.SendAndClose(&bspb.WriteResponse{
-					CommittedSize: streamState.bytesWritten,
-				})
-				break
 			}
 		} else { // Subsequent messages
 			if err := checkSubsequentPreconditions(req, streamState); err != nil {
