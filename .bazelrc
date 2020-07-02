@@ -25,7 +25,7 @@ build:remote --bes_results_url=https://app.buildbuddy.io/invocation/
 build:remote --bes_backend=grpcs://cloud.buildbuddy.io
 build:remote --remote_cache=grpcs://cloud.buildbuddy.io
 build:remote --remote_executor=grpcs://cloud.buildbuddy.io
-build:cache --remote_upload_local_results
+build:remote --remote_upload_local_results
 build:remote --crosstool_top=@buildbuddy_toolchain//:toolchain
 
 # By default, build logs get sent to the production server
