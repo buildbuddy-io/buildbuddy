@@ -281,9 +281,9 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 				return err
 			}
 
-			if err := s.exDB.InsertExecutionSummary(ctx, req.GetActionDigest(), md.GetWorker(), execSummary); err != nil {
-				return err
-			}
+			//			if err := s.exDB.InsertExecutionSummary(ctx, req.GetActionDigest(), md.GetWorker(), execSummary); err != nil {
+			//				return err
+			//			}
 		}
 
 		// logActionResult(req.GetActionDigest(), md)
