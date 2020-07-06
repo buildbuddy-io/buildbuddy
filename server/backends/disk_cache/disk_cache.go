@@ -75,7 +75,6 @@ func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
 	c := &DiskCache{
 		rootDir:      rootDir,
 		maxSizeBytes: maxSizeBytes,
-		prefix:       rootDir,
 		lock:         &sync.RWMutex{},
 	}
 	if err := c.initializeCache(); err != nil {
@@ -187,7 +186,7 @@ func (c *DiskCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return perms.UserPrefixFromContext(ctx) + c.prefix + hash, nil
+	return filepath.Join(c.rootDir, perms.UserPrefixFromContext(ctx) + c.prefix + hash), nil
 }
 
 func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
