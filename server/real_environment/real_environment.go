@@ -41,7 +41,6 @@ type RealEnv struct {
 	webhooks                        []interfaces.Webhook
 	buildEventProxyClients          []*build_event_proxy.BuildEventProxyClient
 	cache                           interfaces.Cache
-	digestCache                     interfaces.DigestCache
 	userDB                          interfaces.UserDB
 	authDB                          interfaces.AuthDB
 	invocationSearchService         interfaces.InvocationSearchService
@@ -122,13 +121,6 @@ func (r *RealEnv) GetCache() interfaces.Cache {
 }
 func (r *RealEnv) SetCache(c interfaces.Cache) {
 	r.cache = c
-}
-
-func (r *RealEnv) GetDigestCache() interfaces.DigestCache {
-	return r.digestCache
-}
-func (r *RealEnv) SetDigestCache(d interfaces.DigestCache) {
-	r.digestCache = d
 }
 
 func (r *RealEnv) GetAuthenticator() interfaces.Authenticator {

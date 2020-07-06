@@ -93,12 +93,12 @@ func HashProperties(props map[string]string) string {
 
 type ExecutionServer struct {
 	env   environment.Env
-	cache interfaces.DigestCache
+	cache interfaces.Cache
 	exDB  interfaces.ExecutionDB
 }
 
 func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
-	cache := env.GetDigestCache()
+	cache := env.GetCache()
 	if cache == nil {
 		return nil, fmt.Errorf("A cache is required to enable the RemoteExecutionServer")
 	}

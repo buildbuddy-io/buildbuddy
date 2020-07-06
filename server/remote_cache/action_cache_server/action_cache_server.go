@@ -22,11 +22,11 @@ const (
 
 type ActionCacheServer struct {
 	env   environment.Env
-	cache interfaces.DigestCache
+	cache interfaces.Cache
 }
 
 func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
-	cache := env.GetDigestCache()
+	cache := env.GetCache()
 	if cache == nil {
 		return nil, fmt.Errorf("A cache is required to enable the ActionCacheServer")
 	}
@@ -36,7 +36,7 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func (s *ActionCacheServer) getCache(instanceName string) interfaces.DigestCache {
+func (s *ActionCacheServer) getCache(instanceName string) interfaces.Cache {
 	c := s.cache
 	if instanceName != "" {
 		c = c.WithPrefix(instanceName)
@@ -44,7 +44,7 @@ func (s *ActionCacheServer) getCache(instanceName string) interfaces.DigestCache
 	return c.WithPrefix(acCachePrefix)
 }
 
-func (s *ActionCacheServer) checkFilesExist(ctx context.Context, cache interfaces.DigestCache, digests []*repb.Digest) error {
+func (s *ActionCacheServer) checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*repb.Digest) error {
 	foundMap, err := cache.ContainsMulti(ctx, digests)
 	if err != nil {
 		return err
@@ -61,7 +61,7 @@ func (s *ActionCacheServer) checkFilesExist(ctx context.Context, cache interface
 	return nil
 }
 
-func (s *ActionCacheServer) checkDirExists(ctx context.Context, cache interfaces.DigestCache, dir *repb.Directory) error {
+func (s *ActionCacheServer) checkDirExists(ctx context.Context, cache interfaces.Cache, dir *repb.Directory) error {
 	digests := make([]*repb.Digest, 0, len(dir.GetFiles()))
 	for _, f := range dir.GetFiles() {
 		if f.Digest == nil {
@@ -72,7 +72,7 @@ func (s *ActionCacheServer) checkDirExists(ctx context.Context, cache interfaces
 	return s.checkFilesExist(ctx, cache, digests)
 }
 
-func (s *ActionCacheServer) validateActionResult(ctx context.Context, cache interfaces.DigestCache, r *repb.ActionResult) error {
+func (s *ActionCacheServer) validateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.ActionResult) error {
 	outputFileDigests := make([]*repb.Digest, 0, len(r.OutputFiles))
 	for _, f := range r.OutputFiles {
 		if len(f.Contents) > 0 && f.GetDigest().GetSizeBytes() > 0 {

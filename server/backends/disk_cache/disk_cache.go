@@ -9,13 +9,16 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
@@ -32,10 +35,11 @@ type DiskCache struct {
 	rootDir      string
 	maxSizeBytes int64
 
-	lock      sync.RWMutex // PROTECTS: evictList, entries, sizeBytes
+	lock      *sync.RWMutex // PROTECTS: evictList, entries, sizeBytes
 	evictList *list.List
 	entries   map[string]*list.Element
 	sizeBytes int64
+	prefix    string
 }
 
 type fileRecord struct {
@@ -71,11 +75,30 @@ func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
 	c := &DiskCache{
 		rootDir:      rootDir,
 		maxSizeBytes: maxSizeBytes,
+		prefix:       rootDir,
+		lock:         &sync.RWMutex{},
 	}
 	if err := c.initializeCache(); err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
+	newPrefix := filepath.Join(append(filepath.SplitList(c.prefix), prefix)...)
+	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
+		newPrefix += "/"
+	}
+
+	return &DiskCache{
+		rootDir:      c.rootDir,
+		maxSizeBytes: c.maxSizeBytes,
+		lock:         c.lock,
+		evictList:    c.evictList,
+		entries:      c.entries,
+		sizeBytes:    c.sizeBytes,
+		prefix:       newPrefix,
+	}
 }
 
 func (c *DiskCache) initializeCache() error {
@@ -159,17 +182,16 @@ func (c *DiskCache) checkSizeAndEvict(ctx context.Context, n int64) error {
 	return nil
 }
 
-func (c *DiskCache) PrefixKey(ctx context.Context, blobName string) (string, error) {
-	// Probably could be more careful here but we are generating these ourselves
-	// for now.
-	if strings.Contains(blobName, "..") {
-		return "", status.InvalidArgumentErrorf("blobName (%s) must not contain ../", blobName)
+func (c *DiskCache) key(ctx context.Context, d *repb.Digest) (string, error) {
+	hash, err := digest.Validate(d)
+	if err != nil {
+		return "", err
 	}
-	return filepath.Join(c.rootDir, blobName), nil
+	return perms.UserPrefixFromContext(ctx) + c.prefix + hash, nil
 }
 
-func (c *DiskCache) Contains(ctx context.Context, key string) (bool, error) {
-	fullPath, err := c.PrefixKey(ctx, key)
+func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+	k, err := c.key(ctx, d)
 	if err != nil {
 		return false, err
 	}
@@ -186,61 +208,61 @@ func (c *DiskCache) Contains(ctx context.Context, key string) (bool, error) {
 	// [ActionResult][build.bazel.remote.execution.v2.ActionResult] and will be
 	// for some period of time afterwards. The TTLs of the referenced blobs SHOULD be increased
 	// if necessary and applicable.
-	return c.useEntry(fullPath), nil
+	return c.useEntry(k), nil
 }
 
-func (c *DiskCache) ContainsMulti(ctx context.Context, keys []string) (map[string]bool, error) {
-	foundMap := make(map[string]bool, len(keys))
+func (c *DiskCache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
+	foundMap := make(map[*repb.Digest]bool, len(digests))
 	// No parallelism here -- we don't know enough about what kind of io
 	// characteristics our disk has anyway. And disk is usually used for
 	// on-prem / small instances where this doesn't matter as much.
-	for _, key := range keys {
-		ok, err := c.Contains(ctx, key)
+	for _, d := range digests {
+		ok, err := c.Contains(ctx, d)
 		if err != nil {
 			return nil, err
 		}
-		foundMap[key] = ok
+		foundMap[d] = ok
 	}
 	return foundMap, nil
 }
 
-func (c *DiskCache) Get(ctx context.Context, key string) ([]byte, error) {
-	fullPath, err := c.PrefixKey(ctx, key)
+func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	k, err := c.key(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	c.useEntry(fullPath)
-	return disk.ReadFile(ctx, fullPath)
+	c.useEntry(k)
+	return disk.ReadFile(ctx, k)
 }
 
-func (c *DiskCache) GetMulti(ctx context.Context, keys []string) (map[string][]byte, error) {
-	foundMap := make(map[string][]byte, len(keys))
+func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	foundMap := make(map[*repb.Digest][]byte, len(digests))
 	// No parallelism here either. Not necessary for an in-memory cache.
-	for _, key := range keys {
-		data, err := c.Get(ctx, key)
+	for _, d := range digests {
+		data, err := c.Get(ctx, d)
 		if err != nil {
 			return nil, err
 		}
-		foundMap[key] = data
+		foundMap[d] = data
 	}
 	return foundMap, nil
 }
 
-func (c *DiskCache) Set(ctx context.Context, key string, data []byte) error {
-	fullPath, err := c.PrefixKey(ctx, key)
+func (c *DiskCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+	k, err := c.key(ctx, d)
 	if err != nil {
 		return err
 	}
 	if err := c.checkSizeAndEvict(ctx, int64(len(data))); err != nil {
 		return err
 	}
-	n, err := disk.WriteFile(ctx, fullPath, data)
+	n, err := disk.WriteFile(ctx, k, data)
 	if err != nil {
 		// If we had an error writing the file, just return that.
 		return err
 	}
 	c.addEntry(&fileRecord{
-		key:       fullPath,
+		key:       k,
 		sizeBytes: int64(n),
 		lastUse:   time.Now(),
 	})
@@ -248,22 +270,23 @@ func (c *DiskCache) Set(ctx context.Context, key string, data []byte) error {
 
 }
 
-func (c *DiskCache) Delete(ctx context.Context, key string) error {
-	fullPath, err := c.PrefixKey(ctx, key)
+func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
+	k, err := c.key(ctx, d)
 	if err != nil {
 		return err
 	}
-	c.removeEntry(fullPath)
-	return disk.DeleteFile(ctx, fullPath)
+	c.removeEntry(k)
+	return disk.DeleteFile(ctx, k)
 }
 
-func (c *DiskCache) Reader(ctx context.Context, key string, offset, length int64) (io.Reader, error) {
-	fullPath, err := c.PrefixKey(ctx, key)
+func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error) {
+	k, err := c.key(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	c.useEntry(fullPath)
-	return disk.FileReader(ctx, fullPath, offset, length)
+	c.useEntry(k)
+	length := d.GetSizeBytes()
+	return disk.FileReader(ctx, k, offset, length)
 }
 
 type dbCloseFn func(totalBytesWritten int64) error
@@ -291,12 +314,13 @@ func (d *dbWriteOnClose) Close() error {
 	return d.closeFn(d.bytesWritten)
 }
 
-func (c *DiskCache) Writer(ctx context.Context, key string) (io.WriteCloser, error) {
-	fullPath, err := c.PrefixKey(ctx, key)
+func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+	k, err := c.key(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	writeCloser, err := disk.FileWriter(ctx, fullPath)
+
+	writeCloser, err := disk.FileWriter(ctx, k)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +332,7 @@ func (c *DiskCache) Writer(ctx context.Context, key string) (io.WriteCloser, err
 				return err
 			}
 			c.addEntry(&fileRecord{
-				key:       fullPath,
+				key:       k,
 				sizeBytes: totalBytesWritten,
 				lastUse:   time.Now(),
 			})

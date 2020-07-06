@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
 	"io/ioutil"
 	"math/big"
@@ -21,14 +23,25 @@ import (
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 	"google.golang.org/grpc/credentials"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 type CertCache struct {
 	cache interfaces.Cache
 }
 
+func digestForKey(key string) *repb.Digest {
+	h := sha256.New()
+	h.Write([]byte(key))
+	return &repb.Digest{
+		Hash:      hex.EncodeToString(h.Sum(nil)),
+		SizeBytes: 10000, // Fake Size.
+	}
+}
+
 func (c *CertCache) Get(ctx context.Context, key string) ([]byte, error) {
-	bytes, err := c.cache.Get(ctx, key)
+	bytes, err := c.cache.Get(ctx, digestForKey(key))
 	if err != nil {
 		return nil, autocert.ErrCacheMiss
 	}
@@ -36,11 +49,11 @@ func (c *CertCache) Get(ctx context.Context, key string) ([]byte, error) {
 }
 
 func (c *CertCache) Put(ctx context.Context, key string, data []byte) error {
-	return c.cache.Set(ctx, key, data)
+	return c.cache.Set(ctx, digestForKey(key), data)
 }
 
 func (c *CertCache) Delete(ctx context.Context, key string) error {
-	return c.cache.Delete(ctx, key)
+	return c.cache.Delete(ctx, digestForKey(key))
 }
 
 func NewCertCache(cache interfaces.Cache) *CertCache {

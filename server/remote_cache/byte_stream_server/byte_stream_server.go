@@ -32,11 +32,11 @@ var (
 
 type ByteStreamServer struct {
 	env   environment.Env
-	cache interfaces.DigestCache
+	cache interfaces.Cache
 }
 
 func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
-	cache := env.GetDigestCache()
+	cache := env.GetCache()
 	if cache == nil {
 		return nil, status.FailedPreconditionError("A cache is required to enable the ByteStreamServer")
 	}
@@ -46,7 +46,7 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	}, nil
 }
 
-func (s *ByteStreamServer) getCache(instanceName string) interfaces.DigestCache {
+func (s *ByteStreamServer) getCache(instanceName string) interfaces.Cache {
 	c := s.cache
 	if instanceName != "" {
 		c = c.WithPrefix(instanceName)

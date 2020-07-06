@@ -79,33 +79,14 @@ type Blobstore interface {
 // Similar to a blobstore, a cache allows for reading and writing data, but
 // additionally it is responsible for deleting data that is past TTL to keep to
 // a manageable size.
-type Cache interface {
-	// Normal cache-like operations.
-	Contains(ctx context.Context, key string) (bool, error)
-	ContainsMulti(ctx context.Context, keys []string) (map[string]bool, error)
-	Get(ctx context.Context, key string) ([]byte, error)
-	GetMulti(ctx context.Context, keys []string) (map[string][]byte, error)
-	Set(ctx context.Context, key string, data []byte) error
-	Delete(ctx context.Context, key string) error
-
-	// Low level interface used for seeking and stream-writing.
-	Reader(ctx context.Context, key string, offset, length int64) (io.Reader, error)
-	Writer(ctx context.Context, key string) (io.WriteCloser, error)
-
-	// Begin garbage collection and any other necessary background tasks.
-	Start() error
-	// Stop garbage collection etc.
-	Stop() error
-}
-
 // Similar to the Cache above, a digest cache allows for more intelligent
 // storing of blob data based on its size.
-type DigestCache interface {
-	// Returns a new DigestCache that will store everything under the prefix
+type Cache interface {
+	// Returns a new Cache that will store everything under the prefix
 	// specified by "prefix". The prefix specified is concatenated onto the
 	// currently set prefix -- so this is a relative operation, not an
 	// absolute one.
-	WithPrefix(prefix string) DigestCache
+	WithPrefix(prefix string) Cache
 
 	// Normal cache-like operations.
 	Contains(ctx context.Context, d *repb.Digest) (bool, error)

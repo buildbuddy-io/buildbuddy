@@ -23,11 +23,11 @@ const gRPCMaxSize = int64(4194304 - 2000)
 
 type ContentAddressableStorageServer struct {
 	env   environment.Env
-	cache interfaces.DigestCache
+	cache interfaces.Cache
 }
 
 func NewContentAddressableStorageServer(env environment.Env) (*ContentAddressableStorageServer, error) {
-	cache := env.GetDigestCache()
+	cache := env.GetCache()
 	if cache == nil {
 		return nil, fmt.Errorf("A cache is required to enable the ContentAddressableStorageServer")
 	}
@@ -37,7 +37,7 @@ func NewContentAddressableStorageServer(env environment.Env) (*ContentAddressabl
 	}, nil
 }
 
-func (s *ContentAddressableStorageServer) getCache(instanceName string) interfaces.DigestCache {
+func (s *ContentAddressableStorageServer) getCache(instanceName string) interfaces.Cache {
 	c := s.cache
 	if instanceName != "" {
 		c = c.WithPrefix(instanceName)
@@ -262,7 +262,7 @@ func (d *dirStack) SerializeToToken() (string, error) {
 	return token, nil
 }
 
-func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, cache interfaces.DigestCache, reqDigest *repb.Digest) (*repb.Directory, error) {
+func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, cache interfaces.Cache, reqDigest *repb.Digest) (*repb.Directory, error) {
 	_, err := digest.Validate(reqDigest)
 	if err != nil {
 		return nil, err
