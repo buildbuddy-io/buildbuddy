@@ -186,7 +186,7 @@ func (c *DiskCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(c.rootDir, perms.UserPrefixFromContext(ctx) + c.prefix + hash), nil
+	return filepath.Join(c.rootDir, perms.UserPrefixFromContext(ctx)+c.prefix+hash), nil
 }
 
 func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
