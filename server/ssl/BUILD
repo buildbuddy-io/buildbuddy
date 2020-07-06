@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/ssl",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:remote_execution_go_proto",
         "//server/environment:go_default_library",
         "//server/interfaces:go_default_library",
         "//server/util/status:go_default_library",
