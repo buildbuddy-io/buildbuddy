@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 
 	"google.golang.org/grpc"
@@ -84,6 +83,5 @@ func GetTestEnv() (*TestEnv, error) {
 		return nil, err
 	}
 	te.SetCache(c)
-	te.SetDigestCache(digest.NewDigestCache(c))
 	return te, nil
 }

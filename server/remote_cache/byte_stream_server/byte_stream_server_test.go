@@ -168,7 +168,7 @@ func TestRPCRead(t *testing.T) {
 	ctx = perms.AttachUserPrefixToContext(ctx, te)
 	for _, tc := range cases {
 		// Set the value in the cache.
-		if err := te.GetDigestCache().Set(ctx, tc.instanceNameDigest.Digest, []byte(tc.wantData)); err != nil {
+		if err := te.GetCache().Set(ctx, tc.instanceNameDigest.Digest, []byte(tc.wantData)); err != nil {
 			t.Fatal(err)
 		}
 
