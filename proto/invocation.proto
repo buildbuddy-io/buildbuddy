@@ -193,17 +193,23 @@ message InvocationStat {
   // The time (in usec since epoch) of the latest green build by this entity.
   int64 last_green_build_usec = 7;
 
+  // The time (in usec since epoch) of the latest red build by this entity.
+  int64 last_red_build_usec = 10;
+
   // The total number of invocations completed successfully by this entity.
   int64 total_num_sucessful_builds = 8;
 
   // The total number of invocations completed unsuccessfully by this entity.
   int64 total_num_failing_builds = 9;
+
+  // The total number of in-progress invocations by this entity.
+  int64 total_num_in_progress_builds = 11;
 }
 
 message GetInvocationStatRequest {
   context.RequestContext request_context = 1;
 
-  // The requested aggregation type. I
+  // The requested aggregation type.
   AggType aggregation_type = 2;
 }
 
