@@ -290,10 +290,9 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 			if streamState.alreadyExists {
-				stream.SendAndClose(&bspb.WriteResponse{
+				return stream.SendAndClose(&bspb.WriteResponse{
 					CommittedSize: streamState.bytesWritten,
 				})
-				break
 			}
 		} else { // Subsequent messages
 			if err := checkSubsequentPreconditions(req, streamState); err != nil {
@@ -310,10 +309,9 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			if err := streamState.writer.Close(); err != nil {
 				return err
 			}
-			stream.SendAndClose(&bspb.WriteResponse{
+			return stream.SendAndClose(&bspb.WriteResponse{
 				CommittedSize: streamState.bytesWritten,
 			})
-			break
 		}
 	}
 	return nil
