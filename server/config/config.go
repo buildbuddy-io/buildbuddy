@@ -104,12 +104,13 @@ type OauthProvider struct {
 }
 
 type SSLConfig struct {
-	EnableSSL        bool   `yaml:"enable_ssl"`
-	UseACME          bool   `yaml:"use_acme"`
-	CertFile         string `yaml:"cert_file"`
-	KeyFile          string `yaml:"key_file"`
-	ClientCACertFile string `yaml:"client_ca_cert_file"`
-	ClientCAKeyFile  string `yaml:"client_ca_key_file"`
+	EnableSSL        bool     `yaml:"enable_ssl"`
+	UseACME          bool     `yaml:"use_acme"`
+	CertFile         string   `yaml:"cert_file"`
+	KeyFile          string   `yaml:"key_file"`
+	ClientCACertFile string   `yaml:"client_ca_cert_file"`
+	ClientCAKeyFile  string   `yaml:"client_ca_key_file"`
+	HostWhitelist    []string `yaml:"host_whitelist"`
 }
 
 type RemoteExecutionTarget struct {

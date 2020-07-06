@@ -130,6 +130,10 @@ func (s *SSLService) populateTLSConfig() error {
 		}
 		hosts := []string{url.Hostname()}
 
+		if sslConf.HostWhitelist != nil {
+			hosts = append(hosts, sslConf.HostWhitelist...)
+		}
+
 		cacheURL := s.env.GetConfigurator().GetAppCacheAPIURL()
 		if url, err = url.Parse(cacheURL); cacheURL != "" && err == nil {
 			hosts = append(hosts, url.Hostname())
