@@ -67,13 +67,22 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		forwardingStreams = append(forwardingStreams, stream)
 	}
 
+	disconnectWithErr := func(e error) error {
+		if channel != nil && streamID != nil {
+			if err := channel.MarkInvocationDisconnected(stream.Context(), streamID.InvocationId); err != nil {
+				log.Printf("Error marking invocation %q as disconnected", streamID.InvocationId)
+			}
+		}
+		return e
+	}
+
 	for {
 		in, err := stream.Recv()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return err
+			return disconnectWithErr(err)
 		}
 		if streamID == nil {
 			streamID = in.OrderedBuildEvent.StreamId
@@ -82,7 +91,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 
 		if err := channel.HandleEvent(stream.Context(), in); err != nil {
 			log.Printf("Error handling event; this means a broken build command: %s", err)
-			return err
+			return disconnectWithErr(err)
 		}
 		for _, stream := range forwardingStreams {
 			// Intentionally ignore errors here -- proxying is best effort.
@@ -110,7 +119,9 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			StreamId:       streamID,
 			SequenceNumber: int64(ack),
 		}
-		stream.Send(rsp)
+		if err := stream.Send(rsp); err != nil {
+			return disconnectWithErr(err)
+		}
 	}
 	return nil
 }

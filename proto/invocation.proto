@@ -39,6 +39,7 @@ message Invocation {
     UNKNOWN_INVOCATION_STATUS = 0;
     COMPLETE_INVOCATION_STATUS = 1;
     PARTIAL_INVOCATION_STATUS = 2;
+    DISCONNECTED_INVOCATION_STATUS = 3;
   }
   InvocationStatus invocation_status = 10;
 
