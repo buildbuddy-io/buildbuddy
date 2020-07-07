@@ -36,6 +36,9 @@ func NewDBHandle(dialect string, args ...interface{}) (*DBHandle, error) {
 	gdb.LogMode(false)
 	if *autoMigrateDB {
 		gdb.AutoMigrate(tables.GetAllTables()...)
+		if err := tables.ManualMigrate(gdb); err != nil {
+			return nil, err
+		}
 	}
 	// SQLITE Special! To avoid "database is locked errors":
 	if dialect == sqliteDialect {

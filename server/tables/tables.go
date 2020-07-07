@@ -97,7 +97,7 @@ type Invocation struct {
 	RepoURL          string `gorm:"index:repo_url_index"`
 	CommitSHA        string `gorm:"index:commit_sha_index"`
 	Command          string
-	Pattern          string
+	Pattern          string `gorm:"type:text;"`
 	ActionCount      int64
 	BlobID           string
 	InvocationStatus int64 `gorm:"index:invocation_status_idx"`
@@ -318,6 +318,11 @@ type TelemetryLog struct {
 
 func (t *TelemetryLog) TableName() string {
 	return "TelemetryLog"
+}
+
+func ManualMigrate(db *gorm.DB) error {
+	db.Model(&Invocation{}).ModifyColumn("pattern", "text")
+	return nil
 }
 
 func init() {
