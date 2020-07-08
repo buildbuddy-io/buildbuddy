@@ -6,7 +6,10 @@ load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 # the static_content we created above so they are included.
 go_binary(
     name = "buildbuddy",
-    args = ["--config_file=config/buildbuddy.local.yaml"],
+    args = [
+        "--config_file=config/buildbuddy.local.yaml",
+        "--max_shutdown_duration=3s",
+    ],
     data = [
         "//:config_files",
         "//app:app_bundle.min",
