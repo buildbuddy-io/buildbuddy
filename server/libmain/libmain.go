@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 
@@ -244,9 +245,9 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 	}
 
 	go func() {
-		log.Fatal(grpcServer.Serve(lis))
+		grpcServer.Serve(lis)
 	}()
-
+	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
 	return grpcServer
 }
 
@@ -283,22 +284,13 @@ func StartAndRunServices(env environment.Env) {
 
 	grpcServer := StartGRPCServiceOrDie(env, buildBuddyServer, gRPCPort, nil)
 
-	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		grpcServer.GracefulStop()
-		return nil
-	})
-
 	if sslService.IsEnabled() {
 		creds, err := sslService.GetGRPCSTLSCreds()
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		sslgRPCServer := StartGRPCServiceOrDie(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
-		env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-			sslgRPCServer.GracefulStop()
-			return nil
-		})
+		StartGRPCServiceOrDie(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
 	}
 
 	mux := http.NewServeMux()
@@ -345,7 +337,8 @@ func StartAndRunServices(env environment.Env) {
 	}
 
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		return server.Shutdown(ctx)
+		err := server.Shutdown(ctx)
+		return err
 	})
 
 	if sslService.IsEnabled() {
@@ -359,15 +352,15 @@ func StartAndRunServices(env environment.Env) {
 			TLSConfig: tlsConfig,
 		}
 		go func() {
-			log.Fatal(sslServer.ListenAndServeTLS("", ""))
+			sslServer.ListenAndServeTLS("", "")
 		}()
 		go func() {
-			log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), sslHandler))
+			http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), sslHandler)
 		}()
 	} else {
 		// If no SSL is enabled, we'll just serve things as-is.
 		go func() {
-			log.Fatal(server.ListenAndServe())
+			server.ListenAndServe()
 		}()
 	}
 	env.GetHealthChecker().WaitForGracefulShutdown()

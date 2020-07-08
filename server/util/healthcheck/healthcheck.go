@@ -2,21 +2,25 @@ package healthcheck
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 )
 
-const (
-	maxShutdownDuration = 60 * time.Second
+var (
+	maxShutdownDuration = flag.Duration("max_shutdown_duration", 25*time.Second, "Time to wait for shutdown")
+)
 
+const (
 	healthCheckPeriod  = 3 * time.Second // The time to wait between health checks.
 	healthCheckTimeout = 2 * time.Second // How long a health check may take, max.
 )
@@ -37,9 +41,11 @@ type HealthChecker struct {
 	done          chan bool
 	quit          chan os.Signal
 	shutdownFuncs []ShutDownFunc
-	lock          sync.RWMutex // protects: readyToServe
-	readyToServe  bool
-	checkers      map[string]Checker
+
+	lock         sync.RWMutex // protects: readyToServe, shuttingDown
+	readyToServe bool
+	shuttingDown bool
+	checkers     map[string]Checker
 }
 
 func NewHealthChecker(serverType string) *HealthChecker {
@@ -51,7 +57,7 @@ func NewHealthChecker(serverType string) *HealthChecker {
 		readyToServe:  true,
 		checkers:      make(map[string]Checker, 0),
 	}
-	signal.Notify(hc.quit, os.Interrupt)
+	signal.Notify(hc.quit, os.Interrupt, syscall.SIGTERM)
 	go hc.handleShutdownFuncs()
 	go func() {
 		for {
@@ -67,27 +73,32 @@ func (h *HealthChecker) handleShutdownFuncs() {
 
 	h.lock.Lock()
 	h.readyToServe = false
+	h.shuttingDown = true
 	h.lock.Unlock()
 
-	log.Printf("Caught interrupt signal; shutting down...")
-	ctx, cancel := context.WithTimeout(context.Background(), maxShutdownDuration)
+	// We use fmt here and below because this code is called from the
+	// signal handler and log.Printf can be a little wonky.
+	fmt.Printf("Caught interrupt signal; shutting down...\n")
+	ctx, cancel := context.WithTimeout(context.Background(), *maxShutdownDuration)
 	defer cancel()
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	for _, fn := range h.shutdownFuncs {
+		f := fn
 		eg.Go(func() error {
-			if err := fn(egCtx); err != nil {
-				log.Printf("Error gracefully shutting down: %s", err)
+			if err := f(egCtx); err != nil {
+				fmt.Printf("Error gracefully shutting down: %s\n", err)
 			}
 			return nil
 		})
 	}
 	eg.Wait()
 	if err := ctx.Err(); err != nil {
-		log.Printf("MaxShutdownDuration exceeded. Exiting anyway...")
+		fmt.Printf("MaxShutdownDuration exceeded. Non-graceful exit.\n")
 	}
+	time.Sleep(10 * time.Millisecond)
+	fmt.Printf("Server %q stopped.\n", h.serverType)
 	close(h.done)
-	log.Printf("Server %q stopped.", h.serverType)
 }
 
 func (h *HealthChecker) RegisterShutdownFunction(f ShutDownFunc) {
@@ -108,6 +119,13 @@ func (h *HealthChecker) WaitForGracefulShutdown() {
 }
 
 func (h *HealthChecker) runHealthChecks(ctx context.Context) {
+	h.lock.RLock()
+	bail := h.shuttingDown
+	h.lock.RUnlock()
+	if bail {
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
 	defer cancel()
 
@@ -127,9 +145,12 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 		log.Printf("Checker err: %s", err)
 	}
 
+	previousReadinessState := false
 	h.lock.Lock()
-	previousReadinessState := h.readyToServe
-	h.readyToServe = newReadinessState
+	if !h.shuttingDown {
+		previousReadinessState = h.readyToServe
+		h.readyToServe = newReadinessState
+	}
 	h.lock.Unlock()
 
 	if newReadinessState != previousReadinessState {

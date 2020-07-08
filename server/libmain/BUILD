@@ -37,6 +37,7 @@ go_library(
         "//server/static:go_default_library",
         "//server/util/db:go_default_library",
         "//server/util/grpc_client:go_default_library",
+        "//server/util/grpc_server:go_default_library",
         "//server/util/healthcheck:go_default_library",
         "//server/util/monitoring:go_default_library",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go_default_library",
