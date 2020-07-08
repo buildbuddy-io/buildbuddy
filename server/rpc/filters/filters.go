@@ -2,25 +2,49 @@ package filters
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 
-	bblog "github.com/buildbuddy-io/buildbuddy/server/util/log"
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+
+	bblog "github.com/buildbuddy-io/buildbuddy/server/util/log"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 )
 
 var (
 	headerContextKeys map[string]string
+
+	once sync.Once
+
+	// *context.CancelFunc -> *context.CancelFunc
+	activeCancelFuncs sync.Map
 )
 
 func init() {
 	headerContextKeys = map[string]string{
 		"x-buildbuddy-jwt": "x-buildbuddy-jwt",
 	}
+}
+
+func cancelActiveContexts(ctx context.Context) error {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return nil
+	}
+	delay := deadline.Sub(time.Now()) - time.Second
+	time.Sleep(delay)
+	activeCancelFuncs.Range(func(key, value interface{}) bool {
+		cancelFunc, ok := value.(*context.CancelFunc)
+		if ok && cancelFunc != nil {
+			(*cancelFunc)()
+		}
+		return true
+	})
+	return nil
 }
 
 type wrappedServerStreamWithContext struct {
@@ -139,8 +163,40 @@ func logRequestUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		start := time.Now()
-		err := handler(srv, &wrappedServerStreamWithContext{stream, stream.Context()})
+		err := handler(srv, stream)
 		bblog.LogGRPCRequest(stream.Context(), info.FullMethod, time.Now().Sub(start), err)
+		return err
+	}
+}
+
+// shutdownContextUnaryServerInterceptor cancels the context if the server is
+// shutting down.
+func shutdownContextUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
+	once.Do(func() {
+		env.GetHealthChecker().RegisterShutdownFunction(cancelActiveContexts)
+	})
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		activeCancelFuncs.Store(&cancel, &cancel)
+		r, err := handler(ctx, req)
+		activeCancelFuncs.Delete(&cancel)
+		return r, err
+	}
+}
+
+// shutdownContextStreamServerInterceptor cancels the context if the server is
+// shutting down.
+func shutdownContextStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
+	once.Do(func() {
+		env.GetHealthChecker().RegisterShutdownFunction(cancelActiveContexts)
+	})
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx, cancel := context.WithCancel(stream.Context())
+		defer cancel()
+		activeCancelFuncs.Store(&cancel, &cancel)
+		err := handler(srv, &wrappedServerStreamWithContext{stream, ctx})
+		activeCancelFuncs.Delete(&cancel)
 		return err
 	}
 }
@@ -175,6 +231,7 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 		logRequestUnaryServerInterceptor(),
 		authUnaryServerInterceptor(env),
 		copyHeadersUnaryServerInterceptor(),
+		shutdownContextUnaryServerInterceptor(env),
 	)
 }
 
@@ -184,6 +241,7 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 		logRequestStreamServerInterceptor(),
 		authStreamServerInterceptor(env),
 		copyHeadersStreamServerInterceptor(),
+		shutdownContextStreamServerInterceptor(env),
 	)
 }
 
