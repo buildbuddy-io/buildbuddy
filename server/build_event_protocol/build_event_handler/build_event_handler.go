@@ -99,7 +99,10 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 	return e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti)
 }
 
-func (e *EventChannel) finalizeInvocation(ctx context.Context, iid string) error {
+func (e *EventChannel) FinalizeInvocation(ctx context.Context, iid string) error {
+	if err := e.pw.Flush(ctx); err != nil {
+		return err
+	}
 	invocation := &inpb.Invocation{
 		InvocationId:     iid,
 		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
@@ -141,13 +144,10 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 	streamID := event.OrderedBuildEvent.StreamId
 	iid := streamID.InvocationId
 
-	// If this is the last event, write the buffer and complete the invocation record.
 	if isFinalEvent(event.OrderedBuildEvent) {
-		if err := e.pw.Flush(ctx); err != nil {
-			return err
-		}
-		return e.finalizeInvocation(ctx, iid)
+		return nil
 	}
+
 	var bazelBuildEvent build_event_stream.BuildEvent
 	if err := readBazelEvent(event.OrderedBuildEvent, &bazelBuildEvent); err != nil {
 		log.Printf("error reading bazel event: %s", err)

@@ -113,6 +113,10 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		}
 	}
 
+	if err := channel.FinalizeInvocation(stream.Context(), streamID.InvocationId); err != nil {
+		return disconnectWithErr(err)
+	}
+
 	// Finally, ack everything.
 	for _, ack := range acks {
 		rsp := &pepb.PublishBuildToolEventStreamResponse{
