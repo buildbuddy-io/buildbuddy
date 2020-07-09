@@ -58,12 +58,18 @@ export default class InvocationComponent extends React.Component {
 
   props: Props;
 
+  timeoutRef: number;
+
   componentWillMount() {
     document.title = `Invocation ${this.props.invocationId} | Buildbuddy`;
     // TODO(siggisim): Move moment configuration elsewhere
     moment.relativeTimeThreshold('ss', 0);
 
     this.fetchInvocation();
+  }
+
+  componentWillUnmount() {
+    clearTimeout(this.timeoutRef);
   }
 
   fetchInvocation() {
@@ -85,7 +91,7 @@ export default class InvocationComponent extends React.Component {
         model: InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]),
         loading: false
       });
-      document.title = `${this.state.model.getUser(true)} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | Buildbuddy`;
+      document.title = `${this.state.model.getUser(true)} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
     }).catch((error: any) => {
       console.error(error);
       this.setState({
@@ -96,8 +102,9 @@ export default class InvocationComponent extends React.Component {
   }
 
   fetchUpdatedProgress() {
+    clearTimeout(this.timeoutRef);
     // Refetch invocation data in 3 seconds to update status.
-    setTimeout(() => {
+    this.timeoutRef = setTimeout(() => {
       this.fetchInvocation();
     }, 3000);
   }
