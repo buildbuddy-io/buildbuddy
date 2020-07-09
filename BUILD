@@ -1,6 +1,13 @@
 package(default_visibility = ["//visibility:public"])
 
 load("@bazel_gazelle//:def.bzl", "gazelle")
+load("@io_bazel_rules_go//go:def.bzl", "nogo")
+
+nogo(
+    name = "vet",
+    vet = True,
+    visibility = ["//visibility:public"],
+)
 
 # Ignore the node_modules dir
 # gazelle:exclude node_modules
