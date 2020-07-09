@@ -193,23 +193,23 @@ button {
 }
 
 .shelf.success {
-  border-bottom: 4px solid #8BC34A;
+  border-bottom: 6px solid #8BC34A;
 }
 
 .shelf.failure {
-  border-bottom: 4px solid #f44336;
+  border-bottom: 6px solid #f44336;
 }
 
 .shelf.in-progress {
-  border-bottom: 4px solid #03A9F4;
+  border-bottom: 6px solid #03A9F4;
 }
 
 .shelf.disconnected {
-  border-bottom: 4px solid #aaa;
+  border-bottom: 6px solid #aaa;
 }
 
 .shelf.neutral {
-  border-bottom: 4px solid #888;
+  border-bottom: 6px solid #888;
 }
 
 .breadcrumbs {
