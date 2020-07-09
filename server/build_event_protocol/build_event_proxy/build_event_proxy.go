@@ -43,18 +43,16 @@ func NewBuildEventProxyClient(target string) *BuildEventProxyClient {
 	return c
 }
 
-func proxyContext(ctx context.Context) context.Context {
-	// Your price is way too high, you need to cut it.
-	newContext, _ := context.WithTimeout(ctx, 10*time.Second)
-	return newContext
-}
-
 func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *bpb.PublishLifecycleEventRequest) {
 	c.reconnectIfNecessary()
-	c.client.PublishLifecycleEvent(proxyContext(ctx), req)
+	newContext, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	c.client.PublishLifecycleEvent(newContext, req)
 }
 
 func (c *BuildEventProxyClient) PublishBuildToolEventStream(ctx context.Context, opts ...grpc.CallOption) (bpb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
 	c.reconnectIfNecessary()
-	return c.client.PublishBuildToolEventStream(proxyContext(ctx), opts...)
+	newContext, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return c.client.PublishBuildToolEventStream(newContext, opts...)
 }
