@@ -260,6 +260,10 @@ export default class InvocationModel {
   }
 
   getTiming() {
+    let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
+    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
+      return "disconnected"
+    }
     if (!this.finished && this.started) {
       return this.timeSinceStart();
     }
@@ -267,16 +271,38 @@ export default class InvocationModel {
   }
 
   getStatus() {
+    let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
+    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
+      return "Disconnected"
+    }
     if (!this.started) {
       return "Not started"
     }
     if (!this.finished) {
-      return "Running..."
+      return "In progress..."
     }
     return this.finished.exitCode.code == 0 ? "Succeeded" : "Failed";
   }
 
+  getStatusClass() {
+    let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
+    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
+      return "disconnected"
+    }
+    if (!this.started) {
+      return "neutral"
+    }
+    if (!this.finished) {
+      return "in-progress"
+    }
+    return this.finished.exitCode.code == 0 ? "success" : "failure";
+  }
+
   getStatusIcon() {
+    let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
+    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
+      return <img className="icon" src="/image/help-circle.svg" />
+    }
     if (!this.started) {
       return <img className="icon" src="/image/help-circle.svg" />
     }

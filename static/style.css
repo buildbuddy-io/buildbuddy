@@ -192,6 +192,26 @@ button {
   margin-bottom: 8px;
 }
 
+.shelf.success {
+  border-bottom: 4px solid #8BC34A;
+}
+
+.shelf.failure {
+  border-bottom: 4px solid #f44336;
+}
+
+.shelf.in-progress {
+  border-bottom: 4px solid #03A9F4;
+}
+
+.shelf.disconnected {
+  border-bottom: 4px solid #aaa;
+}
+
+.shelf.neutral {
+  border-bottom: 4px solid #888;
+}
+
 .breadcrumbs {
   font-size: 16px;
   color: #aaa;
@@ -408,6 +428,14 @@ button {
 
 .card.card-neutral {
   border-left: 6px solid #888;
+}
+
+.card.card-disconnected {
+  border-left: 6px solid #aaa;
+}
+
+.card.card-in-progress {
+  border-left: 6px solid #03A9F4;
 }
 
 .card.dark {
@@ -1193,6 +1221,14 @@ code .comment {
   background-color: #888;
 }
 
+.grid-block-disconnected {
+  background-color: #aaa;
+}
+
+.grid-block-in-progress {
+  background-color: #03A9F4;
+}
+
 .grid-block-success.grid-block-hover {
   background-color: #7CB342;
 }
@@ -1203,6 +1239,14 @@ code .comment {
 
 .grid-block-neutral.grid-block-hover {
   background-color: #666;
+}
+
+.grid-block-disconnected.grid-block-hover {
+  background-color: #bbb;
+}
+
+.grid-block-in-progress.grid-block-hover {
+  background-color: #039BE5;
 }
 
 /** Dense mode **/
@@ -1222,6 +1266,7 @@ code .comment {
 
 .dense .shelf {
   padding: 0;
+  border-bottom: 0;
 }
 
 .dense .grid {
@@ -1343,14 +1388,29 @@ code .comment {
   justify-content: space-between;
 }
 
-.dense-invocation-status-bar.succeeded {
-  border-top: 4px solid #4CAF50;
+.dense-invocation-status-bar.success {
+  border-top: 4px solid #8BC34A;
   background-color: #E8F5E9;
 }
 
-.dense-invocation-status-bar.failed {
-  border-top: 4px solid #b71c1c;
+.dense-invocation-status-bar.failure {
+  border-top: 4px solid #f44336;
   background-color: #ffebee;
+}
+
+.dense-invocation-status-bar.in-progress {
+  border-top: 4px solid #03A9F4;
+  background-color: #E3F2FD;
+}
+
+.dense-invocation-status-bar.disconnected {
+  border-top: 4px solid #aaa;
+  background-color: #eee;
+}
+
+.dense-invocation-status-bar.neutral {
+  border-top: 4px solid #888;
+  background-color: #eee;
 }
 
 .dense-invocation-overview-grid {

@@ -138,7 +138,7 @@ export default class InvocationComponent extends React.Component {
 
     return (
       <div>
-        <div className="shelf">
+        <div className={`shelf ${this.state.model.getStatusClass()}`}>
           {this.props.denseMode ?
             <DenseInvocationOverviewComponent invocationId={this.props.invocationId} model={this.state.model} /> :
             <InvocationOverviewComponent invocationId={this.props.invocationId} model={this.state.model} user={this.props.user} />}
