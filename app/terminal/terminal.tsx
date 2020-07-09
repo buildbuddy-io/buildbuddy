@@ -20,7 +20,7 @@ export default class TerminalComponent extends React.Component<TerminalProps> {
         rowHeight={20}
         lineClassName="terminal-line"
         follow={true}
-        text={this.props.value} />
+        text={this.props.value || "No build logs..."} />
     </div>
   }
 }
