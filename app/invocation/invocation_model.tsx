@@ -4,6 +4,7 @@ import { invocation } from '../../proto/invocation_ts_proto';
 import { build_event_stream } from '../../proto/build_event_stream_ts_proto';
 import { command_line } from '../../proto/command_line_ts_proto';
 import format from '../format/format';
+import { IconType } from '../favicon/favicon';
 
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
@@ -296,6 +297,20 @@ export default class InvocationModel {
       return "in-progress"
     }
     return this.finished.exitCode.code == 0 ? "success" : "failure";
+  }
+
+  getFaviconType() {
+    let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
+    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
+      return IconType.Unknown;
+    }
+    if (!this.started) {
+      return IconType.Unknown;
+    }
+    if (!this.finished) {
+      return IconType.InProgress;
+    }
+    return this.finished.exitCode.code == 0 ? IconType.Success : IconType.Failure;
   }
 
   getStatusIcon() {

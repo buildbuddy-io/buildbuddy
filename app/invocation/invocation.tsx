@@ -4,6 +4,7 @@ import moment from 'moment';
 import rpcService from '../service/rpc_service'
 import authService, { User } from '../auth/auth_service';
 import capabilities from '../capabilities/capabilities';
+import faviconService from '../favicon/favicon';
 
 import InvocationModel from './invocation_model'
 
@@ -85,13 +86,13 @@ export default class InvocationComponent extends React.Component {
         showInProgressScreen = response.invocation[0].event.length == 0;
         this.fetchUpdatedProgress();
       }
-
       this.setState({
         inProgress: showInProgressScreen,
         model: InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]),
         loading: false
       });
       document.title = `${this.state.model.getUser(true)} ${this.state.model.getCommand()} ${this.state.model.getPattern()} | BuildBuddy`;
+      faviconService.setFaviconForType(this.state.model.getFaviconType());
     }).catch((error: any) => {
       console.error(error);
       this.setState({

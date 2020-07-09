@@ -7,6 +7,7 @@ import capabilities from '../capabilities/capabilities'
 import router, { Path } from '../router/router';
 import authService, { AuthService } from '../auth/auth_service';
 import { User } from '../auth/auth_service';
+import faviconService from '../favicon/favicon';
 
 const viewModeKey = "VIEW_MODE";
 const denseModeValue = "DENSE";
@@ -38,9 +39,13 @@ export default class RootComponent extends React.Component {
     authService.userStream.addListener(AuthService.userEventName, (user: User) => {
       this.setState({ ...this.state, user })
     });
+    faviconService.setDefaultFavicon();
   }
 
   handlePathChange() {
+    if (this.state.path != window.location.pathname) {
+      faviconService.setDefaultFavicon();
+    }
     this.setState({
       hash: window.location.hash,
       path: window.location.pathname,

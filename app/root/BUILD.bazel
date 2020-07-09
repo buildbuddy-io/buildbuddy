@@ -9,6 +9,7 @@ ts_library(
         "//app/auth",
         "//app/capabilities",
         "//app/docs",
+        "//app/favicon",
         "//app/footer",
         "//app/invocation",
         "//app/menu",
