@@ -26,6 +26,7 @@ import (
 	durationpb "github.com/golang/protobuf/ptypes/duration"
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -92,9 +93,10 @@ func HashProperties(props map[string]string) string {
 }
 
 type ExecutionServer struct {
-	env   environment.Env
-	cache interfaces.Cache
-	exDB  interfaces.ExecutionDB
+	env          environment.Env
+	cache        interfaces.Cache
+	exDB         interfaces.ExecutionDB
+	shuttingDown bool
 }
 
 func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
@@ -106,11 +108,18 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 	if exDB == nil {
 		return nil, fmt.Errorf("An executionDB is required to enable the RemoteExecutionServer")
 	}
-	return &ExecutionServer{
-		env:   env,
-		cache: cache,
-		exDB:  exDB,
-	}, nil
+	es := &ExecutionServer{
+		env:          env,
+		cache:        cache,
+		exDB:         exDB,
+		shuttingDown: false,
+	}
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		es.shuttingDown = true
+		return nil
+	})
+
+	return es, nil
 }
 
 func (s *ExecutionServer) readProtoFromCache(ctx context.Context, d *digest.InstanceNameDigest, msg proto.Message) error {
@@ -302,6 +311,11 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	}
 
 	finish := func(finalErr error) error {
+		if gstatus.Code(finalErr) == codes.DeadlineExceeded && s.shuttingDown {
+			log.Printf("Returning ResourceExhausted because server is going down now.")
+			// Retry this action because this server is going down!
+			return status.ResourceExhaustedError(finalErr.Error())
+		}
 		log.Printf("finish %s/%d called with finalErr: %s", req.GetActionDigest().GetHash(), req.GetActionDigest().GetSizeBytes(), finalErr)
 		if finalizer != nil {
 			if finalErr != nil {
