@@ -30,13 +30,26 @@ func init() {
 	}
 }
 
-func cancelActiveContexts(ctx context.Context) error {
+func startCancelRoutine(ctx context.Context) error {
 	deadline, ok := ctx.Deadline()
 	if !ok {
 		return nil
 	}
-	delay := deadline.Sub(time.Now()) - time.Second
-	time.Sleep(delay)
+	go func() {
+		delay := deadline.Sub(time.Now()) - time.Second
+		ctx, cancel := context.WithTimeout(ctx, delay)
+		defer cancel()
+		select {
+		case <-ctx.Done():
+			cancelActiveContexts(ctx)
+		case <-time.After(delay):
+			cancelActiveContexts(ctx)
+		}
+	}()
+	return nil
+}
+
+func cancelActiveContexts(ctx context.Context) {
 	activeCancelFuncs.Range(func(key, value interface{}) bool {
 		cancelFunc, ok := value.(*context.CancelFunc)
 		if ok && cancelFunc != nil {
@@ -44,7 +57,6 @@ func cancelActiveContexts(ctx context.Context) error {
 		}
 		return true
 	})
-	return nil
 }
 
 type wrappedServerStreamWithContext struct {
@@ -173,7 +185,7 @@ func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 // shutting down.
 func shutdownContextUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	once.Do(func() {
-		env.GetHealthChecker().RegisterShutdownFunction(cancelActiveContexts)
+		env.GetHealthChecker().RegisterShutdownFunction(startCancelRoutine)
 	})
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		ctx, cancel := context.WithCancel(ctx)
@@ -189,7 +201,7 @@ func shutdownContextUnaryServerInterceptor(env environment.Env) grpc.UnaryServer
 // shutting down.
 func shutdownContextStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	once.Do(func() {
-		env.GetHealthChecker().RegisterShutdownFunction(cancelActiveContexts)
+		env.GetHealthChecker().RegisterShutdownFunction(startCancelRoutine)
 	})
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx, cancel := context.WithCancel(stream.Context())
