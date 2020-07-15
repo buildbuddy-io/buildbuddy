@@ -26,6 +26,7 @@ import (
 	durationpb "github.com/golang/protobuf/ptypes/duration"
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	gmetadata "google.golang.org/grpc/metadata"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -61,6 +62,19 @@ func logActionResult(d *repb.Digest, md *repb.ExecutedActionMetadata) {
 	log.Printf("%q completed action '%s/%d' [q: %02dms work: %02dms, fetch: %02dms, exec: %02dms, upload: %02dms]",
 		md.GetWorker(), d.GetHash(), d.GetSizeBytes(), qTime.Milliseconds(), workTime.Milliseconds(),
 		fetchTime.Milliseconds(), execTime.Milliseconds(), uploadTime.Milliseconds())
+}
+
+func getRequestMetadata(ctx context.Context) *repb.RequestMetadata {
+	if grpcMD, ok := gmetadata.FromIncomingContext(ctx); ok {
+		rmdVals := grpcMD["build.bazel.remote.execution.v2.requestmetadata-bin"]
+		if len(rmdVals) == 1 {
+			rmd := &repb.RequestMetadata{}
+			if err := proto.Unmarshal([]byte(rmdVals[0]), rmd); err == nil {
+				return rmd
+			}
+		}
+	}
+	return nil
 }
 
 func extractStage(op *longrunning.Operation) repb.ExecutionStage_Value {
@@ -289,8 +303,11 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 			if err := proto.Unmarshal(protoBytes, execSummary); err != nil {
 				return err
 			}
-
-			if err := s.exDB.InsertExecutionSummary(ctx, req.GetActionDigest(), md.GetWorker(), execSummary); err != nil {
+			invocationID := ""
+			if rmd := getRequestMetadata(stream.Context()); rmd != nil {
+				invocationID = rmd.GetToolInvocationId()
+			}
+			if err := s.exDB.InsertExecutionSummary(ctx, req.GetActionDigest(), md.GetWorker(), invocationID, execSummary); err != nil {
 				return err
 			}
 		}

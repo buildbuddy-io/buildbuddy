@@ -77,13 +77,14 @@ func (d *ExecutionDB) ReadExecution(ctx context.Context, executionID string) (*t
 	return te, nil
 }
 
-func (d *ExecutionDB) InsertExecutionSummary(ctx context.Context, actionDigest *repb.Digest, workerID string, summary *espb.ExecutionSummary) error {
+func (d *ExecutionDB) InsertExecutionSummary(ctx context.Context, actionDigest *repb.Digest, workerID, invocationID string, summary *espb.ExecutionSummary) error {
 	pk, err := tables.PrimaryKeyForTable("ExecutionSummaries")
 	if err != nil {
 		return err
 	}
 	tableSummary := &tables.ExecutionSummary{
 		SummaryID:                  pk,
+		InvocationID:               invocationID,
 		ActionDigest:               fmt.Sprintf("%s/%d", actionDigest.GetHash(), actionDigest.GetSizeBytes()),
 		WorkerID:                   workerID,
 		UserCpuTimeUsec:            summary.GetExecutionStats().GetUserCpuTimeUsec(),

@@ -255,16 +255,17 @@ func (t *Execution) TableName() string {
 type ExecutionSummary struct {
 	Model
 	// The SummaryID is a randomly generated identifier.
-	SummaryID string `gorm:"primary_key"`
+	SummaryID    string `gorm:"primary_key"`
+	InvocationID string `gorm:"index:esum_invocation_id"`
 
 	// The user/group permissions of the calling user.
-	UserID  string `gorm:"index:user_id"`
-	GroupID string `gorm:"index:group_id"`
-	Perms   int    `gorm:"index:perms"`
+	UserID  string `gorm:"index:esum_user_id"`
+	GroupID string `gorm:"index:esum_group_id"`
+	Perms   int    `gorm:"index:esum_perms"`
 
 	// A "hash/bytes_size" formatted Digest message that
 	// uniquely identifies the Action that was completed.
-	ActionDigest string `gorm:"index:action_digest_index"`
+	ActionDigest string `gorm:"index:esum_action_digest_index"`
 
 	// A unique worker identifier string, identifying the
 	// machine that completed this execution.
