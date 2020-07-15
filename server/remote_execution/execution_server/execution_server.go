@@ -29,7 +29,6 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-
 func diffTimeProtos(startPb, endPb *tspb.Timestamp) time.Duration {
 	start, _ := ptypes.Timestamp(startPb)
 	end, _ := ptypes.Timestamp(endPb)
