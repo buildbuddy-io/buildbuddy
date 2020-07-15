@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -33,7 +32,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
@@ -130,21 +128,6 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	}
 
 	realEnv.SetSplashPrinter(&splash.Printer{})
-
-	if remoteExecConfig := configurator.GetRemoteExecutionConfig(); remoteExecConfig != nil {
-		for _, remoteExecTarget := range remoteExecConfig.RemoteExecutionTargets {
-			propertyString := execution_server.HashProperties(remoteExecTarget.Properties)
-			conn, err := grpc_client.DialTarget(remoteExecTarget.Target)
-			if err != nil {
-				log.Fatalf("Error connecting to remote execution backend: %s", err)
-			}
-			client := repb.NewExecutionClient(conn)
-			maxExecutionDuration := time.Second * time.Duration(remoteExecTarget.MaxExecutionTimeoutSeconds)
-			if err := realEnv.AddExecutionClient(propertyString, client, maxExecutionDuration, remoteExecTarget.DisableStreaming); err != nil {
-				log.Fatal(err)
-			}
-		}
-	}
 	return realEnv
 }
 

@@ -173,9 +173,12 @@ type SplashPrinter interface {
 	PrintSplashScreen(port, grpcPort int)
 }
 
+type ExecutionRouterService interface {
+	GetExecutionClient(ctx context.Context) (ExecutionClientConfig, error)
+}
+
 type ExecutionClientConfig interface {
 	GetExecutionClient() repb.ExecutionClient
-	GetMaxDuration() time.Duration
 	DisableStreaming() bool
 }
 

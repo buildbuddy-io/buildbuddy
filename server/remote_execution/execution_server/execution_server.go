@@ -23,29 +23,12 @@ import (
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	durationpb "github.com/golang/protobuf/ptypes/duration"
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gmetadata "google.golang.org/grpc/metadata"
 	gstatus "google.golang.org/grpc/status"
 )
 
-const (
-	// 7 days? Forever. This is the duration returned when no max duration
-	// has been set in the config and no timeout was set in the client
-	// request. It's basically the same as "no-timeout".
-	infiniteDuration = time.Hour * 24 * 7
-	// TODO(siggisim): Figure out why this needs to be so large for small tests.
-	timeoutGracePeriodFactor = 3
-)
-
-func getPlatformKey(platform *repb.Platform) string {
-	props := make(map[string]string, len(platform.GetProperties()))
-	for _, property := range platform.GetProperties() {
-		props[property.GetName()] = property.GetValue()
-	}
-	return HashProperties(props)
-}
 
 func diffTimeProtos(startPb, endPb *tspb.Timestamp) time.Duration {
 	start, _ := ptypes.Timestamp(startPb)
@@ -150,23 +133,6 @@ func (s *ExecutionServer) readProtoFromCache(ctx context.Context, d *digest.Inst
 
 type finalizerFn func(finalErr error) error
 
-func parseTimeout(timeout *durationpb.Duration, maxDuration time.Duration) (time.Duration, error) {
-	if timeout == nil {
-		if maxDuration == 0 {
-			return infiniteDuration, nil
-		}
-		return maxDuration, nil
-	}
-	requestDuration, err := ptypes.Duration(timeout)
-	if err != nil {
-		return 0, status.InvalidArgumentErrorf("Unparsable timeout: %s", err.Error())
-	}
-	if maxDuration != 0 && requestDuration > maxDuration {
-		return 0, status.InvalidArgumentErrorf("Specified timeout (%s) longer than allowed maximum (%s).", requestDuration, maxDuration)
-	}
-	return requestDuration, nil
-}
-
 func executeResponseWithResult(ar *repb.ActionResult) *repb.ExecuteResponse {
 	return &repb.ExecuteResponse{
 		Status: &statuspb.Status{Code: int32(codes.OK)},
@@ -262,18 +228,15 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	if err := s.readProtoFromCache(ctx, cmdInstanceName, cmd); err != nil {
 		return status.FailedPreconditionErrorf("Error fetching command: %s", err.Error())
 	}
-	execClientConfig, err := s.env.GetExecutionClient(getPlatformKey(cmd.GetPlatform()))
+	ers := s.env.GetExecutionRouterService()
+	if ers == nil {
+		return status.FailedPreconditionErrorf("No execution router service configured")
+	}
+	execClientConfig, err := ers.GetExecutionClient(ctx)
 	if err != nil {
 		return status.UnimplementedErrorf("No worker enabled for platform %v: %s", cmd.GetPlatform(), err)
 	}
 	exClient := execClientConfig.GetExecutionClient()
-	execDuration, err := parseTimeout(action.Timeout, execClientConfig.GetMaxDuration())
-	if err != nil {
-		// These errors are failure-specific. Pass through unchanged.
-		return err
-	}
-	ctx, cancel := context.WithTimeout(ctx, execDuration*timeoutGracePeriodFactor)
-	defer cancel()
 
 	actionDigestName := digest.DownloadResourceName(req.GetActionDigest(), req.GetInstanceName())
 	// writeProgressFn writes progress to our stream (if open) else the DB.

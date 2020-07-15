@@ -8,7 +8,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -53,6 +52,7 @@ type RealEnv struct {
 	executionDB                     interfaces.ExecutionDB
 	APIService                      interfaces.ApiService
 	fileCache                       interfaces.FileCache
+	executionRouterService          interfaces.ExecutionRouterService
 }
 
 func NewRealEnv(c *config.Configurator, h *healthcheck.HealthChecker) *RealEnv {
@@ -179,25 +179,12 @@ func (r *RealEnv) GetContentAddressableStorageClient() repb.ContentAddressableSt
 	return r.contentAddressableStorageClient
 }
 
-func (r *RealEnv) AddExecutionClient(propString string, c repb.ExecutionClient, maxDuration time.Duration, disableStreaming bool) error {
-	// Don't allow duplicate clients.
-	_, ok := r.executionClients[propString]
-	if ok {
-		return status.FailedPreconditionErrorf("Duplicate execution client for properties: %q", propString)
-	}
-	r.executionClients[propString] = &executionClientConfig{
-		client:           c,
-		maxDuration:      maxDuration,
-		disableStreaming: disableStreaming,
-	}
-	return nil
+func (r *RealEnv) SetExecutionRouterService(ers interfaces.ExecutionRouterService) {
+	r.executionRouterService = ers
 }
-func (r *RealEnv) GetExecutionClient(propString string) (interfaces.ExecutionClientConfig, error) {
-	c, ok := r.executionClients[propString]
-	if !ok {
-		return nil, status.FailedPreconditionErrorf("No client found that matches properties: %q", propString)
-	}
-	return c, nil
+
+func (r *RealEnv) GetExecutionRouterService() interfaces.ExecutionRouterService {
+	return r.executionRouterService
 }
 
 func (r *RealEnv) SetExecutionDB(edb interfaces.ExecutionDB) {
