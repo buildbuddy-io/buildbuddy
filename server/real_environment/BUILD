@@ -12,7 +12,6 @@ go_library(
         "//server/interfaces:go_default_library",
         "//server/util/db:go_default_library",
         "//server/util/healthcheck:go_default_library",
-        "//server/util/status:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
     ],
 )

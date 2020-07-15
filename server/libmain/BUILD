@@ -36,7 +36,6 @@ go_library(
         "//server/ssl:go_default_library",
         "//server/static:go_default_library",
         "//server/util/db:go_default_library",
-        "//server/util/grpc_client:go_default_library",
         "//server/util/grpc_server:go_default_library",
         "//server/util/healthcheck:go_default_library",
         "//server/util/monitoring:go_default_library",
