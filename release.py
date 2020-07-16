@@ -102,8 +102,8 @@ def build_artifacts(repo_name, new_version):
 def update_docker_image(new_version):
     version_build_cmd = 'bazel run -c opt --define version=server-image-%s --define release=true deployment:release_onprem' % new_version
     run_or_die(version_build_cmd)
-    #latest_build_cmd = 'bazel run -c opt --define version=latest --define release=true deployment:release_onprem'
-    #run_or_die(latest_build_cmd)
+    latest_build_cmd = 'bazel run -c opt --define version=latest --define release=true deployment:release_onprem'
+    run_or_die(latest_build_cmd)
 
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
@@ -201,9 +201,9 @@ def create_release_and_upload_artifacts(repo, version, artifacts):
             )
 
 def main():
-#    if not workspace_is_clean():
-#        die('Your workspace has uncommitted changes. ' +
-#            'Please run this in a clean workspace!')
+    if not workspace_is_clean():
+        die('Your workspace has uncommitted changes. ' +
+            'Please run this in a clean workspace!')
     gh_token = os.environ.get('GITHUB_TOKEN')
     if not gh_token or gh_token == '':
         die('GITHUB_TOKEN env variable not set. Please go get a repo_token from'
