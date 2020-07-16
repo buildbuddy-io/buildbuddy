@@ -849,3 +849,15 @@ def install_buildbuddy_dependencies():
         sum = "h1:7qlOGliEKZXTDg6OTjfoBKDXWrumCAMpl/TFQ4/5kLM=",
         version = "v3.2.0+incompatible",
     )
+    go_repository(
+        name = "com_github_googlecloudplatform_cloudsql_proxy",
+        importpath = "github.com/GoogleCloudPlatform/cloudsql-proxy",
+        sum = "h1:RYFEvCpg3hleduISfJghlPd4ew3TgU9974AlqQTErac=",
+        version = "v1.17.0",
+    )
+    go_repository(
+        name = "org_bazil_fuse",
+        importpath = "bazil.org/fuse",
+        sum = "h1:FNCRpXiquG1aoyqcIWVFmpTSKVcx2bQD38uZZeGtdlw=",
+        version = "v0.0.0-20180421153158-65cc252bf669",
+    )

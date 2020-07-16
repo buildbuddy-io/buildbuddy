@@ -8,6 +8,7 @@ require (
 	cloud.google.com/go/storage v1.7.0
 	dmitri.shuralyov.com/gpu/mtl v0.0.0-20191203043605-d42048ed14fd // indirect
 	github.com/BurntSushi/xgb v0.0.0-20200324125942-20f126ea2843 // indirect
+	github.com/GoogleCloudPlatform/cloudsql-proxy v1.17.0 // indirect
 	github.com/PuerkitoBio/goquery v1.5.1 // indirect
 	github.com/antihax/optional v1.0.0 // indirect
 	github.com/aws/aws-sdk-go v1.30.23
