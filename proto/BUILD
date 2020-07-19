@@ -160,6 +160,20 @@ proto_library(
 )
 
 proto_library(
+    name = "remote_asset_proto",
+    srcs = ["remote_asset.proto"],
+    deps = [
+        ":remote_execution_proto",
+        ":semver_proto",
+        "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:timestamp_proto",
+        "@go_googleapis//google/api:annotations_proto",
+        "@go_googleapis//google/longrunning:longrunning_proto",
+        "@go_googleapis//google/rpc:status_proto",
+    ],
+)
+
+proto_library(
     name = "remote_execution_proto",
     srcs = ["remote_execution.proto"],
     deps = [
@@ -291,6 +305,20 @@ go_proto_library(
     proto = ":bazel_config_proto",
     deps = [
         ":context_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "remote_asset_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_asset",
+    proto = ":remote_asset_proto",
+    deps = [
+        ":remote_execution_go_proto",
+        ":semver_go_proto",
+        "@go_googleapis//google/api:annotations_go_proto",
+        "@go_googleapis//google/longrunning:longrunning_go_proto",
+        "@go_googleapis//google/rpc:status_go_proto",
     ],
 )
 

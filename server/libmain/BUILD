@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:buildbuddy_service_go_proto",
         "//proto:publish_build_event_go_proto",
+        "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/backends/blobstore:go_default_library",
@@ -26,6 +27,8 @@ go_library(
         "//server/interfaces:go_default_library",
         "//server/nullauth:go_default_library",
         "//server/real_environment:go_default_library",
+        "//server/remote_asset/fetch_server:go_default_library",
+        "//server/remote_asset/push_server:go_default_library",
         "//server/remote_cache/action_cache_server:go_default_library",
         "//server/remote_cache/byte_stream_server:go_default_library",
         "//server/remote_cache/capabilities_server:go_default_library",

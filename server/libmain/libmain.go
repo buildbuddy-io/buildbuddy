@@ -23,6 +23,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/push_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
@@ -42,6 +44,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	bpb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
@@ -162,6 +165,12 @@ func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) 
 			log.Fatalf("Error initializing ActionCacheServer: %s", err)
 		}
 		repb.RegisterActionCacheServer(grpcServer, actionCacheServer)
+
+		pushServer := push_server.NewPushServer(env)
+		rapb.RegisterPushServer(grpcServer, pushServer)
+
+		fetchServer := fetch_server.NewFetchServer(env)
+		rapb.RegisterFetchServer(grpcServer, fetchServer)
 
 	}
 	enableRemoteExec := false
