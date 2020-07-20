@@ -173,7 +173,7 @@ func (c *DiskCache) checkSizeAndEvict(ctx context.Context, n int64) error {
 				c.evictList.Remove(listElement)
 				record := listElement.Value.(*fileRecord)
 				c.sizeBytes -= record.sizeBytes
-				delete(c.entries, key)
+				delete(c.entries, record.key)
 				if err := disk.DeleteFile(ctx, record.key); err != nil {
 					return err
 				}
