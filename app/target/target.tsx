@@ -116,6 +116,10 @@ export default class TargetComponent extends React.Component {
 
   render() {
     let resultEvents = this.props.testResultEvents?.sort(this.resultSort) || [];
+    let files = this.props?.completedEvent?.buildEvent?.completed.importantOutput || [];
+    for (const resultEvent of resultEvents) {
+      files = files.concat(resultEvent?.buildEvent?.testResult?.testActionOutput || []);
+    }
     return (
       <div>
         <div className="shelf">
@@ -173,7 +177,7 @@ export default class TargetComponent extends React.Component {
               <TargetTestLogCardComponent invocationId={this.props.invocationId} testResult={result} />
             </span>
           )}
-          <TargetArtifactsCardComponent invocationId={this.props.invocationId} files={this.props?.completedEvent?.buildEvent?.completed.importantOutput as build_event_stream.File[]} />
+          <TargetArtifactsCardComponent invocationId={this.props.invocationId} files={files as build_event_stream.File[]} />
         </div>
       </div>
     );
