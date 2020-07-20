@@ -174,7 +174,7 @@ type SplashPrinter interface {
 }
 
 type ExecutionRouterService interface {
-	GetExecutionClient(ctx context.Context) (ExecutionClientConfig, error)
+	GetExecutionClient(ctx context.Context, req *repb.ExecuteRequest) (ExecutionClientConfig, error)
 }
 
 type ExecutionClientConfig interface {

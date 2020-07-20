@@ -48,7 +48,7 @@ func newlru(maxSizeBytes int64) (*lru, error) {
 
 // Purge is used to completely clear the cache.
 func (c *lru) Purge() {
-	for k, _ := range c.items {
+	for k := range c.items {
 		delete(c.items, k)
 	}
 	c.evictList.Init()

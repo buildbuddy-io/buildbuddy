@@ -217,23 +217,13 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	requestStartTimePb := ptypes.TimestampNow()
 	ctx := perms.AttachUserPrefixToContext(stream.Context(), s.env)
 
-	action := &repb.Action{}
-	adInstanceName := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
-	if err := s.readProtoFromCache(ctx, adInstanceName, action); err != nil {
-		return status.FailedPreconditionErrorf("Error fetching action: %s", err.Error())
-	}
-	cmd := &repb.Command{}
-	cmdInstanceName := digest.NewInstanceNameDigest(action.GetCommandDigest(), req.GetInstanceName())
-	if err := s.readProtoFromCache(ctx, cmdInstanceName, cmd); err != nil {
-		return status.FailedPreconditionErrorf("Error fetching command: %s", err.Error())
-	}
 	ers := s.env.GetExecutionRouterService()
 	if ers == nil {
 		return status.FailedPreconditionErrorf("No execution router service configured")
 	}
-	execClientConfig, err := ers.GetExecutionClient(ctx)
+	execClientConfig, err := ers.GetExecutionClient(ctx, req)
 	if err != nil {
-		return status.UnimplementedErrorf("No worker enabled for platform %v: %s", cmd.GetPlatform(), err)
+		return status.UnimplementedErrorf("No execution client available for %v: %s", req, err)
 	}
 	exClient := execClientConfig.GetExecutionClient()
 
@@ -291,7 +281,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 
 	finish := func(finalErr error) error {
 		if gstatus.Code(finalErr) == codes.DeadlineExceeded && s.shuttingDown {
-			log.Printf("Returning ResourceExhausted because server is going down now.")
+			log.Printf("Returning ResourceExhausted because server is draining.")
 			// Retry this action because this server is going down!
 			return status.ResourceExhaustedError(finalErr.Error())
 		}
@@ -397,6 +387,8 @@ func (s *ExecutionServer) WaitExecution(req *repb.WaitExecutionRequest, stream r
 	return nil
 }
 
+// This is just here to meet the service definition on paper. Sync-workers may
+// implement this.
 func (s *ExecutionServer) SyncExecute(ctx context.Context, req *repb.ExecuteRequest) (*repb.SyncExecuteResponse, error) {
 	return nil, status.UnimplementedErrorf("Not implemented")
 }
