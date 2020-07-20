@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -142,6 +143,7 @@ func (c *DiskCache) removeEntry(key string) {
 		c.evictList.Remove(listElement)
 		record := listElement.Value.(*fileRecord)
 		c.sizeBytes -= record.sizeBytes
+		delete(c.entries, key)
 	}
 	c.lock.Unlock()
 }
@@ -231,7 +233,12 @@ func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 		return nil, err
 	}
 	c.useEntry(k)
-	return disk.ReadFile(ctx, k)
+	f, err := disk.ReadFile(ctx, k)
+	if err != nil {
+		c.removeEntry(k)
+		return nil, status.NotFoundErrorf("DiskCache missing file: %s", err)
+	}
+	return f, nil
 }
 
 func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
@@ -285,7 +292,12 @@ func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (i
 	}
 	c.useEntry(k)
 	length := d.GetSizeBytes()
-	return disk.FileReader(ctx, k, offset, length)
+	r, err := disk.FileReader(ctx, k, offset, length)
+	if err != nil {
+		c.removeEntry(k)
+		return nil, status.NotFoundErrorf("DiskCache missing file: %s", err)
+	}
+	return r, nil
 }
 
 type dbCloseFn func(totalBytesWritten int64) error

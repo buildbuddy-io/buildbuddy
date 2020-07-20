@@ -138,7 +138,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	d := req.GetActionDigest()
 	blob, err := cache.Get(ctx, d)
 	if err != nil {
-		return nil, status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", d, err))
+		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
 
 	rsp := &repb.ActionResult{}
@@ -146,7 +146,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		return nil, err
 	}
 	if err := s.validateActionResult(ctx, cache, rsp); err != nil {
-		return nil, status.NotFoundError(fmt.Sprintf("ActionResult (%s) not found: %s", d, err))
+		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
 	return rsp, nil
 }

@@ -11,5 +11,6 @@ go_library(
         "//server/remote_cache/digest:go_default_library",
         "//server/util/disk:go_default_library",
         "//server/util/perms:go_default_library",
+        "//server/util/status:go_default_library",
     ],
 )
