@@ -996,6 +996,16 @@ code .comment {
   font-weight: 300;
 }
 
+.command-line-arg {
+  margin-left: 32px;
+  margin-top: 8px;
+  font-family: 'Source Code Pro', monospace;
+}
+
+.command-line-arg:first-of-type {
+  margin-left: 0;
+}
+
 /** Invocation */
 
 .invocation-section {

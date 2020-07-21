@@ -3,6 +3,7 @@ import React from 'react';
 import TargetTestLogCardComponent from './target_test_log_card';
 import TargetTestDocumentCardComponent from './target_test_document_card';
 import TargetArtifactsCardComponent from './target_artifacts_card';
+import ActionCardComponent from './action_card';
 import router from '../router/router';
 import format from '../format/format';
 import { User } from '../auth/auth_service';
@@ -20,6 +21,7 @@ interface Props {
   completedEvent: invocation.InvocationEvent;
   testResultEvents: invocation.InvocationEvent[];
   testSummaryEvent: invocation.InvocationEvent;
+  actionEvents: invocation.InvocationEvent[];
 }
 
 export default class TargetComponent extends React.Component {
@@ -27,7 +29,7 @@ export default class TargetComponent extends React.Component {
   props: Props;
 
   componentWillMount() {
-    document.title = `Target ${this.props.invocationId} | Buildbuddy`;
+    document.title = `Target ${this.props.invocationId} | BuildBuddy`;
   }
 
   handleOrganizationClicked() {
@@ -114,12 +116,18 @@ export default class TargetComponent extends React.Component {
     return a.buildEvent.id.testResult.attempt - b.buildEvent.id.testResult.attempt;
   }
 
+  actionSort(a: invocation.InvocationEvent, b: invocation.InvocationEvent) {
+    return b.buildEvent.action.exitCode - a.buildEvent.action.exitCode;
+  }
+
   render() {
     let resultEvents = this.props.testResultEvents?.sort(this.resultSort) || [];
+    let actionEvents = this.props.actionEvents?.sort(this.actionSort) || [];
     let files = this.props?.completedEvent?.buildEvent?.completed.importantOutput || [];
     for (const resultEvent of resultEvents) {
       files = files.concat(resultEvent?.buildEvent?.testResult?.testActionOutput || []);
     }
+    console.log(actionEvents);
     return (
       <div>
         <div className="shelf">
@@ -153,7 +161,7 @@ export default class TargetComponent extends React.Component {
               </div>}
               <div className="detail">
                 <img className="icon" src="/image/target-regular.svg" />
-                {this.props?.configuredEvent?.buildEvent?.configured.targetKind}
+                {this.props?.configuredEvent?.buildEvent?.configured.targetKind || this.props.actionEvents?.map(action => action?.buildEvent?.action?.type).join(",")}
               </div>
               {this.props?.configuredEvent?.buildEvent?.configured.testSize > 0 && <div className="detail">
                 <img className="icon" src="/image/box-regular.svg" />
@@ -176,6 +184,9 @@ export default class TargetComponent extends React.Component {
               <TargetTestDocumentCardComponent invocationId={this.props.invocationId} testResult={result} />
               <TargetTestLogCardComponent invocationId={this.props.invocationId} testResult={result} />
             </span>
+          )}
+          {actionEvents.map(action =>
+            <ActionCardComponent invocationId={this.props.invocationId} action={action} />
           )}
           <TargetArtifactsCardComponent invocationId={this.props.invocationId} files={files as build_event_stream.File[]} />
         </div>

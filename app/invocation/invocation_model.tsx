@@ -41,6 +41,7 @@ export default class InvocationModel {
   completedMap = new Map<string, invocation.InvocationEvent>();
   testResultMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
   testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
+  actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
 
   static modelFromInvocations(invocations: invocation.Invocation[]) {
     let model = new InvocationModel();
@@ -65,6 +66,11 @@ export default class InvocationModel {
           let results = model.testResultMap.get(buildEvent.id.testResult.label) || [];
           results.push(event as invocation.InvocationEvent);
           model.testResultMap.set(buildEvent.id.testResult.label, results);
+        }
+        if (buildEvent.action) {
+          let results = model.actionMap.get(buildEvent.id.actionCompleted.label) || [];
+          results.push(event as invocation.InvocationEvent);
+          model.actionMap.set(buildEvent.id.actionCompleted.label, results);
         }
         if (buildEvent.testSummary) {
           model.testSummaryMap.set(buildEvent.id.testSummary.label, event as invocation.InvocationEvent);
