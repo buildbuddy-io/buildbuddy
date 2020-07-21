@@ -81,7 +81,7 @@ export default class InvocationModel {
         if (buildEvent.aborted) model.aborted = buildEvent as build_event_stream.BuildEvent;
         if (buildEvent.buildToolLogs) model.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         if (buildEvent.workspaceStatus) model.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
-        if (buildEvent.configuration) model.configuration = buildEvent.configuration as build_event_stream.Configuration;
+        if (buildEvent.configuration && buildEvent?.id?.configuration?.id != "none") model.configuration = buildEvent.configuration as build_event_stream.Configuration;
         if (buildEvent.workspaceInfo) model.workspaceConfig = buildEvent.workspaceInfo as build_event_stream.WorkspaceConfig;
         if (buildEvent.optionsParsed) model.optionsParsed = buildEvent.optionsParsed as build_event_stream.OptionsParsed;
         if (buildEvent.buildMetrics) model.buildMetrics = buildEvent.buildMetrics as build_event_stream.BuildMetrics;
