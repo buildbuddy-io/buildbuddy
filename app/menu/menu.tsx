@@ -75,6 +75,7 @@ export default class MenuComponent extends React.Component {
                   <li onClick={this.handleSetupClicked.bind(this)}>Setup instructions</li>
                   {!capabilities.enterprise && <li onClick={this.dismissMenu.bind(this)}><a target="_blank" href="https://buildbuddy.typeform.com/to/wIXFIA">Upgrade to Enterprise</a></li>}
                   <li onClick={this.dismissMenu.bind(this)}><a href="mailto:hello@buildbuddy.io">Contact us</a></li>
+                  <li onClick={this.dismissMenu.bind(this)}><a target="_blank" href="https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g">BuildBuddy Slack</a></li>
                   {(capabilities.auth && !this.props.user) && <li onClick={this.handleLoginClicked.bind(this)}>Login</li>}
                   {(capabilities.auth && this.props.user) && <li onClick={this.handleLogoutClicked.bind(this)}>Logout</li>}
                 </ul>
