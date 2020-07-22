@@ -17,6 +17,8 @@ interface State {
   stdErr: string;
   stdOut: string;
   cacheEnabled: boolean;
+  loadingStdout: boolean;
+  loadingStderr: boolean;
 }
 
 export default class TargetTestLogCardComponent extends React.Component {
@@ -25,7 +27,9 @@ export default class TargetTestLogCardComponent extends React.Component {
   state: State = {
     stdErr: '',
     stdOut: '',
-    cacheEnabled: true
+    cacheEnabled: true,
+    loadingStdout: true,
+    loadingStderr: true
   }
 
   componentDidMount() {
@@ -53,8 +57,9 @@ export default class TargetTestLogCardComponent extends React.Component {
       return;
     }
 
+    this.setState({ ...this.state, loadingStderr: true });
     rpcService.fetchBytestreamFile(logUrl, this.props.invocationId).then((contents: string) => {
-      this.setState({ ...this.state, stdErr: contents });
+      this.setState({ ...this.state, stdErr: contents, loadingStderr: false });
     }).catch(() => {
       this.setState({ ...this.state, testLog: "Error loading bytestream stderr!" });
     });
@@ -72,8 +77,9 @@ export default class TargetTestLogCardComponent extends React.Component {
       return;
     }
 
+    this.setState({ ...this.state, loadingStdout: true });
     rpcService.fetchBytestreamFile(logUrl, this.props.invocationId).then((contents: string) => {
-      this.setState({ ...this.state, stdout: contents });
+      this.setState({ ...this.state, stdout: contents, loadingStdout: false });
     }).catch(() => {
       this.setState({ ...this.state, testLog: "Error loading bytestream stdout!" });
     });
@@ -97,7 +103,8 @@ export default class TargetTestLogCardComponent extends React.Component {
             <SetupCodeComponent />
             </div>}
           {this.state.cacheEnabled && this.state.stdErr && <div className="error-log"><TerminalComponent value={this.state.stdErr} /></div>}
-          {this.state.cacheEnabled && !this.state.stdErr && <span><br />Loading...</span>}
+          {this.state.cacheEnabled && this.state.loadingStderr && <span><br />Loading...</span>}
+          {this.state.cacheEnabled && !this.state.loadingStderr && !this.state.stdErr && <span><br />Empty log</span>}
         </div>
       </div>}
 
@@ -112,14 +119,16 @@ export default class TargetTestLogCardComponent extends React.Component {
             <SetupCodeComponent />
             </div>}
           {this.state.cacheEnabled && this.state.stdOut && <div className="error-log"><TerminalComponent value={this.state.stdOut} /></div>}
-          {this.state.cacheEnabled && !this.state.stdOut && <span><br />Loading...</span>}
+          {this.state.cacheEnabled && this.state.loadingStdout && <span><br />Loading...</span>}
+          {this.state.cacheEnabled && !this.state.loadingStdout && !this.state.stdOut && <span><br />Empty log</span>}
         </div>
       </div>}
 
       <div className={`card ${this.props.action.buildEvent.action.success ? "card-success" : "card-failure"}`}>
         <img className="icon" src="/image/play-circle.svg" />
         <div className="content">
-          <div className="title">Executed command</div>
+          <div className="title">{this.props.action?.buildEvent?.action?.label}</div>
+          <div className="test-subtitle">{this.props.action?.buildEvent?.action?.type} command exited with code {this.props.action?.buildEvent?.action?.exitCode}</div>
           <div>
             {this.props.action?.buildEvent?.action?.commandLine.map(commandLineArg => <div className="command-line-arg">
               {commandLineArg}

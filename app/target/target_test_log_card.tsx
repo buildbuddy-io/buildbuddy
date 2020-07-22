@@ -16,6 +16,7 @@ interface Props {
 interface State {
   testLog: string;
   cacheEnabled: boolean;
+  loading: boolean;
 }
 
 export default class TargetTestLogCardComponent extends React.Component {
@@ -23,7 +24,8 @@ export default class TargetTestLogCardComponent extends React.Component {
 
   state: State = {
     testLog: '',
-    cacheEnabled: true
+    cacheEnabled: true,
+    loading: false,
   }
 
   componentDidMount() {
@@ -48,10 +50,11 @@ export default class TargetTestLogCardComponent extends React.Component {
       return;
     }
 
+    this.setState({ ...this.state, loading: true });
     rpcService.fetchBytestreamFile(testLogUrl, this.props.invocationId).then((contents: string) => {
-      this.setState({ ...this.state, testLog: contents });
+      this.setState({ ...this.state, testLog: contents, loading: false });
     }).catch(() => {
-      this.setState({ ...this.state, testLog: "Error loading bytestream test.log!" });
+      this.setState({ ...this.state, loading: false, testLog: "Error loading bytestream test.log!" });
     });
   }
 
@@ -91,7 +94,8 @@ export default class TargetTestLogCardComponent extends React.Component {
             <SetupCodeComponent />
           </div>}
         {this.state.cacheEnabled && this.state.testLog && <div className="test-log"><TerminalComponent value={this.state.testLog} /></div>}
-        {this.state.cacheEnabled && !this.state.testLog && <span><br />Loading...</span>}
+        {this.state.cacheEnabled && this.state.loading && <span><br />Loading...</span>}
+        {this.state.cacheEnabled && !this.state.loading && !this.state.testLog && <span><br />Empty log</span>}
       </div>
     </div>
   }
