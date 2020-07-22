@@ -1,0 +1,34 @@
+## All lines are commented out, uncomment and edit the lines you'd like to add to your user specific .bazelrc
+## Copy to your user-specific user.bazelrc (which is in .gitignore) with the following command:
+## cp template-user.bazelrc user.bazelrc
+
+
+########################
+## API key based auth ##
+########################
+## Get your API key by:
+## 1) Logging in or creating an account here: https://app.buildbuddy.io/
+## 2) Following the setup instructions here: https://app.buildbuddy.io/docs/setup/
+## 3) Update and uncomment the lines below accordingly
+#build --bes_backend=grpcs://YOUR_API_KEY_GOES_HERE@cloud.buildbuddy.io
+#build --remote_cache=grpcs://YOUR_API_KEY_GOES_HERE@cloud.buildbuddy.io
+#build --remote_executor=grpcs://YOUR_API_KEY_GOES_HERE@cloud.buildbuddy.io
+
+
+############################
+## Certificate based auth ##
+############################
+## Get your certs by:
+## 1) Logging in or creating an account here: https://app.buildbuddy.io/
+## 2) Click certificate and download certs here: https://app.buildbuddy.io/docs/setup/
+## 3) Uncomment the lines below and place certs in your workspace directory, or update the paths below
+#build --tls_client_certificate=buildbuddy-cert.pem
+#build --tls_client_key=buildbuddy-key.pem
+
+
+#################################
+## Local toolchain development ##
+#################################
+## Use when developing the toolchain repo
+## Uncomment the line below and update the path to point to your local toolchain directory
+#build --override_repository=io_buildbuddy_toolchain=/ABSOLUTE_PATH_TO_YOUR_TOOLCHAIN_DIRECTORY/toolchain/

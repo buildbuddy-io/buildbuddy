@@ -34,4 +34,11 @@ build --bes_backend=grpcs://cloud.buildbuddy.io
 
 # Recommended if connecting to a remote (upload speed constrained) BuildBuddy instance
 build --noremote_upload_local_results # Uploads logs & artifacts without writing to cache
+
+# Populate workspace info like commit sha and repo name to your invocation.
 build --workspace_status_command=$(pwd)/workspace_status.sh
+
+# Try importing a user specific .bazelrc
+# You can create your own by copying and editing the template-user.bazelrc template:
+# cp template-user.bazelrc user.bazelrc
+try-import %workspace%/user.bazelrc

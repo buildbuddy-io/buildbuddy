@@ -27,3 +27,10 @@ bazel-*
 
 # Node dependencies
 node_modules
+
+# User specific .bazelrc
+user.bazelrc
+
+# BuildBuddy certs
+buildbuddy-cert.pem
+buildbuddy-key.pem
