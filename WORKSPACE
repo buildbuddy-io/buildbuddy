@@ -136,10 +136,18 @@ load(":deps.bzl", "install_buildbuddy_dependencies")
 # gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
 install_buildbuddy_dependencies()
 
+load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
+
+container_pull(
+    name = "buildbuddy_go_image_base",
+    digest = "sha256:2b0a8e9a13dcc168b126778d9e947a7081b4d2ee1ee122830d835f176d0e2a70",
+    registry = "gcr.io",
+    repository = "distroless/base",
+)
+
 # Toolchain
 
-# Uncomment and replace http_archive when doing toolchain development.
-
+# Uncomment and replace http_archive when doing toolchain development or checkout template-user.bazelrc.
 # local_repository(
 #     name = "io_buildbuddy_toolchain",
 #     path = __workspace_dir__ + "/../toolchain",
@@ -154,12 +162,3 @@ http_archive(
 load("@io_buildbuddy_toolchain//:rules.bzl", "register_buildbuddy_toolchain")
 
 register_buildbuddy_toolchain(name = "buildbuddy_toolchain")
-
-load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
-
-container_pull(
-    name = "buildbuddy_go_image_base",
-    digest = "sha256:2b0a8e9a13dcc168b126778d9e947a7081b4d2ee1ee122830d835f176d0e2a70",
-    registry = "gcr.io",
-    repository = "distroless/base",
-)
