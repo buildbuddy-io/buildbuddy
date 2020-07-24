@@ -88,7 +88,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
-		log.Printf("Error creating request: $v", err)
+		log.Printf("Error creating request: %v", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
