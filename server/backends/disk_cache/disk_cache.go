@@ -39,7 +39,7 @@ type DiskCache struct {
 	lock      *sync.RWMutex // PROTECTS: evictList, entries, sizeBytes
 	evictList *list.List
 	entries   map[string]*list.Element
-	sizeBytes int64
+	sizeBytes *int64
 	prefix    string
 }
 
@@ -73,9 +73,11 @@ func makeRecord(fullPath string, info os.FileInfo) *fileRecord {
 }
 
 func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
+	zeroSize := int64(0)
 	c := &DiskCache{
 		rootDir:      rootDir,
 		maxSizeBytes: maxSizeBytes,
+		sizeBytes:    &zeroSize,
 		lock:         &sync.RWMutex{},
 	}
 	if err := c.initializeCache(); err != nil {
@@ -125,7 +127,7 @@ func (c *DiskCache) initializeCache() error {
 	for _, record := range records {
 		c.addEntry(record)
 	}
-	log.Printf("Initialized disk cache. Current size: %d (max: %d) bytes", c.sizeBytes, c.maxSizeBytes)
+	log.Printf("Initialized disk cache. Current size: %d (max: %d) bytes", *c.sizeBytes, c.maxSizeBytes)
 	return nil
 }
 
@@ -133,7 +135,7 @@ func (c *DiskCache) addEntry(record *fileRecord) {
 	c.lock.Lock()
 	listElement := c.evictList.PushFront(record)
 	c.entries[record.key] = listElement
-	c.sizeBytes += record.sizeBytes
+	*c.sizeBytes += record.sizeBytes
 	c.lock.Unlock()
 }
 
@@ -142,7 +144,7 @@ func (c *DiskCache) removeEntry(key string) {
 	if listElement, ok := c.entries[key]; ok {
 		c.evictList.Remove(listElement)
 		record := listElement.Value.(*fileRecord)
-		c.sizeBytes -= record.sizeBytes
+		*c.sizeBytes -= record.sizeBytes
 		delete(c.entries, key)
 	}
 	c.lock.Unlock()
@@ -163,20 +165,21 @@ func (c *DiskCache) checkSizeAndEvict(ctx context.Context, n int64) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	newSize := c.sizeBytes + n
+	newSize := *c.sizeBytes + n
 	stopDeleteCutoff := int64(cacheEvictionCutoffPercentage * float64(c.maxSizeBytes))
 
 	if newSize > c.maxSizeBytes {
-		for c.sizeBytes+n > stopDeleteCutoff {
+		for *c.sizeBytes+n > stopDeleteCutoff {
 			listElement := c.evictList.Back()
-			if listElement != nil {
-				c.evictList.Remove(listElement)
-				record := listElement.Value.(*fileRecord)
-				c.sizeBytes -= record.sizeBytes
-				delete(c.entries, record.key)
-				if err := disk.DeleteFile(ctx, record.key); err != nil {
-					return err
-				}
+			if listElement == nil {
+				break
+			}
+			c.evictList.Remove(listElement)
+			record := listElement.Value.(*fileRecord)
+			*c.sizeBytes -= record.sizeBytes
+			delete(c.entries, record.key)
+			if err := disk.DeleteFile(ctx, record.key); err != nil {
+				return err
 			}
 		}
 	}
