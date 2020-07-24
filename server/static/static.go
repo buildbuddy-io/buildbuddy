@@ -82,6 +82,7 @@ func serveIndexTemplate(env environment.Env, template *template.Template, versio
 		Version:            version,
 		ConfiguredIssuers:  issuers,
 		DefaultToDenseMode: env.GetConfigurator().GetDefaultToDenseMode(),
+		GithubEnabled:      env.GetConfigurator().GetGithubConfig() != nil,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

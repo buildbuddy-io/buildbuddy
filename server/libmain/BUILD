@@ -14,6 +14,7 @@ go_library(
         "//server/backends/blobstore:go_default_library",
         "//server/backends/disk_cache:go_default_library",
         "//server/backends/executiondb:go_default_library",
+        "//server/backends/github:go_default_library",
         "//server/backends/invocationdb:go_default_library",
         "//server/backends/memory_cache:go_default_library",
         "//server/backends/slack:go_default_library",

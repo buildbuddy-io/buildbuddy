@@ -5,12 +5,14 @@ export class Capabilities {
   version: string;
   paths: Set<string>;
   enterprise: boolean;
+  github: boolean;
   auth: string;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
     this.version = window.buildbuddyConfig && window.buildbuddyConfig.version;
     this.auth = window.buildbuddyConfig && window.buildbuddyConfig.configured_issuers && window.buildbuddyConfig.configured_issuers.length && window.buildbuddyConfig.configured_issuers[0];
+    this.github = window.buildbuddyConfig && window.buildbuddyConfig.github_enabled;
     this.enterprise = enterprise;
     this.paths = new Set(paths);
     window.gtag('set', {
