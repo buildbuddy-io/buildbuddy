@@ -24,6 +24,7 @@ type generalConfig struct {
 	RemoteExecution *RemoteExecutionConfig `yaml:"remote_execution"`
 	Executor        *ExecutorConfig        `yaml:"executor"`
 	API             *APIConfig             `yaml:"api"`
+	Github          *GithubConfig          `yaml:"github"`
 }
 
 type appConfig struct {
@@ -134,6 +135,11 @@ type ExecutorConfig struct {
 type APIConfig struct {
 	EnableAPI bool   `yaml:"enable_api"`
 	APIKey    string `yaml:"api_key"`
+}
+
+type GithubConfig struct {
+	ClientID     string `yaml:"client_id"`
+	ClientSecret string `yaml:"client_secret"`
 }
 
 func ensureDirectoryExists(dir string) error {
@@ -344,4 +350,9 @@ func (c *Configurator) GetExecutorConfig() *ExecutorConfig {
 func (c *Configurator) GetAPIConfig() *APIConfig {
 	c.rereadIfStale()
 	return c.gc.API
+}
+
+func (c *Configurator) GetGithubConfig() *GithubConfig {
+	c.rereadIfStale()
+	return c.gc.Github
 }

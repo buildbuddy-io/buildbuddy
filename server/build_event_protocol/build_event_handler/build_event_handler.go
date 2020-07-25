@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -58,8 +59,9 @@ func readBazelEvent(obe *pepb.OrderedBuildEvent, out *build_event_stream.BuildEv
 }
 
 type EventChannel struct {
-	env environment.Env
-	pw  *protofile.BufferedProtoWriter
+	env            environment.Env
+	pw             *protofile.BufferedProtoWriter
+	statusReporter *build_status_reporter.BuildStatusReporter
 }
 
 func (e *EventChannel) readAllTempBlobs(ctx context.Context, blobID string) ([]*inpb.InvocationEvent, error) {
@@ -166,6 +168,8 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 		}
 	}
 
+	e.statusReporter.ReportStatusForEvent(ctx, iid, &bazelBuildEvent)
+
 	// For everything else, just save the event to our buffer and keep on chugging.
 	err := e.pw.WriteProtoToStream(ctx, &inpb.InvocationEvent{
 		EventTime:      event.OrderedBuildEvent.Event.EventTime,
@@ -192,8 +196,9 @@ func OpenChannel(env environment.Env, ctx context.Context, iid string) *EventCha
 		chunkFileSizeBytes = defaultChunkFileSizeBytes
 	}
 	return &EventChannel{
-		env: env,
-		pw:  protofile.NewBufferedProtoWriter(env.GetBlobstore(), iid, chunkFileSizeBytes),
+		env:            env,
+		pw:             protofile.NewBufferedProtoWriter(env.GetBlobstore(), iid, chunkFileSizeBytes),
+		statusReporter: build_status_reporter.NewBuildStatusReporter(env),
 	}
 }
 

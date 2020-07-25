@@ -9,6 +9,9 @@ message FrontendConfig {
   // The issuers configured by the backend.
   repeated string configured_issuers = 2;
 
-  // Whether to default to Dense UI mode
+  // Whether to default to Dense UI mode.
   bool default_to_dense_mode = 3;
+
+  // Whether Github linking is enabled.
+  bool github_enabled = 4;
 }

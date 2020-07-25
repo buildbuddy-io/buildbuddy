@@ -14,4 +14,7 @@ message Group {
   // Optional. The domains owned by this group.
   // Ex. "iterationinc.com"
   string owned_domain = 3;
+
+  // True if this group has linked a Github token.
+  bool github_linked = 4;
 }

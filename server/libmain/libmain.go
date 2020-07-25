@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/executiondb"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
@@ -303,6 +304,11 @@ func StartAndRunServices(env environment.Env) {
 		mux.Handle("/login/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Login)))
 		mux.Handle("/auth/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Auth)))
 		mux.Handle("/logout/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Logout)))
+	}
+
+	if githubConfig := env.GetConfigurator().GetGithubConfig(); githubConfig != nil {
+		githubClient := github.NewGithubClient(env)
+		mux.Handle("/auth/github/link/", httpfilters.WrapAuthenticatedExternalHandler(env, http.HandlerFunc(githubClient.Link)))
 	}
 
 	// Register API as an HTTP service.
