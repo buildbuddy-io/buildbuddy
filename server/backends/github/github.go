@@ -62,10 +62,11 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 		appURL := c.env.GetConfigurator().GetAppBuildBuddyURL()
 		url := fmt.Sprintf(
-			"https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s",
+			"https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
 			githubConfig.ClientID,
 			state,
-			appURL+"/auth/github/link/")
+			appURL+"/auth/github/link/",
+			"repo")
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 		return
 	}
