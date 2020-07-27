@@ -94,6 +94,7 @@ type Cache interface {
 	Get(ctx context.Context, d *repb.Digest) ([]byte, error)
 	GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)
 	Set(ctx context.Context, d *repb.Digest, data []byte) error
+	SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error
 	Delete(ctx context.Context, d *repb.Digest) error
 
 	// Low level interface used for seeking and stream-writing.

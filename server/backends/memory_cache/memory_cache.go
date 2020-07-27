@@ -256,6 +256,15 @@ func (m *MemoryCache) Set(ctx context.Context, d *repb.Digest, data []byte) erro
 	return nil
 }
 
+func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	for d, data := range kvs {
+		if err := m.Set(ctx, d, data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
 	k, err := m.key(ctx, d)
 	if err != nil {

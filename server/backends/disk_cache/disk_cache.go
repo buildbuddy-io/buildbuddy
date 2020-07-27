@@ -280,6 +280,15 @@ func (c *DiskCache) Set(ctx context.Context, d *repb.Digest, data []byte) error 
 
 }
 
+func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	for d, data := range kvs {
+		if err := c.Set(ctx, d, data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
 	k, err := c.key(ctx, d)
 	if err != nil {
