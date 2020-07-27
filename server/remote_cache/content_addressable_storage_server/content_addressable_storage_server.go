@@ -110,6 +110,8 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
 	cache := s.getCache(req.GetInstanceName())
 	rsp.Responses = make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(req.Requests))
+
+	kvs := make(map[*repb.Digest][]byte, len(req.Requests))
 	for _, uploadRequest := range req.Requests {
 		uploadDigest := uploadRequest.GetDigest()
 		_, err := digest.Validate(uploadDigest)
@@ -117,11 +119,20 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			return nil, err
 		}
 		if uploadDigest.GetHash() == digest.EmptySha256 {
+			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
+				Digest: uploadDigest,
+				Status: &statuspb.Status{Code: int32(codes.OK)},
+			})
+			// Skip putting this in the kv map -- we don't want the
+			// cache to be queried for empty files.
 			continue
 		}
-		if err := cache.Set(ctx, uploadDigest, uploadRequest.GetData()); err != nil {
-			return nil, err
-		}
+		kvs[uploadDigest] = uploadRequest.GetData()
+	}
+	if err := cache.SetMulti(ctx, kvs); err != nil {
+		return nil, err
+	}
+	for uploadDigest, _ := range kvs {
 		rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 			Digest: uploadDigest,
 			Status: &statuspb.Status{Code: int32(codes.OK)},
