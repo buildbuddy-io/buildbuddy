@@ -169,7 +169,7 @@ func (r *BuildStatusReporter) githubPayloadFromConfiguredEvent(event *build_even
 		return nil // We only report pending for test targets.
 	}
 
-	label := event.Id.GetTargetConfigured().Label
+	label := r.labelFromEvent(event)
 	groupStatus := r.groupStatusFromLabel(label)
 	if groupStatus != nil {
 		groupStatus.numTargets++
@@ -184,7 +184,7 @@ func (r *BuildStatusReporter) githubPayloadFromConfiguredEvent(event *build_even
 
 func (r *BuildStatusReporter) githubPayloadFromTestSummaryEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
 	passed := event.GetTestSummary().OverallStatus == build_event_stream.TestStatus_PASSED
-	label := event.Id.GetTestSummary().Label
+	label := r.labelFromEvent(event)
 	groupStatus := r.groupStatusFromLabel(label)
 	if groupStatus != nil {
 		if passed {
@@ -221,8 +221,8 @@ func (r *BuildStatusReporter) githubPayloadFromFinishedEvent(event *build_event_
 }
 
 func (r *BuildStatusReporter) githubPayloadFromAbortedEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
-	label := event.Id.GetTargetCompleted().Label
-	if r.inFlight[label] {
+	label := r.labelFromEvent(event)
+	if label != "" && r.inFlight[label] {
 		return nil // We only report cancellations for in-flight targets/groups.
 	}
 
@@ -267,7 +267,31 @@ func (r *BuildStatusReporter) initializeGroups(testGroups string) {
 	}
 }
 
+func (r *BuildStatusReporter) labelFromEvent(event *build_event_stream.BuildEvent) string {
+	switch id := event.Id.Id.(type) {
+	case *build_event_stream.BuildEventId_TargetConfigured:
+		return id.TargetConfigured.Label
+	case *build_event_stream.BuildEventId_TargetCompleted:
+		return id.TargetCompleted.Label
+	case *build_event_stream.BuildEventId_TestResult:
+		return id.TestResult.Label
+	case *build_event_stream.BuildEventId_TestSummary:
+		return id.TestSummary.Label
+	case *build_event_stream.BuildEventId_ActionCompleted:
+		return id.ActionCompleted.Label
+	case *build_event_stream.BuildEventId_ConfiguredLabel:
+		return id.ConfiguredLabel.Label
+	case *build_event_stream.BuildEventId_UnconfiguredLabel:
+		return id.UnconfiguredLabel.Label
+	}
+	return ""
+}
+
 func (r *BuildStatusReporter) groupStatusFromLabel(label string) *GroupStatus {
+	if label == "" {
+		return nil
+	}
+
 	for group, status := range r.groups {
 		if strings.HasPrefix(label, group) {
 			return status

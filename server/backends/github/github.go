@@ -123,14 +123,28 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	var accessTokenResponse GithubAccessTokenResponse
 	json.Unmarshal(body, &accessTokenResponse)
 
-	userInfo, err := c.env.GetAuthenticator().AuthenticatedUser(r.Context())
+	auth := c.env.GetAuthenticator()
+	if auth == nil {
+		log.Printf("No authenticator configured")
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		return
+	}
+
+	userInfo, err := auth.AuthenticatedUser(r.Context())
 	if err != nil {
 		log.Printf("Error getting authenticated user: %v", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
 
-	err = c.env.GetDBHandle().Exec(
+	dbHandle := c.env.GetDBHandle()
+	if dbHandle == nil {
+		log.Printf("No database configured")
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		return
+	}
+
+	err = dbHandle.Exec(
 		"UPDATE Groups SET github_token = ? WHERE group_id IN (?)",
 		accessTokenResponse.AccessToken, userInfo.GetAllowedGroups()).Error
 	if err != nil {
@@ -181,13 +195,19 @@ func (c *GithubClient) populateTokenFromGroupIfNecessary(ctx context.Context) er
 		return nil
 	}
 
-	userInfo, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	auth := c.env.GetAuthenticator()
+	dbHandle := c.env.GetDBHandle()
+	if auth == nil || dbHandle == nil {
+		return nil
+	}
+
+	userInfo, err := auth.AuthenticatedUser(ctx)
 	if userInfo == nil || err != nil {
 		return nil
 	}
 
 	var group tables.Group
-	err = c.env.GetDBHandle().Raw("SELECT github_token FROM Groups WHERE group_id = ?",
+	err = dbHandle.Raw("SELECT github_token FROM Groups WHERE group_id = ?",
 		userInfo.GetGroupID()).First(&group).Error
 	if err != nil {
 		return err
