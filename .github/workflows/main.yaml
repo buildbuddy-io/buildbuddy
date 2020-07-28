@@ -22,11 +22,11 @@ jobs:
 
     - name: Build
       run: |
-        "${GITHUB_WORKSPACE}/bin/bazel" build --config=remote //...
+        "${GITHUB_WORKSPACE}/bin/bazel" build --config=ci //...
 
     - name: Test
       run: |
-        "${GITHUB_WORKSPACE}/bin/bazel" test --config=remote //...
+        "${GITHUB_WORKSPACE}/bin/bazel" test --config=ci //...
 
     - name: Slack
       uses: 8398a7/action-slack@v3
