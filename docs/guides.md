@@ -2,7 +2,7 @@
 {
   "name": "Guides",
   "category": "5f18d20522eec65d44a3c1cd",
-  "priority": 100
+  "priority": 1000
 }
 -->
 # Guides
