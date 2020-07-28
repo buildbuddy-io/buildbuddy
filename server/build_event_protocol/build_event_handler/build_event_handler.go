@@ -96,6 +96,7 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 		InvocationId:     iid,
 		InvocationStatus: inpb.Invocation_DISCONNECTED_INVOCATION_STATUS,
 	}
+	e.statusReporter.ReportDisconnect(ctx)
 	ti := &tables.Invocation{}
 	ti.FromProtoAndBlobID(invocation, iid)
 	return e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti)
@@ -168,7 +169,7 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 		}
 	}
 
-	e.statusReporter.ReportStatusForEvent(ctx, iid, &bazelBuildEvent)
+	e.statusReporter.ReportStatusForEvent(ctx, &bazelBuildEvent)
 
 	// For everything else, just save the event to our buffer and keep on chugging.
 	err := e.pw.WriteProtoToStream(ctx, &inpb.InvocationEvent{
@@ -198,7 +199,7 @@ func OpenChannel(env environment.Env, ctx context.Context, iid string) *EventCha
 	return &EventChannel{
 		env:            env,
 		pw:             protofile.NewBufferedProtoWriter(env.GetBlobstore(), iid, chunkFileSizeBytes),
-		statusReporter: build_status_reporter.NewBuildStatusReporter(env),
+		statusReporter: build_status_reporter.NewBuildStatusReporter(env, iid),
 	}
 }
 

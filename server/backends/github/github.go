@@ -27,6 +27,15 @@ type GithubStatusPayload struct {
 	Context     string `json:"context"`
 }
 
+func NewGithubStatusPayload(context, URL, description, state string) *GithubStatusPayload {
+	return &GithubStatusPayload{
+		Context:     context,
+		TargetURL:   URL,
+		Description: description,
+		State:       state,
+	}
+}
+
 type GithubAccessTokenResponse struct {
 	AccessToken string `json:"access_token"`
 	Scope       string `json:"scope"`
@@ -139,6 +148,10 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commitSHA string, payload *GithubStatusPayload) error {
+	if ownerRepo == "" || commitSHA == "" {
+		return nil // We can't create a status without an owner/repo and a commit SHA.
+	}
+
 	err := c.populateTokenFromGroupIfNecessary(ctx)
 
 	// If we don't have a github token, we can't post a status.
