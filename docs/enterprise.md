@@ -1,6 +1,6 @@
 <!--
 {
-  "name": "BuildBuddy Enterprise",
+  "name": "Enterprise Overview",
   "category": "5eed3e5fa3f1277a6b94b83a",
   "priority": 1000
 }
@@ -22,5 +22,11 @@ Enterprise BuildBuddy is available both as a fully-managed cloud hosted solution
 
 For a full feature breakdown, check out our [pricing page](https://buildbuddy.io/pricing).
 
-## Learn more
-If you'd like to learn more or email us at [enterprise@buildbuddy.io](enterprise@buildbuddy.io).
+## Getting started
+To get started with BuildBuddy Enterprise, [request a quote](https://www.buildbuddy.io/request-quote).
+
+## Cloud setup
+Getting started with BuildBuddy Enterprise Cloud is as easy as logging into your [BuildBuddy account](https://app.buildbuddy.io/), and following the setup instructions. 
+
+### On-prem setup
+Once you've received your BuildBuddy Enterprise license, you can configure your BuildBuddy Enterprise on-prem installation by following our [Enterprise Getting Started docs ](enterprise-setup.md).
