@@ -14,7 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
@@ -215,7 +215,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	// WaitExecution and GetOperation requests are handled by reading the
 	// state from the DB.
 	requestStartTimePb := ptypes.TimestampNow()
-	ctx := perms.AttachUserPrefixToContext(stream.Context(), s.env)
+	ctx := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 
 	ers := s.env.GetExecutionRouterService()
 	if ers == nil {

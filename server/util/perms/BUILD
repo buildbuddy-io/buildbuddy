@@ -5,5 +5,4 @@ go_library(
     srcs = ["perms.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/perms",
     visibility = ["//visibility:public"],
-    deps = ["//server/environment:go_default_library"],
 )

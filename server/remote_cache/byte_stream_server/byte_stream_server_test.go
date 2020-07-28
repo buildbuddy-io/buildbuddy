@@ -9,7 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/test_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -165,7 +165,7 @@ func TestRPCRead(t *testing.T) {
 		},
 	}
 
-	ctx = perms.AttachUserPrefixToContext(ctx, te)
+	ctx = prefix.AttachUserPrefixToContext(ctx, te)
 	for _, tc := range cases {
 		// Set the value in the cache.
 		if err := te.GetCache().Set(ctx, tc.instanceNameDigest.Digest, []byte(tc.wantData)); err != nil {

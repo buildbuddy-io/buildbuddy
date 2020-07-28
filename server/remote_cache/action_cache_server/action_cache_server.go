@@ -8,7 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
@@ -131,7 +131,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err != nil {
 		return nil, err
 	}
-	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
+	ctx = prefix.AttachUserPrefixToContext(ctx, s.env)
 	cache := s.getCache(req.GetInstanceName())
 
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
@@ -178,7 +178,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if err != nil {
 		return nil, err
 	}
-	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
+	ctx = prefix.AttachUserPrefixToContext(ctx, s.env)
 	cache := s.getCache(req.GetInstanceName())
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131

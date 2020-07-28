@@ -10,7 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/codes"
@@ -53,7 +53,7 @@ func (s *ContentAddressableStorageServer) getCache(instanceName string) interfac
 // There are no method-specific errors.
 func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	rsp := &repb.FindMissingBlobsResponse{}
-	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
+	ctx = prefix.AttachUserPrefixToContext(ctx, s.env)
 	cache := s.getCache(req.GetInstanceName())
 	digestsToLookup := make([]*repb.Digest, 0, len(req.GetBlobDigests()))
 	for _, d := range req.GetBlobDigests() {
@@ -107,7 +107,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 // provided data.
 func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	rsp := &repb.BatchUpdateBlobsResponse{}
-	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
+	ctx = prefix.AttachUserPrefixToContext(ctx, s.env)
 	cache := s.getCache(req.GetInstanceName())
 	rsp.Responses = make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(req.Requests))
 
@@ -163,7 +163,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 // status.
 func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
 	rsp := &repb.BatchReadBlobsResponse{}
-	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
+	ctx = prefix.AttachUserPrefixToContext(ctx, s.env)
 	cache := s.getCache(req.GetInstanceName())
 	cacheRequest := make([]*repb.Digest, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
@@ -322,7 +322,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return nil
 	}
 
-	ctx := perms.AttachUserPrefixToContext(stream.Context(), s.env)
+	ctx := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 	cache := s.getCache(req.GetInstanceName())
 	dirStack, err := NewDirStack(req.GetPageToken())
 	if err != nil {

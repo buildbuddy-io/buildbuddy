@@ -11,7 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -177,7 +177,7 @@ func (m *MemoryCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return perms.UserPrefixFromContext(ctx) + m.prefix + hash, nil
+	return prefix.UserPrefixFromContext(ctx) + m.prefix + hash, nil
 }
 
 func (m *MemoryCache) WithPrefix(prefix string) interfaces.Cache {

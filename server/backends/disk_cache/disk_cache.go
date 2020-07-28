@@ -16,7 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -192,7 +192,7 @@ func (c *DiskCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(c.rootDir, perms.UserPrefixFromContext(ctx)+c.prefix+hash), nil
+	return filepath.Join(c.rootDir, prefix.UserPrefixFromContext(ctx)+c.prefix+hash), nil
 }
 
 func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {

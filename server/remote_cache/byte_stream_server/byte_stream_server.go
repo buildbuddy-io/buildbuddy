@@ -10,7 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -139,7 +139,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err != nil {
 		return err
 	}
-	ctx := perms.AttachUserPrefixToContext(stream.Context(), s.env)
+	ctx := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 	cache := s.getCache(instanceName)
 	if d.GetHash() == digest.EmptySha256 {
 		return nil
@@ -230,7 +230,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if err != nil {
 		return nil, err
 	}
-	ctx = perms.AttachUserPrefixToContext(ctx, s.env)
+	ctx = prefix.AttachUserPrefixToContext(ctx, s.env)
 	cache := s.getCache(instanceName)
 
 	ws := &writeState{
