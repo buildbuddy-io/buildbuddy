@@ -37,7 +37,7 @@ func (d *InvocationDB) createInvocation(tx *gorm.DB, ctx context.Context, ti *ta
 	}
 	ti.UserID = permissions.UserID
 	ti.GroupID = permissions.GroupID
-	ti.Perms = permissions.Perms
+	ti.Perms = ti.Perms | permissions.Perms
 	return tx.Create(ti).Error
 }
 

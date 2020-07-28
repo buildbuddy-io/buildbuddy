@@ -216,6 +216,9 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 				if url, ok := metadata["REPO_URL"]; ok && url != "" {
 					invocation.RepoUrl = url
 				}
+				if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
+					invocation.ReadPermission = inpb.InvocationPermission_PUBLIC
+				}
 			}
 		case *build_event_stream.BuildEvent_ConvenienceSymlinksIdentified:
 			{

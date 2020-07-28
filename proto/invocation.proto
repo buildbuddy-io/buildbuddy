@@ -65,6 +65,8 @@ message Invocation {
 
   // The commit SHA that this invocation was for.
   string commit_sha = 16;
+
+  InvocationPermission read_permission = 17;
 }
 
 message InvocationEvent {
@@ -76,6 +78,13 @@ message InvocationEvent {
 
   // The sequence number of the event in the stream.
   int64 sequence_number = 3;
+}
+
+enum InvocationPermission {
+  UNKNOWN_PERMISSION = 0;
+  OWNER = 1;
+  GROUP = 2;
+  PUBLIC = 3;
 }
 
 message InvocationLookup {

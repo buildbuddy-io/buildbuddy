@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/jinzhu/gorm"
 
@@ -122,6 +123,9 @@ func (i *Invocation) FromProtoAndBlobID(p *inpb.Invocation, blobID string) {
 	i.ActionCount = p.ActionCount
 	i.BlobID = blobID
 	i.InvocationStatus = int64(p.InvocationStatus)
+	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
+		i.Perms = perms.OTHERS_READ
+	}
 }
 
 func (i *Invocation) ToProto() *inpb.Invocation {
@@ -142,6 +146,11 @@ func (i *Invocation) ToProto() *inpb.Invocation {
 	out.InvocationStatus = inpb.Invocation_InvocationStatus(i.InvocationStatus)
 	out.CreatedAtUsec = i.Model.CreatedAtUsec
 	out.UpdatedAtUsec = i.Model.UpdatedAtUsec
+	if i.Perms&perms.OTHERS_READ > 0 {
+		out.ReadPermission = inpb.InvocationPermission_PUBLIC
+	} else {
+		out.ReadPermission = inpb.InvocationPermission_GROUP
+	}
 	return out
 }
 
