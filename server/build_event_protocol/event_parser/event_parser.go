@@ -16,17 +16,15 @@ import (
 const (
 	envVarPrefix              = "--"
 	envVarOptionName          = "client_env"
-	buildMetadataOptionName   = "build_metadata"
 	envVarSeparator           = "="
 	envVarRedactedPlaceholder = "<REDACTED>"
 	urlSecretRegexString      = `\:\/\/.*\@`
 )
 
-func parseAndFilterCommandLine(in *command_line.CommandLine) (*command_line.CommandLine, map[string]string, map[string]string) {
+func parseAndFilterCommandLine(in *command_line.CommandLine) (*command_line.CommandLine, map[string]string) {
 	envVarMap := make(map[string]string)
-	buildMetadataMap := make(map[string]string)
 	if in == nil {
-		return nil, envVarMap, buildMetadataMap
+		return nil, envVarMap
 	}
 	urlSecretRegex := regexp.MustCompile(urlSecretRegexString)
 	var out command_line.CommandLine
@@ -52,19 +50,13 @@ func parseAndFilterCommandLine(in *command_line.CommandLine) (*command_line.Comm
 						option.OptionValue = strings.Join([]string{parts[0], envVarRedactedPlaceholder}, envVarSeparator)
 						option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + envVarRedactedPlaceholder
 					}
-					if option.OptionName == buildMetadataOptionName {
-						parts := strings.Split(option.OptionValue, envVarSeparator)
-						if len(parts) == 2 {
-							buildMetadataMap[parts[0]] = parts[1]
-						}
-					}
 				}
 			}
 		default:
 			continue
 		}
 	}
-	return &out, envVarMap, buildMetadataMap
+	return &out, envVarMap
 }
 
 func filterUnstructuredCommandLine(in *build_event_stream.UnstructuredCommandLine) *build_event_stream.UnstructuredCommandLine {
@@ -136,28 +128,19 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 			}
 		case *build_event_stream.BuildEvent_StructuredCommandLine:
 			{
-				filteredCL, envVarMap, buildMetadataMap := parseAndFilterCommandLine(p.StructuredCommandLine)
+				filteredCL, envVarMap := parseAndFilterCommandLine(p.StructuredCommandLine)
 				if filteredCL != nil {
 					invocation.StructuredCommandLine = append(invocation.StructuredCommandLine, filteredCL)
 				}
-
-				if user, ok := envVarMap["USER"]; ok {
+				if user, ok := envVarMap["USER"]; ok && user != "" {
 					invocation.User = user
 				}
-
 				invocation.RepoUrl = envVarMap["CIRCLE_REPOSITORY_URL"]
-				if url, ok := envVarMap["GITHUB_REPOSITORY"]; ok {
+				if url, ok := envVarMap["GITHUB_REPOSITORY"]; ok && url != "" {
 					invocation.RepoUrl = url
 				}
-				if url, ok := buildMetadataMap["REPO_URL"]; ok {
-					invocation.RepoUrl = url
-				}
-
 				invocation.CommitSha = envVarMap["CIRCLE_SHA1"]
-				if sha, ok := envVarMap["GITHUB_SHA"]; ok {
-					invocation.CommitSha = sha
-				}
-				if sha, ok := buildMetadataMap["COMMIT_SHA"]; ok {
+				if sha, ok := envVarMap["GITHUB_SHA"]; ok && sha != "" {
 					invocation.CommitSha = sha
 				}
 			}
@@ -223,6 +206,16 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 			}
 		case *build_event_stream.BuildEvent_BuildMetadata:
 			{
+				metadata := p.BuildMetadata.Metadata
+				if metadata == nil {
+					continue
+				}
+				if sha, ok := metadata["COMMIT_SHA"]; ok && sha != "" {
+					invocation.CommitSha = sha
+				}
+				if url, ok := metadata["REPO_URL"]; ok && url != "" {
+					invocation.RepoUrl = url
+				}
 			}
 		case *build_event_stream.BuildEvent_ConvenienceSymlinksIdentified:
 			{
