@@ -12,24 +12,40 @@ import (
 )
 
 type BuildStatusReporter struct {
-	env          environment.Env
-	githubClient *github.GithubClient
-	command      string
-	pattern      string
-	repoURL      string
-	commitSHA    string
-	role         string
+	env             environment.Env
+	githubClient    *github.GithubClient
+	invocationID    string
+	command         string
+	pattern         string
+	role            string
+	repoURL         string
+	commitSHA       string
+	workspaceLoaded bool
+	payloads        []*github.GithubStatusPayload
+	groups          map[string]*GroupStatus
+	inFlight        map[string]bool
 }
 
-func NewBuildStatusReporter(env environment.Env) *BuildStatusReporter {
+type GroupStatus struct {
+	name       string
+	numTargets int
+	numPassed  int
+	numFailed  int
+	numAborted int
+}
+
+func NewBuildStatusReporter(env environment.Env, invocationID string) *BuildStatusReporter {
 	return &BuildStatusReporter{
 		env:          env,
 		githubClient: github.NewGithubClient(env),
+		invocationID: invocationID,
+		payloads:     make([]*github.GithubStatusPayload, 0),
+		inFlight:     make(map[string]bool),
 	}
 }
 
-func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, invocationId string, event *build_event_stream.BuildEvent) {
-	githubPayload := &github.GithubStatusPayload{}
+func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+	var githubPayload *github.GithubStatusPayload
 
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
@@ -43,19 +59,51 @@ func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, invocati
 
 	case *build_event_stream.BuildEvent_WorkspaceStatus:
 		r.populateWorkspaceInfoFromWorkspaceStatus(p.WorkspaceStatus)
-		githubPayload = r.githubPayloadFromWorkspaceStatusEvent(event, invocationId)
+		githubPayload = r.githubPayloadFromWorkspaceStatusEvent(event)
+
+	case *build_event_stream.BuildEvent_Configured:
+		githubPayload = r.githubPayloadFromConfiguredEvent(event)
 
 	case *build_event_stream.BuildEvent_TestSummary:
-		githubPayload = r.githubPayloadFromTestSummaryEvent(event, invocationId)
+		githubPayload = r.githubPayloadFromTestSummaryEvent(event)
+
+	case *build_event_stream.BuildEvent_Aborted:
+		githubPayload = r.githubPayloadFromAbortedEvent(event)
 
 	case *build_event_stream.BuildEvent_Finished:
-		githubPayload = r.githubPayloadFromFinishedEvent(event, invocationId)
+		githubPayload = r.githubPayloadFromFinishedEvent(event)
 	}
 
-	if githubPayload.State != "" && r.role == "CI" {
-		// TODO(siggisim): Kick these into a queue or something (but maintain order).
-		go r.githubClient.CreateStatus(ctx, extractUserRepoFromRepoUrl(r.repoURL), r.commitSHA, githubPayload)
+	if githubPayload != nil && r.role == "CI" {
+		r.payloads = append(r.payloads, githubPayload)
+		r.flushPayloadsIfWorkspaceLoaded(ctx)
 	}
+}
+
+func (r *BuildStatusReporter) ReportDisconnect(ctx context.Context) {
+	for label := range r.inFlight {
+		r.payloads = append(r.payloads, github.NewGithubStatusPayload(label, r.invocationURL(), "Disconnected", "error"))
+	}
+	r.flushPayloadsIfWorkspaceLoaded(ctx)
+}
+
+func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context) {
+	if !r.workspaceLoaded {
+		return // If we haven't loaded the workspace, we can't flush payloads yet.
+	}
+
+	for _, payload := range r.payloads {
+		if payload.State == "pending" {
+			r.inFlight[payload.Context] = true
+		} else {
+			delete(r.inFlight, payload.Context)
+		}
+
+		// TODO(siggisim): Kick these into a queue or something (but maintain order).
+		r.githubClient.CreateStatus(ctx, extractUserRepoFromRepoUrl(r.repoURL), r.commitSHA, payload)
+	}
+
+	r.payloads = make([]*github.GithubStatusPayload, 0)
 }
 
 func (r *BuildStatusReporter) populateWorkspaceInfoFromStartedEvent(event *build_event_stream.BuildEvent) {
@@ -95,6 +143,9 @@ func (r *BuildStatusReporter) populateWorkspaceInfoFromBuildMetadata(metadata *b
 	if role, ok := metadata.Metadata["ROLE"]; ok && role != "" {
 		r.role = role
 	}
+	if testGroups, ok := metadata.Metadata["TEST_GROUPS"]; ok && testGroups != "" {
+		r.initializeGroups(testGroups)
+	}
 }
 
 func (r *BuildStatusReporter) populateWorkspaceInfoFromWorkspaceStatus(workspace *build_event_stream.WorkspaceStatus) {
@@ -106,44 +157,123 @@ func (r *BuildStatusReporter) populateWorkspaceInfoFromWorkspaceStatus(workspace
 			r.commitSHA = item.Value
 		}
 	}
+	r.workspaceLoaded = true
 }
 
-func (r *BuildStatusReporter) githubPayloadFromWorkspaceStatusEvent(event *build_event_stream.BuildEvent, invocationId string) *github.GithubStatusPayload {
-	appURL := r.env.GetConfigurator().GetAppBuildBuddyURL()
-	return &github.GithubStatusPayload{
-		Context:     fmt.Sprintf("bazel %s %s", r.command, r.pattern),
-		TargetURL:   fmt.Sprintf(appURL+"/invocation/%s", invocationId),
-		Description: "Running...",
-		State:       "pending",
-	}
+func (r *BuildStatusReporter) githubPayloadFromWorkspaceStatusEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
+	return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), "Running...", "pending")
 }
 
-func (r *BuildStatusReporter) githubPayloadFromTestSummaryEvent(event *build_event_stream.BuildEvent, invocationId string) *github.GithubStatusPayload {
-	appURL := r.env.GetConfigurator().GetAppBuildBuddyURL()
-	githubPayload := &github.GithubStatusPayload{
-		Context:     event.Id.GetTestSummary().Label,
-		TargetURL:   fmt.Sprintf(appURL+"/invocation/%s?target=%s", invocationId, event.Id.GetTestSummary().Label),
-		Description: descriptionFromOverallStatus(event.GetTestSummary().OverallStatus),
-		State:       "failure",
+func (r *BuildStatusReporter) githubPayloadFromConfiguredEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
+	if event.GetConfigured().TestSize == build_event_stream.TestSize_UNKNOWN {
+		return nil // We only report pending for test targets.
 	}
-	if event.GetTestSummary().OverallStatus == build_event_stream.TestStatus_PASSED {
-		githubPayload.State = "success"
+
+	label := event.Id.GetTargetConfigured().Label
+	groupStatus := r.groupStatusFromLabel(label)
+	if groupStatus != nil {
+		groupStatus.numTargets++
 	}
-	return githubPayload
+
+	if groupStatus != nil && groupStatus.numTargets == 1 {
+		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(groupStatus.name), "Running...", "pending")
+	}
+
+	return github.NewGithubStatusPayload(label, r.targetURL(label), "Running...", "pending")
 }
 
-func (r *BuildStatusReporter) githubPayloadFromFinishedEvent(event *build_event_stream.BuildEvent, invocationId string) *github.GithubStatusPayload {
-	appURL := r.env.GetConfigurator().GetAppBuildBuddyURL()
-	githubPayload := &github.GithubStatusPayload{
-		Context:     fmt.Sprintf("bazel %s %s", r.command, r.pattern),
-		TargetURL:   fmt.Sprintf(appURL+"/invocation/%s", invocationId),
-		Description: descriptionFromExitCodeName(event.GetFinished().ExitCode.Name),
-		State:       "failure",
+func (r *BuildStatusReporter) githubPayloadFromTestSummaryEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
+	passed := event.GetTestSummary().OverallStatus == build_event_stream.TestStatus_PASSED
+	label := event.Id.GetTestSummary().Label
+	groupStatus := r.groupStatusFromLabel(label)
+	if groupStatus != nil {
+		if passed {
+			groupStatus.numPassed++
+		} else {
+			groupStatus.numFailed++
+		}
 	}
+
+	description := descriptionFromOverallStatus(event.GetTestSummary().OverallStatus)
+
+	if groupStatus != nil && groupStatus.numFailed == 1 {
+		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(label), description, "failure")
+	}
+
+	if groupStatus != nil && groupStatus.numPassed == groupStatus.numTargets {
+		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(label), description, "success")
+	}
+
+	if passed {
+		return github.NewGithubStatusPayload(label, r.targetURL(label), description, "success")
+	}
+
+	return github.NewGithubStatusPayload(label, r.targetURL(label), description, "failure")
+}
+
+func (r *BuildStatusReporter) githubPayloadFromFinishedEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
+	description := descriptionFromExitCodeName(event.GetFinished().ExitCode.Name)
 	if event.GetFinished().OverallSuccess {
-		githubPayload.State = "success"
+		return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, "success")
 	}
-	return githubPayload
+
+	return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, "failure")
+}
+
+func (r *BuildStatusReporter) githubPayloadFromAbortedEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
+	label := event.Id.GetTargetCompleted().Label
+	if r.inFlight[label] {
+		return nil // We only report cancellations for in-flight targets/groups.
+	}
+
+	groupStatus := r.groupStatusFromLabel(label)
+	if groupStatus != nil {
+		groupStatus.numAborted++
+	}
+
+	if groupStatus != nil && groupStatus.numAborted == 1 {
+		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(groupStatus.name), "Cancelled", "error")
+	}
+
+	return github.NewGithubStatusPayload(label, r.targetURL(label), "Cancelled", "error")
+}
+
+func (r *BuildStatusReporter) invocationLabel() string {
+	return fmt.Sprintf("bazel %s %s", r.command, r.pattern)
+}
+
+func (r *BuildStatusReporter) invocationURL() string {
+	return fmt.Sprintf("%s/invocation/%s", r.appURL(), r.invocationID)
+}
+
+func (r *BuildStatusReporter) groupURL(label string) string {
+	return fmt.Sprintf("%s?targetFilter=%s", r.invocationURL(), label)
+}
+
+func (r *BuildStatusReporter) targetURL(label string) string {
+	return fmt.Sprintf("%s?target=%s", r.invocationURL(), label)
+}
+
+func (r *BuildStatusReporter) appURL() string {
+	return r.env.GetConfigurator().GetAppBuildBuddyURL()
+}
+
+func (r *BuildStatusReporter) initializeGroups(testGroups string) {
+	r.groups = make(map[string]*GroupStatus)
+	for _, group := range strings.Split(testGroups, ",") {
+		r.groups[group] = &GroupStatus{
+			name: group,
+		}
+	}
+}
+
+func (r *BuildStatusReporter) groupStatusFromLabel(label string) *GroupStatus {
+	for group, status := range r.groups {
+		if strings.HasPrefix(label, group) {
+			return status
+		}
+	}
+	return nil
 }
 
 func patternFromEvent(event *build_event_stream.BuildEvent) string {
