@@ -7,12 +7,12 @@
 -->
 # Getting Started with BuildBuddy Enterprise
 
-We’re here to help you get started -- if you have questions please don’t hesitate to email us at [setup@buildbuddy.io](setup@buildbuddy.io) or ping us on our [Slack channel](https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g).
+We’re here to help you get started - if you have questions please don’t hesitate to email us at [setup@buildbuddy.io](setup@buildbuddy.io) or ping us on our [Slack channel](https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g).
 
 
 ## Installation
 
-The BuildBuddy Enterprise app container is published to gcr.io. Installing on your Kubernetes cluster is easy -- just authenticate to your cluster (1gcloud container clusters get-credentials` or similar) and run the following commands to install BuildBuddy Enterprise:
+The BuildBuddy Enterprise app container is published to gcr.io. Installing on your Kubernetes cluster is easy -- just authenticate to your cluster (`gcloud container clusters get-credentials` or similar) and run the following commands to install BuildBuddy Enterprise:
 
 1. `git clone https://github.com/buildbuddy-io/buildbuddy.git`
 1. `cd buildbuddy`
@@ -20,7 +20,9 @@ The BuildBuddy Enterprise app container is published to gcr.io. Installing on yo
 
 Many of the configurations below require using a custom BuildBuddy configuration file. To make this easier, the `k8s_on_prem.sh` script can optionally push a config file to your cluster in a Kubernetes ConfigMap that contains the contents of a custom config file. To do this, just specify the -config flag with an argument that is the path to your custom configuration file. For example:
 
-1. `./k8s_on_prem.sh -enterprise -config foo/bar/buildbuddy.custom.yaml`
+ ```
+ ./k8s_on_prem.sh -enterprise -config foo/bar/buildbuddy.custom.yaml
+ ```
 
 ## Configuration
 BuildBuddy Enterprise allows configuration of many features that are not available in the open-core version. Below you’ll find examples for configuring some of these features. If you don’t see what you’re looking for below, please don’t hesitate to ask us! For a full overview of what can be configured, see our [Configuration docs](config.md).
