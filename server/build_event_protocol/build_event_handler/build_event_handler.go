@@ -92,11 +92,22 @@ func (e *EventChannel) writeCompletedBlob(ctx context.Context, blobID string, in
 }
 
 func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid string) error {
+	e.statusReporter.ReportDisconnect(ctx)
+
+	if err := e.pw.Flush(ctx); err != nil {
+		return err
+	}
 	invocation := &inpb.Invocation{
 		InvocationId:     iid,
 		InvocationStatus: inpb.Invocation_DISCONNECTED_INVOCATION_STATUS,
 	}
-	e.statusReporter.ReportDisconnect(ctx)
+
+	events, err := e.readAllTempBlobs(ctx, iid)
+	if err != nil {
+		return err
+	}
+	event_parser.FillInvocationFromEvents(events, invocation)
+
 	ti := &tables.Invocation{}
 	ti.FromProtoAndBlobID(invocation, iid)
 	return e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti)
