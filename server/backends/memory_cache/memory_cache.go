@@ -5,7 +5,6 @@ import (
 	"container/list"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"path/filepath"
 	"sync"
@@ -227,7 +226,7 @@ func (m *MemoryCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	value, ok := m.l.Get(k)
 	m.lock.Unlock()
 	if !ok {
-		return nil, status.NotFoundError(fmt.Sprintf("Key %s not found", d))
+		return nil, status.NotFoundErrorf("Key %s not found", d)
 	}
 	return value, nil
 }
