@@ -161,4 +161,7 @@ http_archive(
 
 load("@io_buildbuddy_toolchain//:rules.bzl", "register_buildbuddy_toolchain")
 
-register_buildbuddy_toolchain(name = "buildbuddy_toolchain")
+register_buildbuddy_toolchain(
+    name = "buildbuddy_toolchain",
+    llvm = False,
+)

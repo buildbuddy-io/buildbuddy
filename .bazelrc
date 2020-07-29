@@ -26,6 +26,8 @@ build:remote --bes_backend=grpcs://cloud.buildbuddy.io
 build:remote --remote_cache=grpcs://cloud.buildbuddy.io
 build:remote --remote_executor=grpcs://cloud.buildbuddy.io
 build:remote --remote_upload_local_results
+build:remote --host_platform=@buildbuddy_toolchain//:platform
+build:remote --platforms=@buildbuddy_toolchain//:platform
 build:remote --crosstool_top=@buildbuddy_toolchain//:toolchain
 build:remote --remote_download_minimal
 build:remote --jobs=75
