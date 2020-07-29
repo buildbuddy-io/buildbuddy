@@ -7,14 +7,14 @@
 -->
 # RBE Platforms
 
-# BuildBuddy default 
+## BuildBuddy default 
 
 BuildBuddy's default platform is Ubuntu 16.04 with Java 8 installed. Building on our basic command can specify this platform with the `--host_platform` flag:
 ```
 --host_platform=@bb//:platform
 ```
 
-# Using a custom Docker image
+## Using a custom Docker image
 
 You can configure BuildBuddy RBE to use a custom docker image, by adding the following rule to a BUILD file:
 

@@ -16,7 +16,7 @@ The very simplest Bazel command needed to enable RBE is the following:
 bazel build //... --remote_executor=grpcs://cloud.buildbuddy.io
 ```
 
-This points Bazel at BuildBuddy Cloud as a remote executor. A simple repo that has C/C++/CGO or Java dependencies will build just fine like this. Unfortunately, most interesting repos have some dependencies on C/C++/CGO or Java - so we'll need to tell our remote executors where to find tools like gcc or the JRE. We do this with [platforms](https://docs.bazel.build/versions/master/platforms.html) and [toolchains](https://docs.bazel.build/versions/master/toolchains.html).
+This points Bazel at BuildBuddy Cloud as a remote executor. A simple repo that has C/C++/CGO or Java dependencies will build just fine like this. Most interesting repos have some dependencies on C/C++/CGO or Java - so we'll need to tell our remote executors where to find tools like gcc or the JRE. We do this with [platforms](https://docs.bazel.build/versions/master/platforms.html) and [toolchains](https://docs.bazel.build/versions/master/toolchains.html).
 
 ## Configuring your workspace
 
@@ -107,7 +107,7 @@ bazel build //... --config=remote
 
 ## Authentication
 
-You'll wat to authenticate your RBE builds with either API key or certificate based auth. For more info on how to set this up, see our [authentication guide](guide-auth.md).
+You'll want to authenticate your RBE builds with either API key or certificate based auth. For more info on how to set this up, see our [authentication guide](guide-auth.md).
 
 ## Optimizations
 

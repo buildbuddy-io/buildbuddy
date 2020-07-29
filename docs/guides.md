@@ -14,6 +14,7 @@ We've created a series of helpful guides to walk you through common BuildBuddy t
 
 Here is a list of our available guides:
 
+1. [Authentication Guide](guide-auth.md)
 1. [Logs & Artifacts Guide](guide-logs.md)
 1. [Build Metadata Guide](guide-metadata.md)
 1. [Timing Profile Guide](guide-timing.md)

@@ -7,7 +7,9 @@
 -->
 # Authentication Guide
 
-You have two choices for authenticating your BuildBuddy requests: API key or certificate based mTLS auth.
+You have two choices for authenticating your BuildBuddy requests: 
+ - API key
+ - certificate based mTLS auth
 
 Both of these choices require you to [create a BuildBuddy account](http://app.buildbuddy.io/).
 
