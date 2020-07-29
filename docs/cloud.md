@@ -54,9 +54,13 @@ To configure one of these authentication methods:
 1. [Create](https://app.buildbuddy.io/) a BuildBuddy account.
 1. Visit the [setup instructions page](https://app.buildbuddy.io/docs/setup) which will now contain authentication options.
 
+For more information see our [Authentication Guide](guide-auth.md).
+
 ## More features
 
 For instructions on how to configure additional BuildBuddy features like Remote Build Caching, Remote Build Execution, and more:
 
 1. [Create](https://app.buildbuddy.io/) a BuildBuddy account.
 1. Visit the [setup instructions page](https://app.buildbuddy.io/docs/setup) which has instructions on enabling Remote Build Cache, Remote Build Execution, and more.
+
+For more information on getting started with Remote Build Execution, see our [RBE setup docs](rbe-setup.md).

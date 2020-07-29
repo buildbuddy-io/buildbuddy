@@ -55,8 +55,7 @@ Here's a full list of BuildBuddy's configuration sections:
 **Enterprise only**
 
 - [Auth](config-auth.md) - configure authentication providers.
-- [API](config-api) - configure BuildBuddy API.
-
+- [API](config-api.md) - configure BuildBuddy API.
 
 ## Flags
 
