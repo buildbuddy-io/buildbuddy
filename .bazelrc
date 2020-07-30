@@ -34,6 +34,10 @@ build:remote --jobs=100
 
 # Configuration used for CI
 build:ci --config=remote
+build:ci --build_metadata=ROLE=CI
+build:ci --build_metadata=VISIBILITY=PUBLIC
+build:ci --tls_client_certificate=buildbuddy-cert.pem
+build:ci --tls_client_key=buildbuddy-key.pem
 build:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci
 
 # By default, build logs get sent to the production server
