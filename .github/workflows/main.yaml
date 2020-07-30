@@ -22,8 +22,8 @@ jobs:
 
     - name: Create certs
       run: |
-        echo $BUILDBUDDY_ORG_CERT>buildbuddy-cert.pem
-        echo $BUILDBUDDY_ORG_KEY>buildbuddy-key.pem
+        echo "${{ secrets.BUILDBUDDY_ORG_CERT }}">buildbuddy-cert.pem
+        echo "${{ secrets.BUILDBUDDY_ORG_KEY }}">buildbuddy-key.pem
 
     - name: Build
       run: |
