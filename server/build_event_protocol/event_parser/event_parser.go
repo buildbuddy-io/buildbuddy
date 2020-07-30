@@ -135,11 +135,15 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 				if user, ok := envVarMap["USER"]; ok && user != "" {
 					invocation.User = user
 				}
-				invocation.RepoUrl = envVarMap["CIRCLE_REPOSITORY_URL"]
+				if url, ok := envVarMap["CIRCLE_REPOSITORY_URL"]; ok && url != "" {
+					invocation.RepoUrl = url
+				}
 				if url, ok := envVarMap["GITHUB_REPOSITORY"]; ok && url != "" {
 					invocation.RepoUrl = url
 				}
-				invocation.CommitSha = envVarMap["CIRCLE_SHA1"]
+				if sha, ok := envVarMap["CIRCLE_SHA1"]; ok && sha != "" {
+					invocation.CommitSha = sha
+				}
 				if sha, ok := envVarMap["GITHUB_SHA"]; ok && sha != "" {
 					invocation.CommitSha = sha
 				}
