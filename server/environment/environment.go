@@ -52,4 +52,5 @@ type Env interface {
 	GetExecutionDB() interfaces.ExecutionDB
 	GetAPIService() interfaces.ApiService
 	GetFileCache() interfaces.FileCache
+	GetExecutionService() interfaces.ExecutionService
 }

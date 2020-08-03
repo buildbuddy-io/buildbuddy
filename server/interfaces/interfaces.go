@@ -174,6 +174,12 @@ type SplashPrinter interface {
 	PrintSplashScreen(port, grpcPort int)
 }
 
+type ExecutionService interface {
+	Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error
+	SyncExecute(ctx context.Context, req *repb.ExecuteRequest) (*repb.SyncExecuteResponse, error)
+	WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error
+}
+
 type ExecutionRouterService interface {
 	GetExecutionClient(ctx context.Context, req *repb.ExecuteRequest) (ExecutionClientConfig, error)
 }

@@ -30,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
@@ -176,20 +175,11 @@ func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) 
 
 	}
 	enableRemoteExec := false
-
-	// If there is a remote client registered into the environment, we'll
-	// register our own server which calls that client and maintains state
-	// in the database.
-	if remoteExecConfig := env.GetConfigurator().GetRemoteExecutionConfig(); remoteExecConfig != nil {
-		// Make sure capabilities server reflect that we're running
-		// remote execution.
+	if rexec := env.GetExecutionService(); rexec != nil {
 		enableRemoteExec = true
-		executionServer, err := execution_server.NewExecutionServer(env)
-		if err != nil {
-			log.Fatalf("Error initializing ExecutionServer: %s", err)
-		}
-		repb.RegisterExecutionServer(grpcServer, executionServer)
+		repb.RegisterExecutionServer(grpcServer, rexec)
 	}
+
 	// Register to handle GetCapabilities messages, which tell the client
 	// that this server supports CAS functionality.
 	capabilitiesServer := capabilities_server.NewCapabilitiesServer( /*supportCAS=*/ enableCache /*supportRemoteExec=*/, enableRemoteExec)

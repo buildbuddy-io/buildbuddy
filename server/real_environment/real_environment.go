@@ -52,6 +52,7 @@ type RealEnv struct {
 	executionDB                     interfaces.ExecutionDB
 	APIService                      interfaces.ApiService
 	fileCache                       interfaces.FileCache
+	executionService                interfaces.ExecutionService
 	executionRouterService          interfaces.ExecutionRouterService
 }
 
@@ -205,4 +206,10 @@ func (r *RealEnv) SetFileCache(s interfaces.FileCache) {
 }
 func (r *RealEnv) GetFileCache() interfaces.FileCache {
 	return r.fileCache
+}
+func (r *RealEnv) SetExecutionService(e interfaces.ExecutionService) {
+	r.executionService = e
+}
+func (r *RealEnv) GetExecutionService() interfaces.ExecutionService {
+	return r.executionService
 }
