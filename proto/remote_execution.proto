@@ -130,7 +130,18 @@ service Execution {
       body : "*"
     };
   }
+
+  // HACK(tylerw): Publish a stream of operation updates.
+  rpc PublishOperation(stream google.longrunning.Operation)
+      returns (PublishOperationResponse) {
+         option (google.api.http) = {
+      post : "/v2/{name=operations/**}:publishOperation"
+      body : "*"
+    };
+  }
 }
+
+message PublishOperationResponse {}
 
 // The action cache API is used to query whether a given action has already been
 // performed and, if so, retrieve its result. Unlike the
