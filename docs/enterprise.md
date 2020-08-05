@@ -28,5 +28,5 @@ To get started with BuildBuddy Enterprise, [request a quote](https://www.buildbu
 ## Cloud setup
 Getting started with BuildBuddy Enterprise Cloud is as easy as logging into your [BuildBuddy account](https://app.buildbuddy.io/), and following the setup instructions. 
 
-### On-prem setup
+## On-prem setup
 Once you've received your BuildBuddy Enterprise license, you can configure your BuildBuddy Enterprise on-prem installation by following our [Enterprise Getting Started docs ](enterprise-setup.md).
