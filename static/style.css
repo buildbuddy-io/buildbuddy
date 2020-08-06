@@ -378,13 +378,8 @@ button {
 .filter-input {
   outline: 0;
   border: 0;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
   background: transparent;
-  padding: 0 32px 0 42px;
+  padding: 0 32px 0 8px;
   font-family: inherit;
   font-size: 14px;
   color: #888;
@@ -1101,11 +1096,12 @@ code .comment {
   justify-content: center;
 }
 
-.login-hero b {
+.login-hero-title {
+  font-weight: 700;
   font-size: 36px;
   color: #fff;
   line-height: 1.3em;
-  margin-bottom: -16px;
+  margin-bottom: 8px;
   display: block;
 }
 
