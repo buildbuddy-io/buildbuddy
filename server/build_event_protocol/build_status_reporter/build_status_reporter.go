@@ -127,6 +127,9 @@ func (r *BuildStatusReporter) populateWorkspaceInfoFromStructuredCommandLine(com
 			if len(parts) == 2 && (parts[0] == "CIRCLE_SHA1" || parts[0] == "GITHUB_SHA") {
 				r.commitSHA = parts[1]
 			}
+			if len(parts) == 2 && parts[0] == "CI" && parts[1] != "" {
+				r.role = "CI"
+			}
 		}
 	}
 }
