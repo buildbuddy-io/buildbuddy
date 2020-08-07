@@ -335,6 +335,7 @@ func (t *TelemetryLog) TableName() string {
 
 func ManualMigrate(db *gorm.DB) error {
 	db.Model(&Invocation{}).ModifyColumn("pattern", "text")
+	db.Model(&Execution{}).ModifyColumn("serialized_operation", "text")
 	return nil
 }
 

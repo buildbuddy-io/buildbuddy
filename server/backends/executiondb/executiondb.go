@@ -48,11 +48,7 @@ func (d *ExecutionDB) InsertOrUpdateExecution(ctx context.Context, executionID s
 		Stage:       int64(stage),
 	}
 	if op != nil {
-		opData, err := proto.Marshal(op)
-		if err != nil {
-			return err
-		}
-		execution.SerializedOperation = opData
+		execution.SerializedOperation = []byte(proto.MarshalTextString(op))
 	}
 
 	return d.h.Transaction(func(tx *gorm.DB) error {
