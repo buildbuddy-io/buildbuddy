@@ -121,10 +121,10 @@ func (r *BuildStatusReporter) populateWorkspaceInfoFromStructuredCommandLine(com
 				continue
 			}
 			parts := strings.Split(option.OptionValue, "=")
-			if len(parts) == 2 && (parts[0] == "CIRCLE_REPOSITORY_URL" || parts[0] == "GITHUB_REPOSITORY") {
+			if len(parts) == 2 && (parts[0] == "CIRCLE_REPOSITORY_URL" || parts[0] == "GITHUB_REPOSITORY" || parts[0] == "BUILDKITE_REPO" || parts[0] == "TRAVIS_REPO_SLUG") {
 				r.repoURL = parts[1]
 			}
-			if len(parts) == 2 && (parts[0] == "CIRCLE_SHA1" || parts[0] == "GITHUB_SHA") {
+			if len(parts) == 2 && (parts[0] == "CIRCLE_SHA1" || parts[0] == "GITHUB_SHA" || parts[0] == "BUILDKITE_COMMIT" || parts[0] == "TRAVIS_COMMIT") {
 				r.commitSHA = parts[1]
 			}
 			if len(parts) == 2 && parts[0] == "CI" && parts[1] != "" {
