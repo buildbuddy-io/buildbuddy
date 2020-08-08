@@ -2,6 +2,7 @@ package executiondb
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -48,7 +49,11 @@ func (d *ExecutionDB) InsertOrUpdateExecution(ctx context.Context, executionID s
 		Stage:       int64(stage),
 	}
 	if op != nil {
-		execution.SerializedOperation = []byte(proto.MarshalTextString(op))
+		data, err := proto.Marshal(op)
+		if err != nil {
+			return err
+		}
+		execution.SerializedOperation = []byte(base64.StdEncoding.EncodeToString(data))
 	}
 
 	return d.h.Transaction(func(tx *gorm.DB) error {
