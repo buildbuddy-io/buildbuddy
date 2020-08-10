@@ -1607,3 +1607,10 @@ message SizedDirectory {
 }
 
 message TreeToken { repeated SizedDirectory sized_directories = 1; }
+
+// HACK(tylerw): A serializable task object.
+message ExecutionTask {
+  ExecuteRequest execute_request = 1;
+
+  string jwt = 2;
+}

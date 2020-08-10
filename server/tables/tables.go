@@ -258,6 +258,8 @@ type Execution struct {
 	ExecutionID         string `gorm:"primary_key"`
 	Stage               int64
 	SerializedOperation []byte
+	SerializedRequest   []byte
+	ClaimedAtUsec       int64
 }
 
 func (t *Execution) TableName() string {
