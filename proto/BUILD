@@ -74,33 +74,6 @@ proto_library(
     ],
 )
 
-go_proto_library(
-    name = "build_status_go_proto",
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/build_status",
-    proto = ":build_status_proto",
-)
-
-go_proto_library(
-    name = "build_events_go_proto",
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/build_events",
-    proto = ":build_events_proto",
-    deps = [
-        ":build_status_go_proto",
-    ],
-)
-
-go_proto_library(
-    name = "config_go_proto",
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/config",
-    proto = ":config_proto",
-)
-
-go_proto_library(
-    name = "execution_stats_go_proto",
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/execution_stats",
-    proto = ":execution_stats_proto",
-)
-
 proto_library(
     name = "option_filters_proto",
     srcs = ["option_filters.proto"],
@@ -202,7 +175,39 @@ proto_library(
     ],
 )
 
+proto_library(
+    name = "scheduler_proto",
+    srcs = ["scheduler.proto"]
+)
+
 # Go proto rules below here
+
+go_proto_library(
+    name = "build_status_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/build_status",
+    proto = ":build_status_proto",
+)
+
+go_proto_library(
+    name = "build_events_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/build_events",
+    proto = ":build_events_proto",
+    deps = [
+        ":build_status_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "config_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/config",
+    proto = ":config_proto",
+)
+
+go_proto_library(
+    name = "execution_stats_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/execution_stats",
+    proto = ":execution_stats_proto",
+)
 
 go_proto_library(
     name = "publish_build_event_go_proto",
@@ -343,6 +348,13 @@ go_proto_library(
     deps = [
         "@go_googleapis//google/rpc:status_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "scheduler_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/scheduler",
+    proto = ":scheduler_proto",
 )
 
 # TypeScript proto rules below here

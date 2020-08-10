@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package scheduler;
+
+message NodeAddress {
+  // The node's hostname. Must be reachable from the scheduler.
+  string host = 1;
+
+  // The node's port.
+  int32 port = 2;
+}
+
+message RegisterNodeRequest {
+  NodeAddress node_address = 1;
+
+  // The node's assignable memory.
+  int64 assignable_memory_bytes = 2;
+
+  // The node's assignable CPU.
+  int64 assignable_milli_cpu = 3;
+
+  // Matching constraints.
+  repeated string constraints = 4;
+}
+
+message RegisterNodeResponse {
+  // Intentionally left blank.
+}
+
+message GetTaskRequest {
+  string task_id = 1;
+}
+
+message GetTaskResponse {
+  bytes serialized_task = 1; 
+}
+
+service Scheduler {
+  rpc RegisterNode(stream RegisterNodeRequest)
+      returns (RegisterNodeResponse) {
+  }
+
+  rpc GetTask(GetTaskRequest) returns (GetTaskResponse) {
+  }  
+}
+
+message EnqueueTaskReservationRequest {
+  string task_id = 1;
+
+  // The node's assignable memory.
+  int64 estimated_memory_bytes = 2;
+
+  // The node's assignable CPU.
+  int64 estimated_milli_cpu = 3;	
+}
+
+message EnqueueTaskReservationResponse {
+  // Intentionally left blank.
+}
+
+service QueueExecutor {
+  rpc EnqueueTaskReservation(EnqueueTaskReservationRequest)
+      returns (EnqueueTaskReservationResponse) {
+  }
+}
