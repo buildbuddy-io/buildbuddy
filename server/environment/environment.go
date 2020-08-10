@@ -49,7 +49,6 @@ type Env interface {
 	GetByteStreamClient() bspb.ByteStreamClient
 	GetContentAddressableStorageClient() repb.ContentAddressableStorageClient
 	GetExecutionRouterService() interfaces.ExecutionRouterService
-	GetExecutionDB() interfaces.ExecutionDB
 	GetAPIService() interfaces.ApiService
 	GetFileCache() interfaces.FileCache
 	GetExecutionService() interfaces.ExecutionService

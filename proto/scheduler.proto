@@ -40,7 +40,8 @@ service Scheduler {
       returns (RegisterNodeResponse) {
   }
 
-  rpc GetTask(GetTaskRequest) returns (GetTaskResponse) {
+  rpc GetTask(GetTaskRequest)
+      returns (GetTaskResponse) {
   }  
 }
 
