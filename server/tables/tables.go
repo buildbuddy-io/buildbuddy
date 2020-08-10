@@ -333,6 +333,19 @@ func (t *TelemetryLog) TableName() string {
 	return "TelemetryLog"
 }
 
+type ExecutionNode struct {
+	Model
+	Host                  string `gorm:"primary_key"`
+	Port                  int32  `gorm:"primary_key"`
+	AssignableMemoryBytes int64
+	AssignableMilliCPU    int64
+	Constraints           string
+}
+
+func (n *ExecutionNode) TableName() string {
+	return "ExecutionNodes"
+}
+
 func ManualMigrate(db *gorm.DB) error {
 	db.Model(&Invocation{}).ModifyColumn("pattern", "text")
 	db.Model(&Execution{}).ModifyColumn("serialized_operation", "text")
@@ -348,4 +361,5 @@ func init() {
 	registerTable("EX", &Execution{})
 	registerTable("TL", &TelemetryLog{})
 	registerTable("ES", &ExecutionSummary{})
+	registerTable("EN", &ExecutionNode{})
 }
