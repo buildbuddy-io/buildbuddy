@@ -53,4 +53,5 @@ type Env interface {
 	GetAPIService() interfaces.ApiService
 	GetFileCache() interfaces.FileCache
 	GetExecutionService() interfaces.ExecutionService
+	GetSchedulerService() interfaces.SchedulerService
 }

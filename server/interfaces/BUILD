@@ -9,6 +9,7 @@ go_library(
         "//proto:execution_stats_go_proto",
         "//proto:invocation_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
         "//proto:telemetry_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/tables:go_default_library",

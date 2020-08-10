@@ -53,6 +53,7 @@ type RealEnv struct {
 	APIService                      interfaces.ApiService
 	fileCache                       interfaces.FileCache
 	executionService                interfaces.ExecutionService
+	schedulerService                interfaces.SchedulerService
 	executionRouterService          interfaces.ExecutionRouterService
 }
 
@@ -212,4 +213,10 @@ func (r *RealEnv) SetExecutionService(e interfaces.ExecutionService) {
 }
 func (r *RealEnv) GetExecutionService() interfaces.ExecutionService {
 	return r.executionService
+}
+func (r *RealEnv) SetSchedulerService(s interfaces.SchedulerService) {
+	r.schedulerService = s
+}
+func (r *RealEnv) GetSchedulerService() interfaces.SchedulerService {
+	return r.schedulerService
 }

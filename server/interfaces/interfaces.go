@@ -14,6 +14,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
 // An interface representing the user info gleaned from an authorization header.
@@ -193,4 +194,9 @@ type ExecutionClientConfig interface {
 type FileCache interface {
 	FastLinkFile(d *repb.Digest, outputPath string) bool
 	AddFile(d *repb.Digest, existingFilePath string)
+}
+
+type SchedulerService interface {
+	RegisterNode(stream scpb.Scheduler_RegisterNodeServer) error
+	GetTask(ctx context.Context, req *scpb.GetTaskRequest) (*scpb.GetTaskResponse, error)
 }
