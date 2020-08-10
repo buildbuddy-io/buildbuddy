@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
         "//server/build_event_protocol/build_event_proxy:go_default_library",
         "//server/config:go_default_library",
         "//server/interfaces:go_default_library",

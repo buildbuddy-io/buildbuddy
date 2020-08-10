@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -47,6 +48,7 @@ type RealEnv struct {
 	splashPrinter                   interfaces.SplashPrinter
 	actionCacheClient               repb.ActionCacheClient
 	byteStreamClient                bspb.ByteStreamClient
+	schedulerClient                 scpb.SchedulerClient
 	contentAddressableStorageClient repb.ContentAddressableStorageClient
 	executionClients                map[string]*executionClientConfig
 	APIService                      interfaces.ApiService
@@ -171,6 +173,13 @@ func (r *RealEnv) SetByteStreamClient(b bspb.ByteStreamClient) {
 }
 func (r *RealEnv) GetByteStreamClient() bspb.ByteStreamClient {
 	return r.byteStreamClient
+}
+
+func (r *RealEnv) SetSchedulerClient(s scpb.SchedulerClient) {
+	r.schedulerClient = s
+}
+func (r *RealEnv) GetSchedulerClient() scpb.SchedulerClient {
+	return r.schedulerClient
 }
 
 func (r *RealEnv) SetContentAddressableStorageClient(c repb.ContentAddressableStorageClient) {

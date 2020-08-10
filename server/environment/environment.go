@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -47,6 +48,7 @@ type Env interface {
 	GetSplashPrinter() interfaces.SplashPrinter
 	GetActionCacheClient() repb.ActionCacheClient
 	GetByteStreamClient() bspb.ByteStreamClient
+	GetSchedulerClient() scpb.SchedulerClient
 	GetContentAddressableStorageClient() repb.ContentAddressableStorageClient
 	GetExecutionRouterService() interfaces.ExecutionRouterService
 	GetAPIService() interfaces.ApiService
