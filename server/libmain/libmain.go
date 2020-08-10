@@ -47,6 +47,7 @@ import (
 	bpb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
@@ -179,7 +180,9 @@ func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) 
 		enableRemoteExec = true
 		repb.RegisterExecutionServer(grpcServer, rexec)
 	}
-
+	if scheduler := env.GetSchedulerService(); scheduler != nil {
+		scpb.RegisterSchedulerServer(grpcServer, scheduler)
+	}
 	// Register to handle GetCapabilities messages, which tell the client
 	// that this server supports CAS functionality.
 	capabilitiesServer := capabilities_server.NewCapabilitiesServer( /*supportCAS=*/ enableCache /*supportRemoteExec=*/, enableRemoteExec)

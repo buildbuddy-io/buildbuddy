@@ -10,6 +10,7 @@ go_library(
         "//proto:publish_build_event_go_proto",
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/backends/blobstore:go_default_library",
         "//server/backends/disk_cache:go_default_library",
