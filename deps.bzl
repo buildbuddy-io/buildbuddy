@@ -1140,3 +1140,9 @@ def install_buildbuddy_dependencies():
         sum = "h1:4Z09Hglb792X0kfOBBJUPFEyvVfQWrYT/l8h5EKA6JQ=",
         version = "v0.0.0-20190525122527-15d366b2352e",
     )
+    go_repository(
+        name = "com_github_elastic_gosigar",
+        importpath = "github.com/elastic/gosigar",
+        sum = "h1:L8Stala75cAVQo+HLJebmtaOr1032y357R0CjbKSrZc=",
+        version = "v0.11.0",
+    )

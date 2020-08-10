@@ -19,6 +19,7 @@ require (
 	github.com/creack/pty v1.1.10 // indirect
 	github.com/denisenkom/go-mssqldb v0.0.0-20200428022330-06a60b6afbbc // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
+	github.com/elastic/gosigar v0.11.0 // indirect
 	github.com/elazarl/goproxy v0.0.0-20180725130230-947c36da3153 // indirect
 	github.com/envoyproxy/go-control-plane v0.9.5 // indirect
 	github.com/envoyproxy/protoc-gen-validate v0.3.0 // indirect
