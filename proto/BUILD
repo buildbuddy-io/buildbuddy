@@ -177,7 +177,7 @@ proto_library(
 
 proto_library(
     name = "scheduler_proto",
-    srcs = ["scheduler.proto"]
+    srcs = ["scheduler.proto"],
 )
 
 # Go proto rules below here
