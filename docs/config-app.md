@@ -16,7 +16,7 @@
 
 **Required**
 
-* ```build_buddy_url```  Configures the external URL where your BuildBuddy instance can be found. (Does not actually change the server address or port, see [flags docs](flags.md) for information on how to configure ports)
+* ```build_buddy_url```  Configures the external URL where your BuildBuddy instance can be found. (Does not actually change the server address or port, see [flags docs](config-flags.md) for information on how to configure ports)
 
 **Optional**
 
