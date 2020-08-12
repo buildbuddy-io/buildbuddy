@@ -340,7 +340,7 @@ func (t *TelemetryLog) TableName() string {
 type ExecutionNode struct {
 	Model
 	Host                  string `gorm:"primary_key"`
-	Port                  int32  `gorm:"primary_key"`
+	Port                  int32  `gorm:"primary_key;auto_increment:false"`
 	AssignableMemoryBytes int64
 	AssignableMilliCPU    int64
 	Constraints           string
