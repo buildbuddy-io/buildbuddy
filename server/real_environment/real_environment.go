@@ -49,6 +49,7 @@ type RealEnv struct {
 	actionCacheClient               repb.ActionCacheClient
 	byteStreamClient                bspb.ByteStreamClient
 	schedulerClient                 scpb.SchedulerClient
+	executionClient                 repb.ExecutionClient
 	contentAddressableStorageClient repb.ContentAddressableStorageClient
 	executionClients                map[string]*executionClientConfig
 	APIService                      interfaces.ApiService
@@ -180,6 +181,13 @@ func (r *RealEnv) SetSchedulerClient(s scpb.SchedulerClient) {
 }
 func (r *RealEnv) GetSchedulerClient() scpb.SchedulerClient {
 	return r.schedulerClient
+}
+
+func (r *RealEnv) SetExecutionClient(e repb.ExecutionClient) {
+	r.executionClient = e
+}
+func (r *RealEnv) GetExecutionClient() repb.ExecutionClient {
+	return r.executionClient
 }
 
 func (r *RealEnv) SetContentAddressableStorageClient(c repb.ContentAddressableStorageClient) {
