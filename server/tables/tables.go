@@ -13,6 +13,10 @@ import (
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 )
 
+const (
+	mySQLDialect = "mysql"
+)
+
 type tableDescriptor struct {
 	table interface{}
 	// 2-letter table prefix
@@ -258,8 +262,6 @@ type Execution struct {
 	ExecutionID         string `gorm:"primary_key"`
 	Stage               int64
 	SerializedOperation []byte
-	SerializedRequest   []byte
-	ClaimedAtUsec       int64
 }
 
 func (t *Execution) TableName() string {
@@ -348,9 +350,23 @@ func (n *ExecutionNode) TableName() string {
 	return "ExecutionNodes"
 }
 
+type ExecutionTask struct {
+	Model
+	TaskID         string `gorm:"primary_key"`
+	SerializedTask []byte
+	ClaimedAtUsec  int64
+}
+
+func (n *ExecutionTask) TableName() string {
+	return "ExecutionTasks"
+}
+
 func ManualMigrate(db *gorm.DB) error {
-	db.Model(&Invocation{}).ModifyColumn("pattern", "text")
-	db.Model(&Execution{}).ModifyColumn("serialized_operation", "text")
+	// These types don't apply for sqlite -- just mysql.
+	if db.Dialect().GetName() == mySQLDialect {
+		db.Model(&Invocation{}).ModifyColumn("pattern", "text")
+		db.Model(&Execution{}).ModifyColumn("serialized_operation", "text")
+	}
 	return nil
 }
 
@@ -364,4 +380,5 @@ func init() {
 	registerTable("TL", &TelemetryLog{})
 	registerTable("ES", &ExecutionSummary{})
 	registerTable("EN", &ExecutionNode{})
+	registerTable("ET", &ExecutionTask{})
 }
