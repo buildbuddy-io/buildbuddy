@@ -52,6 +52,7 @@ type RealEnv struct {
 	executionClient                 repb.ExecutionClient
 	contentAddressableStorageClient repb.ContentAddressableStorageClient
 	executionClients                map[string]*executionClientConfig
+	executionDB                     interfaces.ExecutionDB
 	APIService                      interfaces.ApiService
 	fileCache                       interfaces.FileCache
 	executionService                interfaces.ExecutionService
@@ -203,6 +204,13 @@ func (r *RealEnv) SetExecutionRouterService(ers interfaces.ExecutionRouterServic
 
 func (r *RealEnv) GetExecutionRouterService() interfaces.ExecutionRouterService {
 	return r.executionRouterService
+}
+
+func (r *RealEnv) SetExecutionDB(edb interfaces.ExecutionDB) {
+	r.executionDB = edb
+}
+func (r *RealEnv) GetExecutionDB() interfaces.ExecutionDB {
+	return r.executionDB
 }
 
 func (r *RealEnv) SetAPIService(s interfaces.ApiService) {
