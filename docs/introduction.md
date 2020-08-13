@@ -32,4 +32,4 @@ Check out our [contributing](contributing.md) docs to find out how to get starte
 
 ## Join the discussion
 
-Join our [BuildBuddy Slack channel](https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g) to talk to the team, ask questions, discuss BuildBuddy, and get to know us!
+Join our [BuildBuddy Slack channel](https://slack.buildbuddy.io) to talk to the team, ask questions, discuss BuildBuddy, and get to know us!

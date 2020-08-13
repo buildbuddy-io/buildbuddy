@@ -7,7 +7,7 @@
 -->
 # Getting Started with BuildBuddy Enterprise
 
-We’re here to help you get started - if you have questions please don’t hesitate to email us at [setup@buildbuddy.io](setup@buildbuddy.io) or ping us on our [Slack channel](https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g).
+We’re here to help you get started - if you have questions please don’t hesitate to email us at [setup@buildbuddy.io](setup@buildbuddy.io) or ping us on our [Slack channel](https://slack.buildbuddy.io).
 
 
 ## Installation
@@ -156,4 +156,4 @@ ssl:
 ```
 
 ## Learn more
-For more information on configuring BuildBuddy, see our [Configuration docs](config.m). If you have questions please don’t hesitate to email us at [setup@buildbuddy.io](setup@buildbuddy.io) or ping us on our [Slack channel](https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g).
+For more information on configuring BuildBuddy, see our [Configuration docs](config.m). If you have questions please don’t hesitate to email us at [setup@buildbuddy.io](setup@buildbuddy.io) or ping us on our [Slack channel](https://slack.buildbuddy.io).

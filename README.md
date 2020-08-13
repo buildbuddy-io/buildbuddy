@@ -4,7 +4,7 @@
   <a href="https://github.com/buildbuddy-io/buildbuddy/blob/master/LICENSE"><img src="https://img.shields.io/github/license/buildbuddy-io/buildbuddy?color=brightgreen" /></a>
   <a href="https://github.com/buildbuddy-io/buildbuddy/actions"><img src="https://img.shields.io/github/workflow/status/buildbuddy-io/buildbuddy/CI" /></a>
   <a href="https://github.com/buildbuddy-io/buildbuddy/releases"><img src="https://img.shields.io/github/v/release/buildbuddy-io/buildbuddy?color=brightgreen" /></a>
-  <a href="https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g"><img src="https://img.shields.io/badge/slack-join-brightgreen" /></a>
+  <a href="https://slack.buildbuddy.io"><img src="https://img.shields.io/badge/slack-join-brightgreen" /></a>
 </p>
 
 # Intro
@@ -33,7 +33,7 @@ If you'd like to host your own instance **on-prem** or in the cloud, check out o
 Our [documentation](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/introduction.md) gives you a full look at how to set up and configure BuildBuddy.
 
 # Questions?
-If you have any questions, e-mail us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io) or join the [BuildBuddy Slack channel](https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g). We’d love to chat!
+If you have any questions, e-mail us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io) or join the [BuildBuddy Slack channel](https://slack.buildbuddy.io). We’d love to chat!
 
 # Features
 

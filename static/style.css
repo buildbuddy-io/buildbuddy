@@ -53,6 +53,10 @@ button {
   box-sizing: border-box;
 }
 
+.container.narrow {
+  max-width: 800px;
+}
+
 /** Menu **/
 
 .menu {
@@ -515,8 +519,12 @@ button {
 }
 
 .home h2 {
-  margin-top: 32px;
+  margin-top: 48px;
   margin-bottom: 16px;
+}
+
+.home b {
+  font-weight: 600;
 }
 
 code {
@@ -597,64 +605,36 @@ code .comment {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  min-height: 48px;
+  margin-bottom: 32px;
 }
 
 .setup-controls > * {
-  margin-top: 16px;
-}
-
-.setup-controls input[type=radio] {
-  display: none;
-}
-
-.setup-controls input[type=checkbox] {
-  display: none;
-}
-
-.setup-controls input[type=checkbox]+label:before {
-  display: inline-block;
-  content: ' ';
-  width: 24px;
-  height: 24px;
-  border: 1px solid #eee;
-  margin-left: 16px;
-  margin-right: 8px;
-  border-radius: 8px;
-  box-sizing: border-box;
+  margin-top: 8px;
   background-color: #fafafa;
-}
-
-.setup-controls input[type=checkbox]:checked+label:before {
-  content: '×';
-  color: #fff;
-  background-color: #263238;
-  text-align: center;
-}
-
-.setup-controls input[type=checkbox]+label {
-  display: inline-flex;
+  border: 1px solid #eee;
+  padding: 4px 16px 4px 0;
+  display: block;
+  margin-right: 8px;
+  border-radius: 4px;
+  display: flex;
+  justify-content: center;
   align-items: center;
+  flex-grow: 1;
 }
 
-.setup-controls input[type=radio]:checked+label {
-  background-color: #263238;
-  color: #fff;
+.setup-controls input {
+  vertical-align: middle;
+  margin-left: 16px;
 }
 
-.setup-controls .group label {
-  padding: 4px 16px;
-  box-sizing: border-box;
-  margin: 0;
-  cursor: pointer;
+.setup-controls label {
+  margin-left: 8px;
+  vertical-align: middle;
 }
 
 .setup-controls .group {
-  border: 1px solid #eee;
-  display: inline-flex;
-  border-radius: 8px;
-  overflow: hidden;
-  margin-left: 16px;
+  display: flex;
+  align-items: baseline;
 }
 
 .setup .downloads {
@@ -673,11 +653,18 @@ code .comment {
 }
 
 .group-title {
-  font-weight: 700;
+  border: 0;
+  margin-right: 0;
+  background: transparent;
+  font-weight: 600;
+  flex-grow: 0;
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .group-section {
   display: flex;
+  align-items: baseline;
 }
 
 /** Footer **/
@@ -738,6 +725,27 @@ code .comment {
 
 .history .details img:first-of-type {
   margin-left: 0;
+}
+
+.empty-state .button {
+  width: 100%;
+  padding: 24px 64px;
+  background-color: #263238;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: inherit;
+  border: 0;
+  border-radius: 8px;
+  margin-bottom: 32px;
+  cursor: pointer;
+  display: block;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.empty-state b {
+  font-weight: 600;
 }
 
 .load-more {
@@ -850,7 +858,7 @@ code .comment {
 }
 
 .sort-control:after {
-  content: '◦';
+  content: '•';
   margin-left: 12px;
 }
 

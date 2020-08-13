@@ -21,4 +21,4 @@ Here is a list of our available guides:
 1. [Flaky Test Guide](guide-flaky-tests.md) 
 
 ## More
-Don't see a guide for what you're looking for? Email us at [support@buildbuddy.io](support@buildbuddy.io) or join our [Slack channel](https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g) and we'd be happy to help!
+Don't see a guide for what you're looking for? Email us at [support@buildbuddy.io](support@buildbuddy.io) or join our [Slack channel](https://slack.buildbuddy.io) and we'd be happy to help!
