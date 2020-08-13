@@ -62,7 +62,7 @@ export default class InvocationComponent extends React.Component {
   timeoutRef: number;
 
   componentWillMount() {
-    document.title = `Invocation ${this.props.invocationId} | Buildbuddy`;
+    document.title = `Invocation ${this.props.invocationId} | BuildBuddy`;
     // TODO(siggisim): Move moment configuration elsewhere
     moment.relativeTimeThreshold('ss', 0);
 

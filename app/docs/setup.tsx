@@ -16,7 +16,7 @@ export default class SetupComponent extends React.Component {
   };
 
   componentWillMount() {
-    document.title = `Setup | Buildbuddy`;
+    document.title = `Setup | BuildBuddy`;
     
     let request = new bazel_config.GetBazelConfigRequest();
     request.host = window.location.host;
