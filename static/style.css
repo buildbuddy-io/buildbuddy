@@ -1135,7 +1135,7 @@ code .comment {
 }
 
 .login-buttons button:last-of-type {
-  border: 3px solid rgba(255, 255, 255, .4);
+  border: 0;
   color: rgba(255, 255, 255, .4);
   background-color: transparent;
   margin-bottom: 0;
