@@ -63,8 +63,8 @@ If you have any questions, join the [BuildBuddy Slack channel](https://slack.bui
 - **Dense UI mode** - if you want more information density, BuildBuddy has a "Dense mode" that packs more information into every square inch.
 ![Dense UI mode](https://uploads-ssl.webflow.com/5eeba6a68ba54530ffd09006/5ef50dca6ad0da7d3c313946_dense.png)
 
-- **BES backend multiplexing** - if you're already pointing your `bes_backend` flag at another service. BuildBuddy has a `build_event_proxy` configuration option that allows you to specify other backends that your build events should be forwarded to. See the [configuration docs](https://github.com/buildbuddy-io/buildbuddy/blob/master/CONFIG.md#buildeventproxy) for more information. 
+- **BES backend multiplexing** - if you're already pointing your `bes_backend` flag at another service. BuildBuddy has a `build_event_proxy` configuration option that allows you to specify other backends that your build events should be forwarded to. See the [configuration docs](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/config-misc.md) for more information. 
 ![BES backend multiplexing](https://uploads-ssl.webflow.com/5eeba6a68ba54530ffd09006/5ef50dcca5a68708ebe347d5_multiplex.png)
 
-- **Slack webhook support** - BuildBuddy allows you to message a Slack channel when builds finish. It's a nice way of getting a quick notification when a long running build completes, or a CI build fails. See the [configuration docs](https://github.com/buildbuddy-io/buildbuddy/blob/master/CONFIG.md#integrations) for more information. 
+- **Slack webhook support** - BuildBuddy allows you to message a Slack channel when builds finish. It's a nice way of getting a quick notification when a long running build completes, or a CI build fails. See the [configuration docs](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/config-integrations.md) for more information. 
 ![Slack webhook support](https://uploads-ssl.webflow.com/5eeba6a68ba54530ffd09006/5ef50dc7caabdd3e23528f51_slack.png)

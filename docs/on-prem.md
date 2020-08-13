@@ -70,4 +70,4 @@ bash k8s_on_prem.sh
 
 ## Configuring BuildBuddy
 
-For documentation on all BuildBuddy configuration options, check out our [configuration documentation](configurationG\.md).
+For documentation on all BuildBuddy configuration options, check out our [configuration documentation](config.md).
