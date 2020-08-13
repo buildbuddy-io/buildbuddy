@@ -22,9 +22,9 @@ build --bes_results_url=https://app.buildbuddy.io/invocation/
 build --bes_backend=grpcs://cloud.buildbuddy.io
 ```
 
-This will print a **BuildBuddy url** containing your build results at the beginning and end of every Bazel invocation. You can command click / double click on these to open the results in a browser.
+This will print a **BuildBuddy URL** containing your build results at the beginning and end of every Bazel invocation. You can command click / double click on these to open the results in a browser.
 
-**Want more control?** Want to get your whole team set up? Get up and running fast with the cloud hosted [BuildBuddy.io](https://buildbuddy.io) service.
+**Want more?** Get up and running quickly with our fully managed [BuildBuddy Cloud](https://buildbuddy.io) service.
 
 If you'd like to host your own instance **on-prem** or in the cloud, check out our [documentation](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/introduction.md).
 
@@ -33,7 +33,7 @@ If you'd like to host your own instance **on-prem** or in the cloud, check out o
 Our [documentation](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/introduction.md) gives you a full look at how to set up and configure BuildBuddy.
 
 # Questions?
-If you have any questions, e-mail us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io) or join the [BuildBuddy Slack channel](https://slack.buildbuddy.io). We’d love to chat!
+If you have any questions, join the [BuildBuddy Slack channel](https://slack.buildbuddy.io) or e-mail us at [hello@buildbuddy.io](mailto:hello@buildbuddy.io). We’d love to chat!
 
 # Features
 
