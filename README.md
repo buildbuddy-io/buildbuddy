@@ -24,7 +24,7 @@ build --bes_backend=grpcs://cloud.buildbuddy.io
 
 This will print a **BuildBuddy URL** containing your build results at the beginning and end of every Bazel invocation. You can command click / double click on these to open the results in a browser.
 
-**Want more?** Get up and running quickly with our fully managed [BuildBuddy Cloud](https://buildbuddy.io) service.
+**Want more?** Get up and running quickly with our fully managed [BuildBuddy Cloud](https://buildbuddy.io) service. It's free for individuals, open source projects, and teams of up to 3.
 
 If you'd like to host your own instance **on-prem** or in the cloud, check out our [documentation](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/introduction.md).
 
