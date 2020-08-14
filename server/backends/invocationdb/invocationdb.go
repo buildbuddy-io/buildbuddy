@@ -123,10 +123,10 @@ func (d *InvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime 
 	rows, err := d.h.Raw(`SELECT * FROM Invocations as i
                                    WHERE i.created_at_usec < ?
                                    LIMIT ?`, cutoffUsec, limit).Rows()
+	defer rows.Close()
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	invocations := make([]*tables.Invocation, 0)
 	var ti tables.Invocation

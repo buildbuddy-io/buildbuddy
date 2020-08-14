@@ -43,6 +43,7 @@ func NewDBHandle(dialect string, args ...interface{}) (*DBHandle, error) {
 	}
 	// SQLITE Special! To avoid "database is locked errors":
 	if dialect == sqliteDialect {
+		gdb.DB().SetMaxOpenConns(1)
 		gdb.Exec("PRAGMA journal_mode=WAL;")
 	}
 	return &DBHandle{
