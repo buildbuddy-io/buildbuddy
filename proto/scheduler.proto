@@ -27,12 +27,21 @@ message RegisterNodeResponse {
   // Intentionally left blank.
 }
 
-message GetTaskRequest {
+message LeaseTaskRequest {
+  // The task for which to request a lease. If successful, a LeaseTaskResponse
+  // will be returned containing the serialized task and duration of the lease.
   string task_id = 1;
 }
 
-message GetTaskResponse {
-  bytes serialized_task = 1; 
+message LeaseTaskResponse {
+  // The serialized task will be set in the *first* LeaseTaskResponse returned.
+  // from the server. Subsequent responses will *only* include a lease duration.
+  bytes serialized_task = 1;
+
+  // The remaining duration of this lease. To continue to hold the lease, the
+  // client *must* send another LeaseTaskRequest before time.Now() +
+  // lease_duration_seconds.
+  int64 lease_duration_seconds = 2;
 }
 
 service Scheduler {
@@ -40,7 +49,8 @@ service Scheduler {
       returns (RegisterNodeResponse) {
   }
 
-  rpc GetTask(GetTaskRequest) returns (GetTaskResponse) {
+  rpc LeaseTask(stream LeaseTaskRequest)
+      returns (stream LeaseTaskResponse) {
   }  
 }
 
