@@ -199,7 +199,7 @@ type FileCache interface {
 type SchedulerService interface {
 	// RPC methods.
 	RegisterNode(stream scpb.Scheduler_RegisterNodeServer) error
-	GetTask(ctx context.Context, req *scpb.GetTaskRequest) (*scpb.GetTaskResponse, error)
+	LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 
 	// Non-RPC methods.
 	ScheduleTask(ctx context.Context, taskID string, serializedTask []byte) error
