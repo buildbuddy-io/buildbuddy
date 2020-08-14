@@ -1,5 +1,4 @@
 # N.B. This file is bundled and distributed in the enterprise docker image.
-# It should not contain any secrets. Test the image if you change it!
 database:
   data_source: "sqlite3:///buildbuddy/buildbuddy.db"
 storage:

@@ -18,11 +18,15 @@ The BuildBuddy Enterprise app container is published to gcr.io. Installing on yo
 1. `cd buildbuddy`
 1. `./k8s_on_prem.sh -enterprise`
 
-Many of the configurations below require using a custom BuildBuddy configuration file. To make this easier, the `k8s_on_prem.sh` script can optionally push a config file to your cluster in a Kubernetes ConfigMap that contains the contents of a custom config file. To do this, just specify the -config flag with an argument that is the path to your custom configuration file. For example:
+Note: the `k8s_on_prem.sh` script requires **[kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/) version 1.15** or higher to be installed.
+
+Many of the configuration options below require using a custom BuildBuddy configuration file. To make this easier, the `k8s_on_prem.sh` script can optionally push a config file to your cluster in a Kubernetes ConfigMap that contains the contents of a custom config file. To do this, just specify the -config flag with an argument that is the path to your custom configuration file. For example:
 
  ```
  ./k8s_on_prem.sh -enterprise -config foo/bar/buildbuddy.custom.yaml
  ```
+
+ For more details on using the `k8s_on_prem.sh` script, see the [Kubernetes section](on-prem.md#kubernetes) of the on-prem deployment documentation.
 
 ## Configuration
 BuildBuddy Enterprise allows configuration of many features that are not available in the open-core version. Below you’ll find examples for configuring some of these features. If you don’t see what you’re looking for below, please don’t hesitate to ask us! For a full overview of what can be configured, see our [Configuration docs](config.md).
