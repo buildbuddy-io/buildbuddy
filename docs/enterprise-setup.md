@@ -156,4 +156,4 @@ ssl:
 ```
 
 ## Learn more
-For more information on configuring BuildBuddy, see our [Configuration docs](config.m). If you have questions please don’t hesitate to email us at [setup@buildbuddy.io](setup@buildbuddy.io) or ping us on our [Slack channel](https://slack.buildbuddy.io).
+For more information on configuring BuildBuddy, see our [Configuration docs](config.md). If you have questions please don’t hesitate to email us at [setup@buildbuddy.io](setup@buildbuddy.io) or ping us on our [Slack channel](https://slack.buildbuddy.io).
