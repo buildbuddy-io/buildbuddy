@@ -39,7 +39,7 @@ BuildBuddy will automatically pull your repo URL from environment variables if y
 
 ### Build metadata
 
-You can provide the currnet commit SHA with Bazel's build_metadata flag with the key `COMMIT_SHA`. You can do this by adding the flag to your bazel invocations:
+You can provide the current commit SHA with Bazel's build_metadata flag with the key `COMMIT_SHA`. You can do this by adding the flag to your bazel invocations:
 ```
 --build_metadata=COMMIT_SHA=$(git rev-parse HEAD)
 ```

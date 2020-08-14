@@ -24,6 +24,10 @@ function confirmOrExit() {
 
 configMapFile="config/buildbuddy.release.yaml"  # Default config file.
 useEnterprise="false"
+useOutFile="false"
+restart="true"
+outFile=".buildbuddy.deploy.yaml"
+replicas="1"
 while test $# -gt 0; do
     case "$1" in
 	-config)
@@ -33,6 +37,29 @@ while test $# -gt 0; do
 	    else
 		die "no config file specified"
 	    fi
+	    shift
+	    ;;
+	-out)
+	    shift
+	    if test $# -gt 0; then
+		outFile=$1
+	    useOutFile="true"
+	    else
+		die "no out file specified"
+	    fi
+	    shift
+	    ;;
+	-replicas)
+	    shift
+	    if test $# -gt 0; then
+		replicas=$1
+	    else
+		die "no replicas"
+	    fi
+	    shift
+	    ;;
+	-norestart)
+	    restart="false"
 	    shift
 	    ;;
 	-enterprise)
@@ -48,15 +75,34 @@ done
 
 deploymentFile="deployment/buildbuddy-app.onprem.yaml"
 if [ "$useEnterprise" = "true" ]; then
-   confirmOrExit "You've selected the enterprise version. Please confirm you've agreed to the BuildBuddy Enterprise Terms: Y/n"
+   confirmOrExit "You've selected the enterprise version. Please confirm you've agreed to the BuildBuddy Enterprise Terms at https://buildbuddy.io/enterprise-terms: Y/n"
    deploymentFile=deployment/buildbuddy-app.enterprise.yaml
 fi
 
+[ -f $outFile ] && rm $outFile
+touch $outFile
 
 if [ ! -z "$configMapFile" ]; then
-    cp "$configMapFile" /tmp/config.yaml
-    kubectl create namespace buildbuddy
-    kubectl --namespace=buildbuddy create configmap config --from-file "config.yaml=/tmp/config.yaml" --dry-run=client -o yaml | kubectl apply -f -
+    kubectl create namespace buildbuddy -o yaml --dry-run=client >> $outFile
+    echo "---" >> $outFile
+    kubectl --namespace=buildbuddy create configmap config --save-config --from-file "config.yaml=$configMapFile" -o yaml --dry-run=client >> $outFile
+    echo "---" >> $outFile
 fi
 
-kubectl apply -f "$deploymentFile"
+cat $deploymentFile >> $outFile
+
+if [ "$replicas" -gt "1" ]; then
+    sed -i.bak "s/replicas: 1/replicas: $replicas/g" "$outFile"
+    rm "$outFile.bak"
+fi
+
+if [ "$useOutFile" = "true" ]; then
+    echo "Configuration written to yaml file: $outFile"
+else
+    kubectl apply -f "$outFile"
+    rm $outFile
+fi
+
+if [ "$restart" = "true" ] && [ "$useOutFile" = "false" ]; then
+    kubectl rollout restart statefulset buildbuddy-app -n buildbuddy
+fi
