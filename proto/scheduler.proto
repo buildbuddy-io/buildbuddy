@@ -54,14 +54,18 @@ service Scheduler {
   }  
 }
 
+message TaskSize {
+  // The node's assignable memory.
+  int64 estimated_memory_bytes = 1;
+
+  // The node's assignable CPU.
+  int64 estimated_milli_cpu = 2;
+}
+
 message EnqueueTaskReservationRequest {
   string task_id = 1;
 
-  // The node's assignable memory.
-  int64 estimated_memory_bytes = 2;
-
-  // The node's assignable CPU.
-  int64 estimated_milli_cpu = 3;	
+  TaskSize task_size = 2;
 }
 
 message EnqueueTaskReservationResponse {

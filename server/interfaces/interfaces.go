@@ -201,5 +201,5 @@ type SchedulerService interface {
 	LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 
 	// Non-RPC methods.
-	ScheduleTask(ctx context.Context, taskID string, serializedTask []byte) error
+	ScheduleTask(ctx context.Context, taskID string, serializedTask []byte, size *scpb.TaskSize) error
 }

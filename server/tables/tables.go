@@ -354,6 +354,8 @@ type ExecutionTask struct {
 	Model
 	TaskID         string `gorm:"primary_key"`
 	SerializedTask []byte
+	EstimatedMemoryBytes int64
+	EstimatedMilliCPU int64
 	ClaimedAtUsec  int64
 }
 

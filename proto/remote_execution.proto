@@ -1595,12 +1595,12 @@ message SizedDirectory {
 
 message TreeToken { repeated SizedDirectory sized_directories = 1; }
 
-// Next tag: 6
+// Next tag: 7
 message ExecutionTask {
   ExecuteRequest execute_request = 1;
   Action action = 4;
   Command command = 5;
-
+  string execution_id = 6;
   string jwt = 2;
   string invocation_id = 3;
 }
