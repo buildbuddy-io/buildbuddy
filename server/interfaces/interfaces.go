@@ -177,7 +177,6 @@ type SplashPrinter interface {
 
 type ExecutionService interface {
 	Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error
-	SyncExecute(ctx context.Context, req *repb.ExecuteRequest) (*repb.SyncExecuteResponse, error)
 	WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error
 	PublishOperation(stream repb.Execution_PublishOperationServer) error
 }
