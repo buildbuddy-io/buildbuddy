@@ -75,8 +75,10 @@ done
 
 deploymentFile="deployment/buildbuddy-app.onprem.yaml"
 if [ "$useEnterprise" = "true" ]; then
-   confirmOrExit "You've selected the enterprise version. Please confirm you've agreed to the BuildBuddy Enterprise Terms at https://buildbuddy.io/enterprise-terms: Y/n"
-   deploymentFile=deployment/buildbuddy-app.enterprise.yaml
+    echo "You've selected the enterprise version of BuildBuddy."
+    echo "Please confirm you've agreed to the BuildBuddy Enterprise Terms at: https://buildbuddy.io/enterprise-terms"
+    confirmOrExit "Y/n:"
+    deploymentFile=deployment/buildbuddy-app.enterprise.yaml
 fi
 
 [ -f $outFile ] && rm $outFile
