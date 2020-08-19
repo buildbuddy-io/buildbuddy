@@ -1,4 +1,4 @@
-name: Update deps
+name: Update Deps
 
 on:
   push:
@@ -19,13 +19,13 @@ jobs:
     
     - name: Update SHA
       run: | 
-        sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" $GITHUB_WORKSPACE/WORKSPACE
+        sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" $GITHUB_WORKSPACE/../buildbuddy-internal/WORKSPACE
 
     - name: Commit
       run: |
         git config --local user.email "bot@buildbuddy.io"
         git config --local user.name "BuildBuddy Bot"
-        git add $GITHUB_WORKSPACE/WORKSPACE
+        git add $GITHUB_WORKSPACE/../buildbuddy-internal/WORKSPACE
         git commit -m "Update OSS commit SHA" -a
 
     - name: Push changes
