@@ -261,7 +261,7 @@ type Execution struct {
 	// auth Issuer ID and the subcriber ID string.
 	ExecutionID         string `gorm:"primary_key"`
 	Stage               int64
-	SerializedOperation []byte
+	SerializedOperation []byte `gorm:"size:max"`
 }
 
 func (t *Execution) TableName() string {
@@ -353,7 +353,7 @@ func (n *ExecutionNode) TableName() string {
 type ExecutionTask struct {
 	Model
 	TaskID         string `gorm:"primary_key"`
-	SerializedTask []byte
+	SerializedTask []byte `gorm:"size:max"`
 	EstimatedMemoryBytes int64
 	EstimatedMilliCPU int64
 	ClaimedAtUsec  int64
