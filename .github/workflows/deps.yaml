@@ -19,13 +19,15 @@ jobs:
     
     - name: Update SHA
       run: | 
-        sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" $GITHUB_WORKSPACE/../buildbuddy-internal/WORKSPACE
+        cd ../buildbuddy-internal
+        sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" WORKSPACE
 
     - name: Commit
       run: |
+        cd ../buildbuddy-internal
         git config --local user.email "bot@buildbuddy.io"
         git config --local user.name "BuildBuddy Bot"
-        git add $GITHUB_WORKSPACE/../buildbuddy-internal/WORKSPACE
+        git add WORKSPACE
         git commit -m "Update OSS commit SHA" -a
 
     - name: Push changes
