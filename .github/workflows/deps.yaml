@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v1
+      with:
+        repository: "buildbuddy-io/buildbuddy-internal"
+        token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+    
+    - name: Update SHA
+      run: | 
+        sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" WORKSPACE
+
+    - name: Commit
+      run: |
+        git config --local user.email "bot@buildbuddy.io"
+        git config --local user.name "BuildBuddy Bot"
+        git commit -m "Update OSS commit SHA" -a
+
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
