@@ -352,11 +352,11 @@ func (n *ExecutionNode) TableName() string {
 
 type ExecutionTask struct {
 	Model
-	TaskID         string `gorm:"primary_key"`
-	SerializedTask []byte `gorm:"size:max"`
+	TaskID               string `gorm:"primary_key"`
+	SerializedTask       []byte `gorm:"size:max"`
 	EstimatedMemoryBytes int64
-	EstimatedMilliCPU int64
-	ClaimedAtUsec  int64
+	EstimatedMilliCPU    int64
+	ClaimedAtUsec        int64
 }
 
 func (n *ExecutionTask) TableName() string {
