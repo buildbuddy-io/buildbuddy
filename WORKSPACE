@@ -145,23 +145,19 @@ container_pull(
     repository = "distroless/base",
 )
 
-# Toolchain
-
-# Uncomment and replace http_archive when doing toolchain development or checkout template-user.bazelrc.
-# local_repository(
-#     name = "io_buildbuddy_toolchain",
-#     path = __workspace_dir__ + "/../toolchain",
-# )
+# BuildBuddy Toolchain
 
 http_archive(
-    name = "io_buildbuddy_toolchain",
-    strip_prefix = "toolchain-master",
-    urls = ["https://github.com/buildbuddy-io/toolchain/archive/master.tar.gz"],
+    name = "io_buildbuddy_buildbuddy_toolchain",
+    sha256 = "9055a3e6f45773cd61931eba7b7cf35d6477ab6ad8fb2f18bf9815271fc682fe",
+    strip_prefix = "buildbuddy-toolchain-52aa5d2cc6c9ba7ee4063de35987be7d1b75f8e2",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/52aa5d2cc6c9ba7ee4063de35987be7d1b75f8e2.tar.gz"],
 )
 
-load("@io_buildbuddy_toolchain//:rules.bzl", "register_buildbuddy_toolchain")
+load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
 
-register_buildbuddy_toolchain(
-    name = "buildbuddy_toolchain",
-    llvm = False,
-)
+buildbuddy_deps()
+
+load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "buildbuddy")
+
+buildbuddy(name = "buildbuddy_toolchain")

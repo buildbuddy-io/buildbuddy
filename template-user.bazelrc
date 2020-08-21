@@ -31,4 +31,4 @@
 #################################
 ## Use when developing the toolchain repo
 ## Uncomment the line below and update the path to point to your local toolchain directory
-#build --override_repository=io_buildbuddy_toolchain=/ABSOLUTE_PATH_TO_YOUR_TOOLCHAIN_DIRECTORY/toolchain/
+#build --override_repository=io_buildbuddy_buildbuddy_toolchain=/ABSOLUTE_PATH_TO_YOUR_TOOLCHAIN_DIRECTORY/toolchain/
