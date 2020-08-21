@@ -44,22 +44,30 @@ message LeaseTaskResponse {
   int64 lease_duration_seconds = 2;
 }
 
-service Scheduler {
-  rpc RegisterNode(stream RegisterNodeRequest)
-      returns (RegisterNodeResponse) {
-  }
-
-  rpc LeaseTask(stream LeaseTaskRequest)
-      returns (stream LeaseTaskResponse) {
-  }  
-}
-
 message TaskSize {
   // The node's assignable memory.
   int64 estimated_memory_bytes = 1;
 
   // The node's assignable CPU.
   int64 estimated_milli_cpu = 2;
+}
+
+message ScheduleTaskRequest {
+  string task_id = 1;
+  TaskSize task_size = 2;
+  bytes serialized_task = 3;
+}
+
+message ScheduleTaskResponse {
+  // Intentionally left blank.
+}
+
+message ReEnqueueTaskRequest {
+  string task_id = 1;
+}
+
+message ReEnqueueTaskResponse {
+  // Intentionally left blank.
 }
 
 message EnqueueTaskReservationRequest {
@@ -70,6 +78,24 @@ message EnqueueTaskReservationRequest {
 
 message EnqueueTaskReservationResponse {
   // Intentionally left blank.
+}
+
+service Scheduler {
+  rpc RegisterNode(stream RegisterNodeRequest)
+      returns (RegisterNodeResponse) {
+  }
+
+  rpc LeaseTask(stream LeaseTaskRequest)
+      returns (stream LeaseTaskResponse) {
+  }
+
+  rpc ScheduleTask(ScheduleTaskRequest)
+      returns (ScheduleTaskResponse) {
+  }
+
+  rpc ReEnqueueTask(ReEnqueueTaskRequest)
+      returns (ReEnqueueTaskResponse) {
+  }
 }
 
 service QueueExecutor {

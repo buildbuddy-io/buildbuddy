@@ -13,8 +13,8 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 )
 
 // An interface representing the user info gleaned from an authorization header.
@@ -199,7 +199,6 @@ type SchedulerService interface {
 	// RPC methods.
 	RegisterNode(stream scpb.Scheduler_RegisterNodeServer) error
 	LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
-
-	// Non-RPC methods.
-	ScheduleTask(ctx context.Context, taskID string, serializedTask []byte, size *scpb.TaskSize) error
+	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
+	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 }
