@@ -16,11 +16,12 @@ func DialTarget(target string) (*grpc.ClientConn, error) {
 	return DialTargetWithOptions(target, true)
 }
 
-func DialTargetWithOptions(target string, grpcsBytestream bool) (*grpc.ClientConn, error) {
+func DialTargetWithOptions(target string, grpcsBytestream bool, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
 	dialOptions := []grpc.DialOption{
 		filters.GetUnaryClientInterceptor(),
 		filters.GetStreamClientInterceptor(),
 	}
+	dialOptions = append(dialOptions, extraOptions...)
 	u, err := url.Parse(target)
 	if err == nil {
 		if u.User != nil {
