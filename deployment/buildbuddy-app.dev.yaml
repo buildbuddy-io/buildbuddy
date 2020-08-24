@@ -24,7 +24,9 @@ spec:
         - name: buildbuddy-app
           image: gcr.io/flame-build/buildbuddy-app-dev:server_image
           imagePullPolicy: Always
-          args: ["--config_file=config/buildbuddy.dev.yaml"]
+          args: 
+            - "--config_file=config/buildbuddy.dev.yaml"
+            - "--server_type=dev-buildbuddy-server"
           env:
           - name: ENV
             value: "dev"

@@ -13,7 +13,7 @@ import (
 
 var (
 	configFile = flag.String("config_file", "/config.yaml", "The path to a buildbuddy config file")
-	serverType = flag.String("server_type", "dev-buildbuddy-server", "The server type to match on health checks")
+	serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
 )
 
 // NB: Most of the logic you'd typically find in a main.go file is in
