@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"runtime"
 	"time"
 
 	"gopkg.in/yaml.v2"
@@ -187,6 +188,7 @@ type Configurator struct {
 }
 
 func NewConfigurator(configFilePath string) (*Configurator, error) {
+	log.Printf("Compiled with go version: %s", runtime.Version())
 	log.Printf("Reading buildbuddy config from '%s'", configFilePath)
 	conf, err := readConfig(configFilePath)
 	if err != nil {
