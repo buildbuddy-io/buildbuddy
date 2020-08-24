@@ -55,6 +55,9 @@ func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
 	datasource := c.GetDBDataSource()
 	if datasource != "" {
 		parts := strings.SplitN(datasource, "://", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("malformed db connection string")
+		}
 		dialect, connString := parts[0], parts[1]
 		return NewDBHandle(dialect, connString)
 	}
