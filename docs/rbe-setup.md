@@ -50,7 +50,7 @@ The first thing you'll want to do is tell BuildBuddy RBE in what environment you
 
 BuildBuddy's default platform is Ubuntu 16.04 with Java 8 installed. We can specify this platform with the `--host_platform` flag:
 ```
---host_platform=@bb//:platform
+--host_platform=@buildbuddy_toolchain//:platform
 ```
 
 If you want to use a different environment, you can specify a custom Docker container image to use. More information on how to do this can be found in our [platforms documentation](rbe-platforms.md).
@@ -70,7 +70,7 @@ exec: "/usr/bin/gcc": stat /usr/bin/gcc: no such file or directory
 
 To use BuildBuddy's default C toolchain, we can use the `--crosstool_top` flag:
 ```
---crosstool_top=@bb//:toolchain
+--crosstool_top=@buildbuddy_toolchain//:toolchain
 ```
 
 ### Java toolchain
@@ -79,10 +79,10 @@ If your project depends on Java code, you'll need 4 more flags to tell the execu
 
 Using BuildBuddy's default Java 8 config:
 ```
---javabase=@bb//:javabase_jdk8
---host_javabase=@bb//:javabase_jdk8
---java_toolchain=@bb//:toolchain_jdk8
---host_java_toolchain=@bb//:toolchain_jdk8
+--javabase=@buildbuddy_toolchain//:javabase_jdk8
+--host_javabase=@buildbuddy_toolchain//:javabase_jdk8
+--java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
+--host_java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
 ```
 
 If you need a different version of Java, we recommend using [bazel-toolchains](https://releases.bazel.build/bazel-toolchains.html) for now.
@@ -92,17 +92,17 @@ If you need a different version of Java, we recommend using [bazel-toolchains](h
 Now that we've got our platform and toolchains setup - we can do a remote build that includes C & Java dependencies with a command like:
 
 ```
-bazel build //... --remote_executor=grpcs://cloud.buildbuddy.io --crosstool_top=@bb//:toolchain --javabase=@bb//:javabase_jdk8 --host_javabase=@bb//:javabase_jdk8 --java_toolchain=@bb//:toolchain_jdk8 --host_java_toolchain=@bb//:toolchain_jdk8
+bazel build //... --remote_executor=grpcs://cloud.buildbuddy.io --crosstool_top=@buildbuddy_toolchain//:toolchain --javabase=@buildbuddy_toolchain//:javabase_jdk8 --host_javabase=@buildbuddy_toolchain//:javabase_jdk8 --java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8 --host_java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
 ```
 
 This can be a lot of flags to tack onto each bazel build, so instead you can move these to your `.bazelrc` file:
 ```
-build:remote --host_platform=@bb//:platform
-build:remote --crosstool_top=@bb//:toolchain
-build:remote --javabase=@bb//:javabase_jdk8
-build:remote --host_javabase=@bb//:javabase_jdk8
-build:remote --java_toolchain=@bb//:toolchain_jdk8
-build:remote --host_java_toolchain=@bb//:toolchain_jdk8
+build:remote --host_platform=@buildbuddy_toolchain//:platform
+build:remote --crosstool_top=@buildbuddy_toolchain//:toolchain
+build:remote --javabase=@buildbuddy_toolchain//:javabase_jdk8
+build:remote --host_javabase=@buildbuddy_toolchain//:javabase_jdk8
+build:remote --java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
+build:remote --host_java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
 ```
 
 And running:

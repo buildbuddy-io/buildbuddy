@@ -11,7 +11,7 @@
 
 BuildBuddy's default platform is Ubuntu 16.04 with Java 8 installed. Building on our basic command can specify this platform with the `--host_platform` flag:
 ```
---host_platform=@bb//:platform
+--host_platform=@buildbuddy_toolchain//:platform
 ```
 
 ## Using a custom Docker image
