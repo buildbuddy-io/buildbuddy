@@ -25,12 +25,10 @@ http_archive(
     ],
 )
 
-load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies", "go_download_sdk")
+load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
 
 go_download_sdk(
     name = "go_sdk",
-    goos = "linux",
-    goarch = "amd64",
     version = "1.15",
 )
 
