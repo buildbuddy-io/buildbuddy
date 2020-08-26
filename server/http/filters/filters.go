@@ -15,14 +15,14 @@ import (
 	"google.golang.org/grpc"
 )
 
-func RedirectHTTPS(next http.Handler) http.Handler {
+func RedirectHTTPS(env environment.Env, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 
 		protocol := r.Header.Get("X-Forwarded-Proto") // Set by load balancer
-		if protocol == "http" {
+		if sslConfig := env.GetConfigurator().GetSSLConfig(); sslConfig != nil && sslConfig.EnableSSL && protocol == "http" {
 			http.Redirect(w, r, "https://"+r.Host+r.URL.String(), http.StatusMovedPermanently)
 			return
 		}
@@ -102,12 +102,12 @@ func LogRequest(next http.Handler) http.Handler {
 
 type wrapFn func(http.Handler) http.Handler
 
-func WrapExternalHandler(next http.Handler) http.Handler {
+func WrapExternalHandler(env environment.Env, next http.Handler) http.Handler {
 	// NB: These are called in reverse order, so the 0th element will be
 	// called last before the handler itself is called.
 	wrapFns := []wrapFn{
 		Gzip,
-		RedirectHTTPS,
+		func(h http.Handler) http.Handler { return RedirectHTTPS(env, h) },
 		LogRequest,
 		RequestID,
 	}
@@ -124,7 +124,7 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 	wrapFns := []wrapFn{
 		Gzip,
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
-		RedirectHTTPS,
+		func(h http.Handler) http.Handler { return RedirectHTTPS(env, h) },
 		LogRequest,
 		RequestID,
 	}

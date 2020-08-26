@@ -285,8 +285,8 @@ func StartAndRunServices(env environment.Env) {
 
 	mux := http.NewServeMux()
 	// Register all of our HTTP handlers on the default mux.
-	mux.Handle("/", httpfilters.WrapExternalHandler(staticFileServer))
-	mux.Handle("/app/", httpfilters.WrapExternalHandler(http.StripPrefix("/app", afs)))
+	mux.Handle("/", httpfilters.WrapExternalHandler(env, staticFileServer))
+	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
 	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalHandler(env,
 		http.StripPrefix("/rpc/BuildBuddyService/", buildBuddyProtoHandler)))
 	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, buildBuddyServer))
@@ -294,9 +294,9 @@ func StartAndRunServices(env environment.Env) {
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
 	if auth := env.GetAuthenticator(); auth != nil {
-		mux.Handle("/login/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Login)))
-		mux.Handle("/auth/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Auth)))
-		mux.Handle("/logout/", httpfilters.RedirectHTTPS(http.HandlerFunc(auth.Logout)))
+		mux.Handle("/login/", httpfilters.RedirectHTTPS(env, http.HandlerFunc(auth.Login)))
+		mux.Handle("/auth/", httpfilters.RedirectHTTPS(env, http.HandlerFunc(auth.Auth)))
+		mux.Handle("/logout/", httpfilters.RedirectHTTPS(env, http.HandlerFunc(auth.Logout)))
 	}
 
 	if githubConfig := env.GetConfigurator().GetGithubConfig(); githubConfig != nil {
