@@ -87,9 +87,18 @@ type GCSCacheConfig struct {
 	TTLDays         int64  `yaml:"ttl_days"`
 }
 
+type S3CacheConfig struct {
+	Region             string `yaml:"region"`
+	Bucket             string `yaml:"bucket"`
+	CredentialsProfile string `yaml:"credentials_profile"`
+	TTLDays            int64  `yaml:"ttl_days"`
+}
+
+
 type cacheConfig struct {
 	Disk            *DiskConfig     `yaml:"disk"`
 	GCS             *GCSCacheConfig `yaml:"gcs"`
+	S3              *S3CacheConfig  `yaml:"s3"`
 	InMemory        bool            `yaml:"in_memory"`
 	MaxSizeBytes    int64           `yaml:"max_size_bytes"`
 	MemcacheTargets []string        `yaml:"memcache_targets"`
@@ -318,6 +327,11 @@ func (c *Configurator) GetCacheDiskConfig() *DiskConfig {
 func (c *Configurator) GetCacheGCSConfig() *GCSCacheConfig {
 	c.rereadIfStale()
 	return c.gc.Cache.GCS
+}
+
+func (c *Configurator) GetCacheS3Config() *S3CacheConfig {
+	c.rereadIfStale()
+	return c.gc.Cache.S3
 }
 
 func (c *Configurator) GetCacheMemcacheTargets() []string {
