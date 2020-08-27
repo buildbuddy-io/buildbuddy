@@ -74,7 +74,7 @@ func (j *Janitor) Start() {
 					j.deleteExpiredInvocations()
 				case <-j.quit:
 					log.Printf("Cleanup task %d exiting.", 0)
-					break
+					return
 				}
 			}
 		}()
