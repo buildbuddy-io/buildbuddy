@@ -28,6 +28,27 @@ Many of the configuration options below require using a custom BuildBuddy config
 
  For more details on using the `k8s_on_prem.sh` script, see the [Kubernetes section](on-prem.md#kubernetes) of the on-prem deployment documentation.
 
+## Helm
+
+If you run or have access to a Kubernetes cluster and are comfortable with [Helm](https://helm.sh/), we maintain official BuildBuddy Helm charts that are easy to configure and deploy.
+
+They have options deploy everything necessary to use all of BuildBuddy's bells and whistles - including MySQL, nginx, and more.
+
+The official BuildBuddy charts live in our [buildbuddy-helm repo](https://github.com/buildbuddy-io/buildbuddy-helm) and can be added to helm with the following command:
+```
+helm repo add buildbuddy https://helm.buildbuddy.io
+```
+
+You can the deploy BuildBuddy Enterprise with the following command:
+```
+helm install buildbuddy buildbuddy/buildbuddy-enterprise \
+  --set mysql.mysqlUser=sampleUser \
+  --set mysql.mysqlPassword=samplePassword
+```
+
+For more information on configuring your BuildBuddy Enterprise Helm deploy, check out the chart:
+- [BuildBuddy Enterprise](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise)
+
 ## Configuration
 BuildBuddy Enterprise allows configuration of many features that are not available in the open-core version. Below you’ll find examples for configuring some of these features. If you don’t see what you’re looking for below, please don’t hesitate to ask us! For a full overview of what can be configured, see our [Configuration docs](config.md).
 

@@ -16,11 +16,12 @@ For companies, we offer an [Enterprise](enterprise.md) version of BuildBuddy tha
 
 ## Getting started
 
-There are three ways to run BuildBuddy on-prem:
+There are four ways to run BuildBuddy on-prem:
 
 - [Bazel Run](#bazel-run): get the source and run a simple `bazel run` command.
 - [Docker Image](#docker-image): pre-built Docker images running the latest version of BuildBuddy.
 - [Kubernetes](#kubernetes): deploy BuildBuddy to your Kubernetes cluster with a one-line deploy script.
+- [Helm](#helm): deploy BuildBuddy to your Kubernetes cluster with the official BuildBuddy helm charts.
 
 ## Bazel Run
 
@@ -105,6 +106,28 @@ If you've obtained a BuildBuddy enterprise license, you deploy enterprise BuildB
 bash k8s_on_prem.sh -enterprise
 ```
 
+
+## Helm
+
+If you run or have access to a Kubernetes cluster and are comfortable with [Helm](https://helm.sh/), we maintain official BuildBuddy Helm charts that are easy to configure and deploy.
+
+They have options deploy everything necessary to use all of BuildBuddy's bells and whistles - including MySQL, nginx, and more.
+
+The official BuildBuddy charts live in our [buildbuddy-helm repo](https://github.com/buildbuddy-io/buildbuddy-helm) and can be added to helm with the following command:
+```
+helm repo add buildbuddy https://helm.buildbuddy.io
+```
+
+You can the deploy BuildBuddy Open Source with the following command:
+```
+helm install buildbuddy buildbuddy/buildbuddy \
+  --set mysql.mysqlUser=sampleUser \
+  --set mysql.mysqlPassword=samplePassword
+```
+
+For more information on configuring your BuildBuddy Helm deploy, check out the charts themselves:
+- [BuildBuddy Open Source](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy)
+- [BuildBuddy Enterprise](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise)
 
 ## Configuring BuildBuddy
 
