@@ -46,7 +46,7 @@ helm install buildbuddy buildbuddy/buildbuddy-enterprise \
   --set mysql.mysqlPassword=samplePassword
 ```
 
-For more information on configuration your BuildBuddy Enterprise Helm deploy, check out the chart:
+For more information on configuring your BuildBuddy Enterprise Helm deploy, check out the chart:
 - [BuildBuddy Enterprise](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise)
 
 ## Configuration
