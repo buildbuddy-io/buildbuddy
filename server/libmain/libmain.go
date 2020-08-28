@@ -171,7 +171,10 @@ func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) 
 		pushServer := push_server.NewPushServer(env)
 		rapb.RegisterPushServer(grpcServer, pushServer)
 
-		fetchServer := fetch_server.NewFetchServer(env)
+		fetchServer, err := fetch_server.NewFetchServer(env)
+		if err != nil {
+			log.Fatalf("Error initializing FetchServer: %s", err)
+		}
 		rapb.RegisterFetchServer(grpcServer, fetchServer)
 
 	}

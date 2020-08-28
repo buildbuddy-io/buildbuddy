@@ -8,5 +8,6 @@ go_library(
     deps = [
         "//proto:remote_asset_go_proto",
         "//server/environment:go_default_library",
+        "//server/util/status:go_default_library",
     ],
 )
