@@ -26,6 +26,7 @@ type generalConfig struct {
 	Executor        *ExecutorConfig        `yaml:"executor"`
 	API             *APIConfig             `yaml:"api"`
 	Github          *GithubConfig          `yaml:"github"`
+	Org             *OrgConfig             `yaml:"org"`
 }
 
 type appConfig struct {
@@ -94,7 +95,6 @@ type S3CacheConfig struct {
 	TTLDays            int64  `yaml:"ttl_days"`
 }
 
-
 type cacheConfig struct {
 	Disk            *DiskConfig     `yaml:"disk"`
 	GCS             *GCSCacheConfig `yaml:"gcs"`
@@ -151,6 +151,11 @@ type APIConfig struct {
 type GithubConfig struct {
 	ClientID     string `yaml:"client_id"`
 	ClientSecret string `yaml:"client_secret"`
+}
+
+type OrgConfig struct {
+	Name   string `yaml:"name"`
+	Domain string `yaml:"domain"`
 }
 
 func ensureDirectoryExists(dir string) error {
@@ -372,4 +377,9 @@ func (c *Configurator) GetAPIConfig() *APIConfig {
 func (c *Configurator) GetGithubConfig() *GithubConfig {
 	c.rereadIfStale()
 	return c.gc.Github
+}
+
+func (c *Configurator) GetOrgConfig() *OrgConfig {
+	c.rereadIfStale()
+	return c.gc.Org
 }
