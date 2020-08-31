@@ -111,7 +111,7 @@ export default class InvocationComponent extends React.Component {
   }
 
   render() {
-    if (this.state.loading) {
+    if (this.state.loading || this.props.user === undefined) {
       return <InvocationLoadingComponent invocationId={this.props.invocationId} />;
     }
 
