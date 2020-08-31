@@ -157,9 +157,17 @@ export default class InvocationTimingCardComponent extends React.Component {
     return this.state.threadToNumEventPagesMap.get(threadId) || 1;
   }
 
+  formatDuration(durationMicros: number) {
+    let durationSeconds = durationMicros / 1000000
+    if (durationSeconds < 100) {
+      return durationSeconds.toPrecision(3);
+    }
+    return durationSeconds.toFixed(0)
+  }
+
   render() {
     let threads = Array.from(this.state.threadMap.values());
-    return <div className="card artifacts">
+    return <div className="card timing">
       <img className="icon" src="/image/clock-regular.svg" />
       <div className="content">
         <div className="title">Timing</div>
@@ -211,8 +219,8 @@ export default class InvocationTimingCardComponent extends React.Component {
                   .map((event) =>
                     <li>
                       <div className="list-grid">
-                        <div>{event.name}</div>
-                        <div>{(event.dur / 1000000).toPrecision(3)} seconds</div>
+                        <div>{event.name} {event.args?.target}</div>
+                        <div>{this.formatDuration(event.dur)} seconds</div>
                       </div>
                       <div className="list-percent" data-percent={`${(100 * (event.dur / this.props.model.getDurationMicros())).toFixed(0)}%`} style={{ width: `${(100 * (event.dur / this.props.model.getDurationMicros())).toPrecision(3)}%` }}></div>
                     </li>
@@ -237,7 +245,7 @@ export default class InvocationTimingCardComponent extends React.Component {
                   <li>
                     <div className="list-grid">
                       <div>{event.name}</div>
-                      <div>{(event.dur / 1000000).toPrecision(3)} seconds</div>
+                      <div>{this.formatDuration(event.dur)} seconds</div>
                     </div>
                     <div className="list-percent" data-percent={`${(100 * (event.dur / this.props.model.getDurationMicros())).toFixed(0)}%`} style={{ width: `${(100 * (event.dur / this.props.model.getDurationMicros())).toPrecision(3)}%` }}></div>
                   </li>

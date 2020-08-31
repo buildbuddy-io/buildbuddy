@@ -828,6 +828,10 @@ code .comment {
   font-size: 20px;
 }
 
+.timing .list-grid div:first-of-type {
+  font-size: 12px;
+  font-weight: 500;
+}
 
 .list-percent {
   background-color: #8BC34A;
@@ -837,6 +841,8 @@ code .comment {
   margin-top: 2px;
   margin-bottom: 2px;
   position: relative;
+  border-top-right-radius: 3px;
+  border-bottom-right-radius: 3px;
 }
 
 .list-percent:after {
