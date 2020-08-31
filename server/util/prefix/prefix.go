@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 const (
@@ -25,22 +26,25 @@ func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (s
 			}
 		}
 	}
+
+	if !env.GetConfigurator().GetAnonymousUsageEnabled() {
+		return "", status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+	}
+
 	return addPrefix("ANON", key), nil
 }
 
-func AttachUserPrefixToContext(ctx context.Context, env environment.Env) context.Context {
+func AttachUserPrefixToContext(ctx context.Context, env environment.Env) (context.Context, error) {
 	prefix, err := userPrefixCacheKey(ctx, env, "")
-	prefixVal := ""
-	if err == nil {
-		prefixVal = prefix
+	if err != nil && !env.GetConfigurator().GetAnonymousUsageEnabled() {
+		return nil, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 	}
-	return context.WithValue(ctx, userPrefix, prefixVal)
+	return context.WithValue(ctx, userPrefix, prefix), nil
 }
 
-func UserPrefixFromContext(ctx context.Context) string {
-	prefixVal := ""
+func UserPrefixFromContext(ctx context.Context) (string, error) {
 	if v := ctx.Value(userPrefix); v != nil {
-		prefixVal = v.(string)
+		return v.(string), nil
 	}
-	return prefixVal
+	return "", status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 }

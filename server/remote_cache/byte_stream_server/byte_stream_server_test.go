@@ -165,7 +165,11 @@ func TestRPCRead(t *testing.T) {
 		},
 	}
 
-	ctx = prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
 	for _, tc := range cases {
 		// Set the value in the cache.
 		if err := te.GetCache().Set(ctx, tc.instanceNameDigest.Digest, []byte(tc.wantData)); err != nil {

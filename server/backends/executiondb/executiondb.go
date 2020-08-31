@@ -31,12 +31,19 @@ func NewExecutionDB(env environment.Env, h *db.DBHandle) *ExecutionDB {
 }
 
 func (d *ExecutionDB) createExecution(tx *gorm.DB, ctx context.Context, summary *tables.ExecutionSummary) error {
-	permissions := perms.AnonymousUserPermissions()
+	var permissions *perms.UserGroupPerm
 	if auth := d.env.GetAuthenticator(); auth != nil {
 		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
 			permissions = perms.GroupAuthPermissions(u.GetGroupID())
 		}
 	}
+
+	if permissions == nil && d.env.GetConfigurator().GetAnonymousUsageEnabled() {
+		permissions = perms.AnonymousUserPermissions()
+	} else if permissions == nil {
+		return status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+	}
+
 	summary.UserID = permissions.UserID
 	summary.GroupID = permissions.GroupID
 	summary.Perms = permissions.Perms

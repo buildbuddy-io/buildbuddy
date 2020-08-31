@@ -105,7 +105,8 @@ type cacheConfig struct {
 }
 
 type authConfig struct {
-	OauthProviders []*OauthProvider `yaml:"oauth_providers"`
+	OauthProviders       []*OauthProvider `yaml:"oauth_providers"`
+	EnableAnonymousUsage bool             `yaml:"enable_anonymous_usage"`
 }
 
 type OauthProvider struct {
@@ -347,6 +348,11 @@ func (c *Configurator) GetCacheMemcacheTargets() []string {
 func (c *Configurator) GetCacheInMemory() bool {
 	c.rereadIfStale()
 	return c.gc.Cache.InMemory
+}
+
+func (c *Configurator) GetAnonymousUsageEnabled() bool {
+	c.rereadIfStale()
+	return len(c.gc.Auth.OauthProviders) == 0 || c.gc.Auth.EnableAnonymousUsage
 }
 
 func (c *Configurator) GetAuthOauthProviders() []*OauthProvider {

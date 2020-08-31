@@ -142,11 +142,12 @@ export default class SetupCodeComponent extends React.Component {
         <div className="setup-controls">
           <span className="group-title">Select options</span>
           {this.isAuthEnabled() && <span className="group">
-            <input id="auth-none"
+
+            {capabilities.anonymous && <input id="auth-none"
               checked={this.state.auth == "none"}
               onChange={this.handleInputChange.bind(this)}
-              value="none" name="auth" type="radio" />
-            <label htmlFor="auth-none">No auth</label>
+              value="none" name="auth" type="radio" />}
+            {capabilities.anonymous && <label htmlFor="auth-none">No auth</label>}
             <input id="auth-key"
               checked={this.state.auth == "key"}
               onChange={this.handleInputChange.bind(this)}

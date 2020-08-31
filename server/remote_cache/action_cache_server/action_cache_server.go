@@ -131,7 +131,11 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err != nil {
 		return nil, err
 	}
-	ctx = prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
+
 	cache := s.getCache(req.GetInstanceName())
 
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
@@ -178,7 +182,11 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if err != nil {
 		return nil, err
 	}
-	ctx = prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
+
 	cache := s.getCache(req.GetInstanceName())
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131

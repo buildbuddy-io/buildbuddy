@@ -139,7 +139,10 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err != nil {
 		return err
 	}
-	ctx := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
+	if err != nil {
+		return err
+	}
 	cache := s.getCache(instanceName)
 	if d.GetHash() == digest.EmptySha256 {
 		return nil
@@ -230,7 +233,10 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if err != nil {
 		return nil, err
 	}
-	ctx = prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
 	cache := s.getCache(instanceName)
 
 	ws := &writeState{

@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jinzhu/gorm"
 
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
@@ -29,12 +30,19 @@ func NewInvocationDB(env environment.Env, h *db.DBHandle) *InvocationDB {
 }
 
 func (d *InvocationDB) createInvocation(tx *gorm.DB, ctx context.Context, ti *tables.Invocation) error {
-	permissions := perms.AnonymousUserPermissions()
+	var permissions *perms.UserGroupPerm
 	if auth := d.env.GetAuthenticator(); auth != nil {
 		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
 			permissions = perms.GroupAuthPermissions(u.GetGroupID())
 		}
 	}
+
+	if permissions == nil && d.env.GetConfigurator().GetAnonymousUsageEnabled() {
+		permissions = perms.AnonymousUserPermissions()
+	} else if permissions == nil {
+		return status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+	}
+
 	ti.UserID = permissions.UserID
 	ti.GroupID = permissions.GroupID
 	ti.Perms = ti.Perms | permissions.Perms
@@ -59,8 +67,10 @@ func (d *InvocationDB) addPermissionsCheckToQuery(ctx context.Context, q *query_
 	o := query_builder.OrClauses{}
 	o.AddOr("(i.perms & ? != 0)", perms.OTHERS_READ)
 
+	hasUser := false
 	if auth := d.env.GetAuthenticator(); auth != nil {
 		if u, err := auth.AuthenticatedUser(ctx); err == nil {
+			hasUser = true
 			if u.GetGroupID() != "" {
 				groupArgs := []interface{}{
 					perms.GROUP_READ,
@@ -83,6 +93,11 @@ func (d *InvocationDB) addPermissionsCheckToQuery(ctx context.Context, q *query_
 			}
 		}
 	}
+
+	if !hasUser && !d.env.GetConfigurator().GetAnonymousUsageEnabled() {
+		return status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+	}
+
 	orQuery, orArgs := o.Build()
 	q = q.AddWhereClause("("+orQuery+")", orArgs...)
 	return nil

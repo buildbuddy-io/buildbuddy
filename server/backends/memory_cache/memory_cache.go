@@ -177,7 +177,11 @@ func (m *MemoryCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return prefix.UserPrefixFromContext(ctx) + m.prefix + hash, nil
+	userPrefix, err := prefix.UserPrefixFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	return userPrefix + m.prefix + hash, nil
 }
 
 func (m *MemoryCache) WithPrefix(prefix string) interfaces.Cache {

@@ -14,4 +14,7 @@ message FrontendConfig {
 
   // Whether Github linking is enabled.
   bool github_enabled = 4;
+
+  // Whether anonymous usage is enabled.
+  bool anonymous_usage_enabled = 5;
 }

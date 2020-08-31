@@ -5,5 +5,8 @@ go_library(
     srcs = ["prefix.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/prefix",
     visibility = ["//visibility:public"],
-    deps = ["//server/environment:go_default_library"],
+    deps = [
+        "//server/environment:go_default_library",
+        "//server/util/status:go_default_library",
+    ],
 )

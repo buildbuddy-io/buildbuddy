@@ -53,7 +53,10 @@ func (s *ContentAddressableStorageServer) getCache(instanceName string) interfac
 // There are no method-specific errors.
 func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	rsp := &repb.FindMissingBlobsResponse{}
-	ctx = prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
 	cache := s.getCache(req.GetInstanceName())
 	digestsToLookup := make([]*repb.Digest, 0, len(req.GetBlobDigests()))
 	for _, d := range req.GetBlobDigests() {
@@ -107,7 +110,10 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 // provided data.
 func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	rsp := &repb.BatchUpdateBlobsResponse{}
-	ctx = prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
 	cache := s.getCache(req.GetInstanceName())
 	rsp.Responses = make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(req.Requests))
 
@@ -163,7 +169,10 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 // status.
 func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
 	rsp := &repb.BatchReadBlobsResponse{}
-	ctx = prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
 	cache := s.getCache(req.GetInstanceName())
 	cacheRequest := make([]*repb.Digest, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
@@ -322,7 +331,10 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return nil
 	}
 
-	ctx := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
+	if err != nil {
+		return err
+	}
 	cache := s.getCache(req.GetInstanceName())
 	dirStack, err := NewDirStack(req.GetPageToken())
 	if err != nil {

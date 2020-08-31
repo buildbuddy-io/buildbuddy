@@ -53,7 +53,7 @@ export default class SetupComponent extends React.Component {
             <br/><br/>
             Visit your <a href="/">build history</a> to make sure that your builds are associated with your account.
             <br/><br/>
-            Note: Builds using the <b>No auth</b> option will not appear in your history, as they can't be associated with your account.
+            {capabilities.anonymous && <span>Note: Builds using the <b>No auth</b> option will not appear in your history, as they can't be associated with your account.</span>}
 
             {!capabilities.enterprise && <div>
               <h2>Enterprise BuildBuddy</h2>

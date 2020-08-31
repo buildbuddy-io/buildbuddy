@@ -12,6 +12,7 @@ go_library(
         "//server/util/db:go_default_library",
         "//server/util/perms:go_default_library",
         "//server/util/query_builder:go_default_library",
+        "//server/util/status:go_default_library",
         "@com_github_jinzhu_gorm//:go_default_library",
     ],
 )

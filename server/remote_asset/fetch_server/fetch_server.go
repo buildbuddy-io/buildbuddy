@@ -100,7 +100,10 @@ func (p *FetchServer) getCache(instanceName string) interfaces.Cache {
 }
 
 func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest) (*rapb.FetchBlobResponse, error) {
-	ctx = prefix.AttachUserPrefixToContext(ctx, p.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, p.env)
+	if err != nil {
+		return nil, err
+	}
 	cache := p.getCache(req.GetInstanceName())
 
 	for _, qualifier := range req.GetQualifiers() {

@@ -79,10 +79,11 @@ func serveIndexTemplate(env environment.Env, template *template.Template, versio
 		issuers = append(issuers, provider.IssuerURL)
 	}
 	err := template.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendConfig{
-		Version:            version,
-		ConfiguredIssuers:  issuers,
-		DefaultToDenseMode: env.GetConfigurator().GetDefaultToDenseMode(),
-		GithubEnabled:      env.GetConfigurator().GetGithubConfig() != nil,
+		Version:               version,
+		ConfiguredIssuers:     issuers,
+		DefaultToDenseMode:    env.GetConfigurator().GetDefaultToDenseMode(),
+		GithubEnabled:         env.GetConfigurator().GetGithubConfig() != nil,
+		AnonymousUsageEnabled: env.GetConfigurator().GetAnonymousUsageEnabled(),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
