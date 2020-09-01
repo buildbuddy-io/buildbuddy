@@ -10,7 +10,7 @@
     }
   },
   "lint-staged": {
-    "./app/**/*.{js,jsx,ts,tsx}": [
+    "./{app,static}/**/*.{js,jsx,ts,tsx,css,html}": [
       "prettier --write"
     ]
   },
