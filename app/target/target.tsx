@@ -1,15 +1,15 @@
-import React from 'react';
+import React from "react";
 
-import TargetTestLogCardComponent from './target_test_log_card';
-import TargetTestDocumentCardComponent from './target_test_document_card';
-import TargetArtifactsCardComponent from './target_artifacts_card';
-import ActionCardComponent from './action_card';
-import router from '../router/router';
-import format from '../format/format';
-import { User } from '../auth/auth_service';
+import TargetTestLogCardComponent from "./target_test_log_card";
+import TargetTestDocumentCardComponent from "./target_test_document_card";
+import TargetArtifactsCardComponent from "./target_artifacts_card";
+import ActionCardComponent from "./action_card";
+import router from "../router/router";
+import format from "../format/format";
+import { User } from "../auth/auth_service";
 
-import { invocation } from '../../proto/invocation_ts_proto';
-import { build_event_stream } from '../../proto/build_event_stream_ts_proto';
+import { invocation } from "../../proto/invocation_ts_proto";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 
 interface Props {
   invocationId: string;
@@ -25,7 +25,6 @@ interface Props {
 }
 
 export default class TargetComponent extends React.Component {
-
   props: Props;
 
   componentWillMount() {
@@ -101,7 +100,7 @@ export default class TargetComponent extends React.Component {
   }
 
   resultSort(a: invocation.InvocationEvent, b: invocation.InvocationEvent) {
-    let statusDiff = b.buildEvent.testResult.status - a.buildEvent.testResult.status
+    let statusDiff = b.buildEvent.testResult.status - a.buildEvent.testResult.status;
     if (statusDiff != 0) {
       return statusDiff;
     }
@@ -133,62 +132,123 @@ export default class TargetComponent extends React.Component {
         <div className="shelf">
           <div className="container history-overview">
             <div className="breadcrumbs">
-              {this.props.user && <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">{this.props.user?.selectedGroupName()}</span>}
-              {this.props.user && <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">Builds</span>}
-              <span onClick={this.handleInvocationClicked.bind(this)} className="clickable">Invocation {this.props.invocationId}</span>
+              {this.props.user && (
+                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                  {this.props.user?.selectedGroupName()}
+                </span>
+              )}
+              {this.props.user && (
+                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                  Builds
+                </span>
+              )}
+              <span onClick={this.handleInvocationClicked.bind(this)} className="clickable">
+                Invocation {this.props.invocationId}
+              </span>
               <span>Target {this.props.targetLabel}</span>
             </div>
             <div className="titles">
-              <div className="title">
-                {this.props.targetLabel}
-              </div>
+              <div className="title">{this.props.targetLabel}</div>
               <div className="subtitle">
-                {this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis ? format.formatTimestampMillis(this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis) : format.formatTimestampMillis(+this.props?.completedEvent?.eventTime.seconds * 1000)}
+                {this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis
+                  ? format.formatTimestampMillis(
+                      this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis
+                    )
+                  : format.formatTimestampMillis(
+                      +this.props?.completedEvent?.eventTime.seconds * 1000
+                    )}
               </div>
             </div>
             <div className="details">
-              {this.props?.testSummaryEvent && <div className="detail">
-                <img className="icon" src={this.getStatusIcon(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)} />
-                {this.getStatusTitle(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
-              </div>}
-              {!this.props?.testSummaryEvent && <div className="detail">
-                <img className="icon" src={this.props?.completedEvent?.buildEvent?.completed?.success ? "/image/check-circle.svg" : "/image/x-circle.svg"} />
-                {this.props?.completedEvent?.buildEvent?.completed?.success ? "Succeeded" : "Failed"}
-              </div>}
-              {this.props?.testSummaryEvent && <div className="detail">
-                <img className="icon" src="/image/hash.svg" />
-                {this.props?.testSummaryEvent?.buildEvent?.testSummary?.totalRunCount} total runs
-              </div>}
+              {this.props?.testSummaryEvent && (
+                <div className="detail">
+                  <img
+                    className="icon"
+                    src={this.getStatusIcon(
+                      this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus
+                    )}
+                  />
+                  {this.getStatusTitle(
+                    this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus
+                  )}
+                </div>
+              )}
+              {!this.props?.testSummaryEvent && (
+                <div className="detail">
+                  <img
+                    className="icon"
+                    src={
+                      this.props?.completedEvent?.buildEvent?.completed?.success
+                        ? "/image/check-circle.svg"
+                        : "/image/x-circle.svg"
+                    }
+                  />
+                  {this.props?.completedEvent?.buildEvent?.completed?.success
+                    ? "Succeeded"
+                    : "Failed"}
+                </div>
+              )}
+              {this.props?.testSummaryEvent && (
+                <div className="detail">
+                  <img className="icon" src="/image/hash.svg" />
+                  {this.props?.testSummaryEvent?.buildEvent?.testSummary?.totalRunCount} total runs
+                </div>
+              )}
               <div className="detail">
                 <img className="icon" src="/image/target-regular.svg" />
-                {this.props?.configuredEvent?.buildEvent?.configured.targetKind || this.props.actionEvents?.map(action => action?.buildEvent?.action?.type).join(",")}
+                {this.props?.configuredEvent?.buildEvent?.configured.targetKind ||
+                  this.props.actionEvents
+                    ?.map((action) => action?.buildEvent?.action?.type)
+                    .join(",")}
               </div>
-              {this.props?.configuredEvent?.buildEvent?.configured.testSize > 0 && <div className="detail">
-                <img className="icon" src="/image/box-regular.svg" />
-                {this.getTestSize(this.props?.configuredEvent?.buildEvent?.configured.testSize)}
-              </div>}
+              {this.props?.configuredEvent?.buildEvent?.configured.testSize > 0 && (
+                <div className="detail">
+                  <img className="icon" src="/image/box-regular.svg" />
+                  {this.getTestSize(this.props?.configuredEvent?.buildEvent?.configured.testSize)}
+                </div>
+              )}
             </div>
           </div>
         </div>
         <div className="container">
-          {resultEvents.length > 1 && <div className={`runs ${resultEvents.length > 9 && "run-grid"}`}>
-            {resultEvents.map((result, index) =>
-              <a href={`#${index + 1}`}
-                title={`Run ${result.buildEvent.id.testResult.run} (Attempt ${result.buildEvent.id.testResult.attempt}, Shard ${result.buildEvent.id.testResult.shard})`}
-                className={`run ${this.getStatusClass(result.buildEvent.testResult.status)} ${((this.props.hash || "#1") == `#${index + 1}`) && 'selected'}`}>
-                Run {result.buildEvent.id.testResult.run} (Attempt {result.buildEvent.id.testResult.attempt}, Shard {result.buildEvent.id.testResult.shard})
-              </a>)}
-          </div>}
-          {resultEvents.filter((value, index) => `#${index + 1}` == (this.props.hash || '#1')).map((result) =>
-            <span>
-              <TargetTestDocumentCardComponent invocationId={this.props.invocationId} testResult={result} />
-              <TargetTestLogCardComponent invocationId={this.props.invocationId} testResult={result} />
-            </span>
+          {resultEvents.length > 1 && (
+            <div className={`runs ${resultEvents.length > 9 && "run-grid"}`}>
+              {resultEvents.map((result, index) => (
+                <a
+                  href={`#${index + 1}`}
+                  title={`Run ${result.buildEvent.id.testResult.run} (Attempt ${result.buildEvent.id.testResult.attempt}, Shard ${result.buildEvent.id.testResult.shard})`}
+                  className={`run ${this.getStatusClass(result.buildEvent.testResult.status)} ${
+                    (this.props.hash || "#1") == `#${index + 1}` && "selected"
+                  }`}
+                >
+                  Run {result.buildEvent.id.testResult.run} (Attempt{" "}
+                  {result.buildEvent.id.testResult.attempt}, Shard{" "}
+                  {result.buildEvent.id.testResult.shard})
+                </a>
+              ))}
+            </div>
           )}
-          {actionEvents.map(action =>
+          {resultEvents
+            .filter((value, index) => `#${index + 1}` == (this.props.hash || "#1"))
+            .map((result) => (
+              <span>
+                <TargetTestDocumentCardComponent
+                  invocationId={this.props.invocationId}
+                  testResult={result}
+                />
+                <TargetTestLogCardComponent
+                  invocationId={this.props.invocationId}
+                  testResult={result}
+                />
+              </span>
+            ))}
+          {actionEvents.map((action) => (
             <ActionCardComponent invocationId={this.props.invocationId} action={action} />
-          )}
-          <TargetArtifactsCardComponent invocationId={this.props.invocationId} files={files as build_event_stream.File[]} />
+          ))}
+          <TargetArtifactsCardComponent
+            invocationId={this.props.invocationId}
+            files={files as build_event_stream.File[]}
+          />
         </div>
       </div>
     );

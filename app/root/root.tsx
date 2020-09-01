@@ -1,13 +1,13 @@
-import React from 'react';
-import FooterComponent from '../footer/footer';
-import MenuComponent from '../menu/menu';
-import InvocationComponent from '../invocation/invocation';
-import SetupComponent from '../docs/setup';
-import capabilities from '../capabilities/capabilities'
-import router, { Path } from '../router/router';
-import authService, { AuthService } from '../auth/auth_service';
-import { User } from '../auth/auth_service';
-import faviconService from '../favicon/favicon';
+import React from "react";
+import FooterComponent from "../footer/footer";
+import MenuComponent from "../menu/menu";
+import InvocationComponent from "../invocation/invocation";
+import SetupComponent from "../docs/setup";
+import capabilities from "../capabilities/capabilities";
+import router, { Path } from "../router/router";
+import authService, { AuthService } from "../auth/auth_service";
+import { User } from "../auth/auth_service";
+import faviconService from "../favicon/favicon";
 
 const viewModeKey = "VIEW_MODE";
 const denseModeValue = "DENSE";
@@ -29,7 +29,10 @@ export default class RootComponent extends React.Component {
     hash: window.location.hash,
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
-    denseMode: viewModeKey in window.localStorage ? window.localStorage.getItem(viewModeKey) == denseModeValue : window.buildbuddyConfig && window.buildbuddyConfig.default_to_dense_mode
+    denseMode:
+      viewModeKey in window.localStorage
+        ? window.localStorage.getItem(viewModeKey) == denseModeValue
+        : window.buildbuddyConfig && window.buildbuddyConfig.default_to_dense_mode,
   };
 
   componentWillMount() {
@@ -37,7 +40,7 @@ export default class RootComponent extends React.Component {
     authService.register();
     router.register(this.handlePathChange.bind(this));
     authService.userStream.addListener(AuthService.userEventName, (user: User) => {
-      this.setState({ ...this.state, user })
+      this.setState({ ...this.state, user });
     });
     faviconService.setDefaultFavicon();
   }
@@ -49,7 +52,7 @@ export default class RootComponent extends React.Component {
     this.setState({
       hash: window.location.hash,
       path: window.location.pathname,
-      search: new URLSearchParams(window.location.search)
+      search: new URLSearchParams(window.location.search),
     });
     capabilities.didNavigateToPath();
   }
@@ -64,8 +67,21 @@ export default class RootComponent extends React.Component {
     let invocationId = router.getInvocationId(this.state.path);
     return (
       <div className={this.state.denseMode ? "dense root" : "root"}>
-        <MenuComponent user={this.state.user} showHamburger={true} denseModeEnabled={this.state.denseMode} handleDenseModeToggled={this.handleToggleDenseClicked.bind(this)} />
-        {invocationId && <InvocationComponent invocationId={invocationId} hash={this.state.hash} search={this.state.search} denseMode={this.state.denseMode} user={null} />}
+        <MenuComponent
+          user={this.state.user}
+          showHamburger={true}
+          denseModeEnabled={this.state.denseMode}
+          handleDenseModeToggled={this.handleToggleDenseClicked.bind(this)}
+        />
+        {invocationId && (
+          <InvocationComponent
+            invocationId={invocationId}
+            hash={this.state.hash}
+            search={this.state.search}
+            denseMode={this.state.denseMode}
+            user={null}
+          />
+        )}
         {!invocationId && <SetupComponent />}
         <FooterComponent />
       </div>

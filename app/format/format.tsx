@@ -1,17 +1,17 @@
 import Long from "long";
-import moment from 'moment';
+import moment from "moment";
 
 export function percent(percent: number | Long) {
-  return `${((+percent) * 100).toFixed(0)}`;
+  return `${(+percent * 100).toFixed(0)}`;
 }
 
 export function durationUsec(duration: number | Long) {
-  let seconds = (+duration) / 1000000;
+  let seconds = +duration / 1000000;
   return durationSec(seconds);
 }
 
 export function durationMillis(duration: number | Long) {
-  let seconds = (+duration) / 1000;
+  let seconds = +duration / 1000;
   return durationSec(seconds);
 }
 
@@ -55,16 +55,34 @@ export function formatTimestampUsec(timestamp: number | Long) {
 }
 
 export function formatTimestampMillis(timestamp: number | Long) {
-  return `${moment(+timestamp).format('MMMM Do, YYYY')} at ${moment(+timestamp).format('h:mm:ss a')}`;
+  return `${moment(+timestamp).format("MMMM Do, YYYY")} at ${moment(+timestamp).format(
+    "h:mm:ss a"
+  )}`;
 }
 
 export function formatGitUrl(url: string) {
-  return url?.replace("https://", "").replace("ssh://", "").replace(".git", "").replace("git@", "").replace("github.com/", "").replace("github.com:", "");
+  return url
+    ?.replace("https://", "")
+    .replace("ssh://", "")
+    .replace(".git", "")
+    .replace("git@", "")
+    .replace("github.com/", "")
+    .replace("github.com:", "");
 }
 
 export function formatCommitHash(commit: string) {
   return commit?.substring(0, 6);
 }
 
-
-export default { durationSec, durationMillis, durationUsec, sentenceCase, percent, truncateList, formatTimestampUsec, formatTimestampMillis, formatGitUrl, formatCommitHash };
+export default {
+  durationSec,
+  durationMillis,
+  durationUsec,
+  sentenceCase,
+  percent,
+  truncateList,
+  formatTimestampUsec,
+  formatTimestampMillis,
+  formatGitUrl,
+  formatCommitHash,
+};

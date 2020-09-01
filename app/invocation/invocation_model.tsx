@@ -1,10 +1,10 @@
-import React from 'react';
-import moment from 'moment';
-import { invocation } from '../../proto/invocation_ts_proto';
-import { build_event_stream } from '../../proto/build_event_stream_ts_proto';
-import { command_line } from '../../proto/command_line_ts_proto';
-import format from '../format/format';
-import { IconType } from '../favicon/favicon';
+import React from "react";
+import moment from "moment";
+import { invocation } from "../../proto/invocation_ts_proto";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { command_line } from "../../proto/command_line_ts_proto";
+import format from "../format/format";
+import { IconType } from "../favicon/favicon";
 
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
@@ -39,28 +39,44 @@ export default class InvocationModel {
   buildMetadataMap = new Map<string, string>();
   configuredMap = new Map<string, invocation.InvocationEvent>();
   completedMap = new Map<string, invocation.InvocationEvent>();
-  testResultMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
-  testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
-  actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
+  testResultMap: Map<string, invocation.InvocationEvent[]> = new Map<
+    string,
+    invocation.InvocationEvent[]
+  >();
+  testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<
+    string,
+    invocation.InvocationEvent
+  >();
+  actionMap: Map<string, invocation.InvocationEvent[]> = new Map<
+    string,
+    invocation.InvocationEvent[]
+  >();
 
   static modelFromInvocations(invocations: invocation.Invocation[]) {
     let model = new InvocationModel();
     model.invocations = invocations as invocation.Invocation[];
     for (let invocation of invocations) {
-      if (invocation.consoleBuffer) model.consoleBuffer = invocation.consoleBuffer
+      if (invocation.consoleBuffer) model.consoleBuffer = invocation.consoleBuffer;
       for (let cl of invocation.structuredCommandLine) {
-        model.structuredCommandLine.push(cl as command_line.CommandLine)
+        model.structuredCommandLine.push(cl as command_line.CommandLine);
       }
 
       for (let event of invocation.event) {
         let buildEvent = event.buildEvent;
-        if (buildEvent.namedSetOfFiles) model.files.push(buildEvent.namedSetOfFiles as build_event_stream.NamedSetOfFiles);
+        if (buildEvent.namedSetOfFiles)
+          model.files.push(buildEvent.namedSetOfFiles as build_event_stream.NamedSetOfFiles);
         if (buildEvent.configured) model.targets.push(buildEvent as build_event_stream.BuildEvent);
         if (buildEvent.configured) {
-          model.configuredMap.set(buildEvent.id.targetConfigured.label, event as invocation.InvocationEvent);
+          model.configuredMap.set(
+            buildEvent.id.targetConfigured.label,
+            event as invocation.InvocationEvent
+          );
         }
         if (buildEvent.completed) {
-          model.completedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
+          model.completedMap.set(
+            buildEvent.id.targetCompleted.label,
+            event as invocation.InvocationEvent
+          );
         }
         if (buildEvent.testResult) {
           let results = model.testResultMap.get(buildEvent.id.testResult.label) || [];
@@ -73,20 +89,33 @@ export default class InvocationModel {
           model.actionMap.set(buildEvent.id.actionCompleted.label, results);
         }
         if (buildEvent.testSummary) {
-          model.testSummaryMap.set(buildEvent.id.testSummary.label, event as invocation.InvocationEvent);
+          model.testSummaryMap.set(
+            buildEvent.id.testSummary.label,
+            event as invocation.InvocationEvent
+          );
         }
-        if (buildEvent.started) model.started = buildEvent.started as build_event_stream.BuildStarted;
+        if (buildEvent.started)
+          model.started = buildEvent.started as build_event_stream.BuildStarted;
         if (buildEvent.expanded) model.expanded = buildEvent as build_event_stream.BuildEvent;
-        if (buildEvent.finished) model.finished = buildEvent.finished as build_event_stream.BuildFinished;
+        if (buildEvent.finished)
+          model.finished = buildEvent.finished as build_event_stream.BuildFinished;
         if (buildEvent.aborted) model.aborted = buildEvent as build_event_stream.BuildEvent;
-        if (buildEvent.buildToolLogs) model.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
-        if (buildEvent.workspaceStatus) model.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
-        if (buildEvent.configuration && buildEvent?.id?.configuration?.id != "none") model.configuration = buildEvent.configuration as build_event_stream.Configuration;
-        if (buildEvent.workspaceInfo) model.workspaceConfig = buildEvent.workspaceInfo as build_event_stream.WorkspaceConfig;
-        if (buildEvent.optionsParsed) model.optionsParsed = buildEvent.optionsParsed as build_event_stream.OptionsParsed;
-        if (buildEvent.buildMetrics) model.buildMetrics = buildEvent.buildMetrics as build_event_stream.BuildMetrics;
-        if (buildEvent.buildToolLogs) model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
-        if (buildEvent.unstructuredCommandLine) model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+        if (buildEvent.buildToolLogs)
+          model.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
+        if (buildEvent.workspaceStatus)
+          model.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
+        if (buildEvent.configuration && buildEvent?.id?.configuration?.id != "none")
+          model.configuration = buildEvent.configuration as build_event_stream.Configuration;
+        if (buildEvent.workspaceInfo)
+          model.workspaceConfig = buildEvent.workspaceInfo as build_event_stream.WorkspaceConfig;
+        if (buildEvent.optionsParsed)
+          model.optionsParsed = buildEvent.optionsParsed as build_event_stream.OptionsParsed;
+        if (buildEvent.buildMetrics)
+          model.buildMetrics = buildEvent.buildMetrics as build_event_stream.BuildMetrics;
+        if (buildEvent.buildToolLogs)
+          model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
+        if (buildEvent.unstructuredCommandLine)
+          model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
       }
     }
 
@@ -95,7 +124,10 @@ export default class InvocationModel {
       let testResult = model.testSummaryMap.get(label)?.buildEvent.testSummary;
       if (testResult && testResult.overallStatus == build_event_stream.TestStatus.FLAKY) {
         model.flakyTest.push(buildEvent as build_event_stream.BuildEvent);
-      } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.FAILED_TO_BUILD) {
+      } else if (
+        testResult &&
+        testResult.overallStatus == build_event_stream.TestStatus.FAILED_TO_BUILD
+      ) {
         model.brokenTest.push(buildEvent as build_event_stream.BuildEvent);
       } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.PASSED) {
         model.succeededTest.push(buildEvent as build_event_stream.BuildEvent);
@@ -144,7 +176,7 @@ export default class InvocationModel {
       return possessive ? `${invocationUser}'s` : invocationUser;
     }
 
-    let username = this.workspaceStatusMap.get('BUILD_USER') || this.clientEnvMap.get('USER');
+    let username = this.workspaceStatusMap.get("BUILD_USER") || this.clientEnvMap.get("USER");
     if (username == "<REDACTED>") {
       return "Loading";
     }
@@ -160,7 +192,7 @@ export default class InvocationModel {
   }
 
   getHost() {
-    return this.workspaceStatusMap.get('BUILD_HOST') || "Unknown host";
+    return this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
   }
 
   getCache() {
@@ -182,43 +214,51 @@ export default class InvocationModel {
   }
 
   getRepo() {
-    return this.buildMetadataMap.get('REPO_URL') || this.workspaceStatusMap.get('REPO_URL') || this.getGithubRepo();
+    return (
+      this.buildMetadataMap.get("REPO_URL") ||
+      this.workspaceStatusMap.get("REPO_URL") ||
+      this.getGithubRepo()
+    );
   }
 
   getCommit() {
-    return this.buildMetadataMap.get('COMMIT_SHA') || this.workspaceStatusMap.get('COMMIT_SHA') || this.getGithubSHA();
+    return (
+      this.buildMetadataMap.get("COMMIT_SHA") ||
+      this.workspaceStatusMap.get("COMMIT_SHA") ||
+      this.getGithubSHA()
+    );
   }
 
   getGithubUser() {
-    return this.clientEnvMap.get('GITHUB_ACTOR');
+    return this.clientEnvMap.get("GITHUB_ACTOR");
   }
 
   getGithubRepo() {
-    return this.clientEnvMap.get('GITHUB_REPOSITORY');
+    return this.clientEnvMap.get("GITHUB_REPOSITORY");
   }
 
   getGithubSHA() {
-    return this.clientEnvMap.get('GITHUB_SHA');
+    return this.clientEnvMap.get("GITHUB_SHA");
   }
 
   getGithubRun() {
-    return this.clientEnvMap.get('GITHUB_RUN_ID');
+    return this.clientEnvMap.get("GITHUB_RUN_ID");
   }
 
   getGKEProject() {
-    return this.clientEnvMap.get('GKE_PROJECT')
+    return this.clientEnvMap.get("GKE_PROJECT");
   }
 
   getGKECluster() {
-    return this.clientEnvMap.get('GKE_CLUSTER')
+    return this.clientEnvMap.get("GKE_CLUSTER");
   }
 
   getCommand() {
-    return this.started?.command || "build"
+    return this.started?.command || "build";
   }
 
   getTool() {
-    return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build"
+    return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
   }
 
   getPattern() {
@@ -234,15 +274,17 @@ export default class InvocationModel {
   }
 
   getStartTimeNumber() {
-    return typeof this.started?.startTimeMillis == "number" ? this.started?.startTimeMillis : this.started?.startTimeMillis.toNumber();
+    return typeof this.started?.startTimeMillis == "number"
+      ? this.started?.startTimeMillis
+      : this.started?.startTimeMillis.toNumber();
   }
 
   getStartDate() {
-    return moment(this.getStartTimeNumber()).format('MMMM Do, YYYY');
+    return moment(this.getStartTimeNumber()).format("MMMM Do, YYYY");
   }
 
   getStartTime() {
-    return moment(this.getStartTimeNumber()).format('h:mm:ss a');
+    return moment(this.getStartTimeNumber()).format("h:mm:ss a");
   }
 
   timeSinceStart() {
@@ -250,7 +292,7 @@ export default class InvocationModel {
   }
 
   getHumanReadableDuration() {
-    let elapsedTime = +this.toolLogMap.get('elapsed time');
+    let elapsedTime = +this.toolLogMap.get("elapsed time");
     return format.durationSec(elapsedTime);
   }
 
@@ -259,34 +301,34 @@ export default class InvocationModel {
       return this.timeSinceStart();
     }
 
-    return `${this.toolLogMap.get('elapsed time')} seconds`
+    return `${this.toolLogMap.get("elapsed time")} seconds`;
   }
 
   getDurationMicros() {
-    return +this.toolLogMap.get('elapsed time') * 1000000;
+    return +this.toolLogMap.get("elapsed time") * 1000000;
   }
 
   getTiming() {
     let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
     if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
-      return "disconnected"
+      return "disconnected";
     }
     if (!this.finished && this.started) {
       return this.timeSinceStart();
     }
-    return this.getHumanReadableDuration()
+    return this.getHumanReadableDuration();
   }
 
   getStatus() {
     let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
     if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
-      return "Disconnected"
+      return "Disconnected";
     }
     if (!this.started) {
-      return "Not started"
+      return "Not started";
     }
     if (!this.finished) {
-      return "In progress..."
+      return "In progress...";
     }
     return this.finished.exitCode.code == 0 ? "Succeeded" : "Failed";
   }
@@ -294,13 +336,13 @@ export default class InvocationModel {
   getStatusClass() {
     let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
     if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
-      return "disconnected"
+      return "disconnected";
     }
     if (!this.started) {
-      return "neutral"
+      return "neutral";
     }
     if (!this.finished) {
-      return "in-progress"
+      return "in-progress";
     }
     return this.finished.exitCode.code == 0 ? "success" : "failure";
   }
@@ -322,15 +364,19 @@ export default class InvocationModel {
   getStatusIcon() {
     let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
     if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
-      return <img className="icon" src="/image/help-circle.svg" />
+      return <img className="icon" src="/image/help-circle.svg" />;
     }
     if (!this.started) {
-      return <img className="icon" src="/image/help-circle.svg" />
+      return <img className="icon" src="/image/help-circle.svg" />;
     }
     if (!this.finished) {
-      return <img className="icon" src="/image/play-circle.svg" />
+      return <img className="icon" src="/image/play-circle.svg" />;
     }
-    return this.finished.exitCode.code == 0 ? <img className="icon" src="/image/check-circle.svg" /> : <img className="icon" src="/image/x-circle.svg" />;
+    return this.finished.exitCode.code == 0 ? (
+      <img className="icon" src="/image/check-circle.svg" />
+    ) : (
+      <img className="icon" src="/image/x-circle.svg" />
+    );
   }
 
   getCPU() {
@@ -343,8 +389,8 @@ export default class InvocationModel {
 
   getDuration(completionTime: any, beginTime: any) {
     if (!completionTime || !beginTime) return "";
-    let nanos = ((+completionTime.nanos) - (+beginTime.nanos)) / 1000000000
-    return `${((+completionTime.seconds) - (+beginTime.seconds) + nanos).toFixed(3)}`;
+    let nanos = (+completionTime.nanos - +beginTime.nanos) / 1000000000;
+    return `${(+completionTime.seconds - +beginTime.seconds + nanos).toFixed(3)}`;
   }
 
   getRuntime(label: string) {
@@ -352,9 +398,12 @@ export default class InvocationModel {
     if (testResult) {
       return +testResult.totalRunDurationMillis / 1000 + " seconds";
     }
-    return this.getDuration(
-      this.completedMap.get(label)?.eventTime,
-      this.configuredMap.get(label)?.eventTime) + " seconds";
+    return (
+      this.getDuration(
+        this.completedMap.get(label)?.eventTime,
+        this.configuredMap.get(label)?.eventTime
+      ) + " seconds"
+    );
   }
 
   getTestSize(testSize: build_event_stream.TestSize) {

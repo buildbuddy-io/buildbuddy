@@ -12,17 +12,21 @@ export class Capabilities {
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
     this.version = window.buildbuddyConfig && window.buildbuddyConfig.version;
-    this.auth = window.buildbuddyConfig && window.buildbuddyConfig.configured_issuers && window.buildbuddyConfig.configured_issuers.length && window.buildbuddyConfig.configured_issuers[0];
+    this.auth =
+      window.buildbuddyConfig &&
+      window.buildbuddyConfig.configured_issuers &&
+      window.buildbuddyConfig.configured_issuers.length &&
+      window.buildbuddyConfig.configured_issuers[0];
     this.github = window.buildbuddyConfig && window.buildbuddyConfig.github_enabled;
     this.anonymous = window.buildbuddyConfig && window.buildbuddyConfig.anonymous_usage_enabled;
     this.enterprise = enterprise;
     this.paths = new Set(paths);
-    window.gtag('set', {
-      'app_name': this.name,
-      'app_version': this.version,
-      'app_installer_id': window.location.host
+    window.gtag("set", {
+      app_name: this.name,
+      app_version: this.version,
+      app_installer_id: window.location.host,
     });
-    window.gtag('config', 'UA-156160991-2');
+    window.gtag("config", "UA-156160991-2");
     this.didNavigateToPath();
   }
 
@@ -31,9 +35,9 @@ export class Capabilities {
   }
 
   didNavigateToPath() {
-    window.gtag('event', 'path', {
-      event_category: 'navigate',
-      event_label: window.location.pathname + window.location.search + window.location.hash
+    window.gtag("event", "path", {
+      event_category: "navigate",
+      event_label: window.location.pathname + window.location.search + window.location.hash,
     });
   }
 }
