@@ -51,8 +51,6 @@ type Env interface {
 	GetSchedulerClient() scpb.SchedulerClient
 	GetExecutionClient() repb.ExecutionClient
 	GetContentAddressableStorageClient() repb.ContentAddressableStorageClient
-	GetExecutionRouterService() interfaces.ExecutionRouterService
-	GetExecutionDB() interfaces.ExecutionDB
 	GetAPIService() interfaces.ApiService
 	GetFileCache() interfaces.FileCache
 	GetExecutionService() interfaces.ExecutionService
