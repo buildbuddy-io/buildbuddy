@@ -1,5 +1,5 @@
-import { buildbuddy } from '../../proto/buildbuddy_service_ts_proto';
-import events from 'fbemitter';
+import { buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
+import events from "fbemitter";
 
 class RpcService {
   service: buildbuddy.service.BuildBuddyService;
@@ -11,18 +11,31 @@ class RpcService {
   }
 
   downloadBytestreamFile(filename: string, bytestreamURL: string, invocationId: string) {
-    window.open(`/file/download?filename=${encodeURI(filename)}&bytestream_url=${encodeURIComponent(bytestreamURL)}&invocation_id=${invocationId}`);
+    window.open(
+      `/file/download?filename=${encodeURI(filename)}&bytestream_url=${encodeURIComponent(
+        bytestreamURL
+      )}&invocation_id=${invocationId}`
+    );
   }
 
-  fetchBytestreamFile(bytestreamURL: string, invocationId: string, responseType?: "arraybuffer" | "json" | "text" | undefined) {
-    return this.fetchFile(`/file/download?bytestream_url=${encodeURIComponent(bytestreamURL)}&invocation_id=${invocationId}`, responseType || "");
+  fetchBytestreamFile(
+    bytestreamURL: string,
+    invocationId: string,
+    responseType?: "arraybuffer" | "json" | "text" | undefined
+  ) {
+    return this.fetchFile(
+      `/file/download?bytestream_url=${encodeURIComponent(
+        bytestreamURL
+      )}&invocation_id=${invocationId}`,
+      responseType || ""
+    );
   }
 
   fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | "") {
     return new Promise((resolve, reject) => {
       var request = new XMLHttpRequest();
       request.responseType = responseType;
-      request.open('GET', fileURL, true);
+      request.open("GET", fileURL, true);
       request.onload = function () {
         if (this.status >= 200 && this.status < 400) {
           resolve(this.response);
@@ -39,14 +52,14 @@ class RpcService {
 
   rpc(method: any, requestData: any, callback: any) {
     var request = new XMLHttpRequest();
-    request.open('POST', `/rpc/BuildBuddyService/${method.name}`, true);
+    request.open("POST", `/rpc/BuildBuddyService/${method.name}`, true);
 
-    request.setRequestHeader('Content-Type', 'application/proto');
-    request.responseType = 'arraybuffer';
+    request.setRequestHeader("Content-Type", "application/proto");
+    request.responseType = "arraybuffer";
     request.onload = () => {
       if (request.status >= 200 && request.status < 400) {
         callback(null, new Uint8Array(request.response));
-        this.events.emit(method.name, 'completed');
+        this.events.emit(method.name, "completed");
         console.log(`Emitting event [${method.name}]`);
       } else {
         callback(`Error: ${new TextDecoder("utf-8").decode(new Uint8Array(request.response))}`);
@@ -54,11 +67,11 @@ class RpcService {
     };
 
     request.onerror = () => {
-      callback('Error: Connection error');
+      callback("Error: Connection error");
     };
 
     request.send(requestData);
-  };
+  }
 }
 
 export default new RpcService();

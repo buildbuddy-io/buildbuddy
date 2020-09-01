@@ -1,16 +1,15 @@
-import React from 'react';
-import format from '../format/format'
-import SetupCodeComponent from '../docs/setup_code'
+import React from "react";
+import format from "../format/format";
+import SetupCodeComponent from "../docs/setup_code";
 
-import { invocation } from '../../proto/invocation_ts_proto';
-import { build_event_stream } from '../../proto/build_event_stream_ts_proto';
-import { TerminalComponent } from '../terminal/terminal'
-import rpcService from '../service/rpc_service';
-
+import { invocation } from "../../proto/invocation_ts_proto";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { TerminalComponent } from "../terminal/terminal";
+import rpcService from "../service/rpc_service";
 
 interface Props {
-  testResult: invocation.InvocationEvent,
-  invocationId: string,
+  testResult: invocation.InvocationEvent;
+  invocationId: string;
 }
 
 interface State {
@@ -23,10 +22,10 @@ export default class TargetTestLogCardComponent extends React.Component {
   props: Props;
 
   state: State = {
-    testLog: '',
+    testLog: "",
     cacheEnabled: true,
     loading: false,
-  }
+  };
 
   componentDidMount() {
     this.fetchTestLog();
@@ -39,7 +38,9 @@ export default class TargetTestLogCardComponent extends React.Component {
   }
 
   fetchTestLog() {
-    let testLogUrl = this.props.testResult.buildEvent.testResult.testActionOutput.find((log: any) => log.name == "test.log")?.uri;
+    let testLogUrl = this.props.testResult.buildEvent.testResult.testActionOutput.find(
+      (log: any) => log.name == "test.log"
+    )?.uri;
 
     if (!testLogUrl) {
       return;
@@ -51,11 +52,18 @@ export default class TargetTestLogCardComponent extends React.Component {
     }
 
     this.setState({ ...this.state, loading: true });
-    rpcService.fetchBytestreamFile(testLogUrl, this.props.invocationId).then((contents: string) => {
-      this.setState({ ...this.state, testLog: contents, loading: false });
-    }).catch(() => {
-      this.setState({ ...this.state, loading: false, testLog: "Error loading bytestream test.log!" });
-    });
+    rpcService
+      .fetchBytestreamFile(testLogUrl, this.props.invocationId)
+      .then((contents: string) => {
+        this.setState({ ...this.state, testLog: contents, loading: false });
+      })
+      .catch(() => {
+        this.setState({
+          ...this.state,
+          loading: false,
+          testLog: "Error loading bytestream test.log!",
+        });
+      });
   }
 
   getStatusTitle(status: build_event_stream.TestStatus) {
@@ -82,21 +90,56 @@ export default class TargetTestLogCardComponent extends React.Component {
   }
 
   render() {
-    return <div className={`card ${this.state.cacheEnabled && "dark"} ${this.props.testResult.buildEvent.testResult.status == build_event_stream.TestStatus.PASSED ? "card-success" : "card-failure"}`}>
-      <img className="icon" src="/image/log-circle-light.svg" />
-      <div className="content">
-        <div className="title">Test log</div>
-        <div className="test-subtitle">{this.getStatusTitle(this.props.testResult.buildEvent.testResult.status)} in {format.durationMillis(this.props.testResult.buildEvent.testResult.testAttemptDurationMillis)} on Shard {this.props.testResult.buildEvent.id.testResult.shard} (Run {this.props.testResult.buildEvent.id.testResult.run}, Attempt {this.props.testResult.buildEvent.id.testResult.attempt})</div>
-        {!this.state.cacheEnabled &&
-          <div className="empty-state">
-            Test log uploading isn't enabled for this invocation.<br /><br />
-            To enable test log uploading you must add GRPC remote caching. You can do so by checking <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your invocation:
-            <SetupCodeComponent />
-          </div>}
-        {this.state.cacheEnabled && this.state.testLog && <div className="test-log"><TerminalComponent value={this.state.testLog} /></div>}
-        {this.state.cacheEnabled && this.state.loading && <span><br />Loading...</span>}
-        {this.state.cacheEnabled && !this.state.loading && !this.state.testLog && <span><br />Empty log</span>}
+    return (
+      <div
+        className={`card ${this.state.cacheEnabled && "dark"} ${
+          this.props.testResult.buildEvent.testResult.status == build_event_stream.TestStatus.PASSED
+            ? "card-success"
+            : "card-failure"
+        }`}
+      >
+        <img className="icon" src="/image/log-circle-light.svg" />
+        <div className="content">
+          <div className="title">Test log</div>
+          <div className="test-subtitle">
+            {this.getStatusTitle(this.props.testResult.buildEvent.testResult.status)} in{" "}
+            {format.durationMillis(
+              this.props.testResult.buildEvent.testResult.testAttemptDurationMillis
+            )}{" "}
+            on Shard {this.props.testResult.buildEvent.id.testResult.shard} (Run{" "}
+            {this.props.testResult.buildEvent.id.testResult.run}, Attempt{" "}
+            {this.props.testResult.buildEvent.id.testResult.attempt})
+          </div>
+          {!this.state.cacheEnabled && (
+            <div className="empty-state">
+              Test log uploading isn't enabled for this invocation.
+              <br />
+              <br />
+              To enable test log uploading you must add GRPC remote caching. You can do so by
+              checking <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and
+              re-running your invocation:
+              <SetupCodeComponent />
+            </div>
+          )}
+          {this.state.cacheEnabled && this.state.testLog && (
+            <div className="test-log">
+              <TerminalComponent value={this.state.testLog} />
+            </div>
+          )}
+          {this.state.cacheEnabled && this.state.loading && (
+            <span>
+              <br />
+              Loading...
+            </span>
+          )}
+          {this.state.cacheEnabled && !this.state.loading && !this.state.testLog && (
+            <span>
+              <br />
+              Empty log
+            </span>
+          )}
+        </div>
       </div>
-    </div>
+    );
   }
 }

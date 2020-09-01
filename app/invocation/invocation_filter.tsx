@@ -1,10 +1,10 @@
-import React from 'react';
+import React from "react";
 
-import router from '../router/router';
+import router from "../router/router";
 
 interface Props {
-  hash: string,
-  search: URLSearchParams,
+  hash: string;
+  search: URLSearchParams;
 }
 
 export default class InvocationFilterComponent extends React.Component {
@@ -12,17 +12,26 @@ export default class InvocationFilterComponent extends React.Component {
 
   handleFilterChange(event: any) {
     let value = encodeURIComponent(event.target.value);
-    let params = this.props.hash == "#artifacts" ? { "artifactFilter": value } : { "targetFilter": value };
+    let params =
+      this.props.hash == "#artifacts" ? { artifactFilter: value } : { targetFilter: value };
     router.updateParams(params);
   }
 
   render() {
-    return <div className="filter">
-      <img src="/image/filter.svg" />
-      <input value={this.props.search.get(this.props.hash == "#artifacts" ? "artifactFilter" : "targetFilter") || ""}
-        className="filter-input"
-        placeholder="Filter..."
-        onChange={this.handleFilterChange.bind(this)} />
-    </div>
+    return (
+      <div className="filter">
+        <img src="/image/filter.svg" />
+        <input
+          value={
+            this.props.search.get(
+              this.props.hash == "#artifacts" ? "artifactFilter" : "targetFilter"
+            ) || ""
+          }
+          className="filter-input"
+          placeholder="Filter..."
+          onChange={this.handleFilterChange.bind(this)}
+        />
+      </div>
+    );
   }
 }
