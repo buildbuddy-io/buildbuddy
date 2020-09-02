@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import time
+import tempfile
 
 # Don't care about py2/py3 differences too much.
 try:
@@ -89,7 +90,12 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     if len(release_notes) > 0:
         commit_message = "\n".join([commit_message, release_notes])
 
-    tag_cmd = 'git tag -a %s -m "%s"' % (new_version, commit_message.replace('"', '\''))
+    commit_msg_file = tempfile.NamedTemporaryFile(delete=False)
+    commit_msg_file_name = commit_msg_file.name
+    commit_msg_file.write(commit_message)
+    commit_msg_file.close()
+
+    tag_cmd = 'git tag -a %s -F "%s"' % (new_version, commit_msg_file_name)
     run_or_die(tag_cmd)
     push_tag_cmd = 'git push origin %s' % new_version
     run_or_die(push_tag_cmd)
