@@ -83,7 +83,7 @@ func (s *ActionCacheServer) checkDirExists(ctx context.Context, cache interfaces
 func (s *ActionCacheServer) validateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.ActionResult) error {
 	outputFileDigests := make([]*repb.Digest, 0, len(r.OutputFiles))
 	for _, f := range r.OutputFiles {
-		if len(f.Contents) > 0 && f.GetDigest().GetSizeBytes() > 0 {
+		if f.GetDigest().GetSizeBytes() > 0 {
 			outputFileDigests = append(outputFileDigests, f.GetDigest())
 		}
 	}
