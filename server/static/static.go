@@ -73,12 +73,12 @@ func handleRootPaths(env environment.Env, relPath string, rootPaths []string, te
 	})
 }
 
-func serveIndexTemplate(env environment.Env, template *template.Template, version string, w http.ResponseWriter) {
+func serveIndexTemplate(env environment.Env, tpl *template.Template, version string, w http.ResponseWriter) {
 	issuers := make([]string, 0)
 	for _, provider := range env.GetConfigurator().GetAuthOauthProviders() {
 		issuers = append(issuers, provider.IssuerURL)
 	}
-	err := template.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendConfig{
+	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendConfig{
 		Version:               version,
 		ConfiguredIssuers:     issuers,
 		DefaultToDenseMode:    env.GetConfigurator().GetDefaultToDenseMode(),
