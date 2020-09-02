@@ -106,9 +106,9 @@ def build_artifacts(repo_name, new_version):
     return "/tmp/%s.tar.gz" % repo_name
 
 def update_docker_image(new_version):
-    version_build_cmd = 'bazel run -c opt --define version=server-image-%s --define release=true deployment:release_onprem' % new_version
+    version_build_cmd = 'bazel run -c opt --stamp --define version=server-image-%s --define release=true deployment:release_onprem' % new_version
     run_or_die(version_build_cmd)
-    latest_build_cmd = 'bazel run -c opt --define version=latest --define release=true deployment:release_onprem'
+    latest_build_cmd = 'bazel run -c opt --stamp --define version=latest --define release=true deployment:release_onprem'
     run_or_die(latest_build_cmd)
 
 def generate_release_notes(old_version):
