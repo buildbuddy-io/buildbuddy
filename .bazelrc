@@ -53,9 +53,6 @@ build --workspace_status_command=$(pwd)/workspace_status.sh
 # Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
 build --incompatible_strict_action_env
 
-# Stamp the binary with machine, scm info, etc.
-build --stamp
-
 # Try importing a user specific .bazelrc
 # You can create your own by copying and editing the template-user.bazelrc template:
 # cp template-user.bazelrc user.bazelrc
