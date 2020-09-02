@@ -15,6 +15,8 @@ interface State {
   threadMap: Map<number, Thread>;
   timingEnabled: boolean;
   buildInProgress: boolean;
+  /** Whether the "command.profile.gz" file is missing from BuildToolLogs. */
+  isMissingProfile: boolean;
   sortBy: string;
   groupBy: string;
   threadPageSize: number;
@@ -48,6 +50,7 @@ export default class InvocationTimingCardComponent extends React.Component {
     threadMap: new Map<number, Thread>(),
     timingEnabled: true,
     buildInProgress: false,
+    isMissingProfile: false,
     sortBy: window.localStorage[sortByStorageKey] || sortByTimeAscStorageValue,
     groupBy: window.localStorage[groupByStorageKey] || groupByThreadStorageValue,
     threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
@@ -71,7 +74,12 @@ export default class InvocationTimingCardComponent extends React.Component {
     )?.uri;
 
     if (!profileUrl) {
-      this.setState({ ...this.state, buildInProgress: true });
+      const hasBuildToolLogs = this.props.model.buildToolLogs;
+      this.setState({
+        ...this.state,
+        buildInProgress: !hasBuildToolLogs,
+        isMissingProfile: hasBuildToolLogs,
+      });
       return;
     }
 
@@ -288,6 +296,12 @@ export default class InvocationTimingCardComponent extends React.Component {
             </div>
           </div>
           {this.state.buildInProgress && <div className="empty-state">Build is in progress...</div>}
+          {this.state.isMissingProfile && (
+            <div className="empty-state">
+              Could not find profile info. This might be because Bazel was invoked with a
+              non-default <span className="inline-code">--profile</span> flag.
+            </div>
+          )}
           {!this.state.timingEnabled && (
             <div className="empty-state">
               Profiling isn't enabled for this invocation.

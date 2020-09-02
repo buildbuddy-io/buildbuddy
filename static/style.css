@@ -789,6 +789,13 @@ code .comment {
   color: #fff;
 }
 
+.inline-code {
+  font-family: "Source Code Pro", monospace;
+  background: #eee;
+  border-radius: 2px;
+  padding: 2px;
+}
+
 .expanded .terminal {
   height: calc(100vh - 200px);
 }
@@ -1301,7 +1308,7 @@ code .comment {
 }
 
 .dense .empty-state {
-  padding: 0 16px;
+  padding: 0;
 }
 
 .dense .history-overview.container {
