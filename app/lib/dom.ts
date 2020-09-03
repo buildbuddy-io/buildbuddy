@@ -1,4 +1,4 @@
-export function isInSubtreeOf(element: Element, potentialDescendant: Element) {
+export function isInSubtreeOf(element: Element, target: Element) {
   let current: Element | null = target;
   while (current) {
     if (current === element) return true;
