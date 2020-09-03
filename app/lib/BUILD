@@ -4,6 +4,7 @@ package(default_visibility = ["//visibility:public"])
 
 ts_library(
     name = "lib",
+    module_name = "lib",
     srcs = glob(["*.ts", "*.tsx"]),
     deps = [
         "@npm//@types/react",
