@@ -1500,3 +1500,78 @@ code .comment {
 .terminal ::-webkit-scrollbar-corner {
   background-color: transparent;
 }
+
+.hScrollTrack {
+  position: absolute;
+  bottom: 0;
+  height: 14px;
+  left: 0;
+  right: 14px;
+  background: transparent;
+}
+
+.hScrollThumb {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  height: 100%;
+}
+
+.hScrollThumb,
+.viewport::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 2px;
+}
+
+.viewport::-webkit-scrollbar-corner {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.viewport::-webkit-scrollbar-thumb {
+  width: 14px;
+}
+
+.hScrollThumb:hover,
+.viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.hScrollThumb:active {
+  background: rgba(0, 0, 0, 1);
+}
+
+/** Flame chart */
+
+.profile-flame-chart {
+  position: relative;
+  width: 100%;
+  height: 200px;
+  margin: 16px 0;
+}
+
+.viewport::-webkit-scrollbar,
+.viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.profile-flame-chart .viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #f3f3f3;
+  position: relative;
+  overflow: scroll;
+}
+
+.profile-flame-chart .tracks {
+  /* NOTE: this height gets overwritten */
+  height: 500px;
+  min-width: 100%;
+}
+
+.profile-flame-chart rect.hover {
+  stroke: black;
+  stroke-width: 1;
+}

@@ -11,6 +11,7 @@ ts_library(
         "//app/docs",
         "//app/favicon",
         "//app/format",
+        "//app/invocation/profile",
         "//app/router",
         "//app/service",
         "//app/target",

@@ -8,6 +8,7 @@ export class Capabilities {
   github: boolean;
   auth: string;
   anonymous: boolean;
+  flameChart: boolean;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
@@ -21,6 +22,8 @@ export class Capabilities {
     this.anonymous = window.buildbuddyConfig && window.buildbuddyConfig.anonymous_usage_enabled;
     this.enterprise = enterprise;
     this.paths = new Set(paths);
+    this.flameChart =
+      window.localStorage.getItem("buildbuddy://flags/flame_chart_enabled") === "true";
     window.gtag("set", {
       app_name: this.name,
       app_version: this.version,

@@ -90,7 +90,7 @@ export class AnimatedValue {
     return this.max_;
   }
 
-  step(dt: number, { p = 0.02, e = 0.01 } = {}) {
+  step(dt: number, { p = 0.02, e = 0.05 } = {}) {
     const error = this.target_ - this.value_;
     const correction = error * dt * p;
 
