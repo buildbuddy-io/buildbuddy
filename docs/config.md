@@ -50,12 +50,14 @@ Here's a full list of BuildBuddy's configuration sections:
 - [Cache](config-cache.md) - configuration options for BuildBuddy's built-in Remote Build Cache.
 - [Integrations](config-integrations.md) - configure integrations with other services.
 - [SSL](config-ssl.md) - configure SSL/TLS certificates and setup.
+- [Github](config-github.md) - configure your Github integration.
 - [Misc](config-misc.md) - miscellaneous configuration options.
 
 **Enterprise only**
 
 - [Auth](config-auth.md) - configure authentication providers.
 - [API](config-api.md) - configure BuildBuddy API.
+- [Org](config-org.md) - configure BuildBuddy Organization.
 
 ## Flags
 
