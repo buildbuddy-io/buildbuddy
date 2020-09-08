@@ -22,13 +22,13 @@ export class HorizontalScrollbarController {
     this.thumb!.setAttribute("aria-controls", scrollingElement.id);
 
     this.disposer
-      .subscribe(this.thumb!, "mousedown", this.onMouseDown)
-      .subscribe(scrollingElement, "mouseenter", this.onMouseEnterScrollingElement)
-      .subscribe(scrollingElement, "mouseleave", this.onMouseOutScrollingElement)
-      .subscribe(scrollingElement, "wheel", this.onWheelScrollingElement)
-      .subscribe(window, "mousemove", this.onMouseMove)
-      .subscribe(window, "mouseup", this.onMouseUp)
-      .subscribe(window, "keydown", this.onKeyDown);
+      .subscribe(this.thumb!, "mousedown", this.onMouseDown.bind(this))
+      .subscribe(scrollingElement, "mouseenter", this.onMouseEnterScrollingElement.bind(this))
+      .subscribe(scrollingElement, "mouseleave", this.onMouseOutScrollingElement.bind(this))
+      .subscribe(scrollingElement, "wheel", this.onWheelScrollingElement.bind(this))
+      .subscribe(window, "mousemove", this.onMouseMove.bind(this))
+      .subscribe(window, "mouseup", this.onMouseUp.bind(this))
+      .subscribe(window, "keydown", this.onKeyDown.bind(this));
   }
 
   private thumbWidth = 0;
@@ -67,7 +67,7 @@ export class HorizontalScrollbarController {
   private minMouseX = 0;
   private maxMouseX = 0;
   private mouseX = 0;
-  onMouseDown = (e: MouseEvent) => {
+  onMouseDown(e: MouseEvent) {
     if (e.buttons & 1) {
       this.isScrolling = true;
       const thumb = this.thumb!.getBoundingClientRect();
@@ -76,8 +76,8 @@ export class HorizontalScrollbarController {
       this.maxMouseX = e.clientX + (track.x + track.width - (thumb.x + thumb.width));
     }
     this.updateMouse(e);
-  };
-  onMouseMove = (e: MouseEvent) => {
+  }
+  onMouseMove(e: MouseEvent) {
     if (!this.isScrolling) return;
     if (!(e.buttons & 1)) {
       this.isScrolling = false;
@@ -94,31 +94,31 @@ export class HorizontalScrollbarController {
       this.scrollEvent.animate = false;
       this.events.dispatch("scroll", this.scrollEvent);
     }
-  };
-  onMouseUp = (e: MouseEvent) => {
+  }
+  onMouseUp(e: MouseEvent) {
     this.updateMouse(e);
     this.isScrolling = false;
-  };
-  updateMouse = (e: MouseEvent) => {
+  }
+  updateMouse(e: MouseEvent) {
     this.mouseX = Math.min(this.maxMouseX, Math.max(this.minMouseX, e.clientX));
-  };
+  }
 
   private isMouseInside = false;
-  onMouseEnterScrollingElement = (e: MouseEvent) => {
+  onMouseEnterScrollingElement(e: MouseEvent) {
     this.isMouseInside = true;
-  };
-  onMouseOutScrollingElement = (e: MouseEvent) => {
+  }
+  onMouseOutScrollingElement(e: MouseEvent) {
     this.isMouseInside = false;
-  };
-  onWheelScrollingElement = (e: WheelEvent) => {
+  }
+  onWheelScrollingElement(e: WheelEvent) {
     if (e.shiftKey) {
       e.preventDefault();
       this.scrollEvent.delta = e.deltaY;
       this.scrollEvent.animate = true;
       this.events.dispatch("scroll", this.scrollEvent);
     }
-  };
-  onKeyDown = (e: KeyboardEvent) => {
+  }
+  onKeyDown(e: KeyboardEvent) {
     if (!this.isMouseInside || e.ctrlKey || e.shiftKey) return;
 
     if (e.which === 39 || e.which === 37) {
@@ -128,7 +128,7 @@ export class HorizontalScrollbarController {
       this.scrollEvent.animate = true;
       this.events.dispatch("scroll", this.scrollEvent);
     }
-  };
+  }
 
   dispose() {
     this.disposer.dispose();
