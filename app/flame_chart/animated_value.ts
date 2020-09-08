@@ -1,42 +1,5 @@
-import { clamp } from "./math";
-import { TimeDelta } from "./time";
-
-export class AnimationLoop {
-  private dt = new TimeDelta();
-
-  constructor(private callback: (dt: number) => void, private enabled_ = false) {
-    if (enabled_) {
-      this.start();
-    }
-  }
-
-  private loop() {
-    if (!this.enabled_ || this.isNextFrameScheduled) return;
-
-    this.dt.update();
-    this.callback(this.dt.get());
-    this.scheduleNextFrame();
-  }
-
-  private isNextFrameScheduled = false;
-  private scheduleNextFrame() {
-    if (this.isNextFrameScheduled) return;
-    this.isNextFrameScheduled = true;
-    requestAnimationFrame(() => {
-      this.isNextFrameScheduled = false;
-      this.loop();
-    });
-  }
-
-  start() {
-    this.enabled_ = true;
-    this.loop();
-  }
-
-  stop() {
-    this.enabled_ = false;
-    this.dt.reset();
-  }
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 /**

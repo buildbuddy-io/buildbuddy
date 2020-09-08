@@ -22,14 +22,6 @@ ts_library(
 )
 
 ts_library(
-    name = "dom",
-    srcs = ["dom.ts"],
-    deps = [
-        "@npm//tslib",
-    ]
-)
-
-ts_library(
     name = "events",
     srcs = ["events.ts"],
     deps = [
