@@ -1,7 +1,3 @@
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
 /**
  * A value that is animated according to an ease-out curve.
  */
