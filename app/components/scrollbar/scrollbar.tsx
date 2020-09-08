@@ -1,12 +1,19 @@
 import React from "react";
 import { v4 as uuid } from "uuid";
-import { Subject, Subscription, fromEvent } from "rxjs";
+import { Subscription, fromEvent } from "rxjs";
 
-export type ScrollEvent = { delta: number; animate: boolean };
+export type ScrollEvent = {
+  delta: number;
+  animate: boolean;
+};
 
-export class HorizontalScrollbarComponent extends React.Component {
-  public readonly scrollEvents = new Subject<ScrollEvent>();
+export type HorizontalScrollbarProps = {
+  onScroll?: (event: ScrollEvent) => any;
+};
 
+const preventDefaultOnDrag = (e: React.DragEvent<HTMLDivElement>) => e.preventDefault();
+
+export class HorizontalScrollbar extends React.Component<HorizontalScrollbarProps> {
   private track: HTMLDivElement | null = null;
   private thumb: HTMLDivElement | null = null;
 
@@ -15,6 +22,10 @@ export class HorizontalScrollbarComponent extends React.Component {
   private thumbWidth = 0;
   private scrollableWidth = 0;
   private thumbX = 0;
+  private isScrolling = false;
+  private minMouseX = 0;
+  private maxMouseX = 0;
+  private mouseX = 0;
 
   // Single scroll event here avoids creating too many objects.
   private scrollEvent: ScrollEvent = { delta: 0, animate: false };
@@ -22,10 +33,11 @@ export class HorizontalScrollbarComponent extends React.Component {
   private subscription = new Subscription();
 
   private trackRef = React.createRef<HTMLDivElement>();
+  private thumbRef = React.createRef<HTMLDivElement>();
 
   componentDidMount() {
     this.track = this.trackRef.current;
-    this.thumb = this.track.children[0] as any;
+    this.thumb = this.thumbRef.current;
     const scrollingElement = this.track.parentElement;
     if (!scrollingElement.id) {
       scrollingElement.id = uuid();
@@ -33,7 +45,6 @@ export class HorizontalScrollbarComponent extends React.Component {
     this.thumb!.setAttribute("aria-controls", scrollingElement.id);
 
     this.subscription
-      .add(fromEvent(this.thumb!, "mousedown").subscribe(this.onThumbMouseDown.bind(this)))
       .add(
         fromEvent(scrollingElement, "mouseenter").subscribe(
           this.onMouseEnterScrollingElement.bind(this)
@@ -50,7 +61,7 @@ export class HorizontalScrollbarComponent extends React.Component {
       .add(fromEvent(window, "keydown").subscribe(this.onWindowKeyDown.bind(this)));
   }
 
-  update({ scrollLeft, scrollLeftMax }: { scrollLeft: number; scrollLeftMax: number }) {
+  public update({ scrollLeft, scrollLeftMax }: { scrollLeft: number; scrollLeftMax: number }) {
     if (!this.track) return;
 
     this.scrollLeft = scrollLeft;
@@ -76,11 +87,7 @@ export class HorizontalScrollbarComponent extends React.Component {
     );
   }
 
-  private isScrolling = false;
-  private minMouseX = 0;
-  private maxMouseX = 0;
-  private mouseX = 0;
-  onThumbMouseDown(e: MouseEvent) {
+  private onThumbMouseDown(e: MouseEvent) {
     if (e.buttons & 1) {
       this.isScrolling = true;
       const thumb = this.thumb!.getBoundingClientRect();
@@ -90,7 +97,8 @@ export class HorizontalScrollbarComponent extends React.Component {
     }
     this.updateMouse(e);
   }
-  onWindowMouseMove(e: MouseEvent) {
+
+  private onWindowMouseMove(e: MouseEvent) {
     if (!this.isScrolling) return;
     if (!(e.buttons & 1)) {
       this.isScrolling = false;
@@ -102,49 +110,49 @@ export class HorizontalScrollbarComponent extends React.Component {
     const deltaX = this.mouseX - lastX;
 
     if (deltaX !== 0 && this.track!.clientWidth - this.thumbWidth !== 0) {
-      this.scrollEvent.delta =
-        (deltaX / (this.track!.clientWidth - this.thumbWidth)) * this.scrollLeftMax;
-      this.scrollEvent.animate = false;
-      this.scrollEvents.next(this.scrollEvent);
+      this.publishScrollEvent(
+        (deltaX / (this.track!.clientWidth - this.thumbWidth)) * this.scrollLeftMax,
+        false
+      );
     }
   }
-  onWindowMouseUp(e: MouseEvent) {
+  private onWindowMouseUp(e: MouseEvent) {
     this.updateMouse(e);
     this.isScrolling = false;
   }
-  updateMouse(e: MouseEvent) {
+  private updateMouse(e: MouseEvent) {
     this.mouseX = Math.min(this.maxMouseX, Math.max(this.minMouseX, e.clientX));
   }
 
   private isMouseInside = false;
-  onMouseEnterScrollingElement(e: MouseEvent) {
+  private onMouseEnterScrollingElement() {
     this.isMouseInside = true;
   }
-  onMouseLeaveScrollingElement(e: MouseEvent) {
+  private onMouseLeaveScrollingElement() {
     this.isMouseInside = false;
   }
-  onWheelScrollingElement(e: WheelEvent) {
+  private onWheelScrollingElement(e: WheelEvent) {
     if (e.shiftKey) {
       e.preventDefault();
-      this.scrollEvent.delta = e.deltaY;
-      this.scrollEvent.animate = true;
-      this.scrollEvents.next(this.scrollEvent);
+      this.publishScrollEvent(e.deltaY);
     }
   }
-  onWindowKeyDown(e: KeyboardEvent) {
+  private onWindowKeyDown(e: KeyboardEvent) {
     if (!this.isMouseInside || e.ctrlKey || e.shiftKey) return;
 
     if (e.which === 39 || e.which === 37) {
       e.preventDefault();
       const dir = e.which - 38;
-      this.scrollEvent.delta = 40 * dir;
-      this.scrollEvent.animate = true;
-      this.scrollEvents.next(this.scrollEvent);
+      this.publishScrollEvent(40 * dir);
     }
   }
 
-  componentWillUnmount() {
-    this.subscription.unsubscribe();
+  private publishScrollEvent(delta: number, animate: boolean = true) {
+    this.scrollEvent.delta = delta;
+    this.scrollEvent.animate = animate;
+    if (this.props.onScroll) {
+      this.props.onScroll(this.scrollEvent);
+    }
   }
 
   render() {
@@ -152,7 +160,7 @@ export class HorizontalScrollbarComponent extends React.Component {
       <div
         className="hScrollTrack"
         ref={this.trackRef}
-        onDragStart={(e) => e.preventDefault()}
+        onDragStart={preventDefaultOnDrag}
         role="scrollbar"
         // This is set to the parent element's ID on mount
         aria-controls=""
@@ -161,8 +169,16 @@ export class HorizontalScrollbarComponent extends React.Component {
         aria-valuemax={100}
         aria-valuenow={0}
       >
-        <div className="hScrollThumb" />
+        <div
+          className="hScrollThumb"
+          ref={this.thumbRef}
+          onMouseDown={this.onThumbMouseDown.bind(this)}
+        />
       </div>
     );
+  }
+
+  componentWillUnmount() {
+    this.subscription.unsubscribe();
   }
 }
