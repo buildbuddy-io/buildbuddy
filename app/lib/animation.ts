@@ -39,6 +39,9 @@ export class AnimationLoop {
   }
 }
 
+/**
+ * A value that is animated according to an ease-out curve.
+ */
 export class AnimatedValue {
   private target_: number;
   private value_: number;
@@ -91,14 +94,30 @@ export class AnimatedValue {
     return this.max_;
   }
 
-  step(dt: number, { p = 0.02, e = 0.01 } = {}) {
-    const error = this.target_ - this.value_;
-    const correction = error * dt * p;
+  /**
+   * Steps `value` towards `target` according to an "ease-out" curve.
+   *
+   * Let `distance` be the current distance between `target` and `value`:
+   *
+   * - `rate` is the fraction of `distance` covered per millisecond in this step
+   *
+   * - `threshold` is the minimum distance at which `value` and `target` are considered
+   *   visually equal. This allows pausing the animation loop when `value === target`.
+   *
+   * @param dt step time in milliseconds
+   * @param options rate and threshold (optional)
+   */
+  step(dt: number, { rate = 0.02, threshold = 0.01 } = {}) {
+    const distance = this.target_ - this.value_;
+    const stepAmount = distance * rate * dt;
 
-    if (Math.abs(correction) > Math.abs(error) || Math.abs(this.value_ - this.target_) < e) {
+    if (
+      Math.abs(stepAmount) > Math.abs(distance) ||
+      Math.abs(this.value_ - this.target_) < threshold
+    ) {
       this.value_ = this.target_;
     } else {
-      this.value_ = this.value_ + correction;
+      this.value_ = this.value_ + stepAmount;
     }
 
     this.value_ = clamp(this.value_, this.min_, this.max_);
