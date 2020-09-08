@@ -8,7 +8,7 @@ ts_library(
     deps = [
         ":math",
         "@npm//tslib",
-    ]
+    ],
 )
 
 ts_library(
@@ -17,7 +17,7 @@ ts_library(
     deps = [
         ":time_delta",
         "@npm//tslib",
-    ]
+    ],
 )
 
 ts_library(
@@ -25,7 +25,7 @@ ts_library(
     srcs = ["dom.ts"],
     deps = [
         "@npm//tslib",
-    ]
+    ],
 )
 
 ts_library(
@@ -33,7 +33,7 @@ ts_library(
     srcs = ["time_delta.ts"],
     deps = [
         "@npm//tslib",
-    ]
+    ],
 )
 
 ts_library(
@@ -41,7 +41,7 @@ ts_library(
     srcs = ["math.ts"],
     deps = [
         "@npm//tslib",
-    ]
+    ],
 )
 
 ts_library(
@@ -49,5 +49,5 @@ ts_library(
     srcs = ["memo.ts"],
     deps = [
         "@npm//tslib",
-    ]
+    ],
 )
