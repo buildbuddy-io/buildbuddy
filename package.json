@@ -10,12 +10,20 @@
     }
   },
   "lint-staged": {
-    "./app/**/*.{js,jsx,ts,tsx}": [
+    "./{app,static}/**/*.{js,jsx,ts,tsx,css,html}": [
       "prettier --write"
+    ],
+    "**/{BUILD,WORKSPACE,*.bazel,*.bzl}": [
+      "buildifier"
+    ],
+    "**/*.go": [
+      "gofmt -w"
     ]
   },
   "devDependencies": {
     "@bazel/bazel": "^2.0.0",
+    "@bazel/buildifier": "^2.0.0",
+    "@bazel/ibazel": "^0.13.1",
     "@bazel/rollup": "^1.6.1",
     "@bazel/terser": "^1.3.0",
     "@bazel/typescript": "^1.2.4",

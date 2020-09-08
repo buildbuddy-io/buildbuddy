@@ -1,43 +1,8 @@
 import { clamp } from "./math";
-import { TimeDelta } from "./time";
 
-export class AnimationLoop {
-  private dt = new TimeDelta();
-
-  constructor(private callback: (dt: number) => void, private enabled_ = false) {
-    if (enabled_) {
-      this.start();
-    }
-  }
-
-  private loop() {
-    if (!this.enabled_ || this.isNextFrameScheduled) return;
-
-    this.callback(this.dt.get());
-    this.scheduleNextFrame();
-  }
-
-  private isNextFrameScheduled = false;
-  private scheduleNextFrame() {
-    if (this.isNextFrameScheduled) return;
-    this.isNextFrameScheduled = true;
-    requestAnimationFrame(() => {
-      this.isNextFrameScheduled = false;
-      this.loop();
-    });
-  }
-
-  start() {
-    this.enabled_ = true;
-    this.loop();
-  }
-
-  stop() {
-    this.enabled_ = false;
-    this.dt.reset();
-  }
-}
-
+/**
+ * A value that is animated according to an ease-out curve.
+ */
 export class AnimatedValue {
   private target_: number;
   private value_: number;
@@ -90,14 +55,31 @@ export class AnimatedValue {
     return this.max_;
   }
 
-  step(dt: number, { p = 0.02, e = 0.01 } = {}) {
-    const error = this.target_ - this.value_;
-    const correction = error * dt * p;
+  /**
+   * Steps `value` towards `target` according to an "ease-out" curve.
+   *
+   * Let `distance` be the current distance between `target` and `value`:
+   *
+   * - `rate` is the fraction of `distance` covered per millisecond in this step.
+   *   Note that this varies with `distance`, which results in the ease-out curve.
+   *
+   * - `threshold` is the minimum distance at which `value` and `target` are considered
+   *   visually equal. This allows pausing the animation loop when `value === target`.
+   *
+   * @param dt step time in milliseconds
+   * @param options rate and threshold (optional)
+   */
+  step(dt: number, { rate = 0.02, threshold = 0.01 } = {}) {
+    const distance = this.target_ - this.value_;
+    const stepAmount = distance * rate * dt;
 
-    if (Math.abs(correction) > Math.abs(error) || Math.abs(this.value_ - this.target_) < e) {
+    if (
+      Math.abs(stepAmount) > Math.abs(distance) ||
+      Math.abs(this.value_ - this.target_) < threshold
+    ) {
       this.value_ = this.target_;
     } else {
-      this.value_ = this.value_ + correction;
+      this.value_ = this.value_ + stepAmount;
     }
 
     this.value_ = clamp(this.value_, this.min_, this.max_);

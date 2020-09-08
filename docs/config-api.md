@@ -11,7 +11,7 @@ The API is only configurable in the [Enterprise version](enterprise.md) of Build
 
 ## Section
 
-```api:``` The Auth section enables the BuildBuddy API over both gRPC(s) and REST HTTP(s). **Optional**
+```api:``` The API section enables the BuildBuddy API over both gRPC(s) and REST HTTP(s). **Optional**
 
 ## Options
 
