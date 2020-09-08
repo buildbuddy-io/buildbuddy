@@ -99,7 +99,8 @@ export class AnimatedValue {
    *
    * Let `distance` be the current distance between `target` and `value`:
    *
-   * - `rate` is the fraction of `distance` covered per millisecond in this step
+   * - `rate` is the fraction of `distance` covered per millisecond in this step.
+   *   Note that this varies with `distance`, which results in the ease-out curve.
    *
    * - `threshold` is the minimum distance at which `value` and `target` are considered
    *   visually equal. This allows pausing the animation loop when `value === target`.
