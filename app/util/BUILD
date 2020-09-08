@@ -6,6 +6,7 @@ ts_library(
     name = "animated_value",
     srcs = ["animated_value.ts"],
     deps = [
+        ":math",
         "@npm//tslib",
     ]
 )
@@ -14,6 +15,7 @@ ts_library(
     name = "animation_loop",
     srcs = ["animation_loop.ts"],
     deps = [
+        ":time_delta",
         "@npm//tslib",
     ]
 )

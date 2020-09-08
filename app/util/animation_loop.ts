@@ -1,8 +1,10 @@
+import { TimeDelta } from "./time_delta";
+
 /**
  * Utility class for running animations.
  */
 export class AnimationLoop {
-  private lastTimestamp: number | null = null;
+  private dt = new TimeDelta();
 
   constructor(private callback: (dt: number) => void, private enabled_ = false) {
     if (enabled_) {
@@ -13,7 +15,8 @@ export class AnimationLoop {
   private loop() {
     if (!this.enabled_ || this.isNextFrameScheduled) return;
 
-    this.callback(this.getTimeSinceLastUpdate());
+    this.dt.update();
+    this.callback(this.dt.get());
     this.scheduleNextFrame();
   }
 
@@ -34,17 +37,6 @@ export class AnimationLoop {
 
   stop() {
     this.enabled_ = false;
-    this.lastTimestamp = null;
-  }
-
-  private getTimeSinceLastUpdate() {
-    const now = window.performance.now();
-    const delta = this.lastTimestamp === null ? 0 : now - this.lastTimestamp;
-    this.lastTimestamp = now;
-    return delta;
-  }
-
-  reset() {
-    this.lastTimestamp = null;
+    this.dt.reset();
   }
 }

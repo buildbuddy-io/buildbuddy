@@ -1,3 +1,5 @@
+import { clamp } from "./math";
+
 /**
  * A value that is animated according to an ease-out curve.
  */
