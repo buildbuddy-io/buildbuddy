@@ -48,6 +48,14 @@ ts_library(
 )
 
 ts_library(
+    name = "memo"
+    files = ["memo.ts"]
+    deps = [
+        "@npm//tslib",
+    ]
+)
+
+ts_library(
     name = "mouse",
     srcs = ["mouse.ts"],
     deps = [
