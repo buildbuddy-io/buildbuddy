@@ -9,7 +9,6 @@ ts_library(
         "*.tsx",
     ]),
     deps = [
-        "//app/util",
         "@npm//@types/react",
         "@npm//@types/uuid",
         "@npm//react",
