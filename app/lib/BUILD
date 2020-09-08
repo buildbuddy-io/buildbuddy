@@ -13,8 +13,8 @@ ts_library(
 )
 
 ts_library(
-    name = "dispose"
-    files = ["dispose.ts"]
+    name = "dispose",
+    srcs = ["dispose.ts"],
     deps = [
         ":events",
         "@npm//tslib",
@@ -22,16 +22,16 @@ ts_library(
 )
 
 ts_library(
-    name = "dom"
-    files = ["dom.ts"]
+    name = "dom",
+    srcs = ["dom.ts"],
     deps = [
         "@npm//tslib",
     ]
 )
 
 ts_library(
-    name = "events"
-    files = ["events.ts"]
+    name = "events",
+    srcs = ["events.ts"],
     deps = [
         "@npm//@types/react",
         "@npm//react",
@@ -48,8 +48,8 @@ ts_library(
 )
 
 ts_library(
-    name = "memo"
-    files = ["memo.ts"]
+    name = "memo",
+    srcs = ["memo.ts"],
     deps = [
         "@npm//tslib",
     ]
