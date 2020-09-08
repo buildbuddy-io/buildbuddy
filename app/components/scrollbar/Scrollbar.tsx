@@ -1,39 +1,54 @@
 import React from "react";
 import { v4 as uuid } from "uuid";
-import Disposer from "../../dispose";
-import { EventNotifier } from "../../events";
+import { Subject, Subscription, fromEvent } from "rxjs";
 
-export class HorizontalScrollbarController {
-  private readonly disposer = new Disposer();
-  public readonly events = new EventNotifier();
+export type ScrollEvent = { delta: number; animate: boolean };
+
+export class HorizontalScrollbarComponent extends React.Component {
+  public readonly scrollEvents = new Subject<ScrollEvent>();
 
   private track: HTMLDivElement | null = null;
   private thumb: HTMLDivElement | null = null;
 
   private scrollLeft = 0;
   private scrollLeftMax = 0;
+  private thumbWidth = 0;
+  private scrollableWidth = 0;
+  private thumbX = 0;
 
-  init(track: HTMLDivElement, scrollingElement: HTMLElement) {
-    this.track = track;
+  // Single scroll event here avoids creating too many objects.
+  private scrollEvent: ScrollEvent = { delta: 0, animate: false };
+
+  private subscription = new Subscription();
+
+  private trackRef = React.createRef<HTMLDivElement>();
+
+  componentDidMount() {
+    this.track = this.trackRef.current;
     this.thumb = this.track.children[0] as any;
+    const scrollingElement = this.track.parentElement;
     if (!scrollingElement.id) {
       scrollingElement.id = uuid();
     }
     this.thumb!.setAttribute("aria-controls", scrollingElement.id);
 
-    this.disposer
-      .subscribe(this.thumb!, "mousedown", this.onMouseDown.bind(this))
-      .subscribe(scrollingElement, "mouseenter", this.onMouseEnterScrollingElement.bind(this))
-      .subscribe(scrollingElement, "mouseleave", this.onMouseOutScrollingElement.bind(this))
-      .subscribe(scrollingElement, "wheel", this.onWheelScrollingElement.bind(this))
-      .subscribe(window, "mousemove", this.onMouseMove.bind(this))
-      .subscribe(window, "mouseup", this.onMouseUp.bind(this))
-      .subscribe(window, "keydown", this.onKeyDown.bind(this));
+    this.subscription
+      .add(fromEvent(this.thumb!, "mousedown").subscribe(this.onThumbMouseDown.bind(this)))
+      .add(
+        fromEvent(scrollingElement, "mouseenter").subscribe(
+          this.onMouseEnterScrollingElement.bind(this)
+        )
+      )
+      .add(
+        fromEvent(scrollingElement, "mouseleave").subscribe(
+          this.onMouseLeaveScrollingElement.bind(this)
+        )
+      )
+      .add(fromEvent(scrollingElement, "wheel").subscribe(this.onWheelScrollingElement.bind(this)))
+      .add(fromEvent(window, "mousemove").subscribe(this.onWindowMouseMove.bind(this)))
+      .add(fromEvent(window, "mouseup").subscribe(this.onWindowMouseUp.bind(this)))
+      .add(fromEvent(window, "keydown").subscribe(this.onWindowKeyDown.bind(this)));
   }
-
-  private thumbWidth = 0;
-  private scrollableWidth = 0;
-  private thumbX = 0;
 
   update({ scrollLeft, scrollLeftMax }: { scrollLeft: number; scrollLeftMax: number }) {
     if (!this.track) return;
@@ -62,12 +77,10 @@ export class HorizontalScrollbarController {
   }
 
   private isScrolling = false;
-  // Single scroll event here avoids creating too many objects.
-  private scrollEvent = { delta: 0, animate: false };
   private minMouseX = 0;
   private maxMouseX = 0;
   private mouseX = 0;
-  onMouseDown(e: MouseEvent) {
+  onThumbMouseDown(e: MouseEvent) {
     if (e.buttons & 1) {
       this.isScrolling = true;
       const thumb = this.thumb!.getBoundingClientRect();
@@ -77,7 +90,7 @@ export class HorizontalScrollbarController {
     }
     this.updateMouse(e);
   }
-  onMouseMove(e: MouseEvent) {
+  onWindowMouseMove(e: MouseEvent) {
     if (!this.isScrolling) return;
     if (!(e.buttons & 1)) {
       this.isScrolling = false;
@@ -92,10 +105,10 @@ export class HorizontalScrollbarController {
       this.scrollEvent.delta =
         (deltaX / (this.track!.clientWidth - this.thumbWidth)) * this.scrollLeftMax;
       this.scrollEvent.animate = false;
-      this.events.dispatch("scroll", this.scrollEvent);
+      this.scrollEvents.next(this.scrollEvent);
     }
   }
-  onMouseUp(e: MouseEvent) {
+  onWindowMouseUp(e: MouseEvent) {
     this.updateMouse(e);
     this.isScrolling = false;
   }
@@ -107,7 +120,7 @@ export class HorizontalScrollbarController {
   onMouseEnterScrollingElement(e: MouseEvent) {
     this.isMouseInside = true;
   }
-  onMouseOutScrollingElement(e: MouseEvent) {
+  onMouseLeaveScrollingElement(e: MouseEvent) {
     this.isMouseInside = false;
   }
   onWheelScrollingElement(e: WheelEvent) {
@@ -115,10 +128,10 @@ export class HorizontalScrollbarController {
       e.preventDefault();
       this.scrollEvent.delta = e.deltaY;
       this.scrollEvent.animate = true;
-      this.events.dispatch("scroll", this.scrollEvent);
+      this.scrollEvents.next(this.scrollEvent);
     }
   }
-  onKeyDown(e: KeyboardEvent) {
+  onWindowKeyDown(e: KeyboardEvent) {
     if (!this.isMouseInside || e.ctrlKey || e.shiftKey) return;
 
     if (e.which === 39 || e.which === 37) {
@@ -126,45 +139,30 @@ export class HorizontalScrollbarController {
       const dir = e.which - 38;
       this.scrollEvent.delta = 40 * dir;
       this.scrollEvent.animate = true;
-      this.events.dispatch("scroll", this.scrollEvent);
+      this.scrollEvents.next(this.scrollEvent);
     }
   }
 
-  dispose() {
-    this.disposer.dispose();
+  componentWillUnmount() {
+    this.subscription.unsubscribe();
   }
-}
 
-export type HorizontalScrollbarProps = {
-  setController: (controller: HorizontalScrollbarController) => void;
-};
-
-export function HorizontalScrollbar({ setController }: HorizontalScrollbarProps) {
-  const trackRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    if (!setController || !trackRef.current) return;
-
-    const controller = new HorizontalScrollbarController();
-    controller.init(trackRef.current, trackRef.current.parentElement!);
-    setController(controller);
-    return () => controller.dispose();
-  }, [setController, trackRef]);
-
-  return (
-    <div
-      className="hScrollTrack"
-      ref={trackRef}
-      onDragStart={(e) => e.preventDefault()}
-      role="scrollbar"
-      // This is set in controller.init
-      aria-controls=""
-      aria-orientation="horizontal"
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={0}
-    >
-      <div className="hScrollThumb" />
-    </div>
-  );
+  render() {
+    return (
+      <div
+        className="hScrollTrack"
+        ref={this.trackRef}
+        onDragStart={(e) => e.preventDefault()}
+        role="scrollbar"
+        // This is set to the parent element's ID on mount
+        aria-controls=""
+        aria-orientation="horizontal"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={0}
+      >
+        <div className="hScrollThumb" />
+      </div>
+    );
+  }
 }

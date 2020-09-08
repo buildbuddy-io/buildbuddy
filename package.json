@@ -62,6 +62,7 @@
     "react-dom": "^16.8.6",
     "react-lazylog": "https://github.com/buildbuddy-io/react-lazylog.git#37947b0c1363acfd3ec14c937d051f547ea92547",
     "react-virtualized": "^9.21.2",
+    "rxjs": "^6.6.3",
     "semver": "^5.5.0",
     "tmp": "^0.0.33",
     "typescript": "^3.4.5",
