@@ -11,6 +11,7 @@ go_library(
     deps = [
         "//proto:config_go_proto",
         "//server/environment:go_default_library",
+        "//server/version:go_default_library",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )

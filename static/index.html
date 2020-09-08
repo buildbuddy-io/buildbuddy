@@ -1,40 +1,43 @@
 <html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,700,800&display=swap"
+      rel="stylesheet"
+    />
+    <link href="/style.css" rel="stylesheet" />
+    <link rel="apple-touch-icon" sizes="57x57" href="/favicon/apple-icon-57x57.png" />
+    <link rel="apple-touch-icon" sizes="60x60" href="/favicon/apple-icon-60x60.png" />
+    <link rel="apple-touch-icon" sizes="72x72" href="/favicon/apple-icon-72x72.png" />
+    <link rel="apple-touch-icon" sizes="76x76" href="/favicon/apple-icon-76x76.png" />
+    <link rel="apple-touch-icon" sizes="114x114" href="/favicon/apple-icon-114x114.png" />
+    <link rel="apple-touch-icon" sizes="120x120" href="/favicon/apple-icon-120x120.png" />
+    <link rel="apple-touch-icon" sizes="144x144" href="/favicon/apple-icon-144x144.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/favicon/apple-icon-152x152.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-icon-180x180.png" />
+    <link id="favicon" rel="icon" type="image/svg" href="/favicon/favicon_black.svg" />
+    <link rel="manifest" href="/favicon/manifest.json" />
+    <meta name="msapplication-TileColor" content="#263238" />
+    <meta name="msapplication-TileImage" content="/favicon/ms-icon-144x144.png" />
+    <meta name="theme-color" content="#263238" />
+    <meta charset="UTF-8" />
 
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,700,800&display=swap" rel="stylesheet">
-  <link href="/style.css" rel="stylesheet" />
-  <link rel="apple-touch-icon" sizes="57x57" href="/favicon/apple-icon-57x57.png">
-  <link rel="apple-touch-icon" sizes="60x60" href="/favicon/apple-icon-60x60.png">
-  <link rel="apple-touch-icon" sizes="72x72" href="/favicon/apple-icon-72x72.png">
-  <link rel="apple-touch-icon" sizes="76x76" href="/favicon/apple-icon-76x76.png">
-  <link rel="apple-touch-icon" sizes="114x114" href="/favicon/apple-icon-114x114.png">
-  <link rel="apple-touch-icon" sizes="120x120" href="/favicon/apple-icon-120x120.png">
-  <link rel="apple-touch-icon" sizes="144x144" href="/favicon/apple-icon-144x144.png">
-  <link rel="apple-touch-icon" sizes="152x152" href="/favicon/apple-icon-152x152.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-icon-180x180.png">
-  <link id="favicon" rel="icon" type="image/svg" href="/favicon/favicon_black.svg">
-  <link rel="manifest" href="/favicon/manifest.json">
-  <meta name="msapplication-TileColor" content="#263238">
-  <meta name="msapplication-TileImage" content="/favicon/ms-icon-144x144.png">
-  <meta name="theme-color" content="#263238">
-  <meta charset="UTF-8">
+    <script>
+      window.buildbuddyConfig = {{.}};
+    </script>
 
-  <script>
-    window.buildbuddyConfig = {{.}};
-  </script>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-156160991-2"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag("js", new Date());
+    </script>
+  </head>
 
-  <script async src="https://www.googletagmanager.com/gtag/js?id=UA-156160991-2"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag() { dataLayer.push(arguments); }
-    gtag('js', new Date());
-  </script>
-</head>
-
-<body>
-  <div id="app"></div>
-</body>
-<script type="text/javascript" src="/app/app_bundle.min.js"></script>
-
+  <body>
+    <div id="app"></div>
+  </body>
+  <script type="text/javascript" src="/app/app_bundle.min.js"></script>
 </html>

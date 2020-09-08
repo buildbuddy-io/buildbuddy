@@ -1,31 +1,41 @@
-import { AnimatedValue, AnimationLoop } from "lib/animation";
-import {
-  HorizontalScrollbar,
-  HorizontalScrollbarController,
-} from "lib/components/scrollbar/Scrollbar";
-import Disposer from "lib/dispose";
-import { createSvgElement } from "lib/dom";
-import { magnitude } from "lib/math";
-import { setCursorOverride } from "lib/mouse";
+import { AnimatedValue } from "app/util/animated_value";
+import { AnimationLoop } from "app/util/animation_loop";
+import { HorizontalScrollbar } from "app/components/scrollbar/Scrollbar";
+import { createSvgElement } from "app/util/dom";
+import { magnitude } from "app/util/math";
 import React from "react";
+import { Subscription, fromEvent } from "rxjs";
+import { HorizontalScrollbarComponent } from "buildbuddy/app/components/scrollbar/Scrollbar";
 
 const INITIAL_GRID_SIZE = 20;
 
-export class TimelineController {
+export default class Timeline extends React.Component {
   private svg: SVGElement;
   private grid: SVGGElement;
   private gridlines: SVGGElement;
 
-  private disposer = new Disposer();
   private animation = new AnimationLoop((dt: number) => this.draw(dt));
 
   public scrollLeft = new AnimatedValue(0, { min: 0 });
   // Zoom in to one second by default.
-  // TODO: scale to max event time
   public scale = new AnimatedValue(1, { min: 10 });
 
-  constructor(private el: HTMLDivElement, private scrollController: HorizontalScrollbarController) {
-    this.svg = el.querySelector(".tracks");
+  private subscription = new Subscription();
+
+  private rootRef = React.createRef<HTMLDivElement>();
+  private debugRef = React.createRef<HTMLPreElement>();
+  private horizontalScrollbarRef = React.createRef<HorizontalScrollbar>();
+
+  // Root element
+  private el: HTMLDivElement;
+
+  private horizontalScrollbar: HorizontalScrollbar;
+
+  componentDidMount() {
+    this.el = this.rootRef.current;
+    this.horizontalScrollbar = this.horizontalScrollbarRef.current;
+
+    this.svg = this.el.querySelector(".tracks");
     this.grid = this.svg.querySelector("g.grid") as SVGGElement;
     this.gridlines = this.grid.querySelector("g.gridlines") as SVGGElement;
 
@@ -33,14 +43,14 @@ export class TimelineController {
     this.scale.max = 1000000;
     this.setGridSize(1);
 
-    this.disposer
-      .subscribe(this.el, "wheel", this.onWheel)
-      .subscribe(window, "mousemove", this.onMouseMove)
-      .subscribe(this.el, "mousedown", this.onMouseDown)
-      .subscribe(window, "mouseup", this.onMouseUp)
-      .subscribe(this.scrollController.events, "scroll", this.onHorizontalScroll);
+    this.subscription
+      .add(fromEvent(window, "mousemove").subscribe(this.onMouseMove.bind(this)))
+      .add(fromEvent(window, "mouseup").subscribe(this.onMouseUp.bind(this)))
+      .add(this.horizontalScrollbar.events.subscribe(this.onHorizontalScroll.bind(this)));
 
     this.updateDOM();
+
+    this.renderDebugInfo();
   }
 
   public gridSize = INITIAL_GRID_SIZE;
@@ -58,15 +68,15 @@ export class TimelineController {
     return this.el.clientWidth / this.gridSize;
   }
 
-  private draw = (dt: number) => {
+  private draw(dt: number) {
     this.update(dt);
 
     if (this.scrollLeft.isAtTarget && this.scale.isAtTarget) {
       this.animation.stop();
     }
-  };
+  }
 
-  private update = (dt: number) => {
+  private update(dt: number) {
     this.scale.step(dt);
     this.scrollLeft.max = this.gridSize * this.scale.value - this.el.clientWidth;
 
@@ -85,9 +95,9 @@ export class TimelineController {
     this.scale.min = this.getMinScale();
 
     this.updateDOM();
-  };
+  }
 
-  private onWheel = (e: WheelEvent) => {
+  private onWheel(e: WheelEvent) {
     if (e.ctrlKey) {
       e.preventDefault();
       this.updateMouse(e);
@@ -97,60 +107,58 @@ export class TimelineController {
       this.scale.target = Math.pow(Math.E, y1);
       this.animation.start();
     }
-  };
-  private onMouseMove = (e: MouseEvent) => {
+  }
+  private onMouseMove(e: MouseEvent) {
     this.updateMouse(e);
     if (this.isPanning) {
       this.animation.start();
     }
-  };
+  }
 
   private isPanning = false;
-  private onMouseDown = (e: MouseEvent) => {
-    // Right mouse button is treated as mouse up
+  private onMouseDown(e: MouseEvent) {
+    // Right mouse button is treated as mouse up.
     if (e.button === 2) {
       this.onMouseUp(e);
       return;
     }
     this.updateMouse(e);
     if (e.button === 1) {
-      setCursorOverride("grabbing");
+      this.setCursorOverride("grabbing");
       this.isPanning = true;
     }
-  };
-  private onMouseUp = (e: MouseEvent) => {
-    setCursorOverride(null);
+  }
+  private onMouseUp(e: MouseEvent) {
+    this.setCursorOverride(null);
     // middle click
     if (e.button === 1) {
       this.isPanning = false;
     }
-  };
+  }
+
+  private setCursorOverride(cursor: "grabbing" | null) {
+    this.svg.style.cursor = cursor;
+  }
 
   private mouse = { x: 0, grid: 0 };
-  private updateMouse = (e: MouseEvent) => {
+  private updateMouse(e: MouseEvent) {
     const x = e.clientX - this.svg.getBoundingClientRect().x;
     this.mouse = {
       x,
       // If panning, do not allow changing the mouse grid
       grid: this.isPanning ? this.mouse.grid : (this.scrollLeft.value + x) / this.scale.value,
     };
-  };
+  }
 
-  private onHorizontalScroll = ({
-    delta: deltaX,
-    animate,
-  }: {
-    delta: number;
-    animate: boolean;
-  }) => {
+  private onHorizontalScroll({ delta: deltaX, animate }: { delta: number; animate: boolean }) {
     this.scrollLeft.target = this.scrollLeft.target + deltaX;
     if (!animate) {
       this.scrollLeft.value = this.scrollLeft.target;
     }
     this.animation.start();
-  };
+  }
 
-  private updateDOM = () => {
+  private updateDOM() {
     this.grid.setAttribute("transform", `translate(${-this.scrollLeft} 0) scale(${this.scale} 1)`);
     this.gridlines.setAttribute("transform", `scale(1 ${this.svg.clientHeight})`);
     drawGridlines(
@@ -160,16 +168,17 @@ export class TimelineController {
       this.el.clientWidth
     );
 
-    this.scrollController.update({
+    this.horizontalScrollbar.update({
       scrollLeft: this.scrollLeft.value,
       scrollLeftMax: this.scrollLeft.max,
     });
-  };
+  }
 
-  renderDebugInfo = (el: HTMLElement | null | undefined) => {
-    if (el.getAttribute("hidden")) return;
+  private renderDebugInfo() {
+    const el = this.debugRef.current;
+    if (process.env.NODE_ENV !== "development" || el.getAttribute("hidden")) return;
 
-    this.disposer.runAnimationLoop(() => {
+    const debugDrawLoop = new AnimationLoop(() => {
       el.innerHTML = JSON.stringify(
         {
           panning: this.isPanning,
@@ -186,10 +195,54 @@ export class TimelineController {
         2
       );
     });
-  };
+    debugDrawLoop.start();
+    this.subscription.add(() => debugDrawLoop.stop());
+  }
 
-  dispose() {
-    this.disposer.dispose();
+  render() {
+    const debug = window.localStorage.getItem("buildbuddy://debug/flame-chart") === "true";
+
+    return (
+      <TimelineContext.Provider value={this}>
+        <div className="timeline" style={{ position: "relative" }}>
+          <div
+            className="viewport"
+            ref={this.rootRef}
+            onWheel={this.onWheel.bind(this)}
+            onMouseDown={this.onMouseDown.bind(this)}
+          >
+            <svg className="tracks">
+              <g className="grid">
+                <g className="gridlines"></g>
+                <g className="events">{this.props.children}</g>
+              </g>
+            </svg>
+            <pre
+              ref={this.debugRef}
+              hidden={!debug}
+              style={{
+                background: "black",
+                position: "fixed",
+                color: "white",
+                bottom: 0,
+                left: 0,
+                opacity: 0.8,
+                zIndex: 100,
+                pointerEvents: "none",
+                fontSize: 10,
+                margin: 0,
+              }}
+            />
+          </div>
+          <HorizontalScrollbar ref={this.horizontalScrollbarRef} />
+        </div>
+      </TimelineContext.Provider>
+    );
+  }
+
+  componentWillUnmount() {
+    this.animation.stop();
+    this.subscription.unsubscribe();
   }
 }
 
@@ -225,64 +278,4 @@ export function drawGridlines(
 export type TimelineProps = {
   children?: React.ReactNode;
 };
-const TimelineContext = React.createContext<TimelineController | null>(null);
-export function useTimeline() {
-  return React.useContext(TimelineContext);
-}
-
-export default function SvgTimeline({ children }: TimelineProps) {
-  const debugRef = React.useRef();
-
-  const timelineRef = React.useRef<HTMLDivElement>(null);
-
-  const [scrollController, setScrollController] = React.useState<HorizontalScrollbarController>(
-    null
-  );
-
-  const controller = React.useMemo(() => {
-    if (!timelineRef.current || !scrollController || !debugRef.current) {
-      return null;
-    }
-    const controller = new TimelineController(timelineRef.current, scrollController);
-    controller.renderDebugInfo(debugRef.current);
-    return controller;
-  }, [timelineRef, debugRef, scrollController]);
-
-  React.useEffect(() => {
-    return () => controller?.dispose();
-  }, [controller]);
-
-  const debug = window.localStorage.getItem("buildbuddy://debug/flame-chart") === "true";
-
-  return (
-    <TimelineContext.Provider value={controller}>
-      <div className="timeline" style={{ position: "relative" }}>
-        <div className="viewport" ref={timelineRef}>
-          <svg className="tracks">
-            <g className="grid">
-              <g className="gridlines"></g>
-              <g className="events">{children}</g>
-            </g>
-          </svg>
-          <pre
-            ref={debugRef}
-            hidden={!debug}
-            style={{
-              background: "black",
-              position: "fixed",
-              color: "white",
-              bottom: 0,
-              left: 0,
-              opacity: 0.8,
-              zIndex: 100,
-              pointerEvents: "none",
-              fontSize: 10,
-              margin: 0,
-            }}
-          />
-        </div>
-        <HorizontalScrollbar setController={setScrollController} />
-      </div>
-    </TimelineContext.Provider>
-  );
-}
+const TimelineContext = React.createContext<Timeline | null>(null);

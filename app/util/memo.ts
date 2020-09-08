@@ -1,4 +1,4 @@
-export const memoize1 = <T, U>(fn: (arg: T) => U) => {
+export const memoizeSingleArgumentFunction = <T, U>(fn: (arg: T) => U) => {
   const cache = new Map<T, U>();
   return (arg: T) => {
     if (!cache.has(arg)) {

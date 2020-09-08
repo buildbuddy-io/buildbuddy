@@ -2,15 +2,19 @@ package static
 
 import (
 	"html/template"
-	"io/ioutil"
 	"net/http"
 	"path/filepath"
 	"strings"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/version"
 
 	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
+)
+
+const (
+	indexTemplateFilename = "index.html"
 )
 
 // StaticFileServer implements a static file http server that serves static
@@ -18,9 +22,6 @@ import (
 type StaticFileServer struct {
 	handler http.Handler
 }
-
-var indexTemplateFilename = "index.html"
-var versionFilename = "VERSION"
 
 // NewStaticFileServer returns a new static file server that will serve the
 // content in relpath, optionally stripping the prefix.
@@ -39,12 +40,8 @@ func NewStaticFileServer(env environment.Env, relPath string, rootPaths []string
 		if err != nil {
 			return nil, err
 		}
-		versionBytes, err := ioutil.ReadFile(filepath.Join(rfp, versionFilename))
-		if err != nil {
-			return nil, err
-		}
 
-		handler = handleRootPaths(env, relPath, rootPaths, template, string(versionBytes), handler)
+		handler = handleRootPaths(env, relPath, rootPaths, template, version.AppVersion(), handler)
 	}
 	return &StaticFileServer{
 		handler: handler,
@@ -73,12 +70,12 @@ func handleRootPaths(env environment.Env, relPath string, rootPaths []string, te
 	})
 }
 
-func serveIndexTemplate(env environment.Env, template *template.Template, version string, w http.ResponseWriter) {
+func serveIndexTemplate(env environment.Env, tpl *template.Template, version string, w http.ResponseWriter) {
 	issuers := make([]string, 0)
 	for _, provider := range env.GetConfigurator().GetAuthOauthProviders() {
 		issuers = append(issuers, provider.IssuerURL)
 	}
-	err := template.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendConfig{
+	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendConfig{
 		Version:               version,
 		ConfiguredIssuers:     issuers,
 		DefaultToDenseMode:    env.GetConfigurator().GetDefaultToDenseMode(),

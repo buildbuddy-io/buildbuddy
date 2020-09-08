@@ -8,8 +8,12 @@ ts_library(
     deps = [
         "@npm//@types/react",
         "@npm//react",
+        "@npm//rxjs",
         "@npm//tslib",
-        "//app/lib",
-        "//app/lib/components/scrollbar",
+        "//app/components/scrollbar",
+        "//app/util:animated_value",
+        "//app/util:animation_loop",
+        "//app/util:dom",
+        "//app/util:math",
     ],
 )

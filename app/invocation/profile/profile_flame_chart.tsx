@@ -2,7 +2,7 @@ import { memoize1 } from "buildbuddy/app/lib/memo";
 import React from "react";
 import palette from "./palette";
 import { TimelineEvent, buildThreadTimelines, ThreadEvent } from "./profile_model";
-import SvgTimeline, { useTimeline } from "./timeline";
+import Timeline, { useTimeline } from "./timeline";
 
 type ProfileFlameChartProps = {
   profile: {
@@ -65,16 +65,14 @@ export function BlockInfo({ block }: { block: TimelineBlock }) {
 }
 
 export function TimelineBlocks({
+  timeline,
   blocks,
   onHover,
 }: {
+  timeline: Timeline;
   blocks: TimelineBlock[];
   onHover: (block: TimelineBlock) => void;
 }) {
-  const timeline = useTimeline();
-
-  console.log(blocks);
-
   React.useEffect(() => {
     if (!timeline) return;
     const rightBoundary = Math.max(...blocks.map(({ rectProps: { x, width } }) => x + width));

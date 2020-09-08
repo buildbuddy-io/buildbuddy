@@ -904,6 +904,10 @@ code .comment {
   text-decoration: underline;
 }
 
+.empty-state.history {
+  padding: 0 16px;
+}
+
 .target {
   display: flex;
   align-self: center;

@@ -44,6 +44,14 @@ func (s *ActionCacheServer) getCache(instanceName string) interfaces.Cache {
 	return c.WithPrefix(acCachePrefix)
 }
 
+func (s *ActionCacheServer) getCASCache(instanceName string) interfaces.Cache {
+	c := s.cache
+	if instanceName != "" {
+		c = c.WithPrefix(instanceName)
+	}
+	return c
+}
+
 func (s *ActionCacheServer) checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*repb.Digest) error {
 	foundMap, err := cache.ContainsMulti(ctx, digests)
 	if err != nil {
@@ -75,7 +83,7 @@ func (s *ActionCacheServer) checkDirExists(ctx context.Context, cache interfaces
 func (s *ActionCacheServer) validateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.ActionResult) error {
 	outputFileDigests := make([]*repb.Digest, 0, len(r.OutputFiles))
 	for _, f := range r.OutputFiles {
-		if len(f.Contents) > 0 && f.GetDigest().GetSizeBytes() > 0 {
+		if f.GetDigest().GetSizeBytes() > 0 {
 			outputFileDigests = append(outputFileDigests, f.GetDigest())
 		}
 	}
@@ -137,6 +145,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	}
 
 	cache := s.getCache(req.GetInstanceName())
+	casCache := s.getCASCache(req.GetInstanceName())
 
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
@@ -149,7 +158,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := proto.Unmarshal(blob, rsp); err != nil {
 		return nil, err
 	}
-	if err := s.validateActionResult(ctx, cache, rsp); err != nil {
+	if err := s.validateActionResult(ctx, casCache, rsp); err != nil {
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
 	return rsp, nil
