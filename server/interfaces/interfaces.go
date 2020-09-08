@@ -7,10 +7,8 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"google.golang.org/genproto/googleapis/longrunning"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
-	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -144,12 +142,6 @@ type UserDB interface {
 	DeleteGroup(ctx context.Context, groupID string) error
 }
 
-type ExecutionDB interface {
-	InsertOrUpdateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, op *longrunning.Operation) error
-	ReadExecution(ctx context.Context, executionID string) (*tables.Execution, error)
-	InsertExecutionSummary(ctx context.Context, actionDigest *repb.Digest, workerID, invocationID string, summary *espb.ExecutionSummary) error
-}
-
 // A webhook can be called when a build is completed.
 type Webhook interface {
 	NotifyComplete(ctx context.Context, invocation *inpb.Invocation) error
@@ -179,15 +171,6 @@ type ExecutionService interface {
 	Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error
 	WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error
 	PublishOperation(stream repb.Execution_PublishOperationServer) error
-}
-
-type ExecutionRouterService interface {
-	GetExecutionClient(ctx context.Context, req *repb.ExecuteRequest) (ExecutionClientConfig, error)
-}
-
-type ExecutionClientConfig interface {
-	GetExecutionClient() repb.ExecutionClient
-	DisableStreaming() bool
 }
 
 type FileCache interface {

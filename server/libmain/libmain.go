@@ -10,7 +10,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/executiondb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
@@ -86,7 +85,6 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	realEnv.SetBlobstore(bs)
 	realEnv.SetInvocationDB(invocationdb.NewInvocationDB(realEnv, dbHandle))
 	realEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
-	realEnv.SetExecutionDB(executiondb.NewExecutionDB(realEnv, dbHandle))
 
 	webhooks := make([]interfaces.Webhook, 0)
 	appURL := configurator.GetAppBuildBuddyURL()
