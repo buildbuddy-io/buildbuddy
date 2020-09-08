@@ -13,6 +13,7 @@ export class AnimationLoop {
   private loop() {
     if (!this.enabled_ || this.isNextFrameScheduled) return;
 
+    this.dt.update();
     this.callback(this.dt.get());
     this.scheduleNextFrame();
   }

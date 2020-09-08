@@ -1,14 +1,20 @@
 export class TimeDelta {
-  lastTimestamp: number | null = null;
+  private lastTimestamp: number | null = null;
+  private value: number | null = 0;
 
   get() {
+    return this.value;
+  }
+
+  update() {
     const now = window.performance.now();
-    const delta = this.lastTimestamp === null ? 0 : now - this.lastTimestamp;
+    this.value = this.lastTimestamp === null ? 0 : now - this.lastTimestamp;
     this.lastTimestamp = now;
-    return delta;
+    return this.value;
   }
 
   reset() {
     this.lastTimestamp = null;
+    this.value = 0;
   }
 }
