@@ -1,11 +1,11 @@
-import { EventPublisher, EventListener } from "./events";
+import { EventListener } from "./events";
 
 export default class Disposer {
   private readonly subscriptions: any[] = [];
   private readonly animations: (() => void)[] = [];
   private readonly disposables: Disposable[] = [];
 
-  subscribe(object: EventPublisher, eventName: string, listener: EventListener) {
+  subscribe(object: EventTarget, eventName: string, listener: EventListener) {
     object.addEventListener(eventName, listener);
     this.subscriptions.push([object, eventName, listener]);
 
