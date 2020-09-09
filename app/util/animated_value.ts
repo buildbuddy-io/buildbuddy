@@ -69,7 +69,7 @@ export class AnimatedValue {
    * @param dt step time in milliseconds
    * @param options rate and threshold (optional)
    */
-  step(dt: number, { rate = 0.02, threshold = 0.01 } = {}) {
+  step(dt: number, { rate = 0.02, threshold = 2 } = {}) {
     const distance = this.target_ - this.value_;
     const stepAmount = distance * rate * dt;
 

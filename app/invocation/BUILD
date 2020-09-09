@@ -11,7 +11,7 @@ ts_library(
         "//app/docs",
         "//app/favicon",
         "//app/format",
-        "//app/invocation/profile",
+        "//app/invocation/flame_chart",
         "//app/router",
         "//app/service",
         "//app/target",

@@ -4,7 +4,7 @@ import capabilities from "../capabilities/capabilities";
 import SetupCodeComponent from "../docs/setup_code";
 import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
-import ProfileFlameChart from "./profile/profile_flame_chart";
+import ProfileFlameChart from "./flame_chart/profile_flame_chart";
 
 interface Props {
   model: InvocationModel;

@@ -1,0 +1,517 @@
+import { HorizontalScrollbar } from "buildbuddy/app/components/scrollbar/scrollbar";
+import { AnimatedValue } from "buildbuddy/app/util/animated_value";
+import { AnimationLoop } from "buildbuddy/app/util/animation_loop";
+import { createSvgElement } from "buildbuddy/app/util/dom";
+import { round } from "buildbuddy/app/util/math";
+import React from "react";
+import { fromEvent, Subscription } from "rxjs";
+
+const INITIAL_GRID_SIZE = 1;
+export const BLOCK_HEIGHT = 16;
+
+export type TimelineProps = {
+  /**
+   * Specifies the x scaling factor of the timeline.
+   *
+   * If x coords of timeline blocks are in ms, then this would be 1/1000.
+   *
+   * Defaults to 1.
+   */
+  secondsPerX?: number;
+  /**
+   * HTML content that visually groups and labels vertically stacked sections
+   * of the timeline.
+   *
+   * This content scrolls vertically with the timeline but not horizontally,
+   * and does not scale as the timeline is horizontally zoomed.
+   */
+  sectionDecorations?: React.ReactNode;
+};
+
+const TIMESTAMP_HEADER_SIZE = 16;
+const TIMESTAMP_FONT_SIZE = 12;
+
+/**
+ * A horizontally scalable and zoomable SVG timeline.
+ */
+export default class Timeline extends React.Component<TimelineProps> {
+  private animation = new AnimationLoop((dt: number) => this.draw(dt));
+
+  /* Viewport X offset in screen pixels. */
+  public readonly scrollLeft = new AnimatedValue(0, { min: 0 });
+  /** Zoom level. */
+  public readonly screenPixelsPerSecond = new AnimatedValue(1, { min: 10 });
+  /** The max timestamp that can be displayed, in seconds. */
+  public endTimeSeconds = INITIAL_GRID_SIZE;
+
+  private subscription = new Subscription();
+
+  private viewportRef = React.createRef<HTMLDivElement>();
+  private barsContainerRef = React.createRef<SVGSVGElement>();
+  private headerRef = React.createRef<SVGGElement>();
+  private contentContainerRef = React.createRef<SVGGElement>();
+  private gridlinesRef = React.createRef<SVGGElement>();
+  private debugRef = React.createRef<HTMLPreElement>();
+  private horizontalScrollbarRef = React.createRef<HorizontalScrollbar>();
+
+  private viewport: HTMLDivElement;
+  private barsContainerSvg: SVGSVGElement;
+  private header: SVGGElement;
+  private contentContainer: SVGGElement;
+  private gridlines: SVGGElement;
+
+  private horizontalScrollbar: HorizontalScrollbar;
+
+  componentDidMount() {
+    this.viewport = this.viewportRef.current;
+    this.barsContainerSvg = this.barsContainerRef.current;
+    this.header = this.headerRef.current;
+    this.contentContainer = this.contentContainerRef.current;
+    this.gridlines = this.gridlinesRef.current;
+
+    this.horizontalScrollbar = this.horizontalScrollbarRef.current;
+
+    this.setMaxXCoordinate(1 / this.secondsPerX);
+
+    this.subscription
+      .add(fromEvent(window, "mousemove").subscribe(this.onMouseMove.bind(this)))
+      .add(fromEvent(window, "mouseup").subscribe(this.onMouseUp.bind(this)))
+      .add(fromEvent(window, "resize").subscribe(this.onWindowResize.bind(this)))
+      // NOTE: Can't do `<div onWheel={this.onWheel.bind(this)} >` here since
+      // the event target gets treated as "passive," which forbids us from calling
+      // preventDefault() on Ctrl+Wheel
+      .add(
+        fromEvent(this.viewport, "wheel", { passive: false }).subscribe(this.onWheel.bind(this))
+      );
+
+    this.updateDOM();
+
+    this.renderDebugInfo();
+  }
+
+  public setMaxXCoordinate(value: number) {
+    this.endTimeSeconds = value * this.secondsPerX;
+    this.screenPixelsPerSecond.min = this.getMinPixelsPerSecond();
+    this.screenPixelsPerSecond.max = this.getMaxPixelsPerSecond();
+
+    this.screenPixelsPerSecond.target = Math.min(
+      this.endTimeSeconds,
+      this.viewportRightEdgeSeconds
+    );
+    this.scrollLeft.max =
+      this.endTimeSeconds * this.screenPixelsPerSecond.target - this.barsContainerSvg.clientWidth;
+    this.animation.start();
+  }
+
+  private getMinPixelsPerSecond() {
+    return this.barsContainerSvg.clientWidth / this.endTimeSeconds;
+  }
+  private getMaxPixelsPerSecond() {
+    return this.barsContainerSvg.clientWidth / this.secondsPerX;
+  }
+
+  private draw(dt: number) {
+    this.update(dt);
+
+    if (this.scrollLeft.isAtTarget && this.screenPixelsPerSecond.isAtTarget) {
+      this.animation.stop();
+    }
+  }
+
+  private update(dt: number) {
+    this.screenPixelsPerSecond.step(dt);
+    this.scrollLeft.max =
+      this.endTimeSeconds * this.screenPixelsPerSecond.value - this.barsContainerSvg.clientWidth;
+
+    if (this.isPanning || !this.screenPixelsPerSecond.isAtTarget) {
+      // ensure mouse.seconds does not move from the mouse x position
+      const currentMouseSeconds =
+        (this.scrollLeft.value + this.mouse.x) / this.screenPixelsPerSecond.value;
+      const mouseTimeOffset = this.mouse.seconds - currentMouseSeconds;
+      const xCorrection = mouseTimeOffset * this.screenPixelsPerSecond.value;
+
+      this.scrollLeft.target += xCorrection;
+      this.scrollLeft.value += xCorrection;
+    } else {
+      this.scrollLeft.step(dt);
+    }
+    this.screenPixelsPerSecond.min = this.getMinPixelsPerSecond();
+
+    this.updateDOM();
+  }
+
+  private get viewportRightEdgeSeconds() {
+    return (
+      (this.barsContainerSvg.clientWidth + this.scrollLeft.value) / this.screenPixelsPerSecond.value
+    );
+  }
+
+  private onWheel(e: WheelEvent) {
+    if (e.ctrlKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.updateMouse(e);
+      const scrollSpeedMultiplier = 0.005;
+      const y0 = Math.log(this.screenPixelsPerSecond.target);
+      const y1 = y0 + e.deltaY * scrollSpeedMultiplier;
+      this.screenPixelsPerSecond.target = Math.pow(Math.E, y1);
+      this.animation.start();
+    }
+  }
+  private onMouseMove(e: MouseEvent) {
+    this.updateMouse(e);
+    if (this.isPanning) {
+      this.animation.start();
+    }
+  }
+  private onWindowResize() {
+    this.animation.start();
+  }
+
+  private isPanning = false;
+  private onMouseDown(e: MouseEvent) {
+    // Right mouse button is treated as mouse up.
+    if (e.button === 2) {
+      this.onMouseUp(e);
+      return;
+    }
+    this.updateMouse(e);
+    if (e.button === 1) {
+      this.setCursorOverride("grabbing");
+      this.isPanning = true;
+    }
+  }
+  private onMouseUp(e: MouseEvent) {
+    this.setCursorOverride(null);
+    // middle click
+    if (e.button === 1) {
+      this.isPanning = false;
+    }
+  }
+
+  private setCursorOverride(cursor: "grabbing" | null) {
+    this.barsContainerSvg.style.cursor = cursor;
+  }
+
+  private mouse = { x: 0, seconds: 0 };
+  private updateMouse(e: MouseEvent) {
+    const x = e.clientX - this.barsContainerSvg.getBoundingClientRect().x;
+    this.mouse = {
+      x,
+      // If panning, do not allow changing the mouse grid
+      seconds: this.isPanning
+        ? this.mouse.seconds
+        : (this.scrollLeft.value + x) / this.screenPixelsPerSecond.value,
+    };
+  }
+
+  private onHorizontalScroll({ delta: deltaX, animate }: { delta: number; animate: boolean }) {
+    this.scrollLeft.target = this.scrollLeft.target + deltaX;
+    if (!animate) {
+      this.scrollLeft.value = this.scrollLeft.target;
+    }
+    this.animation.start();
+  }
+
+  private get secondsPerX() {
+    return this.props.secondsPerX;
+  }
+
+  private updateDOM() {
+    this.contentContainer.setAttribute(
+      "transform",
+      `translate(${-this.scrollLeft} 0) scale(${
+        this.secondsPerX * this.screenPixelsPerSecond.value
+      } 1)`
+    );
+    this.gridlines.setAttribute("transform", `translate(${-this.scrollLeft} 0)`);
+    this.header.setAttribute("transform", `translate(${-this.scrollLeft} 0)`);
+
+    this.drawGridlines();
+
+    this.horizontalScrollbar.update({
+      scrollLeft: this.scrollLeft.value,
+      scrollLeftMax: this.scrollLeft.max,
+    });
+  }
+
+  private renderDebugInfo() {
+    const el = this.debugRef.current;
+    if (el.getAttribute("hidden")) return;
+
+    const debugDrawLoop = new AnimationLoop(() => {
+      el.innerHTML = JSON.stringify(
+        {
+          panning: this.isPanning,
+          pixelsPerSecond: this.screenPixelsPerSecond.toJson(),
+          scrollLeft: this.scrollLeft.toJson(),
+          mouse: this.mouse,
+          timeline: {
+            transform: this.contentContainer.getAttribute("transform"),
+            endTimeSeconds: this.endTimeSeconds,
+            rightBoundarySeconds: this.viewportRightEdgeSeconds,
+          },
+        },
+        null,
+        2
+      );
+    });
+    debugDrawLoop.start();
+    this.subscription.add(() => debugDrawLoop.stop());
+  }
+
+  private drawGridlines() {
+    if (this.screenPixelsPerSecond.value === 0) {
+      return;
+    }
+    const startSeconds = this.scrollLeft.value / this.screenPixelsPerSecond.value;
+    const endSeconds =
+      (this.scrollLeft.value + this.barsContainerSvg.clientWidth) /
+      this.screenPixelsPerSecond.value;
+
+    const { firstGridlineSeconds, intervalSeconds, count } = computeGridlines(
+      startSeconds,
+      endSeconds,
+      this.barsContainerSvg.clientWidth
+    );
+
+    const gridlinesG = this.gridlines;
+    const timestampG = this.header;
+    gridlinesG.innerHTML = "";
+    timestampG.innerHTML = "";
+
+    if (window.innerWidth / count < 1) {
+      console.error("Too many gridlines to draw. This probably indicates a bug. Stopping.", {
+        firstGridlineSeconds,
+        count,
+        intervalSeconds,
+      });
+      return;
+    }
+
+    for (
+      let t = firstGridlineSeconds;
+      t <= firstGridlineSeconds + intervalSeconds * count;
+      t += intervalSeconds
+    ) {
+      const x = t * this.screenPixelsPerSecond.value;
+
+      const line = createSvgElement("line") as SVGLineElement;
+      line.setAttribute("x1", String(x));
+      line.setAttribute("x2", String(x));
+      line.setAttribute("y1", "0");
+      line.setAttribute("y2", String(this.barsContainerSvg.clientHeight));
+      line.setAttribute("vector-effect", "non-scaling-stroke");
+      // TODO: adjust gridline color based on order of magnitude?
+      line.setAttribute("stroke", "#ccc");
+      line.setAttribute("stroke-width", "1");
+      line.setAttribute("shape-rendering", "crispEdges");
+      gridlinesG.append(line);
+
+      const label = createSvgElement("text") as SVGTextElement;
+      label.innerHTML = `${round(t, 6)}s`;
+      label.setAttribute("x", `${x + 2}`);
+      label.setAttribute("y", `${TIMESTAMP_FONT_SIZE}`);
+      label.setAttribute("font-size", `${TIMESTAMP_FONT_SIZE}px`);
+      timestampG.append(label);
+    }
+  }
+
+  render() {
+    const debug = window.localStorage.getItem("buildbuddy://debug/flame-chart") === "true";
+
+    return (
+      <TimelineContext.Provider value={this}>
+        <div className="timeline" style={{ position: "relative" }}>
+          <svg
+            style={{
+              pointerEvents: "none",
+              position: "absolute",
+              top: 0,
+              left: 0,
+              height: "100%",
+              width: "calc(100% - 16px)",
+            }}
+          >
+            <g ref={this.gridlinesRef}></g>
+          </svg>
+          <div
+            className="viewport"
+            ref={this.viewportRef}
+            onMouseDown={this.onMouseDown.bind(this)}
+          >
+            <div
+              style={{
+                position: "absolute",
+                top: TIMESTAMP_HEADER_SIZE,
+                left: 0,
+                right: 0,
+                pointerEvents: "none",
+              }}
+            >
+              {this.props.sectionDecorations}
+            </div>
+            <svg style={{ position: "absolute" }} ref={this.barsContainerRef} className="tracks">
+              <g transform={`translate(0 ${TIMESTAMP_HEADER_SIZE})`}>
+                <g ref={this.contentContainerRef} transform={`scale(${this.secondsPerX} 1)`}>
+                  {this.props.children}
+                </g>
+              </g>
+            </svg>
+            <pre
+              ref={this.debugRef}
+              hidden={!debug}
+              style={{
+                background: "black",
+                position: "fixed",
+                color: "white",
+                bottom: 0,
+                left: 0,
+                opacity: 0.8,
+                zIndex: 100,
+                pointerEvents: "none",
+                fontSize: 10,
+                margin: 0,
+              }}
+            />
+          </div>
+          <svg
+            style={{
+              pointerEvents: "none",
+              position: "absolute",
+              top: 0,
+              left: 0,
+              height: "100%",
+              width: "calc(100% - 16px)",
+            }}
+          >
+            <rect
+              fill="rgba(200, 200, 200, 0.8)"
+              x="0"
+              width="100%"
+              height={TIMESTAMP_HEADER_SIZE}
+            />
+            <g ref={this.headerRef}></g>
+          </svg>
+          <HorizontalScrollbar
+            ref={this.horizontalScrollbarRef}
+            onScroll={this.onHorizontalScroll.bind(this)}
+          />
+        </div>
+      </TimelineContext.Provider>
+    );
+  }
+
+  componentWillUnmount() {
+    this.animation.stop();
+    this.subscription.unsubscribe();
+  }
+}
+
+const IDEAL_PIXELS_PER_GRIDLINE = 80;
+
+export function computeGridlines(
+  startTimeSeconds: number,
+  endTimeSeconds: number,
+  widthPixels: number
+) {
+  const displayedDuration = endTimeSeconds - startTimeSeconds;
+  const targetCount = widthPixels / IDEAL_PIXELS_PER_GRIDLINE;
+  const count = Math.ceil(targetCount);
+
+  const targetInterval = displayedDuration / targetCount;
+  const intervalSeconds = Math.pow(10, Math.ceil(Math.log10(targetInterval)));
+
+  const firstGridlineSeconds = startTimeSeconds - (startTimeSeconds % intervalSeconds);
+
+  return {
+    firstGridlineSeconds,
+    intervalSeconds,
+    count,
+  };
+}
+
+export const TimelineContext = React.createContext<Timeline | null>(null);
+
+export type TimelineBlocksProps = {
+  blocks: TimelineBlock[];
+  onHover: (block: TimelineBlock) => void;
+};
+
+/**
+ * The blocks rendered within the timeline.
+ */
+export class TimelineBlocks extends React.Component<TimelineBlocksProps> {
+  static contextType = TimelineContext;
+
+  private hoveredBlock: { element: SVGRectElement; index: number } | null = null;
+
+  componentDidMount() {
+    setTimeout(this.onTimelineMounted.bind(this));
+  }
+
+  private onTimelineMounted() {
+    const timeline = this.context as Timeline;
+    if (!timeline) {
+      throw new Error("TimelineBlocks must be rendered within a Timeline.");
+    }
+    const { blocks } = this.props;
+
+    const rightBoundary = Math.max(...blocks.map(({ rectProps: { x, width } }) => x + width));
+    console.debug("[setGridSize]", rightBoundary);
+    timeline.setMaxXCoordinate(rightBoundary);
+  }
+
+  private onMouseMove(e: React.MouseEvent<SVGGElement, MouseEvent>) {
+    if ((e.target as Element).tagName !== "rect") return;
+    const rect = e.target as SVGRectElement;
+
+    const index = Number(rect.dataset["index"]);
+    if (this.hoveredBlock) {
+      this.hoveredBlock.element.classList.remove("hover");
+    }
+    this.hoveredBlock = {
+      element: rect,
+      index,
+    };
+    rect.classList.add("hover");
+    this.props.onHover(this.props.blocks[index]);
+  }
+
+  render() {
+    return (
+      <g onMouseMove={this.onMouseMove.bind(this)}>
+        {this.props.blocks.map((block: any, i: number) => (
+          <TimelineBlock key={i} index={i} block={block} />
+        ))}
+      </g>
+    );
+  }
+}
+
+function TimelineBlock<T extends TimelineBlock>({
+  index,
+  block: { rectProps },
+}: {
+  index: number;
+  block: T;
+}) {
+  return (
+    <rect
+      {...rectProps}
+      height={BLOCK_HEIGHT}
+      shapeRendering="crispEdges"
+      vectorEffect="non-scaling-stroke"
+      data-index={index}
+    />
+  );
+}
+
+export type TimelineBlock = {
+  rectProps: {
+    x: number;
+    y: number;
+    width: number;
+    fill: string;
+  };
+};
