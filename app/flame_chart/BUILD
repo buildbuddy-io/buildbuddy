@@ -5,14 +5,18 @@ package(default_visibility = ["//visibility:public"])
 ts_library(
     name = "flame_chart",
     srcs = glob([
-        "*.ts",
         "*.tsx",
+        "*.ts",
     ]),
     deps = [
-        "//app/components/flame_chart",
-        "//app/util:memo",
+        "//app/components/scrollbar",
+        "//app/util:animated_value",
+        "//app/util:animation_loop",
+        "//app/util:dom",
+        "//app/util:math",
         "@npm//@types/react",
         "@npm//react",
+        "@npm//rxjs",
         "@npm//tslib",
     ],
 )

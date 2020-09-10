@@ -1546,8 +1546,8 @@ code .comment {
 
 /** Flame chart */
 
-.profile-flame-chart {
-  background: #f6f6f6;
+.flame-chart {
+  background: #f9f9f9;
   position: relative;
   width: 100%;
   height: 320px;
@@ -1559,12 +1559,47 @@ code .comment {
   user-select: none;
 }
 
+.flame-chart-hovered-block-info {
+  height: 64px;
+}
+
+.flame-chart-hovered-block-info.no-block-hovered {
+  color: #888;
+}
+
+.flame-chart-hovered-block-info .hovered-block-title {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.flame-chart-hovered-block-info .hovered-block-details {
+  color: #888;
+}
+
+.flame-chart-timestamp-header {
+  fill: rgba(200, 200, 200, 0.8);
+}
+
+.flame-chart-section {
+  border-bottom: 1px solid #ddd;
+  box-shadow: 0 1px -3px rgba(0, 0, 0, 0.12) inset;
+}
+
+.flame-chart-section-header {
+  font-size: 13px;
+  font-weight: bold;
+  background: rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27);
+  padding-left: 8px;
+  /* NOTE: Height is set in JS */
+}
+
 .viewport::-webkit-scrollbar,
 .viewport::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.profile-flame-chart .viewport {
+.flame-chart .viewport {
   position: absolute;
   top: 0;
   left: 0;
@@ -1574,13 +1609,13 @@ code .comment {
   overflow: scroll;
 }
 
-.profile-flame-chart .tracks {
+.flame-chart .tracks {
   /* NOTE: this height gets overwritten */
   height: 500px;
   min-width: 100%;
 }
 
-.profile-flame-chart rect.hover {
+.flame-chart rect.hover {
   stroke: black;
   stroke-width: 1;
   cursor: pointer;

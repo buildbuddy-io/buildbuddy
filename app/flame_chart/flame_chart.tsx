@@ -2,39 +2,37 @@ import { HorizontalScrollbar } from "buildbuddy/app/components/scrollbar/scrollb
 import { AnimatedValue } from "buildbuddy/app/util/animated_value";
 import { AnimationLoop } from "buildbuddy/app/util/animation_loop";
 import { createSvgElement } from "buildbuddy/app/util/dom";
-import { round } from "buildbuddy/app/util/math";
+import { truncateDecimals } from "buildbuddy/app/util/math";
 import React from "react";
 import { fromEvent, Subscription } from "rxjs";
+import { BlockModel, buildFlameChartModel, FlameChartModel } from "./flame_chart_model";
+import { TraceEvent } from "./profile_model";
+import {
+  BLOCK_HEIGHT,
+  INITIAL_END_TIME_SECONDS,
+  SECTION_LABEL_HEIGHT,
+  TIMESTAMP_FONT_SIZE,
+  TIMESTAMP_HEADER_SIZE,
+} from "./style_constants";
 
-const INITIAL_GRID_SIZE = 1;
-export const BLOCK_HEIGHT = 16;
+// These are non-tweakable constants; tweakable values should be defined
+// in style_constants.ts
+const MICROSECONDS_TO_SECONDS = 0.000001;
+const VERTICAL_SCROLLBAR_WIDTH = 16; //Must match CSS styling
 
-export type TimelineProps = {
-  /**
-   * Specifies the x scaling factor of the timeline.
-   *
-   * If x coords of timeline blocks are in ms, then this would be 1/1000.
-   *
-   * Defaults to 1.
-   */
-  secondsPerX?: number;
-  /**
-   * HTML content that visually groups and labels vertically stacked sections
-   * of the timeline.
-   *
-   * This content scrolls vertically with the timeline but not horizontally,
-   * and does not scale as the timeline is horizontally zoomed.
-   */
-  sectionDecorations?: React.ReactNode;
+type ProfileFlameChartState = {
+  hoveredBlock: BlockModel | null;
 };
 
-const TIMESTAMP_HEADER_SIZE = 16;
-const TIMESTAMP_FONT_SIZE = 12;
+export type FlameChartProps = {
+  profile: {
+    traceEvents: TraceEvent[];
+  };
+};
 
-/**
- * A horizontally scalable and zoomable SVG timeline.
- */
-export default class Timeline extends React.Component<TimelineProps> {
+export default class FlameChart extends React.Component<FlameChartProps, ProfileFlameChartState> {
+  state: ProfileFlameChartState = { hoveredBlock: null };
+
   private animation = new AnimationLoop((dt: number) => this.draw(dt));
 
   /* Viewport X offset in screen pixels. */
@@ -42,7 +40,7 @@ export default class Timeline extends React.Component<TimelineProps> {
   /** Zoom level. */
   public readonly screenPixelsPerSecond = new AnimatedValue(1, { min: 10 });
   /** The max timestamp that can be displayed, in seconds. */
-  public endTimeSeconds = INITIAL_GRID_SIZE;
+  public endTimeSeconds = INITIAL_END_TIME_SECONDS;
 
   private subscription = new Subscription();
 
@@ -62,6 +60,14 @@ export default class Timeline extends React.Component<TimelineProps> {
 
   private horizontalScrollbar: HorizontalScrollbar;
 
+  private chartModel: FlameChartModel;
+
+  constructor(props: FlameChartProps) {
+    super(props);
+
+    this.chartModel = buildFlameChartModel(props.profile.traceEvents);
+  }
+
   componentDidMount() {
     this.viewport = this.viewportRef.current;
     this.barsContainerSvg = this.barsContainerRef.current;
@@ -71,13 +77,15 @@ export default class Timeline extends React.Component<TimelineProps> {
 
     this.horizontalScrollbar = this.horizontalScrollbarRef.current;
 
-    this.setMaxXCoordinate(1 / this.secondsPerX);
+    this.setMaxXCoordinate(
+      Math.max(...this.chartModel.blocks.map(({ rectProps: { x, width } }) => x + width))
+    );
 
     this.subscription
       .add(fromEvent(window, "mousemove").subscribe(this.onMouseMove.bind(this)))
       .add(fromEvent(window, "mouseup").subscribe(this.onMouseUp.bind(this)))
       .add(fromEvent(window, "resize").subscribe(this.onWindowResize.bind(this)))
-      // NOTE: Can't do `<div onWheel={this.onWheel.bind(this)} >` here since
+      // NOTE: Can't do `<div onWheel={this.onWheel.bind(this)} >` since
       // the event target gets treated as "passive," which forbids us from calling
       // preventDefault() on Ctrl+Wheel
       .add(
@@ -89,7 +97,11 @@ export default class Timeline extends React.Component<TimelineProps> {
     this.renderDebugInfo();
   }
 
-  public setMaxXCoordinate(value: number) {
+  private onHoverBlock(hoveredBlock: BlockModel) {
+    this.setState({ hoveredBlock });
+  }
+
+  private setMaxXCoordinate(value: number) {
     this.endTimeSeconds = value * this.secondsPerX;
     this.screenPixelsPerSecond.min = this.getMinPixelsPerSecond();
     this.screenPixelsPerSecond.max = this.getMaxPixelsPerSecond();
@@ -214,7 +226,7 @@ export default class Timeline extends React.Component<TimelineProps> {
   }
 
   private get secondsPerX() {
-    return this.props.secondsPerX;
+    return MICROSECONDS_TO_SECONDS;
   }
 
   private updateDOM() {
@@ -289,12 +301,9 @@ export default class Timeline extends React.Component<TimelineProps> {
       return;
     }
 
-    for (
-      let t = firstGridlineSeconds;
-      t <= firstGridlineSeconds + intervalSeconds * count;
-      t += intervalSeconds
-    ) {
-      const x = t * this.screenPixelsPerSecond.value;
+    for (let i = 0; i < count; i++) {
+      const seconds = firstGridlineSeconds + i * intervalSeconds;
+      const x = seconds * this.screenPixelsPerSecond.value;
 
       const line = createSvgElement("line") as SVGLineElement;
       line.setAttribute("x1", String(x));
@@ -309,7 +318,7 @@ export default class Timeline extends React.Component<TimelineProps> {
       gridlinesG.append(line);
 
       const label = createSvgElement("text") as SVGTextElement;
-      label.innerHTML = `${round(t, 6)}s`;
+      label.innerHTML = `${truncateDecimals(seconds, 6)}s`;
       label.setAttribute("x", `${x + 2}`);
       label.setAttribute("y", `${TIMESTAMP_FONT_SIZE}`);
       label.setAttribute("font-size", `${TIMESTAMP_FONT_SIZE}px`);
@@ -318,87 +327,112 @@ export default class Timeline extends React.Component<TimelineProps> {
   }
 
   render() {
+    // TODO: empty state
+
     const debug = window.localStorage.getItem("buildbuddy://debug/flame-chart") === "true";
 
     return (
-      <TimelineContext.Provider value={this}>
-        <div className="timeline" style={{ position: "relative" }}>
-          <svg
-            style={{
-              pointerEvents: "none",
-              position: "absolute",
-              top: 0,
-              left: 0,
-              height: "100%",
-              width: "calc(100% - 16px)",
-            }}
-          >
-            <g ref={this.gridlinesRef}></g>
-          </svg>
-          <div
-            className="viewport"
-            ref={this.viewportRef}
-            onMouseDown={this.onMouseDown.bind(this)}
-          >
-            <div
+      <>
+        <div className="flame-chart">
+          <div className="timeline" style={{ position: "relative" }}>
+            <svg
               style={{
-                position: "absolute",
-                top: TIMESTAMP_HEADER_SIZE,
-                left: 0,
-                right: 0,
                 pointerEvents: "none",
+                position: "absolute",
+                top: 0,
+                left: 0,
+                height: "100%",
+                width: `calc(100% - ${VERTICAL_SCROLLBAR_WIDTH}px)`,
               }}
             >
-              {this.props.sectionDecorations}
-            </div>
-            <svg style={{ position: "absolute" }} ref={this.barsContainerRef} className="tracks">
-              <g transform={`translate(0 ${TIMESTAMP_HEADER_SIZE})`}>
-                <g ref={this.contentContainerRef} transform={`scale(${this.secondsPerX} 1)`}>
-                  {this.props.children}
-                </g>
-              </g>
+              <g ref={this.gridlinesRef}></g>
             </svg>
-            <pre
-              ref={this.debugRef}
-              hidden={!debug}
+            <div
+              className="viewport"
+              ref={this.viewportRef}
+              onMouseDown={this.onMouseDown.bind(this)}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  top: TIMESTAMP_HEADER_SIZE,
+                  left: 0,
+                  right: 0,
+                  pointerEvents: "none",
+                }}
+              >
+                <div>
+                  {this.chartModel.sections.map(({ name, height }, i) => (
+                    <div
+                      key={i}
+                      className="flame-chart-section"
+                      style={{
+                        height,
+                      }}
+                    >
+                      <div
+                        className="flame-chart-section-header"
+                        style={{ height: SECTION_LABEL_HEIGHT }}
+                      >
+                        {name}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <svg style={{ position: "absolute" }} ref={this.barsContainerRef} className="tracks">
+                <g transform={`translate(0 ${TIMESTAMP_HEADER_SIZE})`}>
+                  <g ref={this.contentContainerRef} transform={`scale(${this.secondsPerX} 1)`}>
+                    <FlameChartBlocks
+                      blocks={this.chartModel.blocks}
+                      onHover={this.onHoverBlock.bind(this)}
+                    />
+                  </g>
+                </g>
+              </svg>
+              <pre
+                ref={this.debugRef}
+                hidden={!debug}
+                style={{
+                  background: "black",
+                  position: "fixed",
+                  color: "white",
+                  bottom: 0,
+                  left: 0,
+                  opacity: 0.8,
+                  zIndex: 100,
+                  pointerEvents: "none",
+                  fontSize: 10,
+                  margin: 0,
+                }}
+              />
+            </div>
+            <svg
               style={{
-                background: "black",
-                position: "fixed",
-                color: "white",
-                bottom: 0,
-                left: 0,
-                opacity: 0.8,
-                zIndex: 100,
                 pointerEvents: "none",
-                fontSize: 10,
-                margin: 0,
+                position: "absolute",
+                top: 0,
+                left: 0,
+                height: "100%",
+                width: `calc(100% - ${VERTICAL_SCROLLBAR_WIDTH}px)`,
               }}
+            >
+              <rect
+                className="flame-chart-timestamp-header"
+                x="0"
+                width="100%"
+                height={TIMESTAMP_HEADER_SIZE}
+              />
+              <g ref={this.headerRef}></g>
+            </svg>
+            <HorizontalScrollbar
+              ref={this.horizontalScrollbarRef}
+              onScroll={this.onHorizontalScroll.bind(this)}
             />
           </div>
-          <svg
-            style={{
-              pointerEvents: "none",
-              position: "absolute",
-              top: 0,
-              left: 0,
-              height: "100%",
-              width: "calc(100% - 16px)",
-            }}
-          >
-            <rect
-              fill="rgba(200, 200, 200, 0.8)"
-              x="0"
-              width="100%"
-              height={TIMESTAMP_HEADER_SIZE}
-            />
-            <g ref={this.headerRef}></g>
-          </svg>
-          <HorizontalScrollbar
-            ref={this.horizontalScrollbarRef}
-            onScroll={this.onHorizontalScroll.bind(this)}
-          />
         </div>
-      </TimelineContext.Provider>
+        <HoveredBlockInfo block={this.state.hoveredBlock} />
+      </>
     );
   }
 
@@ -408,13 +442,36 @@ export default class Timeline extends React.Component<TimelineProps> {
   }
 }
 
+type HoveredBlockInfoProps = { block: BlockModel };
+
+class HoveredBlockInfo extends React.Component<HoveredBlockInfoProps> {
+  render() {
+    const { block } = this.props;
+
+    if (!block) {
+      return (
+        <div className="flame-chart-hovered-block-info no-block-hovered">
+          Hover a block in the flame chart to see more info.
+        </div>
+      );
+    }
+
+    const {
+      event: { name, cat: category },
+    } = block;
+
+    return (
+      <div className="flame-chart-hovered-block-info">
+        <div className="hovered-block-title">{name}</div>
+        <div className="hovered-block-details">{category}</div>
+      </div>
+    );
+  }
+}
+
 const IDEAL_PIXELS_PER_GRIDLINE = 80;
 
-export function computeGridlines(
-  startTimeSeconds: number,
-  endTimeSeconds: number,
-  widthPixels: number
-) {
+function computeGridlines(startTimeSeconds: number, endTimeSeconds: number, widthPixels: number) {
   const displayedDuration = endTimeSeconds - startTimeSeconds;
   const targetCount = widthPixels / IDEAL_PIXELS_PER_GRIDLINE;
   const count = Math.ceil(targetCount);
@@ -431,36 +488,14 @@ export function computeGridlines(
   };
 }
 
-export const TimelineContext = React.createContext<Timeline | null>(null);
-
-export type TimelineBlocksProps = {
-  blocks: TimelineBlock[];
-  onHover: (block: TimelineBlock) => void;
+type FlameChartBlocksProps = {
+  blocks: BlockModel[];
+  onHover: (block: BlockModel) => void;
 };
 
-/**
- * The blocks rendered within the timeline.
- */
-export class TimelineBlocks extends React.Component<TimelineBlocksProps> {
-  static contextType = TimelineContext;
-
+/** The blocks rendered within the flame chart timeline. */
+class FlameChartBlocks extends React.Component<FlameChartBlocksProps> {
   private hoveredBlock: { element: SVGRectElement; index: number } | null = null;
-
-  componentDidMount() {
-    setTimeout(this.onTimelineMounted.bind(this));
-  }
-
-  private onTimelineMounted() {
-    const timeline = this.context as Timeline;
-    if (!timeline) {
-      throw new Error("TimelineBlocks must be rendered within a Timeline.");
-    }
-    const { blocks } = this.props;
-
-    const rightBoundary = Math.max(...blocks.map(({ rectProps: { x, width } }) => x + width));
-    console.debug("[setGridSize]", rightBoundary);
-    timeline.setMaxXCoordinate(rightBoundary);
-  }
 
   private onMouseMove(e: React.MouseEvent<SVGGElement, MouseEvent>) {
     if ((e.target as Element).tagName !== "rect") return;
@@ -482,36 +517,16 @@ export class TimelineBlocks extends React.Component<TimelineBlocksProps> {
     return (
       <g onMouseMove={this.onMouseMove.bind(this)}>
         {this.props.blocks.map((block: any, i: number) => (
-          <TimelineBlock key={i} index={i} block={block} />
+          <rect
+            key={i}
+            data-index={i}
+            {...block.rectProps}
+            height={BLOCK_HEIGHT}
+            shapeRendering="crispEdges"
+            vectorEffect="non-scaling-stroke"
+          />
         ))}
       </g>
     );
   }
 }
-
-function TimelineBlock<T extends TimelineBlock>({
-  index,
-  block: { rectProps },
-}: {
-  index: number;
-  block: T;
-}) {
-  return (
-    <rect
-      {...rectProps}
-      height={BLOCK_HEIGHT}
-      shapeRendering="crispEdges"
-      vectorEffect="non-scaling-stroke"
-      data-index={index}
-    />
-  );
-}
-
-export type TimelineBlock = {
-  rectProps: {
-    x: number;
-    y: number;
-    width: number;
-    fill: string;
-  };
-};

@@ -1,10 +1,10 @@
+import FlameChart from "buildbuddy/app/flame_chart/flame_chart";
 import pako from "pako";
 import React from "react";
 import capabilities from "../capabilities/capabilities";
 import SetupCodeComponent from "../docs/setup_code";
 import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
-import ProfileFlameChart from "./flame_chart/profile_flame_chart";
 
 interface Props {
   model: InvocationModel;
@@ -197,7 +197,7 @@ export default class InvocationTimingCardComponent extends React.Component {
         <img className="icon" src="/image/clock-regular.svg" />
         <div className="content">
           {capabilities.flameChart && this.state.profile && (
-            <ProfileFlameChart profile={this.state.profile} />
+            <FlameChart profile={this.state.profile} />
           )}
           <div className="title">Timing</div>
           <div className="sort-controls">

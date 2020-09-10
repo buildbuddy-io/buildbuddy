@@ -1,4 +1,5 @@
-export interface TimelineEvent {
+/** Represents a trace event in the profile. */
+export interface TraceEvent {
   pid: number;
   tid: number;
   ts: number;
@@ -12,6 +13,12 @@ export interface TimelineEvent {
   id?: string;
 }
 
+/** TraceEvent augmented with calculated call stack info. */
+export type ThreadEvent = TraceEvent & {
+  depth: number;
+};
+
+/** A list of all the events and their call stack depths within a named thread. */
 export type ThreadTimeline = {
   tid: number;
   threadName: string;
@@ -19,11 +26,7 @@ export type ThreadTimeline = {
   maxDepth: number;
 };
 
-export type ThreadEvent = TimelineEvent & {
-  depth: number;
-};
-
-function eventComparator(a: TimelineEvent, b: TimelineEvent) {
+function eventComparator(a: TraceEvent, b: TraceEvent) {
   const tid = a.tid !== undefined && b.tid !== undefined ? a.tid - b.tid : 0;
   if (tid !== 0) return tid;
 
@@ -36,7 +39,11 @@ function eventComparator(a: TimelineEvent, b: TimelineEvent) {
   return 0;
 }
 
-export function buildThreadTimelines(events: TimelineEvent[]): ThreadTimeline[] {
+/**
+ * Builds the ThreadTimeline structures given the flat list of trace events
+ * from the profile.
+ */
+export function buildThreadTimelines(events: TraceEvent[]): ThreadTimeline[] {
   events.sort(eventComparator);
 
   const timelines: ThreadTimeline[] = [];
@@ -86,13 +93,6 @@ export function buildThreadTimelines(events: TimelineEvent[]): ThreadTimeline[] 
   }
 
   const tids = timelines.map((timeline) => timeline.tid);
-
-  if (timelines.length !== new Set(timelines.map((timeline) => timeline.tid)).size) {
-    console.error("Invalid timeline configuration: multiple timelines for the same thread ID", {
-      tids,
-      events,
-    });
-  }
 
   return timelines;
 }
