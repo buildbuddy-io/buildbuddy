@@ -41,7 +41,10 @@ func Assemble(stage repb.ExecutionStage_Value, d *digest.InstanceNameDigest, er 
 
 func AssembleFailed(stage repb.ExecutionStage_Value, d *digest.InstanceNameDigest, status error) (*longrunning.Operation, error) {
 	_, op, err := Assemble(stage, d, &repb.ExecuteResponse{
-		Status: &statuspb.Status{Code: int32(gstatus.Code(status))},
+		Status: &statuspb.Status{
+			Code:    int32(gstatus.Code(status)),
+			Message: status.Error(),
+		},
 	})
 	return op, err
 }
