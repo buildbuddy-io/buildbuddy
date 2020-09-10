@@ -355,7 +355,13 @@ func (c *Configurator) GetAnonymousUsageEnabled() bool {
 
 func (c *Configurator) GetAuthOauthProviders() []*OauthProvider {
 	c.rereadIfStale()
-	return c.gc.Auth.OauthProviders
+	op := c.gc.Auth.OauthProviders
+	if len(c.gc.Auth.OauthProviders) == 1 {
+		if cs := os.Getenv("BB_OAUTH_CLIENT_SECRET"); cs != "" {
+			op[0].ClientSecret = cs
+		}
+	}
+	return op
 }
 
 func (c *Configurator) GetSSLConfig() *SSLConfig {
@@ -380,7 +386,11 @@ func (c *Configurator) GetAPIConfig() *APIConfig {
 
 func (c *Configurator) GetGithubConfig() *GithubConfig {
 	c.rereadIfStale()
-	return c.gc.Github
+	ghc := c.gc.Github
+	if cs := os.Getenv("BB_GITHUB_CLIENT_SECRET"); cs != "" {
+		ghc.ClientSecret = cs
+	}
+	return ghc
 }
 
 func (c *Configurator) GetOrgConfig() *OrgConfig {
