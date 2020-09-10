@@ -158,7 +158,7 @@ export class HorizontalScrollbar extends React.Component<HorizontalScrollbarProp
   render() {
     return (
       <div
-        className="hScrollTrack"
+        className="horizontal-scroll-track"
         ref={this.trackRef}
         onDragStart={preventDefaultOnDrag}
         role="scrollbar"
@@ -170,7 +170,7 @@ export class HorizontalScrollbar extends React.Component<HorizontalScrollbarProp
         aria-valuenow={0}
       >
         <div
-          className="hScrollThumb"
+          className="horizontal-scroll-thumb"
           ref={this.thumbRef}
           onMouseDown={this.onThumbMouseDown.bind(this)}
         />

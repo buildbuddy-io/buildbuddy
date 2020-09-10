@@ -1505,7 +1505,7 @@ code .comment {
   background-color: transparent;
 }
 
-.hScrollTrack {
+.horizontal-scroll-track {
   position: absolute;
   bottom: 0;
   height: 14px;
@@ -1514,14 +1514,14 @@ code .comment {
   background: transparent;
 }
 
-.hScrollThumb {
+.horizontal-scroll-thumb {
   position: absolute;
   top: 0;
   bottom: 0;
   height: 100%;
 }
 
-.hScrollThumb,
+.horizontal-scroll-thumb,
 .viewport::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.5);
   border-radius: 2px;
@@ -1535,12 +1535,12 @@ code .comment {
   width: 14px;
 }
 
-.hScrollThumb:hover,
+.horizontal-scroll-thumb:hover,
 .viewport::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.7);
 }
 
-.hScrollThumb:active {
+.horizontal-scroll-thumb:active {
   background: rgba(0, 0, 0, 1);
 }
 
