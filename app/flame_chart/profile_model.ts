@@ -92,7 +92,5 @@ export function buildThreadTimelines(events: TraceEvent[]): ThreadTimeline[] {
     timeline.threadName = threadNameByTid.get(timeline.tid);
   }
 
-  const tids = timelines.map((timeline) => timeline.tid);
-
   return timelines;
 }
