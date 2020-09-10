@@ -1,10 +1,10 @@
-import { HorizontalScrollbar } from "buildbuddy/app/components/scrollbar/scrollbar";
-import { AnimatedValue } from "buildbuddy/app/util/animated_value";
-import { AnimationLoop } from "buildbuddy/app/util/animation_loop";
-import { createSvgElement } from "buildbuddy/app/util/dom";
-import { truncateDecimals } from "buildbuddy/app/util/math";
 import React from "react";
 import { fromEvent, Subscription } from "rxjs";
+import { HorizontalScrollbar } from "../components/scrollbar/scrollbar";
+import { AnimatedValue } from "../util/animated_value";
+import { AnimationLoop } from "../util/animation_loop";
+import { createSvgElement } from "../util/dom";
+import { truncateDecimals } from "../util/math";
 import { BlockModel, buildFlameChartModel, FlameChartModel } from "./flame_chart_model";
 import { TraceEvent } from "./profile_model";
 import {
@@ -36,11 +36,11 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   private animation = new AnimationLoop((dt: number) => this.draw(dt));
 
   /* Viewport X offset in screen pixels. */
-  public readonly scrollLeft = new AnimatedValue(0, { min: 0 });
+  private readonly scrollLeft = new AnimatedValue(0, { min: 0 });
   /** Zoom level. */
-  public readonly screenPixelsPerSecond = new AnimatedValue(1, { min: 10 });
+  private readonly screenPixelsPerSecond = new AnimatedValue(1, { min: 10 });
   /** The max timestamp that can be displayed, in seconds. */
-  public endTimeSeconds = INITIAL_END_TIME_SECONDS;
+  private endTimeSeconds = INITIAL_END_TIME_SECONDS;
 
   private subscription = new Subscription();
 

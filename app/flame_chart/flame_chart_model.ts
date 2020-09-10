@@ -1,4 +1,3 @@
-import { mod } from "../util/math";
 import colors from "./colors";
 import { buildThreadTimelines, ThreadEvent, TraceEvent } from "./profile_model";
 import {
@@ -38,7 +37,7 @@ export type BlockModel = {
  * All colors returned have the same approximate perceived brightness
  * to avoid issues with color contrast.
  */
-const getColor = (id: string) => colors[mod(hash(id), colors.length)];
+const getColor = (id: string) => colors[Math.abs(hash(id) % colors.length)];
 
 function hash(value: string) {
   let hash = 0;

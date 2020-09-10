@@ -17,8 +17,3 @@ export function truncateDecimals(value: number, decimalPlaces: number) {
   const decimalShift = Math.pow(10, decimalPlaces);
   return Math.round(value * decimalShift) / decimalShift;
 }
-
-/** True mod operator that doesn't return negative values. */
-export function mod(value: number, modulus: number) {
-  return ((value % modulus) + modulus) % modulus;
-}
