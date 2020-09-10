@@ -1,8 +1,8 @@
-import FlameChart from "buildbuddy/app/flame_chart/flame_chart";
 import pako from "pako";
 import React from "react";
 import capabilities from "../capabilities/capabilities";
 import SetupCodeComponent from "../docs/setup_code";
+import FlameChart from "../flame_chart/flame_chart";
 import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 
