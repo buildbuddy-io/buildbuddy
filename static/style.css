@@ -1610,7 +1610,7 @@ code .comment {
 }
 
 .flame-chart .tracks {
-  /* NOTE: this height gets overwritten */
+  /* TODO: set height dynamically based on SVG content */
   height: 500px;
   min-width: 100%;
 }
