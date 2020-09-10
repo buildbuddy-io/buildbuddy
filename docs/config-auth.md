@@ -19,7 +19,7 @@ Auth is only configurable in the [Enterprise version](enterprise.md) of BuildBud
   * ```issuer_url: ``` The issuer URL of this OIDC Provider.
   * ```client_id: ``` The oauth client ID.
   * ```client_secret: ``` The oauth client secret.
-
+* ```enable_anonymous_usage:``` If true, unauthenticated build uploads will still be allowed but won't be associated with your organization.
 ## Google auth provider
 
 If you'd like to use Google as an auth provider, you can easily obtain your client id and client secret [here](https://console.developers.google.com/apis/credentials).

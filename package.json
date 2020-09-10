@@ -12,10 +12,17 @@
   "lint-staged": {
     "./{app,static}/**/*.{js,jsx,ts,tsx,css,html}": [
       "prettier --write"
+    ],
+    "**/{BUILD,WORKSPACE,*.bazel,*.bzl}": [
+      "buildifier"
+    ],
+    "**/*.go": [
+      "gofmt -w"
     ]
   },
   "devDependencies": {
     "@bazel/bazel": "^2.0.0",
+    "@bazel/buildifier": "^2.0.0",
     "@bazel/ibazel": "^0.13.1",
     "@bazel/rollup": "^1.6.1",
     "@bazel/terser": "^1.3.0",
@@ -38,6 +45,7 @@
     "@types/react-dom": "^16.8.4",
     "@types/react-lazylog": "^4.5.0",
     "@types/react-virtualized": "^9.21.9",
+    "@types/uuid": "^8.3.0",
     "chalk": "^2.4.2",
     "escodegen": "^1.11.1",
     "espree": "^3.5.4",
@@ -54,9 +62,11 @@
     "react-dom": "^16.8.6",
     "react-lazylog": "https://github.com/buildbuddy-io/react-lazylog.git#37947b0c1363acfd3ec14c937d051f547ea92547",
     "react-virtualized": "^9.21.2",
+    "rxjs": "^6.6.3",
     "semver": "^5.5.0",
     "tmp": "^0.0.33",
     "typescript": "^3.4.5",
-    "uglify-js": "^3.6.0"
+    "uglify-js": "^3.6.0",
+    "uuid": "^8.3.0"
   }
 }
