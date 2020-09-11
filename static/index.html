@@ -23,7 +23,7 @@
     <meta charset="UTF-8" />
 
     <script>
-      window.buildbuddyConfig = {{.}};
+      window.buildbuddyConfig = {{.Config}};
     </script>
 
     <script async src="https://www.googletagmanager.com/gtag/js?id=UA-156160991-2"></script>
@@ -39,5 +39,5 @@
   <body>
     <div id="app"></div>
   </body>
-  <script type="text/javascript" src="/app/app_bundle.min.js"></script>
+  <script type="text/javascript" src="{{.JsEntryPointPath}}"></script>
 </html>

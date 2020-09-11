@@ -21,6 +21,19 @@ terser_minified(
     src = ":app_bundle",
 )
 
+config_setting(
+    name = "minified_js",
+    values = {"compilation_mode": "opt"},
+)
+
+alias(
+    name = "app_js_entry_point",
+    actual = select({
+        ":minified_js": ":app_bundle.min",
+        "//conditions:default": ":app_bundle",
+    }),
+)
+
 ts_library(
     name = "app",
     srcs = glob(["*.tsx"]),
