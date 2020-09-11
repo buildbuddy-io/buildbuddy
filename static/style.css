@@ -1585,6 +1585,8 @@ code .comment {
 
 .flame-chart-section {
   border-bottom: 1px solid #ddd;
+  box-sizing: border-box;
+
   box-shadow: 0 1px -3px rgba(0, 0, 0, 0.12) inset;
 }
 
@@ -1613,9 +1615,9 @@ code .comment {
 }
 
 .flame-chart .tracks {
-  /* TODO: set height dynamically based on SVG content */
-  height: 500px;
+  height: inherit;
   min-width: 100%;
+  overflow: visible;
 }
 
 .flame-chart rect.hover {
