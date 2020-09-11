@@ -21,7 +21,6 @@
     ]
   },
   "devDependencies": {
-    "@bazel/bazel": "^2.0.0",
     "@bazel/buildifier": "^2.0.0",
     "@bazel/ibazel": "^0.13.1",
     "@bazel/rollup": "^1.6.1",
