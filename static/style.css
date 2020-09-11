@@ -1508,9 +1508,9 @@ code .comment {
 .horizontal-scroll-track {
   position: absolute;
   bottom: 0;
-  height: 16px;
+  height: var(--scrollbar-width);
   left: 0;
-  right: 16px;
+  right: var(--scrollbar-width);
   background: transparent;
   overflow: hidden;
 }
@@ -1533,7 +1533,7 @@ code .comment {
 }
 
 .viewport::-webkit-scrollbar {
-  width: 16px;
+  width: var(--scrollbar-width);
 }
 
 .horizontal-scroll-thumb:hover,
@@ -1558,6 +1558,8 @@ code .comment {
   overflow: hidden;
 
   user-select: none;
+
+  --scrollbar-width: 16px;
 }
 
 .flame-chart-hovered-block-info {
