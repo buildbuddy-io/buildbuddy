@@ -1,8 +1,10 @@
-import React from "react";
 import pako from "pako";
-import InvocationModel from "./invocation_model";
+import React from "react";
+import capabilities from "../capabilities/capabilities";
 import SetupCodeComponent from "../docs/setup_code";
+import FlameChart from "../flame_chart/flame_chart";
 import rpcService from "../service/rpc_service";
+import InvocationModel from "./invocation_model";
 
 interface Props {
   model: InvocationModel;
@@ -194,6 +196,9 @@ export default class InvocationTimingCardComponent extends React.Component {
       <div className="card timing">
         <img className="icon" src="/image/clock-regular.svg" />
         <div className="content">
+          {capabilities.flameChart && this.state.profile && (
+            <FlameChart profile={this.state.profile} />
+          )}
           <div className="title">Timing</div>
           <div className="sort-controls">
             <div className="sort-control">

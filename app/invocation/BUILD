@@ -10,6 +10,7 @@ ts_library(
         "//app/capabilities",
         "//app/docs",
         "//app/favicon",
+        "//app/flame_chart",
         "//app/format",
         "//app/router",
         "//app/service",
