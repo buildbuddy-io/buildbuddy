@@ -1,13 +1,13 @@
 import { buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
-import events from "fbemitter";
+import { Subject } from "rxjs";
 
 class RpcService {
   service: buildbuddy.service.BuildBuddyService;
-  events: events.EventEmitter;
+  events: Subject<string>;
 
   constructor() {
     this.service = new buildbuddy.service.BuildBuddyService(this.rpc.bind(this));
-    this.events = new events.EventEmitter();
+    this.events = new Subject();
   }
 
   downloadBytestreamFile(filename: string, bytestreamURL: string, invocationId: string) {
@@ -59,7 +59,7 @@ class RpcService {
     request.onload = () => {
       if (request.status >= 200 && request.status < 400) {
         callback(null, new Uint8Array(request.response));
-        this.events.emit(method.name, "completed");
+        this.events.next(method.name);
         console.log(`Emitting event [${method.name}]`);
       } else {
         callback(`Error: ${new TextDecoder("utf-8").decode(new Uint8Array(request.response))}`);

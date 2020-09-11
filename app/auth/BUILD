@@ -11,7 +11,6 @@ ts_library(
         "//proto:context_ts_proto",
         "//proto:group_ts_proto",
         "//proto:user_ts_proto",
-        "@npm//@types/fbemitter",
-        "@npm//fbemitter",
+        "@npm//rxjs",
     ],
 )
