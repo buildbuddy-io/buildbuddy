@@ -80,6 +80,8 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
     this.setMaxXCoordinate(
       Math.max(...this.chartModel.blocks.map(({ rectProps: { x, width } }) => x + width))
     );
+    // Zoom all the way out initially
+    this.screenPixelsPerSecond.value = this.screenPixelsPerSecond.target = this.screenPixelsPerSecond.min;
 
     this.subscription
       .add(fromEvent(window, "mousemove").subscribe(this.onMouseMove.bind(this)))
