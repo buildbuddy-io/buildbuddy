@@ -35,6 +35,8 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
 
   private animation = new AnimationLoop((dt: number) => this.draw(dt));
 
+  private isDebugEnabled = window.localStorage.getItem("buildbuddy://debug/flame-chart") === "true";
+
   /* Viewport X offset in screen pixels. */
   private readonly scrollLeft = new AnimatedValue(0, { min: 0 });
   /** Zoom level. */
@@ -80,6 +82,8 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
     this.setMaxXCoordinate(
       Math.max(...this.chartModel.blocks.map(({ rectProps: { x, width } }) => x + width))
     );
+    // Zoom all the way out initially
+    this.screenPixelsPerSecond.value = this.screenPixelsPerSecond.target = this.screenPixelsPerSecond.min;
 
     this.subscription
       .add(fromEvent(window, "mousemove").subscribe(this.onMouseMove.bind(this)))
@@ -94,7 +98,9 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
 
     this.updateDOM();
 
-    this.renderDebugInfo();
+    if (this.isDebugEnabled) {
+      this.renderDebugInfo();
+    }
   }
 
   private onHoverBlock(hoveredBlock: BlockModel) {
@@ -249,8 +255,6 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
 
   private renderDebugInfo() {
     const el = this.debugRef.current;
-    if (el.getAttribute("hidden")) return;
-
     const debugDrawLoop = new AnimationLoop(() => {
       el.innerHTML = JSON.stringify(
         {
@@ -328,9 +332,6 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
 
   render() {
     // TODO: empty state
-
-    const debug = window.localStorage.getItem("buildbuddy://debug/flame-chart") === "true";
-
     return (
       <>
         <div className="flame-chart">
@@ -392,7 +393,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
               </svg>
               <pre
                 ref={this.debugRef}
-                hidden={!debug}
+                hidden={!this.isDebugEnabled}
                 style={{
                   background: "black",
                   position: "fixed",

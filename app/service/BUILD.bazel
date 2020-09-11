@@ -7,9 +7,8 @@ ts_library(
     srcs = glob(["*.ts"]),
     deps = [
         "//proto:buildbuddy_service_ts_proto",
-        "@npm//@types/fbemitter",
-        "@npm//fbemitter",
         "@npm//oidc-client",
         "@npm//protobufjs",
+        "@npm//rxjs",
     ],
 )

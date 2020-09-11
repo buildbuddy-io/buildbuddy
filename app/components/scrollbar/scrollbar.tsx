@@ -132,7 +132,10 @@ export class HorizontalScrollbar extends React.Component<HorizontalScrollbarProp
     this.isMouseInside = false;
   }
   private onWheelScrollingElement(e: WheelEvent) {
-    if (e.shiftKey) {
+    if (e.deltaX) {
+      e.preventDefault();
+      this.publishScrollEvent(e.deltaX);
+    } else if (e.shiftKey && e.deltaY) {
       e.preventDefault();
       this.publishScrollEvent(e.deltaY);
     }

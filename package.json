@@ -21,7 +21,6 @@
     ]
   },
   "devDependencies": {
-    "@bazel/bazel": "^2.0.0",
     "@bazel/buildifier": "^2.0.0",
     "@bazel/ibazel": "^0.13.1",
     "@bazel/rollup": "^1.6.1",
@@ -38,7 +37,6 @@
     "terser": "^4.6.4"
   },
   "dependencies": {
-    "@types/fbemitter": "^2.0.32",
     "@types/moment": "^2.13.0",
     "@types/pako": "^1.0.1",
     "@types/react": "^16.8.17",
@@ -50,7 +48,6 @@
     "escodegen": "^1.11.1",
     "espree": "^3.5.4",
     "estraverse": "^4.2.0",
-    "fbemitter": "^2.1.1",
     "glob": "^7.1.4",
     "jsdoc": "^3.6.2",
     "minimist": "^1.2.3",

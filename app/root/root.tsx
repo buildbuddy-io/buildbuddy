@@ -39,8 +39,8 @@ export default class RootComponent extends React.Component {
     capabilities.register("BuildBuddy Community Edition", false, [Path.invocationPath]);
     authService.register();
     router.register(this.handlePathChange.bind(this));
-    authService.userStream.addListener(AuthService.userEventName, (user: User) => {
-      this.setState({ ...this.state, user });
+    authService.userStream.subscribe({
+      next: (user: User) => this.setState({ ...this.state, user }),
     });
     faviconService.setDefaultFavicon();
   }

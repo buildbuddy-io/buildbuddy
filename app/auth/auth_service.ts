@@ -1,4 +1,4 @@
-import events from "fbemitter";
+import { Subject } from "rxjs";
 import rpcService from "../service/rpc_service";
 import { user } from "../../proto/user_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
@@ -22,7 +22,7 @@ export class User {
 
 export class AuthService {
   user: User = null;
-  userStream = new events.EventEmitter();
+  userStream = new Subject<User>();
 
   static userEventName = "user";
 
@@ -74,7 +74,7 @@ export class AuthService {
   emitUser(user: User) {
     console.log("User", user);
     this.user = user;
-    this.userStream.emit(AuthService.userEventName, user);
+    this.userStream.next(user);
   }
 
   getRequestContext() {
