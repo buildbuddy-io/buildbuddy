@@ -64,3 +64,8 @@ Here's a full list of BuildBuddy's configuration sections:
 In addition to the config file, some BuildBuddy options (like port number) can only be configured via command line flags.
 
 More information on these flags, see our [flags documentation](config-flags.md).
+
+## Environment variables
+
+Environment variables in the config file are expanded at runtime.
+You only need to reference your environment variables like this `${ENV_VARIABLE}`. 
