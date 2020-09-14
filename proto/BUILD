@@ -37,6 +37,9 @@ proto_library(
     srcs = [
         "execution_stats.proto",
     ],
+    deps = [
+        ":remote_execution_proto",
+    ],
 )
 
 proto_library(
@@ -207,6 +210,9 @@ go_proto_library(
     name = "execution_stats_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/execution_stats",
     proto = ":execution_stats_proto",
+    deps = [
+        ":remote_execution_go_proto",
+    ],
 )
 
 go_proto_library(
