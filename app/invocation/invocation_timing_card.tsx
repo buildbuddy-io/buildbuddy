@@ -95,6 +95,11 @@ export default class InvocationTimingCardComponent extends React.Component {
       return;
     }
 
+    // if (window.localStorage.getItem("buildbuddy://debug/use_huge_profile") === "true") {
+    //   profileUrl =
+    //     "bytestream://cloud.buildbuddy.io/blobs/1b791565afe9276931f3918427fab357d9d671b861e7c463b3e3e33b0fad31a6/914384";
+    // }
+
     rpcService
       .fetchBytestreamFile(profileUrl, this.props.model.getId(), "arraybuffer")
       .then((contents: Uint8Array) => {
@@ -193,244 +198,248 @@ export default class InvocationTimingCardComponent extends React.Component {
   render() {
     let threads = Array.from(this.state.threadMap.values());
     return (
-      <div className="card timing">
-        <img className="icon" src="/image/clock-regular.svg" />
-        <div className="content">
-          {capabilities.flameChart && this.state.profile && (
-            <FlameChart profile={this.state.profile} />
-          )}
-          <div className="title">Timing</div>
-          <div className="sort-controls">
-            <div className="sort-control">
-              Sort by&nbsp;
-              <u
-                onClick={this.handleSortByClicked.bind(this, sortByTimeAscStorageValue)}
-                className={`clickable ${
-                  this.state.sortBy == sortByTimeAscStorageValue && "selected"
-                }`}
-              >
-                start time
-              </u>{" "}
-              |&nbsp;
-              <u
-                onClick={this.handleSortByClicked.bind(this, sortByDurationDescStorageValue)}
-                className={`clickable ${
-                  this.state.sortBy == sortByDurationDescStorageValue && "selected"
-                }`}
-              >
-                duration
-              </u>
-            </div>
-            <div className="sort-control">
-              Group by&nbsp;
-              <u
-                onClick={this.handleGroupByClicked.bind(this, groupByThreadStorageValue)}
-                className={`clickable ${this.state.groupBy == "thread" && "selected"}`}
-              >
-                thread
-              </u>{" "}
-              |&nbsp;
-              <u
-                onClick={this.handleGroupByClicked.bind(this, groupByAllStorageValue)}
-                className={`clickable ${
-                  this.state.groupBy == groupByAllStorageValue && "selected"
-                }`}
-              >
-                flat
-              </u>
-            </div>
-            <div className="sort-control">
-              Threads&nbsp;
-              <u
-                onClick={this.handleThreadPageSizeClicked.bind(this, 10)}
-                className={`clickable ${this.state.threadPageSize == 10 && "selected"}`}
-              >
-                10
-              </u>{" "}
-              |&nbsp;
-              <u
-                onClick={this.handleThreadPageSizeClicked.bind(this, 100)}
-                className={`clickable ${this.state.threadPageSize == 100 && "selected"}`}
-              >
-                100
-              </u>{" "}
-              |&nbsp;
-              <u
-                onClick={this.handleThreadPageSizeClicked.bind(this, 1000)}
-                className={`clickable ${this.state.threadPageSize == 1000 && "selected"}`}
-              >
-                1000
-              </u>{" "}
-              |&nbsp;
-              <u
-                onClick={this.handleThreadPageSizeClicked.bind(this, 10000)}
-                className={`clickable ${this.state.threadPageSize == 10000 && "selected"}`}
-              >
-                10000
-              </u>
-            </div>
-            <div className="sort-control">
-              Events&nbsp;
-              <u
-                onClick={this.handleEventPageSizeClicked.bind(this, 10)}
-                className={`clickable ${this.state.eventPageSize == 10 && "selected"}`}
-              >
-                10
-              </u>{" "}
-              |&nbsp;
-              <u
-                onClick={this.handleEventPageSizeClicked.bind(this, 100)}
-                className={`clickable ${this.state.eventPageSize == 100 && "selected"}`}
-              >
-                100
-              </u>{" "}
-              |&nbsp;
-              <u
-                onClick={this.handleEventPageSizeClicked.bind(this, 1000)}
-                className={`clickable ${this.state.eventPageSize == 1000 && "selected"}`}
-              >
-                1000
-              </u>{" "}
-              |&nbsp;
-              <u
-                onClick={this.handleEventPageSizeClicked.bind(this, 10000)}
-                className={`clickable ${this.state.eventPageSize == 10000 && "selected"}`}
-              >
-                10000
-              </u>
-            </div>
-          </div>
-          {this.state.buildInProgress && <div className="empty-state">Build is in progress...</div>}
-          {this.state.isMissingProfile && (
-            <div className="empty-state">
-              Could not find profile info. This might be because Bazel was invoked with a
-              non-default <span className="inline-code">--profile</span> flag.
-            </div>
-          )}
-          {!this.state.timingEnabled && (
-            <div className="empty-state">
-              Profiling isn't enabled for this invocation.
-              <br />
-              <br />
-              To enable profiling you must add GRPC remote caching. You can do so by checking{" "}
-              <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running
-              your invocation:
-              <SetupCodeComponent />
-            </div>
-          )}
-          {this.state.error && <div className="empty-state">{this.state.error}</div>}
-          {this.state.groupBy == groupByThreadStorageValue && (
-            <div className="details">
-              {threads
-                .sort(this.sortIdAsc)
-                .slice(0, this.state.threadNumPages * this.state.threadPageSize)
-                .map((thread: Thread) => (
-                  <div>
-                    <div className="list-title">
-                      <div>{thread.name}</div>
-                    </div>
-                    <ul>
-                      {thread.events
-                        .sort(
-                          this.state.sortBy == sortByTimeAscStorageValue
-                            ? this.sortTimeAsc
-                            : this.sortDurationDesc
-                        )
-                        .slice(0, this.state.eventPageSize * this.getNumPagesForThread(thread.id))
-                        .map((event) => (
-                          <li>
-                            <div className="list-grid">
-                              <div>
-                                {event.name} {event.args?.target}
-                              </div>
-                              <div>{this.formatDuration(event.dur)} seconds</div>
-                            </div>
-                            <div
-                              className="list-percent"
-                              data-percent={`${(
-                                100 *
-                                (event.dur / this.props.model.getDurationMicros())
-                              ).toFixed(0)}%`}
-                              style={{
-                                width: `${(
-                                  100 *
-                                  (event.dur / this.props.model.getDurationMicros())
-                                ).toPrecision(3)}%`,
-                              }}
-                            ></div>
-                          </li>
-                        ))}
-                    </ul>
-                    {thread.events.length >
-                      this.state.eventPageSize * this.getNumPagesForThread(thread.id) &&
-                      !!this.state.eventPageSize && (
-                        <div
-                          className="more"
-                          onClick={this.handleMoreEventsClicked.bind(this, thread.id)}
-                        >
-                          See more events
-                        </div>
-                      )}
-                  </div>
-                ))}
-            </div>
-          )}
-          {this.state.groupBy == groupByAllStorageValue && (
-            <div className="details">
-              <div>
-                <div className="list-title">
-                  <div>All events</div>
-                </div>
-                <ul>
-                  {threads
-                    .flatMap((thread: Thread) => thread.events)
-                    .sort(
-                      this.state.sortBy == sortByTimeAscStorageValue
-                        ? this.sortTimeAsc
-                        : this.sortDurationDesc
-                    )
-                    .slice(0, this.state.eventPageSize * this.getNumPagesForThread(0))
-                    .map((event) => (
-                      <li>
-                        <div className="list-grid">
-                          <div>{event.name}</div>
-                          <div>{this.formatDuration(event.dur)} seconds</div>
-                        </div>
-                        <div
-                          className="list-percent"
-                          data-percent={`${(
-                            100 *
-                            (event.dur / this.props.model.getDurationMicros())
-                          ).toFixed(0)}%`}
-                          style={{
-                            width: `${(
-                              100 *
-                              (event.dur / this.props.model.getDurationMicros())
-                            ).toPrecision(3)}%`,
-                          }}
-                        ></div>
-                      </li>
-                    ))}
-                </ul>
-                {threads.flatMap((thread: Thread) => thread.events).length >
-                  this.state.eventPageSize * this.getNumPagesForThread(0) &&
-                  !!this.state.eventPageSize && (
-                    <div className="more" onClick={this.handleMoreEventsClicked.bind(this, 0)}>
-                      See more events
-                    </div>
-                  )}
+      <>
+        {capabilities.flameChart && this.state.profile && (
+          <FlameChart profile={this.state.profile} />
+        )}
+        <div className="card timing">
+          <img className="icon" src="/image/clock-regular.svg" />
+          <div className="content">
+            <div className="title">All events</div>
+            <div className="sort-controls">
+              <div className="sort-control">
+                Sort by&nbsp;
+                <u
+                  onClick={this.handleSortByClicked.bind(this, sortByTimeAscStorageValue)}
+                  className={`clickable ${
+                    this.state.sortBy == sortByTimeAscStorageValue && "selected"
+                  }`}
+                >
+                  start time
+                </u>{" "}
+                |&nbsp;
+                <u
+                  onClick={this.handleSortByClicked.bind(this, sortByDurationDescStorageValue)}
+                  className={`clickable ${
+                    this.state.sortBy == sortByDurationDescStorageValue && "selected"
+                  }`}
+                >
+                  duration
+                </u>
+              </div>
+              <div className="sort-control">
+                Group by&nbsp;
+                <u
+                  onClick={this.handleGroupByClicked.bind(this, groupByThreadStorageValue)}
+                  className={`clickable ${this.state.groupBy == "thread" && "selected"}`}
+                >
+                  thread
+                </u>{" "}
+                |&nbsp;
+                <u
+                  onClick={this.handleGroupByClicked.bind(this, groupByAllStorageValue)}
+                  className={`clickable ${
+                    this.state.groupBy == groupByAllStorageValue && "selected"
+                  }`}
+                >
+                  flat
+                </u>
+              </div>
+              <div className="sort-control">
+                Threads&nbsp;
+                <u
+                  onClick={this.handleThreadPageSizeClicked.bind(this, 10)}
+                  className={`clickable ${this.state.threadPageSize == 10 && "selected"}`}
+                >
+                  10
+                </u>{" "}
+                |&nbsp;
+                <u
+                  onClick={this.handleThreadPageSizeClicked.bind(this, 100)}
+                  className={`clickable ${this.state.threadPageSize == 100 && "selected"}`}
+                >
+                  100
+                </u>{" "}
+                |&nbsp;
+                <u
+                  onClick={this.handleThreadPageSizeClicked.bind(this, 1000)}
+                  className={`clickable ${this.state.threadPageSize == 1000 && "selected"}`}
+                >
+                  1000
+                </u>{" "}
+                |&nbsp;
+                <u
+                  onClick={this.handleThreadPageSizeClicked.bind(this, 10000)}
+                  className={`clickable ${this.state.threadPageSize == 10000 && "selected"}`}
+                >
+                  10000
+                </u>
+              </div>
+              <div className="sort-control">
+                Events&nbsp;
+                <u
+                  onClick={this.handleEventPageSizeClicked.bind(this, 10)}
+                  className={`clickable ${this.state.eventPageSize == 10 && "selected"}`}
+                >
+                  10
+                </u>{" "}
+                |&nbsp;
+                <u
+                  onClick={this.handleEventPageSizeClicked.bind(this, 100)}
+                  className={`clickable ${this.state.eventPageSize == 100 && "selected"}`}
+                >
+                  100
+                </u>{" "}
+                |&nbsp;
+                <u
+                  onClick={this.handleEventPageSizeClicked.bind(this, 1000)}
+                  className={`clickable ${this.state.eventPageSize == 1000 && "selected"}`}
+                >
+                  1000
+                </u>{" "}
+                |&nbsp;
+                <u
+                  onClick={this.handleEventPageSizeClicked.bind(this, 10000)}
+                  className={`clickable ${this.state.eventPageSize == 10000 && "selected"}`}
+                >
+                  10000
+                </u>
               </div>
             </div>
-          )}
-          {this.state.groupBy == groupByThreadStorageValue &&
-            threads.length > this.state.threadPageSize * this.state.threadNumPages &&
-            !!this.state.threadPageSize && (
-              <div className="more" onClick={this.handleMoreThreadsClicked.bind(this)}>
-                See more threads
+            {this.state.buildInProgress && (
+              <div className="empty-state">Build is in progress...</div>
+            )}
+            {this.state.isMissingProfile && (
+              <div className="empty-state">
+                Could not find profile info. This might be because Bazel was invoked with a
+                non-default <span className="inline-code">--profile</span> flag.
               </div>
             )}
+            {!this.state.timingEnabled && (
+              <div className="empty-state">
+                Profiling isn't enabled for this invocation.
+                <br />
+                <br />
+                To enable profiling you must add GRPC remote caching. You can do so by checking{" "}
+                <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running
+                your invocation:
+                <SetupCodeComponent />
+              </div>
+            )}
+            {this.state.error && <div className="empty-state">{this.state.error}</div>}
+            {this.state.groupBy == groupByThreadStorageValue && (
+              <div className="details">
+                {threads
+                  .sort(this.sortIdAsc)
+                  .slice(0, this.state.threadNumPages * this.state.threadPageSize)
+                  .map((thread: Thread) => (
+                    <div>
+                      <div className="list-title">
+                        <div>{thread.name}</div>
+                      </div>
+                      <ul>
+                        {thread.events
+                          .sort(
+                            this.state.sortBy == sortByTimeAscStorageValue
+                              ? this.sortTimeAsc
+                              : this.sortDurationDesc
+                          )
+                          .slice(0, this.state.eventPageSize * this.getNumPagesForThread(thread.id))
+                          .map((event) => (
+                            <li>
+                              <div className="list-grid">
+                                <div>
+                                  {event.name} {event.args?.target}
+                                </div>
+                                <div>{this.formatDuration(event.dur)} seconds</div>
+                              </div>
+                              <div
+                                className="list-percent"
+                                data-percent={`${(
+                                  100 *
+                                  (event.dur / this.props.model.getDurationMicros())
+                                ).toFixed(0)}%`}
+                                style={{
+                                  width: `${(
+                                    100 *
+                                    (event.dur / this.props.model.getDurationMicros())
+                                  ).toPrecision(3)}%`,
+                                }}
+                              ></div>
+                            </li>
+                          ))}
+                      </ul>
+                      {thread.events.length >
+                        this.state.eventPageSize * this.getNumPagesForThread(thread.id) &&
+                        !!this.state.eventPageSize && (
+                          <div
+                            className="more"
+                            onClick={this.handleMoreEventsClicked.bind(this, thread.id)}
+                          >
+                            See more events
+                          </div>
+                        )}
+                    </div>
+                  ))}
+              </div>
+            )}
+            {this.state.groupBy == groupByAllStorageValue && (
+              <div className="details">
+                <div>
+                  <div className="list-title">
+                    <div>All events</div>
+                  </div>
+                  <ul>
+                    {threads
+                      .flatMap((thread: Thread) => thread.events)
+                      .sort(
+                        this.state.sortBy == sortByTimeAscStorageValue
+                          ? this.sortTimeAsc
+                          : this.sortDurationDesc
+                      )
+                      .slice(0, this.state.eventPageSize * this.getNumPagesForThread(0))
+                      .map((event) => (
+                        <li>
+                          <div className="list-grid">
+                            <div>{event.name}</div>
+                            <div>{this.formatDuration(event.dur)} seconds</div>
+                          </div>
+                          <div
+                            className="list-percent"
+                            data-percent={`${(
+                              100 *
+                              (event.dur / this.props.model.getDurationMicros())
+                            ).toFixed(0)}%`}
+                            style={{
+                              width: `${(
+                                100 *
+                                (event.dur / this.props.model.getDurationMicros())
+                              ).toPrecision(3)}%`,
+                            }}
+                          ></div>
+                        </li>
+                      ))}
+                  </ul>
+                  {threads.flatMap((thread: Thread) => thread.events).length >
+                    this.state.eventPageSize * this.getNumPagesForThread(0) &&
+                    !!this.state.eventPageSize && (
+                      <div className="more" onClick={this.handleMoreEventsClicked.bind(this, 0)}>
+                        See more events
+                      </div>
+                    )}
+                </div>
+              </div>
+            )}
+            {this.state.groupBy == groupByThreadStorageValue &&
+              threads.length > this.state.threadPageSize * this.state.threadNumPages &&
+              !!this.state.threadPageSize && (
+                <div className="more" onClick={this.handleMoreThreadsClicked.bind(this)}>
+                  See more threads
+                </div>
+              )}
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 }
