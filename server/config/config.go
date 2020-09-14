@@ -182,7 +182,6 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 
 	// expand environment variables
 	expandedFileBytes := []byte(os.ExpandEnv(string(fileBytes)))
-	fmt.Println(string(expandedFileBytes))
 
 	var gc generalConfig
 	if err := yaml.Unmarshal([]byte(expandedFileBytes), &gc); err != nil {
