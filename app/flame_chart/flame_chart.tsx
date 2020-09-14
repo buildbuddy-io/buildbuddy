@@ -474,7 +474,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
               aria-label="Zoom out"
               onClick={this.onZoomOutClick.bind(this)}
               onMouseMove={stopPropagation}
-              title="Zoom in (Ctrl + scroll up)"
+              title="Zoom out (Ctrl + scroll up)"
             >
               <img src="/image/zoom-out.svg" className="icon" />
             </button>
