@@ -15,7 +15,7 @@ Enterprise BuildBuddy is available both as a fully-managed cloud hosted solution
 - OpenID Connect auth support that integrates with Okta, GSuite, Auth0, and more
 - BuildBuddy API for programatic access to your build results
 - Remote Build Execution with support for custom Docker images
-- Configurable TTL for build results and cache with support for persistant build artifact storage
+- Configurable TTL for build results and cache with support for persistent build artifact storage
 - High availability (HA) configurations
 - Horizontal scaling with Kubernetes HPA
 - Enterprise grade support and uptime
