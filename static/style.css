@@ -1,7 +1,3 @@
-html {
-  --body-text-color: black;
-}
-
 h1,
 h2,
 h3,
@@ -1571,7 +1567,7 @@ code .comment {
 }
 
 .flame-chart-hovered-block-info .data {
-  color: var(--body-text-color);
+  color: #000;
 }
 
 .flame-chart-hovered-block-info.no-block-hovered {
