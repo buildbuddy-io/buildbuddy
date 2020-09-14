@@ -42,12 +42,6 @@ function eventComparator(a: TraceEvent, b: TraceEvent) {
   return durationDiff;
 }
 
-// Don't show events smaller than 1ms for now.
-const EVENT_VISIBILITY_THRESHOLD_MICROSECONDS = 1 * 1000;
-// Don't show events that are a tiny fraction of the longest build event time.
-// These events probably aren't worth optimizing for most people.
-const EVENT_VISIBILITY_THRESHOLD_FRACTION_OF_LONGEST_EVENT = 0.0025;
-
 function getThreadNames(events: TraceEvent[]) {
   const threadNameByTid = new Map<number, string>();
   for (const event of events as ThreadEvent[]) {
@@ -62,14 +56,11 @@ function getThreadNames(events: TraceEvent[]) {
  * Builds the ThreadTimeline structures given the flat list of trace events
  * from the profile.
  */
-export function buildThreadTimelines(events: TraceEvent[]): ThreadTimeline[] {
+export function buildThreadTimelines(
+  events: TraceEvent[],
+  { visibilityThreshold = 0 } = {}
+): ThreadTimeline[] {
   const threadNameByTid = getThreadNames(events);
-
-  const longestEvent = Math.max(...events.map((event) => event.dur || 0));
-  const visibilityThreshold = Math.max(
-    EVENT_VISIBILITY_THRESHOLD_MICROSECONDS,
-    longestEvent * EVENT_VISIBILITY_THRESHOLD_FRACTION_OF_LONGEST_EVENT
-  );
 
   events = events.filter(
     (event) =>
