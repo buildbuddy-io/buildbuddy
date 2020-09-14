@@ -95,11 +95,6 @@ export default class InvocationTimingCardComponent extends React.Component {
       return;
     }
 
-    // if (window.localStorage.getItem("buildbuddy://debug/use_huge_profile") === "true") {
-    //   profileUrl =
-    //     "bytestream://cloud.buildbuddy.io/blobs/1b791565afe9276931f3918427fab357d9d671b861e7c463b3e3e33b0fad31a6/914384";
-    // }
-
     rpcService
       .fetchBytestreamFile(profileUrl, this.props.model.getId(), "arraybuffer")
       .then((contents: Uint8Array) => {
