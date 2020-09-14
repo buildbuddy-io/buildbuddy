@@ -180,8 +180,11 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 		return nil, fmt.Errorf("Error reading config file: %s", err)
 	}
 
+	// expand environment variables
+	expandedFileBytes := []byte(os.ExpandEnv(string(fileBytes)))
+
 	var gc generalConfig
-	if err := yaml.Unmarshal([]byte(fileBytes), &gc); err != nil {
+	if err := yaml.Unmarshal([]byte(expandedFileBytes), &gc); err != nil {
 		return nil, fmt.Errorf("Error parsing config file: %s", err)
 	}
 	return &gc, nil
