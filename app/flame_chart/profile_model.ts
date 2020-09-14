@@ -31,14 +31,14 @@ function eventComparator(a: TraceEvent, b: TraceEvent) {
   const threadIdDiff = a.tid - b.tid;
   if (threadIdDiff !== 0) return threadIdDiff;
 
-  // Order in increasing order of start time.
+  // Sort in increasing order of start time.
   const tsDiff = a.ts - b.ts;
   if (tsDiff !== 0) return tsDiff;
 
   // When two events have the same start time, longer events should come first, since
   // those are considered the parent events of the shorter events and we want to push them
   // to the stack first.
-  const durationDiff = a.dur - b.dur;
+  const durationDiff = b.dur - a.dur;
   return durationDiff;
 }
 
