@@ -43,6 +43,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
 
   private subscription = new Subscription();
 
+  private rulerRef = React.createRef<HTMLDivElement>();
   private viewportRef = React.createRef<HTMLDivElement>();
   private barsContainerRef = React.createRef<SVGSVGElement>();
   private headerRef = React.createRef<SVGGElement>();
@@ -63,16 +64,25 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   private chartModel: FlameChartModel;
   private buildDuration: number;
 
-  constructor(props: FlameChartProps) {
-    super(props);
-
-    this.chartModel = buildFlameChartModel(props.profile.traceEvents);
+  componentDidMount() {
     this.buildDuration = Math.max(
-      ...props.profile.traceEvents.map((event) => (event.ts || 0) + (event.dur || 0))
+      ...this.props.profile.traceEvents.map((event) => (event.ts || 0) + (event.dur || 0))
     );
+    const rulerWidth = this.rulerRef.current.getBoundingClientRect().width;
+    const singlePixelDuration = this.buildDuration / rulerWidth;
+
+    this.chartModel = buildFlameChartModel(this.props.profile.traceEvents, {
+      visibilityThreshold: singlePixelDuration,
+    });
+
+    // Re-render now that the chart model has been computed with the container
+    // dimensions taken into account.
+    this.forceUpdate();
   }
 
-  componentDidMount() {
+  componentDidUpdate() {
+    if (!this.chartModel) return;
+
     this.viewport = this.viewportRef.current;
     this.barsContainerSvg = this.barsContainerRef.current;
     this.header = this.headerRef.current;
@@ -367,6 +377,12 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   }
 
   render() {
+    if (!this.chartModel) {
+      // Return a div that is used to measure the area where the chart
+      // will be rendered.
+      return <div ref={this.rulerRef} />;
+    }
+
     // TODO: empty state
     return (
       <div className="flame-chart-container">

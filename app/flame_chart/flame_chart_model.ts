@@ -49,10 +49,13 @@ function hash(value: string) {
   return hash;
 }
 
-export function buildFlameChartModel(events: TraceEvent[]): FlameChartModel {
+export function buildFlameChartModel(
+  events: TraceEvent[],
+  { visibilityThreshold = 0 } = {}
+): FlameChartModel {
   let currentThreadY = 0;
 
-  const timelines = buildThreadTimelines(events);
+  const timelines = buildThreadTimelines(events, { visibilityThreshold });
   const sections: SectionDecorationModel[] = [];
   const blocks: BlockModel[] = [];
 

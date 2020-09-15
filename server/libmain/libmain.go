@@ -204,8 +204,7 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.MaxConcurrentStreams(1024),
-		// Support large BEP messages: https://github.com/bazelbuild/bazel/issues/12050
-		grpc.MaxRecvMsgSize(50000000),
+		grpc.MaxRecvMsgSize(env.GetConfigurator().GetGRPCMaxRecvMsgSizeBytes()),
 	}
 
 	if credentialOption != nil {

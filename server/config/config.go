@@ -38,6 +38,7 @@ type appConfig struct {
 	AddUserToDomainGroup    bool   `yaml:"add_user_to_domain_group"`
 	GRPCOverHTTPPortEnabled bool   `yaml:"grpc_over_http_port_enabled"`
 	DefaultToDenseMode      bool   `yaml:"default_to_dense_mode"`
+	GRPCMaxRecvMsgSizeBytes int    `yaml:"grpc_max_recv_msg_size_bytes"`
 }
 
 type buildEventProxy struct {
@@ -151,6 +152,7 @@ type APIConfig struct {
 type GithubConfig struct {
 	ClientID     string `yaml:"client_id"`
 	ClientSecret string `yaml:"client_secret"`
+	AccessToken  string `yaml:"access_token"`
 }
 
 type OrgConfig struct {
@@ -179,8 +181,11 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 		return nil, fmt.Errorf("Error reading config file: %s", err)
 	}
 
+	// expand environment variables
+	expandedFileBytes := []byte(os.ExpandEnv(string(fileBytes)))
+
 	var gc generalConfig
-	if err := yaml.Unmarshal([]byte(fileBytes), &gc); err != nil {
+	if err := yaml.Unmarshal([]byte(expandedFileBytes), &gc); err != nil {
 		return nil, fmt.Errorf("Error parsing config file: %s", err)
 	}
 	return &gc, nil
@@ -306,6 +311,16 @@ func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {
 func (c *Configurator) GetDefaultToDenseMode() bool {
 	c.rereadIfStale()
 	return c.gc.App.DefaultToDenseMode
+}
+
+func (c *Configurator) GetGRPCMaxRecvMsgSizeBytes() int {
+	c.rereadIfStale()
+	n := c.gc.App.GRPCMaxRecvMsgSizeBytes
+	if n == 0 {
+		// Support large BEP messages: https://github.com/bazelbuild/bazel/issues/12050
+		return 50000000
+	}
+	return n
 }
 
 func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {
