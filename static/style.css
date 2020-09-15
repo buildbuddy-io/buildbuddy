@@ -1547,12 +1547,16 @@ code .comment {
 
 /** Flame chart */
 
+.dense .flame-chart-container {
+  margin: 0 16px;
+}
+
 .flame-chart {
   background: #f9f9f9;
   position: relative;
   width: 100%;
   height: 320px;
-  margin: 16px 0;
+  margin: 24px 0;
 
   border-radius: 4px 2px 4px;
   overflow: hidden;
@@ -1560,10 +1564,68 @@ code .comment {
   user-select: none;
 
   --scrollbar-width: 14px;
+  --controls-padding: 8px;
+  --controls-height: 32px;
+}
+
+.flame-chart .flame-chart-sections {
+  padding-bottom: calc(2 * var(--controls-padding) + var(--controls-height));
+}
+
+.flame-chart-controls {
+  position: absolute;
+  bottom: var(--scrollbar-width);
+  right: var(--scrollbar-width);
+
+  height: var(--controls-height);
+  padding: 8px;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.flame-chart-controls .icon {
+}
+
+.flame-chart-controls button {
+  width: var(--controls-height);
+  height: var(--controls-height);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(220, 220, 220, 0.8);
+  backdrop-filter: blur(3px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27), 0 1px 1px rgba(255, 255, 255, 0.1) inset;
+  border-radius: 2px;
+  transition: 80ms ease-out;
+
+  cursor: pointer;
+
+  border: none;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+}
+
+.flame-chart-controls button:hover:not(:active) {
+  background: white;
+}
+
+.flame-chart-controls button:active {
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.5);
 }
 
 .flame-chart-hovered-block-info {
-  height: 96px;
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27);
+  white-space: nowrap;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  backdrop-filter: blur(3px);
 }
 
 .flame-chart-hovered-block-info .data {
@@ -1575,7 +1637,7 @@ code .comment {
 }
 
 .flame-chart-hovered-block-info .hovered-block-title {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: bold;
 }
 
