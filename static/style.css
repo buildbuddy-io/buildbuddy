@@ -1508,9 +1508,9 @@ code .comment {
 .horizontal-scroll-track {
   position: absolute;
   bottom: 0;
-  height: 16px;
+  height: var(--scrollbar-width);
   left: 0;
-  right: 16px;
+  right: var(--scrollbar-width);
   background: transparent;
   overflow: hidden;
 }
@@ -1533,7 +1533,7 @@ code .comment {
 }
 
 .viewport::-webkit-scrollbar {
-  width: 16px;
+  width: var(--scrollbar-width);
 }
 
 .horizontal-scroll-thumb:hover,
@@ -1554,14 +1554,20 @@ code .comment {
   height: 320px;
   margin: 16px 0;
 
-  border-radius: 4px 2px 8px;
+  border-radius: 4px 2px 4px;
   overflow: hidden;
 
   user-select: none;
+
+  --scrollbar-width: 14px;
 }
 
 .flame-chart-hovered-block-info {
-  height: 64px;
+  height: 96px;
+}
+
+.flame-chart-hovered-block-info .data {
+  color: #000;
 }
 
 .flame-chart-hovered-block-info.no-block-hovered {
@@ -1578,7 +1584,7 @@ code .comment {
 }
 
 .flame-chart-timestamp-header {
-  fill: rgba(200, 200, 200, 0.8);
+  fill: rgba(220, 220, 220, 0.9);
 }
 
 .flame-chart-section {
@@ -1618,8 +1624,13 @@ code .comment {
   overflow: visible;
 }
 
-.flame-chart rect.hover {
-  stroke: black;
+.flame-chart rect {
   stroke-width: 1;
+  stroke: white;
+  vector-effect: non-scaling-stroke;
+}
+
+.flame-chart rect.hover {
+  opacity: 0.8;
   cursor: pointer;
 }

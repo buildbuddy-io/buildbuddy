@@ -13,16 +13,11 @@ import {
   SECTION_LABEL_HEIGHT,
   TIMESTAMP_FONT_SIZE,
   TIMESTAMP_HEADER_SIZE,
+  VERTICAL_SCROLLBAR_WIDTH,
 } from "./style_constants";
 
-// These are non-tweakable constants; tweakable values should be defined
-// in style_constants.ts
-const MICROSECONDS_TO_SECONDS = 0.000001;
-const VERTICAL_SCROLLBAR_WIDTH = 16; //Must match CSS styling
-
-type ProfileFlameChartState = {
-  hoveredBlock: BlockModel | null;
-};
+// NOTE: Do not add state to the flame chart since it is expensive to re-render.
+type ProfileFlameChartState = {};
 
 export type FlameChartProps = {
   profile: {
@@ -31,8 +26,6 @@ export type FlameChartProps = {
 };
 
 export default class FlameChart extends React.Component<FlameChartProps, ProfileFlameChartState> {
-  state: ProfileFlameChartState = { hoveredBlock: null };
-
   private animation = new AnimationLoop((dt: number) => this.draw(dt));
 
   private isDebugEnabled = window.localStorage.getItem("buildbuddy://debug/flame-chart") === "true";
@@ -46,6 +39,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
 
   private subscription = new Subscription();
 
+  private rulerRef = React.createRef<HTMLDivElement>();
   private viewportRef = React.createRef<HTMLDivElement>();
   private barsContainerRef = React.createRef<SVGSVGElement>();
   private headerRef = React.createRef<SVGGElement>();
@@ -53,6 +47,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   private gridlinesRef = React.createRef<SVGGElement>();
   private debugRef = React.createRef<HTMLPreElement>();
   private horizontalScrollbarRef = React.createRef<HorizontalScrollbar>();
+  private hoveredBlockInfoRef = React.createRef<HoveredBlockInfo>();
 
   private viewport: HTMLDivElement;
   private barsContainerSvg: SVGSVGElement;
@@ -63,14 +58,27 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   private horizontalScrollbar: HorizontalScrollbar;
 
   private chartModel: FlameChartModel;
-
-  constructor(props: FlameChartProps) {
-    super(props);
-
-    this.chartModel = buildFlameChartModel(props.profile.traceEvents);
-  }
+  private buildDuration: number;
 
   componentDidMount() {
+    this.buildDuration = Math.max(
+      ...this.props.profile.traceEvents.map((event) => (event.ts || 0) + (event.dur || 0))
+    );
+    const rulerWidth = this.rulerRef.current.getBoundingClientRect().width;
+    const singlePixelDuration = this.buildDuration / rulerWidth;
+
+    this.chartModel = buildFlameChartModel(this.props.profile.traceEvents, {
+      visibilityThreshold: singlePixelDuration,
+    });
+
+    // Re-render now that the chart model has been computed with the container
+    // dimensions taken into account.
+    this.forceUpdate();
+  }
+
+  componentDidUpdate() {
+    if (!this.chartModel) return;
+
     this.viewport = this.viewportRef.current;
     this.barsContainerSvg = this.barsContainerRef.current;
     this.header = this.headerRef.current;
@@ -104,7 +112,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   }
 
   private onHoverBlock(hoveredBlock: BlockModel) {
-    this.setState({ hoveredBlock });
+    this.hoveredBlockInfoRef.current?.setState({ block: hoveredBlock });
   }
 
   private setMaxXCoordinate(value: number) {
@@ -125,7 +133,8 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
     return this.barsContainerSvg.clientWidth / this.endTimeSeconds;
   }
   private getMaxPixelsPerSecond() {
-    return this.barsContainerSvg.clientWidth / this.secondsPerX;
+    // Don't allow zooming in more than 1ms per 100 pixels.
+    return 100 / 0.001;
   }
 
   private draw(dt: number) {
@@ -232,7 +241,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   }
 
   private get secondsPerX() {
-    return MICROSECONDS_TO_SECONDS;
+    return 1;
   }
 
   private updateDOM() {
@@ -331,6 +340,12 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   }
 
   render() {
+    if (!this.chartModel) {
+      // Return a div that is used to measure the area where the chart
+      // will be rendered.
+      return <div ref={this.rulerRef} />;
+    }
+
     // TODO: empty state
     return (
       <>
@@ -432,7 +447,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
             />
           </div>
         </div>
-        <HoveredBlockInfo block={this.state.hoveredBlock} />
+        <HoveredBlockInfo ref={this.hoveredBlockInfoRef} buildDuration={this.buildDuration} />
       </>
     );
   }
@@ -443,11 +458,16 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   }
 }
 
-type HoveredBlockInfoProps = { block: BlockModel };
+type HoveredBlockInfoState = { block?: BlockModel };
 
-class HoveredBlockInfo extends React.Component<HoveredBlockInfoProps> {
+const MICROSECONDS_PER_SECOND = 1_000_000;
+
+class HoveredBlockInfo extends React.Component<{ buildDuration: number }, HoveredBlockInfoState> {
+  state: HoveredBlockInfoState = {};
+
   render() {
-    const { block } = this.props;
+    const { block } = this.state;
+    const { buildDuration } = this.props;
 
     if (!block) {
       return (
@@ -458,13 +478,26 @@ class HoveredBlockInfo extends React.Component<HoveredBlockInfoProps> {
     }
 
     const {
-      event: { name, cat: category },
+      event: { name, cat: category, ts, dur },
     } = block;
+
+    const buildFraction = ((dur / buildDuration) * 100).toFixed(2);
+    const percentage = buildFraction ? `${buildFraction} %` : "< 0.01 %";
 
     return (
       <div className="flame-chart-hovered-block-info">
         <div className="hovered-block-title">{name}</div>
-        <div className="hovered-block-details">{category}</div>
+        <div className="hovered-block-details">
+          <div>{category}</div>
+          <div>
+            <span className="data">{ts / MICROSECONDS_PER_SECOND}</span> seconds &ndash;{" "}
+            <span className="data">{(ts + dur) / MICROSECONDS_PER_SECOND}</span> seconds
+          </div>
+          <div>
+            <span className="data">{dur / MICROSECONDS_PER_SECOND}</span> seconds total (
+            <span className="data">{percentage}</span> of total build duration)
+          </div>
+        </div>
       </div>
     );
   }
