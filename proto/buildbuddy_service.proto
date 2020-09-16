@@ -22,6 +22,4 @@ service BuildBuddyService {
 
   rpc GetInvocationStat(invocation.GetInvocationStatRequest)
       returns (invocation.GetInvocationStatResponse);
-
-  rpc CreateGroup(grp.CreateGroupRequest) returns (grp.CreateGroupResponse);
 }
