@@ -62,9 +62,7 @@ message ScheduleTaskResponse {
   // Intentionally left blank.
 }
 
-message ReEnqueueTaskRequest {
-  string task_id = 1;
-}
+message ReEnqueueTaskRequest { string task_id = 1; }
 
 message ReEnqueueTaskResponse {
   // Intentionally left blank.
@@ -81,25 +79,16 @@ message EnqueueTaskReservationResponse {
 }
 
 service Scheduler {
-  rpc RegisterNode(stream RegisterNodeRequest)
-      returns (RegisterNodeResponse) {
-  }
+  rpc RegisterNode(stream RegisterNodeRequest) returns (RegisterNodeResponse) {}
 
-  rpc LeaseTask(stream LeaseTaskRequest)
-      returns (stream LeaseTaskResponse) {
-  }
+  rpc LeaseTask(stream LeaseTaskRequest) returns (stream LeaseTaskResponse) {}
 
-  rpc ScheduleTask(ScheduleTaskRequest)
-      returns (ScheduleTaskResponse) {
-  }
+  rpc ScheduleTask(ScheduleTaskRequest) returns (ScheduleTaskResponse) {}
 
-  rpc ReEnqueueTask(ReEnqueueTaskRequest)
-      returns (ReEnqueueTaskResponse) {
-  }
+  rpc ReEnqueueTask(ReEnqueueTaskRequest) returns (ReEnqueueTaskResponse) {}
 }
 
 service QueueExecutor {
   rpc EnqueueTaskReservation(EnqueueTaskReservationRequest)
-      returns (EnqueueTaskReservationResponse) {
-  }
+      returns (EnqueueTaskReservationResponse) {}
 }
