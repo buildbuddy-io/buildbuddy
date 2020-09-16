@@ -534,6 +534,8 @@ class HoveredBlockInfo extends React.Component<{ buildDuration: number }, Hovere
 
     const buildFraction = ((dur / buildDuration) * 100).toFixed(2);
     const percentage = buildFraction ? `${buildFraction} %` : "< 0.01 %";
+    const duration = truncateDecimals(dur / MICROSECONDS_PER_SECOND, 3);
+    const displayedDuration = duration === 0 ? "< 0.001" : `${duration}`;
 
     return (
       <div
@@ -548,13 +550,14 @@ class HoveredBlockInfo extends React.Component<{ buildDuration: number }, Hovere
         <div className="hovered-block-title">{name}</div>
         <div className="hovered-block-details">
           <div>{category}</div>
-          <div>
-            <span className="data">{ts / MICROSECONDS_PER_SECOND}</span> seconds &ndash;{" "}
-            <span className="data">{(ts + dur) / MICROSECONDS_PER_SECOND}</span> seconds
+
+          <div className="duration">
+            <span className="data">{displayedDuration}</span> seconds total (
+            <span className="data">{percentage}</span> of total build duration)
           </div>
           <div>
-            <span className="data">{dur / MICROSECONDS_PER_SECOND}</span> seconds total (
-            <span className="data">{percentage}</span> of total build duration)
+            @ {truncateDecimals(ts / MICROSECONDS_PER_SECOND, 3)} s &ndash;{" "}
+            {truncateDecimals((ts + dur) / MICROSECONDS_PER_SECOND, 3)} s
           </div>
         </div>
       </div>
