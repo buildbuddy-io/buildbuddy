@@ -13,11 +13,9 @@ service BuildBuddyService {
   rpc SearchInvocation(invocation.SearchInvocationRequest)
       returns (invocation.SearchInvocationResponse);
 
-  rpc CreateUser(user.CreateUserRequest)
-      returns (user.CreateUserResponse);
+  rpc CreateUser(user.CreateUserRequest) returns (user.CreateUserResponse);
 
-  rpc GetUser(user.GetUserRequest)
-      returns (user.GetUserResponse);
+  rpc GetUser(user.GetUserRequest) returns (user.GetUserResponse);
 
   rpc GetBazelConfig(bazel_config.GetBazelConfigRequest)
       returns (bazel_config.GetBazelConfigResponse);

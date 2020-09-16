@@ -30,7 +30,7 @@ option java_package = "build.bazel.remote.asset.v1";
 option objc_class_prefix = "RA";
 
 // The Remote Asset API provides a mapping from a URI and Qualifiers to
-// Digests.  
+// Digests.
 //
 // Multiple URIs may be used to refer to the same content.  For example, the
 // same tarball may exist at multiple mirrors and thus be retrievable from
@@ -76,7 +76,7 @@ message Qualifier {
 }
 
 // The Fetch service resolves or fetches assets referenced by URI and
-// Qualifiers, returning a Digest for the content in 
+// Qualifiers, returning a Digest for the content in
 // [ContentAddressableStorage][build.bazel.remote.execution.v2.ContentAddressableStorage].
 //
 // As with other services in the Remote Execution API, any call may return an
@@ -85,7 +85,8 @@ message Qualifier {
 // respect the information provided.
 service Fetch {
   // Resolve or fetch referenced assets, making them available to the caller and
-  // other consumers in the [ContentAddressableStorage][build.bazel.remote.execution.v2.ContentAddressableStorage].
+  // other consumers in the
+  // [ContentAddressableStorage][build.bazel.remote.execution.v2.ContentAddressableStorage].
   //
   // Servers *MAY* fetch content that they do not already have cached, for any
   // URLs they support.
@@ -102,23 +103,25 @@ service Fetch {
   // Servers *MAY* cache fetched content and reuse it for subsequent requests,
   // subject to `oldest_content_accepted`.
   //
-  // Servers *MAY* support the complementary [Push][build.bazel.remote.asset.v1.Push]
-  // API and allow content to be directly inserted for use in future fetch
-  // responses.
+  // Servers *MAY* support the complementary
+  // [Push][build.bazel.remote.asset.v1.Push] API and allow content to be
+  // directly inserted for use in future fetch responses.
   //
   // Servers *MUST* ensure Fetch'd content matches all the specified
   // qualifiers except in the case of previously Push'd resources, for which
   // the server *MAY* trust the pushing client to have set the qualifiers
   // correctly, without validation.
   //
-  // Servers not implementing the complementary [Push][build.bazel.remote.asset.v1.Push]
-  // API *MUST* reject requests containing qualifiers it does not support.
+  // Servers not implementing the complementary
+  // [Push][build.bazel.remote.asset.v1.Push] API *MUST* reject requests
+  // containing qualifiers it does not support.
   //
   // Servers *MAY* transform assets as part of the fetch. For example a
-  // tarball fetched by [FetchDirectory][build.bazel.remote.asset.v1.Fetch.FetchDirectory]
-  // might be unpacked, or a Git repository
-  // fetched by [FetchBlob][build.bazel.remote.asset.v1.Fetch.FetchBlob]
-  // might be passed through `git-archive`.
+  // tarball fetched by
+  // [FetchDirectory][build.bazel.remote.asset.v1.Fetch.FetchDirectory] might be
+  // unpacked, or a Git repository fetched by
+  // [FetchBlob][build.bazel.remote.asset.v1.Fetch.FetchBlob] might be passed
+  // through `git-archive`.
   //
   // Errors handling the requested assets will be returned as gRPC Status errors
   // here; errors outside the server's control will be returned inline in the
@@ -142,10 +145,16 @@ service Fetch {
   // `qualifiers.name` and a `description` of `"{qualifier}" not supported`
   // indicating the name of the unsupported qualifier.
   rpc FetchBlob(FetchBlobRequest) returns (FetchBlobResponse) {
-    option (google.api.http) = { post: "/v1/{instance_name=**}/assets:fetchBlob" body: "*" };
+    option (google.api.http) = {
+      post : "/v1/{instance_name=**}/assets:fetchBlob"
+      body : "*"
+    };
   }
   rpc FetchDirectory(FetchDirectoryRequest) returns (FetchDirectoryResponse) {
-    option (google.api.http) = { post: "/v1/{instance_name=**}/assets:fetchDirectory" body: "*" };
+    option (google.api.http) = {
+      post : "/v1/{instance_name=**}/assets:fetchDirectory"
+      body : "*"
+    };
   }
 }
 
@@ -175,7 +184,7 @@ message FetchBlobRequest {
   google.protobuf.Duration timeout = 2;
 
   // The oldest content the client is willing to accept, as measured from the
-  // time it was Push'd or when the underlying retrieval from origin was 
+  // time it was Push'd or when the underlying retrieval from origin was
   // started.
   // Upon retries of Fetch requests that cannot be completed within a single
   // RPC, clients *SHOULD* provide the same value for subsequent requests as the
@@ -188,8 +197,8 @@ message FetchBlobRequest {
   // can directly fetch from origin, in which case multiple URIs *SHOULD*
   // represent the same content available at different locations (such as an
   // origin and secondary mirrors). These may also be URIs for content known to
-  // the server through other mechanisms, e.g. pushed via the [Push][build.bazel.remote.asset.v1.Push]
-  // service.
+  // the server through other mechanisms, e.g. pushed via the
+  // [Push][build.bazel.remote.asset.v1.Push] service.
   //
   // Clients *MUST* supply at least one URI. Servers *MAY* match any one of the
   // supplied URIs.
@@ -250,7 +259,8 @@ message FetchDirectoryRequest {
   // available for future Fetch calls.
   //
   // If this timeout is exceeded on an attempt to retrieve content from origin
-  // the client will receive DEADLINE_EXCEEDED in [FetchDirectoryResponse.status].
+  // the client will receive DEADLINE_EXCEEDED in
+  // [FetchDirectoryResponse.status].
   google.protobuf.Duration timeout = 2;
 
   // The oldest content the client is willing to accept, as measured from the
@@ -267,8 +277,8 @@ message FetchDirectoryRequest {
   // can directly fetch from origin, in which case multiple URIs *SHOULD*
   // represent the same content available at different locations (such as an
   // origin and secondary mirrors). These may also be URIs for content known to
-  // the server through other mechanisms, e.g. pushed via the [Push][build.bazel.remote.asset.v1.Push]
-  // service.
+  // the server through other mechanisms, e.g. pushed via the
+  // [Push][build.bazel.remote.asset.v1.Push] service.
   //
   // Clients *MUST* supply at least one URI. Servers *MAY* match any one of the
   // supplied URIs.
@@ -357,11 +367,17 @@ service Push {
   // * `INTERNAL`: An internal error occurred while performing the operation.
   //   The client should retry.
   rpc PushBlob(PushBlobRequest) returns (PushBlobResponse) {
-    option (google.api.http) = { post: "/v1/{instance_name=**}/assets:pushBlob" body: "*" };
+    option (google.api.http) = {
+      post : "/v1/{instance_name=**}/assets:pushBlob"
+      body : "*"
+    };
   }
 
   rpc PushDirectory(PushDirectoryRequest) returns (PushDirectoryResponse) {
-    option (google.api.http) = { post: "/v1/{instance_name=**}/assets:pushDirectory" body: "*" };
+    option (google.api.http) = {
+      post : "/v1/{instance_name=**}/assets:pushDirectory"
+      body : "*"
+    };
   }
 }
 
@@ -384,8 +400,9 @@ message PushBlobRequest {
   // The same qualifiers apply to all URIs.
   repeated Qualifier qualifiers = 3;
 
-  // A time after which this content should stop being returned via [FetchBlob][build.bazel.remote.asset.v1.Fetch.FetchBlob].
-  // Servers *MAY* expire content early, e.g. due to storage pressure.
+  // A time after which this content should stop being returned via
+  // [FetchBlob][build.bazel.remote.asset.v1.Fetch.FetchBlob]. Servers *MAY*
+  // expire content early, e.g. due to storage pressure.
   google.protobuf.Timestamp expire_at = 4;
 
   // The blob to associate.
@@ -402,7 +419,8 @@ message PushBlobRequest {
 
 // A response message for
 // [Push.PushBlob][build.bazel.remote.asset.v1.Push.PushBlob].
-message PushBlobResponse { /* empty */ }
+message PushBlobResponse { /* empty */
+}
 
 // A request message for
 // [Push.PushDirectory][build.bazel.remote.asset.v1.Push.PushDirectory].
@@ -442,4 +460,5 @@ message PushDirectoryRequest {
 
 // A response message for
 // [Push.PushDirectory][build.bazel.remote.asset.v1.Push.PushDirectory].
-message PushDirectoryResponse { /* empty */ }
+message PushDirectoryResponse { /* empty */
+}

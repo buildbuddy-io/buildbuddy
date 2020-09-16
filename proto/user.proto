@@ -5,9 +5,7 @@ import "proto/user_id.proto";
 
 package user;
 
-message GetUserRequest {
-  UserId user_id = 1;
-}
+message GetUserRequest { UserId user_id = 1; }
 
 message GetUserResponse {
   DisplayUser display_user = 1;
@@ -23,6 +21,4 @@ message CreateUserRequest {
   // from the authentication provider response.
 }
 
-message CreateUserResponse {
-   DisplayUser display_user = 1;
-}
+message CreateUserResponse { DisplayUser display_user = 1; }
