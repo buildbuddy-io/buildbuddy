@@ -4,7 +4,8 @@ package form;
 
 // An error associated with a user form field.
 message FieldError {
-  // Name of the form field which uniquely identifies it in the UI.
+  // Name of the form field which should match the corresponding proto field
+  // name.
   string field_name = 1;
 
   // Error message that should be shown above the field.
