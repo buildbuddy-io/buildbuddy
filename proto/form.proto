@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package form;
+
+// An error associated with a user form field.
+message FieldError {
+  // Name of the form field which uniquely identifies it in the UI.
+  string field_name = 1;
+
+  // Error message that should be shown above the field.
+  string error_message = 2;
+}
