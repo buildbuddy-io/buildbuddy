@@ -3,7 +3,6 @@ syntax = "proto3";
 package grp;
 
 import "proto/form.proto";
-import "proto/user_id.proto";
 
 message Group {
   // The unique ID of this group.
@@ -37,7 +36,7 @@ message CreateGroupRequest {
 
 message CreateGroupResponse {
   // Whether group creation was successful.
-  boolean success = 1;
+  bool success = 1;
 
   // The ID of the created group.
   string group_id = 2;
@@ -56,7 +55,7 @@ message UpdateGroupRequest {
 
 message UpdateGroupResponse {
   // Whether the group update was successful.
-  boolean success = 1;
+  bool success = 1;
 
   // Error messages associated with problematic form fields (if the update
   // wasn't successful).

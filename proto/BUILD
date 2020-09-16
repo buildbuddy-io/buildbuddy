@@ -109,6 +109,14 @@ proto_library(
     srcs = [
         "grp.proto",
     ],
+    deps = [
+        ":form_proto",
+    ],
+)
+
+proto_library(
+    name = "form_proto",
+    srcs = ["form.proto"],
     deps = [],
 )
 
@@ -125,6 +133,7 @@ proto_library(
     srcs = ["buildbuddy_service.proto"],
     deps = [
         ":bazel_config_proto",
+        ":group_proto",
         ":invocation_proto",
         ":user_proto",
     ],
@@ -275,6 +284,7 @@ go_proto_library(
     proto = ":buildbuddy_service_proto",
     deps = [
         ":bazel_config_go_proto",
+        ":group_go_proto",
         ":invocation_go_proto",
         ":user_go_proto",
     ],
@@ -299,6 +309,16 @@ go_proto_library(
     name = "group_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/group",
     proto = ":group_proto",
+    deps = [
+        ":form_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "form_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/form",
+    proto = ":form_proto",
+    deps = [],
 )
 
 go_proto_library(

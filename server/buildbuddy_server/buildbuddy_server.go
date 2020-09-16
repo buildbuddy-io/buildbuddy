@@ -116,6 +116,18 @@ func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserR
 	}, nil
 }
 
+func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGroupRequest) (*grpb.CreateGroupResponse, error) {
+	return &grpb.CreateGroupResponse{
+		Success: false,
+	}, nil
+}
+
+func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGroupRequest) (*grpb.UpdateGroupResponse, error) {
+	return &grpb.UpdateGroupResponse{
+		Success: false,
+	}, nil
+}
+
 func makeConfigOption(lifecycle, flagName, flagValue string) *bzpb.ConfigOption {
 	return &bzpb.ConfigOption{
 		Body:            fmt.Sprintf("%s --%s=%s", lifecycle, flagName, flagValue),
