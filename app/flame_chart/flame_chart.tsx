@@ -188,7 +188,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   }
 
   private onWheel(e: WheelEvent) {
-    if (e.ctrlKey) {
+    if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) {
       e.preventDefault();
       e.stopPropagation();
       this.updateMouse(e);
