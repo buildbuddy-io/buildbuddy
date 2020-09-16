@@ -117,15 +117,11 @@ func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserR
 }
 
 func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGroupRequest) (*grpb.CreateGroupResponse, error) {
-	return &grpb.CreateGroupResponse{
-		Success: false,
-	}, nil
+	return nil, status.UnimplementedError("Not Implemented")
 }
 
 func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGroupRequest) (*grpb.UpdateGroupResponse, error) {
-	return &grpb.UpdateGroupResponse{
-		Success: false,
-	}, nil
+	return nil, status.UnimplementedError("Not Implemented")
 }
 
 func makeConfigOption(lifecycle, flagName, flagValue string) *bzpb.ConfigOption {

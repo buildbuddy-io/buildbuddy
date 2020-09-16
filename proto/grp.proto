@@ -28,36 +28,20 @@ message Group {
 }
 
 message CreateGroupRequest {
-  // Group initialized with required fields except for ID.
-  //
-  // The required fields are documented in the Group proto.
-  Group group = 1;
+  string name = 1;
+  string owned_domain = 2;
+  bool auto_populate_from_owned_domain = 3;
 }
 
 message CreateGroupResponse {
-  // Whether group creation was successful.
-  bool success = 1;
-
   // The ID of the created group.
-  string group_id = 2;
-
-  // Error messages associated with problematic form fields (if creation wasn't
-  // successful).
-  repeated form.FieldError errors = 3;
+  string group_id = 1;
 }
 
 message UpdateGroupRequest {
-  // Updated group fields.
-  //
-  // Non-editable fields are ignored.
-  Group group = 1;
+  string name = 1;
+  string owned_domain = 2;
+  bool auto_populate_from_owned_domain = 3;
 }
 
-message UpdateGroupResponse {
-  // Whether the group update was successful.
-  bool success = 1;
-
-  // Error messages associated with problematic form fields (if the update
-  // wasn't successful).
-  repeated form.FieldError errors = 2;
-}
+message UpdateGroupResponse {}

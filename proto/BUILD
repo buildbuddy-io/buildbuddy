@@ -109,14 +109,6 @@ proto_library(
     srcs = [
         "grp.proto",
     ],
-    deps = [
-        ":form_proto",
-    ],
-)
-
-proto_library(
-    name = "form_proto",
-    srcs = ["form.proto"],
     deps = [],
 )
 
@@ -309,15 +301,6 @@ go_proto_library(
     name = "group_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/group",
     proto = ":group_proto",
-    deps = [
-        ":form_go_proto",
-    ],
-)
-
-go_proto_library(
-    name = "form_go_proto",
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/form",
-    proto = ":form_proto",
     deps = [],
 )
 
