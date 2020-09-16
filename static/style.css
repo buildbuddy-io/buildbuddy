@@ -1639,10 +1639,19 @@ code .comment {
 .flame-chart-hovered-block-info .hovered-block-title {
   font-size: 13px;
   font-weight: bold;
+  margin-bottom: -2px;
 }
 
 .flame-chart-hovered-block-info .hovered-block-details {
   color: #888;
+}
+
+.flame-chart-hovered-block-info .duration {
+  font-size: 14px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid #eee;
+  margin-bottom: 4px;
 }
 
 .flame-chart-timestamp-header {

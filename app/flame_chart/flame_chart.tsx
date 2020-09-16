@@ -548,13 +548,13 @@ class HoveredBlockInfo extends React.Component<{ buildDuration: number }, Hovere
         <div className="hovered-block-title">{name}</div>
         <div className="hovered-block-details">
           <div>{category}</div>
-          <div>
-            <span className="data">{ts / MICROSECONDS_PER_SECOND}</span> seconds &ndash;{" "}
-            <span className="data">{(ts + dur) / MICROSECONDS_PER_SECOND}</span> seconds
-          </div>
-          <div>
+
+          <div className="duration">
             <span className="data">{dur / MICROSECONDS_PER_SECOND}</span> seconds total (
             <span className="data">{percentage}</span> of total build duration)
+          </div>
+          <div>
+            @ {ts / MICROSECONDS_PER_SECOND} s &ndash; {(ts + dur) / MICROSECONDS_PER_SECOND} s
           </div>
         </div>
       </div>
