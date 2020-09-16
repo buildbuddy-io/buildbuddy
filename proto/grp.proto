@@ -19,12 +19,6 @@ message Group {
 
   // True if this group has linked a Github token.
   bool github_linked = 4;
-
-  // Whether users from the owned domain should automatically
-  // be added to the group when they sign up (defaults to false).
-  //
-  // Not yet implemented.
-  bool auto_populate_from_owned_domain = 5;
 }
 
 message CreateGroupRequest {
