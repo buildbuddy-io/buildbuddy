@@ -1292,6 +1292,10 @@ code .comment {
   padding: 0;
 }
 
+.dense .root-loading .container {
+  padding: 0 32px;
+}
+
 .dense .menu {
   height: 64px;
 }
