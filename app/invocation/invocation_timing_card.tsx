@@ -194,9 +194,7 @@ export default class InvocationTimingCardComponent extends React.Component {
     let threads = Array.from(this.state.threadMap.values());
     return (
       <>
-        {capabilities.flameChart && this.state.profile && (
-          <FlameChart profile={this.state.profile} />
-        )}
+        {this.state.profile && <FlameChart profile={this.state.profile} />}
         <div className="card timing">
           <img className="icon" src="/image/clock-regular.svg" />
           <div className="content">
