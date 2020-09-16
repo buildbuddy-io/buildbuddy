@@ -550,11 +550,12 @@ class HoveredBlockInfo extends React.Component<{ buildDuration: number }, Hovere
           <div>{category}</div>
 
           <div className="duration">
-            <span className="data">{dur / MICROSECONDS_PER_SECOND}</span> seconds total (
-            <span className="data">{percentage}</span> of total build duration)
+            <span className="data">{truncateDecimals(dur / MICROSECONDS_PER_SECOND, 3)}</span>{" "}
+            seconds total (<span className="data">{percentage}</span> of total build duration)
           </div>
           <div>
-            @ {ts / MICROSECONDS_PER_SECOND} s &ndash; {(ts + dur) / MICROSECONDS_PER_SECOND} s
+            @ {truncateDecimals(ts / MICROSECONDS_PER_SECOND, 3)} s &ndash;{" "}
+            {truncateDecimals((ts + dur) / MICROSECONDS_PER_SECOND, 3)} s
           </div>
         </div>
       </div>
