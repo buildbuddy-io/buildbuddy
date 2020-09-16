@@ -176,7 +176,9 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
     }
     this.screenPixelsPerSecond.min = this.getMinPixelsPerSecond();
 
-    this.viewport.scrollTop = this.mouse.scrollTop - this.mouse.y;
+    if (this.isPanning) {
+      this.viewport.scrollTop = this.mouse.scrollTop - this.mouse.y;
+    }
 
     this.updateDOM();
   }
