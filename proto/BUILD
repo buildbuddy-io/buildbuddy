@@ -301,7 +301,6 @@ go_proto_library(
     name = "group_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/group",
     proto = ":group_proto",
-    deps = [],
 )
 
 go_proto_library(
