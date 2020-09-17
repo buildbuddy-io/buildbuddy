@@ -2,6 +2,8 @@ load("@npm_bazel_typescript//:index.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["root.css"])
+
 ts_library(
     name = "root",
     srcs = glob(["*.tsx"]),

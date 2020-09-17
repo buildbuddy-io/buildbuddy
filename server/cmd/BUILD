@@ -16,6 +16,7 @@ go_binary(
     data = [
         "//:config_files",
         "//app:app_js_entry_point",
+        "//app:style.css",
         "//static",
     ],
     embed = [":go_default_library"],

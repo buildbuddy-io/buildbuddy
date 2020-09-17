@@ -45,3 +45,20 @@ ts_library(
         "@npm//react-dom",
     ],
 )
+
+genrule(
+    name = "style",
+    srcs = [
+        "//app/root:root.css",
+    ],
+    outs = ["style.css"],
+    cmd_bash = ("""
+        touch out;
+        for f in $(SRCS); do
+            if [[ ! -d $$f ]]; then
+            (cat $$f; echo) >> out;
+            fi;
+        done;
+        cat out > $@;
+    """),
+)
