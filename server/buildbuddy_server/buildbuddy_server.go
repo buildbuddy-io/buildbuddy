@@ -156,12 +156,6 @@ func GetEmailDomain(email string) string {
 }
 
 func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGroupRequest) (*grpb.UpdateGroupResponse, error) {
-	auth := s.env.GetAuthenticator()
-	userDB := s.env.GetUserDB()
-	if auth == nil || userDB == nil {
-		return nil, status.UnimplementedError("Not Implemented")
-	}
-
 	return nil, status.UnimplementedError("Not Implemented")
 }
 
