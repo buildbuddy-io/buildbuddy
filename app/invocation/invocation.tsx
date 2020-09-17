@@ -8,7 +8,6 @@ import faviconService from "../favicon/favicon";
 
 import InvocationModel from "./invocation_model";
 
-import InvocationLoadingComponent from "./invocation_loading";
 import InvocationInProgressComponent from "./invocation_in_progress";
 import InvocationNotFoundComponent from "./invocation_not_found";
 
@@ -122,7 +121,7 @@ export default class InvocationComponent extends React.Component {
 
   render() {
     if (this.state.loading || this.props.user === undefined) {
-      return <InvocationLoadingComponent invocationId={this.props.invocationId} />;
+      return <div className="loading"></div>;
     }
 
     if (this.state.notFound) {
@@ -164,8 +163,8 @@ export default class InvocationComponent extends React.Component {
     var showAll = !this.props.hash && !this.props.denseMode;
 
     return (
-      <div>
-        <div className={`shelf ${this.state.model.getStatusClass()}`}>
+      <div className="invocation">
+        <div className={`shelf nopadding-dense ${this.state.model.getStatusClass()}`}>
           {this.props.denseMode ? (
             <DenseInvocationOverviewComponent
               invocationId={this.props.invocationId}
@@ -179,7 +178,7 @@ export default class InvocationComponent extends React.Component {
             />
           )}
         </div>
-        <div className="container">
+        <div className="container nopadding-dense">
           {this.props.denseMode ? (
             <DenseInvocationTabsComponent hash={this.props.hash} />
           ) : (

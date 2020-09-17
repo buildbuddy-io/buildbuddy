@@ -40,6 +40,14 @@ class Router {
     this.navigateTo(Path.setupPath);
   }
 
+  navigateToSettings() {
+    if (!capabilities.canNavigateToPath(Path.invocationPath)) {
+      alert(`Settings are not available in ${capabilities.name}`);
+      return;
+    }
+    this.navigateTo(Path.settingsPath);
+  }
+
   navigateToInvocation(invocationId: string) {
     if (!capabilities.canNavigateToPath(Path.invocationPath)) {
       alert(`Invocations are not available in ${capabilities.name}`);
@@ -144,6 +152,7 @@ export class Path {
   static repoHistoryPath = "/history/repo/";
   static commitHistoryPath = "/history/commit/";
   static setupPath = "/docs/setup/";
+  static settingsPath = "/settings/";
 }
 
 export default new Router();

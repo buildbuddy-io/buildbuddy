@@ -33,11 +33,6 @@ body {
   flex-direction: column;
 }
 
-.root-loading {
-  min-height: 50vh;
-  padding-top: 32px;
-}
-
 a {
   text-decoration: none;
   color: inherit;
@@ -904,10 +899,6 @@ code .comment {
   text-decoration: underline;
 }
 
-.empty-state.history {
-  padding: 0 16px;
-}
-
 .target {
   display: flex;
   align-self: center;
@@ -1289,7 +1280,16 @@ code .comment {
 
 .dense .container {
   max-width: 100%;
+  padding: 0 16px;
+}
+
+.dense .nopadding-dense {
   padding: 0;
+}
+
+.dense .shelf {
+  padding: 16px 0;
+  border-bottom: 0;
 }
 
 .dense .menu {
@@ -1300,32 +1300,13 @@ code .comment {
   height: 32px;
 }
 
-.dense .shelf {
-  padding: 0;
-  border-bottom: 0;
-}
-
 .dense .grid {
   padding: 0 16px;
-  margin-top: 0px;
   margin-bottom: 8px;
 }
 
 .dense .empty-state {
   padding: 0;
-}
-
-.dense .history-overview.container {
-  padding: 16px;
-}
-
-.dense .state-page .container,
-.dense .home .container {
-  padding: 0 32px;
-}
-
-.dense .state-page .shelf {
-  padding: 48px 0;
 }
 
 .dense .tabs {
@@ -1387,10 +1368,6 @@ code .comment {
 
 .dense .card .icon {
   display: none;
-}
-
-.dense .menu .container {
-  padding: 0 16px;
 }
 
 .dense .list-grid div:first-of-type {
@@ -1547,10 +1524,6 @@ code .comment {
 
 /** Flame chart */
 
-.dense .flame-chart-container {
-  margin: 0 16px;
-}
-
 .flame-chart {
   background: #f9f9f9;
   position: relative;
@@ -1583,9 +1556,6 @@ code .comment {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.flame-chart-controls .icon {
 }
 
 .flame-chart-controls button {
@@ -1704,4 +1674,52 @@ code .comment {
 .flame-chart rect.hover {
   opacity: 0.8;
   cursor: pointer;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  overflow: auto;
+  background-color: #fff;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+@keyframes rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-grow: 1;
+}
+
+.loading:before {
+  content: "";
+  display: block;
+  animation: rotate 2s linear infinite;
+  width: 32px;
+  height: 32px;
+  opacity: 0.8;
+  background-image: url("/image/loader.svg");
+  background-size: cover;
+}
+
+.loading.loading-dark {
+  background: #263238;
+}
+
+.loading.loading-dark:before {
+  background-image: url("/image/loader-white.svg");
 }

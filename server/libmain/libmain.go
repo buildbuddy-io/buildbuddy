@@ -244,7 +244,7 @@ func StartAndRunServices(env environment.Env) {
 	if err := rlimit.MaxRLimit(); err != nil {
 		log.Printf("Error raising open files limit: %s", err)
 	}
-	staticFileServer, err := static.NewStaticFileServer(env, *staticDirectory, []string{"/invocation/", "/history/", "/docs/"})
+	staticFileServer, err := static.NewStaticFileServer(env, *staticDirectory, []string{"/invocation/", "/history/", "/docs/", "/settings/"})
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)
 	}
