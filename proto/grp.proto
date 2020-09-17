@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package grp;
 
-import "proto/form.proto";
-
 message Group {
   // The unique ID of this group.
   // Ex. "GR4576963743584254779"
@@ -19,23 +17,30 @@ message Group {
 
   // True if this group has linked a Github token.
   bool github_linked = 4;
+
+  // Whether new users who sign up with an email at the owned domain
+  // are auto-added to this group.
+  bool auto_populate_from_owned_domain = 5;
 }
 
 message CreateGroupRequest {
+  // The name of this group (may be displayed to users).
+  // Ex. "Tyler Williams Group"
   string name = 1;
-  string owned_domain = 2;
-  bool auto_populate_from_owned_domain = 3;
+  // Whether new users who sign up with an email at the owned domain
+  // are auto-added to this group.
+  bool auto_populate_from_owned_domain = 2;
 }
 
-message CreateGroupResponse {
-  // The ID of the created group.
-  string group_id = 1;
-}
+message CreateGroupResponse {}
 
 message UpdateGroupRequest {
+  // The name of this group (may be displayed to users).
+  // Ex. "Tyler Williams Group"
   string name = 1;
-  string owned_domain = 2;
-  bool auto_populate_from_owned_domain = 3;
+  // Whether new users who sign up with an email at the owned domain
+  // are auto-added to this group.
+  bool auto_populate_from_owned_domain = 2;
 }
 
 message UpdateGroupResponse {}
