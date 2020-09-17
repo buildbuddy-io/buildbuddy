@@ -19,7 +19,7 @@ const (
 )
 
 var (
-	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle.min.js", "Absolute URL path of the app JS entry point")
+	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle.js", "Absolute URL path of the app JS entry point")
 )
 
 // StaticFileServer implements a static file http server that serves static
