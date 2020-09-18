@@ -98,7 +98,7 @@ export default class MenuComponent extends React.Component {
                           target="_blank"
                           href={
                             capabilities.createOrg
-                              ? Path.createOrg
+                              ? Path.createOrgPath
                               : "https://buildbuddy.typeform.com/to/PFjD5A"
                           }
                         >
