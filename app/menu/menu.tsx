@@ -1,7 +1,7 @@
 import React from "react";
 import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
-import router from "../router/router";
+import router, { Path } from "../router/router";
 
 interface Props {
   children?: any;
@@ -98,7 +98,7 @@ export default class MenuComponent extends React.Component {
                           target="_blank"
                           href={
                             capabilities.createOrg
-                              ? "/org/create"
+                              ? Path.createOrg
                               : "https://buildbuddy.typeform.com/to/PFjD5A"
                           }
                         >
