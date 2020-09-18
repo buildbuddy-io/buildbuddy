@@ -64,11 +64,8 @@ export default class TargetTestCasesCardComponent extends React.Component {
           <div className="content">
             <div className="title">{this.props.testSuite.getAttribute("name")}</div>
             <div className="test-subtitle">
-              {testCases.length} {testCases.length == 1 ? "test" : "tests"} {this.getStatusTitle()}{" "}
-              in{" "}
-              {format.durationMillis(
-                this.props.testResult.buildEvent.testResult.testAttemptDurationMillis
-              )}
+              {testCases.length} {testCases.length == 1 ? "test" : "tests"} {this.getStatusTitle()} in{" "}
+              {format.durationMillis(this.props.testResult.buildEvent.testResult.testAttemptDurationMillis)}
             </div>
             <div className="test-document">
               <div className="test-suite">
@@ -78,9 +75,7 @@ export default class TargetTestCasesCardComponent extends React.Component {
                       <div className="test-case">
                         <div className="test-case-name">
                           {testCase.getAttribute("classname") && (
-                            <span className="test-class">
-                              {testCase.getAttribute("classname")}.
-                            </span>
+                            <span className="test-class">{testCase.getAttribute("classname")}.</span>
                           )}
                           {testCase.getAttribute("name")}
                         </div>

@@ -56,10 +56,7 @@ function getThreadNames(events: TraceEvent[]) {
  * Builds the ThreadTimeline structures given the flat list of trace events
  * from the profile.
  */
-export function buildThreadTimelines(
-  events: TraceEvent[],
-  { visibilityThreshold = 0 } = {}
-): ThreadTimeline[] {
+export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold = 0 } = {}): ThreadTimeline[] {
   const threadNameByTid = getThreadNames(events);
 
   events = events.filter(
