@@ -53,6 +53,13 @@ export default class MenuComponent extends React.Component {
     this.dismissMenu();
   }
 
+  handleCreateOrgClicked(e: React.MouseEvent) {
+    if (!capabilities.createOrg) return;
+
+    e.preventDefault();
+    router.navigateToCreateOrg();
+  }
+
   render() {
     return (
       <div>
@@ -95,6 +102,7 @@ export default class MenuComponent extends React.Component {
                     !this.props.user?.isInDefaultGroup() && (
                       <li onClick={this.dismissMenu.bind(this)}>
                         <a
+                          onClick={this.handleCreateOrgClicked.bind(this)}
                           target={capabilities.createOrg ? undefined : "_blank"}
                           href={
                             capabilities.createOrg
