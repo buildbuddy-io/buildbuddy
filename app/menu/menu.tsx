@@ -95,7 +95,7 @@ export default class MenuComponent extends React.Component {
                     !this.props.user?.isInDefaultGroup() && (
                       <li onClick={this.dismissMenu.bind(this)}>
                         <a
-                          target="_blank"
+                          target={capabilities.createOrg ? undefined : "_blank"}
                           href={
                             capabilities.createOrg
                               ? Path.createOrgPath
