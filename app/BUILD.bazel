@@ -22,15 +22,15 @@ terser_minified(
 )
 
 config_setting(
-    name = "minified_js",
-    values = {"compilation_mode": "opt"},
+    name = "fastbuild",
+    values = {"compilation_mode": "fastbuild"},
 )
 
 alias(
     name = "app_js_entry_point",
     actual = select({
-        ":minified_js": ":app_bundle.min",
-        "//conditions:default": ":app_bundle",
+        ":fastbuild": ":app_bundle",
+        "//conditions:default": ":app_bundle.min",
     }),
 )
 
@@ -44,4 +44,21 @@ ts_library(
         "@npm//react",
         "@npm//react-dom",
     ],
+)
+
+genrule(
+    name = "style",
+    srcs = [
+        "//app/root:root.css",
+    ],
+    outs = ["style.css"],
+    cmd_bash = ("""
+        touch out;
+        for f in $(SRCS); do
+            if [[ ! -d $$f ]]; then
+            (cat $$f; echo) >> out;
+            fi;
+        done;
+        cat out > $@;
+    """),
 )

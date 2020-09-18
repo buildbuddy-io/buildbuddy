@@ -10,12 +10,13 @@ go_binary(
         "--config_file=config/buildbuddy.local.yaml",
         "--max_shutdown_duration=3s",
     ] + select({
-        "//app:minified_js": ["--js_entry_point_path=/app/app_bundle.min.js"],
-        "//conditions:default": ["--js_entry_point_path=/app/app_bundle.js"],
+        "//app:fastbuild": ["--js_entry_point_path=/app/app_bundle.js"],
+        "//conditions:default": ["--js_entry_point_path=/app/app_bundle.min.js"],
     }),
     data = [
         "//:config_files",
         "//app:app_js_entry_point",
+        "//app:style.css",
         "//static",
     ],
     embed = [":go_default_library"],
@@ -31,6 +32,7 @@ container_image(
     symlinks = {
         "config.yaml": "app/server/cmd/buildbuddy.runfiles/buildbuddy/config/buildbuddy.release.yaml",
     },
+    tags = ["no-cache"],
     visibility = ["//visibility:public"],
 )
 

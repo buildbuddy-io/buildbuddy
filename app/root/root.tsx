@@ -73,17 +73,21 @@ export default class RootComponent extends React.Component {
           denseModeEnabled={this.state.denseMode}
           handleDenseModeToggled={this.handleToggleDenseClicked.bind(this)}
         />
-        {invocationId && (
-          <InvocationComponent
-            invocationId={invocationId}
-            hash={this.state.hash}
-            search={this.state.search}
-            denseMode={this.state.denseMode}
-            user={null}
-          />
-        )}
-        {!invocationId && <SetupComponent />}
-        <FooterComponent />
+        <div className="main">
+          <div className="content">
+            {invocationId && (
+              <InvocationComponent
+                invocationId={invocationId}
+                hash={this.state.hash}
+                search={this.state.search}
+                denseMode={this.state.denseMode}
+                user={null}
+              />
+            )}
+            {!invocationId && <SetupComponent />}
+          </div>
+          <FooterComponent />
+        </div>
       </div>
     );
   }

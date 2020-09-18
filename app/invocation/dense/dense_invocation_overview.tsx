@@ -19,7 +19,7 @@ export default class DenseInvocationOverviewComponent extends React.Component {
 
   render() {
     return (
-      <div className="container">
+      <div className="container nopadding-dense">
         <div className="dense-invocation">
           <div className="dense-invocation-title">Invocation</div>
           <div className="dense-invocation-invocation-id">

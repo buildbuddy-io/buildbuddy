@@ -130,7 +130,7 @@ export default class TargetComponent extends React.Component {
     return (
       <div>
         <div className="shelf">
-          <div className="container history-overview">
+          <div className="container">
             <div className="breadcrumbs">
               {this.props.user && (
                 <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
@@ -210,7 +210,7 @@ export default class TargetComponent extends React.Component {
             </div>
           </div>
         </div>
-        <div className="container">
+        <div className="container nopadding-dense">
           {resultEvents.length > 1 && (
             <div className={`runs ${resultEvents.length > 9 && "run-grid"}`}>
               {resultEvents.map((result, index) => (
