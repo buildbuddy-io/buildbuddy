@@ -100,6 +100,16 @@ class Router {
     this.navigateTo(Path.commitHistoryPath + commit);
   }
 
+  navigateToCreateOrg() {
+    if (!capabilities.createOrg) {
+      alert(
+        `Organizations are not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
+      );
+      return;
+    }
+    this.navigateTo(Path.createOrgPath);
+  }
+
   updateParams(params: any) {
     let keys = Object.keys(params);
     let queryParam = keys.map((key) => `${key}=${params[key]}`).join("&");
@@ -153,6 +163,8 @@ export class Path {
   static commitHistoryPath = "/history/commit/";
   static setupPath = "/docs/setup/";
   static settingsPath = "/settings/";
+  static createOrgPath = "/org/create";
+  static editOrgPath = "/org/edit";
 }
 
 export default new Router();
