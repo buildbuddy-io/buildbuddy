@@ -132,7 +132,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		return nil, status.InvalidArgumentError("Group name cannot be empty")
 	}
 
-	var groupOwnedDomain string = ""
+	groupOwnedDomain := ""
 	if req.GetAutoPopulateFromOwnedDomain() {
 		userEmailDomain := GetEmailDomain(jwtUser.Email)
 		groupOwnedDomain = userEmailDomain
