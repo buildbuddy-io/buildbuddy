@@ -32,6 +32,7 @@ container_image(
     symlinks = {
         "config.yaml": "app/server/cmd/buildbuddy.runfiles/buildbuddy/config/buildbuddy.release.yaml",
     },
+    tags = ["no-cache"],
     visibility = ["//visibility:public"],
 )
 
