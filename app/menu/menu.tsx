@@ -94,7 +94,14 @@ export default class MenuComponent extends React.Component {
                     !this.props.user?.selectedGroup.ownedDomain &&
                     !this.props.user?.isInDefaultGroup() && (
                       <li onClick={this.dismissMenu.bind(this)}>
-                        <a target="_blank" href="https://buildbuddy.typeform.com/to/PFjD5A">
+                        <a
+                          target="_blank"
+                          href={
+                            capabilities.createOrg
+                              ? "/org/create"
+                              : "https://buildbuddy.typeform.com/to/PFjD5A"
+                          }
+                        >
                           Create organization
                         </a>
                       </li>

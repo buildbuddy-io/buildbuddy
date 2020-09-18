@@ -153,6 +153,8 @@ export class Path {
   static commitHistoryPath = "/history/commit/";
   static setupPath = "/docs/setup/";
   static settingsPath = "/settings/";
+  static createOrgPath = "/org/create";
+  static editOrgPath = "/org/edit";
 }
 
 export default new Router();
