@@ -55,9 +55,7 @@ export function formatTimestampUsec(timestamp: number | Long) {
 }
 
 export function formatTimestampMillis(timestamp: number | Long) {
-  return `${moment(+timestamp).format("MMMM Do, YYYY")} at ${moment(+timestamp).format(
-    "h:mm:ss a"
-  )}`;
+  return `${moment(+timestamp).format("MMMM Do, YYYY")} at ${moment(+timestamp).format("h:mm:ss a")}`;
 }
 
 export function formatGitUrl(url: string) {

@@ -84,17 +84,14 @@ export default class InvocationComponent extends React.Component {
         var showInProgressScreen = false;
         if (
           response.invocation.length &&
-          response.invocation[0].invocationStatus ==
-            invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS
+          response.invocation[0].invocationStatus == invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS
         ) {
           showInProgressScreen = response.invocation[0].event.length == 0;
           this.fetchUpdatedProgress();
         }
         this.setState({
           inProgress: showInProgressScreen,
-          model: InvocationModel.modelFromInvocations(
-            response.invocation as invocation.Invocation[]
-          ),
+          model: InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]),
           loading: false,
         });
         document.title = `${this.state.model.getUser(
@@ -166,10 +163,7 @@ export default class InvocationComponent extends React.Component {
       <div className="invocation">
         <div className={`shelf nopadding-dense ${this.state.model.getStatusClass()}`}>
           {this.props.denseMode ? (
-            <DenseInvocationOverviewComponent
-              invocationId={this.props.invocationId}
-              model={this.state.model}
-            />
+            <DenseInvocationOverviewComponent invocationId={this.props.invocationId} model={this.state.model} />
           ) : (
             <InvocationOverviewComponent
               invocationId={this.props.invocationId}
@@ -191,10 +185,9 @@ export default class InvocationComponent extends React.Component {
             <InvocationFilterComponent hash={this.props.hash} search={this.props.search} />
           )}
 
-          {(showAll || this.props.hash == "#log") &&
-            this.state.model.aborted?.aborted.description && (
-              <ErrorCardComponent model={this.state.model} />
-            )}
+          {(showAll || this.props.hash == "#log") && this.state.model.aborted?.aborted.description && (
+            <ErrorCardComponent model={this.state.model} />
+          )}
 
           {(!this.props.hash || this.props.hash == "#targets") && (
             <TargetsComponent
@@ -219,10 +212,7 @@ export default class InvocationComponent extends React.Component {
           )}
 
           {(showAll || this.props.hash == "#details") && (
-            <InvocationDetailsCardComponent
-              model={this.state.model}
-              limitResults={!this.props.hash}
-            />
+            <InvocationDetailsCardComponent model={this.state.model} limitResults={!this.props.hash} />
           )}
 
           {(showAll || this.props.hash == "#artifacts") && (
@@ -234,9 +224,7 @@ export default class InvocationComponent extends React.Component {
           )}
 
           {this.props.hash == "#timing" && <TimingCardComponent model={this.state.model} />}
-          {this.props.hash == "#raw" && (
-            <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />
-          )}
+          {this.props.hash == "#raw" && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
         </div>
       </div>
     );
