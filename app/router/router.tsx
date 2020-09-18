@@ -41,7 +41,7 @@ class Router {
   }
 
   navigateToSettings() {
-    if (!capabilities.canNavigateToPath(Path.invocationPath)) {
+    if (!capabilities.canNavigateToPath(Path.settingsPath)) {
       alert(`Settings are not available in ${capabilities.name}`);
       return;
     }
