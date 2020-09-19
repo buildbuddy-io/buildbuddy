@@ -1,7 +1,7 @@
 import React from "react";
 import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
-import router from "../router/router";
+import router, { Path } from "../router/router";
 
 interface Props {
   children?: any;
@@ -53,6 +53,10 @@ export default class MenuComponent extends React.Component {
     this.dismissMenu();
   }
 
+  handleCreateOrgClicked() {
+    router.navigateToCreateOrg();
+  }
+
   render() {
     return (
       <div>
@@ -86,9 +90,9 @@ export default class MenuComponent extends React.Component {
                     !this.props.user?.selectedGroup.ownedDomain &&
                     !this.props.user?.isInDefaultGroup() && (
                       <li onClick={this.dismissMenu.bind(this)}>
-                        <a target="_blank" href="https://buildbuddy.typeform.com/to/PFjD5A">
+                        <div className="clickable" onClick={this.handleCreateOrgClicked.bind(this)}>
                           Create organization
-                        </a>
+                        </div>
                       </li>
                     )}
                   <li onClick={this.dismissMenu.bind(this)}>

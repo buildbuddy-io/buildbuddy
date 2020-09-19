@@ -100,6 +100,14 @@ class Router {
     this.navigateTo(Path.commitHistoryPath + commit);
   }
 
+  navigateToCreateOrg() {
+    if (!capabilities.createOrg) {
+      window.open("https://buildbuddy.typeform.com/to/PFjD5A", "_blank");
+      return;
+    }
+    this.navigateTo(Path.createOrgPath);
+  }
+
   updateParams(params: any) {
     let keys = Object.keys(params);
     let queryParam = keys.map((key) => `${key}=${params[key]}`).join("&");
@@ -153,6 +161,8 @@ export class Path {
   static commitHistoryPath = "/history/commit/";
   static setupPath = "/docs/setup/";
   static settingsPath = "/settings/";
+  static createOrgPath = "/org/create";
+  static editOrgPath = "/org/edit";
 }
 
 export default new Router();
