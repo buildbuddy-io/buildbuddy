@@ -53,10 +53,7 @@ export default class MenuComponent extends React.Component {
     this.dismissMenu();
   }
 
-  handleCreateOrgClicked(e: React.MouseEvent) {
-    if (!capabilities.createOrg) return;
-
-    e.preventDefault();
+  handleCreateOrgClicked() {
     router.navigateToCreateOrg();
   }
 
@@ -101,17 +98,9 @@ export default class MenuComponent extends React.Component {
                     !this.props.user?.selectedGroup.ownedDomain &&
                     !this.props.user?.isInDefaultGroup() && (
                       <li onClick={this.dismissMenu.bind(this)}>
-                        <a
-                          onClick={this.handleCreateOrgClicked.bind(this)}
-                          target={capabilities.createOrg ? undefined : "_blank"}
-                          href={
-                            capabilities.createOrg
-                              ? Path.createOrgPath
-                              : "https://buildbuddy.typeform.com/to/PFjD5A"
-                          }
-                        >
+                        <div className="clickable" onClick={this.handleCreateOrgClicked.bind(this)}>
                           Create organization
-                        </a>
+                        </div>
                       </li>
                     )}
                   <li onClick={this.dismissMenu.bind(this)}>

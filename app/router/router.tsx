@@ -102,9 +102,7 @@ class Router {
 
   navigateToCreateOrg() {
     if (!capabilities.createOrg) {
-      alert(
-        `Organizations are not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
-      );
+      window.open("https://buildbuddy.typeform.com/to/PFjD5A", "_blank");
       return;
     }
     this.navigateTo(Path.createOrgPath);
