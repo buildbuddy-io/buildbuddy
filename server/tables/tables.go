@@ -238,6 +238,7 @@ func (u *User) ToProto() *uspb.DisplayUser {
 			Last:  u.LastName,
 		},
 		ProfileImageUrl: u.ImageURL,
+		Email:           u.Email,
 	}
 }
 
