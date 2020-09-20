@@ -22,7 +22,6 @@ require (
 	github.com/elazarl/goproxy v0.0.0-20180725130230-947c36da3153 // indirect
 	github.com/envoyproxy/go-control-plane v0.9.5 // indirect
 	github.com/envoyproxy/protoc-gen-validate v0.3.0 // indirect
-	github.com/fsnotify/fsnotify v1.4.9 // indirect
 	github.com/go-gl/glfw v0.0.0-20200420212212-258d9bec320e // indirect
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20200420212212-258d9bec320e // indirect
 	github.com/go-redis/redis/v8 v8.1.3 // indirect

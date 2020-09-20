@@ -21,4 +21,5 @@ message DisplayUser {
   UserId user_id = 1;
   Name name = 2;
   string profile_image_url = 3;
+  string email = 4;
 }
