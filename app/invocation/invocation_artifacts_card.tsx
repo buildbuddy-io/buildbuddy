@@ -52,10 +52,7 @@ export default class ArtifactsCardComponent extends React.Component {
           <div className="title">Artifacts</div>
           <div className="details">
             {targets
-              .slice(
-                0,
-                (this.props.pageSize && this.state.numPages * this.props.pageSize) || undefined
-              )
+              .slice(0, (this.props.pageSize && this.state.numPages * this.props.pageSize) || undefined)
               .map((completed) => (
                 <div>
                   <div className="artifact-section-title">{completed.id.targetCompleted.label}</div>
@@ -63,16 +60,13 @@ export default class ArtifactsCardComponent extends React.Component {
                     .filter(
                       (output) =>
                         !this.props.filter ||
-                        completed.id.targetCompleted.label
-                          .toLowerCase()
-                          .includes(this.props.filter.toLowerCase()) ||
+                        completed.id.targetCompleted.label.toLowerCase().includes(this.props.filter.toLowerCase()) ||
                         output.name.toLowerCase().includes(this.props.filter.toLowerCase())
                     )
                     .map((output) => (
                       <div
                         className="artifact-name"
-                        onClick={this.handleArtifactClicked.bind(this, output.uri, output.name)}
-                      >
+                        onClick={this.handleArtifactClicked.bind(this, output.uri, output.name)}>
                         {output.name}
                       </div>
                     ))}
@@ -82,13 +76,11 @@ export default class ArtifactsCardComponent extends React.Component {
               <span>{this.props.filter ? "No matching artifacts" : "No artifacts"}</span>
             )}
           </div>
-          {this.props.pageSize &&
-            targets.length > this.state.numPages * this.props.pageSize &&
-            !!this.state.numPages && (
-              <div className="more" onClick={this.handleMoreArtifactClicked.bind(this)}>
-                See more artifacts
-              </div>
-            )}
+          {this.props.pageSize && targets.length > this.state.numPages * this.props.pageSize && !!this.state.numPages && (
+            <div className="more" onClick={this.handleMoreArtifactClicked.bind(this)}>
+              See more artifacts
+            </div>
+          )}
         </div>
       </div>
     );

@@ -102,9 +102,7 @@ export default class TargetTestDocumentCardComponent extends React.Component {
                     </div>
                   )}
                   <div className="card">
-                    <div className="stat">
-                      Run {this.props.testResult.buildEvent.id.testResult.run}
-                    </div>
+                    <div className="stat">Run {this.props.testResult.buildEvent.id.testResult.run}</div>
                     <div className="stat-label">
                       (Attempt {this.props.testResult.buildEvent.id.testResult.attempt}, Shard{" "}
                       {this.props.testResult.buildEvent.id.testResult.shard})
@@ -121,10 +119,7 @@ export default class TargetTestDocumentCardComponent extends React.Component {
                   testSuite={testSuite}
                   tagName="failure"
                 />
-                <TargetTestCasesCardComponent
-                  testResult={this.props.testResult}
-                  testSuite={testSuite}
-                />
+                <TargetTestCasesCardComponent testResult={this.props.testResult} testSuite={testSuite} />
                 <TargetTestCasesCardComponent
                   testResult={this.props.testResult}
                   testSuite={testSuite}
@@ -134,8 +129,7 @@ export default class TargetTestDocumentCardComponent extends React.Component {
                 {Array.from(testSuite.children)
                   .filter(
                     (child) =>
-                      (child.tagName == "system-out" || child.tagName == "system-err") &&
-                      child.innerHTML.length > 0
+                      (child.tagName == "system-out" || child.tagName == "system-err") && child.innerHTML.length > 0
                   )
                   .map((child) => (
                     <TargetLogCardComponent

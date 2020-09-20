@@ -10,12 +10,7 @@ export default class DenseInvocationTabsComponent extends React.Component {
   render() {
     return (
       <div className="tabs">
-        <a
-          href="#targets"
-          className={`tab ${
-            (this.props.hash == "#targets" || this.props.hash == "") && "selected"
-          }`}
-        >
+        <a href="#targets" className={`tab ${(this.props.hash == "#targets" || this.props.hash == "") && "selected"}`}>
           TARGETS
         </a>
         <a href="#log" className={`tab ${this.props.hash == "#log" && "selected"}`}>

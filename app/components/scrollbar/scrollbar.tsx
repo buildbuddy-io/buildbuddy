@@ -45,16 +45,8 @@ export class HorizontalScrollbar extends React.Component<HorizontalScrollbarProp
     this.thumb!.setAttribute("aria-controls", scrollingElement.id);
 
     this.subscription
-      .add(
-        fromEvent(scrollingElement, "mouseenter").subscribe(
-          this.onMouseEnterScrollingElement.bind(this)
-        )
-      )
-      .add(
-        fromEvent(scrollingElement, "mouseleave").subscribe(
-          this.onMouseLeaveScrollingElement.bind(this)
-        )
-      )
+      .add(fromEvent(scrollingElement, "mouseenter").subscribe(this.onMouseEnterScrollingElement.bind(this)))
+      .add(fromEvent(scrollingElement, "mouseleave").subscribe(this.onMouseLeaveScrollingElement.bind(this)))
       .add(fromEvent(scrollingElement, "wheel").subscribe(this.onWheelScrollingElement.bind(this)))
       .add(fromEvent(window, "mousemove").subscribe(this.onWindowMouseMove.bind(this)))
       .add(fromEvent(window, "mouseup").subscribe(this.onWindowMouseUp.bind(this)))
@@ -70,20 +62,14 @@ export class HorizontalScrollbar extends React.Component<HorizontalScrollbarProp
     this.scrollableWidth = this.scrollLeftMax + trackClientWidth;
     this.thumbWidth = (trackClientWidth / this.scrollableWidth) * trackClientWidth;
     this.thumbX =
-      scrollLeftMax === 0
-        ? 0
-        : (this.scrollLeft / this.scrollLeftMax) * (trackClientWidth - this.thumbWidth);
+      scrollLeftMax === 0 ? 0 : (this.scrollLeft / this.scrollLeftMax) * (trackClientWidth - this.thumbWidth);
 
     this.thumb!.style.left = `${this.thumbX}px`;
     this.thumb!.style.width = `${this.thumbWidth}px`;
 
     this.track.setAttribute(
       "aria-valuenow",
-      String(
-        Math.round(
-          this.thumbX === 0 ? 0 : (100 * this.thumbX) / (trackClientWidth - this.thumbWidth)
-        )
-      )
+      String(Math.round(this.thumbX === 0 ? 0 : (100 * this.thumbX) / (trackClientWidth - this.thumbWidth)))
     );
   }
 
@@ -110,10 +96,7 @@ export class HorizontalScrollbar extends React.Component<HorizontalScrollbarProp
     const deltaX = this.mouseX - lastX;
 
     if (deltaX !== 0 && this.track!.clientWidth - this.thumbWidth !== 0) {
-      this.publishScrollEvent(
-        (deltaX / (this.track!.clientWidth - this.thumbWidth)) * this.scrollLeftMax,
-        false
-      );
+      this.publishScrollEvent((deltaX / (this.track!.clientWidth - this.thumbWidth)) * this.scrollLeftMax, false);
     }
   }
   private onWindowMouseUp(e: MouseEvent) {
@@ -170,13 +153,8 @@ export class HorizontalScrollbar extends React.Component<HorizontalScrollbarProp
         aria-orientation="horizontal"
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={0}
-      >
-        <div
-          className="horizontal-scroll-thumb"
-          ref={this.thumbRef}
-          onMouseDown={this.onThumbMouseDown.bind(this)}
-        />
+        aria-valuenow={0}>
+        <div className="horizontal-scroll-thumb" ref={this.thumbRef} onMouseDown={this.onThumbMouseDown.bind(this)} />
       </div>
     );
   }
