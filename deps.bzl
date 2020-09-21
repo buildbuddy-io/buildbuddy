@@ -1172,6 +1172,7 @@ def install_buildbuddy_dependencies():
     )
     go_repository(
         name = "io_opentelemetry_go_otel",
+        build_file_proto_mode = "disable",
         importpath = "go.opentelemetry.io/otel",
         sum = "h1:IN2tzQa9Gc4ZVKnTaMbPVcHjvzOdg5n9QfnmlqiET7E=",
         version = "v0.11.0",
