@@ -30,7 +30,11 @@ message CreateGroupRequest {
   bool auto_populate_from_owned_domain = 2;
 }
 
-message CreateGroupResponse {}
+message CreateGroupResponse {
+  // ID of the created group.
+  // Ex. "GR4576963743584254779"
+  string id = 1;
+}
 
 message UpdateGroupRequest {
   // The ID of the group to be updated.
