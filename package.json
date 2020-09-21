@@ -4,8 +4,8 @@
   "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "clean": "rm -rf bazel-* && rm -rf node_modules",
-    "dev": "ibazel run server --compilation_mode=fastbuild"
+    "clean": "bazel clean && rm -rf node_modules",
+    "dev": "ibazel run server"
   },
   "husky": {
     "hooks": {
