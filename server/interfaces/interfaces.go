@@ -137,7 +137,8 @@ type UserDB interface {
 	CreateDefaultGroup(ctx context.Context) error
 
 	// Groups API
-	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) error
+	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (string, error)
+	AddUserToGroup(ctx context.Context, userID string, groupID string) error
 	GetAuthGroup(ctx context.Context) (*tables.Group, error)
 	DeleteGroup(ctx context.Context, groupID string) error
 }

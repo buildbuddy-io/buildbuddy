@@ -102,6 +102,7 @@ type cacheConfig struct {
 	InMemory        bool            `yaml:"in_memory"`
 	MaxSizeBytes    int64           `yaml:"max_size_bytes"`
 	MemcacheTargets []string        `yaml:"memcache_targets"`
+	RedisTarget     string          `yaml:"redis_target"`
 }
 
 type authConfig struct {
@@ -356,6 +357,11 @@ func (c *Configurator) GetCacheS3Config() *S3CacheConfig {
 func (c *Configurator) GetCacheMemcacheTargets() []string {
 	c.rereadIfStale()
 	return c.gc.Cache.MemcacheTargets
+}
+
+func (c *Configurator) GetCacheRedisTarget() string {
+	c.rereadIfStale()
+	return c.gc.Cache.RedisTarget
 }
 
 func (c *Configurator) GetCacheInMemory() bool {
