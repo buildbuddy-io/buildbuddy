@@ -56,7 +56,6 @@
     "escodegen": "^1.11.1",
     "espree": "^7.0.0",
     "estraverse": "^5.1.0",
-    "fbemitter": "^2.1.1",
     "glob": "^7.1.4",
     "jsdoc": "^3.6.2",
     "minimist": "^1.2.3",
