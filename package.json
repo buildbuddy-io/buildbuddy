@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
-  "scripts": {},
+  "scripts": {
+    "clean": "bazel clean && rm -rf node_modules",
+    "dev": "ibazel run server"
+  },
   "husky": {
     "hooks": {
       "pre-commit": "lint-staged"
@@ -24,8 +27,9 @@
     ]
   },
   "devDependencies": {
-    "@bazel/buildifier": "^2.0.0",
-    "@bazel/ibazel": "^0.13.1",
+    "@bazel/bazelisk": "^1.6.1",
+    "@bazel/buildifier": "^3.4.0",
+    "@bazel/ibazel": "^0.13.2",
     "@bazel/rollup": "^1.6.1",
     "@bazel/terser": "^1.3.0",
     "@bazel/typescript": "^1.2.4",
@@ -48,10 +52,10 @@
     "@types/react-lazylog": "^4.5.0",
     "@types/react-virtualized": "^9.21.9",
     "@types/uuid": "^8.3.0",
-    "chalk": "^2.4.2",
+    "chalk": "^4.0.0",
     "escodegen": "^1.11.1",
-    "espree": "^3.5.4",
-    "estraverse": "^4.2.0",
+    "espree": "^7.0.0",
+    "estraverse": "^5.1.0",
     "glob": "^7.1.4",
     "jsdoc": "^3.6.2",
     "minimist": "^1.2.3",
@@ -64,8 +68,8 @@
     "react-lazylog": "https://github.com/buildbuddy-io/react-lazylog.git#37947b0c1363acfd3ec14c937d051f547ea92547",
     "react-virtualized": "^9.21.2",
     "rxjs": "^6.6.3",
-    "semver": "^5.5.0",
-    "tmp": "^0.0.33",
+    "semver": "^7.1.2",
+    "tmp": "^0.2.0",
     "typescript": "^3.4.5",
     "uglify-js": "^3.6.0",
     "uuid": "^8.3.0"
