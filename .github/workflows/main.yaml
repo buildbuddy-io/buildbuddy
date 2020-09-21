@@ -5,7 +5,10 @@ on:
     branches:
       - master
     paths-ignore:
-      - 'docs/**'
+      - "docs/**"
+  pull_request:
+    branches:
+      - master
 
 jobs:
   build:
@@ -13,35 +16,35 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'ci skip')"
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v1
+      - name: Checkout
+        uses: actions/checkout@v1
 
-    - name: Install bazelisk
-      run: |
-        curl -LO "https://github.com/bazelbuild/bazelisk/releases/download/v1.1.0/bazelisk-linux-amd64"
-        mkdir -p "${GITHUB_WORKSPACE}/bin/"
-        mv bazelisk-linux-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
-        chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
+      - name: Install bazelisk
+        run: |
+          curl -LO "https://github.com/bazelbuild/bazelisk/releases/download/v1.1.0/bazelisk-linux-amd64"
+          mkdir -p "${GITHUB_WORKSPACE}/bin/"
+          mv bazelisk-linux-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
+          chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
 
-    - name: Create certs
-      run: |
-        echo "${{ secrets.BUILDBUDDY_ORG_CERT }}">buildbuddy-cert.pem
-        echo "${{ secrets.BUILDBUDDY_ORG_KEY }}">buildbuddy-key.pem
+      - name: Create certs
+        run: |
+          echo "${{ secrets.BUILDBUDDY_ORG_CERT }}">buildbuddy-cert.pem
+          echo "${{ secrets.BUILDBUDDY_ORG_KEY }}">buildbuddy-key.pem
 
-    - name: Build
-      run: |
-        "${GITHUB_WORKSPACE}/bin/bazel" build --config=ci //...
+      - name: Build
+        run: |
+          "${GITHUB_WORKSPACE}/bin/bazel" build --config=ci //...
 
-    - name: Test
-      run: |
-        "${GITHUB_WORKSPACE}/bin/bazel" test --config=ci //...
+      - name: Test
+        run: |
+          "${GITHUB_WORKSPACE}/bin/bazel" test --config=ci //...
 
-    - name: Slack
-      uses: 8398a7/action-slack@v3
-      with:
-        status: ${{ job.status }}
-        fields: all
-      env:
-        GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CI_WEBHOOK_URL }}
-      if: always()
+      - name: Slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: all
+        env:
+          GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CI_WEBHOOK_URL }}
+        if: always()
