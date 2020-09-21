@@ -143,11 +143,17 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		Name:        groupName,
 		OwnedDomain: groupOwnedDomain,
 	}
-	if err := userDB.InsertOrUpdateGroup(ctx, group); err != nil {
+	groupID, err := userDB.InsertOrUpdateGroup(ctx, group)
+	if err != nil {
 		return nil, err
 	}
 
-	return &grpb.CreateGroupResponse{}, nil
+	if err := userDB.AddUserToGroup(ctx, groupID, jwtUser.UserID); err != nil {
+		return nil, err
+	}
+	return &grpb.CreateGroupResponse{
+		Id: groupID,
+	}, nil
 }
 
 func GetEmailDomain(email string) string {
