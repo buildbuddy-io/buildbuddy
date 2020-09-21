@@ -24,9 +24,7 @@ class RpcService {
     responseType?: "arraybuffer" | "json" | "text" | undefined
   ) {
     return this.fetchFile(
-      `/file/download?bytestream_url=${encodeURIComponent(
-        bytestreamURL
-      )}&invocation_id=${invocationId}`,
+      `/file/download?bytestream_url=${encodeURIComponent(bytestreamURL)}&invocation_id=${invocationId}`,
       responseType || ""
     );
   }

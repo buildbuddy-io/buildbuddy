@@ -49,10 +49,7 @@ function hash(value: string) {
   return hash;
 }
 
-export function buildFlameChartModel(
-  events: TraceEvent[],
-  { visibilityThreshold = 0 } = {}
-): FlameChartModel {
+export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold = 0 } = {}): FlameChartModel {
   let currentThreadY = 0;
 
   const timelines = buildThreadTimelines(events, { visibilityThreshold });
@@ -71,10 +68,7 @@ export function buildFlameChartModel(
             x: ts / MICROSECONDS_PER_SECOND,
             width: dur / MICROSECONDS_PER_SECOND,
             y:
-              currentThreadY +
-              depth * (BLOCK_HEIGHT + BLOCK_VERTICAL_GAP) +
-              SECTION_LABEL_HEIGHT +
-              SECTION_PADDING_TOP,
+              currentThreadY + depth * (BLOCK_HEIGHT + BLOCK_VERTICAL_GAP) + SECTION_LABEL_HEIGHT + SECTION_PADDING_TOP,
             fill: getColor(`${cat}#${name}`),
           },
           event,

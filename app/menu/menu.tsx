@@ -1,7 +1,7 @@
 import React from "react";
 import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
-import router from "../router/router";
+import router, { Path } from "../router/router";
 
 interface Props {
   children?: any;
@@ -53,6 +53,10 @@ export default class MenuComponent extends React.Component {
     this.dismissMenu();
   }
 
+  handleCreateOrgClicked() {
+    router.navigateToCreateOrg();
+  }
+
   render() {
     return (
       <div>
@@ -69,41 +73,30 @@ export default class MenuComponent extends React.Component {
               </a>
             </div>
             {this.props.showHamburger && (!capabilities.auth || !this.props.user) && (
-              <img
-                onClick={this.handleMenuClicked.bind(this)}
-                className="icon"
-                src="/image/menu.svg"
-              />
+              <img onClick={this.handleMenuClicked.bind(this)} className="icon" src="/image/menu.svg" />
             )}
             {this.props.showHamburger && capabilities.auth && this.props.user && (
               <img
                 onClick={this.handleMenuClicked.bind(this)}
-                className={`profile-photo ${
-                  this.props.user?.displayUser?.profileImageUrl ? "" : "default-photo"
-                }`}
+                className={`profile-photo ${this.props.user?.displayUser?.profileImageUrl ? "" : "default-photo"}`}
                 src={this.props.user?.displayUser?.profileImageUrl || "/image/user-regular.svg"}
               />
             )}
             {this.state.menuExpanded && (
               <div className="side-menu">
                 <ul>
-                  {this.props.children && (
-                    <li onClick={this.dismissMenu.bind(this)}>{this.props.children}</li>
-                  )}
+                  {this.props.children && <li onClick={this.dismissMenu.bind(this)}>{this.props.children}</li>}
                   {this.props.user &&
                     !this.props.user?.selectedGroup.ownedDomain &&
                     !this.props.user?.isInDefaultGroup() && (
                       <li onClick={this.dismissMenu.bind(this)}>
-                        <a target="_blank" href="https://buildbuddy.typeform.com/to/PFjD5A">
+                        <div className="clickable" onClick={this.handleCreateOrgClicked.bind(this)}>
                           Create organization
-                        </a>
+                        </div>
                       </li>
                     )}
                   <li onClick={this.dismissMenu.bind(this)}>
-                    <a
-                      target="_blank"
-                      href="https://github.com/buildbuddy-io/buildbuddy/issues/new"
-                    >
+                    <a target="_blank" href="https://github.com/buildbuddy-io/buildbuddy/issues/new">
                       Report an issue
                     </a>
                   </li>
@@ -139,9 +132,7 @@ export default class MenuComponent extends React.Component {
                         <a href="/auth/github/link/">Link GitHub Account</a>
                       </li>
                     )}
-                  {capabilities.auth && !this.props.user && (
-                    <li onClick={this.handleLoginClicked.bind(this)}>Login</li>
-                  )}
+                  {capabilities.auth && !this.props.user && <li onClick={this.handleLoginClicked.bind(this)}>Login</li>}
                   {capabilities.auth && this.props.user && (
                     <li onClick={this.handleLogoutClicked.bind(this)}>Logout</li>
                   )}
