@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/bazel_config.proto";
+import "proto/grp.proto";
 import "proto/invocation.proto";
 import "proto/user.proto";
 
@@ -13,15 +14,17 @@ service BuildBuddyService {
   rpc SearchInvocation(invocation.SearchInvocationRequest)
       returns (invocation.SearchInvocationResponse);
 
-  rpc CreateUser(user.CreateUserRequest)
-      returns (user.CreateUserResponse);
+  rpc CreateUser(user.CreateUserRequest) returns (user.CreateUserResponse);
 
-  rpc GetUser(user.GetUserRequest)
-      returns (user.GetUserResponse);
+  rpc GetUser(user.GetUserRequest) returns (user.GetUserResponse);
 
   rpc GetBazelConfig(bazel_config.GetBazelConfigRequest)
       returns (bazel_config.GetBazelConfigResponse);
 
   rpc GetInvocationStat(invocation.GetInvocationStatRequest)
       returns (invocation.GetInvocationStatResponse);
+
+  rpc CreateGroup(grp.CreateGroupRequest) returns (grp.CreateGroupResponse);
+
+  rpc UpdateGroup(grp.UpdateGroupRequest) returns (grp.UpdateGroupResponse);
 }

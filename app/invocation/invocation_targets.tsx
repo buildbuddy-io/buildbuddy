@@ -35,9 +35,7 @@ export default class TargetsComponent extends React.Component {
             className="card-failure"
             iconPath="/image/x-circle.svg"
             presentVerb={`failing ${this.props.model.failed.length == 1 ? "target" : "targets"}`}
-            pastVerb={`${
-              this.props.model.failed.length == 1 ? "target" : "targets"
-            } failed to build`}
+            pastVerb={`${this.props.model.failed.length == 1 ? "target" : "targets"} failed to build`}
             model={this.props.model}
             filter={this.props.filter}
             pageSize={this.props.pageSize}
@@ -89,9 +87,7 @@ export default class TargetsComponent extends React.Component {
             className="card-success"
             iconPath="/image/check-circle.svg"
             presentVerb={`${this.props.model.succeeded.length == 1 ? "target" : "targets"}`}
-            pastVerb={`${
-              this.props.model.succeeded.length == 1 ? "target" : "targets"
-            } built successfully`}
+            pastVerb={`${this.props.model.succeeded.length == 1 ? "target" : "targets"} built successfully`}
             model={this.props.model}
             filter={this.props.filter}
             pageSize={this.props.pageSize}

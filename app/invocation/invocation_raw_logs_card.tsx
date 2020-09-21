@@ -21,10 +21,7 @@ export default class RawLogsCardComponent extends React.Component {
   };
 
   handleEventClicked(event: invocation.InvocationEvent) {
-    this.state.expandedMap.set(
-      event.sequenceNumber,
-      !this.state.expandedMap.get(event.sequenceNumber)
-    );
+    this.state.expandedMap.set(event.sequenceNumber, !this.state.expandedMap.get(event.sequenceNumber));
     this.setState(this.state);
   }
 
@@ -42,16 +39,10 @@ export default class RawLogsCardComponent extends React.Component {
             {this.props.model.invocations.flatMap((invocation) => (
               <div>
                 {invocation.event
-                  .slice(
-                    0,
-                    (this.props.pageSize && this.state.numPages * this.props.pageSize) || undefined
-                  )
+                  .slice(0, (this.props.pageSize && this.state.numPages * this.props.pageSize) || undefined)
                   .map((event) => (
                     <div className="raw-event">
-                      <div
-                        className="raw-event-title"
-                        onClick={this.handleEventClicked.bind(this, event)}
-                      >
+                      <div className="raw-event-title" onClick={this.handleEventClicked.bind(this, event)}>
                         [{this.state.expandedMap.get(event.sequenceNumber) ? "-" : "+"}] Build event{" "}
                         {event.sequenceNumber} -{" "}
                         {Object.keys(event.buildEvent)

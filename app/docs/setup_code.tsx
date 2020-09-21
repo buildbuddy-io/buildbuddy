@@ -33,8 +33,8 @@ export default class SetupCodeComponent extends React.Component {
   };
 
   componentWillMount() {
-    authService.userStream.addListener(AuthService.userEventName, (user: User) => {
-      this.setState({ ...this.state, user });
+    authService.userStream.subscribe({
+      next: (user: User) => this.setState({ ...this.state, user }),
     });
 
     if (this.props.bazelConfigResponse) {
@@ -44,11 +44,9 @@ export default class SetupCodeComponent extends React.Component {
     request.host = window.location.host;
     request.protocol = window.location.protocol;
     request.includeCertificate = true;
-    rpcService.service
-      .getBazelConfig(request)
-      .then((response: bazel_config.GetBazelConfigResponse) => {
-        this.setState({ ...this.state, bazelConfigResponse: response });
-      });
+    rpcService.service.getBazelConfig(request).then((response: bazel_config.GetBazelConfigResponse) => {
+      this.setState({ ...this.state, bazelConfigResponse: response });
+    });
   }
 
   handleInputChange(event: any) {
@@ -72,27 +70,19 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   getResultsUrl() {
-    return this.getResponse()?.configOption.find(
-      (option: any) => option.flagName == "bes_results_url"
-    )?.body;
+    return this.getResponse()?.configOption.find((option: any) => option.flagName == "bes_results_url")?.body;
   }
 
   getEventStream(otherFile?: boolean) {
-    let url = this.getResponse()?.configOption.find(
-      (option: any) => option.flagName == "bes_backend"
-    )?.body;
-    return this.state.auth == "key" &&
-      (!this.state.separateAuth || (this.state.separateAuth && otherFile))
+    let url = this.getResponse()?.configOption.find((option: any) => option.flagName == "bes_backend")?.body;
+    return this.state.auth == "key" && (!this.state.separateAuth || (this.state.separateAuth && otherFile))
       ? url
       : this.stripAPIKey(url);
   }
 
   getCache(otherFile?: boolean) {
-    let url = this.getResponse()?.configOption.find(
-      (option: any) => option.flagName == "remote_cache"
-    )?.body;
-    return this.state.auth == "key" &&
-      (!this.state.separateAuth || (this.state.separateAuth && otherFile))
+    let url = this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_cache")?.body;
+    return this.state.auth == "key" && (!this.state.separateAuth || (this.state.separateAuth && otherFile))
       ? url
       : this.stripAPIKey(url);
   }
@@ -116,11 +106,8 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   getRemoteExecution(otherFile?: boolean) {
-    let url = this.getResponse()?.configOption.find(
-      (option: any) => option.flagName == "remote_executor"
-    )?.body;
-    return this.state.auth == "key" &&
-      (!this.state.separateAuth || (this.state.separateAuth && otherFile))
+    let url = this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_executor")?.body;
+    return this.state.auth == "key" && (!this.state.separateAuth || (this.state.separateAuth && otherFile))
       ? url
       : this.stripAPIKey(url);
   }
@@ -139,9 +126,7 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   isCacheEnabled() {
-    return !!this.getResponse()?.configOption.find(
-      (option: any) => option.flagName == "remote_cache"
-    );
+    return !!this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_cache");
   }
 
   isExecutionEnabled() {
@@ -302,9 +287,7 @@ export default class SetupCodeComponent extends React.Component {
             {this.state.cacheChecked && <div>{this.getCache()}</div>}
             {this.state.cacheChecked && <div>{this.getCacheOptions()}</div>}
             {this.state.executionChecked && <div>{this.getRemoteExecution()}</div>}
-            {this.state.auth == "cert" && !this.state.separateAuth && (
-              <div>{this.getCredentials()}</div>
-            )}
+            {this.state.auth == "cert" && !this.state.separateAuth && <div>{this.getCredentials()}</div>}
           </div>
           <button onClick={this.handleCopyClicked.bind(this)}>Copy</button>
         </code>
@@ -317,12 +300,8 @@ export default class SetupCodeComponent extends React.Component {
             <code data-header="~/.bazelrc">
               <div className="contents">
                 {this.state.auth != "cert" && <div>{this.getEventStream(true)}</div>}
-                {this.state.auth != "cert" && this.state.cacheChecked && (
-                  <div>{this.getCache(true)}</div>
-                )}
-                {this.state.auth != "cert" && this.state.executionChecked && (
-                  <div>{this.getRemoteExecution(true)}</div>
-                )}
+                {this.state.auth != "cert" && this.state.cacheChecked && <div>{this.getCache(true)}</div>}
+                {this.state.auth != "cert" && this.state.executionChecked && <div>{this.getRemoteExecution(true)}</div>}
                 {this.state.auth == "cert" && <div>{this.getCredentials()}</div>}
               </div>
               <button onClick={this.handleCopyClicked.bind(this)}>Copy</button>
@@ -340,8 +319,7 @@ export default class SetupCodeComponent extends React.Component {
                       new Blob([this.getResponse()?.certificate?.cert], {
                         type: "text/plain",
                       })
-                    )}
-                  >
+                    )}>
                     Download buildbuddy-cert.pem
                   </a>
                 </div>
@@ -354,16 +332,15 @@ export default class SetupCodeComponent extends React.Component {
                       new Blob([this.getResponse()?.certificate?.key], {
                         type: "text/plain",
                       })
-                    )}
-                  >
+                    )}>
                     Download buildbuddy-key.pem
                   </a>
                 </div>
               )}
             </div>
-            To use certificate based auth. Download the two files above and place them in your
-            workspace directory. If you place them outside of your workspace - make sure to update
-            the paths in your .bazelrc file to point to the correct location.
+            To use certificate based auth. Download the two files above and place them in your workspace directory. If
+            you place them outside of your workspace - make sure to update the paths in your .bazelrc file to point to
+            the correct location.
             <br />
             <br />
             Note: Certificate based auth is only compatible with Bazel version 3.1 and above.

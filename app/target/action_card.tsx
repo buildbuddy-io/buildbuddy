@@ -115,22 +115,18 @@ export default class TargetTestLogCardComponent extends React.Component {
           <div
             className={`card ${this.state.cacheEnabled && "dark"} ${
               this.props.action.buildEvent.action.success ? "card-success" : "card-failure"
-            }`}
-          >
+            }`}>
             <img className="icon" src="/image/log-circle-light.svg" />
             <div className="content">
               <div className="title">Error Log</div>
-              <div className="test-subtitle">
-                {this.getStatusTitle(this.props.action.buildEvent.action.success)}
-              </div>
+              <div className="test-subtitle">{this.getStatusTitle(this.props.action.buildEvent.action.success)}</div>
               {!this.state.cacheEnabled && (
                 <div className="empty-state">
                   Log uploading isn't enabled for this invocation.
                   <br />
                   <br />
-                  To enable action log uploading you must add GRPC remote caching. You can do so by
-                  checking <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and
-                  re-running your invocation:
+                  To enable action log uploading you must add GRPC remote caching. You can do so by checking{" "}
+                  <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your invocation:
                   <SetupCodeComponent />
                 </div>
               )}
@@ -165,9 +161,8 @@ export default class TargetTestLogCardComponent extends React.Component {
                   Log uploading isn't enabled for this invocation.
                   <br />
                   <br />
-                  To enable action log uploading you must add GRPC remote caching. You can do so by
-                  checking <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and
-                  re-running your invocation:
+                  To enable action log uploading you must add GRPC remote caching. You can do so by checking{" "}
+                  <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your invocation:
                   <SetupCodeComponent />
                 </div>
               )}
@@ -192,11 +187,7 @@ export default class TargetTestLogCardComponent extends React.Component {
           </div>
         )}
 
-        <div
-          className={`card ${
-            this.props.action.buildEvent.action.success ? "card-success" : "card-failure"
-          }`}
-        >
+        <div className={`card ${this.props.action.buildEvent.action.success ? "card-success" : "card-failure"}`}>
           <img className="icon" src="/image/play-circle.svg" />
           <div className="content">
             <div className="title">{this.props.action?.buildEvent?.action?.label}</div>

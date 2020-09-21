@@ -18,3 +18,32 @@ message Group {
   // True if this group has linked a Github token.
   bool github_linked = 4;
 }
+
+message CreateGroupRequest {
+  // The name of this group (may be displayed to users).
+  // Ex. "Tyler Williams Group"
+  string name = 1;
+
+  // Whether new users who sign up with an email that matches the
+  // authenticated user's email will be automatically added to the
+  // group.
+  bool auto_populate_from_owned_domain = 2;
+}
+
+message CreateGroupResponse {}
+
+message UpdateGroupRequest {
+  // The ID of the group to be updated.
+  string id = 1;
+
+  // The name of this group (may be displayed to users).
+  // Ex. "Tyler Williams Group"
+  string name = 2;
+
+  // Whether new users who sign up with an email that matches the
+  // authenticated user's email will be automatically added to the
+  // group.
+  bool auto_populate_from_owned_domain = 3;
+}
+
+message UpdateGroupResponse {}

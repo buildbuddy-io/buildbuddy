@@ -1,6 +1,7 @@
 package static
 
 import (
+	"flag"
 	"html/template"
 	"net/http"
 	"path/filepath"
@@ -15,6 +16,10 @@ import (
 
 const (
 	indexTemplateFilename = "index.html"
+)
+
+var (
+	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle.min.js", "Absolute URL path of the app JS entry point")
 )
 
 // StaticFileServer implements a static file http server that serves static
@@ -75,12 +80,16 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 	for _, provider := range env.GetConfigurator().GetAuthOauthProviders() {
 		issuers = append(issuers, provider.IssuerURL)
 	}
-	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendConfig{
+	config := cfgpb.FrontendConfig{
 		Version:               version,
 		ConfiguredIssuers:     issuers,
 		DefaultToDenseMode:    env.GetConfigurator().GetDefaultToDenseMode(),
 		GithubEnabled:         env.GetConfigurator().GetGithubConfig() != nil,
 		AnonymousUsageEnabled: env.GetConfigurator().GetAnonymousUsageEnabled(),
+	}
+	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendTemplateData{
+		Config:           &config,
+		JsEntryPointPath: *jsEntryPointPath,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -225,7 +225,7 @@ func (r *BuildStatusReporter) githubPayloadFromFinishedEvent(event *build_event_
 
 func (r *BuildStatusReporter) githubPayloadFromAbortedEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
 	label := r.labelFromEvent(event)
-	if label != "" && r.inFlight[label] {
+	if label != "" || !r.inFlight[label] {
 		return nil // We only report cancellations for in-flight targets/groups.
 	}
 

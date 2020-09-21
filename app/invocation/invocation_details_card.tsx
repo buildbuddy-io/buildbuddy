@@ -74,8 +74,7 @@ export default class ArtifactsCardComponent extends React.Component {
             <div className="invocation-section">
               <div className="invocation-section-title">Targets</div>
               <div>
-                {this.props.model.targets.length}{" "}
-                {this.props.model.targets.length == 1 ? "target" : "targets"}
+                {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
                 {!!this.props.model.buildMetrics?.targetMetrics.targetsConfigured && (
                   <span>
                     {" "}
@@ -90,10 +89,7 @@ export default class ArtifactsCardComponent extends React.Component {
               <div>
                 {this.props.model.buildMetrics?.actionSummary.actionsExecuted} actions
                 {!!this.props.model.buildMetrics?.actionSummary.actionsCreated && (
-                  <span>
-                    {" "}
-                    ({this.props.model.buildMetrics?.actionSummary.actionsCreated} created)
-                  </span>
+                  <span> ({this.props.model.buildMetrics?.actionSummary.actionsCreated} created)</span>
                 )}
               </div>
             </div>
@@ -129,8 +125,7 @@ export default class ArtifactsCardComponent extends React.Component {
                 <div className="invocation-section-title">Github commit</div>
                 <div>
                   <a
-                    href={`https://github.com/${this.props.model.getGithubRepo()}/commit/${this.props.model.getGithubSHA()}`}
-                  >
+                    href={`https://github.com/${this.props.model.getGithubRepo()}/commit/${this.props.model.getGithubSHA()}`}>
                     {this.props.model.getGithubSHA()}
                   </a>
                 </div>
@@ -142,8 +137,7 @@ export default class ArtifactsCardComponent extends React.Component {
                 <div className="invocation-section-title">Github run</div>
                 <div>
                   <a
-                    href={`https://github.com/${this.props.model.getGithubRepo()}/actions/runs/${this.props.model.getGithubRun()}`}
-                  >
+                    href={`https://github.com/${this.props.model.getGithubRepo()}/actions/runs/${this.props.model.getGithubRun()}`}>
                     {this.props.model.getGithubRun()}
                   </a>
                 </div>
@@ -155,8 +149,7 @@ export default class ArtifactsCardComponent extends React.Component {
                 <div className="invocation-section-title">GKE project</div>
                 <div>
                   <a
-                    href={`http://console.cloud.google.com/home/dashboard?project=${this.props.model.getGKEProject()}`}
-                  >
+                    href={`http://console.cloud.google.com/home/dashboard?project=${this.props.model.getGKEProject()}`}>
                     {this.props.model.getGKEProject()}
                   </a>
                 </div>
@@ -168,8 +161,7 @@ export default class ArtifactsCardComponent extends React.Component {
                 <div className="invocation-section-title">GKE cluster</div>
                 <div>
                   <a
-                    href={`https://console.cloud.google.com/kubernetes/list?project=${this.props.model.getGKEProject()}&filter=name:${this.props.model.getGKECluster()}`}
-                  >
+                    href={`https://console.cloud.google.com/kubernetes/list?project=${this.props.model.getGKEProject()}&filter=name:${this.props.model.getGKECluster()}`}>
                     {this.props.model.getGKECluster()}
                   </a>
                 </div>
@@ -177,25 +169,19 @@ export default class ArtifactsCardComponent extends React.Component {
             )}
 
             {this.props.model.structuredCommandLine
-              .filter(
-                (commandLine) => commandLine.commandLineLabel && commandLine.commandLineLabel.length
-              )
+              .filter((commandLine) => commandLine.commandLineLabel && commandLine.commandLineLabel.length)
               .sort((a, b) => {
                 return a.commandLineLabel < b.commandLineLabel ? -1 : 1;
               })
               .slice(0, this.props.limitResults && this.state.limit ? this.state.limit : undefined)
               .map((commandLine) => (
                 <div className="invocation-command-line">
-                  <div className="invocation-command-line-title">
-                    {commandLine.commandLineLabel} command line
-                  </div>
+                  <div className="invocation-command-line-title">{commandLine.commandLineLabel} command line</div>
                   {commandLine.sections.flatMap((section) => (
                     <div className="invocation-section">
                       <div className="invocation-section-title">{section.sectionLabel}</div>
                       <div>
-                        {section.chunkList?.chunk.map((chunk) => (
-                          <div className="invocation-chunk">{chunk}</div>
-                        )) || []}
+                        {section.chunkList?.chunk.map((chunk) => <div className="invocation-chunk">{chunk}</div>) || []}
                         {section.optionList?.option.map((option) => (
                           <div>
                             <span className="invocation-option-dash">--</span>

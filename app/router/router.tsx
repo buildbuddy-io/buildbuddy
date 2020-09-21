@@ -40,6 +40,14 @@ class Router {
     this.navigateTo(Path.setupPath);
   }
 
+  navigateToSettings() {
+    if (!capabilities.canNavigateToPath(Path.settingsPath)) {
+      alert(`Settings are not available in ${capabilities.name}`);
+      return;
+    }
+    this.navigateTo(Path.settingsPath);
+  }
+
   navigateToInvocation(invocationId: string) {
     if (!capabilities.canNavigateToPath(Path.invocationPath)) {
       alert(`Invocations are not available in ${capabilities.name}`);
@@ -90,6 +98,14 @@ class Router {
       return;
     }
     this.navigateTo(Path.commitHistoryPath + commit);
+  }
+
+  navigateToCreateOrg() {
+    if (!capabilities.createOrg) {
+      window.open("https://buildbuddy.typeform.com/to/PFjD5A", "_blank");
+      return;
+    }
+    this.navigateTo(Path.createOrgPath);
   }
 
   updateParams(params: any) {
@@ -144,6 +160,9 @@ export class Path {
   static repoHistoryPath = "/history/repo/";
   static commitHistoryPath = "/history/commit/";
   static setupPath = "/docs/setup/";
+  static settingsPath = "/settings/";
+  static createOrgPath = "/org/create";
+  static editOrgPath = "/org/edit";
 }
 
 export default new Router();

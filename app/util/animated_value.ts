@@ -9,10 +9,7 @@ export class AnimatedValue {
   private min_: number;
   private max_: number;
 
-  constructor(
-    target: number,
-    { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER } = {}
-  ) {
+  constructor(target: number, { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER } = {}) {
     this.min_ = min;
     this.max_ = max;
     this.target_ = clamp(target, min, max);
@@ -69,14 +66,11 @@ export class AnimatedValue {
    * @param dt step time in milliseconds
    * @param options rate and threshold (optional)
    */
-  step(dt: number, { rate = 0.02, threshold = 2 } = {}) {
+  step(dt: number, { rate = 0.02, threshold = 0.000001 } = {}) {
     const distance = this.target_ - this.value_;
     const stepAmount = distance * rate * dt;
 
-    if (
-      Math.abs(stepAmount) > Math.abs(distance) ||
-      Math.abs(this.value_ - this.target_) < threshold
-    ) {
+    if (Math.abs(stepAmount) > Math.abs(distance) || Math.abs(this.value_ - this.target_) < threshold) {
       this.value_ = this.target_;
     } else {
       this.value_ = this.value_ + stepAmount;

@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "proto/remote_execution.proto";
+
 package execution_stats;
 
 message ExecutionStats {
@@ -63,8 +65,23 @@ message IOStats {
   int64 file_upload_duration_usec = 6;
 }
 
+// Next tag: 7
 message ExecutionSummary {
+  // The instance name.
+  string instance_name = 6;
+
+  // The digest of the action that was executed.
+  build.bazel.remote.execution.v2.Digest action_digest = 3;
+
+  // The ID of the executor that performed this work.
+  string worker_id = 4;
+
+  // The associated invocation_id, if one was present.
+  string invocation_id = 5;
+
+  // Any execution_stats that were collected during this execution.
   ExecutionStats execution_stats = 1;
 
+  // Any io_stats that were collected during this execution.
   IOStats io_stats = 2;
 }

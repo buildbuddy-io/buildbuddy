@@ -2,6 +2,14 @@ syntax = "proto3";
 
 package config;
 
+message FrontendTemplateData {
+  // Contents of the JS global variable `window.buildBuddyConfig`.
+  FrontendConfig config = 1;
+
+  // Path to the JS entry point.
+  string js_entry_point_path = 2;
+}
+
 message FrontendConfig {
   // The version of this buildbuddy instance.
   string version = 1;

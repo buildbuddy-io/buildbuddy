@@ -96,17 +96,14 @@ export default class TargetTestLogCardComponent extends React.Component {
           this.props.testResult.buildEvent.testResult.status == build_event_stream.TestStatus.PASSED
             ? "card-success"
             : "card-failure"
-        }`}
-      >
+        }`}>
         <img className="icon" src="/image/log-circle-light.svg" />
         <div className="content">
           <div className="title">Test log</div>
           <div className="test-subtitle">
             {this.getStatusTitle(this.props.testResult.buildEvent.testResult.status)} in{" "}
-            {format.durationMillis(
-              this.props.testResult.buildEvent.testResult.testAttemptDurationMillis
-            )}{" "}
-            on Shard {this.props.testResult.buildEvent.id.testResult.shard} (Run{" "}
+            {format.durationMillis(this.props.testResult.buildEvent.testResult.testAttemptDurationMillis)} on Shard{" "}
+            {this.props.testResult.buildEvent.id.testResult.shard} (Run{" "}
             {this.props.testResult.buildEvent.id.testResult.run}, Attempt{" "}
             {this.props.testResult.buildEvent.id.testResult.attempt})
           </div>
@@ -115,9 +112,8 @@ export default class TargetTestLogCardComponent extends React.Component {
               Test log uploading isn't enabled for this invocation.
               <br />
               <br />
-              To enable test log uploading you must add GRPC remote caching. You can do so by
-              checking <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and
-              re-running your invocation:
+              To enable test log uploading you must add GRPC remote caching. You can do so by checking{" "}
+              <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your invocation:
               <SetupCodeComponent />
             </div>
           )}

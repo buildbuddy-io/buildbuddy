@@ -39,18 +39,9 @@ export default class InvocationModel {
   buildMetadataMap = new Map<string, string>();
   configuredMap = new Map<string, invocation.InvocationEvent>();
   completedMap = new Map<string, invocation.InvocationEvent>();
-  testResultMap: Map<string, invocation.InvocationEvent[]> = new Map<
-    string,
-    invocation.InvocationEvent[]
-  >();
-  testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<
-    string,
-    invocation.InvocationEvent
-  >();
-  actionMap: Map<string, invocation.InvocationEvent[]> = new Map<
-    string,
-    invocation.InvocationEvent[]
-  >();
+  testResultMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
+  testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
+  actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
 
   static modelFromInvocations(invocations: invocation.Invocation[]) {
     let model = new InvocationModel();
@@ -67,16 +58,10 @@ export default class InvocationModel {
           model.files.push(buildEvent.namedSetOfFiles as build_event_stream.NamedSetOfFiles);
         if (buildEvent.configured) model.targets.push(buildEvent as build_event_stream.BuildEvent);
         if (buildEvent.configured) {
-          model.configuredMap.set(
-            buildEvent.id.targetConfigured.label,
-            event as invocation.InvocationEvent
-          );
+          model.configuredMap.set(buildEvent.id.targetConfigured.label, event as invocation.InvocationEvent);
         }
         if (buildEvent.completed) {
-          model.completedMap.set(
-            buildEvent.id.targetCompleted.label,
-            event as invocation.InvocationEvent
-          );
+          model.completedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
         }
         if (buildEvent.testResult) {
           let results = model.testResultMap.get(buildEvent.id.testResult.label) || [];
@@ -89,19 +74,13 @@ export default class InvocationModel {
           model.actionMap.set(buildEvent.id.actionCompleted.label, results);
         }
         if (buildEvent.testSummary) {
-          model.testSummaryMap.set(
-            buildEvent.id.testSummary.label,
-            event as invocation.InvocationEvent
-          );
+          model.testSummaryMap.set(buildEvent.id.testSummary.label, event as invocation.InvocationEvent);
         }
-        if (buildEvent.started)
-          model.started = buildEvent.started as build_event_stream.BuildStarted;
+        if (buildEvent.started) model.started = buildEvent.started as build_event_stream.BuildStarted;
         if (buildEvent.expanded) model.expanded = buildEvent as build_event_stream.BuildEvent;
-        if (buildEvent.finished)
-          model.finished = buildEvent.finished as build_event_stream.BuildFinished;
+        if (buildEvent.finished) model.finished = buildEvent.finished as build_event_stream.BuildFinished;
         if (buildEvent.aborted) model.aborted = buildEvent as build_event_stream.BuildEvent;
-        if (buildEvent.buildToolLogs)
-          model.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
+        if (buildEvent.buildToolLogs) model.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         if (buildEvent.workspaceStatus)
           model.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
         if (buildEvent.configuration && buildEvent?.id?.configuration?.id != "none")
@@ -110,8 +89,7 @@ export default class InvocationModel {
           model.workspaceConfig = buildEvent.workspaceInfo as build_event_stream.WorkspaceConfig;
         if (buildEvent.optionsParsed)
           model.optionsParsed = buildEvent.optionsParsed as build_event_stream.OptionsParsed;
-        if (buildEvent.buildMetrics)
-          model.buildMetrics = buildEvent.buildMetrics as build_event_stream.BuildMetrics;
+        if (buildEvent.buildMetrics) model.buildMetrics = buildEvent.buildMetrics as build_event_stream.BuildMetrics;
         if (buildEvent.buildToolLogs)
           model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         if (buildEvent.unstructuredCommandLine)
@@ -124,10 +102,7 @@ export default class InvocationModel {
       let testResult = model.testSummaryMap.get(label)?.buildEvent.testSummary;
       if (testResult && testResult.overallStatus == build_event_stream.TestStatus.FLAKY) {
         model.flakyTest.push(buildEvent as build_event_stream.BuildEvent);
-      } else if (
-        testResult &&
-        testResult.overallStatus == build_event_stream.TestStatus.FAILED_TO_BUILD
-      ) {
+      } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.FAILED_TO_BUILD) {
         model.brokenTest.push(buildEvent as build_event_stream.BuildEvent);
       } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.PASSED) {
         model.succeededTest.push(buildEvent as build_event_stream.BuildEvent);
@@ -214,19 +189,11 @@ export default class InvocationModel {
   }
 
   getRepo() {
-    return (
-      this.buildMetadataMap.get("REPO_URL") ||
-      this.workspaceStatusMap.get("REPO_URL") ||
-      this.getGithubRepo()
-    );
+    return this.buildMetadataMap.get("REPO_URL") || this.workspaceStatusMap.get("REPO_URL") || this.getGithubRepo();
   }
 
   getCommit() {
-    return (
-      this.buildMetadataMap.get("COMMIT_SHA") ||
-      this.workspaceStatusMap.get("COMMIT_SHA") ||
-      this.getGithubSHA()
-    );
+    return this.buildMetadataMap.get("COMMIT_SHA") || this.workspaceStatusMap.get("COMMIT_SHA") || this.getGithubSHA();
   }
 
   getGithubUser() {
@@ -399,10 +366,7 @@ export default class InvocationModel {
       return +testResult.totalRunDurationMillis / 1000 + " seconds";
     }
     return (
-      this.getDuration(
-        this.completedMap.get(label)?.eventTime,
-        this.configuredMap.get(label)?.eventTime
-      ) + " seconds"
+      this.getDuration(this.completedMap.get(label)?.eventTime, this.configuredMap.get(label)?.eventTime) + " seconds"
     );
   }
 

@@ -33,11 +33,6 @@ body {
   flex-direction: column;
 }
 
-.root-loading {
-  min-height: 50vh;
-  padding-top: 32px;
-}
-
 a {
   text-decoration: none;
   color: inherit;
@@ -904,10 +899,6 @@ code .comment {
   text-decoration: underline;
 }
 
-.empty-state.history {
-  padding: 0 16px;
-}
-
 .target {
   display: flex;
   align-self: center;
@@ -1289,7 +1280,16 @@ code .comment {
 
 .dense .container {
   max-width: 100%;
+  padding: 0 16px;
+}
+
+.dense .nopadding-dense {
   padding: 0;
+}
+
+.dense .shelf {
+  padding: 16px 0;
+  border-bottom: 0;
 }
 
 .dense .menu {
@@ -1300,32 +1300,13 @@ code .comment {
   height: 32px;
 }
 
-.dense .shelf {
-  padding: 0;
-  border-bottom: 0;
-}
-
 .dense .grid {
   padding: 0 16px;
-  margin-top: 0px;
   margin-bottom: 8px;
 }
 
 .dense .empty-state {
   padding: 0;
-}
-
-.dense .history-overview.container {
-  padding: 16px;
-}
-
-.dense .state-page .container,
-.dense .home .container {
-  padding: 0 32px;
-}
-
-.dense .state-page .shelf {
-  padding: 48px 0;
 }
 
 .dense .tabs {
@@ -1387,10 +1368,6 @@ code .comment {
 
 .dense .card .icon {
   display: none;
-}
-
-.dense .menu .container {
-  padding: 0 16px;
 }
 
 .dense .list-grid div:first-of-type {
@@ -1508,10 +1485,11 @@ code .comment {
 .horizontal-scroll-track {
   position: absolute;
   bottom: 0;
-  height: 14px;
+  height: var(--scrollbar-width);
   left: 0;
-  right: 14px;
+  right: var(--scrollbar-width);
   background: transparent;
+  overflow: hidden;
 }
 
 .horizontal-scroll-thumb {
@@ -1531,8 +1509,8 @@ code .comment {
   background: rgba(0, 0, 0, 0.1);
 }
 
-.viewport::-webkit-scrollbar-thumb {
-  width: 14px;
+.viewport::-webkit-scrollbar {
+  width: var(--scrollbar-width);
 }
 
 .horizontal-scroll-thumb:hover,
@@ -1551,16 +1529,77 @@ code .comment {
   position: relative;
   width: 100%;
   height: 320px;
-  margin: 16px 0;
+  margin: 24px 0;
 
-  border-radius: 4px 2px 8px;
+  border-radius: 4px 2px 4px;
   overflow: hidden;
 
   user-select: none;
+
+  --scrollbar-width: 14px;
+  --controls-padding: 8px;
+  --controls-height: 32px;
+}
+
+.flame-chart .flame-chart-sections {
+  padding-bottom: calc(2 * var(--controls-padding) + var(--controls-height));
+}
+
+.flame-chart-controls {
+  position: absolute;
+  bottom: var(--scrollbar-width);
+  right: var(--scrollbar-width);
+
+  height: var(--controls-height);
+  padding: 8px;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.flame-chart-controls button {
+  width: var(--controls-height);
+  height: var(--controls-height);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(220, 220, 220, 0.8);
+  backdrop-filter: blur(3px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27), 0 1px 1px rgba(255, 255, 255, 0.1) inset;
+  border-radius: 2px;
+  transition: 80ms ease-out;
+
+  cursor: pointer;
+
+  border: none;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+}
+
+.flame-chart-controls button:hover:not(:active) {
+  background: white;
+}
+
+.flame-chart-controls button:active {
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.5);
 }
 
 .flame-chart-hovered-block-info {
-  height: 64px;
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27);
+  white-space: nowrap;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  backdrop-filter: blur(3px);
+}
+
+.flame-chart-hovered-block-info .data {
+  color: #000;
 }
 
 .flame-chart-hovered-block-info.no-block-hovered {
@@ -1568,20 +1607,31 @@ code .comment {
 }
 
 .flame-chart-hovered-block-info .hovered-block-title {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: bold;
+  margin-bottom: -2px;
 }
 
 .flame-chart-hovered-block-info .hovered-block-details {
   color: #888;
 }
 
+.flame-chart-hovered-block-info .duration {
+  font-size: 14px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid #eee;
+  margin-bottom: 4px;
+}
+
 .flame-chart-timestamp-header {
-  fill: rgba(200, 200, 200, 0.8);
+  fill: rgba(220, 220, 220, 0.9);
 }
 
 .flame-chart-section {
   border-bottom: 1px solid #ddd;
+  box-sizing: border-box;
+
   box-shadow: 0 1px -3px rgba(0, 0, 0, 0.12) inset;
 }
 
@@ -1610,13 +1660,66 @@ code .comment {
 }
 
 .flame-chart .tracks {
-  /* TODO: set height dynamically based on SVG content */
-  height: 500px;
+  height: inherit;
   min-width: 100%;
+  overflow: visible;
+}
+
+.flame-chart rect {
+  stroke-width: 1;
+  stroke: white;
+  vector-effect: non-scaling-stroke;
 }
 
 .flame-chart rect.hover {
-  stroke: black;
-  stroke-width: 1;
+  opacity: 0.8;
   cursor: pointer;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  overflow: auto;
+  background-color: #fff;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+@keyframes rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-grow: 1;
+}
+
+.loading:before {
+  content: "";
+  display: block;
+  animation: rotate 2s linear infinite;
+  width: 32px;
+  height: 32px;
+  opacity: 0.8;
+  background-image: url("/image/loader.svg");
+  background-size: cover;
+}
+
+.loading.loading-dark {
+  background: #263238;
+}
+
+.loading.loading-dark:before {
+  background-image: url("/image/loader-white.svg");
 }

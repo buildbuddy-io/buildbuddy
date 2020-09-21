@@ -29,10 +29,7 @@ export default class TargetArtifactsCardComponent extends React.Component {
           <div className="title">Artifacts</div>
           <div className="details">
             {this.props.files.map((file) => (
-              <div
-                className="artifact-name"
-                onClick={this.handleArtifactClicked.bind(this, file.uri, file.name)}
-              >
+              <div className="artifact-name" onClick={this.handleArtifactClicked.bind(this, file.uri, file.name)}>
                 {file.name}
               </div>
             ))}

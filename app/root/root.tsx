@@ -39,8 +39,8 @@ export default class RootComponent extends React.Component {
     capabilities.register("BuildBuddy Community Edition", false, [Path.invocationPath]);
     authService.register();
     router.register(this.handlePathChange.bind(this));
-    authService.userStream.addListener(AuthService.userEventName, (user: User) => {
-      this.setState({ ...this.state, user });
+    authService.userStream.subscribe({
+      next: (user: User) => this.setState({ ...this.state, user }),
     });
     faviconService.setDefaultFavicon();
   }
@@ -73,17 +73,21 @@ export default class RootComponent extends React.Component {
           denseModeEnabled={this.state.denseMode}
           handleDenseModeToggled={this.handleToggleDenseClicked.bind(this)}
         />
-        {invocationId && (
-          <InvocationComponent
-            invocationId={invocationId}
-            hash={this.state.hash}
-            search={this.state.search}
-            denseMode={this.state.denseMode}
-            user={null}
-          />
-        )}
-        {!invocationId && <SetupComponent />}
-        <FooterComponent />
+        <div className="main">
+          <div className="content">
+            {invocationId && (
+              <InvocationComponent
+                invocationId={invocationId}
+                hash={this.state.hash}
+                search={this.state.search}
+                denseMode={this.state.denseMode}
+                user={null}
+              />
+            )}
+            {!invocationId && <SetupComponent />}
+          </div>
+          <FooterComponent />
+        </div>
       </div>
     );
   }

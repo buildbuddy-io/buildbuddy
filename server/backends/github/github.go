@@ -166,7 +166,7 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 		return nil // We can't create a status without an owner/repo and a commit SHA.
 	}
 
-	err := c.populateTokenFromGroupIfNecessary(ctx)
+	err := c.populateTokenIfNecessary(ctx)
 
 	// If we don't have a github token, we can't post a status.
 	if c.githubToken == "" || err != nil {
@@ -190,8 +190,14 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 	return err
 }
 
-func (c *GithubClient) populateTokenFromGroupIfNecessary(ctx context.Context) error {
+func (c *GithubClient) populateTokenIfNecessary(ctx context.Context) error {
 	if c.githubTokenFetched || c.env.GetConfigurator().GetGithubConfig() == nil {
+		return nil
+	}
+
+	if accessToken := c.env.GetConfigurator().GetGithubConfig().AccessToken; accessToken != "" {
+		c.githubToken = accessToken
+		c.githubTokenFetched = true
 		return nil
 	}
 

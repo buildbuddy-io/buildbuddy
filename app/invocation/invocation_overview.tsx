@@ -92,16 +92,11 @@ export default class InvocationOverviewComponent extends React.Component {
           </div>
           <div
             className="detail"
-            title={`${this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured / ${this.props.model.buildMetrics?.targetMetrics.targetsLoaded} loaded`}
-          >
+            title={`${this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured / ${this.props.model.buildMetrics?.targetMetrics.targetsLoaded} loaded`}>
             <img className="icon" src="/image/target-regular.svg" />
-            {this.props.model.targets.length}{" "}
-            {this.props.model.targets.length == 1 ? "target" : "targets"}
+            {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
           </div>
-          <div
-            title={`${this.props.model.buildMetrics?.actionSummary.actionsCreated} created`}
-            className="detail"
-          >
+          <div title={`${this.props.model.buildMetrics?.actionSummary.actionsCreated} created`} className="detail">
             <img className="icon" src="/image/activity-regular.svg" />
             {this.props.model.buildMetrics?.actionSummary.actionsExecuted} actions
           </div>

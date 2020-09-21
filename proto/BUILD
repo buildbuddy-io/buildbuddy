@@ -37,6 +37,9 @@ proto_library(
     srcs = [
         "execution_stats.proto",
     ],
+    deps = [
+        ":remote_execution_proto",
+    ],
 )
 
 proto_library(
@@ -122,6 +125,7 @@ proto_library(
     srcs = ["buildbuddy_service.proto"],
     deps = [
         ":bazel_config_proto",
+        ":group_proto",
         ":invocation_proto",
         ":user_proto",
     ],
@@ -207,6 +211,9 @@ go_proto_library(
     name = "execution_stats_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/execution_stats",
     proto = ":execution_stats_proto",
+    deps = [
+        ":remote_execution_go_proto",
+    ],
 )
 
 go_proto_library(
@@ -269,6 +276,7 @@ go_proto_library(
     proto = ":buildbuddy_service_proto",
     deps = [
         ":bazel_config_go_proto",
+        ":group_go_proto",
         ":invocation_go_proto",
         ":user_go_proto",
     ],

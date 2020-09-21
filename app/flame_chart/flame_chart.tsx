@@ -13,16 +13,11 @@ import {
   SECTION_LABEL_HEIGHT,
   TIMESTAMP_FONT_SIZE,
   TIMESTAMP_HEADER_SIZE,
+  VERTICAL_SCROLLBAR_WIDTH,
 } from "./style_constants";
 
-// These are non-tweakable constants; tweakable values should be defined
-// in style_constants.ts
-const MICROSECONDS_TO_SECONDS = 0.000001;
-const VERTICAL_SCROLLBAR_WIDTH = 16; //Must match CSS styling
-
-type ProfileFlameChartState = {
-  hoveredBlock: BlockModel | null;
-};
+// NOTE: Do not add state to the flame chart since it is expensive to re-render.
+type ProfileFlameChartState = {};
 
 export type FlameChartProps = {
   profile: {
@@ -30,10 +25,14 @@ export type FlameChartProps = {
   };
 };
 
-export default class FlameChart extends React.Component<FlameChartProps, ProfileFlameChartState> {
-  state: ProfileFlameChartState = { hoveredBlock: null };
+const stopPropagation = (e: any) => e.stopPropagation();
 
+const LEFT_MOUSE_BUTTON = 0;
+
+export default class FlameChart extends React.Component<FlameChartProps, ProfileFlameChartState> {
   private animation = new AnimationLoop((dt: number) => this.draw(dt));
+
+  private isDebugEnabled = window.localStorage.getItem("buildbuddy://debug/flame-chart") === "true";
 
   /* Viewport X offset in screen pixels. */
   private readonly scrollLeft = new AnimatedValue(0, { min: 0 });
@@ -44,6 +43,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
 
   private subscription = new Subscription();
 
+  private rulerRef = React.createRef<HTMLDivElement>();
   private viewportRef = React.createRef<HTMLDivElement>();
   private barsContainerRef = React.createRef<SVGSVGElement>();
   private headerRef = React.createRef<SVGGElement>();
@@ -51,6 +51,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   private gridlinesRef = React.createRef<SVGGElement>();
   private debugRef = React.createRef<HTMLPreElement>();
   private horizontalScrollbarRef = React.createRef<HorizontalScrollbar>();
+  private hoveredBlockInfoRef = React.createRef<HoveredBlockInfo>();
 
   private viewport: HTMLDivElement;
   private barsContainerSvg: SVGSVGElement;
@@ -61,14 +62,25 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   private horizontalScrollbar: HorizontalScrollbar;
 
   private chartModel: FlameChartModel;
-
-  constructor(props: FlameChartProps) {
-    super(props);
-
-    this.chartModel = buildFlameChartModel(props.profile.traceEvents);
-  }
+  private buildDuration: number;
 
   componentDidMount() {
+    this.buildDuration = Math.max(...this.props.profile.traceEvents.map((event) => (event.ts || 0) + (event.dur || 0)));
+    const rulerWidth = this.rulerRef.current.getBoundingClientRect().width;
+    const singlePixelDuration = this.buildDuration / rulerWidth;
+
+    this.chartModel = buildFlameChartModel(this.props.profile.traceEvents, {
+      visibilityThreshold: singlePixelDuration,
+    });
+
+    // Re-render now that the chart model has been computed with the container
+    // dimensions taken into account.
+    this.forceUpdate();
+  }
+
+  componentDidUpdate() {
+    if (!this.chartModel) return;
+
     this.viewport = this.viewportRef.current;
     this.barsContainerSvg = this.barsContainerRef.current;
     this.header = this.headerRef.current;
@@ -77,9 +89,9 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
 
     this.horizontalScrollbar = this.horizontalScrollbarRef.current;
 
-    this.setMaxXCoordinate(
-      Math.max(...this.chartModel.blocks.map(({ rectProps: { x, width } }) => x + width))
-    );
+    this.setMaxXCoordinate(Math.max(...this.chartModel.blocks.map(({ rectProps: { x, width } }) => x + width)));
+    // Zoom all the way out initially
+    this.screenPixelsPerSecond.value = this.screenPixelsPerSecond.target = this.screenPixelsPerSecond.min;
 
     this.subscription
       .add(fromEvent(window, "mousemove").subscribe(this.onMouseMove.bind(this)))
@@ -88,17 +100,25 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
       // NOTE: Can't do `<div onWheel={this.onWheel.bind(this)} >` since
       // the event target gets treated as "passive," which forbids us from calling
       // preventDefault() on Ctrl+Wheel
-      .add(
-        fromEvent(this.viewport, "wheel", { passive: false }).subscribe(this.onWheel.bind(this))
-      );
+      .add(fromEvent(this.viewport, "wheel", { passive: false }).subscribe(this.onWheel.bind(this)));
 
     this.updateDOM();
 
-    this.renderDebugInfo();
+    if (this.isDebugEnabled) {
+      this.renderDebugInfo();
+    }
   }
 
   private onHoverBlock(hoveredBlock: BlockModel) {
-    this.setState({ hoveredBlock });
+    this.hoveredBlockInfoRef.current?.setState({ block: hoveredBlock });
+  }
+  private onBlocksMouseMove(e: React.MouseEvent<SVGGElement, MouseEvent>) {
+    const x = e.clientX;
+    const y = e.clientY;
+    this.hoveredBlockInfoRef.current?.setState({ x, y });
+  }
+  private onBlocksMouseLeave(e: React.MouseEvent<SVGGElement, MouseEvent>) {
+    this.hoveredBlockInfoRef.current?.setState({ block: null });
   }
 
   private setMaxXCoordinate(value: number) {
@@ -106,12 +126,8 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
     this.screenPixelsPerSecond.min = this.getMinPixelsPerSecond();
     this.screenPixelsPerSecond.max = this.getMaxPixelsPerSecond();
 
-    this.screenPixelsPerSecond.target = Math.min(
-      this.endTimeSeconds,
-      this.viewportRightEdgeSeconds
-    );
-    this.scrollLeft.max =
-      this.endTimeSeconds * this.screenPixelsPerSecond.target - this.barsContainerSvg.clientWidth;
+    this.screenPixelsPerSecond.target = Math.min(this.endTimeSeconds, this.viewportRightEdgeSeconds);
+    this.scrollLeft.max = this.endTimeSeconds * this.screenPixelsPerSecond.target - this.barsContainerSvg.clientWidth;
     this.animation.start();
   }
 
@@ -119,7 +135,8 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
     return this.barsContainerSvg.clientWidth / this.endTimeSeconds;
   }
   private getMaxPixelsPerSecond() {
-    return this.barsContainerSvg.clientWidth / this.secondsPerX;
+    // Don't allow zooming in more than 1ms per 100 pixels.
+    return 100 / 0.001;
   }
 
   private draw(dt: number) {
@@ -132,13 +149,11 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
 
   private update(dt: number) {
     this.screenPixelsPerSecond.step(dt);
-    this.scrollLeft.max =
-      this.endTimeSeconds * this.screenPixelsPerSecond.value - this.barsContainerSvg.clientWidth;
+    this.scrollLeft.max = this.endTimeSeconds * this.screenPixelsPerSecond.value - this.barsContainerSvg.clientWidth;
 
     if (this.isPanning || !this.screenPixelsPerSecond.isAtTarget) {
       // ensure mouse.seconds does not move from the mouse x position
-      const currentMouseSeconds =
-        (this.scrollLeft.value + this.mouse.x) / this.screenPixelsPerSecond.value;
+      const currentMouseSeconds = (this.scrollLeft.value + this.mouse.x) / this.screenPixelsPerSecond.value;
       const mouseTimeOffset = this.mouse.seconds - currentMouseSeconds;
       const xCorrection = mouseTimeOffset * this.screenPixelsPerSecond.value;
 
@@ -149,26 +164,31 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
     }
     this.screenPixelsPerSecond.min = this.getMinPixelsPerSecond();
 
+    if (this.isPanning) {
+      this.viewport.scrollTop = this.mouse.scrollTop - this.mouse.y;
+    }
+
     this.updateDOM();
   }
 
   private get viewportRightEdgeSeconds() {
-    return (
-      (this.barsContainerSvg.clientWidth + this.scrollLeft.value) / this.screenPixelsPerSecond.value
-    );
+    return (this.barsContainerSvg.clientWidth + this.scrollLeft.value) / this.screenPixelsPerSecond.value;
   }
 
   private onWheel(e: WheelEvent) {
-    if (e.ctrlKey) {
+    if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) {
       e.preventDefault();
       e.stopPropagation();
       this.updateMouse(e);
-      const scrollSpeedMultiplier = 0.005;
-      const y0 = Math.log(this.screenPixelsPerSecond.target);
-      const y1 = y0 + e.deltaY * scrollSpeedMultiplier;
-      this.screenPixelsPerSecond.target = Math.pow(Math.E, y1);
-      this.animation.start();
+      this.adjustZoom(e.deltaY);
     }
+  }
+  private adjustZoom(delta: number) {
+    const scrollSpeedMultiplier = 0.005;
+    const y0 = Math.log(this.screenPixelsPerSecond.target);
+    const y1 = y0 + delta * scrollSpeedMultiplier;
+    this.screenPixelsPerSecond.target = Math.pow(Math.E, y1);
+    this.animation.start();
   }
   private onMouseMove(e: MouseEvent) {
     this.updateMouse(e);
@@ -182,39 +202,46 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
 
   private isPanning = false;
   private onMouseDown(e: MouseEvent) {
-    // Right mouse button is treated as mouse up.
-    if (e.button === 2) {
+    // Non-left click cancels pan.
+    if (e.button !== LEFT_MOUSE_BUTTON) {
       this.onMouseUp(e);
       return;
     }
+
     this.updateMouse(e);
-    if (e.button === 1) {
-      this.setCursorOverride("grabbing");
-      this.isPanning = true;
-    }
+    this.setCursorOverride("grabbing");
+    this.isPanning = true;
   }
   private onMouseUp(e: MouseEvent) {
     this.setCursorOverride(null);
-    // middle click
-    if (e.button === 1) {
+
+    if (e.button === LEFT_MOUSE_BUTTON) {
       this.isPanning = false;
     }
   }
 
   private setCursorOverride(cursor: "grabbing" | null) {
-    this.barsContainerSvg.style.cursor = cursor;
+    document.body.style.cursor = cursor;
   }
 
-  private mouse = { x: 0, seconds: 0 };
+  private mouse = { x: 0, seconds: 0, y: 0, scrollTop: 0 };
   private updateMouse(e: MouseEvent) {
     const x = e.clientX - this.barsContainerSvg.getBoundingClientRect().x;
+    const y = e.clientY - this.viewport.getBoundingClientRect().y;
     this.mouse = {
       x,
       // If panning, do not allow changing the mouse grid
-      seconds: this.isPanning
-        ? this.mouse.seconds
-        : (this.scrollLeft.value + x) / this.screenPixelsPerSecond.value,
+      seconds: this.isPanning ? this.mouse.seconds : (this.scrollLeft.value + x) / this.screenPixelsPerSecond.value,
+      y,
+      // If panning, keep scrollTop fixed so we can compute the delta
+      scrollTop: this.isPanning ? this.mouse.scrollTop : this.viewport.scrollTop + y,
     };
+  }
+  private setZoomOriginToCenter() {
+    const rect = this.barsContainerSvg.getBoundingClientRect();
+    const x = rect.x + rect.width / 2;
+    this.mouse.x = x;
+    this.mouse.seconds = (this.scrollLeft.value + x) / this.screenPixelsPerSecond.value;
   }
 
   private onHorizontalScroll({ delta: deltaX, animate }: { delta: number; animate: boolean }) {
@@ -226,15 +253,13 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   }
 
   private get secondsPerX() {
-    return MICROSECONDS_TO_SECONDS;
+    return 1;
   }
 
   private updateDOM() {
     this.contentContainer.setAttribute(
       "transform",
-      `translate(${-this.scrollLeft} 0) scale(${
-        this.secondsPerX * this.screenPixelsPerSecond.value
-      } 1)`
+      `translate(${-this.scrollLeft} 0) scale(${this.secondsPerX * this.screenPixelsPerSecond.value} 1)`
     );
     this.gridlines.setAttribute("transform", `translate(${-this.scrollLeft} 0)`);
     this.header.setAttribute("transform", `translate(${-this.scrollLeft} 0)`);
@@ -249,8 +274,6 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
 
   private renderDebugInfo() {
     const el = this.debugRef.current;
-    if (el.getAttribute("hidden")) return;
-
     const debugDrawLoop = new AnimationLoop(() => {
       el.innerHTML = JSON.stringify(
         {
@@ -277,9 +300,7 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
       return;
     }
     const startSeconds = this.scrollLeft.value / this.screenPixelsPerSecond.value;
-    const endSeconds =
-      (this.scrollLeft.value + this.barsContainerSvg.clientWidth) /
-      this.screenPixelsPerSecond.value;
+    const endSeconds = (this.scrollLeft.value + this.barsContainerSvg.clientWidth) / this.screenPixelsPerSecond.value;
 
     const { firstGridlineSeconds, intervalSeconds, count } = computeGridlines(
       startSeconds,
@@ -326,13 +347,27 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
     }
   }
 
+  private onZoomOutClick() {
+    this.onZoomButtonClick(-1);
+  }
+  private onZoomInClick() {
+    this.onZoomButtonClick(+1);
+  }
+  private onZoomButtonClick(direction: number) {
+    this.setZoomOriginToCenter();
+    this.adjustZoom(direction * 60);
+  }
+
   render() {
+    if (!this.chartModel) {
+      // Return a div that is used to measure the area where the chart
+      // will be rendered.
+      return <div ref={this.rulerRef} />;
+    }
+
     // TODO: empty state
-
-    const debug = window.localStorage.getItem("buildbuddy://debug/flame-chart") === "true";
-
     return (
-      <>
+      <div className="flame-chart-container">
         <div className="flame-chart">
           <div className="timeline" style={{ position: "relative" }}>
             <svg
@@ -343,15 +378,10 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
                 left: 0,
                 height: "100%",
                 width: `calc(100% - ${VERTICAL_SCROLLBAR_WIDTH}px)`,
-              }}
-            >
+              }}>
               <g ref={this.gridlinesRef}></g>
             </svg>
-            <div
-              className="viewport"
-              ref={this.viewportRef}
-              onMouseDown={this.onMouseDown.bind(this)}
-            >
+            <div className="viewport" ref={this.viewportRef} onMouseDown={this.onMouseDown.bind(this)}>
               <div
                 style={{
                   position: "absolute",
@@ -359,21 +389,16 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
                   left: 0,
                   right: 0,
                   pointerEvents: "none",
-                }}
-              >
-                <div>
+                }}>
+                <div className="flame-chart-sections">
                   {this.chartModel.sections.map(({ name, height }, i) => (
                     <div
                       key={i}
                       className="flame-chart-section"
                       style={{
                         height,
-                      }}
-                    >
-                      <div
-                        className="flame-chart-section-header"
-                        style={{ height: SECTION_LABEL_HEIGHT }}
-                      >
+                      }}>
+                      <div className="flame-chart-section-header" style={{ height: SECTION_LABEL_HEIGHT }}>
                         {name}
                       </div>
                     </div>
@@ -386,13 +411,15 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
                     <FlameChartBlocks
                       blocks={this.chartModel.blocks}
                       onHover={this.onHoverBlock.bind(this)}
+                      onMouseMove={this.onBlocksMouseMove.bind(this)}
+                      onMouseLeave={this.onBlocksMouseLeave.bind(this)}
                     />
                   </g>
                 </g>
               </svg>
               <pre
                 ref={this.debugRef}
-                hidden={!debug}
+                hidden={!this.isDebugEnabled}
                 style={{
                   background: "black",
                   position: "fixed",
@@ -415,24 +442,31 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
                 left: 0,
                 height: "100%",
                 width: `calc(100% - ${VERTICAL_SCROLLBAR_WIDTH}px)`,
-              }}
-            >
-              <rect
-                className="flame-chart-timestamp-header"
-                x="0"
-                width="100%"
-                height={TIMESTAMP_HEADER_SIZE}
-              />
+              }}>
+              <rect className="flame-chart-timestamp-header" x="0" width="100%" height={TIMESTAMP_HEADER_SIZE} />
               <g ref={this.headerRef}></g>
             </svg>
-            <HorizontalScrollbar
-              ref={this.horizontalScrollbarRef}
-              onScroll={this.onHorizontalScroll.bind(this)}
-            />
+            <HorizontalScrollbar ref={this.horizontalScrollbarRef} onScroll={this.onHorizontalScroll.bind(this)} />
+          </div>
+          <div className="flame-chart-controls">
+            <button
+              aria-label="Zoom out"
+              onClick={this.onZoomOutClick.bind(this)}
+              onMouseMove={stopPropagation}
+              title="Zoom out (Ctrl + scroll up)">
+              <img src="/image/zoom-out.svg" className="icon" />
+            </button>
+            <button
+              aria-label="Zoom in"
+              onClick={this.onZoomInClick.bind(this)}
+              onMouseMove={stopPropagation}
+              title="Zoom in (Ctrl + scroll down)">
+              <img src="/image/zoom-in.svg" className="icon" />
+            </button>
           </div>
         </div>
-        <HoveredBlockInfo block={this.state.hoveredBlock} />
-      </>
+        <HoveredBlockInfo ref={this.hoveredBlockInfoRef} buildDuration={this.buildDuration} />
+      </div>
     );
   }
 
@@ -442,28 +476,50 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   }
 }
 
-type HoveredBlockInfoProps = { block: BlockModel };
+type HoveredBlockInfoState = { block?: BlockModel; x?: number; y?: number };
 
-class HoveredBlockInfo extends React.Component<HoveredBlockInfoProps> {
+const MICROSECONDS_PER_SECOND = 1_000_000;
+
+class HoveredBlockInfo extends React.Component<{ buildDuration: number }, HoveredBlockInfoState> {
+  state: HoveredBlockInfoState = {};
+
   render() {
-    const { block } = this.props;
+    const { block } = this.state;
+    const { buildDuration } = this.props;
 
-    if (!block) {
-      return (
-        <div className="flame-chart-hovered-block-info no-block-hovered">
-          Hover a block in the flame chart to see more info.
-        </div>
-      );
-    }
+    if (!block) return <></>;
 
     const {
-      event: { name, cat: category },
+      event: { name, cat: category, ts, dur },
     } = block;
 
+    const buildFraction = ((dur / buildDuration) * 100).toFixed(2);
+    const percentage = buildFraction ? `${buildFraction} %` : "< 0.01 %";
+    const duration = truncateDecimals(dur / MICROSECONDS_PER_SECOND, 3);
+    const displayedDuration = duration === 0 ? "< 0.001" : `${duration}`;
+
     return (
-      <div className="flame-chart-hovered-block-info">
+      <div
+        className="flame-chart-hovered-block-info"
+        style={{
+          position: "fixed",
+          top: (this.state.y || 0) + 16,
+          left: (this.state.x || 0) - 16,
+          pointerEvents: "none",
+        }}>
         <div className="hovered-block-title">{name}</div>
-        <div className="hovered-block-details">{category}</div>
+        <div className="hovered-block-details">
+          <div>{category}</div>
+
+          <div className="duration">
+            <span className="data">{displayedDuration}</span> seconds total (<span className="data">{percentage}</span>{" "}
+            of total build duration)
+          </div>
+          <div>
+            @ {truncateDecimals(ts / MICROSECONDS_PER_SECOND, 3)} s &ndash;{" "}
+            {truncateDecimals((ts + dur) / MICROSECONDS_PER_SECOND, 3)} s
+          </div>
+        </div>
       </div>
     );
   }
@@ -491,11 +547,16 @@ function computeGridlines(startTimeSeconds: number, endTimeSeconds: number, widt
 type FlameChartBlocksProps = {
   blocks: BlockModel[];
   onHover: (block: BlockModel) => void;
+  onMouseMove: (e: React.MouseEvent<SVGGElement, MouseEvent>) => void;
+  onMouseLeave: (e: React.MouseEvent<SVGGElement, MouseEvent>) => void;
 };
 
 /** The blocks rendered within the flame chart timeline. */
 class FlameChartBlocks extends React.Component<FlameChartBlocksProps> {
-  private hoveredBlock: { element: SVGRectElement; index: number } | null = null;
+  private hoveredBlock: {
+    element: SVGRectElement;
+    index: number;
+  } | null = null;
 
   private onMouseMove(e: React.MouseEvent<SVGGElement, MouseEvent>) {
     if ((e.target as Element).tagName !== "rect") return;
@@ -511,11 +572,20 @@ class FlameChartBlocks extends React.Component<FlameChartBlocksProps> {
     };
     rect.classList.add("hover");
     this.props.onHover(this.props.blocks[index]);
+    this.props.onMouseMove(e);
+  }
+
+  private onMouseLeave(e: React.MouseEvent<SVGGElement, MouseEvent>) {
+    if (this.hoveredBlock) {
+      this.hoveredBlock.element.classList.remove("hover");
+    }
+    this.hoveredBlock = null;
+    this.props.onMouseLeave(e);
   }
 
   render() {
     return (
-      <g onMouseMove={this.onMouseMove.bind(this)}>
+      <g onMouseMove={this.onMouseMove.bind(this)} onMouseLeave={this.onMouseLeave.bind(this)}>
         {this.props.blocks.map((block: any, i: number) => (
           <rect
             key={i}

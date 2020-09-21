@@ -116,6 +116,49 @@ func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserR
 	}, nil
 }
 
+func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGroupRequest) (*grpb.CreateGroupResponse, error) {
+	auth := s.env.GetAuthenticator()
+	userDB := s.env.GetUserDB()
+	if auth == nil || userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	jwtUser := &tables.User{}
+	if err := auth.FillUser(ctx, jwtUser); err != nil {
+		return nil, err
+	}
+
+	groupName := strings.TrimSpace(req.GetName())
+	if len(groupName) == 0 {
+		return nil, status.InvalidArgumentError("Group name cannot be empty")
+	}
+
+	groupOwnedDomain := ""
+	if req.GetAutoPopulateFromOwnedDomain() {
+		userEmailDomain := GetEmailDomain(jwtUser.Email)
+		groupOwnedDomain = userEmailDomain
+	}
+
+	group := &tables.Group{
+		UserID:      jwtUser.UserID,
+		Name:        groupName,
+		OwnedDomain: groupOwnedDomain,
+	}
+	if err := userDB.InsertOrUpdateGroup(ctx, group); err != nil {
+		return nil, err
+	}
+
+	return &grpb.CreateGroupResponse{}, nil
+}
+
+func GetEmailDomain(email string) string {
+	chunks := strings.Split(email, "@")
+	return chunks[len(chunks)-1]
+}
+
+func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGroupRequest) (*grpb.UpdateGroupResponse, error) {
+	return nil, status.UnimplementedError("Not Implemented")
+}
+
 func makeConfigOption(lifecycle, flagName, flagValue string) *bzpb.ConfigOption {
 	return &bzpb.ConfigOption{
 		Body:            fmt.Sprintf("%s --%s=%s", lifecycle, flagName, flagValue),

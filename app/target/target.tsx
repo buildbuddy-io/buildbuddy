@@ -130,7 +130,7 @@ export default class TargetComponent extends React.Component {
     return (
       <div>
         <div className="shelf">
-          <div className="container history-overview">
+          <div className="container">
             <div className="breadcrumbs">
               {this.props.user && (
                 <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
@@ -154,9 +154,7 @@ export default class TargetComponent extends React.Component {
                   ? format.formatTimestampMillis(
                       this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis
                     )
-                  : format.formatTimestampMillis(
-                      +this.props?.completedEvent?.eventTime.seconds * 1000
-                    )}
+                  : format.formatTimestampMillis(+this.props?.completedEvent?.eventTime.seconds * 1000)}
               </div>
             </div>
             <div className="details">
@@ -164,13 +162,9 @@ export default class TargetComponent extends React.Component {
                 <div className="detail">
                   <img
                     className="icon"
-                    src={this.getStatusIcon(
-                      this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus
-                    )}
+                    src={this.getStatusIcon(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
                   />
-                  {this.getStatusTitle(
-                    this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus
-                  )}
+                  {this.getStatusTitle(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
                 </div>
               )}
               {!this.props?.testSummaryEvent && (
@@ -183,9 +177,7 @@ export default class TargetComponent extends React.Component {
                         : "/image/x-circle.svg"
                     }
                   />
-                  {this.props?.completedEvent?.buildEvent?.completed?.success
-                    ? "Succeeded"
-                    : "Failed"}
+                  {this.props?.completedEvent?.buildEvent?.completed?.success ? "Succeeded" : "Failed"}
                 </div>
               )}
               {this.props?.testSummaryEvent && (
@@ -197,9 +189,7 @@ export default class TargetComponent extends React.Component {
               <div className="detail">
                 <img className="icon" src="/image/target-regular.svg" />
                 {this.props?.configuredEvent?.buildEvent?.configured.targetKind ||
-                  this.props.actionEvents
-                    ?.map((action) => action?.buildEvent?.action?.type)
-                    .join(",")}
+                  this.props.actionEvents?.map((action) => action?.buildEvent?.action?.type).join(",")}
               </div>
               {this.props?.configuredEvent?.buildEvent?.configured.testSize > 0 && (
                 <div className="detail">
@@ -210,7 +200,7 @@ export default class TargetComponent extends React.Component {
             </div>
           </div>
         </div>
-        <div className="container">
+        <div className="container nopadding-dense">
           {resultEvents.length > 1 && (
             <div className={`runs ${resultEvents.length > 9 && "run-grid"}`}>
               {resultEvents.map((result, index) => (
@@ -219,10 +209,8 @@ export default class TargetComponent extends React.Component {
                   title={`Run ${result.buildEvent.id.testResult.run} (Attempt ${result.buildEvent.id.testResult.attempt}, Shard ${result.buildEvent.id.testResult.shard})`}
                   className={`run ${this.getStatusClass(result.buildEvent.testResult.status)} ${
                     (this.props.hash || "#1") == `#${index + 1}` && "selected"
-                  }`}
-                >
-                  Run {result.buildEvent.id.testResult.run} (Attempt{" "}
-                  {result.buildEvent.id.testResult.attempt}, Shard{" "}
+                  }`}>
+                  Run {result.buildEvent.id.testResult.run} (Attempt {result.buildEvent.id.testResult.attempt}, Shard{" "}
                   {result.buildEvent.id.testResult.shard})
                 </a>
               ))}
@@ -232,14 +220,8 @@ export default class TargetComponent extends React.Component {
             .filter((value, index) => `#${index + 1}` == (this.props.hash || "#1"))
             .map((result) => (
               <span>
-                <TargetTestDocumentCardComponent
-                  invocationId={this.props.invocationId}
-                  testResult={result}
-                />
-                <TargetTestLogCardComponent
-                  invocationId={this.props.invocationId}
-                  testResult={result}
-                />
+                <TargetTestDocumentCardComponent invocationId={this.props.invocationId} testResult={result} />
+                <TargetTestLogCardComponent invocationId={this.props.invocationId} testResult={result} />
               </span>
             ))}
           {actionEvents.map((action) => (
