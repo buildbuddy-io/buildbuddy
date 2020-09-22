@@ -178,6 +178,7 @@ enum AggType {
   GROUP_ID_AGGREGATION_TYPE = 3;
   REPO_URL_AGGREGATION_TYPE = 4;
   COMMIT_SHA_AGGREGATION_TYPE = 5;
+  DATE_AGGREGATION_TYPE = 6;
 }
 
 message InvocationStat {
@@ -214,6 +215,33 @@ message InvocationStat {
 
   // The total number of in-progress invocations by this entity.
   int64 total_num_in_progress_builds = 11;
+
+  // The number of invocations using the 'build' command.
+  int64 build_command_count = 12;
+
+  // The number of invocations using the 'run' command.
+  int64 run_command_count = 13;
+
+  // The number of invocations using the 'test' command.
+  int64 test_command_count = 14;
+
+  // The number of invocations with a duration longer than 0 seconds.
+  int64 completed_invocation_count = 15;
+
+  // The number of unique users who stared a build.
+  int64 user_count = 16;
+
+  // The number of unique commits that caused a build.
+  int64 commit_count = 17;
+
+  // The number of unique hosts that ran a build.
+  int64 host_count = 18;
+
+  // The number of unique repos that were built.
+  int64 repo_count = 19;
+
+  // The duration (in microseconds) of the longest build.
+  int64 max_duration_usec = 20;
 }
 
 message GetInvocationStatRequest {
@@ -221,6 +249,10 @@ message GetInvocationStatRequest {
 
   // The requested aggregation type.
   AggType aggregation_type = 2;
+
+  // The maximum number of stats to return. If not set, the server will
+  // determine a reasonable limit.
+  int32 limit = 3;
 }
 
 message GetInvocationStatResponse {

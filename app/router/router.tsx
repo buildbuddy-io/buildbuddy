@@ -48,6 +48,14 @@ class Router {
     this.navigateTo(Path.settingsPath);
   }
 
+  navigateToTrends() {
+    if (!capabilities.canNavigateToPath(Path.trendsPath)) {
+      alert(`Trends are not available in ${capabilities.name}`);
+      return;
+    }
+    this.navigateTo(Path.trendsPath);
+  }
+
   navigateToInvocation(invocationId: string) {
     if (!capabilities.canNavigateToPath(Path.invocationPath)) {
       alert(`Invocations are not available in ${capabilities.name}`);
@@ -163,6 +171,7 @@ export class Path {
   static settingsPath = "/settings/";
   static createOrgPath = "/org/create";
   static editOrgPath = "/org/edit";
+  static trendsPath = "/trends/";
 }
 
 export default new Router();

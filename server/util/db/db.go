@@ -10,6 +10,7 @@ import (
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
+
 	// Allow for "cloudsql" type connections that support workload identity.
 	_ "github.com/GoogleCloudPlatform/cloudsql-proxy/proxy/dialers/mysql"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -26,6 +27,7 @@ var (
 
 type DBHandle struct {
 	*gorm.DB
+	dialect string
 }
 
 func NewDBHandle(dialect string, args ...interface{}) (*DBHandle, error) {
@@ -47,8 +49,16 @@ func NewDBHandle(dialect string, args ...interface{}) (*DBHandle, error) {
 		gdb.Exec("PRAGMA journal_mode=WAL;")
 	}
 	return &DBHandle{
-		DB: gdb,
+		DB:      gdb,
+		dialect: dialect,
 	}, nil
+}
+
+func (h *DBHandle) DateFromUsecTimestamp(fieldName string) string {
+	if h.dialect == sqliteDialect {
+		return "DATE(" + fieldName + "/1000000, 'unixepoch')"
+	}
+	return "DATE(FROM_UNIXTIME(" + fieldName + "/1000000))"
 }
 
 func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
