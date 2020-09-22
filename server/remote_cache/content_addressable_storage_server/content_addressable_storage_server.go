@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
@@ -38,11 +39,7 @@ func NewContentAddressableStorageServer(env environment.Env) (*ContentAddressabl
 }
 
 func (s *ContentAddressableStorageServer) getCache(instanceName string) interfaces.Cache {
-	c := s.cache
-	if instanceName != "" {
-		c = c.WithPrefix(instanceName)
-	}
-	return c
+	return namespace.CASCache(s.cache, instanceName)
 }
 
 // Determine if blobs are present in the CAS.

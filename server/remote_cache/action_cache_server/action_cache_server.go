@@ -8,16 +8,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-)
-
-const (
-	acCachePrefix = "ac"
 )
 
 type ActionCacheServer struct {
@@ -37,19 +34,11 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 }
 
 func (s *ActionCacheServer) getCache(instanceName string) interfaces.Cache {
-	c := s.cache
-	if instanceName != "" {
-		c = c.WithPrefix(instanceName)
-	}
-	return c.WithPrefix(acCachePrefix)
+	return namespace.ActionCache(s.cache, instanceName)
 }
 
 func (s *ActionCacheServer) getCASCache(instanceName string) interfaces.Cache {
-	c := s.cache
-	if instanceName != "" {
-		c = c.WithPrefix(instanceName)
-	}
-	return c
+	return namespace.CASCache(s.cache, instanceName)
 }
 
 func (s *ActionCacheServer) checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*repb.Digest) error {

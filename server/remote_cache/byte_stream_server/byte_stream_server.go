@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -47,11 +48,7 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 }
 
 func (s *ByteStreamServer) getCache(instanceName string) interfaces.Cache {
-	c := s.cache
-	if instanceName != "" {
-		c = c.WithPrefix(instanceName)
-	}
-	return c
+	return namespace.CASCache(s.cache, instanceName)
 }
 
 func minInt64(a, b int64) int64 {
