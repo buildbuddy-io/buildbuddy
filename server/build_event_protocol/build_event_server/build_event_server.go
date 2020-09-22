@@ -70,7 +70,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	disconnectWithErr := func(e error) error {
 		if channel != nil && streamID != nil {
 			if err := channel.MarkInvocationDisconnected(stream.Context(), streamID.InvocationId); err != nil {
-				log.Printf("Error marking invocation %q as disconnected", streamID.InvocationId)
+				log.Printf("Error marking invocation %q as disconnected: %s", streamID.InvocationId, err)
 			}
 		}
 		return e
