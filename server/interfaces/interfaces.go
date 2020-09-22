@@ -35,6 +35,7 @@ type UserInfo interface {
 	GetUserID() string
 	GetGroupID() string
 	GetAllowedGroups() []string
+	IsAdmin() bool
 }
 
 type Authenticator interface {

@@ -91,6 +91,9 @@ func (d *InvocationDB) addPermissionsCheckToQuery(ctx context.Context, q *query_
 				o.AddOr(groupQueryStr, groupArgs...)
 				o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", perms.OWNER_READ, u.GetUserID())
 			}
+			if u.IsAdmin() {
+				o.AddOr("(i.perms & ? != 0)", perms.ALL)
+			}
 		}
 	}
 
