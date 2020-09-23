@@ -35,6 +35,7 @@ type UserInfo interface {
 	GetUserID() string
 	GetGroupID() string
 	GetAllowedGroups() []string
+	IsAdmin() bool
 }
 
 type Authenticator interface {
@@ -185,4 +186,14 @@ type SchedulerService interface {
 	LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
+}
+
+type Subscriber interface {
+	Close() error
+	Chan() <-chan string
+}
+
+type PubSub interface {
+	Publish(ctx context.Context, channelName string, message string) error
+	Subscribe(ctx context.Context, channelName string) Subscriber
 }
