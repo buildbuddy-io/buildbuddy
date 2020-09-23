@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/build_event_stream.proto";
+import "proto/cache.proto";
 import "proto/command_line.proto";
 import "proto/context.proto";
 import "google/protobuf/timestamp.proto";
@@ -67,6 +68,10 @@ message Invocation {
   string commit_sha = 16;
 
   InvocationPermission read_permission = 17;
+
+  // Any cache stats that were captured during this invocation.
+  // May not be present if the buildbuddy cache was not used.
+  cache.CacheStats cache_stats = 18;
 }
 
 message InvocationEvent {

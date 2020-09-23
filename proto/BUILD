@@ -26,6 +26,13 @@ proto_library(
 )
 
 proto_library(
+    name = "cache_proto",
+    srcs = [
+        "cache.proto",
+    ],
+)
+
+proto_library(
     name = "config_proto",
     srcs = [
         "config.proto",
@@ -87,6 +94,7 @@ proto_library(
     srcs = ["invocation.proto"],
     deps = [
         ":build_event_stream_proto",
+        ":cache_proto",
         ":command_line_proto",
         ":context_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -264,6 +272,7 @@ go_proto_library(
     proto = ":invocation_proto",
     deps = [
         ":build_event_stream_go_proto",
+        ":cache_go_proto",
         ":command_line_go_proto",
         ":context_go_proto",
     ],
@@ -301,6 +310,12 @@ go_proto_library(
     name = "group_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/group",
     proto = ":group_proto",
+)
+
+go_proto_library(
+    name = "cache_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/cache",
+    proto = ":cache_proto",
 )
 
 go_proto_library(
