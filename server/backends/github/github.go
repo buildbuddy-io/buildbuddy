@@ -144,6 +144,8 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// TODO: instead of linking all groups in GetAllowedGroups,
+	// link only the group in the RequestContext.
 	err = dbHandle.Exec(
 		"UPDATE Groups SET github_token = ? WHERE group_id IN (?)",
 		accessTokenResponse.AccessToken, userInfo.GetAllowedGroups()).Error

@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
@@ -191,8 +192,24 @@ func assembleURL(host, scheme, port string) string {
 }
 
 func (s *BuildBuddyServer) getGroupAPIKey(ctx context.Context) string {
+	groupID := ""
+	reqCtx = request_context.ProtoRequestContextFromContext(ctx)
+	if reqCtx != nil {
+		groupId = reqCtx.GetGroupID()
+	}
+
 	if userDB := s.env.GetUserDB(); userDB != nil {
 		if tu, _ := userDB.GetUser(ctx); tu != nil {
+			if groupID != "" {
+				for _, g := range tu.Groups {
+					if g.groupID == groupID {
+						return g.APIKey
+					}
+				}
+				// If group ID was provided explicitly, it would be unexpected behavior
+				// if we used an API key from another group, so return empty string.
+				return ""
+			}
 			for _, g := range tu.Groups {
 				if g.OwnedDomain != "" && g.APIKey != "" {
 					return g.APIKey
@@ -231,7 +248,30 @@ func getIntFlag(flagName string, defaultVal string) string {
 	return f.Value.String()
 }
 
+func authenticatedGroupIDFromRequestContext(s *BuildBuddyServer, ctx context.Context, reqCtx *rcpb.RequestContext) (string, error) {
+	if reqCtx == nil || reqCtx.GetGroupID() == "" {
+		// If group ID is not provided, this is not an error; we try to infer it based
+		// on the app config and the groups the user belongs to.
+		return "", nil
+	}
+	if auth := d.env.GetAuthenticator(); auth != nil {
+		if u, err := auth.AuthenticatedUser(ctx); err == nil {
+			for _, allowedGroupID := range u.GetAllowedGroups() {
+				if allowedGroupID == reqCtx.GetGroupId() {
+					return reqCtx.GetGroupID(), nil
+				}
+			}
+		}
+	}
+	return status.PermissionDeniedError("User is not allowed to access the requested group ID.")
+}
+
 func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBazelConfigRequest) (*bzpb.GetBazelConfigResponse, error) {
+	groupID, err := authenticatedGroupIDFromRequestContext(s, ctx, req.GetRequestContext())
+	if err != nil {
+		return nil, err
+	}
+	
 	configOptions := make([]*bzpb.ConfigOption, 0)
 
 	// Use config urls if they're set and fall back to host & protocol from request if not.
@@ -246,7 +286,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 	if eventsAPIURL == "" {
 		eventsAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 	}
-	groupAPIKey := s.getGroupAPIKey(ctx)
+	groupAPIKey := s.getGroupAPIKey(ctx, groupID)
 	eventsAPIURL = insertPassword(eventsAPIURL, groupAPIKey)
 	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", eventsAPIURL))
 

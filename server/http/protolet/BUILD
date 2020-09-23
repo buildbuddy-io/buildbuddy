@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/http/protolet",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:context_go_proto",
         "@com_github_golang_protobuf//jsonpb:go_default_library_gen",
         "@com_github_golang_protobuf//proto:go_default_library",
     ],

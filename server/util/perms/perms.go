@@ -1,5 +1,9 @@
 package perms
 
+import (
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+)
+
 const (
 	NONE         = 0o0
 	OWNER_READ   = 0o0400

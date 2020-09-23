@@ -1,8 +1,9 @@
 import React from "react";
-import rpcService from "../service/rpc_service";
 import { bazel_config } from "../../proto/bazel_config_ts_proto";
-import SetupCodeComponent from "./setup_code";
+import authService from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
+import rpcService from "../service/rpc_service";
+import SetupCodeComponent from "./setup_code";
 
 interface State {
   menuExpanded: boolean;
@@ -19,6 +20,7 @@ export default class SetupComponent extends React.Component {
     document.title = `Setup | BuildBuddy`;
 
     let request = new bazel_config.GetBazelConfigRequest();
+    request.requestContext = authService.getRequestContext();
     request.host = window.location.host;
     request.protocol = window.location.protocol;
     request.includeCertificate = true;
