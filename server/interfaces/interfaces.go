@@ -193,7 +193,19 @@ type Subscriber interface {
 	Chan() <-chan string
 }
 
+// A PubSub allows for sending messages between distributed (cross process,
+// cross machine) processes. This may be implemented by a cloud-pubsub service,
+// or something like redis.
 type PubSub interface {
 	Publish(ctx context.Context, channelName string, message string) error
 	Subscribe(ctx context.Context, channelName string) Subscriber
+}
+
+// A Counter allows for incrementing and reading counter values globally. No
+// guarantees are made about the durability of counters -- they may be
+// evicted from the backing store that maintains them (usually memcache or
+// redis), so they should *not* be used in critical path code.
+type Counter interface {
+	Increment(counterName string, n int64) (int64, error)
+	Read(counterName string) (int64, error)
 }
