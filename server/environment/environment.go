@@ -55,4 +55,5 @@ type Env interface {
 	GetFileCache() interfaces.FileCache
 	GetExecutionService() interfaces.ExecutionService
 	GetSchedulerService() interfaces.SchedulerService
+	GetPubSub() interfaces.PubSub
 }

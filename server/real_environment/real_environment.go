@@ -56,6 +56,7 @@ type RealEnv struct {
 	fileCache                       interfaces.FileCache
 	executionService                interfaces.ExecutionService
 	schedulerService                interfaces.SchedulerService
+	pubSub                          interfaces.PubSub
 }
 
 func NewRealEnv(c *config.Configurator, h *healthcheck.HealthChecker) *RealEnv {
@@ -219,4 +220,10 @@ func (r *RealEnv) SetSchedulerService(s interfaces.SchedulerService) {
 }
 func (r *RealEnv) GetSchedulerService() interfaces.SchedulerService {
 	return r.schedulerService
+}
+func (r *RealEnv) SetPubSub(p interfaces.PubSub) {
+	r.pubSub = p
+}
+func (r *RealEnv) GetPubSub() interfaces.PubSub {
+	return r.pubSub
 }
