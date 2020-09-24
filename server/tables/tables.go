@@ -320,6 +320,7 @@ type ExecutionTask struct {
 	EstimatedMilliCPU    int64
 	ClaimedAtUsec        int64
 	AttemptCount         int64
+	OS                   string
 }
 
 func (n *ExecutionTask) TableName() string {
