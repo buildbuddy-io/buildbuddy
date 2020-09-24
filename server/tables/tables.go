@@ -242,28 +242,6 @@ func (u *User) ToProto() *uspb.DisplayUser {
 	}
 }
 
-// // A user's group membership.
-// type UserGroup struct {
-// 	// TODO: do these rows get deleted automatically when deleting a group?
-// 	// (do we want them to be?)
-
-//   // The buildbuddy user ID.
-// 	UserID      string `gorm:"column:user_user_id;index:user_id_index"`
-
-// 	// The buildbuddy group ID.
-// 	GroupID     string `gorm:"column:group_group_id;index:group_id_index"`
-
-// 	// Indicates the user's membership status.
-// 	Status      int
-
-// 	// Bitwise flags indicating the user's permissions to perform group actions.
-// 	Permissions int
-// }
-
-// func (ug *UserGroup) TableName() string {
-// 	return "UserGroups"
-// }
-
 type Token struct {
 	Model
 	// The subscriber ID, a concatenated string of the
@@ -401,7 +379,6 @@ func init() {
 	registerTable("CA", &CacheEntry{})
 	registerTable("US", &User{})
 	registerTable("GR", &Group{})
-	// registerTable("UG", &UserGroup{})
 	registerTable("TO", &Token{})
 	registerTable("EX", &Execution{})
 	registerTable("TL", &TelemetryLog{})
