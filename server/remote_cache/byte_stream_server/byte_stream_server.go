@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -140,18 +141,26 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err != nil {
 		return err
 	}
+
+	ht := hit_tracker.NewHitTracker(s.env, digest.GetInvocationIDFromMD(ctx), false)
 	cache := s.getCache(instanceName)
 	if d.GetHash() == digest.EmptySha256 {
+		ht.TrackEmptyHit()
 		return nil
 	}
 	reader, err := cache.Reader(ctx, d, req.ReadOffset)
 	if err != nil {
+		ht.TrackMiss(d)
 		return err
 	}
 
+	downloadTracker := ht.TrackDownload(d)
 	buf := make([]byte, minInt64(int64(readBufSizeBytes), d.GetSizeBytes()))
 	if len(buf) > 0 { // safety check -- should always be true.
 		_, err = io.CopyBuffer(&streamWriter{stream}, reader, buf)
+	}
+	if err == nil {
+		downloadTracker.Close()
 	}
 	return err
 }
@@ -181,7 +190,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 type writeState struct {
 	activeResourceName string
-	hash               string
+	d                  *repb.Digest
 	writer             io.WriteCloser
 	bytesWritten       int64
 	alreadyExists      bool
@@ -238,7 +247,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 
 	ws := &writeState{
 		activeResourceName: req.ResourceName,
-		hash:               d.GetHash(),
+		d:                  d,
 	}
 
 	// The protocol says it is *optional* to allow overwriting, but does
@@ -274,6 +283,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 }
 
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
+	ctx := stream.Context()
 	var streamState *writeState
 	for {
 		req, err := stream.Recv()
@@ -288,7 +298,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			if err := checkInitialPreconditions(req); err != nil {
 				return err
 			}
-			streamState, err = s.initStreamState(stream.Context(), req)
+			streamState, err = s.initStreamState(ctx, req)
 			if err != nil {
 				return err
 			}
@@ -297,6 +307,9 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 					CommittedSize: streamState.bytesWritten,
 				})
 			}
+			ht := hit_tracker.NewHitTracker(s.env, digest.GetInvocationIDFromMD(ctx), false)
+			uploadTracker := ht.TrackUpload(streamState.d)
+			defer uploadTracker.Close()
 		} else { // Subsequent messages
 			if err := checkSubsequentPreconditions(req, streamState); err != nil {
 				return err

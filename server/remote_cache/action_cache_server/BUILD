@@ -10,6 +10,7 @@ go_library(
         "//server/environment:go_default_library",
         "//server/interfaces:go_default_library",
         "//server/remote_cache/digest:go_default_library",
+        "//server/remote_cache/hit_tracker:go_default_library",
         "//server/remote_cache/namespace:go_default_library",
         "//server/util/prefix:go_default_library",
         "//server/util/status:go_default_library",

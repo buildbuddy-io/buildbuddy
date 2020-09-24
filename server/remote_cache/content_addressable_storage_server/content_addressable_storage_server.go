@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -114,6 +115,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 	cache := s.getCache(req.GetInstanceName())
 	rsp.Responses = make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(req.Requests))
 
+	ht := hit_tracker.NewHitTracker(s.env, digest.GetInvocationIDFromMD(ctx), false)
 	kvs := make(map[*repb.Digest][]byte, len(req.Requests))
 	for _, uploadRequest := range req.Requests {
 		uploadDigest := uploadRequest.GetDigest()
@@ -121,6 +123,11 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		if err != nil {
 			return nil, err
 		}
+		uploadTracker := ht.TrackUpload(uploadDigest)
+		// defers are preetty cheap: https://tpaschalis.github.io/defer-internals/
+		// so doing 100-1000 or so in this loop is fine.
+		defer uploadTracker.Close()
+
 		if uploadDigest.GetHash() == digest.EmptySha256 {
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 				Digest: uploadDigest,
@@ -132,6 +139,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		}
 		kvs[uploadDigest] = uploadRequest.GetData()
 	}
+
 	if err := cache.SetMulti(ctx, kvs); err != nil {
 		return nil, err
 	}
@@ -173,11 +181,16 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	cache := s.getCache(req.GetInstanceName())
 	cacheRequest := make([]*repb.Digest, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
+	ht := hit_tracker.NewHitTracker(s.env, digest.GetInvocationIDFromMD(ctx), false)
 	for _, readDigest := range req.GetDigests() {
 		_, err := digest.Validate(readDigest)
 		if err != nil {
 			return nil, err
 		}
+		downloadTracker := ht.TrackUpload(readDigest)
+		// defers are preetty cheap: https://tpaschalis.github.io/defer-internals/
+		// so doing 100-1000 or so in this loop is fine.
+		defer downloadTracker.Close()
 		if readDigest.GetHash() != digest.EmptySha256 {
 			cacheRequest = append(cacheRequest, readDigest)
 		}
