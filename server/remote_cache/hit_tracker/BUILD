@@ -10,5 +10,6 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment:go_default_library",
         "//server/interfaces:go_default_library",
+        "//server/remote_cache/digest:go_default_library",
     ],
 )

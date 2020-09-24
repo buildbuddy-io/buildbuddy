@@ -137,7 +137,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	cache := s.getCache(req.GetInstanceName())
 	casCache := s.getCASCache(req.GetInstanceName())
 
-	ht := hit_tracker.NewHitTracker(s.env, digest.GetInvocationIDFromMD(ctx), true)
+	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
 	downloadTracker := ht.TrackDownload(d)
@@ -189,7 +189,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if err != nil {
 		return nil, err
 	}
-	ht := hit_tracker.NewHitTracker(s.env, digest.GetInvocationIDFromMD(ctx), true)
+	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
 	d := req.GetActionDigest()
 	uploadTracker := ht.TrackUpload(d)
 	cache := s.getCache(req.GetInstanceName())

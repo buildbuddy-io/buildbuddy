@@ -132,7 +132,7 @@ func (e *EventChannel) FinalizeInvocation(ctx context.Context, iid string) error
 	event_parser.FillInvocationFromEvents(events, invocation)
 
 	ti := tableInvocationFromProto(invocation, iid)
-	if cacheStats := hit_tracker.CollectCacheStats(e.env, iid); cacheStats != nil {
+	if cacheStats := hit_tracker.CollectCacheStats(ctx, e.env, iid); cacheStats != nil {
 		ti.ActionCacheHits = cacheStats.GetActionCacheHits()
 		ti.ActionCacheMisses = cacheStats.GetActionCacheMisses()
 		ti.ActionCacheUploads = cacheStats.GetActionCacheUploads()

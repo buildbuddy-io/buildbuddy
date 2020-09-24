@@ -206,6 +206,6 @@ type PubSub interface {
 // evicted from the backing store that maintains them (usually memcache or
 // redis), so they should *not* be used in critical path code.
 type Counter interface {
-	Increment(counterName string, n int64) (int64, error)
-	Read(counterName string) (int64, error)
+	Increment(ctx context.Context, counterName string, n int64) (int64, error)
+	Read(ctx context.Context, counterName string) (int64, error)
 }

@@ -142,7 +142,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		return err
 	}
 
-	ht := hit_tracker.NewHitTracker(s.env, digest.GetInvocationIDFromMD(ctx), false)
+	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 	cache := s.getCache(instanceName)
 	if d.GetHash() == digest.EmptySha256 {
 		ht.TrackEmptyHit()
@@ -307,7 +307,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 					CommittedSize: streamState.bytesWritten,
 				})
 			}
-			ht := hit_tracker.NewHitTracker(s.env, digest.GetInvocationIDFromMD(ctx), false)
+			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 			uploadTracker := ht.TrackUpload(streamState.d)
 			defer uploadTracker.Close()
 		} else { // Subsequent messages
