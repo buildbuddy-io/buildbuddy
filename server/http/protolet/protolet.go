@@ -137,11 +137,15 @@ func GenerateHTTPHandlers(server interface{}) (http.HandlerFunc, error) {
 		methodType := method.Type()
 		reqVal := reflect.New(methodType.In(2).Elem())
 		req := reqVal.Interface().(proto.Message)
+		fmt.Println(req == nil)
+		fmt.Println(req)
 		if err := ReadRequestToProto(r, req); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		ctx := requestcontext.ContextWithProtoRequestContext(r.Context(), getProtoRequestContext(req))
+		reqCtx := getProtoRequestContext(req)
+		fmt.Println(reqCtx)
+		ctx := requestcontext.ContextWithProtoRequestContext(r.Context(), reqCtx)
 		args := []reflect.Value{reflect.ValueOf(server), reflect.ValueOf(ctx), reqVal}
 		rspArr := method.Call(args)
 		if rspArr[1].Interface() != nil {

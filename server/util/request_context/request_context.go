@@ -15,5 +15,9 @@ func ContextWithProtoRequestContext(ctx context.Context, reqCtx *ctxpb.RequestCo
 }
 
 func ProtoRequestContextFromContext(ctx context.Context) *ctxpb.RequestContext {
-	return ctx.Value(contextProtoRequestContextKey).(*ctxpb.RequestContext)
+	val := ctx.Value(contextProtoRequestContextKey)
+	if val == nil {
+		return nil
+	}
+	return val.(*ctxpb.RequestContext)
 }
