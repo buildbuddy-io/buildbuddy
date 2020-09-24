@@ -1,4 +1,4 @@
-package group
+package requestcontext
 
 import (
 	"context"
@@ -7,13 +7,13 @@ import (
 )
 
 const (
-	protoRequestContextContextKey
+	contextProtoRequestContextKey = "proto.requestContext"
 )
 
-func ContextWithProtoRequestContext(ctx *context.Context, reqCtx *ctxpb.RequestContext) {
-	return ctx.WithValue(ctx, protoRequestContextContextKey, reqCtx)
+func ContextWithProtoRequestContext(ctx context.Context, reqCtx *ctxpb.RequestContext) context.Context {
+	return context.WithValue(ctx, contextProtoRequestContextKey, reqCtx)
 }
 
-func ProtoRequestContextFromContext(ctx *context.Context) reqCtx *ctxpb.RequestContext {
-	return ctx.Value(protoRequestContextContextKey).(*ctxpb.RequestContext)
+func ProtoRequestContextFromContext(ctx context.Context) *ctxpb.RequestContext {
+	return ctx.Value(contextProtoRequestContextKey).(*ctxpb.RequestContext)
 }

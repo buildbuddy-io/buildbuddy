@@ -10,6 +10,7 @@ import (
 	"reflect"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+  "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 )
@@ -43,7 +44,7 @@ func isGetRequestContextMethod(m reflect.Method) bool {
 	if t.Kind() != reflect.Func {
 		return false
 	}
-	if t.Name != "GetRequestContext" {
+	if m.Name != "GetRequestContext" {
 		return false
 	}
 	if t.NumIn() != 0 || t.NumOut() != 1 {
@@ -63,7 +64,7 @@ func getProtoRequestContext(req proto.Message) *ctxpb.RequestContext {
 			continue
 		}
 		args := []reflect.Value{reflect.ValueOf(req)}
-		ctxArr := method.Call(args)
+		ctxArr := method.Func.Call(args)
 		return ctxArr[0].Interface().(*ctxpb.RequestContext)
 	}
 	return nil
@@ -140,7 +141,7 @@ func GenerateHTTPHandlers(server interface{}) (http.HandlerFunc, error) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		ctx := ContextWithProtoRequestContext(ctx, getProtoRequestContext(reqVal))
+		ctx := requestcontext.ContextWithProtoRequestContext(r.Context(), getProtoRequestContext(req))
 		args := []reflect.Value{reflect.ValueOf(server), reflect.ValueOf(ctx), reqVal}
 		rspArr := method.Call(args)
 		if rspArr[1].Interface() != nil {
