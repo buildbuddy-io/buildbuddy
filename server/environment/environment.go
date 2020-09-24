@@ -56,4 +56,5 @@ type Env interface {
 	GetExecutionService() interfaces.ExecutionService
 	GetSchedulerService() interfaces.SchedulerService
 	GetPubSub() interfaces.PubSub
+	GetCounter() interfaces.Counter
 }

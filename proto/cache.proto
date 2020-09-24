@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package cache;
+
+message CacheStats {
+  // Server-side Action-cache stats.
+  int64 action_cache_hits = 1;
+  int64 action_cache_misses = 2;
+  int64 action_cache_uploads = 3;
+
+  // Server-side CAS-cache stats.
+  int64 cas_cache_hits = 4;
+  int64 cas_cache_misses = 5;
+  int64 cas_cache_uploads = 6;
+
+  // Rough throughput can be computed using the total cache bytes
+  // {uploaded,downloaded}/{upload_time,download_time}.
+  int64 total_download_size_bytes = 7;
+  int64 total_upload_size_bytes = 8;
+  int64 total_download_usec = 9;
+  int64 total_upload_usec = 10;
+}
