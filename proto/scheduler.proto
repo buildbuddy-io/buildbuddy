@@ -56,6 +56,7 @@ message ScheduleTaskRequest {
   string task_id = 1;
   TaskSize task_size = 2;
   bytes serialized_task = 3;
+  string os = 4;
 }
 
 message ScheduleTaskResponse {
@@ -72,6 +73,8 @@ message EnqueueTaskReservationRequest {
   string task_id = 1;
 
   TaskSize task_size = 2;
+
+  string os = 3;
 }
 
 message EnqueueTaskReservationResponse {
