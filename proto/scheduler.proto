@@ -73,8 +73,6 @@ message EnqueueTaskReservationRequest {
   string task_id = 1;
 
   TaskSize task_size = 2;
-
-  string os = 3;
 }
 
 message EnqueueTaskReservationResponse {
