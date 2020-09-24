@@ -38,7 +38,7 @@ func NewBuildBuddyServer(env environment.Env, sslService *ssl.SSLService) (*Buil
 	}, nil
 }
 
-func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvocationRequest) (*inpb.GetInvocationResponse, error) {	
+func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvocationRequest) (*inpb.GetInvocationResponse, error) {
 	if req.GetLookup().GetInvocationId() == "" {
 		return nil, status.InvalidArgumentErrorf("GetInvocationRequest must contain a valid invocation_id")
 	}

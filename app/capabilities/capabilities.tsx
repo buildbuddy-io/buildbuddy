@@ -30,8 +30,6 @@ export class Capabilities {
     });
     window.gtag("config", "UA-156160991-2");
     this.didNavigateToPath();
-
-    console.debug(this);
   }
 
   canNavigateToPath(path: string) {

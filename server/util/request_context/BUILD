@@ -6,6 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/request_context",
     visibility = ["//visibility:public"],
     deps = [
-      "//proto:context_go_proto",
-    ]
+        "//proto:context_go_proto",
+    ],
 )

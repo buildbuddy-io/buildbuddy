@@ -10,7 +10,7 @@ import (
 	"reflect"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
-  "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 )
@@ -120,7 +120,7 @@ type HTTPHandlers struct {
 	// Middleware that deserializes the request body and adds it to the request context.
 	BodyParserMiddleware func(http.Handler) http.Handler
 	// Handler that runs after the parsed request message is authenticated, returning the response proto.
-	RequestHandler       http.Handler
+	RequestHandler http.Handler
 }
 
 func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
@@ -146,7 +146,7 @@ func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
 				http.Error(w, fmt.Sprintf("Method '%s' not found.", r.URL.Path), http.StatusNotFound)
 				return
 			}
-	
+
 			methodType := method.Type()
 			reqVal := reflect.New(methodType.In(2).Elem())
 			req := reqVal.Interface().(proto.Message)
@@ -160,7 +160,7 @@ func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
-	} 
+	}
 
 	requestHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		method, ok := handlerFns[r.URL.Path]
@@ -188,6 +188,6 @@ func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
 
 	return &HTTPHandlers{
 		BodyParserMiddleware: bodyParserMiddleware,
-		RequestHandler: requestHandler,
+		RequestHandler:       requestHandler,
 	}, nil
 }
