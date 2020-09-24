@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_counter"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
@@ -131,6 +132,13 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	}
 
 	realEnv.SetSplashPrinter(&splash.Printer{})
+
+	counter, err := memory_counter.NewMemoryCounter()
+	if err != nil {
+		log.Fatalf("Error configuring in-memory counters: %s", err.Error())
+	}
+	realEnv.SetCounter(counter)
+
 	return realEnv
 }
 
