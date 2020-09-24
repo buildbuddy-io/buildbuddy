@@ -2,6 +2,7 @@ package hit_tracker
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -73,12 +74,16 @@ type HitTracker struct {
 }
 
 func NewHitTracker(ctx context.Context, env environment.Env, actionCache bool) *HitTracker {
-	return &HitTracker{
+	ht := &HitTracker{
 		c:           env.GetCounter(),
 		ctx:         ctx,
 		iid:         digest.GetInvocationIDFromMD(ctx),
 		actionCache: actionCache,
 	}
+	if ht.iid == "" {
+		log.Printf("HitTracker created with empty invocationID. Is header set?")
+	}
+	return ht
 }
 
 func (h *HitTracker) counterName(ct counterType) string {
@@ -92,7 +97,7 @@ func (h *HitTracker) counterName(ct counterType) string {
 //   log.Printf("Error counting cache miss.")
 // }
 func (h *HitTracker) TrackMiss(d *repb.Digest) error {
-	if h.c == nil {
+	if h.c == nil || h.iid == "" {
 		return nil
 	}
 	_, err := h.c.Increment(h.ctx, h.counterName(Miss), 1)
@@ -100,7 +105,7 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 }
 
 func (h *HitTracker) TrackEmptyHit() error {
-	if h.c == nil {
+	if h.c == nil || h.iid == "" {
 		return nil
 	}
 	_, err := h.c.Increment(h.ctx, h.counterName(Hit), 1)
@@ -125,7 +130,7 @@ func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
 		closeFunc: func() error {
-			if h.c == nil {
+			if h.c == nil || h.iid == "" {
 				return nil
 			}
 			end := time.Now()
@@ -153,7 +158,7 @@ func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
 		closeFunc: func() error {
-			if h.c == nil {
+			if h.c == nil || h.iid == "" {
 				return nil
 			}
 			end := time.Now()
@@ -173,7 +178,7 @@ func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
 
 func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *capb.CacheStats {
 	c := env.GetCounter()
-	if c == nil {
+	if c == nil || iid == "" {
 		return nil
 	}
 	cs := &capb.CacheStats{}
