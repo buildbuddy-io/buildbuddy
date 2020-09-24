@@ -6,6 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -25,7 +26,42 @@ const (
 
 	DownloadUsec
 	UploadUsec
+
+	// New counter types go here!
 )
+
+func cacheTypePrefix(actionCache bool, name string) string {
+	if actionCache {
+		return "action-cache-" + name
+	} else {
+		return "cas-" + name
+	}
+}
+
+func rawCounterName(actionCache bool, ct counterType) string {
+	switch ct {
+	case Hit:
+		return cacheTypePrefix(actionCache, "hits")
+	case Miss:
+		return cacheTypePrefix(actionCache, "misses")
+	case Upload:
+		return cacheTypePrefix(actionCache, "uploads")
+	case DownloadSizeBytes:
+		return "download-size-bytes"
+	case UploadSizeBytes:
+		return "upload-size-bytes"
+	case DownloadUsec:
+		return "download-usec"
+	case UploadUsec:
+		return "upload-usec"
+	default:
+		return "UNKNOWN-COUNTER-TYPE"
+	}
+}
+
+func counterName(actionCache bool, ct counterType, iid string) string {
+	return iid + "-" + rawCounterName(actionCache, ct)
+}
 
 type HitTracker struct {
 	iid         string
@@ -41,37 +77,8 @@ func NewHitTracker(env environment.Env, invocationID string, actionCache bool) *
 	}
 }
 
-func (h *HitTracker) cacheTypePrefix(name string) string {
-	if h.actionCache {
-		return "action-cache-" + name
-	} else {
-		return "cas-" + name
-	}
-}
-
-func (h *HitTracker) rawCounterName(ct counterType) string {
-	switch ct {
-	case Hit:
-		return h.cacheTypePrefix("hits")
-	case Miss:
-		return h.cacheTypePrefix("misses")
-	case Upload:
-		return h.cacheTypePrefix("uploads")
-	case DownloadSizeBytes:
-		return "download-size-bytes"
-	case UploadSizeBytes:
-		return "upload-size-bytes"
-	case DownloadUsec:
-		return "download-usec"
-	case UploadUsec:
-		return "upload-usec"
-	default:
-		return "UNKNWON-COUNTER-TYPE"
-	}
-}
-
 func (h *HitTracker) counterName(ct counterType) string {
-	return h.iid + "-" + h.rawCounterName(ct)
+	return counterName(h.actionCache, ct, h.iid)
 }
 
 // Example Usage:
@@ -158,4 +165,27 @@ func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
 			return nil
 		},
 	}
+}
+
+func CollectCacheStats(env environment.Env, iid string) *capb.CacheStats {
+	c := env.GetCounter()
+	if c == nil {
+		return nil
+	}
+	cs := &capb.CacheStats{}
+
+	cs.ActionCacheHits, _ = c.Read(counterName(true, Hit, iid))
+	cs.ActionCacheMisses, _ = c.Read(counterName(true, Miss, iid))
+	cs.ActionCacheUploads, _ = c.Read(counterName(true, Upload, iid))
+
+	cs.CasCacheHits, _ = c.Read(counterName(false, Hit, iid))
+	cs.CasCacheMisses, _ = c.Read(counterName(false, Miss, iid))
+	cs.CasCacheUploads, _ = c.Read(counterName(false, Upload, iid))
+
+	cs.TotalDownloadSizeBytes, _ = c.Read(counterName(false, DownloadSizeBytes, iid))
+	cs.TotalUploadSizeBytes, _ = c.Read(counterName(false, UploadSizeBytes, iid))
+	cs.TotalDownloadUsec, _ = c.Read(counterName(false, DownloadUsec, iid))
+	cs.TotalUploadUsec, _ = c.Read(counterName(false, UploadUsec, iid))
+
+	return cs
 }
