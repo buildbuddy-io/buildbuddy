@@ -142,6 +142,11 @@ type Group struct {
 	// The group name. This may be displayed to users.
 	Name string
 
+	// An unique URL segment that is displayed in group-related URLs.
+	// e.g. "example-org" in app.buildbuddy.com/join/example-org or
+	// "example-org.buildbuddy.com" if we support subdomains in the future.
+	UrlIdentifier string
+
 	// The "owned" domain. In enterprise/cloud version, we create a
 	// group for a customer's domain, and new users that sign up with an
 	// email belonging to that domain may be added to this group.
