@@ -65,7 +65,7 @@ export class AuthService {
     let user = new User();
     user.displayUser = response.displayUser as user.DisplayUser;
     user.groups = response.userGroup as grp.Group[];
-    let selectedGroupId = window.localStorage["buildbuddy://auth/selected_group_id"];
+    let selectedGroupId = window.localStorage["selected_group_id"];
     if (user.groups.length > 0) {
       user.selectedGroup =
         user.groups.find(
