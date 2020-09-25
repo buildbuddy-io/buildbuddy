@@ -9,10 +9,11 @@ import (
 	"net/http"
 	"reflect"
 
-	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
+
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 )
 
 const (
@@ -115,6 +116,9 @@ func WriteProtoToResponse(rsp proto.Message, w http.ResponseWriter, r *http.Requ
 		return fmt.Errorf("Unknown Content-Type: %s, expected application/json or application/protobuf", ct)
 	}
 }
+
+// TODO(tylerw): restructure protolet as a self-RPC to avoid the need for this
+// body parsing middleware.
 
 type HTTPHandlers struct {
 	// Middleware that deserializes the request body and adds it to the request context.

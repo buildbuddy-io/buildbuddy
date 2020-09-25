@@ -193,8 +193,7 @@ func assembleURL(host, scheme, port string) string {
 
 func (s *BuildBuddyServer) getGroupAPIKey(ctx context.Context) string {
 	groupID := ""
-	reqCtx := requestcontext.ProtoRequestContextFromContext(ctx)
-	if reqCtx != nil {
+	if reqCtx := requestcontext.ProtoRequestContextFromContext(ctx); reqCtx != nil {
 		groupID = reqCtx.GetGroupId()
 	}
 
