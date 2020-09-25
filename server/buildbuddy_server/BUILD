@@ -15,6 +15,7 @@ go_library(
         "//server/environment:go_default_library",
         "//server/ssl:go_default_library",
         "//server/tables:go_default_library",
+        "//server/util/request_context:go_default_library",
         "//server/util/status:go_default_library",
     ],
 )

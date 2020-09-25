@@ -1,8 +1,8 @@
 import React from "react";
-import rpcService from "../service/rpc_service";
 import { bazel_config } from "../../proto/bazel_config_ts_proto";
+import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
-import authService, { AuthService, User } from "../auth/auth_service";
+import rpcService from "../service/rpc_service";
 
 interface Props {
   bazelConfigResponse?: bazel_config.GetBazelConfigResponse;
@@ -41,6 +41,7 @@ export default class SetupCodeComponent extends React.Component {
       return;
     }
     let request = new bazel_config.GetBazelConfigRequest();
+    request.requestContext = authService.getRequestContext();
     request.host = window.location.host;
     request.protocol = window.location.protocol;
     request.includeCertificate = true;
