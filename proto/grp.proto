@@ -17,6 +17,15 @@ message Group {
 
   // True if this group has linked a Github token.
   bool github_linked = 4;
+
+  // The unique URL segment for this group which is used
+  // to construct nice-looking URLs for this group, such as
+  // https://app.buildbuddy.com/join/:url-identifier
+  //
+  // May consist of only lowercase ASCII letters (a-z) and hyphens.
+  //
+  // Ex: "iteration-inc"
+  string url_identifier = 5;
 }
 
 message CreateGroupRequest {
@@ -28,6 +37,15 @@ message CreateGroupRequest {
   // authenticated user's email will be automatically added to the
   // group.
   bool auto_populate_from_owned_domain = 2;
+
+  // The unique URL segment for this group which is used
+  // to construct nice-looking URLs for this group, such as
+  // https://app.buildbuddy.com/join/:url-identifier
+  //
+  // May consist of only lowercase ASCII letters (a-z) and hyphens.
+  //
+  // Ex: "iteration-inc"
+  string url_identifier = 3;
 }
 
 message CreateGroupResponse {
@@ -48,6 +66,15 @@ message UpdateGroupRequest {
   // authenticated user's email will be automatically added to the
   // group.
   bool auto_populate_from_owned_domain = 3;
+
+  // The unique URL segment for this group which is used
+  // to construct nice-looking URLs for this group, such as
+  // https://app.buildbuddy.com/join/:url-identifier
+  //
+  // May consist of only lowercase ASCII letters (a-z) and hyphens.
+  //
+  // Ex: "iteration-inc"
+  string url_identifier = 4;
 }
 
 message UpdateGroupResponse {}
