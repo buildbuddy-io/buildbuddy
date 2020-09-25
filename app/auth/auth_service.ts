@@ -97,6 +97,12 @@ export class AuthService {
 
   setSelectedGroupId(groupId: string) {
     window.localStorage[SELECTED_GROUP_ID_LOCAL_STORAGE_KEY] = groupId;
+    const selectedGroup = this.user.groups.find((group) => group.id === groupId);
+    if (!selectedGroup) {
+      this.refreshUser();
+    } else {
+      this.emitUser(Object.assign(new User(), this.user, { selectedGroup }));
+    }
   }
 
   login() {
