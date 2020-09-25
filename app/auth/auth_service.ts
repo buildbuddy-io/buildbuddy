@@ -5,7 +5,7 @@ import { grp } from "../../proto/group_ts_proto";
 import { context } from "../../proto/context_ts_proto";
 import capabilities from "../capabilities/capabilities";
 
-const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "buildbuddy://auth/selected_group_id";
+const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
 
 export class User {
   displayUser: user.DisplayUser;
@@ -47,6 +47,12 @@ export class AuthService {
           this.emitUser(null);
         }
       });
+  }
+
+  refreshUser() {
+    rpcService.service.getUser(new user.GetUserRequest()).then((response: user.GetUserResponse) => {
+      this.emitUser(this.userFromResponse(response));
+    });
   }
 
   createUser() {
