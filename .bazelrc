@@ -40,6 +40,10 @@ build:ci --tls_client_certificate=buildbuddy-cert.pem
 build:ci --tls_client_key=buildbuddy-key.pem
 build:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci
 
+# Configuration used for untrusted CI
+build:untrusted-ci --config=remote
+build:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
+
 # By default, build logs get sent to the production server
 build --bes_results_url=https://app.buildbuddy.io/invocation/
 build --bes_backend=grpcs://cloud.buildbuddy.io
