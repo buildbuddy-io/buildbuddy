@@ -1,6 +1,7 @@
 package memory_counter
 
 import (
+	"context"
 	"sync"
 
 	lru "github.com/hashicorp/golang-lru"
@@ -27,7 +28,7 @@ func NewMemoryCounter() (*MemoryCounter, error) {
 	}, nil
 }
 
-func (m *MemoryCounter) Increment(counterName string, n int64) (int64, error) {
+func (m *MemoryCounter) Increment(ctx context.Context, counterName string, n int64) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -44,7 +45,7 @@ func (m *MemoryCounter) Increment(counterName string, n int64) (int64, error) {
 
 }
 
-func (m *MemoryCounter) Read(counterName string) (int64, error) {
+func (m *MemoryCounter) Read(ctx context.Context, counterName string) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -54,5 +55,5 @@ func (m *MemoryCounter) Read(counterName string) (int64, error) {
 		}
 	}
 
-	return -1, nil
+	return 0, nil
 }

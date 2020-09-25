@@ -2,14 +2,11 @@ package tables
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/jinzhu/gorm"
 
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 )
 
@@ -91,71 +88,35 @@ func (m *Model) BeforeUpdate(tx *gorm.DB) (err error) {
 
 type Invocation struct {
 	Model
-	InvocationID     string `gorm:"primary_key;"`
-	UserID           string `gorm:"index:user_id"`
-	GroupID          string `gorm:"index:group_id"`
-	Perms            int    `gorm:"index:perms"`
-	Success          bool
-	User             string `gorm:"index:user_index"`
-	DurationUsec     int64
-	Host             string `gorm:"index:host_index"`
-	RepoURL          string `gorm:"index:repo_url_index"`
-	CommitSHA        string `gorm:"index:commit_sha_index"`
-	Command          string
-	Pattern          string `gorm:"type:text;"`
-	ActionCount      int64
-	BlobID           string
-	InvocationStatus int64 `gorm:"index:invocation_status_idx"`
+	InvocationID           string `gorm:"primary_key;"`
+	UserID                 string `gorm:"index:user_id"`
+	GroupID                string `gorm:"index:group_id"`
+	Perms                  int    `gorm:"index:perms"`
+	Success                bool
+	User                   string `gorm:"index:user_index"`
+	DurationUsec           int64
+	Host                   string `gorm:"index:host_index"`
+	RepoURL                string `gorm:"index:repo_url_index"`
+	CommitSHA              string `gorm:"index:commit_sha_index"`
+	Command                string
+	Pattern                string `gorm:"type:text;"`
+	ActionCount            int64
+	BlobID                 string
+	InvocationStatus       int64 `gorm:"index:invocation_status_idx"`
+	ActionCacheHits        int64
+	ActionCacheMisses      int64
+	ActionCacheUploads     int64
+	CasCacheHits           int64
+	CasCacheMisses         int64
+	CasCacheUploads        int64
+	TotalDownloadSizeBytes int64
+	TotalUploadSizeBytes   int64
+	TotalDownloadUsec      int64
+	TotalUploadUsec        int64
 }
 
 func (i *Invocation) TableName() string {
 	return "Invocations"
-}
-
-func (i *Invocation) FromProtoAndBlobID(p *inpb.Invocation, blobID string) {
-	i.InvocationID = p.InvocationId // Required.
-	i.Success = p.Success
-	i.User = p.User
-	i.DurationUsec = p.DurationUsec
-	i.Host = p.Host
-	i.RepoURL = p.RepoUrl
-	i.CommitSHA = p.CommitSha
-	i.Command = p.Command
-	if p.Pattern != nil {
-		i.Pattern = strings.Join(p.Pattern, ", ")
-	}
-	i.ActionCount = p.ActionCount
-	i.BlobID = blobID
-	i.InvocationStatus = int64(p.InvocationStatus)
-	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
-		i.Perms = perms.OTHERS_READ
-	}
-}
-
-func (i *Invocation) ToProto() *inpb.Invocation {
-	out := &inpb.Invocation{}
-	out.InvocationId = i.InvocationID // Required.
-	out.Success = i.Success
-	out.User = i.User
-	out.DurationUsec = i.DurationUsec
-	out.Host = i.Host
-	out.RepoUrl = i.RepoURL
-	out.CommitSha = i.CommitSHA
-	out.Command = i.Command
-	if i.Pattern != "" {
-		out.Pattern = strings.Split(i.Pattern, ", ")
-	}
-	out.ActionCount = i.ActionCount
-	// BlobID is not present in output client proto.
-	out.InvocationStatus = inpb.Invocation_InvocationStatus(i.InvocationStatus)
-	out.CreatedAtUsec = i.Model.CreatedAtUsec
-	out.UpdatedAtUsec = i.Model.UpdatedAtUsec
-	if i.Perms&perms.OTHERS_READ > 0 {
-		out.ReadPermission = inpb.InvocationPermission_PUBLIC
-	} else {
-		out.ReadPermission = inpb.InvocationPermission_GROUP
-	}
-	return out
 }
 
 type CacheEntry struct {
@@ -359,6 +320,7 @@ type ExecutionTask struct {
 	EstimatedMilliCPU    int64
 	ClaimedAtUsec        int64
 	AttemptCount         int64
+	OS                   string
 }
 
 func (n *ExecutionTask) TableName() string {

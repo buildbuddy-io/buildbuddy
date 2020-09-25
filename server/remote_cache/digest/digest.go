@@ -2,6 +2,7 @@ package digest
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	guuid "github.com/google/uuid"
+	gmetadata "google.golang.org/grpc/metadata"
 )
 
 const (
@@ -108,4 +110,26 @@ func UploadResourceName(d *repb.Digest, instanceName string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%s/uploads/%s/blobs/%s/%d", instanceName, u.String(), d.GetHash(), d.GetSizeBytes()), nil
+}
+
+// This is probably the wrong place for this, but works for now.
+func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
+	if grpcMD, ok := gmetadata.FromIncomingContext(ctx); ok {
+		rmdVals := grpcMD["build.bazel.remote.execution.v2.requestmetadata-bin"]
+		if len(rmdVals) == 1 {
+			rmd := &repb.RequestMetadata{}
+			if err := proto.Unmarshal([]byte(rmdVals[0]), rmd); err == nil {
+				return rmd
+			}
+		}
+	}
+	return nil
+}
+
+func GetInvocationIDFromMD(ctx context.Context) string {
+	iid := ""
+	if rmd := GetRequestMetadata(ctx); rmd != nil {
+		iid = rmd.GetToolInvocationId()
+	}
+	return iid
 }

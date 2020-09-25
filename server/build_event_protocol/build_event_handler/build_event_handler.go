@@ -5,17 +5,22 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
@@ -108,8 +113,7 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 	}
 	event_parser.FillInvocationFromEvents(events, invocation)
 
-	ti := &tables.Invocation{}
-	ti.FromProtoAndBlobID(invocation, iid)
+	ti := tableInvocationFromProto(invocation, iid)
 	return e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti)
 }
 
@@ -127,8 +131,19 @@ func (e *EventChannel) FinalizeInvocation(ctx context.Context, iid string) error
 	}
 	event_parser.FillInvocationFromEvents(events, invocation)
 
-	ti := &tables.Invocation{}
-	ti.FromProtoAndBlobID(invocation, iid)
+	ti := tableInvocationFromProto(invocation, iid)
+	if cacheStats := hit_tracker.CollectCacheStats(ctx, e.env, iid); cacheStats != nil {
+		ti.ActionCacheHits = cacheStats.GetActionCacheHits()
+		ti.ActionCacheMisses = cacheStats.GetActionCacheMisses()
+		ti.ActionCacheUploads = cacheStats.GetActionCacheUploads()
+		ti.CasCacheHits = cacheStats.GetCasCacheHits()
+		ti.CasCacheMisses = cacheStats.GetCasCacheMisses()
+		ti.CasCacheUploads = cacheStats.GetCasCacheUploads()
+		ti.TotalDownloadSizeBytes = cacheStats.GetTotalDownloadSizeBytes()
+		ti.TotalUploadSizeBytes = cacheStats.GetTotalUploadSizeBytes()
+		ti.TotalDownloadUsec = cacheStats.GetTotalDownloadUsec()
+		ti.TotalUploadUsec = cacheStats.GetTotalUploadUsec()
+	}
 	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 		return err
 	}
@@ -219,7 +234,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	if err != nil {
 		return nil, err
 	}
-	invocation := ti.ToProto()
+	invocation := TableInvocationToProto(ti)
 	pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), iid)
 	buildEvents := make([]*inpb.InvocationEvent, 0)
 	for {
@@ -235,4 +250,64 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	}
 	event_parser.FillInvocationFromEvents(buildEvents, invocation)
 	return invocation, nil
+}
+
+func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocation {
+	i := &tables.Invocation{}
+	i.InvocationID = p.InvocationId // Required.
+	i.Success = p.Success
+	i.User = p.User
+	i.DurationUsec = p.DurationUsec
+	i.Host = p.Host
+	i.RepoURL = p.RepoUrl
+	i.CommitSHA = p.CommitSha
+	i.Command = p.Command
+	if p.Pattern != nil {
+		i.Pattern = strings.Join(p.Pattern, ", ")
+	}
+	i.ActionCount = p.ActionCount
+	i.BlobID = blobID
+	i.InvocationStatus = int64(p.InvocationStatus)
+	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
+		i.Perms = perms.OTHERS_READ
+	}
+	return i
+}
+
+func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
+	out := &inpb.Invocation{}
+	out.InvocationId = i.InvocationID // Required.
+	out.Success = i.Success
+	out.User = i.User
+	out.DurationUsec = i.DurationUsec
+	out.Host = i.Host
+	out.RepoUrl = i.RepoURL
+	out.CommitSha = i.CommitSHA
+	out.Command = i.Command
+	if i.Pattern != "" {
+		out.Pattern = strings.Split(i.Pattern, ", ")
+	}
+	out.ActionCount = i.ActionCount
+	// BlobID is not present in output client proto.
+	out.InvocationStatus = inpb.Invocation_InvocationStatus(i.InvocationStatus)
+	out.CreatedAtUsec = i.Model.CreatedAtUsec
+	out.UpdatedAtUsec = i.Model.UpdatedAtUsec
+	if i.Perms&perms.OTHERS_READ > 0 {
+		out.ReadPermission = inpb.InvocationPermission_PUBLIC
+	} else {
+		out.ReadPermission = inpb.InvocationPermission_GROUP
+	}
+	out.CacheStats = &capb.CacheStats{
+		ActionCacheHits:        i.ActionCacheHits,
+		ActionCacheMisses:      i.ActionCacheMisses,
+		ActionCacheUploads:     i.ActionCacheUploads,
+		CasCacheHits:           i.CasCacheHits,
+		CasCacheMisses:         i.CasCacheMisses,
+		CasCacheUploads:        i.CasCacheUploads,
+		TotalDownloadSizeBytes: i.TotalDownloadSizeBytes,
+		TotalUploadSizeBytes:   i.TotalUploadSizeBytes,
+		TotalDownloadUsec:      i.TotalDownloadUsec,
+		TotalUploadUsec:        i.TotalUploadUsec,
+	}
+	return out
 }
