@@ -50,7 +50,7 @@ export class AuthService {
   }
 
   refreshUser() {
-    rpcService.service.getUser(new user.GetUserRequest()).then((response: user.GetUserResponse) => {
+    return rpcService.service.getUser(new user.GetUserRequest()).then((response: user.GetUserResponse) => {
       this.emitUser(this.userFromResponse(response));
     });
   }
@@ -95,11 +95,11 @@ export class AuthService {
     return requestContext;
   }
 
-  setSelectedGroupId(groupId: string) {
+  async setSelectedGroupId(groupId: string) {
     window.localStorage[SELECTED_GROUP_ID_LOCAL_STORAGE_KEY] = groupId;
     const selectedGroup = this.user.groups.find((group) => group.id === groupId);
     if (!selectedGroup) {
-      this.refreshUser();
+      await this.refreshUser();
     } else {
       this.emitUser(Object.assign(new User(), this.user, { selectedGroup }));
     }
