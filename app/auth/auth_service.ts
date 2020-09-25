@@ -5,6 +5,8 @@ import { grp } from "../../proto/group_ts_proto";
 import { context } from "../../proto/context_ts_proto";
 import capabilities from "../capabilities/capabilities";
 
+const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
+
 export class User {
   displayUser: user.DisplayUser;
   groups: grp.Group[];
@@ -47,6 +49,12 @@ export class AuthService {
       });
   }
 
+  refreshUser() {
+    rpcService.service.getUser(new user.GetUserRequest()).then((response: user.GetUserResponse) => {
+      this.emitUser(this.userFromResponse(response));
+    });
+  }
+
   createUser() {
     let request = new user.CreateUserRequest();
     rpcService.service
@@ -85,6 +93,16 @@ export class AuthService {
     requestContext.userId = new user.UserId();
     requestContext.userId.id = userIdFromCookie;
     return requestContext;
+  }
+
+  setSelectedGroupId(groupId: string) {
+    window.localStorage[SELECTED_GROUP_ID_LOCAL_STORAGE_KEY] = groupId;
+    const selectedGroup = this.user.groups.find((group) => group.id === groupId);
+    if (!selectedGroup) {
+      this.refreshUser();
+    } else {
+      this.emitUser(Object.assign(new User(), this.user, { selectedGroup }));
+    }
   }
 
   login() {
