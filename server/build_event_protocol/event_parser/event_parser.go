@@ -71,7 +71,7 @@ func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
 			return true
 		}
 		isWildCard := strings.HasSuffix(allowed, "*")
-		allowedPrefix := lowercaseAllowed[:len(lowercaseAllowed)-1]
+		allowedPrefix := strings.ReplaceAll(lowercaseAllowed, "*", "")
 		if isWildCard && strings.HasPrefix(lowercaseVariableName, allowedPrefix) {
 			return true
 		}
