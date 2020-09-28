@@ -143,7 +143,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	group := &tables.Group{
 		UserID:        jwtUser.UserID,
 		Name:          groupName,
-		UrlIdentifier: urlIdentifier,
+		URLIdentifier: urlIdentifier,
 		OwnedDomain:   groupOwnedDomain,
 	}
 	groupID, err := userDB.InsertOrUpdateGroup(ctx, group)
