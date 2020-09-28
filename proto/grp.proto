@@ -28,6 +28,10 @@ message Group {
   string url_identifier = 5;
 }
 
+message GetGroupRequest {
+  string url_identifier = 1;
+}
+
 message CreateGroupRequest {
   // The name of this group (may be displayed to users).
   // Ex. "Tyler Williams Group"
