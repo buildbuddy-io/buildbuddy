@@ -167,7 +167,7 @@ export default class InvocationModel {
   }
 
   getHost() {
-    return this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
+    return this.invocations.find(() => true)?.host || this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
   }
 
   getCache() {
