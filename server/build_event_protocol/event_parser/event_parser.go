@@ -85,7 +85,10 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 
 	var consoleBuffer bytes.Buffer
 	var allowedEnvVars = []string{"USER", "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID"}
+
 	structuredCommandLines := make([]*command_line.CommandLine, 0)
+	workspaceStatuses := make([]*build_event_stream.WorkspaceStatus, 0)
+	buildMetadata := make([]map[string]string, 0)
 
 	for _, event := range buildEvents {
 		invocation.Event = append(invocation.Event, event)
@@ -130,18 +133,7 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 			}
 		case *build_event_stream.BuildEvent_WorkspaceStatus:
 			{
-				for _, item := range p.WorkspaceStatus.Item {
-					switch item.Key {
-					case "BUILD_USER":
-						invocation.User = item.Value
-					case "BUILD_HOST":
-						invocation.Host = item.Value
-					case "REPO_URL":
-						invocation.RepoUrl = item.Value
-					case "COMMIT_SHA":
-						invocation.CommitSha = item.Value
-					}
-				}
+				workspaceStatuses = append(workspaceStatuses, p.WorkspaceStatus)
 			}
 		case *build_event_stream.BuildEvent_Fetch:
 			{
@@ -191,15 +183,7 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 				if metadata == nil {
 					continue
 				}
-				if sha, ok := metadata["COMMIT_SHA"]; ok && sha != "" {
-					invocation.CommitSha = sha
-				}
-				if url, ok := metadata["REPO_URL"]; ok && url != "" {
-					invocation.RepoUrl = url
-				}
-				if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
-					invocation.ReadPermission = inpb.InvocationPermission_PUBLIC
-				}
+				buildMetadata = append(buildMetadata, metadata)
 				if allowed, ok := metadata["ALLOW_ENV"]; ok && allowed != "" {
 					allowedEnvVars = append(allowedEnvVars, strings.Split(allowed, ",")...)
 				}
@@ -210,8 +194,19 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 		}
 	}
 
+	// Fill invocation in a deterministic order:
+	// - Environment variables
+	// - Workspace status
+	// - Build metadata
+
 	for _, commandLine := range structuredCommandLines {
 		fillInvocationFromStructuredCommandLine(commandLine, invocation, allowedEnvVars)
+	}
+	for _, workspaceStatus := range workspaceStatuses {
+		fillInvocationFromWorkspaceStatus(workspaceStatus, invocation)
+	}
+	for _, buildMetadatum := range buildMetadata {
+		fillInvocationFromBuildMetadata(buildMetadatum, invocation)
 	}
 
 	buildDuration := time.Duration((endTimeMillis - startTimeMillis) * int64(time.Millisecond))
@@ -251,5 +246,45 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	}
 	if sha, ok := envVarMap["GITHUB_SHA"]; ok && sha != "" {
 		invocation.CommitSha = sha
+	}
+}
+
+func fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.WorkspaceStatus, invocation *inpb.Invocation) {
+	for _, item := range workspaceStatus.Item {
+		if item.Value == "" {
+			continue
+		}
+		switch item.Key {
+		case "BUILD_USER":
+			invocation.User = item.Value
+		case "USER":
+			invocation.User = item.Value
+		case "BUILD_HOST":
+			invocation.Host = item.Value
+		case "HOST":
+			invocation.Host = item.Value
+		case "REPO_URL":
+			invocation.RepoUrl = item.Value
+		case "COMMIT_SHA":
+			invocation.CommitSha = item.Value
+		}
+	}
+}
+
+func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inpb.Invocation) {
+	if sha, ok := metadata["COMMIT_SHA"]; ok && sha != "" {
+		invocation.CommitSha = sha
+	}
+	if url, ok := metadata["REPO_URL"]; ok && url != "" {
+		invocation.RepoUrl = url
+	}
+	if user, ok := metadata["USER"]; ok && user != "" {
+		invocation.User = user
+	}
+	if host, ok := metadata["HOST"]; ok && host != "" {
+		invocation.Host = host
+	}
+	if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
+		invocation.ReadPermission = inpb.InvocationPermission_PUBLIC
 	}
 }

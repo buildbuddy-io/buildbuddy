@@ -96,6 +96,58 @@ You can override these default settings and make authenticated builds visible to
 build --build_metadata=VISIBILITY=PUBLIC
 ```
 
+## User
+
+By default a build's user is determined by the system on which Bazel is run.
+
+You can override this using build metadata or workspace info.
+
+### Build metadata
+
+You can provide your user with Bazel's build_metadata flag with the key `USER`. You can do this by adding the flag to your bazel invocations:
+
+```
+--build_metadata=USER=yourname
+```
+
+### Workspace info
+
+The second method is a little more involved, but allows you to populate multiple pieces of metadata at once.
+
+First, you'll need to point your `workspace_status_command` flag at a `workspace_status.sh` file at the root of your workspace. You can do this by adding the following line to your `.bazelrc`.
+
+```
+build --workspace_status_command=$(pwd)/workspace_status.sh
+```
+
+Then you'll need to add a `workspace_status.sh` file to the root of your workspace that prints `USER yourname`.
+
+## Host
+
+By default a build's host is determined by the system on which Bazel is run.
+
+You can override this using build metadata or workspace info.
+
+### Build metadata
+
+You can provide your user with Bazel's build_metadata flag with the key `HOST`. You can do this by adding the flag to your bazel invocations:
+
+```
+--build_metadata=HOST=yourhost
+```
+
+### Workspace info
+
+The second method is a little more involved, but allows you to populate multiple pieces of metadata at once.
+
+First, you'll need to point your `workspace_status_command` flag at a `workspace_status.sh` file at the root of your workspace. You can do this by adding the following line to your `.bazelrc`.
+
+```
+build --workspace_status_command=$(pwd)/workspace_status.sh
+```
+
+Then you'll need to add a `workspace_status.sh` file to the root of your workspace that prints `HOST yourhost`.
+
 ## Environment variable redacting
 
 By default, all environment variables are redacted by BuildBuddy except for `USER`, `GITHUB_ACTOR`, `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_RUN_ID` which are displayed in the BuildBuddy UI.
