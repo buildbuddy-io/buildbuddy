@@ -158,10 +158,13 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		groupOwnedDomain = userEmailDomain
 	}
 
+	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
+
 	group := &tables.Group{
-		UserID:      jwtUser.UserID,
-		Name:        groupName,
-		OwnedDomain: groupOwnedDomain,
+		UserID:        jwtUser.UserID,
+		Name:          groupName,
+		URLIdentifier: urlIdentifier,
+		OwnedDomain:   groupOwnedDomain,
 	}
 	groupID, err := userDB.InsertOrUpdateGroup(ctx, group)
 	if err != nil {

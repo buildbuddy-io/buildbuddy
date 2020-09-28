@@ -2,7 +2,6 @@ package hit_tracker
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -74,16 +73,12 @@ type HitTracker struct {
 }
 
 func NewHitTracker(ctx context.Context, env environment.Env, actionCache bool) *HitTracker {
-	ht := &HitTracker{
+	return &HitTracker{
 		c:           env.GetCounter(),
 		ctx:         ctx,
 		iid:         digest.GetInvocationIDFromMD(ctx),
 		actionCache: actionCache,
 	}
-	if ht.iid == "" {
-		log.Printf("HitTracker created with empty invocationID. Is header set?")
-	}
-	return ht
 }
 
 func (h *HitTracker) counterName(ct counterType) string {
