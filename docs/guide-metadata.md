@@ -5,6 +5,7 @@
   "priority": 800
 }
 -->
+
 # Build Metadata Guide
 
 Additional metadata can be sent up with your Bazel invocation to give BuildBuddy more information about your build.
@@ -16,6 +17,7 @@ BuildBuddy allows you to group invocations by the repository on which they were 
 ### Build metadata
 
 The first method is simple - just provide the repo URL with Bazel's build_metadata flag with the key `REPO_URL`. You can do this by adding the following line to your `.bazelrc`:
+
 ```
 build --build_metadata=REPO_URL=https://github.com/buildbuddy-io/buildbuddy.git
 ```
@@ -25,6 +27,7 @@ build --build_metadata=REPO_URL=https://github.com/buildbuddy-io/buildbuddy.git
 The second method is a little more involved, but allows you to populate multiple pieces of metadata at once.
 
 First, you'll need to point your `workspace_status_command` flag at a `workspace_status.sh` file at the root of your workspace. You can do this by adding the following line to your `.bazelrc`.
+
 ```
 build --workspace_status_command=$(pwd)/workspace_status.sh
 ```
@@ -40,6 +43,7 @@ BuildBuddy will automatically pull your repo URL from environment variables if y
 ### Build metadata
 
 You can provide the current commit SHA with Bazel's build_metadata flag with the key `COMMIT_SHA`. You can do this by adding the flag to your bazel invocations:
+
 ```
 --build_metadata=COMMIT_SHA=$(git rev-parse HEAD)
 ```
@@ -51,6 +55,7 @@ Note: you cannot add this particular flag to your `.bazelrc` file because it doe
 The second method is a little more involved, but allows you to populate multiple pieces of metadata at once.
 
 First, you'll need to point your `workspace_status_command` flag at a `workspace_status.sh` file at the root of your workspace. You can do this by adding the following line to your `.bazelrc`.
+
 ```
 build --workspace_status_command=$(pwd)/workspace_status.sh
 ```
@@ -66,6 +71,7 @@ BuildBuddy will automatically pull your commit SHA from environment variables if
 The role metadata field allows you to specify whether this invocation was done on behalf of a CI (continuous integration) system. If set, this enables features like Github commit status reporting (if a Github account is linked).
 
 For CI builds, you can add the following line to your `.bazelrc` and run your CI builds with the `--config=ci` flag:
+
 ```
 build:ci --build_metadata=ROLE=CI
 ```
@@ -85,6 +91,37 @@ build --build_metadata=TEST_GROUPS=//foo/bar,//foo/baz
 The visibility metadata field determines who is allowed to view your build results. By default, unauthenticated builds are publicly visible to anyone with a link, while authenticated builds are only available to members of your organization.
 
 You can override these default settings and make authenticated builds visible to anyone with a link by adding the following line to your `.bazelrc`:
+
 ```
 build --build_metadata=VISIBILITY=PUBLIC
+```
+
+## Environment variable redacting
+
+By default, all environment variables are redacted by BuildBuddy except for `USER`, `GITHUB_ACTOR`, `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_RUN_ID` which are displayed in the BuildBuddy UI.
+
+Redacted environment variables are displayed in the BuildBuddy UI as `<REDACTED>`.
+
+You can optionally allow other environment variables to be displayed using the `ALLOW_ENV` metadata flag.
+
+The `ALLOW_ENV` metadata param accepts a comma separated list of allowed environment variables and supports trailing wildcards.
+
+### Examples
+
+Don't redact the `PATH` environment variable:
+
+```
+build --build_metadata=ALLOW_ENV=PATH
+```
+
+Don't redact the `PATH` environment or any environment variable beginning with `BAZEL_`
+
+```
+build --build_metadata=ALLOW_ENV=PATH,BAZEL_*
+```
+
+Don't redact any environment variables.
+
+```
+build --build_metadata=ALLOW_ENV=*
 ```

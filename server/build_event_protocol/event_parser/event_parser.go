@@ -21,7 +21,7 @@ const (
 	urlSecretRegexString      = `\:\/\/.*\@`
 )
 
-func parseAndFilterCommandLine(in *command_line.CommandLine) (*command_line.CommandLine, map[string]string) {
+func parseAndFilterCommandLine(in *command_line.CommandLine, allowedEnvVars []string) (*command_line.CommandLine, map[string]string) {
 	envVarMap := make(map[string]string)
 	if in == nil {
 		return nil, envVarMap
@@ -47,6 +47,10 @@ func parseAndFilterCommandLine(in *command_line.CommandLine) (*command_line.Comm
 						if len(parts) == 2 {
 							envVarMap[parts[0]] = parts[1]
 						}
+						if isAllowedEnvVar(parts[0], allowedEnvVars) {
+							continue
+						}
+
 						option.OptionValue = strings.Join([]string{parts[0], envVarRedactedPlaceholder}, envVarSeparator)
 						option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + envVarRedactedPlaceholder
 					}
@@ -59,32 +63,20 @@ func parseAndFilterCommandLine(in *command_line.CommandLine) (*command_line.Comm
 	return &out, envVarMap
 }
 
-func filterUnstructuredCommandLine(in *build_event_stream.UnstructuredCommandLine) *build_event_stream.UnstructuredCommandLine {
-	if in == nil {
-		return nil
-	}
-	urlSecretRegex := regexp.MustCompile(urlSecretRegexString)
-	var out build_event_stream.UnstructuredCommandLine
-	out = *in
-	for i, arg := range out.Args {
-		if strings.Contains(arg, "@") {
-			out.Args[i] = urlSecretRegex.ReplaceAllString(arg, "://"+envVarRedactedPlaceholder+"@")
+func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
+	lowercaseVariableName := strings.ToLower(variableName)
+	for _, allowed := range allowedEnvVars {
+		lowercaseAllowed := strings.ToLower(allowed)
+		if allowed == "*" || lowercaseVariableName == lowercaseAllowed {
+			return true
 		}
-		if strings.HasPrefix(arg, envVarPrefix+"remote_header") {
-			out.Args[i] = envVarPrefix + "remote_header" + envVarSeparator + envVarRedactedPlaceholder
-		}
-		if strings.HasPrefix(arg, envVarPrefix+"remote_cache_header") {
-			out.Args[i] = envVarPrefix + "remote_cache_header" + envVarSeparator + envVarRedactedPlaceholder
-		}
-		if strings.HasPrefix(arg, envVarPrefix+envVarOptionName) {
-			parts := strings.Split(arg, envVarSeparator)
-			if len(parts) < 2 {
-				continue
-			}
-			out.Args[i] = envVarPrefix + envVarOptionName + envVarSeparator + parts[1] + envVarSeparator + envVarRedactedPlaceholder
+		isWildCard := strings.HasSuffix(allowed, "*")
+		allowedPrefix := lowercaseAllowed[:len(lowercaseAllowed)-1]
+		if isWildCard && strings.HasPrefix(lowercaseVariableName, allowedPrefix) {
+			return true
 		}
 	}
-	return &out
+	return false
 }
 
 func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *inpb.Invocation) {
@@ -92,6 +84,8 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 	endTimeMillis := int64(-1)
 
 	var consoleBuffer bytes.Buffer
+	var allowedEnvVars = []string{"USER", "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID"}
+	structuredCommandLines := make([]*command_line.CommandLine, 0)
 
 	for _, event := range buildEvents {
 		invocation.Event = append(invocation.Event, event)
@@ -124,41 +118,12 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 			}
 		case *build_event_stream.BuildEvent_UnstructuredCommandLine:
 			{
-				p.UnstructuredCommandLine = filterUnstructuredCommandLine(p.UnstructuredCommandLine)
+				// Clear the unstructured command line so we don't have to redact it.
+				p.UnstructuredCommandLine = &build_event_stream.UnstructuredCommandLine{}
 			}
 		case *build_event_stream.BuildEvent_StructuredCommandLine:
 			{
-				filteredCL, envVarMap := parseAndFilterCommandLine(p.StructuredCommandLine)
-				if filteredCL != nil {
-					invocation.StructuredCommandLine = append(invocation.StructuredCommandLine, filteredCL)
-				}
-				if user, ok := envVarMap["USER"]; ok && user != "" {
-					invocation.User = user
-				}
-				if url, ok := envVarMap["TRAVIS_REPO_SLUG"]; ok && url != "" {
-					invocation.RepoUrl = url
-				}
-				if url, ok := envVarMap["BUILDKITE_REPO"]; ok && url != "" {
-					invocation.RepoUrl = url
-				}
-				if url, ok := envVarMap["CIRCLE_REPOSITORY_URL"]; ok && url != "" {
-					invocation.RepoUrl = url
-				}
-				if url, ok := envVarMap["GITHUB_REPOSITORY"]; ok && url != "" {
-					invocation.RepoUrl = url
-				}
-				if sha, ok := envVarMap["TRAVIS_COMMIT"]; ok && sha != "" {
-					invocation.CommitSha = sha
-				}
-				if sha, ok := envVarMap["BUILDKITE_COMMIT"]; ok && sha != "" {
-					invocation.CommitSha = sha
-				}
-				if sha, ok := envVarMap["CIRCLE_SHA1"]; ok && sha != "" {
-					invocation.CommitSha = sha
-				}
-				if sha, ok := envVarMap["GITHUB_SHA"]; ok && sha != "" {
-					invocation.CommitSha = sha
-				}
+				structuredCommandLines = append(structuredCommandLines, p.StructuredCommandLine)
 			}
 		case *build_event_stream.BuildEvent_OptionsParsed:
 			{
@@ -235,6 +200,9 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 				if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
 					invocation.ReadPermission = inpb.InvocationPermission_PUBLIC
 				}
+				if allowed, ok := metadata["ALLOW_ENV"]; ok && allowed != "" {
+					allowedEnvVars = append(allowedEnvVars, strings.Split(allowed, ",")...)
+				}
 			}
 		case *build_event_stream.BuildEvent_ConvenienceSymlinksIdentified:
 			{
@@ -242,8 +210,46 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 		}
 	}
 
+	for _, commandLine := range structuredCommandLines {
+		fillInvocationFromStructuredCommandLine(commandLine, invocation, allowedEnvVars)
+	}
+
 	buildDuration := time.Duration((endTimeMillis - startTimeMillis) * int64(time.Millisecond))
 	invocation.DurationUsec = buildDuration.Microseconds()
 	// TODO(siggisim): Do this rendering once on write, rather than on every read.
 	invocation.ConsoleBuffer = string(terminal.RenderAsANSI(consoleBuffer.Bytes()))
+}
+
+func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine, invocation *inpb.Invocation, allowedEnvVars []string) {
+	filteredCL, envVarMap := parseAndFilterCommandLine(commandLine, allowedEnvVars)
+	if filteredCL != nil {
+		invocation.StructuredCommandLine = append(invocation.StructuredCommandLine, filteredCL)
+	}
+	if user, ok := envVarMap["USER"]; ok && user != "" {
+		invocation.User = user
+	}
+	if url, ok := envVarMap["TRAVIS_REPO_SLUG"]; ok && url != "" {
+		invocation.RepoUrl = url
+	}
+	if url, ok := envVarMap["BUILDKITE_REPO"]; ok && url != "" {
+		invocation.RepoUrl = url
+	}
+	if url, ok := envVarMap["CIRCLE_REPOSITORY_URL"]; ok && url != "" {
+		invocation.RepoUrl = url
+	}
+	if url, ok := envVarMap["GITHUB_REPOSITORY"]; ok && url != "" {
+		invocation.RepoUrl = url
+	}
+	if sha, ok := envVarMap["TRAVIS_COMMIT"]; ok && sha != "" {
+		invocation.CommitSha = sha
+	}
+	if sha, ok := envVarMap["BUILDKITE_COMMIT"]; ok && sha != "" {
+		invocation.CommitSha = sha
+	}
+	if sha, ok := envVarMap["CIRCLE_SHA1"]; ok && sha != "" {
+		invocation.CommitSha = sha
+	}
+	if sha, ok := envVarMap["GITHUB_SHA"]; ok && sha != "" {
+		invocation.CommitSha = sha
+	}
 }
