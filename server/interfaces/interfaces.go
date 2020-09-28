@@ -140,7 +140,7 @@ type UserDB interface {
 	// Groups API
 	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (string, error)
 	AddUserToGroup(ctx context.Context, userID string, groupID string) error
-	// Takes a group with identifying properties and fills the remaining fields.
+	// Takes a group with url_identifier set and fills the remaining fields.
 	FillGroup(ctx context.Context, *tables.Group) error
 	GetAuthGroup(ctx context.Context) (*tables.Group, error)
 	DeleteGroup(ctx context.Context, groupID string) error
