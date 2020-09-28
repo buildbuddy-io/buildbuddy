@@ -133,7 +133,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 		// NOTE: this RPC does not require authentication, so sensitive group
 		// info should not be exposed here.
 		Name: group.Name,
-	}
+	}, nil
 }
 
 func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGroupRequest) (*grpb.CreateGroupResponse, error) {
