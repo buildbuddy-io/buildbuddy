@@ -123,7 +123,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	group := &tables.Group{
-		URLIdentifier: req.UrlIdentifier
+		URLIdentifier: req.UrlIdentifier,
 	}
 	if err := userDB.FillGroup(group); err != nil {
 		return err
