@@ -18,15 +18,43 @@ const (
 	envVarOptionName          = "client_env"
 	envVarSeparator           = "="
 	envVarRedactedPlaceholder = "<REDACTED>"
-	urlSecretRegexString      = `\:\/\/.*\@`
 )
+
+var (
+	urlSecretRegex = regexp.MustCompile(`[a-zA-Z-0-9-_=]+\@`)
+)
+
+func stripURLSecrets(input string) string {
+	return urlSecretRegex.ReplaceAllString(input, "")
+}
+
+func stripURLSecretsFromList(inputs []string) []string {
+	for index, input := range inputs {
+		inputs[index] = stripURLSecrets(input)
+	}
+	return inputs
+}
+
+func stripURLSecretsFromFile(file *build_event_stream.File) *build_event_stream.File {
+	switch p := file.GetFile().(type) {
+	case *build_event_stream.File_Uri:
+		p.Uri = stripURLSecrets(p.Uri)
+	}
+	return file
+}
+
+func stripURLSecretsFromFiles(files []*build_event_stream.File) []*build_event_stream.File {
+	for index, file := range files {
+		files[index] = stripURLSecretsFromFile(file)
+	}
+	return files
+}
 
 func parseAndFilterCommandLine(in *command_line.CommandLine, allowedEnvVars []string) (*command_line.CommandLine, map[string]string) {
 	envVarMap := make(map[string]string)
 	if in == nil {
 		return nil, envVarMap
 	}
-	urlSecretRegex := regexp.MustCompile(urlSecretRegexString)
 	var out command_line.CommandLine
 	out = *in
 	for _, section := range out.Sections {
@@ -34,10 +62,8 @@ func parseAndFilterCommandLine(in *command_line.CommandLine, allowedEnvVars []st
 		case *command_line.CommandLineSection_OptionList:
 			{
 				for _, option := range p.OptionList.Option {
-					if strings.Contains(option.OptionValue, "@") {
-						option.OptionValue = urlSecretRegex.ReplaceAllString(option.OptionValue, "://"+envVarRedactedPlaceholder+"@")
-						option.CombinedForm = urlSecretRegex.ReplaceAllString(option.CombinedForm, "://"+envVarRedactedPlaceholder+"@")
-					}
+					option.OptionValue = stripURLSecrets(option.OptionValue)
+					option.CombinedForm = stripURLSecrets(option.CombinedForm)
 					if option.OptionName == "remote_header" || option.OptionName == "remote_cache_header" {
 						option.OptionValue = envVarRedactedPlaceholder
 						option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + envVarRedactedPlaceholder
@@ -107,6 +133,7 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 			}
 		case *build_event_stream.BuildEvent_Started:
 			{
+				p.Started.OptionsDescription = stripURLSecrets(p.Started.OptionsDescription)
 				startTimeMillis = p.Started.StartTimeMillis
 				invocation.Command = p.Started.Command
 				for _, child := range event.BuildEvent.Children {
@@ -130,6 +157,8 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 			}
 		case *build_event_stream.BuildEvent_OptionsParsed:
 			{
+				p.OptionsParsed.CmdLine = stripURLSecretsFromList(p.OptionsParsed.CmdLine)
+				p.OptionsParsed.ExplicitCmdLine = stripURLSecretsFromList(p.OptionsParsed.ExplicitCmdLine)
 			}
 		case *build_event_stream.BuildEvent_WorkspaceStatus:
 			{
@@ -149,18 +178,27 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 			}
 		case *build_event_stream.BuildEvent_Action:
 			{
+				p.Action.Stdout = stripURLSecretsFromFile(p.Action.Stdout)
+				p.Action.Stderr = stripURLSecretsFromFile(p.Action.Stderr)
+				p.Action.PrimaryOutput = stripURLSecretsFromFile(p.Action.PrimaryOutput)
+				p.Action.ActionMetadataLogs = stripURLSecretsFromFiles(p.Action.ActionMetadataLogs)
 			}
 		case *build_event_stream.BuildEvent_NamedSetOfFiles:
 			{
+				p.NamedSetOfFiles.Files = stripURLSecretsFromFiles(p.NamedSetOfFiles.Files)
 			}
 		case *build_event_stream.BuildEvent_Completed:
 			{
+				p.Completed.ImportantOutput = stripURLSecretsFromFiles(p.Completed.ImportantOutput)
 			}
 		case *build_event_stream.BuildEvent_TestResult:
 			{
+				p.TestResult.TestActionOutput = stripURLSecretsFromFiles(p.TestResult.TestActionOutput)
 			}
 		case *build_event_stream.BuildEvent_TestSummary:
 			{
+				p.TestSummary.Passed = stripURLSecretsFromFiles(p.TestSummary.Passed)
+				p.TestSummary.Failed = stripURLSecretsFromFiles(p.TestSummary.Failed)
 			}
 		case *build_event_stream.BuildEvent_Finished:
 			{
@@ -169,6 +207,7 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 			}
 		case *build_event_stream.BuildEvent_BuildToolLogs:
 			{
+				p.BuildToolLogs.Log = stripURLSecretsFromFiles(p.BuildToolLogs.Log)
 			}
 		case *build_event_stream.BuildEvent_BuildMetrics:
 			{
