@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
@@ -194,8 +195,23 @@ func assembleURL(host, scheme, port string) string {
 }
 
 func (s *BuildBuddyServer) getGroupAPIKey(ctx context.Context) string {
+	groupID := ""
+	if reqCtx := requestcontext.ProtoRequestContextFromContext(ctx); reqCtx != nil {
+		groupID = reqCtx.GetGroupId()
+	}
+
 	if userDB := s.env.GetUserDB(); userDB != nil {
 		if tu, _ := userDB.GetUser(ctx); tu != nil {
+			if groupID != "" {
+				for _, g := range tu.Groups {
+					if g.GroupID == groupID {
+						return g.APIKey
+					}
+				}
+				// If group ID was provided explicitly, it would be unexpected behavior
+				// if we used an API key from another group, so return empty string.
+				return ""
+			}
 			for _, g := range tu.Groups {
 				if g.OwnedDomain != "" && g.APIKey != "" {
 					return g.APIKey

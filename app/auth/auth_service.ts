@@ -5,6 +5,8 @@ import { grp } from "../../proto/group_ts_proto";
 import { context } from "../../proto/context_ts_proto";
 import capabilities from "../capabilities/capabilities";
 
+const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
+
 export class User {
   displayUser: user.DisplayUser;
   groups: grp.Group[];
@@ -47,6 +49,12 @@ export class AuthService {
       });
   }
 
+  refreshUser() {
+    return rpcService.service.getUser(new user.GetUserRequest()).then((response: user.GetUserResponse) => {
+      this.emitUser(this.userFromResponse(response));
+    });
+  }
+
   createUser() {
     let request = new user.CreateUserRequest();
     rpcService.service
@@ -65,8 +73,12 @@ export class AuthService {
     let user = new User();
     user.displayUser = response.displayUser as user.DisplayUser;
     user.groups = response.userGroup as grp.Group[];
+    let selectedGroupId = window.localStorage["selected_group_id"];
     if (user.groups.length > 0) {
-      user.selectedGroup = user.groups.find((group) => !!group?.ownedDomain) || user.groups[0];
+      user.selectedGroup =
+        user.groups.find(
+          (group) => (selectedGroupId && group?.id === selectedGroupId) || Boolean(group?.ownedDomain)
+        ) || user.groups[0];
     }
     return user;
   }
@@ -84,7 +96,18 @@ export class AuthService {
     let requestContext = new context.RequestContext();
     requestContext.userId = new user.UserId();
     requestContext.userId.id = userIdFromCookie;
+    requestContext.groupId = this.user?.selectedGroup?.id || "";
     return requestContext;
+  }
+
+  async setSelectedGroupId(groupId: string) {
+    window.localStorage[SELECTED_GROUP_ID_LOCAL_STORAGE_KEY] = groupId;
+    const selectedGroup = this.user.groups.find((group) => group.id === groupId);
+    if (!selectedGroup) {
+      await this.refreshUser();
+    } else {
+      this.emitUser(Object.assign(new User(), this.user, { selectedGroup }));
+    }
   }
 
   login() {

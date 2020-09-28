@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"google.golang.org/grpc"
@@ -102,37 +103,50 @@ func LogRequest(next http.Handler) http.Handler {
 
 type wrapFn func(http.Handler) http.Handler
 
-func WrapExternalHandler(env environment.Env, next http.Handler) http.Handler {
-	// NB: These are called in reverse order, so the 0th element will be
-	// called last before the handler itself is called.
-	wrapFns := []wrapFn{
-		Gzip,
-		func(h http.Handler) http.Handler { return RedirectHTTPS(env, h) },
-		LogRequest,
-		RequestID,
-	}
+func wrapHandler(env environment.Env, next http.Handler, wrapFns *[]wrapFn) http.Handler {
 	handler := next
-	for _, fn := range wrapFns {
+	for _, fn := range *wrapFns {
 		handler = fn(handler)
 	}
 	return handler
 }
 
+func WrapAuthenticatedExternalProtoletHandler(env environment.Env, httpPrefix string, handlers *protolet.HTTPHandlers) http.Handler {
+	return wrapHandler(env, handlers.RequestHandler, &[]wrapFn{
+		Gzip,
+		func(h http.Handler) http.Handler { return Authenticate(env, h) },
+		// The request message is parsed before authentication since the request_context
+		// field needs to be authenticated if it's present.
+		func(h http.Handler) http.Handler {
+			return http.StripPrefix(httpPrefix, handlers.BodyParserMiddleware(h))
+		},
+		func(h http.Handler) http.Handler { return RedirectHTTPS(env, h) },
+		LogRequest,
+		RequestID,
+	})
+}
+
+func WrapExternalHandler(env environment.Env, next http.Handler) http.Handler {
+	// NB: These are called in reverse order, so the 0th element will be
+	// called last before the handler itself is called.
+	return wrapHandler(env, next, &[]wrapFn{
+		Gzip,
+		func(h http.Handler) http.Handler { return RedirectHTTPS(env, h) },
+		LogRequest,
+		RequestID,
+	})
+}
+
 func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) http.Handler {
 	// NB: These are called in reverse order, so the 0th element will be
 	// called last before the handler itself is called.
-	wrapFns := []wrapFn{
+	return wrapHandler(env, next, &[]wrapFn{
 		Gzip,
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
 		func(h http.Handler) http.Handler { return RedirectHTTPS(env, h) },
 		LogRequest,
 		RequestID,
-	}
-	handler := next
-	for _, fn := range wrapFns {
-		handler = fn(handler)
-	}
-	return handler
+	})
 }
 
 func ServeGRPCOverHTTPPort(grpcServer *grpc.Server, next http.Handler) http.Handler {

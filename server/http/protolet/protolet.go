@@ -9,8 +9,15 @@ import (
 	"net/http"
 	"reflect"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
+
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+)
+
+const (
+	contextProtoMessageKey = "protolet.requestMessage"
 )
 
 func isRPCMethod(m reflect.Method) bool {
@@ -35,6 +42,38 @@ func isRPCMethod(m reflect.Method) bool {
 		return false
 	}
 	return true
+}
+
+func isGetRequestContextMethod(m reflect.Method) bool {
+	t := m.Type
+	if t.Kind() != reflect.Func {
+		return false
+	}
+	if m.Name != "GetRequestContext" {
+		return false
+	}
+	if t.NumIn() != 1 || t.NumOut() != 1 {
+		return false
+	}
+	// TODO: Figure out why this doesn't work
+	// if !t.Out(0).Implements(reflect.TypeOf((*ctxpb.RequestContext)(nil)).Elem()) {
+	// 	return false
+	// }
+	return true
+}
+
+func getProtoRequestContext(req proto.Message) *ctxpb.RequestContext {
+	protoType := reflect.TypeOf(req)
+	for i := 0; i < protoType.NumMethod(); i++ {
+		method := protoType.Method(i)
+		if !isGetRequestContextMethod(method) {
+			continue
+		}
+		args := []reflect.Value{reflect.ValueOf(req)}
+		ctxArr := method.Func.Call(args)
+		return ctxArr[0].Interface().(*ctxpb.RequestContext)
+	}
+	return nil
 }
 
 func ReadRequestToProto(r *http.Request, req proto.Message) error {
@@ -78,7 +117,17 @@ func WriteProtoToResponse(rsp proto.Message, w http.ResponseWriter, r *http.Requ
 	}
 }
 
-func GenerateHTTPHandlers(server interface{}) (http.HandlerFunc, error) {
+// TODO(tylerw): restructure protolet as a self-RPC to avoid the need for this
+// body parsing middleware.
+
+type HTTPHandlers struct {
+	// Middleware that deserializes the request body and adds it to the request context.
+	BodyParserMiddleware func(http.Handler) http.Handler
+	// Handler that runs after the parsed request message is authenticated, returning the response proto.
+	RequestHandler http.Handler
+}
+
+func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
 	if reflect.ValueOf(server).Type().Kind() != reflect.Ptr {
 		return nil, fmt.Errorf("GenerateHTTPHandlers must be called with a pointer to an RPC service implementation")
 	}
@@ -94,20 +143,37 @@ func GenerateHTTPHandlers(server interface{}) (http.HandlerFunc, error) {
 		log.Printf("Auto-registered HTTP handler for %s", method.Name)
 	}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	bodyParserMiddleware := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			method, ok := handlerFns[r.URL.Path]
+			if !ok {
+				http.Error(w, fmt.Sprintf("Method '%s' not found.", r.URL.Path), http.StatusNotFound)
+				return
+			}
+
+			methodType := method.Type()
+			reqVal := reflect.New(methodType.In(2).Elem())
+			req := reqVal.Interface().(proto.Message)
+			if err := ReadRequestToProto(r, req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			ctx := context.WithValue(r.Context(), contextProtoMessageKey, req)
+			reqCtx := getProtoRequestContext(req)
+			ctx = requestcontext.ContextWithProtoRequestContext(ctx, reqCtx)
+
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+
+	requestHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		method, ok := handlerFns[r.URL.Path]
 		if !ok {
 			http.Error(w, fmt.Sprintf("Method '%s' not found.", r.URL.Path), http.StatusNotFound)
 			return
 		}
 
-		methodType := method.Type()
-		reqVal := reflect.New(methodType.In(2).Elem())
-		req := reqVal.Interface().(proto.Message)
-		if err := ReadRequestToProto(r, req); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		reqVal := reflect.ValueOf(r.Context().Value(contextProtoMessageKey).(proto.Message))
 		args := []reflect.Value{reflect.ValueOf(server), reflect.ValueOf(r.Context()), reqVal}
 		rspArr := method.Call(args)
 		if rspArr[1].Interface() != nil {
@@ -122,5 +188,10 @@ func GenerateHTTPHandlers(server interface{}) (http.HandlerFunc, error) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-	}), nil
+	})
+
+	return &HTTPHandlers{
+		BodyParserMiddleware: bodyParserMiddleware,
+		RequestHandler:       requestHandler,
+	}, nil
 }

@@ -8,6 +8,8 @@ class RpcService {
   constructor() {
     this.service = new buildbuddy.service.BuildBuddyService(this.rpc.bind(this));
     this.events = new Subject();
+
+    (window as any)._rpcService = this;
   }
 
   downloadBytestreamFile(filename: string, bytestreamURL: string, invocationId: string) {
@@ -52,7 +54,7 @@ class RpcService {
     var request = new XMLHttpRequest();
     request.open("POST", `/rpc/BuildBuddyService/${method.name}`, true);
 
-    request.setRequestHeader("Content-Type", "application/proto");
+    request.setRequestHeader("Content-Type", method.contentType || "application/proto");
     request.responseType = "arraybuffer";
     request.onload = () => {
       if (request.status >= 200 && request.status < 400) {

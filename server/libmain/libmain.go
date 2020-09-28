@@ -275,7 +275,7 @@ func StartAndRunServices(env environment.Env) {
 
 	// Generate HTTP (protolet) handlers for the BuildBuddy API, so it
 	// can be called over HTTP(s).
-	buildBuddyProtoHandler, err := protolet.GenerateHTTPHandlers(buildBuddyServer)
+	buildBuddyProtoHandlers, err := protolet.GenerateHTTPHandlers(buildBuddyServer)
 	if err != nil {
 		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
 	}
@@ -297,8 +297,7 @@ func StartAndRunServices(env environment.Env) {
 	// Register all of our HTTP handlers on the default mux.
 	mux.Handle("/", httpfilters.WrapExternalHandler(env, staticFileServer))
 	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
-	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalHandler(env,
-		http.StripPrefix("/rpc/BuildBuddyService/", buildBuddyProtoHandler)))
+	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", buildBuddyProtoHandlers))
 	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, buildBuddyServer))
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
@@ -317,12 +316,11 @@ func StartAndRunServices(env environment.Env) {
 	// Register API as an HTTP service.
 	apiConfig := env.GetConfigurator().GetAPIConfig()
 	if api := env.GetAPIService(); apiConfig != nil && apiConfig.EnableAPI && api != nil {
-		apiProtoHandler, err := protolet.GenerateHTTPHandlers(api)
+		apiProtoHandlers, err := protolet.GenerateHTTPHandlers(api)
 		if err != nil {
 			log.Fatalf("Error initializing RPC over HTTP handlers for API: %s", err)
 		}
-		mux.Handle("/api/v1/", httpfilters.WrapAuthenticatedExternalHandler(env,
-			http.StripPrefix("/api/v1/", apiProtoHandler)))
+		mux.Handle("/api/v1/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/api/v1/", apiProtoHandlers))
 		// Protolet doesn't currently support streaming RPCs, so we'll register a regular old http handler.
 		mux.Handle("/api/v1/GetFile", httpfilters.WrapAuthenticatedExternalHandler(env, api))
 	}
