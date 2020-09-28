@@ -244,6 +244,7 @@ type ExecutionSummary struct {
 	// A "hash/bytes_size" formatted Digest message that
 	// uniquely identifies the Action that was completed.
 	ActionDigest string `gorm:"index:esum_action_digest_index"`
+	InstanceName string
 
 	// A unique worker identifier string, identifying the
 	// machine that completed this execution.
@@ -264,12 +265,20 @@ type ExecutionSummary struct {
 	VoluntaryContextSwitches   int64
 	InvoluntaryContextSwitches int64
 
+	// IO Stats
 	FileDownloadCount        int64
 	FileDownloadSizeBytes    int64
 	FileDownloadDurationUsec int64
 	FileUploadCount          int64
 	FileUploadSizeBytes      int64
 	FileUploadDurationUsec   int64
+
+	// Timing Stats
+	QueueTimeUsec  int64
+	FetchTimeUsec  int64
+	ExecTimeUsec   int64
+	UploadTimeUsec int64
+	WorkTimeUsec   int64
 }
 
 func (t *ExecutionSummary) TableName() string {
