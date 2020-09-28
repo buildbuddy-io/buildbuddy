@@ -46,6 +46,7 @@ proto_library(
     ],
     deps = [
         ":remote_execution_proto",
+        "@com_google_protobuf//:duration_proto",
     ],
 )
 
