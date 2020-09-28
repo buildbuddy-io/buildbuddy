@@ -29,6 +29,13 @@ message Group {
 }
 
 message GetGroupRequest {
+  // The unique URL segment for this group which is used
+  // to construct nice-looking URLs for this group, such as
+  // https://app.buildbuddy.com/join/:url-identifier
+  //
+  // May consist of only lowercase ASCII letters (a-z) and hyphens.
+  //
+  // Ex: "iteration-inc"
   string url_identifier = 1;
 }
 
