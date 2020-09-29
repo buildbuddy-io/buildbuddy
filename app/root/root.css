@@ -1106,11 +1106,7 @@ code .comment {
 }
 
 .login-hero {
-  border-right: 1px solid rgba(255, 255, 255, 0.5);
-  padding-right: 32px;
-  margin-right: 32px;
   color: rgba(255, 255, 255, 0.7);
-  max-width: 40%;
   line-height: 1.6em;
   display: flex;
   flex-direction: column;
@@ -1206,9 +1202,32 @@ code .comment {
   color: rgba(255, 255, 255, 0.7);
 }
 
-@media (max-width: 800px) {
+@media (min-width: 801px) {
   .login-hero {
+    border-right: 1px solid rgba(255, 255, 255, 0.5);
+    padding-right: 32px;
+    margin-right: 32px;
+    max-width: 40%;
+  }
+}
+
+@media (max-width: 800px) {
+  .hide-on-mobile {
     display: none;
+  }
+
+  .login-box {
+    flex-direction: column;
+  }
+
+  .login-hero {
+    /* REMOVE */
+    padding: 24px;
+    text-align: center;
+  }
+
+  .login-buttons {
+    padding: 0 8px;
   }
 }
 

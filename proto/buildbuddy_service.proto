@@ -26,6 +26,8 @@ service BuildBuddyService {
 
   rpc GetGroup(grp.GetGroupRequest) returns (grp.GetGroupResponse);
 
+  rpc JoinGroup(grp.JoinGroupRequest) returns (grp.JoinGroupResponse);
+
   rpc CreateGroup(grp.CreateGroupRequest) returns (grp.CreateGroupResponse);
 
   rpc UpdateGroup(grp.UpdateGroupRequest) returns (grp.UpdateGroupResponse);

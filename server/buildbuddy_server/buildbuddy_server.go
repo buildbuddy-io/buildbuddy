@@ -123,10 +123,10 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	group := &tables.Group{
-		URLIdentifier: req.UrlIdentifier,
+		URLIdentifier: req.GetUrlIdentifier(),
 	}
-	if err := userDB.FillGroup(group); err != nil {
-		return err
+	if err := userDB.FillGroup(ctx, group); err != nil {
+		return nil, err
 	}
 	return &grpb.GetGroupResponse{
 		Id: group.GroupID,
@@ -171,12 +171,31 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		return nil, err
 	}
 
-	if err := userDB.AddUserToGroup(ctx, groupID, jwtUser.UserID); err != nil {
+	if err := userDB.AddUserToGroup(ctx, jwtUser.UserID, groupID); err != nil {
 		return nil, err
 	}
 	return &grpb.CreateGroupResponse{
 		Id: groupID,
 	}, nil
+}
+
+func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupRequest) (*grpb.JoinGroupResponse, error) {
+	auth := s.env.GetAuthenticator()
+	userDB := s.env.GetUserDB()
+	if auth == nil || userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	user, err := userDB.GetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// TODO: check whether the user is authorized to join the group.
+	// They should either have been invited or have an email under
+	// the group's owned domain.
+	if err := userDB.AddUserToGroup(ctx, user.UserID, req.GetId()); err != nil {
+		return nil, err
+	}
+	return &grpb.JoinGroupResponse{}, nil
 }
 
 func GetEmailDomain(email string) string {
