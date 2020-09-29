@@ -67,11 +67,15 @@ message Invocation {
   // The commit SHA that this invocation was for.
   string commit_sha = 16;
 
+  // Read permissions for this invocation.
   InvocationPermission read_permission = 17;
 
   // Any cache stats that were captured during this invocation.
   // May not be present if the buildbuddy cache was not used.
   cache.CacheStats cache_stats = 18;
+
+  // The role played by this invocation. Ex: "CI"
+  string role = 19;
 }
 
 message InvocationEvent {
