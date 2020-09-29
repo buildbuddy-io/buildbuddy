@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "google/protobuf/duration.proto";
 import "proto/remote_execution.proto";
 
 package execution_stats;
@@ -65,7 +66,24 @@ message IOStats {
   int64 file_upload_duration_usec = 6;
 }
 
-// Next tag: 7
+message TimingStats {
+  // Time this execution spent queued.
+  google.protobuf.Duration queue_time = 1;
+
+  // Time to fetch this execution's inputs.
+  google.protobuf.Duration fetch_time = 2;
+
+  // Time to execute this execution's command.
+  google.protobuf.Duration exec_time = 3;
+
+  // Time to upload this execution's outputs.
+  google.protobuf.Duration upload_time = 4;
+
+  // Total work time (roughly fetch + exec + upload).
+  google.protobuf.Duration work_time = 5;
+}
+
+// Next tag: 8
 message ExecutionSummary {
   // The instance name.
   string instance_name = 6;
@@ -84,4 +102,6 @@ message ExecutionSummary {
 
   // Any io_stats that were collected during this execution.
   IOStats io_stats = 2;
+
+  TimingStats timing_stats = 7;
 }

@@ -261,6 +261,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 	i.Host = p.Host
 	i.RepoURL = p.RepoUrl
 	i.CommitSHA = p.CommitSha
+	i.Role = p.Role
 	i.Command = p.Command
 	if p.Pattern != nil {
 		i.Pattern = strings.Join(p.Pattern, ", ")
@@ -283,6 +284,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	out.Host = i.Host
 	out.RepoUrl = i.RepoURL
 	out.CommitSha = i.CommitSHA
+	out.Role = i.Role
 	out.Command = i.Command
 	if i.Pattern != "" {
 		out.Pattern = strings.Split(i.Pattern, ", ")
