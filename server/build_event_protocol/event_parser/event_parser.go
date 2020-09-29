@@ -286,6 +286,9 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	if sha, ok := envVarMap["GITHUB_SHA"]; ok && sha != "" {
 		invocation.CommitSha = sha
 	}
+	if ci, ok := envVarMap["CI"]; ok && ci != "" {
+		invocation.Role = "CI"
+	}
 }
 
 func fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.WorkspaceStatus, invocation *inpb.Invocation) {
@@ -302,6 +305,8 @@ func fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.Works
 			invocation.Host = item.Value
 		case "HOST":
 			invocation.Host = item.Value
+		case "ROLE":
+			invocation.Role = item.Value
 		case "REPO_URL":
 			invocation.RepoUrl = item.Value
 		case "COMMIT_SHA":
@@ -322,6 +327,9 @@ func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inp
 	}
 	if host, ok := metadata["HOST"]; ok && host != "" {
 		invocation.Host = host
+	}
+	if role, ok := metadata["ROLE"]; ok && role != "" {
+		invocation.Role = role
 	}
 	if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
 		invocation.ReadPermission = inpb.InvocationPermission_PUBLIC
