@@ -117,6 +117,25 @@ func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserR
 	}, nil
 }
 
+func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupRequest) (*grpb.GetGroupResponse, error) {
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	group := &tables.Group{
+		URLIdentifier: req.UrlIdentifier,
+	}
+	if err := userDB.FillGroup(ctx, group); err != nil {
+		return nil, err
+	}
+	return &grpb.GetGroupResponse{
+		Id: group.GroupID,
+		// NOTE: this RPC does not require authentication, so sensitive group
+		// info should not be exposed here.
+		Name: group.Name,
+	}, nil
+}
+
 func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGroupRequest) (*grpb.CreateGroupResponse, error) {
 	auth := s.env.GetAuthenticator()
 	userDB := s.env.GetUserDB()
