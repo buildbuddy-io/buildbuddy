@@ -76,7 +76,7 @@ func makeGroups(grps []*tables.Group) []*grpb.Group {
 			Name:          g.Name,
 			OwnedDomain:   g.OwnedDomain,
 			GithubLinked:  g.GithubToken != "",
-			UrlIdentifier: g.URLIdentifier
+			UrlIdentifier: g.URLIdentifier,
 		})
 	}
 	return r

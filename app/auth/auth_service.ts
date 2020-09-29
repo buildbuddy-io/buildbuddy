@@ -73,7 +73,7 @@ export class AuthService {
     let user = new User();
     user.displayUser = response.displayUser as user.DisplayUser;
     user.groups = response.userGroup as grp.Group[];
-    let selectedGroupId = window.localStorage["selected_group_id"];
+    let selectedGroupId = window.localStorage[SELECTED_GROUP_ID_LOCAL_STORAGE_KEY];
     if (user.groups.length > 0) {
       user.selectedGroup =
         user.groups.find(
