@@ -28,6 +28,27 @@ message Group {
   string url_identifier = 5;
 }
 
+message GetGroupRequest {
+  // The unique URL segment for this group which is used
+  // to construct nice-looking URLs for this group, such as
+  // https://app.buildbuddy.com/join/:url-identifier
+  //
+  // May consist of only lowercase ASCII letters (a-z) and hyphens.
+  //
+  // Ex: "iteration-inc"
+  string url_identifier = 1;
+}
+
+message GetGroupResponse {
+  // The unique ID of the group.
+  // Ex. "GR4576963743584254779"
+  string id = 1;
+
+  // The name of this group (may be displayed to users).
+  // Ex. "Tyler Williams Group"
+  string name = 2;
+}
+
 message CreateGroupRequest {
   // The name of this group (may be displayed to users).
   // Ex. "Tyler Williams Group"
