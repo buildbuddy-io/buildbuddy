@@ -17,7 +17,7 @@ interface State {
   threadMap: Map<number, Thread>;
   timingEnabled: boolean;
   buildInProgress: boolean;
-  /** Whether the "command.profile.gz" file is missing from BuildToolLogs. */
+  /** Whether the profile file is missing from BuildToolLogs. */
   isMissingProfile: boolean;
   sortBy: string;
   groupBy: string;
@@ -71,9 +71,9 @@ export default class InvocationTimingCardComponent extends React.Component {
   }
 
   fetchProfile() {
-    let profileUrl = this.props.model.buildToolLogs?.log.find((log: any) => log.name == "command.profile.gz")?.uri;
+    let profileFile = this.props.model.buildToolLogs?.log.find((log: any) => log.uri);
 
-    if (!profileUrl) {
+    if (!profileFile?.uri) {
       const hasBuildToolLogs = this.props.model.buildToolLogs;
       this.setState({
         ...this.state,
@@ -83,7 +83,7 @@ export default class InvocationTimingCardComponent extends React.Component {
       return;
     }
 
-    if (!profileUrl.startsWith("bytestream://")) {
+    if (!profileFile?.uri.startsWith("bytestream://")) {
       this.setState({
         ...this.state,
         timingEnabled: false,
@@ -97,11 +97,16 @@ export default class InvocationTimingCardComponent extends React.Component {
       return;
     }
 
+    let compressionOption = this.props.model.optionsMap.get("json_trace_compression");
+    var isGzipped = compressionOption === undefined ? profileFile.name?.endsWith(".gz") : compressionOption == "1";
+
     rpcService
-      .fetchBytestreamFile(profileUrl, this.props.model.getId(), "arraybuffer")
+      .fetchBytestreamFile(profileFile?.uri, this.props.model.getId(), isGzipped ? "arraybuffer" : "json")
       .then((contents: Uint8Array) => {
-        let decompressedResponse = pako.inflate(contents, { to: "string" });
-        this.updateProfile(JSON.parse(decompressedResponse));
+        if (isGzipped) {
+          contents = JSON.parse(pako.inflate(contents, { to: "string" }));
+        }
+        this.updateProfile(contents);
       })
       .catch(() => {
         console.error("Error loading bytestream timing profile!");
