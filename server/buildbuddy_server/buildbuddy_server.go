@@ -125,7 +125,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 	group := &tables.Group{
 		URLIdentifier: req.UrlIdentifier,
 	}
-	if err := userDB.FillGroup(group); err != nil {
+	if err := userDB.FillGroup(ctx, group); err != nil {
 		return err
 	}
 	return &grpb.GetGroupResponse{
