@@ -169,6 +169,15 @@ func (g *Group) TableName() string {
 	return "Groups"
 }
 
+type UserGroup struct {
+	UserUserID   string `gorm:"primary_key"`
+	GroupGroupID string `gorm:"primary_key"`
+}
+
+func (ug *UserGroup) TableName() string {
+	return "UserGroups"
+}
+
 type User struct {
 	Model
 
@@ -181,7 +190,7 @@ type User struct {
 
 	// Groups are used to determine read/write permissions
 	// for everything.
-	Groups []*Group `gorm:"many2many:UserGroups;"`
+	Groups []*Group `gorm:"-"` // gorm ignore
 
 	// Profile information etc.
 	FirstName string
