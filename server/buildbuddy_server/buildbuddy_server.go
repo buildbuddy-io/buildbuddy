@@ -72,10 +72,11 @@ func makeGroups(grps []*tables.Group) []*grpb.Group {
 	r := make([]*grpb.Group, 0)
 	for _, g := range grps {
 		r = append(r, &grpb.Group{
-			Id:           g.GroupID,
-			Name:         g.Name,
-			OwnedDomain:  g.OwnedDomain,
-			GithubLinked: g.GithubToken != "",
+			Id:            g.GroupID,
+			Name:          g.Name,
+			OwnedDomain:   g.OwnedDomain,
+			GithubLinked:  g.GithubToken != "",
+			UrlIdentifier: g.URLIdentifier
 		})
 	}
 	return r
