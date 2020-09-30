@@ -83,25 +83,14 @@ message TimingStats {
   google.protobuf.Duration work_time = 5;
 }
 
-// Next tag: 8
+// Next tag: 9
 message ExecutionSummary {
-  // The instance name.
-  string instance_name = 6;
-
-  // The digest of the action that was executed.
-  build.bazel.remote.execution.v2.Digest action_digest = 3;
-
-  // The ID of the executor that performed this work.
-  string worker_id = 4;
-
-  // The associated invocation_id, if one was present.
-  string invocation_id = 5;
-
-  // Any execution_stats that were collected during this execution.
-  ExecutionStats execution_stats = 1;
+  reserved 1, 3, 4, 5, 6, 7;
 
   // Any io_stats that were collected during this execution.
   IOStats io_stats = 2;
 
-  TimingStats timing_stats = 7;
+  // Execution stage timings.
+  build.bazel.remote.execution.v2.ExecutedActionMetadata
+      executed_action_metadata = 8;
 }

@@ -239,48 +239,9 @@ type Execution struct {
 	ExecutionID         string `gorm:"primary_key"`
 	Stage               int64
 	SerializedOperation []byte `gorm:"size:max"`
-}
+	InvocationID        string `gorm:"index:execution_invocation_id"`
 
-func (t *Execution) TableName() string {
-	return "Executions"
-}
-
-type ExecutionSummary struct {
-	Model
-	// The SummaryID is a randomly generated identifier.
-	SummaryID    string `gorm:"primary_key"`
-	InvocationID string `gorm:"index:esum_invocation_id"`
-
-	// The user/group permissions of the calling user.
-	UserID  string `gorm:"index:esum_user_id"`
-	GroupID string `gorm:"index:esum_group_id"`
-	Perms   int    `gorm:"index:esum_perms"`
-
-	// A "hash/bytes_size" formatted Digest message that
-	// uniquely identifies the Action that was completed.
-	ActionDigest string `gorm:"index:esum_action_digest_index"`
-	InstanceName string
-
-	// A unique worker identifier string, identifying the
-	// machine that completed this execution.
-	WorkerID string
-
-	// Execution metrics (cpu,memory,tx,rx, etc)
-	UserCpuTimeUsec            int64
-	SysCpuTimeUsec             int64
-	MaxResidentSetSizeBytes    int64
-	PageReclaims               int64
-	PageFaults                 int64
-	Swaps                      int64
-	BlockInputOperations       int64
-	BlockOutputOperations      int64
-	MessagesSent               int64
-	MessagesReceived           int64
-	SignalsReceived            int64
-	VoluntaryContextSwitches   int64
-	InvoluntaryContextSwitches int64
-
-	// IO Stats
+	// IOStats
 	FileDownloadCount        int64
 	FileDownloadSizeBytes    int64
 	FileDownloadDurationUsec int64
@@ -288,16 +249,21 @@ type ExecutionSummary struct {
 	FileUploadSizeBytes      int64
 	FileUploadDurationUsec   int64
 
-	// Timing Stats
-	QueueTimeUsec  int64
-	FetchTimeUsec  int64
-	ExecTimeUsec   int64
-	UploadTimeUsec int64
-	WorkTimeUsec   int64
+	// ExecutedActionMetadata
+	Worker                             string
+	QueuedTimestampUsec                int64
+	WorkerStartTimestampUsec           int64
+	WorkerCompletedTimestampUsec       int64
+	InputFetchStartTimestampUsec       int64
+	InputFetchCompletedTimestampUsec   int64
+	ExecutionStartTimestampUsec        int64
+	ExecutionCompletedTimestampUsec    int64
+	OutputUploadStartTimestampUsec     int64
+	OutputUploadCompletedTimestampUsec int64
 }
 
-func (t *ExecutionSummary) TableName() string {
-	return "ExecutionSummaries"
+func (t *Execution) TableName() string {
+	return "Executions"
 }
 
 type TelemetryLog struct {
@@ -368,7 +334,6 @@ func init() {
 	registerTable("TO", &Token{})
 	registerTable("EX", &Execution{})
 	registerTable("TL", &TelemetryLog{})
-	registerTable("ES", &ExecutionSummary{})
 	registerTable("EN", &ExecutionNode{})
 	registerTable("ET", &ExecutionTask{})
 }
