@@ -29,7 +29,6 @@ go_test(
         "//server/test_environment:go_default_library",
         "//server/util/prefix:go_default_library",
         "//server/util/random:go_default_library",
-        "//server/util/status:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//status:go_default_library",
