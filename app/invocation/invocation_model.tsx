@@ -1,6 +1,7 @@
 import React from "react";
 import moment from "moment";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { cache } from "../../proto/cache_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { command_line } from "../../proto/command_line_ts_proto";
 import format from "../format/format";
@@ -8,6 +9,7 @@ import { IconType } from "../favicon/favicon";
 
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
+  cacheStats: cache.CacheStats[] = [];
 
   consoleBuffer: string;
   targets: build_event_stream.BuildEvent[] = [];
@@ -46,6 +48,9 @@ export default class InvocationModel {
   static modelFromInvocations(invocations: invocation.Invocation[]) {
     let model = new InvocationModel();
     model.invocations = invocations as invocation.Invocation[];
+    model.cacheStats = invocations
+      .map((invocation) => invocation.cacheStats)
+      .filter((cacheStat) => !!cacheStat) as cache.CacheStats[];
     for (let invocation of invocations) {
       if (invocation.consoleBuffer) model.consoleBuffer = invocation.consoleBuffer;
       for (let cl of invocation.structuredCommandLine) {

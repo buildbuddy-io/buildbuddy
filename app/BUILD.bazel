@@ -50,6 +50,7 @@ genrule(
     name = "style",
     srcs = [
         "//app/root:root.css",
+        "//app/invocation:invocation.css",
     ],
     outs = ["style.css"],
     cmd_bash = ("""

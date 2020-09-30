@@ -2,6 +2,8 @@ load("@npm_bazel_typescript//:index.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(glob(["*.css"]))
+
 ts_library(
     name = "invocation",
     srcs = glob(["**/*.tsx"]),
@@ -17,6 +19,7 @@ ts_library(
         "//app/target",
         "//app/terminal",
         "//proto:build_event_stream_ts_proto",
+        "//proto:cache_ts_proto",
         "//proto:command_line_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto:user_ts_proto",

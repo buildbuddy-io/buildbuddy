@@ -414,6 +414,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "cache_ts_proto",
+    deps = [":cache_proto"],
+)
+
+ts_proto_library(
     name = "user_ts_proto",
     deps = [":user_proto"],
 )
