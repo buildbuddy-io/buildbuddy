@@ -331,6 +331,7 @@ func init() {
 	registerTable("CA", &CacheEntry{})
 	registerTable("US", &User{})
 	registerTable("GR", &Group{})
+	registerTable("UG", &UserGroup{})
 	registerTable("TO", &Token{})
 	registerTable("EX", &Execution{})
 	registerTable("TL", &TelemetryLog{})
