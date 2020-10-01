@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -139,11 +140,12 @@ type UserDB interface {
 
 	// Groups API
 	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (string, error)
-	AddUserToGroup(ctx context.Context, userID string, groupID string) error
 	// Takes a group with url_identifier set and fills the remaining fields.
 	FillGroup(ctx context.Context, g *tables.Group) error
 	GetAuthGroup(ctx context.Context) (*tables.Group, error)
 	DeleteGroup(ctx context.Context, groupID string) error
+	AddUserToGroup(ctx context.Context, userID string, groupID string) error
+	RequestToJoinGroup(ctx context.Context, userID string, groupID string) error
 }
 
 // A webhook can be called when a build is completed.

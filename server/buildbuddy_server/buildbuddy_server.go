@@ -190,12 +190,25 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 	if err != nil {
 		return nil, err
 	}
-	// TODO: check whether the user is authorized to join the group.
-	// They should either have been invited or have an email under
-	// the group's owned domain.
-	if err := userDB.AddUserToGroup(ctx, user.UserID, req.GetId()); err != nil {
+	group := &tables.Group{
+		GroupID: req.GetId(),
+	}
+	if err := userDB.FillGroup(ctx, group); err != nil {
 		return nil, err
 	}
+	// If the user's email matches the group's owned domain, they can be added
+	// as a member immediately.
+	if group.OwnedDomain != "" && GetEmailDomain(user.Email) == group.OwnedDomain {
+		if err := userDB.AddUserToGroup(ctx, user.UserID, req.GetId()); err != nil {
+			return nil, err
+		}
+	} else {
+		// Otherwise submit a request to join the group.
+		if err := userDB.RequestToJoinGroup(ctx, user.UserID, req.GetId()); err != nil {
+			return nil, err
+		}
+	}
+
 	return &grpb.JoinGroupResponse{}, nil
 }
 
