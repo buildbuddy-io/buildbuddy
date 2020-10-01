@@ -238,7 +238,10 @@ type Execution struct {
 	// auth Issuer ID and the subcriber ID string.
 	ExecutionID         string `gorm:"primary_key"`
 	Stage               int64
-	SerializedOperation []byte `gorm:"size:max"`
+	SerializedOperation []byte `gorm:"size:max"` // deprecated.
+	StatusCode          int32
+	StatusMessage       string
+	CachedResult        bool
 	InvocationID        string `gorm:"index:execution_invocation_id"`
 
 	// IOStats
