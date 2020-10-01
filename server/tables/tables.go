@@ -12,6 +12,12 @@ import (
 
 const (
 	mySQLDialect = "mysql"
+
+	
+	// UserGroup membership status constants
+
+	MemberStatus = 0
+	MembershipRequestedStatus = 1
 )
 
 type tableDescriptor struct {
@@ -170,8 +176,15 @@ func (g *Group) TableName() string {
 }
 
 type UserGroup struct {
-	UserUserID   string `gorm:"primary_key"`
-	GroupGroupID string `gorm:"primary_key"`
+	UserUserID       string `gorm:"primary_key"`
+	GroupGroupID     string `gorm:"primary_key"`
+
+	// The user's membership status.
+	//
+	// This can be one of:
+	// 0 (default): The user is a group member.
+	// 1: The user has requested to join, but is not yet approved.
+	MembershipStatus int32 `gorm:"index:membership_status_index"`
 }
 
 func (ug *UserGroup) TableName() string {
