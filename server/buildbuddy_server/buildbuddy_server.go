@@ -198,7 +198,7 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 	}
 	// If the user's email matches the group's owned domain, they can be added
 	// as a member immediately.
-	if group.OwnedDomain != "" && GetEmailDomain(user.Email) == group.OwnedDomain {
+	if group.OwnedDomain != "" && group.OwnedDomain == GetEmailDomain(user.Email) {
 		if err := userDB.AddUserToGroup(ctx, user.UserID, req.GetId()); err != nil {
 			return nil, err
 		}
