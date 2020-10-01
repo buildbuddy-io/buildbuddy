@@ -99,3 +99,10 @@ message UpdateGroupRequest {
 }
 
 message UpdateGroupResponse {}
+
+enum GroupMembershipStatus {
+  // The user is a member of the group.
+  MEMBER = 0;
+  // The user has requested to join the group but is not yet a member.
+  REQUESTED = 1;
+}
