@@ -681,6 +681,35 @@ code .comment {
   background-color: #263238;
 }
 
+.footer-icon-links {
+  color: #263238;
+  margin-bottom: 4px;
+}
+
+.dark .footer-icon-links {
+  color: inherit;
+}
+
+.footer-icon-links a {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 12px;
+}
+
+.footer-icon-links img {
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+}
+
+.footer-icon-links img {
+  filter: invert();
+}
+
+.dark .footer-icon-links img {
+  filter: none;
+}
+
 /** History **/
 
 .history .card {
