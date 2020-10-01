@@ -155,7 +155,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 
 	groupOwnedDomain := ""
 	if req.GetAutoPopulateFromOwnedDomain() {
-		userEmailDomain := GetEmailDomain(jwtUser.Email)
+		userEmailDomain := getEmailDomain(jwtUser.Email)
 		groupOwnedDomain = userEmailDomain
 	}
 
@@ -198,7 +198,7 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 	}
 	// If the user's email matches the group's owned domain, they can be added
 	// as a member immediately.
-	if group.OwnedDomain != "" && group.OwnedDomain == GetEmailDomain(user.Email) {
+	if group.OwnedDomain != "" && group.OwnedDomain == getEmailDomain(user.Email) {
 		if err := userDB.AddUserToGroup(ctx, user.UserID, req.GetId()); err != nil {
 			return nil, err
 		}
@@ -212,7 +212,7 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 	return &grpb.JoinGroupResponse{}, nil
 }
 
-func GetEmailDomain(email string) string {
+func getEmailDomain(email string) string {
 	chunks := strings.Split(email, "@")
 	return chunks[len(chunks)-1]
 }
