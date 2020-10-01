@@ -4,8 +4,6 @@ import (
 	"context"
 	"io"
 	"io/ioutil"
-	"regexp"
-	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -22,14 +20,6 @@ import (
 const (
 	// Keep under the limit of ~4MB (1024 * 1024 * 4).
 	readBufSizeBytes = (1024 * 1024 * 4) - 100
-)
-
-var (
-	// Matches:
-	// - "blobs/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
-	// - "uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555/blobs/8afb02ca7aace3ae5cd8748ac589e2e33022b1a4bfd22d5d234c5887e270fe9c/17997850"
-	uploadRegex   = regexp.MustCompile("^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?blobs/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
-	downloadRegex = regexp.MustCompile("^(?:(?P<instance_name>.*)/)?blobs/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
 )
 
 type ByteStreamServer struct {
@@ -57,39 +47,6 @@ func minInt64(a, b int64) int64 {
 		return a
 	}
 	return b
-}
-
-func extractDigest(resourceName string, matcher *regexp.Regexp) (string, *repb.Digest, error) {
-	match := matcher.FindStringSubmatch(resourceName)
-	result := make(map[string]string, len(match))
-	for i, name := range matcher.SubexpNames() {
-		if i != 0 && name != "" && i < len(match) {
-			result[name] = match[i]
-		}
-	}
-	hash, hashOK := result["hash"]
-	sizeStr, sizeOK := result["size"]
-	if !hashOK || !sizeOK {
-		return "", nil, status.InvalidArgumentErrorf("Unparsable resource name: %s", resourceName)
-	}
-	if hash == "" {
-		return "", nil, status.InvalidArgumentErrorf("Unparsable resource name (empty hash?): %s", resourceName)
-	}
-	sizeBytes, err := strconv.ParseInt(sizeStr, 10, 0)
-	if err != nil {
-		return "", nil, err
-	}
-
-	// Set the instance name, if one was present.
-	instanceName := ""
-	if in, ok := result["instance_name"]; ok {
-		instanceName = in
-	}
-
-	return instanceName, &repb.Digest{
-		Hash:      hash,
-		SizeBytes: sizeBytes,
-	}, nil
 }
 
 func checkReadPreconditions(req *bspb.ReadRequest) error {
@@ -133,7 +90,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err := checkReadPreconditions(req); err != nil {
 		return err
 	}
-	instanceName, d, err := extractDigest(req.GetResourceName(), downloadRegex)
+	instanceName, d, err := digest.ExtractDigestFromDownloadResourceName(req.GetResourceName())
 	if err != nil {
 		return err
 	}
@@ -235,7 +192,7 @@ func (discardWriteCloser) Close() error {
 }
 
 func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
-	instanceName, d, err := extractDigest(req.ResourceName, uploadRegex)
+	instanceName, d, err := digest.ExtractDigestFromUploadResourceName(req.ResourceName)
 	if err != nil {
 		return nil, err
 	}

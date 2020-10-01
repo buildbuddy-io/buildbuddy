@@ -18,6 +18,7 @@ import BuildLogsCardComponent from "./invocation_build_logs_card";
 import ErrorCardComponent from "./invocation_error_card";
 import InvocationDetailsCardComponent from "./invocation_details_card";
 import ArtifactsCardComponent from "./invocation_artifacts_card";
+import CacheCardComponent from "./invocation_cache_card";
 import RawLogsCardComponent from "./invocation_raw_logs_card";
 import TimingCardComponent from "./invocation_timing_card";
 import TargetsComponent from "./invocation_targets";
@@ -214,6 +215,8 @@ export default class InvocationComponent extends React.Component {
           {(showAll || this.props.hash == "#details") && (
             <InvocationDetailsCardComponent model={this.state.model} limitResults={!this.props.hash} />
           )}
+
+          {(showAll || this.props.hash == "#cache") && <CacheCardComponent model={this.state.model} />}
 
           {(showAll || this.props.hash == "#artifacts") && (
             <ArtifactsCardComponent
