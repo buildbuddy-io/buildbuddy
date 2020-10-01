@@ -693,6 +693,9 @@ code .comment {
 .footer-icon-links a {
   display: inline-flex;
   align-items: center;
+}
+
+.footer-icon-links a:not(:last-child) {
   margin-right: 12px;
 }
 
