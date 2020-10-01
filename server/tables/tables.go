@@ -170,8 +170,12 @@ func (g *Group) TableName() string {
 }
 
 type UserGroup struct {
-	UserUserID   string `gorm:"primary_key"`
-	GroupGroupID string `gorm:"primary_key"`
+	UserUserID       string `gorm:"primary_key"`
+	GroupGroupID     string `gorm:"primary_key"`
+
+	// The user's membership status.
+	// Values correspond to `GroupMembershipStatus` enum values in `grp.proto`.
+	MembershipStatus int32 `gorm:"index:membership_status_index"`
 }
 
 func (ug *UserGroup) TableName() string {
