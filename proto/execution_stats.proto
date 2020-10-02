@@ -1,6 +1,8 @@
 syntax = "proto3";
 
 import "google/protobuf/duration.proto";
+import "google/rpc/status.proto";
+import "proto/context.proto";
 import "proto/remote_execution.proto";
 
 package execution_stats;
@@ -66,23 +68,6 @@ message IOStats {
   int64 file_upload_duration_usec = 6;
 }
 
-message TimingStats {
-  // Time this execution spent queued.
-  google.protobuf.Duration queue_time = 1;
-
-  // Time to fetch this execution's inputs.
-  google.protobuf.Duration fetch_time = 2;
-
-  // Time to execute this execution's command.
-  google.protobuf.Duration exec_time = 3;
-
-  // Time to upload this execution's outputs.
-  google.protobuf.Duration upload_time = 4;
-
-  // Total work time (roughly fetch + exec + upload).
-  google.protobuf.Duration work_time = 5;
-}
-
 // Next tag: 9
 message ExecutionSummary {
   reserved 1, 3, 4, 5, 6, 7;
@@ -93,4 +78,40 @@ message ExecutionSummary {
   // Execution stage timings.
   build.bazel.remote.execution.v2.ExecutedActionMetadata
       executed_action_metadata = 8;
+}
+
+message Execution {
+  // The digest of the [Action][build.bazel.remote.execution.v2.Action] to
+  // execute.
+  build.bazel.remote.execution.v2.Digest action_digest = 1;
+
+  // The stage this execution is currently in.
+  build.bazel.remote.execution.v2.ExecutionStage.Value stage = 2;
+
+  // The Status of this execution (if it has finished).
+  google.rpc.Status status = 3;
+
+  // Any IO stats that were collected during this execution.
+  IOStats io_stats = 4;
+
+  // Execution stage timings.
+  build.bazel.remote.execution.v2.ExecutedActionMetadata
+      executed_action_metadata = 5;
+}
+
+message ExecutionLookup {
+  // The invocation_id: a fully qualified execution ID
+  string invocation_id = 1;
+}
+
+message GetExecutionRequest {
+  context.RequestContext request_context = 1;
+
+  ExecutionLookup lookup = 2;
+}
+
+message GetExecutionResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated Execution execution = 2;
 }
