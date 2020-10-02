@@ -408,8 +408,10 @@ func (c *Configurator) GetAPIConfig() *APIConfig {
 func (c *Configurator) GetGithubConfig() *GithubConfig {
 	c.rereadIfStale()
 	ghc := c.gc.Github
-	if cs := os.Getenv("BB_GITHUB_CLIENT_SECRET"); cs != "" {
-		ghc.ClientSecret = cs
+	if ghc != nil {
+		if cs := os.Getenv("BB_GITHUB_CLIENT_SECRET"); cs != "" {
+			ghc.ClientSecret = cs
+		}
 	}
 	return ghc
 }
