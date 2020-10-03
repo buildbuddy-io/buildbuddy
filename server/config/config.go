@@ -151,9 +151,10 @@ type APIConfig struct {
 }
 
 type GithubConfig struct {
-	ClientID     string `yaml:"client_id"`
-	ClientSecret string `yaml:"client_secret"`
-	AccessToken  string `yaml:"access_token"`
+	ClientID            string `yaml:"client_id"`
+	ClientSecret        string `yaml:"client_secret"`
+	AccessToken         string `yaml:"access_token"`
+	StatusPerTestTarget *bool  `yaml:"status_per_test_target"`
 }
 
 type OrgConfig struct {

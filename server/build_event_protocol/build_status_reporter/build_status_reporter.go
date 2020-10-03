@@ -45,6 +45,7 @@ func NewBuildStatusReporter(env environment.Env, invocationID string) *BuildStat
 }
 
 func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+	shouldReportStatusPerTest := r.shouldReportStatusPerTest()
 	var githubPayload *github.GithubStatusPayload
 
 	switch p := event.Payload.(type) {
@@ -62,11 +63,13 @@ func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *b
 		githubPayload = r.githubPayloadFromWorkspaceStatusEvent(event)
 
 	case *build_event_stream.BuildEvent_Configured:
-		githubPayload = r.githubPayloadFromConfiguredEvent(event)
-
+		if shouldReportStatusPerTest {
+			githubPayload = r.githubPayloadFromConfiguredEvent(event)
+		}
 	case *build_event_stream.BuildEvent_TestSummary:
-		githubPayload = r.githubPayloadFromTestSummaryEvent(event)
-
+		if shouldReportStatusPerTest {
+			githubPayload = r.githubPayloadFromTestSummaryEvent(event)
+		}
 	case *build_event_stream.BuildEvent_Aborted:
 		githubPayload = r.githubPayloadFromAbortedEvent(event)
 
@@ -259,6 +262,16 @@ func (r *BuildStatusReporter) targetURL(label string) string {
 
 func (r *BuildStatusReporter) appURL() string {
 	return r.env.GetConfigurator().GetAppBuildBuddyURL()
+}
+
+func (r *BuildStatusReporter) shouldReportStatusPerTest() bool {
+	shouldReportStatusPerTest := r.env.GetConfigurator().GetGithubConfig().StatusPerTestTarget
+
+	if shouldReportStatusPerTest == nil {
+		return true
+	}
+
+	return *shouldReportStatusPerTest
 }
 
 func (r *BuildStatusReporter) initializeGroups(testGroups string) {
