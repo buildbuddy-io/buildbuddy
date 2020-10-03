@@ -12,18 +12,19 @@ import (
 )
 
 type BuildStatusReporter struct {
-	env             environment.Env
-	githubClient    *github.GithubClient
-	invocationID    string
-	command         string
-	pattern         string
-	role            string
-	repoURL         string
-	commitSHA       string
-	workspaceLoaded bool
-	payloads        []*github.GithubStatusPayload
-	groups          map[string]*GroupStatus
-	inFlight        map[string]bool
+	env                       environment.Env
+	githubClient              *github.GithubClient
+	shouldReportStatusPerTest bool
+	invocationID              string
+	command                   string
+	pattern                   string
+	role                      string
+	repoURL                   string
+	commitSHA                 string
+	workspaceLoaded           bool
+	payloads                  []*github.GithubStatusPayload
+	groups                    map[string]*GroupStatus
+	inFlight                  map[string]bool
 }
 
 type GroupStatus struct {
@@ -35,17 +36,24 @@ type GroupStatus struct {
 }
 
 func NewBuildStatusReporter(env environment.Env, invocationID string) *BuildStatusReporter {
+	githubConfig := env.GetConfigurator().GetGithubConfig()
+	shouldReportStatusPerTest := true
+
+	if githubConfig != nil && githubConfig.StatusPerTestTarget != nil {
+		shouldReportStatusPerTest = *githubConfig.StatusPerTestTarget
+	}
+
 	return &BuildStatusReporter{
-		env:          env,
-		githubClient: github.NewGithubClient(env),
-		invocationID: invocationID,
-		payloads:     make([]*github.GithubStatusPayload, 0),
-		inFlight:     make(map[string]bool),
+		env:                       env,
+		githubClient:              github.NewGithubClient(env),
+		shouldReportStatusPerTest: shouldReportStatusPerTest,
+		invocationID:              invocationID,
+		payloads:                  make([]*github.GithubStatusPayload, 0),
+		inFlight:                  make(map[string]bool),
 	}
 }
 
 func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
-	shouldReportStatusPerTest := r.shouldReportStatusPerTest()
 	var githubPayload *github.GithubStatusPayload
 
 	switch p := event.Payload.(type) {
@@ -63,11 +71,11 @@ func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *b
 		githubPayload = r.githubPayloadFromWorkspaceStatusEvent(event)
 
 	case *build_event_stream.BuildEvent_Configured:
-		if shouldReportStatusPerTest {
+		if r.shouldReportStatusPerTest {
 			githubPayload = r.githubPayloadFromConfiguredEvent(event)
 		}
 	case *build_event_stream.BuildEvent_TestSummary:
-		if shouldReportStatusPerTest {
+		if r.shouldReportStatusPerTest {
 			githubPayload = r.githubPayloadFromTestSummaryEvent(event)
 		}
 	case *build_event_stream.BuildEvent_Aborted:
@@ -262,16 +270,6 @@ func (r *BuildStatusReporter) targetURL(label string) string {
 
 func (r *BuildStatusReporter) appURL() string {
 	return r.env.GetConfigurator().GetAppBuildBuddyURL()
-}
-
-func (r *BuildStatusReporter) shouldReportStatusPerTest() bool {
-	shouldReportStatusPerTest := r.env.GetConfigurator().GetGithubConfig().StatusPerTestTarget
-
-	if shouldReportStatusPerTest == nil {
-		return true
-	}
-
-	return *shouldReportStatusPerTest
 }
 
 func (r *BuildStatusReporter) initializeGroups(testGroups string) {
