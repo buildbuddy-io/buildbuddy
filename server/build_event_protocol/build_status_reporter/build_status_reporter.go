@@ -128,17 +128,21 @@ func (r *BuildStatusReporter) populateWorkspaceInfoFromStructuredCommandLine(com
 			continue
 		}
 		for _, option := range section.GetOptionList().Option {
-			if option.OptionName != "ENV" {
+			if option.OptionName != "ENV" && option.OptionName != "client_env" {
 				continue
 			}
 			parts := strings.Split(option.OptionValue, "=")
-			if len(parts) == 2 && (parts[0] == "CIRCLE_REPOSITORY_URL" || parts[0] == "GITHUB_REPOSITORY" || parts[0] == "BUILDKITE_REPO" || parts[0] == "TRAVIS_REPO_SLUG") {
-				r.repoURL = parts[1]
+			if len(parts) != 2 {
+				continue
 			}
-			if len(parts) == 2 && (parts[0] == "CIRCLE_SHA1" || parts[0] == "GITHUB_SHA" || parts[0] == "BUILDKITE_COMMIT" || parts[0] == "TRAVIS_COMMIT") {
-				r.commitSHA = parts[1]
-			}
-			if len(parts) == 2 && parts[0] == "CI" && parts[1] != "" {
+			environmentVariable := parts[0]
+			value := parts[1]
+			switch environmentVariable {
+			case "CIRCLE_REPOSITORY_URL","GITHUB_REPOSITORY","BUILDKITE_REPO","TRAVIS_REPO_SLUG","CI_REPOSITORY_URL":
+				r.repoURL = value
+			case "CIRCLE_SHA1","GITHUB_SHA","BUILDKITE_COMMIT","TRAVIS_COMMIT","CI_COMMIT_SHA":
+				r.commitSHA = value
+			case "CI":
 				r.role = "CI"
 			}
 		}
