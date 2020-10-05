@@ -670,47 +670,49 @@ code .comment {
 /** Footer **/
 
 .footer {
-  text-align: center;
   color: #aaa;
   font-size: 0.8em;
   padding: 32px 32px 64px 32px;
   height: 32px;
+
+  display: flex;
+  justify-content: space-between;
 }
 
 .dark .footer {
   background-color: #263238;
 }
 
-.footer-icon-links {
-  color: #263238;
-  margin-bottom: 4px;
+.footer-link-list {
+  text-align: center;
 }
 
-.dark .footer-icon-links {
-  color: inherit;
-}
-
-.footer-icon-links a {
-  display: inline-flex;
-  align-items: center;
-}
-
-.footer-icon-links a:not(:last-child) {
+.footer-link-list > :not(:last-child) {
   margin-right: 12px;
+  position: relative;
 }
 
-.footer-icon-links img {
-  width: 16px;
-  height: 16px;
-  margin-right: 4px;
+.footer-link-list > :not(:last-child)::after {
+  content: "|";
+  display: inline;
+  position: absolute;
+  right: -10px;
+  opacity: 0.5;
 }
 
-.footer-icon-links img {
-  filter: invert();
+.footer-link-list > * {
+  white-space: nowrap;
 }
 
-.dark .footer-icon-links img {
-  filter: none;
+@media (max-width: 800px) {
+  .footer {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .footer-link-list:not(:last-child) {
+    margin-bottom: 8px;
+  }
 }
 
 /** History **/
