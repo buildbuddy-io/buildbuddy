@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
@@ -180,4 +181,16 @@ func GetInvocationIDFromMD(ctx context.Context) string {
 		iid = rmd.GetToolInvocationId()
 	}
 	return iid
+}
+
+func IsCacheDebuggingEnabled(ctx context.Context) bool {
+	if grpcMD, ok := gmetadata.FromIncomingContext(ctx); ok {
+		debugCacheHitsValue := grpcMD["debug-cache-hits"]
+		if len(debugCacheHitsValue) == 1 {
+			if strings.ToLower(strings.TrimSpace(debugCacheHitsValue[0])) == "true" {
+				return true
+			}
+		}
+	}
+	return false
 }
