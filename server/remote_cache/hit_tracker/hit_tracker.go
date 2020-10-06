@@ -132,6 +132,9 @@ func (t *transferTimer) Close() error {
 
 func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, dur time.Duration, actionCounter, sizeCounter, timeCounter counterType) closeFunction {
 	return func() error {
+		if h.c == nil || h.iid == "" {
+			return nil
+		}
 		if _, err := h.c.Increment(h.ctx, h.getCounter(actionCache, actionCounter), 1); err != nil {
 			return err
 		}
