@@ -28,6 +28,14 @@ message Group {
   string url_identifier = 5;
 }
 
+message JoinGroupRequest {
+  // The unique ID of this group.
+  // Ex. "GR4576963743584254779"
+  string id = 1;
+}
+
+message JoinGroupResponse {}
+
 message GetGroupRequest {
   // The unique URL segment for this group which is used
   // to construct nice-looking URLs for this group, such as
@@ -47,6 +55,10 @@ message GetGroupResponse {
   // The name of this group (may be displayed to users).
   // Ex. "Tyler Williams Group"
   string name = 2;
+
+  // Optional. The domains owned by this group.
+  // Ex. "iterationinc.com"
+  string owned_domain = 3;
 }
 
 message CreateGroupRequest {

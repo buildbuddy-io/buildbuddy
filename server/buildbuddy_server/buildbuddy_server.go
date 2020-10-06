@@ -72,10 +72,11 @@ func makeGroups(grps []*tables.Group) []*grpb.Group {
 	r := make([]*grpb.Group, 0)
 	for _, g := range grps {
 		r = append(r, &grpb.Group{
-			Id:           g.GroupID,
-			Name:         g.Name,
-			OwnedDomain:  g.OwnedDomain,
-			GithubLinked: g.GithubToken != "",
+			Id:            g.GroupID,
+			Name:          g.Name,
+			OwnedDomain:   g.OwnedDomain,
+			GithubLinked:  g.GithubToken != "",
+			UrlIdentifier: g.URLIdentifier,
 		})
 	}
 	return r
@@ -123,7 +124,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	group := &tables.Group{
-		URLIdentifier: req.UrlIdentifier,
+		URLIdentifier: req.GetUrlIdentifier(),
 	}
 	if err := userDB.FillGroup(ctx, group); err != nil {
 		return nil, err
@@ -133,6 +134,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 		// NOTE: this RPC does not require authentication, so sensitive group
 		// info should not be exposed here.
 		Name: group.Name,
+		OwnedDomain: group.OwnedDomain,
 	}, nil
 }
 
@@ -153,7 +155,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 
 	groupOwnedDomain := ""
 	if req.GetAutoPopulateFromOwnedDomain() {
-		userEmailDomain := GetEmailDomain(user.Email)
+		userEmailDomain := getEmailDomain(user.Email)
 		groupOwnedDomain = userEmailDomain
 	}
 
@@ -178,7 +180,39 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	}, nil
 }
 
-func GetEmailDomain(email string) string {
+func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupRequest) (*grpb.JoinGroupResponse, error) {
+	auth := s.env.GetAuthenticator()
+	userDB := s.env.GetUserDB()
+	if auth == nil || userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	user, err := userDB.GetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	group := &tables.Group{
+		GroupID: req.GetId(),
+	}
+	if err := userDB.FillGroup(ctx, group); err != nil {
+		return nil, err
+	}
+	// If the user's email matches the group's owned domain, they can be added
+	// as a member immediately.
+	if group.OwnedDomain != "" && group.OwnedDomain == getEmailDomain(user.Email) {
+		if err := userDB.AddUserToGroup(ctx, user.UserID, req.GetId()); err != nil {
+			return nil, err
+		}
+	} else {
+		// Otherwise submit a request to join the group.
+		if err := userDB.RequestToJoinGroup(ctx, user.UserID, req.GetId()); err != nil {
+			return nil, err
+		}
+	}
+
+	return &grpb.JoinGroupResponse{}, nil
+}
+
+func getEmailDomain(email string) string {
 	chunks := strings.Split(email, "@")
 	return chunks[len(chunks)-1]
 }
