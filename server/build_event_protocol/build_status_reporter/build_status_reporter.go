@@ -138,9 +138,9 @@ func (r *BuildStatusReporter) populateWorkspaceInfoFromStructuredCommandLine(com
 			environmentVariable := parts[0]
 			value := parts[1]
 			switch environmentVariable {
-			case "CIRCLE_REPOSITORY_URL","GITHUB_REPOSITORY","BUILDKITE_REPO","TRAVIS_REPO_SLUG","CI_REPOSITORY_URL":
+			case "CIRCLE_REPOSITORY_URL", "GITHUB_REPOSITORY", "BUILDKITE_REPO", "TRAVIS_REPO_SLUG", "CI_REPOSITORY_URL":
 				r.repoURL = value
-			case "CIRCLE_SHA1","GITHUB_SHA","BUILDKITE_COMMIT","TRAVIS_COMMIT","CI_COMMIT_SHA":
+			case "CIRCLE_SHA1", "GITHUB_SHA", "BUILDKITE_COMMIT", "TRAVIS_COMMIT", "CI_COMMIT_SHA":
 				r.commitSHA = value
 			case "CI":
 				r.role = "CI"

@@ -133,7 +133,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 		Id: group.GroupID,
 		// NOTE: this RPC does not require authentication, so sensitive group
 		// info should not be exposed here.
-		Name: group.Name,
+		Name:        group.Name,
 		OwnedDomain: group.OwnedDomain,
 	}, nil
 }
