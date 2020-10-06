@@ -145,9 +145,9 @@ load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
 
 container_pull(
     name = "buildbuddy_go_image_base",
-    digest = "sha256:2b0a8e9a13dcc168b126778d9e947a7081b4d2ee1ee122830d835f176d0e2a70",
+    digest = "sha256:e5768afa5429b85ac75de67efc98a4bf53e4ef0f7388667fb34c89d481d82b00",
     registry = "gcr.io",
-    repository = "distroless/base",
+    repository = "distroless/base-debian10",
 )
 
 # BuildBuddy Toolchain
