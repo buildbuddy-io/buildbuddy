@@ -55,6 +55,10 @@ message GetGroupResponse {
   // The name of this group (may be displayed to users).
   // Ex. "Tyler Williams Group"
   string name = 2;
+
+  // Optional. The domains owned by this group.
+  // Ex. "iterationinc.com"
+  string owned_domain = 3;
 }
 
 message CreateGroupRequest {
