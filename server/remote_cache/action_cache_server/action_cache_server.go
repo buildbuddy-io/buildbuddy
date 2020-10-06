@@ -137,16 +137,14 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	cache := s.getCache(req.GetInstanceName())
 	casCache := s.getCASCache(req.GetInstanceName())
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
+	ht := hit_tracker.NewHitTracker(ctx, s.env, req.GetInstanceName())
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
-	downloadTracker := ht.TrackDownload(d)
+	downloadTracker := ht.TrackACDownload(d)
 	blob, err := cache.Get(ctx, d)
 	if err != nil {
-		ht.TrackMiss(d)
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
-	defer downloadTracker.Close()
 
 	rsp := &repb.ActionResult{}
 	if err := proto.Unmarshal(blob, rsp); err != nil {
@@ -155,6 +153,8 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := s.validateActionResult(ctx, casCache, rsp); err != nil {
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
+	downloadTracker.Close(rsp)
+
 	return rsp, nil
 }
 
@@ -189,9 +189,9 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if err != nil {
 		return nil, err
 	}
-	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
+	ht := hit_tracker.NewHitTracker(ctx, s.env, req.GetInstanceName())
 	d := req.GetActionDigest()
-	uploadTracker := ht.TrackUpload(d)
+	uploadTracker := ht.TrackACUpload(d)
 	cache := s.getCache(req.GetInstanceName())
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131
@@ -206,6 +206,6 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if err := cache.Set(ctx, d, blob); err != nil {
 		return nil, err
 	}
-	uploadTracker.Close()
+	uploadTracker.Close(req.ActionResult)
 	return req.ActionResult, nil
 }
