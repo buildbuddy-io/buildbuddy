@@ -289,6 +289,15 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	if ci, ok := envVarMap["CI"]; ok && ci != "" {
 		invocation.Role = "CI"
 	}
+
+	// Gitlab CI Environment Variables
+	// https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
+	if url, ok := envVarMap["CI_REPOSITORY_URL"]; ok && url != "" {
+		invocation.RepoUrl = url
+	}
+	if sha, ok := envVarMap["CI_COMMIT_SHA"]; ok && sha != "" {
+		invocation.CommitSha = sha
+	}
 }
 
 func fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.WorkspaceStatus, invocation *inpb.Invocation) {

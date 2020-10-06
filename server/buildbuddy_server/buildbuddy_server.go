@@ -139,13 +139,12 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 }
 
 func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGroupRequest) (*grpb.CreateGroupResponse, error) {
-	auth := s.env.GetAuthenticator()
 	userDB := s.env.GetUserDB()
-	if auth == nil || userDB == nil {
+	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	jwtUser := &tables.User{}
-	if err := auth.FillUser(ctx, jwtUser); err != nil {
+	user, err := userDB.GetUser(ctx)
+	if err != nil {
 		return nil, err
 	}
 
@@ -156,14 +155,14 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 
 	groupOwnedDomain := ""
 	if req.GetAutoPopulateFromOwnedDomain() {
-		userEmailDomain := getEmailDomain(jwtUser.Email)
+		userEmailDomain := getEmailDomain(user.Email)
 		groupOwnedDomain = userEmailDomain
 	}
 
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 
 	group := &tables.Group{
-		UserID:        jwtUser.UserID,
+		UserID:        user.UserID,
 		Name:          groupName,
 		URLIdentifier: urlIdentifier,
 		OwnedDomain:   groupOwnedDomain,
@@ -173,7 +172,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		return nil, err
 	}
 
-	if err := userDB.AddUserToGroup(ctx, jwtUser.UserID, groupID); err != nil {
+	if err := userDB.AddUserToGroup(ctx, user.UserID, groupID); err != nil {
 		return nil, err
 	}
 	return &grpb.CreateGroupResponse{

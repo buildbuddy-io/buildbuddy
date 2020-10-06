@@ -12,18 +12,19 @@ import (
 )
 
 type BuildStatusReporter struct {
-	env             environment.Env
-	githubClient    *github.GithubClient
-	invocationID    string
-	command         string
-	pattern         string
-	role            string
-	repoURL         string
-	commitSHA       string
-	workspaceLoaded bool
-	payloads        []*github.GithubStatusPayload
-	groups          map[string]*GroupStatus
-	inFlight        map[string]bool
+	env                       environment.Env
+	githubClient              *github.GithubClient
+	shouldReportStatusPerTest bool
+	invocationID              string
+	command                   string
+	pattern                   string
+	role                      string
+	repoURL                   string
+	commitSHA                 string
+	workspaceLoaded           bool
+	payloads                  []*github.GithubStatusPayload
+	groups                    map[string]*GroupStatus
+	inFlight                  map[string]bool
 }
 
 type GroupStatus struct {
@@ -35,12 +36,20 @@ type GroupStatus struct {
 }
 
 func NewBuildStatusReporter(env environment.Env, invocationID string) *BuildStatusReporter {
+	githubConfig := env.GetConfigurator().GetGithubConfig()
+	shouldReportStatusPerTest := true
+
+	if githubConfig != nil && githubConfig.StatusPerTestTarget != nil {
+		shouldReportStatusPerTest = *githubConfig.StatusPerTestTarget
+	}
+
 	return &BuildStatusReporter{
-		env:          env,
-		githubClient: github.NewGithubClient(env),
-		invocationID: invocationID,
-		payloads:     make([]*github.GithubStatusPayload, 0),
-		inFlight:     make(map[string]bool),
+		env:                       env,
+		githubClient:              github.NewGithubClient(env),
+		shouldReportStatusPerTest: shouldReportStatusPerTest,
+		invocationID:              invocationID,
+		payloads:                  make([]*github.GithubStatusPayload, 0),
+		inFlight:                  make(map[string]bool),
 	}
 }
 
@@ -62,11 +71,13 @@ func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *b
 		githubPayload = r.githubPayloadFromWorkspaceStatusEvent(event)
 
 	case *build_event_stream.BuildEvent_Configured:
-		githubPayload = r.githubPayloadFromConfiguredEvent(event)
-
+		if r.shouldReportStatusPerTest {
+			githubPayload = r.githubPayloadFromConfiguredEvent(event)
+		}
 	case *build_event_stream.BuildEvent_TestSummary:
-		githubPayload = r.githubPayloadFromTestSummaryEvent(event)
-
+		if r.shouldReportStatusPerTest {
+			githubPayload = r.githubPayloadFromTestSummaryEvent(event)
+		}
 	case *build_event_stream.BuildEvent_Aborted:
 		githubPayload = r.githubPayloadFromAbortedEvent(event)
 
@@ -117,17 +128,21 @@ func (r *BuildStatusReporter) populateWorkspaceInfoFromStructuredCommandLine(com
 			continue
 		}
 		for _, option := range section.GetOptionList().Option {
-			if option.OptionName != "ENV" {
+			if option.OptionName != "ENV" && option.OptionName != "client_env" {
 				continue
 			}
 			parts := strings.Split(option.OptionValue, "=")
-			if len(parts) == 2 && (parts[0] == "CIRCLE_REPOSITORY_URL" || parts[0] == "GITHUB_REPOSITORY" || parts[0] == "BUILDKITE_REPO" || parts[0] == "TRAVIS_REPO_SLUG") {
-				r.repoURL = parts[1]
+			if len(parts) != 2 {
+				continue
 			}
-			if len(parts) == 2 && (parts[0] == "CIRCLE_SHA1" || parts[0] == "GITHUB_SHA" || parts[0] == "BUILDKITE_COMMIT" || parts[0] == "TRAVIS_COMMIT") {
-				r.commitSHA = parts[1]
-			}
-			if len(parts) == 2 && parts[0] == "CI" && parts[1] != "" {
+			environmentVariable := parts[0]
+			value := parts[1]
+			switch environmentVariable {
+			case "CIRCLE_REPOSITORY_URL","GITHUB_REPOSITORY","BUILDKITE_REPO","TRAVIS_REPO_SLUG","CI_REPOSITORY_URL":
+				r.repoURL = value
+			case "CIRCLE_SHA1","GITHUB_SHA","BUILDKITE_COMMIT","TRAVIS_COMMIT","CI_COMMIT_SHA":
+				r.commitSHA = value
+			case "CI":
 				r.role = "CI"
 			}
 		}

@@ -36,7 +36,7 @@ Then you'll need to add a `workspace_status.sh` file to the root of your workspa
 
 ### Environment variables
 
-BuildBuddy will automatically pull your repo URL from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, or BuildKite. The environment variables currently supported are `GITHUB_REPOSITORY`, `CIRCLE_REPOSITORY_URL`, `BUILDKITE_REPO`, and `TRAVIS_REPO_SLUG`.
+BuildBuddy will automatically pull your repo URL from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, Gitlab CI, or BuildKite. The environment variables currently supported are `GITHUB_REPOSITORY`, `CIRCLE_REPOSITORY_URL`, `TRAVIS_REPO_SLUG`, `CI_REPOSITORY_URL`, and `BUILDKITE_REPO`.
 
 ## Commit SHA
 
@@ -64,7 +64,7 @@ Then you'll need to add a `workspace_status.sh` file to the root of your workspa
 
 ### Environment variables
 
-BuildBuddy will automatically pull your commit SHA from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, or BuildKite. The environment variables currently supported are `GITHUB_SHA`, `CIRCLE_SHA1`, `BUILDKITE_COMMIT`, and `TRAVIS_COMMIT`.
+BuildBuddy will automatically pull your commit SHA from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, Gitlab CI, or BuildKite. The environment variables currently supported are `GITHUB_SHA`, `CIRCLE_SHA1`, `TRAVIS_COMMIT`, `CI_COMMIT_SHA`, and `BUILDKITE_COMMIT`.
 
 ## Role
 
@@ -76,7 +76,7 @@ For CI builds, you can add the following line to your `.bazelrc` and run your CI
 build:ci --build_metadata=ROLE=CI
 ```
 
-This role will automatically be populated if the environment variable `CI` is set, which it is in most CI systems like CircleCI, BuildKite, Github Actions, Travis, and others.
+This role will automatically be populated if the environment variable `CI` is set, which it is in most CI systems like Github Actions, CircleCI, Travis, Gitlab CI, BuildKite, and others.
 
 ## Test groups
 

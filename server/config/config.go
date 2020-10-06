@@ -151,9 +151,10 @@ type APIConfig struct {
 }
 
 type GithubConfig struct {
-	ClientID     string `yaml:"client_id"`
-	ClientSecret string `yaml:"client_secret"`
-	AccessToken  string `yaml:"access_token"`
+	ClientID            string `yaml:"client_id"`
+	ClientSecret        string `yaml:"client_secret"`
+	AccessToken         string `yaml:"access_token"`
+	StatusPerTestTarget *bool  `yaml:"status_per_test_target"`
 }
 
 type OrgConfig struct {
@@ -408,8 +409,10 @@ func (c *Configurator) GetAPIConfig() *APIConfig {
 func (c *Configurator) GetGithubConfig() *GithubConfig {
 	c.rereadIfStale()
 	ghc := c.gc.Github
-	if cs := os.Getenv("BB_GITHUB_CLIENT_SECRET"); cs != "" {
-		ghc.ClientSecret = cs
+	if ghc != nil {
+		if cs := os.Getenv("BB_GITHUB_CLIENT_SECRET"); cs != "" {
+			ghc.ClientSecret = cs
+		}
 	}
 	return ghc
 }

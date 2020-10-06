@@ -169,6 +169,7 @@ func (c *DiskCache) checkSizeAndEvict(ctx context.Context, n int64) error {
 	stopDeleteCutoff := int64(cacheEvictionCutoffPercentage * float64(c.maxSizeBytes))
 
 	if newSize > c.maxSizeBytes {
+		log.Printf("Cache is currently %d bytes, going to remove items until we're below %d bytes.", *c.sizeBytes, stopDeleteCutoff)
 		for *c.sizeBytes+n > stopDeleteCutoff {
 			listElement := c.evictList.Back()
 			if listElement == nil {
@@ -179,9 +180,10 @@ func (c *DiskCache) checkSizeAndEvict(ctx context.Context, n int64) error {
 			*c.sizeBytes -= record.sizeBytes
 			delete(c.entries, record.key)
 			if err := disk.DeleteFile(ctx, record.key); err != nil {
-				return err
+				log.Printf("Error deleting file %q (already deleted?)", record.key)
 			}
 		}
+		log.Printf("Cache size is now %d bytes, unlocking.", *c.sizeBytes)
 	}
 
 	return nil
