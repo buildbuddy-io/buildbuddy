@@ -170,8 +170,8 @@ func (g *Group) TableName() string {
 }
 
 type UserGroup struct {
-	UserUserID       string `gorm:"primary_key"`
-	GroupGroupID     string `gorm:"primary_key"`
+	UserUserID   string `gorm:"primary_key"`
+	GroupGroupID string `gorm:"primary_key"`
 
 	// The user's membership status.
 	// Values correspond to `GroupMembershipStatus` enum values in `grp.proto`.
@@ -324,6 +324,19 @@ func (n *ExecutionTask) TableName() string {
 	return "ExecutionTasks"
 }
 
+type CacheLog struct {
+	Model
+	InvocationID       string `gorm:"primary_key"`
+	JoinKey            string `gorm:"primary_key"`
+	DigestHash         string
+	RemoteInstanceName string
+	SerializedProto    []byte `gorm:"size:max"`
+}
+
+func (c *CacheLog) TableName() string {
+	return "CacheLogs"
+}
+
 func ManualMigrate(db *gorm.DB) error {
 	// These types don't apply for sqlite -- just mysql.
 	if db.Dialect().GetName() == mySQLDialect {
@@ -344,4 +357,5 @@ func init() {
 	registerTable("TL", &TelemetryLog{})
 	registerTable("EN", &ExecutionNode{})
 	registerTable("ET", &ExecutionTask{})
+	registerTable("CL", &CacheLog{})
 }
