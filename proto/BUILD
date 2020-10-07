@@ -107,17 +107,10 @@ proto_library(
 proto_library(
     name = "user_proto",
     srcs = ["user.proto"],
-    exports = [":user_id_proto"],
     deps = [
         ":group_proto",
         ":user_id_proto",
     ],
-    exports = [":user_id_proto"]
-)
-
-proto_library(
-    name = "user_id_proto",
-    srcs = ["user_id.proto"],
 )
 
 proto_library(

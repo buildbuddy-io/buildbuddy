@@ -20,6 +20,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 )
 
@@ -136,6 +137,24 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 		// info should not be exposed here.
 		Name:        group.Name,
 		OwnedDomain: group.OwnedDomain,
+	}, nil
+}
+
+func (s *BuildBuddyServer) GetGroupUsers(ctx context.Context, req *grpb.GetGroupUsersRequest) (*grpb.GetGroupUsersResponse, error) {
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	if req.GetRequestContext() == nil || req.GetRequestContext().getGroupID() == "" {
+		return nil, status.InvalidArgumentError("Missing group ID in request context.")
+	}
+	users, err := userDB.GetGroupUsers(ctx, req.GetRequestContext().getGroupID(), req.GetMembershipStatus())
+	if err != nil {
+		return nil, err
+	}
+	displayUsers := make([]*uidpb.DisplayUser, 0)
+	return &grpb.GetGroupUsersResponse{
+		Users: displayUsers
 	}, nil
 }
 

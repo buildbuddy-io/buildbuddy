@@ -75,14 +75,14 @@ message GetGroupUsersRequest {
 
 message GetGroupUsersResponse {
   // Users related to the group that match the request criteria.
-  repeated DisplayUser users = 1;
+  repeated user_id.DisplayUser users = 1;
 }
 
 message UpdateGroupMembershipRequest {
   context.RequestContext request_context = 1;
 
   // The user whose membership status is to be updated.
-  user.UserId user_id = 2;
+  user_id.UserId user_id = 2;
 
   // The membership status to assign to the user in relation to the
   // group ID provided in the request context.
