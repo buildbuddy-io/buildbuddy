@@ -107,7 +107,7 @@ message ExecutionLookup {
 message GetExecutionRequest {
   context.RequestContext request_context = 1;
 
-  ExecutionLookup lookup = 2;
+  ExecutionLookup execution_lookup = 2;
 }
 
 message GetExecutionResponse {
