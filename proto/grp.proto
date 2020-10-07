@@ -82,17 +82,16 @@ message GetGroupUsersRequest {
   GroupMembershipStatus group_membership_status = 3;
 }
 
-message GroupUser {
-  user_id.DisplayUser user = 1;
-  GroupMembershipStatus group_membership_status = 2;
-}
-
 message GetGroupUsersResponse {
   context.ResponseContext response_context = 1;
 
-  // Users related to the group that match the request criteria.
-  repeated user_id.DisplayUser users = 2;
+  message GroupUser {
+    user_id.DisplayUser user = 1;
+    GroupMembershipStatus group_membership_status = 2;
+  }
 
+  // Users related to the group that match the request criteria.
+  repeated GroupUser users = 2;
 }
 
 message UpdateGroupUsersRequest {
@@ -103,7 +102,6 @@ message UpdateGroupUsersRequest {
 
   // Update applied to a user in the group.
   message Update {
-
     enum MembershipAction {
       UNKNOWN_MEMBERSHIP_ACTION = 0;
       // Add the user to the group.
