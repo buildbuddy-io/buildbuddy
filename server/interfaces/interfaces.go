@@ -172,7 +172,7 @@ type SplashPrinter interface {
 	PrintSplashScreen(port, grpcPort int)
 }
 
-type ExecutionService interface {
+type RemoteExecutionService interface {
 	Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error
 	WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error
 	PublishOperation(stream repb.Execution_PublishOperationServer) error

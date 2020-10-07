@@ -49,11 +49,11 @@ type Env interface {
 	GetActionCacheClient() repb.ActionCacheClient
 	GetByteStreamClient() bspb.ByteStreamClient
 	GetSchedulerClient() scpb.SchedulerClient
-	GetExecutionClient() repb.ExecutionClient
+	GetRemoteExecutionClient() repb.ExecutionClient
 	GetContentAddressableStorageClient() repb.ContentAddressableStorageClient
 	GetAPIService() interfaces.ApiService
 	GetFileCache() interfaces.FileCache
-	GetExecutionService() interfaces.ExecutionService
+	GetRemoteExecutionService() interfaces.RemoteExecutionService
 	GetSchedulerService() interfaces.SchedulerService
 	GetPubSub() interfaces.PubSub
 	GetCounter() interfaces.Counter

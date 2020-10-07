@@ -49,12 +49,12 @@ type RealEnv struct {
 	actionCacheClient               repb.ActionCacheClient
 	byteStreamClient                bspb.ByteStreamClient
 	schedulerClient                 scpb.SchedulerClient
-	executionClient                 repb.ExecutionClient
+	remoteExecutionClient           repb.ExecutionClient
 	contentAddressableStorageClient repb.ContentAddressableStorageClient
 	executionClients                map[string]*executionClientConfig
 	APIService                      interfaces.ApiService
 	fileCache                       interfaces.FileCache
-	executionService                interfaces.ExecutionService
+	remoteExecutionService          interfaces.RemoteExecutionService
 	schedulerService                interfaces.SchedulerService
 	pubSub                          interfaces.PubSub
 	counter                         interfaces.Counter
@@ -184,11 +184,11 @@ func (r *RealEnv) GetSchedulerClient() scpb.SchedulerClient {
 	return r.schedulerClient
 }
 
-func (r *RealEnv) SetExecutionClient(e repb.ExecutionClient) {
-	r.executionClient = e
+func (r *RealEnv) SetRemoteExecutionClient(e repb.ExecutionClient) {
+	r.remoteExecutionClient = e
 }
-func (r *RealEnv) GetExecutionClient() repb.ExecutionClient {
-	return r.executionClient
+func (r *RealEnv) GetRemoteExecutionClient() repb.ExecutionClient {
+	return r.remoteExecutionClient
 }
 
 func (r *RealEnv) SetContentAddressableStorageClient(c repb.ContentAddressableStorageClient) {
@@ -210,11 +210,11 @@ func (r *RealEnv) SetFileCache(s interfaces.FileCache) {
 func (r *RealEnv) GetFileCache() interfaces.FileCache {
 	return r.fileCache
 }
-func (r *RealEnv) SetExecutionService(e interfaces.ExecutionService) {
-	r.executionService = e
+func (r *RealEnv) SetRemoteExecutionService(e interfaces.RemoteExecutionService) {
+	r.remoteExecutionService = e
 }
-func (r *RealEnv) GetExecutionService() interfaces.ExecutionService {
-	return r.executionService
+func (r *RealEnv) GetRemoteExecutionService() interfaces.RemoteExecutionService {
+	return r.remoteExecutionService
 }
 func (r *RealEnv) SetSchedulerService(s interfaces.SchedulerService) {
 	r.schedulerService = s

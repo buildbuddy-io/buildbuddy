@@ -185,7 +185,7 @@ func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) 
 
 	}
 	enableRemoteExec := false
-	if rexec := env.GetExecutionService(); rexec != nil {
+	if rexec := env.GetRemoteExecutionService(); rexec != nil {
 		enableRemoteExec = true
 		repb.RegisterExecutionServer(grpcServer, rexec)
 	}
