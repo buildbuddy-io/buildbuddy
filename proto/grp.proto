@@ -32,14 +32,20 @@ message Group {
 }
 
 message JoinGroupRequest {
+  // TODO: Add request_context
+
   // The unique ID of this group.
   // Ex. "GR4576963743584254779"
   string id = 1;
 }
 
-message JoinGroupResponse {}
+message JoinGroupResponse {
+  // TODO: Add response_context
+}
 
 message GetGroupRequest {
+  // TODO: Add request_context
+
   // The unique URL segment for this group which is used
   // to construct nice-looking URLs for this group, such as
   // https://app.buildbuddy.com/join/:url-identifier
@@ -51,6 +57,8 @@ message GetGroupRequest {
 }
 
 message GetGroupResponse {
+  // TODO: Add response_context
+
   // The unique ID of the group.
   // Ex. "GR4576963743584254779"
   string id = 1;
@@ -65,41 +73,60 @@ message GetGroupResponse {
 }
 
 message GetGroupUsersRequest {
-  // Request context.
-  // This contains the group ID to get the users for.
   context.RequestContext request_context = 1;
 
+  // The ID of the group to get the users from.
+  string group_id = 2;
+
   // Membership status filter (optional).
-  GroupMembershipStatus membership_status = 2;
+  GroupMembershipStatus group_membership_status = 3;
+}
+
+message GroupUser {
+  user_id.DisplayUser user = 1;
+  GroupMembershipStatus group_membership_status = 2;
 }
 
 message GetGroupUsersResponse {
+  context.ResponseContext response_context = 1;
+
   // Users related to the group that match the request criteria.
-  repeated user_id.DisplayUser users = 1;
+  repeated user_id.DisplayUser users = 2;
+
 }
 
 message UpdateGroupUsersRequest {
   context.RequestContext request_context = 1;
 
-  // IDs of users whose membership should be updated.
-  repeated user_id.UserId user_ids = 2;
+  // The ID of the group to update.
+  string group_id = 2;
 
-  // The membership update to apply to the users in relation to the
-  // group ID provided in the request context.
-  GroupMembershipUpdate update = 3;
+  // Update applied to a user in the group.
+  message Update {
+
+    enum MembershipAction {
+      UNKNOWN_MEMBERSHIP_ACTION = 0;
+      // Add the user to the group.
+      ADD = 1;
+      // Remove the user from the group as well as any pending membership requests.
+      REMOVE = 2;
+    }
+
+    user_id.UserId user_id = 1;
+    MembershipAction membership_action = 2;
+  }
+
+  // Updates to apply to group users.
+  repeated Update updates = 3;
 }
 
-enum GroupMembershipUpdate {
-  UNKNOWN_MEMBERSHIP_UPDATE = 0;
-  // Add the user to the group.
-  ADD = 1;
-  // Remove the user from the group as well as any pending membership requests.
-  REMOVE = 2;
+message UpdateGroupUsersResponse {
+  context.ResponseContext response_context = 1;
 }
-
-message UpdateGroupUsersResponse {}
 
 message CreateGroupRequest {
+  // TODO: Add request_context
+
   // The name of this group (may be displayed to users).
   // Ex. "Tyler Williams Group"
   string name = 1;
@@ -120,12 +147,16 @@ message CreateGroupRequest {
 }
 
 message CreateGroupResponse {
+  // TODO: Add response_context
+
   // ID of the created group.
   // Ex. "GR4576963743584254779"
   string id = 1;
 }
 
 message UpdateGroupRequest {
+  // TODO: Add request_context
+
   // The ID of the group to be updated.
   string id = 1;
 
@@ -148,7 +179,9 @@ message UpdateGroupRequest {
   string url_identifier = 4;
 }
 
-message UpdateGroupResponse {}
+message UpdateGroupResponse {
+  // TODO: Add response_context
+}
 
 enum GroupMembershipStatus {
   UNKNOWN_MEMBERSHIP_STATUS = 0;
