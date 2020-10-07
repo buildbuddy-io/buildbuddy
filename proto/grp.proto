@@ -95,14 +95,6 @@ message GetGroupUsersResponse {
 
 }
 
-enum GroupMembershipAction {
-  UNKNOWN_MEMBERSHIP_ACTION = 0;
-  // Add the user to the group.
-  ADD = 1;
-  // Remove the user from the group as well as any pending membership requests.
-  REMOVE = 2;
-}
-
 message UpdateGroupUsersRequest {
   context.RequestContext request_context = 1;
 
@@ -110,13 +102,22 @@ message UpdateGroupUsersRequest {
   string group_id = 2;
 
   // Update applied to a user in the group.
-  message MembershipUpdate {
+  message Update {
+
+    enum MembershipAction {
+      UNKNOWN_MEMBERSHIP_ACTION = 0;
+      // Add the user to the group.
+      ADD = 1;
+      // Remove the user from the group as well as any pending membership requests.
+      REMOVE = 2;
+    }
+
     user_id.UserId user_id = 1;
-    GroupMembershipAction action = 2;
+    MembershipAction action = 2;
   }
 
   // Updates to apply to group users.
-  repeated MembershipUpdate membership_updates = 3;
+  repeated Update updates = 3;
 }
 
 message UpdateGroupUsersResponse {
