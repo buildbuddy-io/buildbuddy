@@ -2,8 +2,6 @@ package invocationdb
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -63,54 +61,11 @@ func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.
 	})
 }
 
-func (d *InvocationDB) addPermissionsCheckToQuery(ctx context.Context, q *query_builder.Query) error {
-	o := query_builder.OrClauses{}
-	o.AddOr("(i.perms & ? != 0)", perms.OTHERS_READ)
-
-	hasUser := false
-	if auth := d.env.GetAuthenticator(); auth != nil {
-		if u, err := auth.AuthenticatedUser(ctx); err == nil {
-			hasUser = true
-			if u.GetGroupID() != "" {
-				groupArgs := []interface{}{
-					perms.GROUP_READ,
-					u.GetGroupID(),
-				}
-				o.AddOr("(i.perms & ? != 0 AND i.group_id = ?)", groupArgs...)
-			} else if u.GetUserID() != "" {
-				groupArgs := []interface{}{
-					perms.GROUP_READ,
-				}
-				groupParams := make([]string, 0)
-				for _, groupID := range u.GetAllowedGroups() {
-					groupArgs = append(groupArgs, groupID)
-					groupParams = append(groupParams, "?")
-				}
-				groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
-				groupQueryStr := fmt.Sprintf("(i.perms & ? != 0 AND i.group_id IN %s)", groupParamString)
-				o.AddOr(groupQueryStr, groupArgs...)
-				o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", perms.OWNER_READ, u.GetUserID())
-			}
-			if u.IsAdmin() {
-				o.AddOr("(i.perms & ? != 0)", perms.ALL)
-			}
-		}
-	}
-
-	if !hasUser && !d.env.GetConfigurator().GetAnonymousUsageEnabled() {
-		return status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
-	}
-
-	orQuery, orArgs := o.Build()
-	q = q.AddWhereClause("("+orQuery+")", orArgs...)
-	return nil
-}
-
 func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error) {
 	ti := &tables.Invocation{}
 	q := query_builder.NewQuery(`SELECT * FROM Invocations as i`)
 	q = q.AddWhereClause(`i.invocation_id = ?`, invocationID)
-	if err := d.addPermissionsCheckToQuery(ctx, q); err != nil {
+	if err := perms.AddPermissionsCheckToQuery(ctx, d.env, q); err != nil {
 		return nil, err
 	}
 	queryStr, args := q.Build()
@@ -125,7 +80,7 @@ func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocation
 	ti := &tables.Group{}
 	q := query_builder.NewQuery(`SELECT * FROM Groups as g JOIN Invocations as i ON g.group_id = i.group_id`)
 	q = q.AddWhereClause(`i.invocation_id = ?`, invocationID)
-	if err := d.addPermissionsCheckToQuery(ctx, q); err != nil {
+	if err := perms.AddPermissionsCheckToQuery(ctx, d.env, q); err != nil {
 		return nil, err
 	}
 	queryStr, args := q.Build()

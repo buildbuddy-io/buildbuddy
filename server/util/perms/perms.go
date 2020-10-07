@@ -1,5 +1,15 @@
 package perms
 
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+)
+
 const (
 	NONE         = 0o0
 	OWNER_READ   = 0o0400
@@ -34,4 +44,47 @@ func GroupAuthPermissions(groupID string) *UserGroupPerm {
 		GroupID: groupID,
 		Perms:   GROUP_READ | GROUP_WRITE,
 	}
+}
+
+func AddPermissionsCheckToQuery(ctx context.Context, env environment.Env, q *query_builder.Query) error {
+	o := query_builder.OrClauses{}
+	o.AddOr("(i.perms & ? != 0)", OTHERS_READ)
+
+	hasUser := false
+	if auth := env.GetAuthenticator(); auth != nil {
+		if u, err := auth.AuthenticatedUser(ctx); err == nil {
+			hasUser = true
+			if u.GetGroupID() != "" {
+				groupArgs := []interface{}{
+					GROUP_READ,
+					u.GetGroupID(),
+				}
+				o.AddOr("(i.perms & ? != 0 AND i.group_id = ?)", groupArgs...)
+			} else if u.GetUserID() != "" {
+				groupArgs := []interface{}{
+					GROUP_READ,
+				}
+				groupParams := make([]string, 0)
+				for _, groupID := range u.GetAllowedGroups() {
+					groupArgs = append(groupArgs, groupID)
+					groupParams = append(groupParams, "?")
+				}
+				groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
+				groupQueryStr := fmt.Sprintf("(i.perms & ? != 0 AND i.group_id IN %s)", groupParamString)
+				o.AddOr(groupQueryStr, groupArgs...)
+				o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", OWNER_READ, u.GetUserID())
+			}
+			if u.IsAdmin() {
+				o.AddOr("(i.perms & ? != 0)", ALL)
+			}
+		}
+	}
+
+	if !hasUser && !env.GetConfigurator().GetAnonymousUsageEnabled() {
+		return status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+	}
+
+	orQuery, orArgs := o.Build()
+	q = q.AddWhereClause("("+orQuery+")", orArgs...)
+	return nil
 }
