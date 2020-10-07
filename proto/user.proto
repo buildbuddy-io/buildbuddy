@@ -5,10 +5,10 @@ import "proto/user_id.proto";
 
 package user;
 
-message GetUserRequest { UserId user_id = 1; }
+message GetUserRequest { user_id.UserId user_id = 1; }
 
 message GetUserResponse {
-  DisplayUser display_user = 1;
+  user_id.DisplayUser display_user = 1;
 
   // The groups this user is a member of.
   repeated grp.Group user_group = 2;
@@ -21,4 +21,4 @@ message CreateUserRequest {
   // from the authentication provider response.
 }
 
-message CreateUserResponse { DisplayUser display_user = 1; }
+message CreateUserResponse { user_id.DisplayUser display_user = 1; }

@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package user;
+package user_id;
 
 message UserId {
   // The user's ID according to BuildBuddy.
