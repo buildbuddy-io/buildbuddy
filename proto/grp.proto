@@ -113,7 +113,7 @@ message UpdateGroupUsersRequest {
     }
 
     user_id.UserId user_id = 1;
-    MembershipAction action = 2;
+    MembershipAction membership_action = 2;
   }
 
   // Updates to apply to group users.
