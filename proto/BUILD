@@ -106,13 +106,17 @@ proto_library(
 
 proto_library(
     name = "user_proto",
-    srcs = [
-        "user.proto",
-        "user_id.proto",
-    ],
+    srcs = ["user.proto"],
     deps = [
+        ":user_id_proto",
         ":group_proto",
     ],
+    exports = [":user_id_proto"]
+)
+
+proto_library(
+    name = "user_id_proto",
+    srcs = ["user_id.proto"],
 )
 
 proto_library(
@@ -127,7 +131,7 @@ proto_library(
     name = "context_proto",
     srcs = ["context.proto"],
     deps = [
-        "user_proto",
+        ":user_id_proto",
     ],
 )
 
@@ -305,11 +309,18 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "user_id_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/user_id",
+    proto = ":user_id_proto",
+)
+
+go_proto_library(
     name = "user_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/user",
     proto = ":user_proto",
     deps = [
         ":group_go_proto",
+        ":user_id_go_proto",
     ],
 )
 
@@ -330,7 +341,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/context",
     proto = ":context_proto",
     deps = [
-        ":user_go_proto",
+        ":user_id_go_proto",
     ],
 )
 
@@ -422,6 +433,11 @@ ts_proto_library(
 ts_proto_library(
     name = "cache_ts_proto",
     deps = [":cache_proto"],
+)
+
+ts_proto_library(
+    name = "user_id_ts_proto",
+    deps = [":user_id_proto"],
 )
 
 ts_proto_library(
