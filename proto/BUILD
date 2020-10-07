@@ -136,6 +136,7 @@ proto_library(
     srcs = ["buildbuddy_service.proto"],
     deps = [
         ":bazel_config_proto",
+        ":execution_stats_proto",
         ":group_proto",
         ":invocation_proto",
         ":user_proto",
@@ -290,6 +291,7 @@ go_proto_library(
     proto = ":buildbuddy_service_proto",
     deps = [
         ":bazel_config_go_proto",
+        ":execution_stats_go_proto",
         ":group_go_proto",
         ":invocation_go_proto",
         ":user_go_proto",

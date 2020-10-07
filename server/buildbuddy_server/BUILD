@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:bazel_config_go_proto",
+        "//proto:execution_stats_go_proto",
         "//proto:group_go_proto",
         "//proto:invocation_go_proto",
         "//proto:user_go_proto",

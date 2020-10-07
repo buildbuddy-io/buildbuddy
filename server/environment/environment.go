@@ -44,6 +44,7 @@ type Env interface {
 	GetUserDB() interfaces.UserDB
 	GetAuthDB() interfaces.AuthDB
 	GetInvocationStatService() interfaces.InvocationStatService
+	GetExecutionService() interfaces.ExecutionService
 	GetInvocationSearchService() interfaces.InvocationSearchService
 	GetSplashPrinter() interfaces.SplashPrinter
 	GetActionCacheClient() repb.ActionCacheClient

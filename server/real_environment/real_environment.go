@@ -58,6 +58,7 @@ type RealEnv struct {
 	schedulerService                interfaces.SchedulerService
 	pubSub                          interfaces.PubSub
 	counter                         interfaces.Counter
+	executionService                interfaces.ExecutionService
 }
 
 func NewRealEnv(c *config.Configurator, h *healthcheck.HealthChecker) *RealEnv {
@@ -233,4 +234,10 @@ func (r *RealEnv) SetCounter(c interfaces.Counter) {
 }
 func (r *RealEnv) GetCounter() interfaces.Counter {
 	return r.counter
+}
+func (r *RealEnv) SetExecutionService(e interfaces.ExecutionService) {
+	r.executionService = e
+}
+func (r *RealEnv) GetExecutionService() interfaces.ExecutionService {
+	return r.executionService
 }

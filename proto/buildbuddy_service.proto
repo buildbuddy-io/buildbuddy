@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/bazel_config.proto";
+import "proto/execution_stats.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
 import "proto/user.proto";
@@ -8,27 +9,29 @@ import "proto/user.proto";
 package buildbuddy.service;
 
 service BuildBuddyService {
+  // Invocation API
   rpc GetInvocation(invocation.GetInvocationRequest)
       returns (invocation.GetInvocationResponse);
-
   rpc SearchInvocation(invocation.SearchInvocationRequest)
       returns (invocation.SearchInvocationResponse);
-
-  rpc CreateUser(user.CreateUserRequest) returns (user.CreateUserResponse);
-
-  rpc GetUser(user.GetUserRequest) returns (user.GetUserResponse);
-
-  rpc GetBazelConfig(bazel_config.GetBazelConfigRequest)
-      returns (bazel_config.GetBazelConfigResponse);
-
   rpc GetInvocationStat(invocation.GetInvocationStatRequest)
       returns (invocation.GetInvocationStatResponse);
 
+  // Bazel Config API
+  rpc GetBazelConfig(bazel_config.GetBazelConfigRequest)
+      returns (bazel_config.GetBazelConfigResponse);
+
+  // User API
+  rpc CreateUser(user.CreateUserRequest) returns (user.CreateUserResponse);
+  rpc GetUser(user.GetUserRequest) returns (user.GetUserResponse);
+
+  // Groups API
   rpc GetGroup(grp.GetGroupRequest) returns (grp.GetGroupResponse);
-
   rpc JoinGroup(grp.JoinGroupRequest) returns (grp.JoinGroupResponse);
-
   rpc CreateGroup(grp.CreateGroupRequest) returns (grp.CreateGroupResponse);
-
   rpc UpdateGroup(grp.UpdateGroupRequest) returns (grp.UpdateGroupResponse);
+
+  // Execution API
+  rpc GetExecution(execution_stats.GetExecutionRequest)
+      returns (execution_stats.GetExecutionResponse);
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
@@ -360,6 +361,13 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 func (s *BuildBuddyServer) GetInvocationStat(ctx context.Context, req *inpb.GetInvocationStatRequest) (*inpb.GetInvocationStatResponse, error) {
 	if iss := s.env.GetInvocationStatService(); iss != nil {
 		return iss.GetInvocationStat(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error) {
+	if es := s.env.GetExecutionService(); es != nil {
+		return es.GetExecution(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
