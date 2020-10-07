@@ -190,6 +190,13 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 			InvocationID:     iid,
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
 		}
+
+		if auth := e.env.GetAuthenticator(); auth != nil {
+			if apiKey := auth.ParseAPIKeyFromString(extractOptionsFromBuildEvent(bazelBuildEvent)); apiKey != "" {
+				ctx = auth.AuthContextFromAPIKey(ctx, apiKey)
+			}
+		}
+
 		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 			return err
 		}
@@ -215,6 +222,14 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 		return e.pw.Flush(ctx)
 	}
 	return nil
+}
+
+func extractOptionsFromBuildEvent(event build_event_stream.BuildEvent) string {
+	switch p := event.Payload.(type) {
+	case *build_event_stream.BuildEvent_Started:
+		return p.Started.GetOptionsDescription
+	}
+	return ""
 }
 
 func OpenChannel(env environment.Env, ctx context.Context, iid string) *EventChannel {
