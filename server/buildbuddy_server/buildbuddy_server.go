@@ -161,7 +161,7 @@ func (s *BuildBuddyServer) GetGroupUsers(ctx context.Context, req *grpb.GetGroup
 	}, nil
 }
 
-func (s *BuildBuddyServer) UpdateGroupMembership(ctx context.Context, req *grpb.UpdateGroupMembershipRequest) (*grpb.UpdateGroupMembershipResponse, error) {
+func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.UpdateGroupUsersRequest) (*grpb.UpdateGroupUsersResponse, error) {
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
@@ -169,10 +169,10 @@ func (s *BuildBuddyServer) UpdateGroupMembership(ctx context.Context, req *grpb.
 	if req.GetRequestContext() == nil || req.GetRequestContext().GetGroupId() == "" {
 		return nil, status.InvalidArgumentError("Missing group ID in request context.")
 	}
-	if err := userDB.UpdateGroupMembership(ctx, req.GetUserId().GetId(), req.GetRequestContext().GetGroupId(), req.GetMembershipStatus()); err != nil {
+	if err := userDB.UpdateGroupUsers(ctx, req.GetUserId().GetId(), req.GetRequestContext().GetGroupId(), req.GetMembershipStatus()); err != nil {
 		return nil, err
 	}
-	return &grpb.UpdateGroupMembershipResponse{}, nil
+	return &grpb.UpdateGroupUsersResponse{}, nil
 }
 
 func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGroupRequest) (*grpb.CreateGroupResponse, error) {
