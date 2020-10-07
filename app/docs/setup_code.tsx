@@ -106,6 +106,10 @@ export default class SetupCodeComponent extends React.Component {
     return "";
   }
 
+  getRemoteOptions() {
+    return <span>build --remote_timeout=3600</span>;
+  }
+
   getRemoteExecution(otherFile?: boolean) {
     let url = this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_executor")?.body;
     return this.state.auth == "key" && (!this.state.separateAuth || (this.state.separateAuth && otherFile))
@@ -287,6 +291,7 @@ export default class SetupCodeComponent extends React.Component {
             <div>{this.getEventStream()}</div>
             {this.state.cacheChecked && <div>{this.getCache()}</div>}
             {this.state.cacheChecked && <div>{this.getCacheOptions()}</div>}
+            {(this.state.cacheChecked || this.state.executionChecked) && <div>{this.getRemoteOptions()}</div>}
             {this.state.executionChecked && <div>{this.getRemoteExecution()}</div>}
             {this.state.auth == "cert" && !this.state.separateAuth && <div>{this.getCredentials()}</div>}
           </div>
