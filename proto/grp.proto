@@ -150,14 +150,6 @@ message UpdateGroupRequest {
 
 message UpdateGroupResponse {}
 
-enum GroupMembershipUpdate {
-  UNKNOWN_MEMBERSHIP_UPDATE = 0;
-  // Add the user to the group.
-  ADD = 1;
-  // Remove the user from the group as well as any pending membership requests.
-  REMOVE = 2;
-}
-
 enum GroupMembershipStatus {
   UNKNOWN_MEMBERSHIP_STATUS = 0;
   // The user is a member of the group.
