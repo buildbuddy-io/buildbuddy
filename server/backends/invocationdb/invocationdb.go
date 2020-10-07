@@ -65,7 +65,7 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 	ti := &tables.Invocation{}
 	q := query_builder.NewQuery(`SELECT * FROM Invocations as i`)
 	q = q.AddWhereClause(`i.invocation_id = ?`, invocationID)
-	if err := perms.AddPermissionsCheckToQuery(ctx, d.env, q); err != nil {
+	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, d.env, q, "i"); err != nil {
 		return nil, err
 	}
 	queryStr, args := q.Build()
@@ -80,7 +80,7 @@ func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocation
 	ti := &tables.Group{}
 	q := query_builder.NewQuery(`SELECT * FROM Groups as g JOIN Invocations as i ON g.group_id = i.group_id`)
 	q = q.AddWhereClause(`i.invocation_id = ?`, invocationID)
-	if err := perms.AddPermissionsCheckToQuery(ctx, d.env, q); err != nil {
+	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, d.env, q, "i"); err != nil {
 		return nil, err
 	}
 	queryStr, args := q.Build()

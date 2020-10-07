@@ -47,8 +47,16 @@ func GroupAuthPermissions(groupID string) *UserGroupPerm {
 }
 
 func AddPermissionsCheckToQuery(ctx context.Context, env environment.Env, q *query_builder.Query) error {
+	return AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "")
+}
+
+func AddPermissionsCheckToQueryWithTableAlias(ctx context.Context, env environment.Env, q *query_builder.Query, tableAlias string) error {
+	tablePrefix := ""
+	if tableAlias != "" {
+		tablePrefix = tableAlias + "."
+	}
 	o := query_builder.OrClauses{}
-	o.AddOr("(i.perms & ? != 0)", OTHERS_READ)
+	o.AddOr(fmt.Sprintf("(%sperms & ? != 0)", tablePrefix), OTHERS_READ)
 
 	hasUser := false
 	if auth := env.GetAuthenticator(); auth != nil {
@@ -59,7 +67,7 @@ func AddPermissionsCheckToQuery(ctx context.Context, env environment.Env, q *que
 					GROUP_READ,
 					u.GetGroupID(),
 				}
-				o.AddOr("(i.perms & ? != 0 AND i.group_id = ?)", groupArgs...)
+				o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id = ?)", tablePrefix, tablePrefix), groupArgs...)
 			} else if u.GetUserID() != "" {
 				groupArgs := []interface{}{
 					GROUP_READ,
@@ -70,12 +78,12 @@ func AddPermissionsCheckToQuery(ctx context.Context, env environment.Env, q *que
 					groupParams = append(groupParams, "?")
 				}
 				groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
-				groupQueryStr := fmt.Sprintf("(i.perms & ? != 0 AND i.group_id IN %s)", groupParamString)
+				groupQueryStr := fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id IN %s)", tablePrefix, tablePrefix, groupParamString)
 				o.AddOr(groupQueryStr, groupArgs...)
-				o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", OWNER_READ, u.GetUserID())
+				o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %suser_id = ?)", tablePrefix, tablePrefix), OWNER_READ, u.GetUserID())
 			}
 			if u.IsAdmin() {
-				o.AddOr("(i.perms & ? != 0)", ALL)
+				o.AddOr(fmt.Sprintf("(%sperms & ? != 0)", tablePrefix), ALL)
 			}
 		}
 	}
