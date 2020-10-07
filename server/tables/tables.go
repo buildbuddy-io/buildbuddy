@@ -240,7 +240,11 @@ type Execution struct {
 	Model
 	// The subscriber ID, a concatenated string of the
 	// auth Issuer ID and the subcriber ID string.
-	ExecutionID         string `gorm:"primary_key"`
+	ExecutionID string `gorm:"primary_key"`
+	UserID      string `gorm:"index:user_id"`
+	GroupID     string `gorm:"index:group_id"`
+	Perms       int    `gorm:"index:perms"`
+
 	Stage               int64
 	SerializedOperation []byte `gorm:"size:max"` // deprecated.
 	StatusCode          int32

@@ -82,11 +82,19 @@ message UpdateGroupUsersRequest {
   context.RequestContext request_context = 1;
 
   // IDs of users whose membership should be updated.
-  repeated user_id.UserId user_id = 2;
+  repeated user_id.UserId user_ids = 2;
 
   // The membership update to apply to the users in relation to the
   // group ID provided in the request context.
   GroupMembershipUpdate update = 3;
+}
+
+enum GroupMembershipUpdate {
+  UNKNOWN_MEMBERSHIP_UPDATE = 0;
+  // Add the user to the group.
+  ADD = 1;
+  // Remove the user from the group as well as any pending membership requests.
+  REMOVE = 2;
 }
 
 message UpdateGroupUsersResponse {}
