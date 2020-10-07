@@ -145,17 +145,34 @@ func (s *BuildBuddyServer) GetGroupUsers(ctx context.Context, req *grpb.GetGroup
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	if req.GetRequestContext() == nil || req.GetRequestContext().getGroupID() == "" {
+	if req.GetRequestContext() == nil || req.GetRequestContext().GetGroupId() == "" {
 		return nil, status.InvalidArgumentError("Missing group ID in request context.")
 	}
-	users, err := userDB.GetGroupUsers(ctx, req.GetRequestContext().getGroupID(), req.GetMembershipStatus())
+	users, err := userDB.GetGroupUsers(ctx, req.GetRequestContext().GetGroupId(), req.GetMembershipStatus())
 	if err != nil {
 		return nil, err
 	}
 	displayUsers := make([]*uidpb.DisplayUser, 0)
+	for _, user := range users {
+		displayUsers = append(displayUsers, user.ToProto())
+	}
 	return &grpb.GetGroupUsersResponse{
-		Users: displayUsers
+		Users: displayUsers,
 	}, nil
+}
+
+func (s *BuildBuddyServer) UpdateGroupMembership(ctx context.Context, req *grpb.UpdateGroupMembershipRequest) (*grpb.UpdateGroupMembershipResponse, error) {
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	if req.GetRequestContext() == nil || req.GetRequestContext().GetGroupId() == "" {
+		return nil, status.InvalidArgumentError("Missing group ID in request context.")
+	}
+	if err := userDB.UpdateGroupMembership(ctx, req.GetUserId().GetId(), req.GetRequestContext().GetGroupId(), req.GetMembershipStatus()); err != nil {
+		return nil, err
+	}
+	return &grpb.UpdateGroupMembershipResponse{}, nil
 }
 
 func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGroupRequest) (*grpb.CreateGroupResponse, error) {

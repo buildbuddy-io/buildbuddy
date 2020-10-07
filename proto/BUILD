@@ -107,6 +107,7 @@ proto_library(
 proto_library(
     name = "user_proto",
     srcs = ["user.proto"],
+    exports = [":user_id_proto"],
     deps = [
         ":group_proto",
         ":user_id_proto",
@@ -120,7 +121,9 @@ proto_library(
 
 proto_library(
     name = "group_proto",
-    srcs = ["grp.proto"],
+    srcs = [
+        "grp.proto",
+    ],
     deps = [
         ":context_proto",
         ":user_id_proto",
@@ -328,6 +331,10 @@ go_proto_library(
     name = "group_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/group",
     proto = ":group_proto",
+    deps = [
+        ":context_go_proto",
+        ":user_id_go_proto",
+    ],
 )
 
 go_proto_library(

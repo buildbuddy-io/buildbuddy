@@ -10,6 +10,7 @@ import (
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -145,7 +146,9 @@ type UserDB interface {
 	GetAuthGroup(ctx context.Context) (*tables.Group, error)
 	DeleteGroup(ctx context.Context, groupID string) error
 	AddUserToGroup(ctx context.Context, userID string, groupID string) error
+	UpdateGroupMembership(ctx context.Context, userID string, groupID string, status grpb.GroupMembershipStatus) error
 	RequestToJoinGroup(ctx context.Context, userID string, groupID string) error
+	GetGroupUsers(ctx context.Context, groupID string, status grpb.GroupMembershipStatus) ([]*tables.User, error)
 }
 
 // A webhook can be called when a build is completed.

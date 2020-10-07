@@ -78,20 +78,18 @@ message GetGroupUsersResponse {
   repeated user_id.DisplayUser users = 1;
 }
 
-message UpdateGroupMembershipRequest {
+message UpdateGroupUsersRequest {
   context.RequestContext request_context = 1;
 
-  // The user whose membership status is to be updated.
-  user_id.UserId user_id = 2;
+  // IDs of users whose membership should be updated.
+  repeated user_id.UserId user_id = 2;
 
-  // The membership status to assign to the user in relation to the
+  // The membership update to apply to the users in relation to the
   // group ID provided in the request context.
-  // If set to UNKNOWN_MEMBERSHIP_STATUS, the user is removed from the
-  // group, and any membership requests are also deleted.
-  GroupMembershipStatus membership_status = 3;
+  GroupMembershipUpdate update = 3;
 }
 
-message UpdateGroupMembershipResponse {}
+message UpdateGroupUsersResponse {}
 
 message CreateGroupRequest {
   // The name of this group (may be displayed to users).
@@ -143,6 +141,14 @@ message UpdateGroupRequest {
 }
 
 message UpdateGroupResponse {}
+
+enum GroupMembershipUpdate {
+  UNKNOWN_MEMBERSHIP_UPDATE = 0;
+  // Add the user to the group.
+  ADD = 1;
+  // Remove the user from the group as well as any pending membership requests.
+  REMOVE = 2;
+}
 
 enum GroupMembershipStatus {
   UNKNOWN_MEMBERSHIP_STATUS = 0;
