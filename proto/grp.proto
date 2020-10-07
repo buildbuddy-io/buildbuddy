@@ -82,7 +82,7 @@ message UpdateGroupUsersRequest {
   context.RequestContext request_context = 1;
 
   // IDs of users whose membership should be updated.
-  repeated user_id.UserId user_id = 2;
+  repeated user_id.UserId user_ids = 2;
 
   // The membership update to apply to the users in relation to the
   // group ID provided in the request context.
