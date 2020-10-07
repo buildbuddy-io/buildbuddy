@@ -106,28 +106,33 @@ proto_library(
 
 proto_library(
     name = "user_proto",
-    srcs = [
-        "user.proto",
-        "user_id.proto",
-    ],
+    srcs = ["user.proto"],
     deps = [
+        ":user_id_proto",
         ":group_proto",
     ],
+    exports = [":user_id_proto"]
+)
+
+proto_library(
+    name = "user_id_proto",
+    srcs = ["user_id.proto"],
 )
 
 proto_library(
     name = "group_proto",
-    srcs = [
-        "grp.proto",
+    srcs = ["grp.proto"],
+    deps = [
+        ":context_proto",
+        ":user_id_proto",
     ],
-    deps = [],
 )
 
 proto_library(
     name = "context_proto",
     srcs = ["context.proto"],
     deps = [
-        "user_proto",
+        ":user_proto",
     ],
 )
 

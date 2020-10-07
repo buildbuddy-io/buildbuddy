@@ -1,5 +1,8 @@
 syntax = "proto3";
 
+import "proto/context.proto";
+import "proto/user_id.proto";
+
 package grp;
 
 message Group {
@@ -60,6 +63,35 @@ message GetGroupResponse {
   // Ex. "iterationinc.com"
   string owned_domain = 3;
 }
+
+message GetGroupUsersRequest {
+  // Request context.
+  // This contains the group ID to get the users for.
+  context.RequestContext request_context = 1;
+
+  // Membership status filter (optional).
+  GroupMembershipStatus membership_status = 2;
+}
+
+message GetGroupUsersResponse {
+  // Users related to the group that match the request criteria.
+  repeated DisplayUser users = 1;
+}
+
+message UpdateGroupMembershipRequest {
+  context.RequestContext request_context = 1;
+
+  // The user whose membership status is to be updated.
+  user.UserId user_id = 2;
+
+  // The membership status to assign to the user in relation to the
+  // group ID provided in the request context.
+  // If set to UNKNOWN_MEMBERSHIP_STATUS, the user is removed from the
+  // group, and any membership requests are also deleted.
+  GroupMembershipStatus membership_status = 3;
+}
+
+message UpdateGroupMembershipResponse {}
 
 message CreateGroupRequest {
   // The name of this group (may be displayed to users).
