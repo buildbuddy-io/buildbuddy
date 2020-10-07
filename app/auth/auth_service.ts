@@ -1,14 +1,15 @@
 import { Subject } from "rxjs";
-import rpcService from "../service/rpc_service";
-import { user } from "../../proto/user_ts_proto";
-import { grp } from "../../proto/group_ts_proto";
 import { context } from "../../proto/context_ts_proto";
+import { grp } from "../../proto/group_ts_proto";
+import { user_id } from "../../proto/user_id_ts_proto";
+import { user } from "../../proto/user_ts_proto";
 import capabilities from "../capabilities/capabilities";
+import rpcService from "../service/rpc_service";
 
 const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
 
 export class User {
-  displayUser: user.DisplayUser;
+  displayUser: user_id.DisplayUser;
   groups: grp.Group[];
   selectedGroup: grp.Group;
 
@@ -71,7 +72,7 @@ export class AuthService {
 
   userFromResponse(response: user.GetUserResponse) {
     let user = new User();
-    user.displayUser = response.displayUser as user.DisplayUser;
+    user.displayUser = response.displayUser as user_id.DisplayUser;
     user.groups = response.userGroup as grp.Group[];
     let selectedGroupId = window.localStorage.getItem(SELECTED_GROUP_ID_LOCAL_STORAGE_KEY);
     if (user.groups.length > 0) {
@@ -94,7 +95,7 @@ export class AuthService {
     let match = document.cookie.match("(^|[^;]+)\\s*" + cookieName + "\\s*=\\s*([^;]+)");
     let userIdFromCookie = match ? match.pop() : "";
     let requestContext = new context.RequestContext();
-    requestContext.userId = new user.UserId();
+    requestContext.userId = new user_id.UserId();
     requestContext.userId.id = userIdFromCookie;
     requestContext.groupId = this.user?.selectedGroup?.id || "";
     return requestContext;

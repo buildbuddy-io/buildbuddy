@@ -672,47 +672,24 @@ code .comment {
 .footer {
   color: #aaa;
   font-size: 0.8em;
-  padding: 32px 32px 64px 32px;
-  height: 32px;
+  padding: 32px 32px 32px 32px;
 
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
 }
 
 .dark .footer {
   background-color: #263238;
 }
 
-.footer-link-list {
-  text-align: center;
+.footer > :not(:last-child) {
+  margin-right: 16px;
 }
 
-.footer-link-list > :not(:last-child) {
-  margin-right: 12px;
-  position: relative;
-}
-
-.footer-link-list > :not(:last-child)::after {
-  content: "|";
-  display: inline;
-  position: absolute;
-  right: -10px;
-  opacity: 0.5;
-}
-
-.footer-link-list > * {
-  white-space: nowrap;
-}
-
-@media (max-width: 1024px) {
-  .footer {
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .footer-link-list:not(:last-child) {
-    margin-bottom: 8px;
-  }
+.footer img {
+  height: 16px;
+  opacity: 0.7;
 }
 
 /** History **/
