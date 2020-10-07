@@ -7,7 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/jinzhu/gorm"
 
-	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
+	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 const (
