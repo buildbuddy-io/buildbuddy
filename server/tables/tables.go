@@ -346,7 +346,7 @@ func ManualMigrate(db *gorm.DB) error {
 	m := db.Migrator()
 	if !m.HasColumn(&UserGroup{}, "status") {
 		m.AddColumn(&UserGroup{}, "status")
-		db.Exec("UPDATE UserGroups SET status = ?", int32(grpb.GroupMembershipStatus_MEMBER))
+		db.Exec("UPDATE UserGroups SET membership_status = ?", int32(grpb.GroupMembershipStatus_MEMBER))
 	}
 	// These types don't apply for sqlite -- just mysql.
 	if db.Dialect().GetName() == mySQLDialect {
