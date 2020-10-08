@@ -39,6 +39,7 @@ build:ci --build_metadata=VISIBILITY=PUBLIC
 build:ci --tls_client_certificate=buildbuddy-cert.pem
 build:ci --tls_client_key=buildbuddy-key.pem
 build:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci
+build:ci --disk_cache=
 
 # Configuration used for untrusted CI
 build:untrusted-ci --config=remote

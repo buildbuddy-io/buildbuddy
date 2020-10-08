@@ -16,6 +16,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v1
 
+      - name: Mount Bazel cache
+        uses: actions/cache@v1
+        with:
+          path: "/home/runner/.cache/bazel"
+          key: bazel
+
       - name: Install bazelisk
         run: |
           curl -LO "https://github.com/bazelbuild/bazelisk/releases/download/v1.1.0/bazelisk-linux-amd64"
