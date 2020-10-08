@@ -147,8 +147,8 @@ type UserDB interface {
 	DeleteGroup(ctx context.Context, groupID string) error
 	AddUserToGroup(ctx context.Context, userID string, groupID string) error
 	RequestToJoinGroup(ctx context.Context, userID string, groupID string) error
-	GetGroupUsers(ctx context.Context, groupID string, status grpb.GroupMembershipStatus) ([]*tables.User, error)
-	UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_GroupMembershipUpdate) error
+	GetGroupUsers(ctx context.Context, groupID string, status grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error)
+	UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error
 }
 
 // A webhook can be called when a build is completed.

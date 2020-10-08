@@ -20,7 +20,6 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 )
 
@@ -140,36 +139,53 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 	}, nil
 }
 
+func (s *BuildBuddyServer) authorizeGroupAccess(ctx context.Context, groupID string) error {
+	if groupID == "" {
+		return status.InvalidArgumentError("group ID is required")
+	}
+	auth := s.env.GetAuthenticator()
+	if auth == nil {
+		return status.UnimplementedError("Not Implemented")
+	}
+	user, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	for _, allowedGroupID := range user.GetAllowedGroups() {
+		if allowedGroupID == groupID {
+			return nil
+		}
+	}
+	return status.PermissionDeniedError("User does not have access to the requested group")
+}
+
 func (s *BuildBuddyServer) GetGroupUsers(ctx context.Context, req *grpb.GetGroupUsersRequest) (*grpb.GetGroupUsersResponse, error) {
+	if err := s.authorizeGroupAccess(ctx, req.GetGroupId()); err != nil {
+		return nil, err
+	}
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	if req.GetRequestContext() == nil || req.GetRequestContext().GetGroupId() == "" {
-		return nil, status.InvalidArgumentError("Missing group ID in request context.")
-	}
-	users, err := userDB.GetGroupUsers(ctx, req.GetRequestContext().GetGroupId(), req.GetMembershipStatus())
+	users, err := userDB.GetGroupUsers(ctx, req.GetGroupId(), req.GetGroupMembershipStatus())
 	if err != nil {
 		return nil, err
 	}
-	displayUsers := make([]*uidpb.DisplayUser, 0)
-	for _, user := range users {
-		displayUsers = append(displayUsers, user.ToProto())
-	}
 	return &grpb.GetGroupUsersResponse{
-		Users: displayUsers,
+		User: users,
 	}, nil
 }
 
 func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.UpdateGroupUsersRequest) (*grpb.UpdateGroupUsersResponse, error) {
+	if err := s.authorizeGroupAccess(ctx, req.GetGroupId()); err != nil {
+		return nil, err
+	}
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	if req.GetRequestContext() == nil || req.GetRequestContext().GetGroupId() == "" {
-		return nil, status.InvalidArgumentError("Missing group ID in request context.")
-	}
-	if err := userDB.UpdateGroupUsers(ctx, req.GetUserId().GetId(), req.GetRequestContext().GetGroupId(), req.GetMembershipStatus()); err != nil {
+	// Make sure the user in the request context is authorized to act on the group.
+	if err := userDB.UpdateGroupUsers(ctx, req.GetGroupId(), req.GetUpdate()); err != nil {
 		return nil, err
 	}
 	return &grpb.UpdateGroupUsersResponse{}, nil
