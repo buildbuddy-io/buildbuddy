@@ -115,7 +115,7 @@ message UpdateGroupUsersRequest {
   }
 
   // Updates to apply to group users.
-  repeated Update updates = 3;
+  repeated Update update = 3;
 }
 
 message UpdateGroupUsersResponse {
