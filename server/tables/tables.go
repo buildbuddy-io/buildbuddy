@@ -342,12 +342,23 @@ func (c *CacheLog) TableName() string {
 	return "CacheLogs"
 }
 
-func ManualMigrate(db *gorm.DB) error {
+
+// Manual migration called before auto-migration.
+func PreAutoMigrate(db *gorm.DB) error {
 	m := db.Migrator()
 	if !m.HasColumn(&UserGroup{}, "status") {
-		m.AddColumn(&UserGroup{}, "status")
-		db.Exec("UPDATE UserGroups SET membership_status = ?", int32(grpb.GroupMembershipStatus_MEMBER))
+		if err := m.AddColumn(&UserGroup{}, "status"); err != nil {
+			return err
+		}
+		if err := db.Exec("UPDATE UserGroups SET membership_status = ?", int32(grpb.GroupMembershipStatus_MEMBER)); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+// Manual migration called after auto-migration.
+func PostAutoMigrate(db *gorm.DB) error {
 	// These types don't apply for sqlite -- just mysql.
 	if db.Dialect().GetName() == mySQLDialect {
 		db.Model(&Invocation{}).ModifyColumn("pattern", "text")
