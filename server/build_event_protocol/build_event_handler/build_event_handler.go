@@ -192,7 +192,11 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 		}
 
 		if auth := e.env.GetAuthenticator(); auth != nil {
-			if apiKey := auth.ParseAPIKeyFromString(extractOptionsFromBuildEvent(bazelBuildEvent)); apiKey != "" {
+			options, err := extractOptionsFromBuildEvent(bazelBuildEvent)
+			if err != nil {
+				return err
+			}
+			if apiKey := auth.ParseAPIKeyFromString(options); apiKey != "" {
 				ctx = auth.AuthContextFromAPIKey(ctx, apiKey)
 			}
 		}
@@ -224,12 +228,12 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 	return nil
 }
 
-func extractOptionsFromBuildEvent(event build_event_stream.BuildEvent) string {
+func extractOptionsFromBuildEvent(event build_event_stream.BuildEvent) (string, error) {
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
-		return p.Started.GetOptionsDescription
+		return p.Started.OptionsDescription, nil
 	}
-	return ""
+	return "", fmt.Errorf("First build event was not a Started event, it was %+v", event.Payload)
 }
 
 func OpenChannel(env environment.Env, ctx context.Context, iid string) *EventChannel {
