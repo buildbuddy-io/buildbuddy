@@ -133,6 +133,9 @@ func (c *CacheEntry) TableName() string {
 	return "CacheEntries"
 }
 
+// NOTE: Do not use `url_identifier_index` as an index name for Group.
+// It is removed as part of a migration.
+
 type Group struct {
 	Model
 	// The group ID -- a unique ID.
@@ -147,7 +150,7 @@ type Group struct {
 	// A unique URL segment that is displayed in group-related URLs.
 	// e.g. "example-org" in app.buildbuddy.com/join/example-org or
 	// "example-org.buildbuddy.com" if we support subdomains in the future.
-	URLIdentifier *string `gorm:"unique_index:url_identifier_index"`
+	URLIdentifier *string `gorm:"unique_index:url_identifier_unique_index"`
 
 	// The "owned" domain. In enterprise/cloud version, we create a
 	// group for a customer's domain, and new users that sign up with an
@@ -345,7 +348,10 @@ func (c *CacheLog) TableName() string {
 
 // Manual migration called before auto-migration.
 func PreAutoMigrate(db *gorm.DB) error {
-	if db.Dialect().HasTable("UserGroups") && !db.Dialect().HasColumn("UserGroups", "membership_status") {
+	d := db.Dialect()
+
+	// Initialize UserGroups.membership_status to 1 if the column doesn't exist.
+	if d.HasTable("UserGroups") && !d.HasColumn("UserGroups", "membership_status") {
 		if err := db.Exec("ALTER TABLE UserGroups ADD membership_status int").Error; err != nil {
 			return err
 		}
@@ -353,6 +359,23 @@ func PreAutoMigrate(db *gorm.DB) error {
 			return err
 		}
 	}
+
+	// Prepare Groups.url_identifier for index update (non-unique index to unique index).
+	if d.HasTable("Groups") {
+		// Remove the old url_identifier_index.
+		if d.HasIndex("Groups", "url_identifier_index") {
+			if err := d.RemoveIndex("Groups", "url_identifier_index"); err != nil {
+				return err
+			}
+		}
+		// Before creating a unique index, need to replace empty strings with NULL.
+		if d.HasIndex("Groups", "url_identifier_unique_index") {
+			if err := db.Exec(`UPDATE Groups SET url_identifier = NULL WHERE url_identifier = ""`).Error; err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
