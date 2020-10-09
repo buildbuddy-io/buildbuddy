@@ -369,7 +369,7 @@ func PreAutoMigrate(db *gorm.DB) error {
 			}
 		}
 		// Before creating a unique index, need to replace empty strings with NULL.
-		if d.HasIndex("Groups", "url_identifier_unique_index") {
+		if !d.HasIndex("Groups", "url_identifier_unique_index") {
 			if err := db.Exec(`UPDATE Groups SET url_identifier = NULL WHERE url_identifier = ""`).Error; err != nil {
 				return err
 			}
