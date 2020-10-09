@@ -144,7 +144,7 @@ type Group struct {
 	// The group name. This may be displayed to users.
 	Name string
 
-	// An unique URL segment that is displayed in group-related URLs.
+	// A unique URL segment that is displayed in group-related URLs.
 	// e.g. "example-org" in app.buildbuddy.com/join/example-org or
 	// "example-org.buildbuddy.com" if we support subdomains in the future.
 	URLIdentifier *string `gorm:"unique_index:url_identifier_index"`
