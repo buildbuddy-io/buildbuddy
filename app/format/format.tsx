@@ -17,6 +17,9 @@ export function durationMillis(duration: number | Long) {
 
 export function durationSec(duration: number | Long) {
   let seconds = +duration;
+  if (seconds < 0) {
+    return "0 s";
+  }
   if (seconds > 60 * 60 * 24 * 365) {
     return `${(seconds / (60 * 60 * 24 * 365)).toPrecision(3)} years`;
   }
