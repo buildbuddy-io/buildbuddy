@@ -346,10 +346,10 @@ func (c *CacheLog) TableName() string {
 // Manual migration called before auto-migration.
 func PreAutoMigrate(db *gorm.DB) error {
 	if db.Dialect().HasTable("UserGroups") && !db.Dialect().HasColumn("UserGroups", "membership_status") {
-		if err := db.Exec("ALTER TABLE UserGroups ADD membership_status int"); err != nil {
+		if err := db.Exec("ALTER TABLE UserGroups ADD membership_status int").Error; err != nil {
 			return err
 		}
-		if err := db.Exec("UPDATE UserGroups SET membership_status = ?", int32(grpb.GroupMembershipStatus_MEMBER)); err != nil {
+		if err := db.Exec("UPDATE UserGroups SET membership_status = ?", int32(grpb.GroupMembershipStatus_MEMBER)).Error; err != nil {
 			return err
 		}
 	}
