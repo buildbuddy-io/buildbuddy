@@ -184,7 +184,6 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	// Make sure the user in the request context is authorized to act on the group.
 	if err := userDB.UpdateGroupUsers(ctx, req.GetGroupId(), req.GetUpdate()); err != nil {
 		return nil, err
 	}
