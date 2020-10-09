@@ -166,12 +166,12 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		groupOwnedDomain = userEmailDomain
 	}
 
-	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 	group := &tables.Group{
 		UserID:        user.UserID,
 		Name:          groupName,
 		OwnedDomain:   groupOwnedDomain,
 	}
+	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 	if urlIdentifier != "" {
 		group.URLIdentifier = &urlIdentifier
 	}
