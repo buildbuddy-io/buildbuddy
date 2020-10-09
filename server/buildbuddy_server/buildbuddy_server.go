@@ -128,12 +128,10 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	urlIdentifier := &req.UrlIdentifier
-	if *urlIdentifier == "" {
-		urlIdentifier = nil
-	}
-	group := &tables.Group{
-		URLIdentifier: urlIdentifier,
+	group := &tables.Group{}
+	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
+	if urlIdentifier != "" {
+		group.URLIdentifier = &urlIdentifier
 	}
 	if err := userDB.FillGroup(ctx, group); err != nil {
 		return nil, err
