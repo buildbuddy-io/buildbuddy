@@ -38,8 +38,11 @@ func NewDBHandle(dialect string, args ...interface{}) (*DBHandle, error) {
 	gdb.SingularTable(true)
 	gdb.LogMode(false)
 	if *autoMigrateDB {
+		if err := tables.PreAutoMigrate(gdb); err != nil {
+			return nil, err
+		}
 		gdb.AutoMigrate(tables.GetAllTables()...)
-		if err := tables.ManualMigrate(gdb); err != nil {
+		if err := tables.PostAutoMigrate(gdb); err != nil {
 			return nil, err
 		}
 	}
