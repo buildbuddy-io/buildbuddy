@@ -21,8 +21,8 @@ export class Capabilities {
     this.github = window.buildbuddyConfig && window.buildbuddyConfig.github_enabled;
     this.anonymous = window.buildbuddyConfig && window.buildbuddyConfig.anonymous_usage_enabled;
     this.enterprise = enterprise;
+    this.createOrg = this.enterprise;
     this.paths = new Set(paths);
-    this.createOrg = window.localStorage["buildbuddy://flags/create_org_enabled"] === "true";
     window.gtag("set", {
       app_name: this.name,
       app_version: this.version,
