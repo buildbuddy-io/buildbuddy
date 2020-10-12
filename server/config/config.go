@@ -138,11 +138,11 @@ type RemoteExecutionConfig struct {
 }
 
 type ExecutorConfig struct {
+	AppTarget           string `yaml:"app_target"`
 	RootDirectory       string `yaml:"root_directory"`
 	LocalCacheDirectory string `yaml:"local_cache_directory"`
 	LocalCacheSizeBytes int64  `yaml:"local_cache_size_bytes"`
-	CacheTarget         string `yaml:"cache_target"`
-	AppTarget           string `yaml:"app_target"`
+	DockerSocket        string `yaml:"docker_socket"`
 }
 
 type APIConfig struct {

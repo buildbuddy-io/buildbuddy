@@ -65,6 +65,12 @@ type Authenticator interface {
 	// Returns the UserInfo extracted from any authorization headers
 	// present in the request.
 	AuthenticatedUser(ctx context.Context) (UserInfo, error)
+
+	// Parses and returns a BuildBuddy API key from the given string.
+	ParseAPIKeyFromString(string) string
+
+	// Returns a context containing the given API key.
+	AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context
 }
 
 // A Blobstore must allow for reading, writing, and deleting blobs.

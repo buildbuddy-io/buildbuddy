@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/jinzhu/gorm"
 
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -241,9 +242,9 @@ type Execution struct {
 	// The subscriber ID, a concatenated string of the
 	// auth Issuer ID and the subcriber ID string.
 	ExecutionID string `gorm:"primary_key"`
-	UserID      string `gorm:"index:user_id"`
-	GroupID     string `gorm:"index:group_id"`
-	Perms       int    `gorm:"index:perms"`
+	UserID      string `gorm:"index:executions_user_id"`
+	GroupID     string `gorm:"index:executions_group_id"`
+	Perms       int    `gorm:"index:executions_perms"`
 
 	Stage               int64
 	SerializedOperation []byte `gorm:"size:max"` // deprecated.
@@ -341,7 +342,22 @@ func (c *CacheLog) TableName() string {
 	return "CacheLogs"
 }
 
-func ManualMigrate(db *gorm.DB) error {
+
+// Manual migration called before auto-migration.
+func PreAutoMigrate(db *gorm.DB) error {
+	if db.Dialect().HasTable("UserGroups") && !db.Dialect().HasColumn("UserGroups", "membership_status") {
+		if err := db.Exec("ALTER TABLE UserGroups ADD membership_status int").Error; err != nil {
+			return err
+		}
+		if err := db.Exec("UPDATE UserGroups SET membership_status = ?", int32(grpb.GroupMembershipStatus_MEMBER)).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Manual migration called after auto-migration.
+func PostAutoMigrate(db *gorm.DB) error {
 	// These types don't apply for sqlite -- just mysql.
 	if db.Dialect().GetName() == mySQLDialect {
 		db.Model(&Invocation{}).ModifyColumn("pattern", "text")

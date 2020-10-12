@@ -136,7 +136,7 @@ export default class SetupCodeComponent extends React.Component {
 
   isExecutionEnabled() {
     return (
-      this.isAuthenticated() &&
+      (this.isAuthenticated() || !capabilities.auth) &&
       !!this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_executor")
     );
   }

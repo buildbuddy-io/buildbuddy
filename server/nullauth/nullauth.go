@@ -38,3 +38,11 @@ func (a *NullAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 func (a *NullAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", 301)
 }
+
+func (a *NullAuthenticator) ParseAPIKeyFromString(input string) string {
+	return ""
+}
+
+func (a *NullAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
+	return ctx
+}
