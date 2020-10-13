@@ -20,7 +20,6 @@ export default class SetupComponent extends React.Component {
     document.title = `Setup | BuildBuddy`;
 
     let request = new bazel_config.GetBazelConfigRequest();
-    request.requestContext = authService.getRequestContext();
     request.host = window.location.host;
     request.protocol = window.location.protocol;
     request.includeCertificate = true;

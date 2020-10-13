@@ -72,12 +72,16 @@ func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.Searc
 func makeGroups(grps []*tables.Group) []*grpb.Group {
 	r := make([]*grpb.Group, 0)
 	for _, g := range grps {
+		urlIdentifier := ""
+		if g.URLIdentifier != nil {
+			urlIdentifier = *g.URLIdentifier
+		}
 		r = append(r, &grpb.Group{
 			Id:            g.GroupID,
 			Name:          g.Name,
 			OwnedDomain:   g.OwnedDomain,
 			GithubLinked:  g.GithubToken != "",
-			UrlIdentifier: g.URLIdentifier,
+			UrlIdentifier: urlIdentifier,
 		})
 	}
 	return r
@@ -124,8 +128,10 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	group := &tables.Group{
-		URLIdentifier: req.GetUrlIdentifier(),
+	group := &tables.Group{}
+	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
+	if urlIdentifier != "" {
+		group.URLIdentifier = &urlIdentifier
 	}
 	if err := userDB.FillGroup(ctx, group); err != nil {
 		return nil, err
@@ -211,13 +217,14 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		groupOwnedDomain = userEmailDomain
 	}
 
-	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
-
 	group := &tables.Group{
 		UserID:        user.UserID,
 		Name:          groupName,
-		URLIdentifier: urlIdentifier,
 		OwnedDomain:   groupOwnedDomain,
+	}
+	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
+	if urlIdentifier != "" {
+		group.URLIdentifier = &urlIdentifier
 	}
 	groupID, err := userDB.InsertOrUpdateGroup(ctx, group)
 	if err != nil {

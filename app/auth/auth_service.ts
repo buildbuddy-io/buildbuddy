@@ -29,8 +29,6 @@ export class AuthService {
 
   static userEventName = "user";
 
-  constructor() {}
-
   register() {
     if (!capabilities.auth) return;
     let request = new user.GetUserRequest();
@@ -87,6 +85,7 @@ export class AuthService {
   emitUser(user: User) {
     console.log("User", user);
     this.user = user;
+    rpcService.requestContext = this.getRequestContext();
     this.userStream.next(user);
   }
 
