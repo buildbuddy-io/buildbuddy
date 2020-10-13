@@ -1,31 +1,35 @@
 <!--
 {
-  "name": "Overview",
+  "name": "Configuration Overview",
   "category": "5eed3e2ace045b343fc0a328",
   "priority": 1000
 }
 -->
+
 # Configuring BuildBuddy
-[BuildBuddy on-prem](on-prem.md) is configured using a [yaml](https://en.wikipedia.org/wiki/YAML) formatted configuration file. 
+
+[BuildBuddy on-prem](on-prem.md) is configured using a [yaml](https://en.wikipedia.org/wiki/YAML) formatted configuration file.
 
 ## Command line flag
-On startup, BuildBuddy reads this config file which is specified using the ```--config_file``` flag. The config file is periodically re-read, although some options like enabling or disabling a cache require a restart to take effect.
+
+On startup, BuildBuddy reads this config file which is specified using the `--config_file` flag. The config file is periodically re-read, although some options like enabling or disabling a cache require a restart to take effect.
 
 ## Docker
-If you're running BuildBuddy in a Docker image - you can use Docker's [-v flag](https://docs.docker.com/storage/volumes/) to map a custom local config file to ```/config.yaml``` in the Docker image. 
+
+If you're running BuildBuddy in a Docker image - you can use Docker's [-v flag](https://docs.docker.com/storage/volumes/) to map a custom local config file to `/config.yaml` in the Docker image.
 
 Be sure to replace `PATH_TO_YOUR_LOCAL_CONFIG ` with the path to your custom config file:
+
 ```
 docker pull gcr.io/flame-public/buildbuddy-app-onprem:latest && docker run -p 1985:1985 -p 8080:8080 -v /PATH_TO_YOUR_LOCAL_CONFIG/config.yaml:/config.yaml gcr.io/flame-public/buildbuddy-app-onprem:latest
 ```
 
 ## Option types
 
-There are two types of config options: *Required*, and *Optional*.
+There are two types of config options: _Required_, and _Optional_.
 
-* **Required** - BuildBuddy will not run without these.
-* **Optional** - They configure optional functionality. BuildBuddy will happily run without them.
-
+- **Required** - BuildBuddy will not run without these.
+- **Optional** - They configure optional functionality. BuildBuddy will happily run without them.
 
 ## Sample configuration files
 
@@ -43,7 +47,6 @@ Here's a full list of BuildBuddy's configuration sections:
 - [App](config-app.md) - basic app-level configuration options.
 - [Storage](config-storage.md) - options that determine where BuildBuddy stores build results.
 - [Database](config-database.md) - options that determine where BuildBuddy stores build metadata.
-
 
 **Optional**
 
@@ -68,4 +71,4 @@ More information on these flags, see our [flags documentation](config-flags.md).
 ## Environment variables
 
 Environment variables in the config file are expanded at runtime.
-You only need to reference your environment variables like this `${ENV_VARIABLE}`. 
+You only need to reference your environment variables like this `${ENV_VARIABLE}`.

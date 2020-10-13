@@ -1,17 +1,21 @@
 <!--
 {
-  "name": "Remote Build Execution Setup",
+  "name": "RBE Setup",
   "category": "5f18d21935ec3867907dda03",
   "priority": 900
 }
 -->
+
 # Remote Build Execution Setup
 
 Getting started with Remote Build Execution (RBE) is less daunting than it may seem. We've put together a guide that not only helps you get started with BuildBuddy RBE, but also helps you understand what is going on under the hood.
 
+This guide assumes you're using [BuildBuddy Cloud](cloud.md) or [BuildBuddy Enterprise on-prem](enterprise.md).
+
 ## The basics
 
 The very simplest Bazel command needed to enable RBE is the following:
+
 ```
 bazel build //... --remote_executor=grpcs://cloud.buildbuddy.io
 ```
@@ -25,6 +29,7 @@ There are several options for configuring your platforms and toolchains, the mos
 Unfortunately, bazel-toolchains has a dependency on Docker and can take quite some time to start up in a clean workspace, so we provide a simple and easy-to-use [BuildBuddy toolchain](https://github.com/buildbuddy-io/toolchain) that enables you to get up and running quickly, and works for most use cases.
 
 To get started with the BuildBuddy Toolchain, add the following lines to your `WORKSPACE` file:
+
 ```
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
@@ -49,6 +54,7 @@ You'll likely want to pin this to a specific commit/version and add a SHA for re
 The first thing you'll want to do is tell BuildBuddy RBE in what environment you'll want to run your build actions. This is tools can be found in different locations on different platforms. This is done with the `--host_platform` flag.
 
 BuildBuddy's default platform is Ubuntu 16.04 with Java 8 installed. We can specify this platform with the `--host_platform` flag:
+
 ```
 --host_platform=@buildbuddy_toolchain//:platform
 ```
@@ -64,11 +70,13 @@ Toolchains sound complicated (and they can be) - but the concept is simple. We'r
 The first toolchain you'll likely run into the need for is a C/C++ compiler. Even if your code isn't written in one of these languages, it's likely that one of your dependencies is - or calls some C code with something like [cgo](https://golang.org/cmd/cgo/).
 
 You'll know you need a C toolchain when you see an error for a missing gcc or clang that looks like:
+
 ```
 exec: "/usr/bin/gcc": stat /usr/bin/gcc: no such file or directory
 ```
 
 To use BuildBuddy's default C toolchain, we can use the `--crosstool_top` flag:
+
 ```
 --crosstool_top=@buildbuddy_toolchain//:toolchain
 ```
@@ -78,6 +86,7 @@ To use BuildBuddy's default C toolchain, we can use the `--crosstool_top` flag:
 If your project depends on Java code, you'll need 4 more flags to tell the executors where to look for Java tools.
 
 Using BuildBuddy's default Java 8 config:
+
 ```
 --javabase=@buildbuddy_toolchain//:javabase_jdk8
 --host_javabase=@buildbuddy_toolchain//:javabase_jdk8
@@ -96,6 +105,7 @@ bazel build //... --remote_executor=grpcs://cloud.buildbuddy.io --crosstool_top=
 ```
 
 This can be a lot of flags to tack onto each bazel build, so instead you can move these to your `.bazelrc` file:
+
 ```
 build:remote --host_platform=@buildbuddy_toolchain//:platform
 build:remote --crosstool_top=@buildbuddy_toolchain//:toolchain
@@ -106,6 +116,7 @@ build:remote --host_java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
 ```
 
 And running:
+
 ```
 bazel build //... --config=remote
 ```
@@ -119,6 +130,7 @@ You'll want to authenticate your RBE builds with either API key or certificate b
 By default, bazel will download intermediate results of remote executions - so in case an artifact isn't found in the remote cache, it can be re-uploaded. This can slow down builds in networks constrained environments.
 
 This can be turned off with the flag:
+
 ```
 --remote_download_minimal
 ```

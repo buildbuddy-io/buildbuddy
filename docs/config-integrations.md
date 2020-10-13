@@ -5,19 +5,20 @@
   "priority": 300
 }
 -->
+
 # Integration Configuration
 
 ## Section
 
-```integrations:``` A section configuring optional external services BuildBuddy can integrate with, like Slack. **Optional**
+`integrations:` A section configuring optional external services BuildBuddy can integrate with, like Slack. **Optional**
 
 ## Options
 
 **Optional**
 
-* ```slack:```  A section configuring Slack integration.
+- `slack:` A section configuring Slack integration.
 
-  * ```webhook_url``` A webhook url to post build update messages to.
+  - `webhook_url` A webhook url to post build update messages to.
 
 ## Getting a webhook url
 

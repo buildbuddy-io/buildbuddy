@@ -5,6 +5,7 @@
   "priority": 600
 }
 -->
+
 # RBE with GitHub Actions
 
 Using BuildBuddy RBE with Github Actions is the simplest way to get started using BuildBuddy with a CI system.
@@ -12,6 +13,7 @@ Using BuildBuddy RBE with Github Actions is the simplest way to get started usin
 ## Setup instructions
 
 There are three steps:
+
 1. Create a workflow file
 1. Update your `.bazelrc`
 1. Set up cert Github secrets
@@ -19,6 +21,7 @@ There are three steps:
 ### Workflow file
 
 All you have to do is create a file `.github/workflows/main.yaml`
+
 ```
 name: CI
 
@@ -30,7 +33,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout
       uses: actions/checkout@v1
@@ -73,10 +76,9 @@ You can download these files by logging in to your [BuildBuddy account](https://
 
 You can then open these two files in a text editor, and add them as Github Secrets named `BUILDBUDDY_ORG_CERT` and `BUILDBUDDY_ORG_KEY`. For more information on setting up Github Secrets, [click here](https://docs.github.com/en/actions/configuring-and-managing-workflows/creating-and-storing-encrypted-secrets).
 
-
 ## Github commit statuses
 
-If you'd like BuildBuddy to publish commit statuses to your repo, you can do so by [logging in]((https://app.buildbuddy.io)) and clicking `Link Github Account` in the user menu in the top right.
+If you'd like BuildBuddy to publish commit statuses to your repo, you can do so by [logging in](https://app.buildbuddy.io) and clicking `Link Github Account` in the user menu in the top right.
 
 ## Visibility
 
@@ -89,6 +91,7 @@ build:ci --build_metadata=VISIBILITY=PUBLIC
 ## Remote build execution
 
 If you'd like to use BuildBuddy's Remote Build Execution capabilities in your CI workflow, you can add the following lines to your `.bazelrc`:
+
 ```
 build:remote --bes_results_url=https://app.buildbuddy.io/invocation/
 build:remote --bes_backend=grpcs://cloud.buildbuddy.io

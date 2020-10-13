@@ -5,11 +5,13 @@
   "priority": 700
 }
 -->
+
 # RBE Platforms
 
-## BuildBuddy default 
+## BuildBuddy default
 
 BuildBuddy's default platform is Ubuntu 16.04 with Java 8 installed. Building on our basic command can specify this platform with the `--host_platform` flag:
+
 ```
 --host_platform=@buildbuddy_toolchain//:platform
 ```
@@ -37,6 +39,7 @@ platform(
 Make sure to replace `gcr.io/YOUR:IMAGE` with your docker image url.
 
 You can then pass this configuration to BuildBuddy RBE with the following flag:
+
 ```
 --host_platform=//:docker_image_platform
 ```
