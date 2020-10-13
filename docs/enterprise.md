@@ -1,17 +1,19 @@
 <!--
 {
   "name": "Enterprise Overview",
-  "category": "5eed3e5fa3f1277a6b94b83a",
+  "category": "5f84be4816a467581a4ca066",
   "priority": 1000
 }
 -->
+
 # BuildBuddy Enterprise
 
-We offer an enterprise version of BuildBuddy targeted at companies who need advanced features and enterprise 
+We offer an enterprise version of BuildBuddy targeted at companies who need advanced features and enterprise level support.
 
 Enterprise BuildBuddy is available both as a fully-managed cloud hosted solution, or as an on-prem deployment.
 
 ## Features
+
 - OpenID Connect auth support that integrates with Okta, GSuite, Auth0, and more
 - BuildBuddy API for programatic access to your build results
 - Remote Build Execution with support for custom Docker images
@@ -23,10 +25,13 @@ Enterprise BuildBuddy is available both as a fully-managed cloud hosted solution
 For a full feature breakdown, check out our [pricing page](https://buildbuddy.io/pricing).
 
 ## Getting started
+
 To get started with BuildBuddy Enterprise, [request a quote](https://www.buildbuddy.io/request-quote).
 
 ## Cloud setup
-Getting started with BuildBuddy Enterprise Cloud is as easy as logging into your [BuildBuddy account](https://app.buildbuddy.io/), and following the setup instructions. 
+
+Getting started with BuildBuddy Enterprise Cloud is as easy as logging into your [BuildBuddy account](https://app.buildbuddy.io/), and following the setup instructions once BuildBuddy Enterprise has been enabled for your account.
 
 ## On-prem setup
+
 Once you've received your BuildBuddy Enterprise license, you can configure your BuildBuddy Enterprise on-prem installation by following our [Enterprise Getting Started docs ](enterprise-setup.md).

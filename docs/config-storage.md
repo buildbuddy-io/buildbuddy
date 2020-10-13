@@ -1,42 +1,44 @@
 <!--
 {
   "name": "Storage",
-  "category": "5eed3e2ace045b343fc0a328",
+  "category": "5f84be4816a46711e64ca065",
   "priority": 700
 }
 -->
+
 # Storage Configuration
-```storage:``` The Storage section configures where and how BuildBuddy will store blob data. **Required**
+
+`storage:` The Storage section configures where and how BuildBuddy will store blob data. **Required**
 
 ## Options
 
 One of the following sections is **Required**
 
-* ```disk:``` The Disk section configures disk-based blob storage.
+- `disk:` The Disk section configures disk-based blob storage.
 
-  * ```root_directory``` The root directory to store all blobs in, if using disk based storage. This directory must be readable and writable by the BuildBuddy process. The directory will be created if it does not exist.
+  - `root_directory` The root directory to store all blobs in, if using disk based storage. This directory must be readable and writable by the BuildBuddy process. The directory will be created if it does not exist.
 
-* ```gcs:``` The GCS section configures Google Cloud Storage based blob storage.
+- `gcs:` The GCS section configures Google Cloud Storage based blob storage.
 
-  * ```bucket``` The name of the GCS bucket to store files in. Will be created if it does not already exist.
+  - `bucket` The name of the GCS bucket to store files in. Will be created if it does not already exist.
 
-  * ```credentials_file``` A path to a [JSON credentials file](https://cloud.google.com/docs/authentication/getting-started) that will be used to authenticate to GCS. 
+  - `credentials_file` A path to a [JSON credentials file](https://cloud.google.com/docs/authentication/getting-started) that will be used to authenticate to GCS.
 
-  * ```project_id``` The Google Cloud project ID of the project owning the above credentials and GCS bucket.
+  - `project_id` The Google Cloud project ID of the project owning the above credentials and GCS bucket.
 
-* ```aws_s3:``` The AWS section configures AWS S3 storage.
+- `aws_s3:` The AWS section configures AWS S3 storage.
 
-  * ```region``` The AWS region
+  - `region` The AWS region
 
-  * ```bucket``` The AWS S3 bucket (will be created automatically)
+  - `bucket` The AWS S3 bucket (will be created automatically)
 
-  * ```credentials_profile``` If a profile other than default is chosen, use that one.
+  - `credentials_profile` If a profile other than default is chosen, use that one.
 
-  * By default, the S3 blobstore will rely on environment variables, shared credentials, or IAM roles. See [AWS Go SDK docs](https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html#specifying-credentials) for more information.
+  - By default, the S3 blobstore will rely on environment variables, shared credentials, or IAM roles. See [AWS Go SDK docs](https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html#specifying-credentials) for more information.
 
 **Optional**
 
-* ```chunk_file_size_bytes:``` How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.
+- `chunk_file_size_bytes:` How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.
 
 ## Example sections
 
@@ -49,7 +51,6 @@ storage:
   disk:
     root_directory: /tmp/buildbuddy
 ```
-
 
 ### GCS
 

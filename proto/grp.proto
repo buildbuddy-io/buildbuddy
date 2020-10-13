@@ -78,8 +78,8 @@ message GetGroupUsersRequest {
   // The ID of the group to get the users from.
   string group_id = 2;
 
-  // Membership status filter (optional).
-  GroupMembershipStatus group_membership_status = 3;
+  // Statuses of members to retrieve (required).
+  repeated GroupMembershipStatus group_membership_status = 3;
 }
 
 message GetGroupUsersResponse {
@@ -91,7 +91,7 @@ message GetGroupUsersResponse {
   }
 
   // Users related to the group that match the request criteria.
-  repeated GroupUser users = 2;
+  repeated GroupUser user = 2;
 }
 
 message UpdateGroupUsersRequest {

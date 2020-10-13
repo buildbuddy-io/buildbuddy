@@ -1,14 +1,15 @@
 <!--
 {
   "name": "Samples",
-  "category": "5eed3e2ace045b343fc0a328",
+  "category": "5f84be4816a46711e64ca065",
   "priority": 900
 }
 -->
+
 # Sample Configuration Files
 
-
 ### Running locally (disk only)
+
 ```
 app:
   build_buddy_url: "http://localhost:8080"
@@ -26,6 +27,7 @@ cache:
 ```
 
 ### Running with MySQL and in-memory cache
+
 ```
 app:
   build_buddy_url: "http://acme.corp"
@@ -41,10 +43,10 @@ cache:
   in_memory: true
 ```
 
-
 ## Enterprise
 
 ### Running with your own auth provider
+
 ```
 app:
   build_buddy_url: "http://acme.corp"
@@ -66,6 +68,7 @@ auth:
 ```
 
 ### Fully loaded
+
 ```
 app:
   build_buddy_url: "https://app.buildbuddy.mydomain"
@@ -81,6 +84,7 @@ storage:
     project_id: "flame-build"
     credentials_file: "your_service-acct.json"
 cache:
+    redis_target: "12.34.56.79:6379"
     gcs:
       bucket: "buildbuddy_cache"
       project_id: "your_gcs_project_id"
@@ -91,10 +95,10 @@ auth:
     - issuer_url: "https://your-custom-domain.okta.com"
       client_id: "0aaa5twc7sx0kUW123x6"
       client_secret: "P8fRAYxWMmGhdA9040GV2_q9MZ6esTJif1n4BubxU"
-
 ssl:
   enable_ssl: true
   client_ca_cert_file: your_ca.crt
   client_ca_key_file: your_ca.pem
-
+remote_execution:
+  enabled: true
 ```

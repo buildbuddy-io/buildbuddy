@@ -1,23 +1,24 @@
 <!--
 {
   "name": "Integrations",
-  "category": "5eed3e2ace045b343fc0a328",
+  "category": "5f84be4816a46711e64ca065",
   "priority": 300
 }
 -->
+
 # Integration Configuration
 
 ## Section
 
-```integrations:``` A section configuring optional external services BuildBuddy can integrate with, like Slack. **Optional**
+`integrations:` A section configuring optional external services BuildBuddy can integrate with, like Slack. **Optional**
 
 ## Options
 
 **Optional**
 
-* ```slack:```  A section configuring Slack integration.
+- `slack:` A section configuring Slack integration.
 
-  * ```webhook_url``` A webhook url to post build update messages to.
+  - `webhook_url` A webhook url to post build update messages to.
 
 ## Getting a webhook url
 

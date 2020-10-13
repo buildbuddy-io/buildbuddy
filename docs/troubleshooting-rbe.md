@@ -1,10 +1,11 @@
 <!--
 {
   "name": "RBE Failures",
-  "category": "5f18d210c4a59be9e3cf8136",
+  "category": "5f84be4816a4677e374ca127",
   "priority": 900
 }
 -->
+
 # Troubleshooting RBE Failures
 
 ## Remote connection/protocol failed with: execution failed
@@ -12,6 +13,7 @@
 This error is often a sign that a cache write is timing out. By default, bazel's `remote_timeout` [flag](https://docs.bazel.build/versions/master/command-line-reference.html#flag--remote_timeout) limits all remote execution calls to 60 seconds.
 
 We recommend using the following flag to increase this remote timeout:
+
 ```
 --remote_timeout=600
 ```
@@ -23,6 +25,7 @@ These expensive writes should only happen once when artifacts are initially writ
 This error is a sign that a cache write is timing out. By default, bazel's `remote_timeout` [flag](https://docs.bazel.build/versions/master/command-line-reference.html#flag--remote_timeout) limits all remote execution calls to 60 seconds.
 
 We recommend using the following flag to increase this remote timeout:
+
 ```
 --remote_timeout=600
 ```

@@ -1,12 +1,12 @@
 <!--
 {
-  "name": "Cloud",
-  "category": "5eeba6a6c5230e48eea60f18",
+  "name": "Cloud Quickstart",
+  "category": "5f84be4816a467536a4ca064",
   "priority": 800
 }
 -->
 
-# BuildBuddy Cloud
+# Cloud Quickstart
 
 [Cloud BuildBuddy](https://app.buildbuddy.io/) is a fully managed SaaS solution for Enterprise Bazel features. It provides a results store & UI, remote build caching, remote build execution, and more.
 
@@ -38,8 +38,7 @@ INFO: Streaming build results to: https://app.buildbuddy.io/invocation/24a37b8f-
 INFO: Build completed successfully, 1 total action
 ```
 
-You can ⌘ + double-click on these urls to quickly view the invocation's details. 
-
+You can ⌘ + double-click on these urls to quickly view the invocation's details.
 
 ## Authentication
 

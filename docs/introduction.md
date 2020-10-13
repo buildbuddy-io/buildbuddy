@@ -1,10 +1,11 @@
 <!--
 {
   "name": "Introduction",
-  "category": "5eeba6a6c5230e48eea60f18",
+  "category": "5f84be4816a467536a4ca064",
   "priority": 1000
 }
 -->
+
 # BuildBuddy Documentation
 
 BuildBuddy is an open-core Bazel build event viewer, result store, remote cache, and remote build execution platform.
@@ -14,15 +15,14 @@ BuildBuddy is an open-core Bazel build event viewer, result store, remote cache,
 There are two main ways to get started with BuildBuddy:
 
 1. [BuildBuddy Cloud](cloud.md): a fully managed cloud version of BuildBuddy that is free to use for individuals and open source projects. You can get up and running quickly by just adding a few lines to your `.bazelrc` file.
-1. [BuildBuddy On-Prem](on-prem.md): Run your own instance of BuildBuddy on your own servers or in your own cloud environment. Features targeted at individual developers are free and open source. [BuildBuddy Enterprise](enterprise.md) is also available for companies that need advanced features like OIDC auth, API access, and more. 
-
+1. [BuildBuddy On-Prem](on-prem.md): Run your own instance of BuildBuddy on your own servers or in your own cloud environment. Features targeted at individual developers are free and open source. [BuildBuddy Enterprise](enterprise.md) is also available for companies that need advanced features like OIDC auth, API access, and more.
 
 ## Go further
 
 Once you've gotten started with BuildBuddy - there's lots more to check out!
 
 1. [Guides](guides.md): Helpful guides to walk you through common BuildBuddy use-cases.
-1. [Configuration options](config.md): Learn how to to set up BuildBuddy just the way you like it.
+1. [Configuration options](config.md): Learn how to configure BuildBuddy to conform to your needs.
 1. [Remote Build Execution](remote-build-execution.md): parallelize your builds across thousands of machines.
 1. [Troubleshooting](troubleshooting.md): Where to go when you're stuck.
 

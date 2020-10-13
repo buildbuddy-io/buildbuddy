@@ -1,21 +1,22 @@
 <!--
 {
   "name": "Database",
-  "category": "5eed3e2ace045b343fc0a328",
+  "category": "5f84be4816a46711e64ca065",
   "priority": 700
 }
 -->
+
 # Database Configuration
 
 ## Section
 
-```database:``` The database section configures the database that BuildBuddy stores metadata in. **Required**
+`database:` The database section configures the database that BuildBuddy stores metadata in. **Required**
 
 ## Options
 
 **Required**
 
-* ```data_source```  This is a connection string used by the database driver to connect to the database. MySQL and SQLite databases are supported.
+- `data_source` This is a connection string used by the database driver to connect to the database. MySQL and SQLite databases are supported.
 
 ## Example sections
 

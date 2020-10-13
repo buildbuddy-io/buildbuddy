@@ -8,15 +8,15 @@ def install_buildbuddy_dependencies():
         name = "org_golang_google_grpc",
         build_file_proto_mode = "disable",
         importpath = "google.golang.org/grpc",
-        sum = "h1:EC2SB8S04d2r73uptxphDSUG+kTKVgjRPF+N3xpxRB4=",
-        version = "v1.29.1",
+        sum = "h1:IBKSUNL2uBS2DkJBncPP+TwT0sp9tgA8A75NjHt6umg=",
+        version = "v1.33.0",
     )
 
     go_repository(
         name = "com_github_google_uuid",
         importpath = "github.com/google/uuid",
-        sum = "h1:Gkbcsh/GbpXz7lPftLA3P6TYMwjCLYm83jiFQZF/3gY=",
-        version = "v1.1.1",
+        sum = "h1:EVhdT+1Kseyi1/pUmXKaFxYsDNy9RQYkMWRH68J/W7Y=",
+        version = "v1.1.2",
     )
 
     # Needed for go dependencies.
@@ -121,15 +121,15 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "org_golang_x_net",
         importpath = "golang.org/x/net",
-        sum = "h1:VXak5I6aEWmAXeQjA+QSZzlgNrpq9mjcfDemuexIKsU=",
-        version = "v0.0.0-20200707034311-ab3426394381",
+        sum = "h1:1GKfLldebiSdhTlt3nalwrb7L40Tixr/0IH+kSbRgmk=",
+        version = "v0.0.0-20201009032441-dbdefad45b89",
     )
 
     go_repository(
         name = "org_golang_x_sys",
         importpath = "golang.org/x/sys",
-        sum = "h1:5/PjkGUjvEU5Gl6BxmvKRPpqo2uNMv4rcHBMwzk/st8=",
-        version = "v0.0.0-20200622214017-ed371f2e16b4",
+        sum = "h1:bNEHhJCnrwMKNMmOx3yAynp5vs5/gRy+XWFtZFu7NBM=",
+        version = "v0.0.0-20201009025420-dfb3f7c4e634",
     )
 
     go_repository(
@@ -436,8 +436,8 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "org_golang_google_genproto",
         importpath = "google.golang.org/genproto",
-        sum = "h1:+kGHl1aib/qcwaRi1CbqBZ1rk19r85MNUf8HaBghugY=",
-        version = "v0.0.0-20200526211855-cb27e3aa2013",
+        sum = "h1:YhtyeaRgEDy6amoaijBY0B6uzaztIKKZbUcaO2OIFps=",
+        version = "v0.0.0-20201009135657-4d944d34d83c",
     )
 
     go_repository(
@@ -702,8 +702,8 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "org_golang_google_protobuf",
         importpath = "google.golang.org/protobuf",
-        sum = "h1:UhZDfRO8JRQru4/+LlLE0BRKGF8L+PICnvYZmx/fEGA=",
-        version = "v1.24.0",
+        sum = "h1:Ejskq+SyPohKW+1uil0JJMtmHCgJPJ/qWTxr8qp+R4c=",
+        version = "v1.25.0",
     )
     go_repository(
         name = "com_github_bradfitz_gomemcache",

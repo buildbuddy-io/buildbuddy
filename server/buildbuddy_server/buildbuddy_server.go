@@ -145,6 +145,57 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 	}, nil
 }
 
+func (s *BuildBuddyServer) authorizeGroupAccess(ctx context.Context, groupID string) error {
+	if groupID == "" {
+		return status.InvalidArgumentError("group ID is required")
+	}
+	auth := s.env.GetAuthenticator()
+	if auth == nil {
+		return status.UnimplementedError("Not Implemented")
+	}
+	user, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	for _, allowedGroupID := range user.GetAllowedGroups() {
+		if allowedGroupID == groupID {
+			return nil
+		}
+	}
+	return status.PermissionDeniedError("User does not have access to the requested group")
+}
+
+func (s *BuildBuddyServer) GetGroupUsers(ctx context.Context, req *grpb.GetGroupUsersRequest) (*grpb.GetGroupUsersResponse, error) {
+	if err := s.authorizeGroupAccess(ctx, req.GetGroupId()); err != nil {
+		return nil, err
+	}
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	users, err := userDB.GetGroupUsers(ctx, req.GetGroupId(), req.GetGroupMembershipStatus())
+	if err != nil {
+		return nil, err
+	}
+	return &grpb.GetGroupUsersResponse{
+		User: users,
+	}, nil
+}
+
+func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.UpdateGroupUsersRequest) (*grpb.UpdateGroupUsersResponse, error) {
+	if err := s.authorizeGroupAccess(ctx, req.GetGroupId()); err != nil {
+		return nil, err
+	}
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	if err := userDB.UpdateGroupUsers(ctx, req.GetGroupId(), req.GetUpdate()); err != nil {
+		return nil, err
+	}
+	return &grpb.UpdateGroupUsersResponse{}, nil
+}
+
 func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGroupRequest) (*grpb.CreateGroupResponse, error) {
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
