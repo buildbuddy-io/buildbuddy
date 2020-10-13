@@ -1,7 +1,7 @@
 <!--
 {
   "name": "Contributing",
-  "category": "5eeba6a6c5230e48eea60f18",
+  "category": "5f84be4816a467536a4ca064",
   "priority": 500
 }
 -->

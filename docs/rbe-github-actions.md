@@ -1,7 +1,7 @@
 <!--
 {
   "name": "RBE with GitHub Actions",
-  "category": "5f18d21935ec3867907dda03",
+  "category": "5f84be4816a467f32f4ca128",
   "priority": 600
 }
 -->

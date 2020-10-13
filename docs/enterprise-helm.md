@@ -1,7 +1,7 @@
 <!--
 {
   "name": "Enterprise Helm Charts",
-  "category": "5eed3e5fa3f1277a6b94b83a",
+  "category": "5f84be4816a467581a4ca066",
   "priority": 600
 }
 -->
