@@ -44,6 +44,8 @@ message JoinGroupResponse {
 }
 
 message GetGroupRequest {
+  context.RequestContext request_context = 2;
+
   // The unique URL segment for this group which is used
   // to construct nice-looking URLs for this group, such as
   // https://app.buildbuddy.com/join/:url-identifier
@@ -55,6 +57,8 @@ message GetGroupRequest {
 }
 
 message GetGroupResponse {
+  context.ResponseContext response_context = 4;
+
   // The unique ID of the group.
   // Ex. "GR4576963743584254779"
   string id = 1;
