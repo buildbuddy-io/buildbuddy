@@ -32,7 +32,7 @@ message Group {
 }
 
 message JoinGroupRequest {
-  // TODO: Add request_context
+  context.RequestContext request_context = 2;
 
   // The unique ID of this group.
   // Ex. "GR4576963743584254779"
@@ -40,11 +40,11 @@ message JoinGroupRequest {
 }
 
 message JoinGroupResponse {
-  // TODO: Add response_context
+  context.ResponseContext response_context = 1;
 }
 
 message GetGroupRequest {
-  // TODO: Add request_context
+  context.RequestContext request_context = 2;
 
   // The unique URL segment for this group which is used
   // to construct nice-looking URLs for this group, such as
@@ -57,7 +57,7 @@ message GetGroupRequest {
 }
 
 message GetGroupResponse {
-  // TODO: Add response_context
+  context.ResponseContext response_context = 4;
 
   // The unique ID of the group.
   // Ex. "GR4576963743584254779"
@@ -123,7 +123,7 @@ message UpdateGroupUsersResponse {
 }
 
 message CreateGroupRequest {
-  // TODO: Add request_context
+  context.RequestContext request_context = 4;
 
   // The name of this group (may be displayed to users).
   // Ex. "Tyler Williams Group"
@@ -145,7 +145,7 @@ message CreateGroupRequest {
 }
 
 message CreateGroupResponse {
-  // TODO: Add response_context
+  context.ResponseContext response_context = 2;
 
   // ID of the created group.
   // Ex. "GR4576963743584254779"
@@ -153,7 +153,7 @@ message CreateGroupResponse {
 }
 
 message UpdateGroupRequest {
-  // TODO: Add request_context
+  context.RequestContext request_context = 5;
 
   // The ID of the group to be updated.
   string id = 1;
@@ -178,7 +178,7 @@ message UpdateGroupRequest {
 }
 
 message UpdateGroupResponse {
-  // TODO: Add response_context
+  context.ResponseContext response_context = 1;
 }
 
 enum GroupMembershipStatus {
