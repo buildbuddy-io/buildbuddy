@@ -14,13 +14,13 @@ There are three ways to run BuildBuddy Enterprise On-prem:
 - [Docker Image](#docker-image): pre-built Docker images running the latest version of BuildBuddy.
 - [Kubernetes](#kubernetes): deploy BuildBuddy to your Kubernetes cluster with a one-line deploy script.
 
-We recommend using Helm as it includes all of the bells and whistles like nginx, remote build executors, etc. If you're not a fan of using helm for deployment - we recommend using Helm to generate your Kubernetes deployment yaml file with `helm template`, and then running `kubectl apply` with that file.
+We recommend using Helm as it includes all of the bells and whistles like nginx, remote build executors, etc. If you're not a fan of using Helm for deployment - we recommend using Helm to generate your Kubernetes deployment yaml file with `helm template`, and then running `kubectl apply` with that file.
 
 ## Helm
 
 If you run or have access to a Kubernetes cluster and are comfortable with [Helm](https://helm.sh/), we maintain official BuildBuddy Helm charts that are easy to configure and deploy.
 
-They have options deploy everything necessary to use all of BuildBuddy's bells and whistles - including MySQL, nginx, and more.
+They have options to deploy everything necessary to use all of BuildBuddy's bells and whistles - including MySQL, nginx, and more.
 
 The official BuildBuddy charts live in our [buildbuddy-helm repo](https://github.com/buildbuddy-io/buildbuddy-helm) and can be added to helm with the following command:
 
@@ -42,7 +42,7 @@ For more information on configuring your BuildBuddy Helm deploy, check out the c
 
 ## Docker Image
 
-We publish a [Docker](https://www.docker.com/) image with every release that contains a pre-configured BuildBuddy.
+We publish a [Docker](https://www.docker.com/) image with every release that contains a pre-configured BuildBuddy Enterprise.
 
 To run it, use the following command:
 
@@ -58,7 +58,7 @@ We also publish a docker image containing our RBE executor:
 docker pull gcr.io/flame-public/buildbuddy-executor-enterprise:latest && docker run -p 1987:1987 gcr.io/flame-public/buildbuddy-executor-enterprise:latest
 ```
 
-For its configuration options, see [RBE config documentation](rbe-config.md).
+For configuration options, see [RBE config documentation](config-rbe.md).
 
 ## Kubernetes
 

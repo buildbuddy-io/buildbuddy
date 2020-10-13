@@ -117,7 +117,7 @@ bash k8s_on_prem.sh -enterprise
 
 If you run or have access to a Kubernetes cluster and are comfortable with [Helm](https://helm.sh/), we maintain official BuildBuddy Helm charts that are easy to configure and deploy.
 
-They have options deploy everything necessary to use all of BuildBuddy's bells and whistles - including MySQL, nginx, and more.
+They have options to deploy everything necessary to use all of BuildBuddy's bells and whistles - including MySQL, nginx, and more.
 
 The official BuildBuddy charts live in our [buildbuddy-helm repo](https://github.com/buildbuddy-io/buildbuddy-helm) and can be added to helm with the following command:
 

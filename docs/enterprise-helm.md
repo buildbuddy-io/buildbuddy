@@ -10,7 +10,7 @@
 
 If you run or have access to a Kubernetes cluster and are comfortable with [Helm](https://helm.sh/), we maintain official BuildBuddy Helm charts that are easy to configure and deploy.
 
-They have options deploy everything necessary to use all of BuildBuddy's bells and whistles - including MySQL, nginx, remote build execution and more.
+They have options to deploy everything necessary to use all of BuildBuddy's bells and whistles - including MySQL, nginx, remote build execution and more.
 
 The official BuildBuddy charts live in our [buildbuddy-helm repo](https://github.com/buildbuddy-io/buildbuddy-helm).
 
@@ -41,13 +41,13 @@ helm repo add buildbuddy https://helm.buildbuddy.io
 
 To install the chart with the release name `my-release`:
 
-```bash
+```
 $ helm install my-release buildbuddy/buildbuddy-enterprise
 ```
 
 **Helm v2 command**
 
-```bash
+```
 $ helm install --name my-release buildbuddy/buildbuddy-enterprise
 ```
 
@@ -58,7 +58,7 @@ section lists the parameters that can be configured during installation.
 
 To uninstall/delete the `my-release` deployment:
 
-```bash
+```
 $ helm delete my-release
 ```
 
@@ -68,7 +68,7 @@ The command removes all the Kubernetes components associated with the chart and 
 
 If you change configuration, you can update your deployment:
 
-```bash
+```
 $ helm upgrade my-release -f my-values.yaml buildbuddy/buildbuddy-enterprise
 ```
 
@@ -76,13 +76,13 @@ $ helm upgrade my-release -f my-values.yaml buildbuddy/buildbuddy-enterprise
 
 You can write your Kubernetes deployment configuration to a file release name `my-release`:
 
-```bash
+```
 $ helm template my-release buildbuddy/buildbuddy-enterprise > buildbuddy-deploy.yaml
 ```
 
 You can then check this configuration in to your source repository, or manually apply it to your cluster with:
 
-```bash
+```
 $ kubectl apply -f buildbuddy-deploy.yaml
 ```
 
@@ -93,7 +93,7 @@ command with the `-f` or `--values` flag to get started.
 
 ### Example MySQL configuration
 
-```yaml
+```
 mysql:
   enabled: true
   mysqlUser: "sampleUser"
@@ -102,7 +102,7 @@ mysql:
 
 ### Example external database configuration
 
-```yaml
+```
 mysql:
   enabled: false
 
@@ -117,7 +117,7 @@ config:
 
 Note: make sure to run `kubectl apply --validate=false -f https://github.com/jetstack/cert-manager/releases/download/v0.16.1/cert-manager.crds.yaml` to install CRDs before deploying this configuration.
 
-```yaml
+```
 ingress:
   enabled: true
   sslEnabled: true
@@ -146,7 +146,7 @@ config:
 
 Auth can be configured with any provider that supports OpenID Connect (OIDC) including Google GSuite, Okta, Auth0 and others.
 
-```yaml
+```
 ingress:
   enabled: true
   sslEnabled: true
@@ -180,7 +180,7 @@ config:
 
 ## Example with remote build execution
 
-```yaml
+```
 executor:
   enabled: true
   replicas: 3
@@ -201,13 +201,13 @@ For local testing use [minikube](https://github.com/kubernetes/minikube)
 
 Create local cluster using with specified Kubernetes version (e.g. `1.15.6`)
 
-```bash
+```
 $ minikube start --kubernetes-version v1.15.6
 ```
 
 Initialize helm
 
-```bash
+```
 $ helm init
 ```
 
@@ -215,13 +215,13 @@ Above command is not required for Helm v3
 
 Get dependencies
 
-```bash
+```
 $ helm dependency update
 ```
 
 Perform local installation
 
-```bash
+```
 $ helm install . \
     --set image.tag=5.12.4 \
     --set mysql.mysqlUser=sampleUser \
@@ -230,7 +230,7 @@ $ helm install . \
 
 **Helm v3 command**
 
-```bash
+```
 $ helm install . \
     --generate-name \
     --set image.tag=5.12.4 \

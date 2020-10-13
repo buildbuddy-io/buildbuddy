@@ -10,17 +10,17 @@
 
 Remote Build Execution is only configurable in the [Enterprise version](enterprise.md) of BuildBuddy.
 
-Most RBE configuration is done via [toolchains](rbe-setup.md), [platforms](rbe-platforms.md), or the [enterprise Helm chart](enterprise-helm) - but it must be enabled in your config.yaml.
+RBE configuration must be enabled in your `config.yaml` file, but most configuration is done via [toolchains](rbe-setup.md), [platforms](rbe-platforms.md), or the [enterprise Helm chart](enterprise-helm).
 
 ## Section
 
-`remote_execution:` The org section allows you to configure BuildBuddy's remote build execution. **Optional**
+`remote_execution:` The remote_execution section allows you to configure BuildBuddy's remote build execution. **Optional**
 
 ## Options
 
 **Optional**
 
-- `enabled:` The name of your organization, which is displayed on your organization's build history.
+- `enabled:` True if remote execution should be enabled.
 
 ## Example section
 
