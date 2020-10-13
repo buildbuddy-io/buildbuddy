@@ -1,12 +1,14 @@
-import { buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
 import { Subject } from "rxjs";
+import { buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
+import { context } from "../../proto/context_ts_proto";
 
 class RpcService {
   service: buildbuddy.service.BuildBuddyService;
   events: Subject<string>;
+  requestContext: context.RequestContext;
 
   constructor() {
-    this.service = new buildbuddy.service.BuildBuddyService(this.rpc.bind(this));
+    this.service = this.autoAttachRequestContext(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this)));
     this.events = new Subject();
 
     (window as any)._rpcService = this;
@@ -72,6 +74,29 @@ class RpcService {
 
     request.send(requestData);
   }
+
+  private autoAttachRequestContext(
+    service: buildbuddy.service.BuildBuddyService
+  ): buildbuddy.service.BuildBuddyService {
+    const rpcNames = getRpcMethodNames(buildbuddy.service.BuildBuddyService);
+
+    return new Proxy(service, {
+      get: (_, prop: string) => {
+        if (!rpcNames.has(prop)) return (service as any)[prop];
+
+        return (request: Record<string, any>) => {
+          if (this.requestContext && !request.requestContext) {
+            request.requestContext = this.requestContext;
+          }
+          return (service as any)[prop](request);
+        };
+      },
+    });
+  }
+}
+
+function getRpcMethodNames(serviceClass: Function) {
+  return new Set(Object.keys(serviceClass.prototype).filter((key) => key !== "constructor"));
 }
 
 export default new RpcService();
