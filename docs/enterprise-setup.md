@@ -52,6 +52,8 @@ docker pull gcr.io/flame-public/buildbuddy-app-enterprise:latest && docker run -
 
 If you'd like to pass a custom configuration file to BuildBuddy running in a Docker image - see the [configuration docs](config.md) on using Docker's [-v flag](https://docs.docker.com/storage/volumes/).
 
+Note: If you're using BuildBuddy's Docker image locally and a third party gRPC cache, you'll likely need to add the `--network=host` [flag](https://docs.docker.com/network/host/) to your `docker run` command in order for BuildBuddy to be able to pull test logs and timing information from the external cache.
+
 We also publish a docker image containing our RBE executor:
 
 ```
