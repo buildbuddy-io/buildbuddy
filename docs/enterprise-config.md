@@ -6,7 +6,7 @@
 }
 -->
 
-## Configuring BuildBuddy Enterprise
+# Configuring BuildBuddy Enterprise
 
 BuildBuddy Enterprise allows configuration of many features that are not available in the open-core version. Below you’ll find examples for configuring some of these features. If you don’t see what you’re looking for below, please don’t hesitate to ask us! For a full overview of what can be configured, see our [Configuration docs](config.md).
 
