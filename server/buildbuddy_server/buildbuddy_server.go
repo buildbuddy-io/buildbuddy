@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
@@ -21,6 +20,7 @@ import (
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
 const (
@@ -218,9 +218,9 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	}
 
 	group := &tables.Group{
-		UserID:        user.UserID,
-		Name:          groupName,
-		OwnedDomain:   groupOwnedDomain,
+		UserID:      user.UserID,
+		Name:        groupName,
+		OwnedDomain: groupOwnedDomain,
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 	if urlIdentifier != "" {
@@ -237,6 +237,38 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	return &grpb.CreateGroupResponse{
 		Id: groupID,
 	}, nil
+}
+
+func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGroupRequest) (*grpb.UpdateGroupResponse, error) {
+	auth := s.env.GetAuthenticator()
+	userDB := s.env.GetUserDB()
+	if auth == nil || userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	if err := s.authorizeGroupAccess(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	group := &tables.Group{
+		GroupID: req.GetId(),
+	}
+	if err := userDB.FillGroup(ctx, group); err != nil {
+		return nil, err
+	}
+	group.Name = req.GetName()
+	if req.GetUrlIdentifier() != "" {
+		group.URLIdentifier = &req.UrlIdentifier
+	}
+	if req.GetAutoPopulateFromOwnedDomain() {
+		user, err := userDB.GetUser(ctx)
+		if err != nil {
+			return nil, err
+		}
+		group.OwnedDomain = getEmailDomain(user.Email)
+	}
+	if _, err := userDB.InsertOrUpdateGroup(ctx, group); err != nil {
+		return nil, err
+	}
+	return &grpb.UpdateGroupResponse{}, nil
 }
 
 func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupRequest) (*grpb.JoinGroupResponse, error) {
@@ -274,10 +306,6 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 func getEmailDomain(email string) string {
 	chunks := strings.Split(email, "@")
 	return chunks[len(chunks)-1]
-}
-
-func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGroupRequest) (*grpb.UpdateGroupResponse, error) {
-	return nil, status.UnimplementedError("Not Implemented")
 }
 
 func makeConfigOption(lifecycle, flagName, flagValue string) *bzpb.ConfigOption {
