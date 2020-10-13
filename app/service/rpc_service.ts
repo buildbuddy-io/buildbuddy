@@ -78,20 +78,16 @@ class RpcService {
   private autoAttachRequestContext(
     service: buildbuddy.service.BuildBuddyService
   ): buildbuddy.service.BuildBuddyService {
-    const rpcNames = getRpcMethodNames(buildbuddy.service.BuildBuddyService);
-
-    return new Proxy(service, {
-      get: (_, prop: string) => {
-        if (!rpcNames.has(prop)) return (service as any)[prop];
-
-        return (request: Record<string, any>) => {
-          if (this.requestContext && !request.requestContext) {
-            request.requestContext = this.requestContext;
-          }
-          return (service as any)[prop](request);
-        };
-      },
-    });
+    const extendedService = Object.create(service);
+    for (const rpcName of getRpcMethodNames(buildbuddy.service.BuildBuddyService)) {
+      extendedService[rpcName] = (request: Record<string, any>) => {
+        if (this.requestContext && !request.requestContext) {
+          request.requestContext = this.requestContext;
+        }
+        return (service as any)[rpcName](request);
+      };
+    }
+    return extendedService;
   }
 }
 
