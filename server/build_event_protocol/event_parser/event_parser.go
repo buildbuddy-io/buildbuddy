@@ -265,6 +265,9 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	if url, ok := envVarMap["TRAVIS_REPO_SLUG"]; ok && url != "" {
 		invocation.RepoUrl = url
 	}
+	if url, ok := envVarMap["GIT_URL"]; ok && url != "" {
+		invocation.RepoUrl = url
+	}
 	if url, ok := envVarMap["BUILDKITE_REPO"]; ok && url != "" {
 		invocation.RepoUrl = url
 	}
@@ -275,6 +278,9 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 		invocation.RepoUrl = url
 	}
 	if sha, ok := envVarMap["TRAVIS_COMMIT"]; ok && sha != "" {
+		invocation.CommitSha = sha
+	}
+	if sha, ok := envVarMap["GIT_COMMIT"]; ok && sha != "" {
 		invocation.CommitSha = sha
 	}
 	if sha, ok := envVarMap["BUILDKITE_COMMIT"]; ok && sha != "" {
