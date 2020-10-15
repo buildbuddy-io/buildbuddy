@@ -76,6 +76,9 @@ message Invocation {
 
   // The role played by this invocation. Ex: "CI"
   string role = 19;
+
+  // Access control list for this invocation.
+  ACL acl = 20;
 }
 
 message InvocationEvent {
