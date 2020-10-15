@@ -114,4 +114,6 @@ message GetExecutionResponse {
   context.ResponseContext response_context = 1;
 
   repeated Execution execution = 2;
+
+  ACL acl = 3;
 }
