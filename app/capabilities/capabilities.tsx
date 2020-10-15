@@ -9,6 +9,8 @@ export class Capabilities {
   auth: string;
   anonymous: boolean;
   createOrg: boolean;
+  // TODO: Base this on the buildbuddyConfig
+  invocationSharing: boolean = true;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;

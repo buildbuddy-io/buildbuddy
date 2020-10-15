@@ -1,0 +1,38 @@
+.filled-button {
+  padding: 8px 16px;
+  height: 40px;
+  background-color: #263238;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: inherit;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  display: block;
+  box-sizing: border-box;
+  text-align: center;
+  line-height: normal;
+  -webkit-font-smoothing: inherit;
+  -moz-osx-font-smoothing: inherit;
+
+  flex-shrink: 0;
+  align-self: center;
+  display: flex;
+  align-items: center;
+}
+
+.filled-button:hover {
+  background-color: #455a64;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: 100ms;
+}
+
+.filled-button:active {
+  box-shadow: none;
+}
+
+.filled-button[disabled] {
+  background: #bbb;
+  cursor: not-allowed;
+}

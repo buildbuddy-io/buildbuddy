@@ -1,33 +1,27 @@
-import React from "react";
 import moment from "moment";
-
-import rpcService from "../service/rpc_service";
-import authService, { User } from "../auth/auth_service";
+import React from "react";
+import { invocation } from "../../proto/invocation_ts_proto";
+import { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
 import faviconService from "../favicon/favicon";
-
-import InvocationModel from "./invocation_model";
-
-import InvocationInProgressComponent from "./invocation_in_progress";
-import InvocationNotFoundComponent from "./invocation_not_found";
-
-import InvocationOverviewComponent from "./invocation_overview";
-import InvocationTabsComponent from "./invocation_tabs";
-import InvocationFilterComponent from "./invocation_filter";
-import BuildLogsCardComponent from "./invocation_build_logs_card";
-import ErrorCardComponent from "./invocation_error_card";
-import InvocationDetailsCardComponent from "./invocation_details_card";
-import ArtifactsCardComponent from "./invocation_artifacts_card";
-import CacheCardComponent from "./invocation_cache_card";
-import RawLogsCardComponent from "./invocation_raw_logs_card";
-import TimingCardComponent from "./invocation_timing_card";
-import TargetsComponent from "./invocation_targets";
+import rpcService from "../service/rpc_service";
 import TargetComponent from "../target/target";
-
 import DenseInvocationOverviewComponent from "./dense/dense_invocation_overview";
 import DenseInvocationTabsComponent from "./dense/dense_invocation_tabs";
-
-import { invocation } from "../../proto/invocation_ts_proto";
+import ArtifactsCardComponent from "./invocation_artifacts_card";
+import BuildLogsCardComponent from "./invocation_build_logs_card";
+import CacheCardComponent from "./invocation_cache_card";
+import InvocationDetailsCardComponent from "./invocation_details_card";
+import ErrorCardComponent from "./invocation_error_card";
+import InvocationFilterComponent from "./invocation_filter";
+import InvocationInProgressComponent from "./invocation_in_progress";
+import InvocationModel from "./invocation_model";
+import InvocationNotFoundComponent from "./invocation_not_found";
+import InvocationOverviewComponent from "./invocation_overview";
+import RawLogsCardComponent from "./invocation_raw_logs_card";
+import InvocationTabsComponent from "./invocation_tabs";
+import TargetsComponent from "./invocation_targets";
+import TimingCardComponent from "./invocation_timing_card";
 
 interface State {
   loading: boolean;
@@ -163,7 +157,11 @@ export default class InvocationComponent extends React.Component {
       <div className="invocation">
         <div className={`shelf nopadding-dense ${this.state.model.getStatusClass()}`}>
           {this.props.denseMode ? (
-            <DenseInvocationOverviewComponent invocationId={this.props.invocationId} model={this.state.model} />
+            <DenseInvocationOverviewComponent
+              user={this.props.user}
+              invocationId={this.props.invocationId}
+              model={this.state.model}
+            />
           ) : (
             <InvocationOverviewComponent
               invocationId={this.props.invocationId}

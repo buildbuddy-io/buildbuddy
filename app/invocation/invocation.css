@@ -75,3 +75,33 @@
   margin-top: 32px;
   font-size: 16px;
 }
+
+.dense-invocation {
+  display: flex;
+  justify-content: space-between;
+}
+
+.invocation-share-button {
+  margin-left: 8px;
+}
+
+.invocation-share-button img {
+  margin-right: 12px;
+  margin-left: -4px;
+  width: 16px;
+  height: 16px;
+}
+
+.invocation-share-dialog .row {
+  display: flex;
+  flex-direction: row;
+}
+
+.invocation-share-dialog .row > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.invocation-share-dialog .link-input {
+  flex-grow: 1;
+  text-overflow: ellipsis;
+}
