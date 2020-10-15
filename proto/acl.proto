@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package acl;
 
+// Access control list for BuildBuddy objects.
 message ACL {
   Permissions owner_permissions = 1;
   Permissions group_permissions = 2;
