@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package acl;
+
+message ACL {
+  Permissions owner_permissions = 1;
+  Permissions group_permissions = 2;
+  Permissions others_permissions = 3;
+
+  message Permissions {
+    bool read = 1;
+    bool write = 2;
+    bool execute = 3;
+  }
+}

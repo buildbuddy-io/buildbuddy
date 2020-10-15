@@ -51,6 +51,7 @@ proto_library(
         "execution_stats.proto",
     ],
     deps = [
+        ":acl_proto",
         ":context_proto",
         ":remote_execution_proto",
         "@com_google_protobuf//:duration_proto",
@@ -244,6 +245,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/execution_stats",
     proto = ":execution_stats_proto",
     deps = [
+        ":acl_go_proto",
         ":context_go_proto",
         ":remote_execution_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",

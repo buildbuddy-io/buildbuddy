@@ -1,7 +1,7 @@
 syntax = "proto3";
 
-import "google/protobuf/duration.proto";
 import "google/rpc/status.proto";
+import "proto/acl.proto";
 import "proto/context.proto";
 import "proto/remote_execution.proto";
 
@@ -115,5 +115,5 @@ message GetExecutionResponse {
 
   repeated Execution execution = 2;
 
-  ACL acl = 3;
+  acl.ACL acl = 3;
 }
