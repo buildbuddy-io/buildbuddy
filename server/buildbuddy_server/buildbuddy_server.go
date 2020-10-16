@@ -226,16 +226,12 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 
-	// Make sure the URL identifier isn't already taken by any existing group.
 	if urlIdentifier != "" {
-		existingGroup, err := userDB.GetGroupByURLIdentifier(ctx, urlIdentifier)
-		if err != nil && gstatus.Code(err) != gcodes.NotFound {
+		if existingGroup, err := userDB.GetGroupByURLIdentifier(ctx, urlIdentifier); existingGroup != nil {
+			return nil, status.InvalidArgumentError("URL is already in use")
+		} else if gstatus.Code(err) != gcodes.NotFound {
 			return nil, err
 		}
-		if existingGroup != nil {
-			return nil, status.InvalidArgumentError("URL is already in use")
-		}
-
 		group.URLIdentifier = &urlIdentifier
 	}
 
@@ -265,23 +261,19 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	var err error
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 
-	// Make sure the new URL identifier isn't taken by a different group
-	// than the one being updated.
 	if urlIdentifier != "" {
-		group, err = userDB.GetGroupByURLIdentifier(ctx, urlIdentifier)
-		if err != nil && gstatus.Code(err) != gcodes.NotFound {
+		if group, err = userDB.GetGroupByURLIdentifier(ctx, urlIdentifier); group != nil && group.GroupID != req.GetId() {
+			return nil, status.InvalidArgumentError("URL is already in use")
+		} else if err != nil && gstatus.Code(err) != gcodes.NotFound {
 			return nil, err
 		}
-		if group != nil && group.GroupID != req.GetId() {
-			return nil, status.InvalidArgumentError("URL is already in use")
-		}
-	}
-
-	if group == nil {
+	} else if req.GetId() != "" {
 		group, err = userDB.GetGroupByID(ctx, req.GetId())
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		return nil, status.InvalidArgumentError("Missing organization identifier.")
 	}
 	group.Name = req.GetName()
 	if urlIdentifier != "" {
