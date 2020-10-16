@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "proto/acl.proto";
 import "proto/build_event_stream.proto";
 import "proto/cache.proto";
 import "proto/command_line.proto";
@@ -76,6 +77,9 @@ message Invocation {
 
   // The role played by this invocation. Ex: "CI"
   string role = 19;
+
+  // Access control list for this invocation.
+  acl.ACL acl = 20;
 }
 
 message InvocationEvent {

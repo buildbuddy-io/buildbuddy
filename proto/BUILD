@@ -1,7 +1,16 @@
+load("@rules_proto//proto:defs.bzl", "proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("//rules:typescript_proto_library.bzl", "ts_proto_library")
 
 package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "acl_proto",
+    srcs = ["acl.proto"],
+    deps = [
+        ":user_id_proto",
+    ],
+)
 
 proto_library(
     name = "build_status_proto",
@@ -45,6 +54,7 @@ proto_library(
         "execution_stats.proto",
     ],
     deps = [
+        ":acl_proto",
         ":context_proto",
         ":remote_execution_proto",
         "@com_google_protobuf//:duration_proto",
@@ -96,6 +106,7 @@ proto_library(
     name = "invocation_proto",
     srcs = ["invocation.proto"],
     deps = [
+        ":acl_proto",
         ":build_event_stream_proto",
         ":cache_proto",
         ":command_line_proto",
@@ -206,6 +217,15 @@ proto_library(
 # Go proto rules below here
 
 go_proto_library(
+    name = "acl_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/acl",
+    proto = ":acl_proto",
+    deps = [
+        ":user_id_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "build_status_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/build_status",
     proto = ":build_status_proto",
@@ -231,6 +251,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/execution_stats",
     proto = ":execution_stats_proto",
     deps = [
+        ":acl_go_proto",
         ":context_go_proto",
         ":remote_execution_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
@@ -284,6 +305,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/invocation",
     proto = ":invocation_proto",
     deps = [
+        ":acl_go_proto",
         ":build_event_stream_go_proto",
         ":cache_go_proto",
         ":command_line_go_proto",
@@ -406,6 +428,11 @@ go_proto_library(
 )
 
 # TypeScript proto rules below here
+
+ts_proto_library(
+    name = "acl_ts_proto",
+    deps = [":acl_proto"],
+)
 
 ts_proto_library(
     name = "bazel_config_ts_proto",
