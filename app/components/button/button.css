@@ -1,8 +1,6 @@
-.filled-button {
+.button {
   padding: 8px 16px;
   height: 40px;
-  background-color: #263238;
-  color: #fff;
   font-size: 16px;
   font-weight: 600;
   font-family: inherit;
@@ -22,6 +20,11 @@
   align-items: center;
 }
 
+.filled-button {
+  background-color: #263238;
+  color: #fff;
+}
+
 .filled-button:hover {
   background-color: #455a64;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
@@ -35,4 +38,19 @@
 .filled-button[disabled] {
   background: #bbb;
   cursor: not-allowed;
+}
+
+.outlined-button {
+  background: transparent;
+  border: 1px solid rgba(20, 20, 20, 0.1);
+  transition: 200ms ease;
+}
+
+.outlined-button:hover {
+  border: 1px solid transparent;
+  background: rgba(20, 20, 20, 0.1);
+}
+
+.outlined-button:active {
+  background: rgba(20, 20, 20, 0.2);
 }

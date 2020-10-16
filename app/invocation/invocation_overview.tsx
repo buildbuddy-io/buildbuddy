@@ -1,8 +1,9 @@
 import React from "react";
-import InvocationModel from "./invocation_model";
-import router from "../router/router";
-import format from "../format/format";
 import { User } from "../auth/auth_service";
+import format from "../format/format";
+import router from "../router/router";
+import InvocationModel from "./invocation_model";
+import InvocationShareButton from "./invocation_share_button";
 
 interface Props {
   model: InvocationModel;
@@ -43,18 +44,21 @@ export default class InvocationOverviewComponent extends React.Component {
   render() {
     return (
       <div className="container">
-        <div className="breadcrumbs">
-          {this.props.user && (
-            <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
-              {this.props.user?.selectedGroupName()}
-            </span>
-          )}
-          {this.props.user && (
-            <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
-              Builds
-            </span>
-          )}
-          <span>Invocation {this.props.invocationId}</span>
+        <div className="breadcrumbs-and-share-button">
+          <div className="breadcrumbs">
+            {this.props.user && (
+              <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                {this.props.user?.selectedGroupName()}
+              </span>
+            )}
+            {this.props.user && (
+              <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                Builds
+              </span>
+            )}
+            <span>Invocation {this.props.invocationId}</span>
+          </div>
+          <InvocationShareButton user={this.props.user} model={this.props.model} />
         </div>
         <div className="titles">
           <div className="title" title={this.props.model.getAllPatterns()}>

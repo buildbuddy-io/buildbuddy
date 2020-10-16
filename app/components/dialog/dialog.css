@@ -20,32 +20,6 @@
   margin-right: 8px;
 }
 
-.dialog-close-button {
-  /* Style reset */
-  border: none;
-  margin: 0;
-  padding: 0;
-  background: transparent;
-  line-height: normal;
-  -webkit-font-smoothing: inherit;
-  -moz-osx-font-smoothing: inherit;
-  -webkit-appearance: none;
-
-  /* Styling */
-  align-self: start;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-
-.dialog-close-button:hover {
-  opacity: 0.7;
-}
-
-.dialog-close-button img {
-  width: inherit;
-  height: inherit;
-}
-
 .dialog-title {
   font-size: 24px;
 }
@@ -53,4 +27,17 @@
 .dialog-body {
   padding: 8px var(--dialog-side-padding);
   overflow-y: auto;
+}
+
+.dialog-footer {
+  display: flex;
+  padding: 0 var(--dialog-side-padding);
+  margin-top: 8px;
+  /* Convert bottom margin to padding so that the shadow can render. */
+  padding-bottom: 8px;
+  margin-bottom: -8px;
+}
+
+.dialog-footer-buttons {
+  margin-left: auto;
 }

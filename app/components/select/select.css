@@ -1,0 +1,31 @@
+.select-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.select {
+  font-size: inherit;
+  height: 40px;
+  padding: 8px 16px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  background: transparent;
+  appearance: none;
+  padding-right: 40px;
+  cursor: pointer;
+}
+
+.select-wrapper::after {
+  content: "";
+  display: block;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 40px;
+  background-image: url("/image/chevron-down.svg");
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: 1;
+  pointer-events: none;
+}

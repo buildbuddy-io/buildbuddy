@@ -31,24 +31,29 @@ export class DialogTitle extends React.Component<DialogTitleProps> {
   }
 }
 
-export type DialogCloseButtonProps = Omit<JSX.IntrinsicElements["button"], "children">;
-
-export class DialogCloseButton extends React.Component<DialogCloseButtonProps> {
-  render() {
-    const { className, ...props } = this.props;
-    return (
-      <button className={`dialog-close-button ${className || ""}`} aria-label="Close" {...props}>
-        <img src="/image/x.svg" />
-      </button>
-    );
-  }
-}
-
 export type DialogBodyProps = JSX.IntrinsicElements["div"];
 
 export class DialogBody extends React.Component<DialogBodyProps> {
   render() {
     const { className, ...props } = this.props;
     return <div className={`dialog-body ${className}`} {...props} />;
+  }
+}
+
+export type DialogFooterProps = JSX.IntrinsicElements["div"];
+
+export class DialogFooter extends React.Component<DialogFooterProps> {
+  render() {
+    const { className, ...props } = this.props;
+    return <div className={`dialog-footer ${className}`} {...props} />;
+  }
+}
+
+export type DialogFooterButtonsProps = JSX.IntrinsicElements["div"];
+
+export class DialogFooterButtons extends React.Component<DialogFooterButtonsProps> {
+  render() {
+    const { className, ...props } = this.props;
+    return <div className={`dialog-footer-buttons ${className}`} {...props} />;
   }
 }

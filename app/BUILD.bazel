@@ -55,6 +55,7 @@ genrule(
         "//app/components/dialog:dialog.css",
         "//app/components/input:input.css",
         "//app/components/modal:modal.css",
+        "//app/components/select:select.css",
     ],
     outs = ["style.css"],
     cmd_bash = ("""
