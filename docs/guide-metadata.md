@@ -36,7 +36,7 @@ Then you'll need to add a `workspace_status.sh` file to the root of your workspa
 
 ### Environment variables
 
-BuildBuddy will automatically pull your repo URL from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, Gitlab CI, or BuildKite. The environment variables currently supported are `GITHUB_REPOSITORY`, `CIRCLE_REPOSITORY_URL`, `TRAVIS_REPO_SLUG`, `CI_REPOSITORY_URL`, and `BUILDKITE_REPO`.
+BuildBuddy will automatically pull your repo URL from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, Jenkins, Gitlab CI, or BuildKite. The environment variables currently supported are `GITHUB_REPOSITORY`, `CIRCLE_REPOSITORY_URL`, `TRAVIS_REPO_SLUG`, `GIT_URL`, `CI_REPOSITORY_URL`, and `BUILDKITE_REPO`.
 
 ## Commit SHA
 
@@ -64,7 +64,7 @@ Then you'll need to add a `workspace_status.sh` file to the root of your workspa
 
 ### Environment variables
 
-BuildBuddy will automatically pull your commit SHA from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, Gitlab CI, or BuildKite. The environment variables currently supported are `GITHUB_SHA`, `CIRCLE_SHA1`, `TRAVIS_COMMIT`, `CI_COMMIT_SHA`, and `BUILDKITE_COMMIT`.
+BuildBuddy will automatically pull your commit SHA from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, Jenkins, Gitlab CI, or BuildKite. The environment variables currently supported are `GITHUB_SHA`, `CIRCLE_SHA1`, `TRAVIS_COMMIT`, `GIT_COMMIT`, `CI_COMMIT_SHA`, and `BUILDKITE_COMMIT`.
 
 ## Role
 
