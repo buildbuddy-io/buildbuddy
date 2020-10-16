@@ -7,6 +7,9 @@ package(default_visibility = ["//visibility:public"])
 proto_library(
     name = "acl_proto",
     srcs = ["acl.proto"],
+    deps = [
+        ":user_id_proto",
+    ],
 )
 
 proto_library(
@@ -217,6 +220,9 @@ go_proto_library(
     name = "acl_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/acl",
     proto = ":acl_proto",
+    deps = [
+        ":user_id_go_proto",
+    ],
 )
 
 go_proto_library(

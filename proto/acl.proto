@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "proto/user_id.proto";
+
 package acl;
 
 // Access control list for BuildBuddy objects.
