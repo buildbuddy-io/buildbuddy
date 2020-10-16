@@ -97,6 +97,9 @@ message Execution {
   // Execution stage timings.
   build.bazel.remote.execution.v2.ExecutedActionMetadata
       executed_action_metadata = 5;
+
+  // Permissions for this execution.
+  acl.ACL acl = 6;
 }
 
 message ExecutionLookup {
@@ -114,6 +117,4 @@ message GetExecutionResponse {
   context.ResponseContext response_context = 1;
 
   repeated Execution execution = 2;
-
-  acl.ACL acl = 3;
 }
