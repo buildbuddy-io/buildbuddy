@@ -21,6 +21,8 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	gcodes "google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -136,9 +138,6 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 	if err != nil {
 		return nil, err
 	}
-	if group == nil {
-		return nil, status.NotFoundError("The requested organization was not found.")
-	}
 	return &grpb.GetGroupResponse{
 		Id: group.GroupID,
 		// NOTE: this RPC does not require authentication, so sensitive group
@@ -226,9 +225,11 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		OwnedDomain: groupOwnedDomain,
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
+
+	// Make sure the URL identifier isn't already taken by any existing group.
 	if urlIdentifier != "" {
 		existingGroup, err := userDB.GetGroupByURLIdentifier(ctx, urlIdentifier)
-		if err != nil {
+		if err != nil && gstatus.Code(err) != gcodes.NotFound {
 			return nil, err
 		}
 		if existingGroup != nil {
@@ -237,6 +238,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 
 		group.URLIdentifier = &urlIdentifier
 	}
+
 	groupID, err := userDB.InsertOrUpdateGroup(ctx, group)
 	if err != nil {
 		return nil, err
@@ -262,23 +264,23 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	var group *tables.Group
 	var err error
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
+
+	// Make sure the new URL identifier isn't taken by a different group
+	// than the one being updated.
 	if urlIdentifier != "" {
 		group, err = userDB.GetGroupByURLIdentifier(ctx, urlIdentifier)
-		if err != nil {
+		if err != nil && gstatus.Code(err) != gcodes.NotFound {
 			return nil, err
 		}
 		if group != nil && group.GroupID != req.GetId() {
-			return nil, status.InvalidArgumentError("URL is already in use.")
+			return nil, status.InvalidArgumentError("URL is already in use")
 		}
 	}
 
 	if group == nil {
-		group, err := userDB.GetGroupByID(ctx, req.GetId())
+		group, err = userDB.GetGroupByID(ctx, req.GetId())
 		if err != nil {
 			return nil, err
-		}
-		if group == nil {
-			return nil, status.NotFoundError("The requested organization was not found.")
 		}
 	}
 	group.Name = req.GetName()
@@ -311,9 +313,6 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 	group, err := userDB.GetGroupByID(ctx, req.GetId())
 	if err != nil {
 		return nil, err
-	}
-	if group == nil {
-		return nil, status.NotFoundError("The requested organization was not found.")
 	}
 	// If the user's email matches the group's owned domain, they can be added
 	// as a member immediately.
