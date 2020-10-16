@@ -109,10 +109,6 @@ export default class InvocationShareButtonComponent extends React.Component<
                   {visibility === "public" && "Anyone on the Internet with this link can view"}
                 </div>
               </div>
-              <div className="expiration-warning">
-                <span className="bold">Note:</span> invocations are stored forever, but artifacts may not be available
-                after 30 days.
-              </div>
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>

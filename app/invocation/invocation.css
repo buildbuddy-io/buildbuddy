@@ -128,11 +128,3 @@
   font-weight: 600;
   margin-bottom: 8px;
 }
-
-.invocation-share-dialog .expiration-warning {
-  background: #e1f5fe;
-  border-radius: 8px;
-  margin-top: 8px;
-  padding: 16px;
-  font-size: 14px;
-}
