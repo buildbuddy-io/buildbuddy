@@ -267,7 +267,8 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 		} else if err != nil && gstatus.Code(err) != gcodes.NotFound {
 			return nil, err
 		}
-	} else if req.GetId() != "" {
+	}
+	if group == nil && req.GetId() != "" {
 		group, err = userDB.GetGroupByID(ctx, req.GetId())
 		if err != nil {
 			return nil, err
