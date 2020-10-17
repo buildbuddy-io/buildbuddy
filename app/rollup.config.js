@@ -1,17 +1,26 @@
 const node = require("rollup-plugin-node-resolve");
 const commonjs = require("rollup-plugin-commonjs");
 const replace = require("rollup-plugin-replace");
+const builtins = require("rollup-plugin-node-builtins");
 
 module.exports = {
   plugins: [
     node({
-      mainFields: ["browser", "es2015", "module", "jsnext:main", "main"],
+      mainFields: ["browser", "es2015", "module", "jsnext:main", "main", "events"],
     }),
+    builtins(),
     commonjs({
       namedExports: {
         "protobufjs/minimal": ["rpc", "roots", "util", "Reader", "Writer"],
         "node_modules/react-dom/index.js": ["findDOMNode"],
-        "node_modules/react/index.js": ["createElement", "PureComponent", "Children", "Component"],
+        "node_modules/react/index.js": [
+          "createElement",
+          "PureComponent",
+          "Children",
+          "Component",
+          "cloneElement",
+          "isValidElement",
+        ],
         "node_modules/react-lazylog/build/index.js": ["LazyLog"],
       },
       sourceMap: false,
