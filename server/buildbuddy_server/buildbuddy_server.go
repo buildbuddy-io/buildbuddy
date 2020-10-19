@@ -99,7 +99,7 @@ func (s *BuildBuddyServer) authorizeInvocationUpdate(ctx context.Context, reqCtx
 	}
 
 	// Invocations should probably never be writeable by OTHERS,
-	// but including this check for completeness.
+	// but this check is included for completeness.
 	if in.Perms&perms.OTHERS_WRITE != 0 {
 		return nil
 	}
@@ -135,6 +135,7 @@ func (s *BuildBuddyServer) UpdateInvocation(ctx context.Context, req *inpb.Updat
 	if err := s.authorizeInvocationUpdate(ctx, req.GetRequestContext(), in); err != nil {
 		return nil, err
 	}
+	// NOTE: We currently ignore the user_id and group_id in the updated ACL.
 	in.Perms = updatedPerms
 	if err := db.InsertOrUpdateInvocation(ctx, in); err != nil {
 		return nil, err
