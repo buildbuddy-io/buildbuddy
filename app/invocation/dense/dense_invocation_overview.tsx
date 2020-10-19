@@ -67,7 +67,9 @@ export default class DenseInvocationOverviewComponent extends React.Component {
           </div>
           <div className="dense-invocation-overview-grid-chunk">
             <div className="dense-invocation-overview-grid-title">Failed</div>
-            <div className="dense-invocation-overview-grid-value">{this.props.model.failed.length}</div>
+            <div className="dense-invocation-overview-grid-value">
+              {this.props.model.failed.length + this.props.model.failedTest.length}
+            </div>
           </div>
           <div className="dense-invocation-overview-grid-chunk">
             <div className="dense-invocation-overview-grid-title">Flaky</div>
@@ -75,7 +77,9 @@ export default class DenseInvocationOverviewComponent extends React.Component {
           </div>
           <div className="dense-invocation-overview-grid-chunk">
             <div className="dense-invocation-overview-grid-title">Successful</div>
-            <div className="dense-invocation-overview-grid-value">{this.props.model.succeeded.length}</div>
+            <div className="dense-invocation-overview-grid-value">
+              {this.props.model.succeeded.length - this.props.model.failedTest.length}
+            </div>
           </div>
         </div>
       </div>
