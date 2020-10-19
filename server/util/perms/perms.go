@@ -8,6 +8,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 const (
@@ -43,6 +46,25 @@ func GroupAuthPermissions(groupID string) *UserGroupPerm {
 		UserID:  groupID,
 		GroupID: groupID,
 		Perms:   GROUP_READ | GROUP_WRITE,
+	}
+}
+
+func ToACLProto(userID *uidpb.UserId, groupID string, perms int) *aclpb.ACL {
+	return &aclpb.ACL{
+		UserId:  userID,
+		GroupId: groupID,
+		OwnerPermissions: &aclpb.ACL_Permissions{
+			Read:  perms&OWNER_READ != 0,
+			Write: perms&OWNER_WRITE != 0,
+		},
+		GroupPermissions: &aclpb.ACL_Permissions{
+			Read:  perms&GROUP_READ != 0,
+			Write: perms&GROUP_WRITE != 0,
+		},
+		OthersPermissions: &aclpb.ACL_Permissions{
+			Read:  perms&OTHERS_READ != 0,
+			Write: perms&OTHERS_WRITE != 0,
+		},
 	}
 }
 
