@@ -6,8 +6,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/log",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:remote_execution_go_proto",
         "//server/util/uuid:go_default_library",
+        "@com_github_golang_protobuf//proto:go_default_library",
         "@org_golang_google_grpc//codes:go_default_library",
+        "@org_golang_google_grpc//metadata:go_default_library",
         "@org_golang_google_grpc//status:go_default_library",
     ],
 )
