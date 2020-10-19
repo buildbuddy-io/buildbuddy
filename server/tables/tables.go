@@ -345,7 +345,6 @@ func (c *CacheLog) TableName() string {
 	return "CacheLogs"
 }
 
-
 // Manual migration called before auto-migration.
 func PreAutoMigrate(db *gorm.DB) error {
 	d := db.Dialect()
