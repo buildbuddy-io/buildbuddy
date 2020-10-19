@@ -220,9 +220,10 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	}
 
 	group := &tables.Group{
-		UserID:      user.UserID,
-		Name:        groupName,
-		OwnedDomain: groupOwnedDomain,
+		UserID:         user.UserID,
+		Name:           groupName,
+		OwnedDomain:    groupOwnedDomain,
+		SharingEnabled: req.GetSharingEnabled(),
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 
@@ -287,6 +288,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 		}
 		group.OwnedDomain = getEmailDomain(user.Email)
 	}
+	group.SharingEnabled = req.GetSharingEnabled()
 	if _, err := userDB.InsertOrUpdateGroup(ctx, group); err != nil {
 		return nil, err
 	}

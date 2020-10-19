@@ -152,6 +152,8 @@ type Group struct {
 	// "example-org.buildbuddy.com" if we support subdomains in the future.
 	URLIdentifier *string `gorm:"unique_index:url_identifier_unique_index"`
 
+	SharingEnabled bool `gorm:"default:true"`
+
 	// The "owned" domain. In enterprise/cloud version, we create a
 	// group for a customer's domain, and new users that sign up with an
 	// email belonging to that domain may be added to this group.
@@ -344,7 +346,6 @@ type CacheLog struct {
 func (c *CacheLog) TableName() string {
 	return "CacheLogs"
 }
-
 
 // Manual migration called before auto-migration.
 func PreAutoMigrate(db *gorm.DB) error {
