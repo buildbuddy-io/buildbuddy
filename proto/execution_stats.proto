@@ -1,7 +1,7 @@
 syntax = "proto3";
 
-import "google/protobuf/duration.proto";
 import "google/rpc/status.proto";
+import "proto/acl.proto";
 import "proto/context.proto";
 import "proto/remote_execution.proto";
 
@@ -97,6 +97,9 @@ message Execution {
   // Execution stage timings.
   build.bazel.remote.execution.v2.ExecutedActionMetadata
       executed_action_metadata = 5;
+
+  // Permissions for this execution.
+  acl.ACL acl = 6;
 }
 
 message ExecutionLookup {

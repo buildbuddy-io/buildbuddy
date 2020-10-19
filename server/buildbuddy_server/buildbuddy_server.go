@@ -21,6 +21,8 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	gcodes "google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -128,12 +130,12 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	group := &tables.Group{}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
-	if urlIdentifier != "" {
-		group.URLIdentifier = &urlIdentifier
+	if urlIdentifier == "" {
+		return nil, status.InvalidArgumentError("URL identifier is required.")
 	}
-	if err := userDB.FillGroup(ctx, group); err != nil {
+	group, err := userDB.GetGroupByURLIdentifier(ctx, urlIdentifier)
+	if err != nil {
 		return nil, err
 	}
 	return &grpb.GetGroupResponse{
@@ -223,9 +225,16 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		OwnedDomain: groupOwnedDomain,
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
+
 	if urlIdentifier != "" {
+		if existingGroup, err := userDB.GetGroupByURLIdentifier(ctx, urlIdentifier); existingGroup != nil {
+			return nil, status.InvalidArgumentError("URL is already in use")
+		} else if gstatus.Code(err) != gcodes.NotFound {
+			return nil, err
+		}
 		group.URLIdentifier = &urlIdentifier
 	}
+
 	groupID, err := userDB.InsertOrUpdateGroup(ctx, group)
 	if err != nil {
 		return nil, err
@@ -248,15 +257,28 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	if err := s.authorizeGroupAccess(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	group := &tables.Group{
-		GroupID: req.GetId(),
+	var group *tables.Group
+	var err error
+	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
+
+	if urlIdentifier != "" {
+		if group, err = userDB.GetGroupByURLIdentifier(ctx, urlIdentifier); group != nil && group.GroupID != req.GetId() {
+			return nil, status.InvalidArgumentError("URL is already in use")
+		} else if err != nil && gstatus.Code(err) != gcodes.NotFound {
+			return nil, err
+		}
 	}
-	if err := userDB.FillGroup(ctx, group); err != nil {
-		return nil, err
+	if group == nil && req.GetId() != "" {
+		group, err = userDB.GetGroupByID(ctx, req.GetId())
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, status.InvalidArgumentError("Missing organization identifier.")
 	}
 	group.Name = req.GetName()
-	if req.GetUrlIdentifier() != "" {
-		group.URLIdentifier = &req.UrlIdentifier
+	if urlIdentifier != "" {
+		group.URLIdentifier = &urlIdentifier
 	}
 	if req.GetAutoPopulateFromOwnedDomain() {
 		user, err := userDB.GetUser(ctx)
@@ -281,10 +303,8 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 	if err != nil {
 		return nil, err
 	}
-	group := &tables.Group{
-		GroupID: req.GetId(),
-	}
-	if err := userDB.FillGroup(ctx, group); err != nil {
+	group, err := userDB.GetGroupByID(ctx, req.GetId())
+	if err != nil {
 		return nil, err
 	}
 	// If the user's email matches the group's owned domain, they can be added

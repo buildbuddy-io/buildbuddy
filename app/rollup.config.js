@@ -5,13 +5,22 @@ const replace = require("rollup-plugin-replace");
 module.exports = {
   plugins: [
     node({
+      browser: true,
       mainFields: ["browser", "es2015", "module", "jsnext:main", "main"],
+      preferBuiltins: false,
     }),
     commonjs({
       namedExports: {
         "protobufjs/minimal": ["rpc", "roots", "util", "Reader", "Writer"],
         "node_modules/react-dom/index.js": ["findDOMNode"],
-        "node_modules/react/index.js": ["createElement", "PureComponent", "Children", "Component"],
+        "node_modules/react/index.js": [
+          "createElement",
+          "PureComponent",
+          "Children",
+          "Component",
+          "cloneElement",
+          "isValidElement",
+        ],
         "node_modules/react-lazylog/build/index.js": ["LazyLog"],
       },
       sourceMap: false,

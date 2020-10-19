@@ -10,6 +10,7 @@ rollup_bundle(
     entry_point = "app.tsx",
     deps = [
         ":app",
+        "@npm//events",
         "@npm//rollup-plugin-commonjs",
         "@npm//rollup-plugin-node-resolve",
         "@npm//rollup-plugin-replace",
