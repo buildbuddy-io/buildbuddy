@@ -18,6 +18,7 @@ go_library(
         "//server/tables:go_default_library",
         "//server/util/request_context:go_default_library",
         "//server/util/status:go_default_library",
+        "@com_github_golang_protobuf//proto:go_default_library",
         "@org_golang_google_grpc//codes:go_default_library",
         "@org_golang_google_grpc//status:go_default_library",
     ],
