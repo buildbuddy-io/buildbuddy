@@ -117,6 +117,20 @@ message GetInvocationResponse {
   repeated Invocation invocation = 2;
 }
 
+message UpdateInvocationRequest {
+  context.RequestContext request_context = 1;
+
+  // The ID of the invocation to be updated.
+  string invocation_id = 2;
+
+  // Permissions for the invocation.
+  acl.ACL acl = 3;
+}
+
+message UpdateInvocationResponse {
+  context.ResponseContext response_context = 1;
+}
+
 message InvocationQuery {
   // The search parameters in this query will be ANDed when performing a
   // search -- so if a client species both "user" and "host", all results
