@@ -1,4 +1,4 @@
-load("@npm_bazel_typescript//:index.bzl", "ts_devserver", "ts_library")
+load("@npm_bazel_typescript//:index.bzl", "ts_library")
 load("@npm_bazel_rollup//:index.bzl", "rollup_bundle")
 load("@npm_bazel_terser//:index.bzl", "terser_minified")
 
@@ -52,6 +52,11 @@ genrule(
     srcs = [
         "//app/root:root.css",
         "//app/invocation:invocation.css",
+        "//app/components/button:button.css",
+        "//app/components/dialog:dialog.css",
+        "//app/components/input:input.css",
+        "//app/components/modal:modal.css",
+        "//app/components/select:select.css",
     ],
     outs = ["style.css"],
     cmd_bash = ("""

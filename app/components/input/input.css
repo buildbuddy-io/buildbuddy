@@ -1,0 +1,14 @@
+.text-input {
+  height: 40px;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 8px 16px;
+  box-sizing: border-box;
+  appearance: none;
+  border: 1px solid gray;
+  border-radius: 2px;
+}
+
+.text-input[readonly] {
+  background: #eee;
+}

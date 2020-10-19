@@ -1,8 +1,11 @@
 import React from "react";
-import InvocationModel from "../invocation_model";
+import { User } from "../../auth/auth_service";
 import router from "../../router/router";
+import InvocationModel from "../invocation_model";
+import InvocationShareButton from "../invocation_share_button";
 
 interface Props {
+  user?: User;
   model: InvocationModel;
   invocationId: string;
 }
@@ -21,10 +24,13 @@ export default class DenseInvocationOverviewComponent extends React.Component {
     return (
       <div className="container nopadding-dense">
         <div className="dense-invocation">
-          <div className="dense-invocation-title">Invocation</div>
-          <div className="dense-invocation-invocation-id">
-            {this.props.invocationId} ({this.props.model.getStartDate()}, {this.props.model.getStartTime()})
+          <div>
+            <div className="dense-invocation-title">Invocation</div>
+            <div className="dense-invocation-invocation-id">
+              {this.props.invocationId} ({this.props.model.getStartDate()}, {this.props.model.getStartTime()})
+            </div>
           </div>
+          <InvocationShareButton user={this.props.user} model={this.props.model} />
         </div>
         <div className={`dense-invocation-status-bar ${this.props.model.getStatusClass()}`}>
           <div>

@@ -10,6 +10,11 @@ ts_library(
     deps = [
         "//app/auth",
         "//app/capabilities",
+        "//app/components/button",
+        "//app/components/dialog",
+        "//app/components/input",
+        "//app/components/modal",
+        "//app/components/select",
         "//app/docs",
         "//app/favicon",
         "//app/flame_chart",

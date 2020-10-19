@@ -75,3 +75,56 @@
   margin-top: 32px;
   font-size: 16px;
 }
+
+.dense-invocation {
+  display: flex;
+  justify-content: space-between;
+}
+
+.invocation .breadcrumbs-and-share-button {
+  display: flex;
+  justify-content: space-between;
+}
+
+.invocation-share-button {
+  margin-left: 8px;
+}
+
+.invocation-share-button img {
+  margin-right: 12px;
+  margin-left: -4px;
+  width: 16px;
+  height: 16px;
+}
+
+.invocation-share-dialog .row {
+  display: flex;
+  flex-direction: row;
+}
+
+.invocation-share-dialog .row > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.invocation-share-dialog .link-input {
+  flex-grow: 1;
+  text-overflow: ellipsis;
+}
+
+.invocation-share-dialog > :not(:last-child) {
+  margin-bottom: 16px;
+}
+
+.invocation-share-dialog .visibility-explanation {
+  margin-top: 8px;
+  color: #333;
+}
+
+.invocation-share-dialog select {
+  min-width: 50%;
+}
+
+.invocation-share-dialog .visibility-header {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
