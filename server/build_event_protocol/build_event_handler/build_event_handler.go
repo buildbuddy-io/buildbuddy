@@ -318,6 +318,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	} else {
 		out.ReadPermission = inpb.InvocationPermission_GROUP
 	}
+	out.Acl = perms.ToACLProto(i.UserID, i.GroupID, i.Perms)
 	out.CacheStats = &capb.CacheStats{
 		ActionCacheHits:        i.ActionCacheHits,
 		ActionCacheMisses:      i.ActionCacheMisses,

@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/perms",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:acl_go_proto",
         "//server/environment:go_default_library",
         "//server/util/query_builder:go_default_library",
         "//server/util/status:go_default_library",
