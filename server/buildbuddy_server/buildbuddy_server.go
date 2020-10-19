@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/golang/protobuf/proto"
 
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -41,6 +42,20 @@ func NewBuildBuddyServer(env environment.Env, sslService *ssl.SSLService) (*Buil
 	}, nil
 }
 
+func (s *BuildBuddyServer) getSanitizedGetInvocationResponse(ctx context.Context, unsanitizedResponse *inpb.GetInvocationResponse) (*inpb.GetInvocationResponse, error) {
+	apiKey := s.getGroupAPIKey(ctx)
+	if apiKey == "" {
+		return unsanitizedResponse, nil
+	}
+	unsanitizedText := proto.MarshalTextString(unsanitizedResponse)
+	text := strings.ReplaceAll(unsanitizedText, apiKey, "<REDACTED>")
+	rsp := &inpb.GetInvocationResponse{}
+	if err := proto.UnmarshalText(text, rsp); err != nil {
+		return nil, err
+	}
+	return rsp, nil
+}
+
 func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvocationRequest) (*inpb.GetInvocationResponse, error) {
 	if req.GetLookup().GetInvocationId() == "" {
 		return nil, status.InvalidArgumentErrorf("GetInvocationRequest must contain a valid invocation_id")
@@ -50,11 +65,16 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 	if err != nil {
 		return nil, err
 	}
-	return &inpb.GetInvocationResponse{
+	unsanitizedResponse := &inpb.GetInvocationResponse{
 		Invocation: []*inpb.Invocation{
 			inv,
 		},
-	}, nil
+	}
+	sanitizedResponse, err := s.getSanitizedGetInvocationResponse(ctx, unsanitizedResponse)
+	if err != nil {
+		return nil, err
+	}
+	return sanitizedResponse, nil
 }
 
 func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {
