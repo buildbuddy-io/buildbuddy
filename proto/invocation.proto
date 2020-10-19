@@ -269,6 +269,23 @@ message InvocationStat {
 
   // The duration (in microseconds) of the longest build.
   int64 max_duration_usec = 20;
+
+  // Server-side Action-cache stats.
+  int64 action_cache_hits = 21;
+  int64 action_cache_misses = 22;
+  int64 action_cache_uploads = 23;
+
+  // Server-side CAS-cache stats.
+  int64 cas_cache_hits = 24;
+  int64 cas_cache_misses = 25;
+  int64 cas_cache_uploads = 26;
+
+  // Rough throughput can be computed using the total cache bytes
+  // {uploaded,downloaded}/{upload_time,download_time}.
+  int64 total_download_size_bytes = 27;
+  int64 total_upload_size_bytes = 28;
+  int64 total_download_usec = 29;
+  int64 total_upload_usec = 30;
 }
 
 message GetInvocationStatRequest {
