@@ -68,6 +68,35 @@ func ToACLProto(userID *uidpb.UserId, groupID string, perms int) *aclpb.ACL {
 	}
 }
 
+func ToPerms(acl *aclpb.ACL) (int, error) {
+	if acl == nil {
+		return 0, status.InvalidArgumentError("ACL is nil.")
+	}
+	if acl.GetOwnerPermissions() == nil || acl.GetGroupPermissions() == nil || acl.GetOthersPermissions() == nil {
+		return 0, status.InvalidArgumentError("ACL is missing one or more required permissions fields.")
+	}
+	p := 0
+	if acl.GetOwnerPermissions().GetRead() {
+		p |= OWNER_READ
+	}
+	if acl.GetOwnerPermissions().GetWrite() {
+		p |= OWNER_WRITE
+	}
+	if acl.GetGroupPermissions().GetRead() {
+		p |= GROUP_READ
+	}
+	if acl.GetGroupPermissions().GetWrite() {
+		p |= GROUP_WRITE
+	}
+	if acl.GetOthersPermissions().GetRead() {
+		p |= OTHERS_READ
+	}
+	if acl.GetOthersPermissions().GetWrite() {
+		p |= OTHERS_WRITE
+	}
+	return p, nil
+}
+
 func AddPermissionsCheckToQuery(ctx context.Context, env environment.Env, q *query_builder.Query) error {
 	return AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "")
 }

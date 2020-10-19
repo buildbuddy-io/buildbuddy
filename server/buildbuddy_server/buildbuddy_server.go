@@ -17,10 +17,12 @@ import (
 	"github.com/golang/protobuf/proto"
 
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
+	perms "github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
@@ -85,6 +87,59 @@ func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.Searc
 		return nil, fmt.Errorf("A query must be provided")
 	}
 	return searcher.QueryInvocations(ctx, req)
+}
+
+func (s *BuildBuddyServer) authorizeInvocationUpdate(ctx context.Context, reqCtx *ctxpb.RequestContext, in *tables.Invocation) error {
+	auth := s.env.GetAuthenticator()
+	if auth == nil {
+		return status.UnimplementedError("Not Implemented")
+	}
+	if _, err := auth.AuthenticatedUser(ctx); err != nil {
+		return err
+	}
+
+	// Invocations should probably never be writeable by OTHERS,
+	// but including this check for completeness.
+	if in.Perms&perms.OTHERS_WRITE != 0 {
+		return nil
+	}
+
+	if reqCtx.GetUserId() == nil {
+		return status.InternalError("User ID should not be nil after authentication.")
+	}
+	isOwner := reqCtx.GetUserId().GetId() == in.UserID
+	if isOwner && in.Perms&perms.OWNER_WRITE != 0 {
+		return nil
+	}
+	isGroupSelected := reqCtx.GetGroupId() == in.GroupID
+	if isGroupSelected && in.Perms&perms.GROUP_WRITE != 0 {
+		return nil
+	}
+
+	return status.PermissionDeniedError("You do not have permission to edit this invocation.")
+}
+
+func (s *BuildBuddyServer) UpdateInvocation(ctx context.Context, req *inpb.UpdateInvocationRequest) (*inpb.UpdateInvocationResponse, error) {
+	db := s.env.GetInvocationDB()
+	if req.GetInvocationId() == "" {
+		return nil, status.InvalidArgumentError("Invocation ID is required.")
+	}
+	updatedPerms, err := perms.ToPerms(req.GetAcl())
+	if err != nil {
+		return nil, status.InvalidArgumentError("The provided ACL is invalid.")
+	}
+	in, err := db.LookupInvocation(ctx, req.GetInvocationId())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeInvocationUpdate(ctx, req.GetRequestContext(), in); err != nil {
+		return nil, err
+	}
+	in.Perms = updatedPerms
+	if err := db.InsertOrUpdateInvocation(ctx, in); err != nil {
+		return nil, err
+	}
+	return &inpb.UpdateInvocationResponse{}, nil
 }
 
 func makeGroups(grps []*tables.Group) []*grpb.Group {
