@@ -64,7 +64,7 @@ export default class InvocationShareButtonComponent extends React.Component<
   }
 
   render() {
-    if (!this.props.user || window.localStorage["invocation_sharing"] !== "true") {
+    if (!capabilities.invocationSharing || !this.props.user) {
       return <></>;
     }
 
@@ -72,10 +72,8 @@ export default class InvocationShareButtonComponent extends React.Component<
 
     return (
       <>
-        <FilledButton
-          className="invocation-share-button"
-          disabled={!capabilities.invocationSharing}
-          onClick={this.onClick.bind(this)}>
+        {/* TODO: disable this button if the org doesn't allow sharing. */}
+        <FilledButton className="invocation-share-button" onClick={this.onClick.bind(this)}>
           {/* TODO: Use an icon that signifies the current permissions */}
           <img src="/image/share-2-white.svg" alt="" />
           Share
