@@ -42,18 +42,14 @@ func NewBuildBuddyServer(env environment.Env, sslService *ssl.SSLService) (*Buil
 	}, nil
 }
 
-func (s *BuildBuddyServer) getSanitizedGetInvocationResponse(ctx context.Context, unsanitizedResponse *inpb.GetInvocationResponse) (*inpb.GetInvocationResponse, error) {
+func (s *BuildBuddyServer) redactAPIKey(ctx context.Context, rsp *inpb.GetInvocationResponse) error {
 	apiKey := s.getGroupAPIKey(ctx)
 	if apiKey == "" {
-		return unsanitizedResponse, nil
+		return nil
 	}
-	unsanitizedText := proto.MarshalTextString(unsanitizedResponse)
-	text := strings.ReplaceAll(unsanitizedText, apiKey, "<REDACTED>")
-	rsp := &inpb.GetInvocationResponse{}
-	if err := proto.UnmarshalText(text, rsp); err != nil {
-		return nil, err
-	}
-	return rsp, nil
+	txt := proto.MarshalTextString(rsp)
+	txt = strings.ReplaceAll(txt, apiKey, "<REDACTED>")
+	return proto.UnmarshalText(txt, rsp)
 }
 
 func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvocationRequest) (*inpb.GetInvocationResponse, error) {
@@ -65,16 +61,16 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 	if err != nil {
 		return nil, err
 	}
-	unsanitizedResponse := &inpb.GetInvocationResponse{
+
+	rsp := &inpb.GetInvocationResponse{
 		Invocation: []*inpb.Invocation{
 			inv,
 		},
 	}
-	sanitizedResponse, err := s.getSanitizedGetInvocationResponse(ctx, unsanitizedResponse)
-	if err != nil {
+	if err := s.redactAPIKey(ctx, rsp); err != nil {
 		return nil, err
 	}
-	return sanitizedResponse, nil
+	return rsp, nil
 }
 
 func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {
