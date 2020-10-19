@@ -23,6 +23,7 @@ import (
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 const (
@@ -318,7 +319,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	} else {
 		out.ReadPermission = inpb.InvocationPermission_GROUP
 	}
-	out.Acl = perms.ToACLProto(i.UserID, i.GroupID, i.Perms)
+	out.Acl = perms.ToACLProto(&uidpb.UserId{Id: i.UserID}, i.GroupID, i.Perms)
 	out.CacheStats = &capb.CacheStats{
 		ActionCacheHits:        i.ActionCacheHits,
 		ActionCacheMisses:      i.ActionCacheMisses,

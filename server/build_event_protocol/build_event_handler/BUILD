@@ -11,6 +11,7 @@ go_library(
         "//proto:cache_go_proto",
         "//proto:invocation_go_proto",
         "//proto:publish_build_event_go_proto",
+        "//proto:user_id_go_proto",
         "//server/build_event_protocol/build_status_reporter:go_default_library",
         "//server/build_event_protocol/event_parser:go_default_library",
         "//server/environment:go_default_library",
