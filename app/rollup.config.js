@@ -1,14 +1,14 @@
 const node = require("rollup-plugin-node-resolve");
 const commonjs = require("rollup-plugin-commonjs");
 const replace = require("rollup-plugin-replace");
-const builtins = require("rollup-plugin-node-builtins");
 
 module.exports = {
   plugins: [
     node({
-      mainFields: ["browser", "es2015", "module", "jsnext:main", "main", "events"],
+      browser: true,
+      mainFields: ["browser", "es2015", "module", "jsnext:main", "main"],
+      preferBuiltins: false,
     }),
-    builtins(),
     commonjs({
       namedExports: {
         "protobufjs/minimal": ["rpc", "roots", "util", "Reader", "Writer"],
