@@ -1,6 +1,6 @@
 .base-button {
   padding: 8px 16px;
-  height: 40px;
+  min-height: 40px;
   font-size: 16px;
   font-weight: 600;
   font-family: inherit;
