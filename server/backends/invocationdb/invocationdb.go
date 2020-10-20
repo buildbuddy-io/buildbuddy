@@ -73,6 +73,14 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, invocationID str
 		if err := tx.Select("perms", "user_id", "group_id").Where("invocation_id = ?", invocationID).First(&in).Error; err != nil {
 			return err
 		}
+		var group tables.Group
+		if err := tx.Select("sharing_enabled").Where("group_id = ?").First(&group).Error; err != nil {
+			return err
+		}
+		if !group.SharingEnabled {
+			return status.PermissionDeniedError("Your organization does not allow this action.")
+		}
+
 		currentACL := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
 		if err := perms.AuthorizeWrite(ctx, currentACL); err != nil {
 			return err
