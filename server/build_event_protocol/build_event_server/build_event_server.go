@@ -5,9 +5,11 @@ import (
 	"io"
 	"log"
 	"sort"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
 
@@ -51,6 +53,7 @@ func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, re
 // decide to re-send every build event for which an ACK has not been received. If so, it
 // adds an OPEN_STREAM event.
 func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
+	ctx := stream.Context()
 	// Semantically, the protocol requires we ack events in order.
 	acks := make([]int, 0)
 	var streamID *bepb.StreamId
@@ -58,7 +61,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 
 	forwardingStreams := make([]pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, 0)
 	for _, client := range s.env.GetBuildEventProxyClients() {
-		stream, err := client.PublishBuildToolEventStream(stream.Context(), grpc.WaitForReady(false))
+		stream, err := client.PublishBuildToolEventStream(ctx, grpc.WaitForReady(false))
 		if err != nil {
 			log.Printf("Unable to proxy stream: %s", err)
 			continue
@@ -69,7 +72,9 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 
 	disconnectWithErr := func(e error) error {
 		if channel != nil && streamID != nil {
-			if err := channel.MarkInvocationDisconnected(stream.Context(), streamID.InvocationId); err != nil {
+			ctx, cancel := background.ExtendContextForFinalization(ctx, 3*time.Second)
+			defer cancel()
+			if err := channel.MarkInvocationDisconnected(ctx, streamID.InvocationId); err != nil {
 				log.Printf("Error marking invocation %q as disconnected: %s", streamID.InvocationId, err)
 			}
 		}
@@ -86,10 +91,10 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		}
 		if streamID == nil {
 			streamID = in.OrderedBuildEvent.StreamId
-			channel = build_event_handler.OpenChannel(s.env, stream.Context(), streamID.InvocationId)
+			channel = build_event_handler.OpenChannel(s.env, ctx, streamID.InvocationId)
 		}
 
-		if err := channel.HandleEvent(stream.Context(), in); err != nil {
+		if err := channel.HandleEvent(ctx, in); err != nil {
 			log.Printf("Error handling event; this means a broken build command: %s", err)
 			return disconnectWithErr(err)
 		}
@@ -113,7 +118,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		}
 	}
 
-	if err := channel.FinalizeInvocation(stream.Context(), streamID.InvocationId); err != nil {
+	if err := channel.FinalizeInvocation(ctx, streamID.InvocationId); err != nil {
 		return disconnectWithErr(err)
 	}
 
