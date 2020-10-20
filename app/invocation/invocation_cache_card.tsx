@@ -44,10 +44,6 @@ export default class CacheCardComponent extends React.Component {
                             <span className="color-swatch cache-miss-color-swatch"></span>
                             <span className="cache-stat">{cacheStat.actionCacheMisses}</span> misses
                           </div>
-                          <div className="cache-chart-label">
-                            <span className="color-swatch"></span>
-                            <span className="cache-stat">{cacheStat.actionCacheUploads}</span> writes
-                          </div>
                         </div>
                       </div>
                     </div>
@@ -56,7 +52,7 @@ export default class CacheCardComponent extends React.Component {
                       <div className="cache-title">Content addressable store (CAS)</div>
                       <div className="cache-subtitle">Stores files (including logs & profiling info)</div>
                       <div className="cache-chart">
-                        {this.drawChart(+cacheStat.casCacheHits, "#4CAF50", +cacheStat.casCacheMisses, "#f44336")}
+                        {this.drawChart(+cacheStat.casCacheHits, "#4CAF50", +cacheStat.casCacheUploads, "#f44336")}
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch cache-hit-color-swatch"></span>
@@ -64,10 +60,6 @@ export default class CacheCardComponent extends React.Component {
                           </div>
                           <div className="cache-chart-label">
                             <span className="color-swatch cache-miss-color-swatch"></span>
-                            <span className="cache-stat">{cacheStat.casCacheMisses}</span> misses
-                          </div>
-                          <div className="cache-chart-label">
-                            <span className="color-swatch"></span>
                             <span className="cache-stat">{cacheStat.casCacheUploads}</span> writes
                           </div>
                         </div>

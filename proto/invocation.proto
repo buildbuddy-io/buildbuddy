@@ -149,7 +149,7 @@ message InvocationQuery {
   // The git repo the build was for.
   string repo_url = 4;
 
-  // The commit sha used for the build build.
+  // The commit sha used for the build.
   string commit_sha = 5;
 }
 
@@ -269,6 +269,44 @@ message InvocationStat {
 
   // The duration (in microseconds) of the longest build.
   int64 max_duration_usec = 20;
+
+  // Server-side Action-cache stats.
+  int64 action_cache_hits = 21;
+  int64 action_cache_misses = 22;
+  int64 action_cache_uploads = 23;
+
+  // Server-side CAS-cache stats.
+  int64 cas_cache_hits = 24;
+  int64 cas_cache_misses = 25;
+  int64 cas_cache_uploads = 26;
+
+  // Rough throughput can be computed using the total cache bytes
+  // {uploaded,downloaded}/{upload_time,download_time}.
+  int64 total_download_size_bytes = 27;
+  int64 total_upload_size_bytes = 28;
+  int64 total_download_usec = 29;
+  int64 total_upload_usec = 30;
+}
+
+message InvocationStatQuery {
+  // The search parameters in this query will be ANDed when performing a
+  // query -- so if a client species both "user" and "host", all results
+  // returned must match both fields.
+
+  // The unix-user who performed the build.
+  string user = 1;
+
+  // The host this build was executed on.
+  string host = 2;
+
+  // The git repo the build was for.
+  string repo_url = 4;
+
+  // The commit sha used for the build.
+  string commit_sha = 5;
+
+  // The role played by the build. Ex: "CI"
+  string role = 6;
 }
 
 message GetInvocationStatRequest {
@@ -280,6 +318,9 @@ message GetInvocationStatRequest {
   // The maximum number of stats to return. If not set, the server will
   // determine a reasonable limit.
   int32 limit = 3;
+
+  // Query used to filter invocation stats.
+  InvocationStatQuery query = 4;
 }
 
 message GetInvocationStatResponse {
