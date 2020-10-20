@@ -29,6 +29,9 @@ message Group {
   //
   // Ex: "iteration-inc"
   string url_identifier = 5;
+
+  // Whether sharing features are allowed by this group.
+  bool sharing_enabled = 6;
 }
 
 message JoinGroupRequest {
@@ -56,6 +59,8 @@ message GetGroupRequest {
   string url_identifier = 1;
 }
 
+// Publicly visible group info.
+// DO NOT add new fields exposing sensitive data.
 message GetGroupResponse {
   context.ResponseContext response_context = 4;
 
@@ -142,6 +147,9 @@ message CreateGroupRequest {
   //
   // Ex: "iteration-inc"
   string url_identifier = 3;
+
+  // Whether sharing features are allowed by this group.
+  bool sharing_enabled = 5;
 }
 
 message CreateGroupResponse {
@@ -175,6 +183,9 @@ message UpdateGroupRequest {
   //
   // Ex: "iteration-inc"
   string url_identifier = 4;
+
+  // Whether sharing features are allowed by this group.
+  bool sharing_enabled = 6;
 }
 
 message UpdateGroupResponse {
