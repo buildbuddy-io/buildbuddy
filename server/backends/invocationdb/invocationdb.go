@@ -70,11 +70,11 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, invocationID str
 	}
 	return d.h.Transaction(func(tx *gorm.DB) error {
 		var in tables.Invocation
-		if err := tx.Select("perms", "user_id", "group_id").Where("invocation_id = ?", invocationID).First(&in).Error; err != nil {
+		if err := tx.Raw("SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?", invocationID).Scan(&in).Error; err != nil {
 			return err
 		}
 		var group tables.Group
-		if err := tx.Select("sharing_enabled").Where("group_id = ?").First(&group).Error; err != nil {
+		if err := tx.Raw("SELECT sharing_enabled FROM Groups WHERE group_id = ?").Scan(&group).Error; err != nil {
 			return err
 		}
 		if !group.SharingEnabled {
@@ -85,8 +85,7 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, invocationID str
 		if err := perms.AuthorizeWrite(ctx, currentACL); err != nil {
 			return err
 		}
-		if err := tx.Exec(`
-				UPDATE Invocations SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
+		if err := tx.Exec(`UPDATE Invocations SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
 			return err
 		}
 		return nil
