@@ -10,6 +10,7 @@ go_library(
         "//proto:publish_build_event_go_proto",
         "//server/build_event_protocol/build_event_handler:go_default_library",
         "//server/environment:go_default_library",
+        "//server/util/background:go_default_library",
         "@io_bazel_rules_go//proto/wkt:empty_go_proto",
         "@org_golang_google_grpc//:go_default_library",
     ],
