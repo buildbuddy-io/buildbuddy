@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/interfaces",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:acl_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:group_go_proto",
         "//proto:invocation_go_proto",

@@ -12,7 +12,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jinzhu/gorm"
 
+	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 type InvocationDB struct {
@@ -56,6 +58,28 @@ func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.
 			}
 		} else {
 			tx.Model(&existing).Where("invocation_id = ?", ti.InvocationID).Updates(ti)
+		}
+		return nil
+	})
+}
+
+func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, invocationID string, acl *aclpb.ACL) error {
+	p, err := perms.ToPerms(acl)
+	if err != nil {
+		return err
+	}
+	return d.h.Transaction(func(tx *gorm.DB) error {
+		var in tables.Invocation
+		if err := tx.Select("perms", "user_id", "group_id").Where("invocation_id = ?", invocationID).First(&in).Error; err != nil {
+			return err
+		}
+		currentACL := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
+		if err := perms.AuthorizeWrite(ctx, currentACL); err != nil {
+			return err
+		}
+		if err := tx.Exec(`
+				UPDATE Invocations SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
+			return err
 		}
 		return nil
 	})
