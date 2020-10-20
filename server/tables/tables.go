@@ -277,6 +277,9 @@ type Execution struct {
 	ExecutionCompletedTimestampUsec    int64
 	OutputUploadStartTimestampUsec     int64
 	OutputUploadCompletedTimestampUsec int64
+
+	// Command Snippet
+	CommandSnippet string
 }
 
 func (t *Execution) TableName() string {
