@@ -149,7 +149,7 @@ message InvocationQuery {
   // The git repo the build was for.
   string repo_url = 4;
 
-  // The commit sha used for the build build.
+  // The commit sha used for the build.
   string commit_sha = 5;
 }
 
@@ -288,6 +288,27 @@ message InvocationStat {
   int64 total_upload_usec = 30;
 }
 
+message InvocationStatQuery {
+  // The search parameters in this query will be ANDed when performing a
+  // query -- so if a client species both "user" and "host", all results
+  // returned must match both fields.
+
+  // The unix-user who performed the build.
+  string user = 1;
+
+  // The host this build was executed on.
+  string host = 2;
+
+  // The git repo the build was for.
+  string repo_url = 4;
+
+  // The commit sha used for the build.
+  string commit_sha = 5;
+
+  // The role played by the build. Ex: "CI"
+  string role = 6;
+}
+
 message GetInvocationStatRequest {
   context.RequestContext request_context = 1;
 
@@ -297,6 +318,9 @@ message GetInvocationStatRequest {
   // The maximum number of stats to return. If not set, the server will
   // determine a reasonable limit.
   int32 limit = 3;
+
+  // Query used to filter invocation stats.
+  InvocationStatQuery query = 4;
 }
 
 message GetInvocationStatResponse {
