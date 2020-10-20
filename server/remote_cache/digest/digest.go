@@ -165,9 +165,9 @@ func ExtractDigestFromDownloadResourceName(resourceName string) (string, *repb.D
 func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
 	if grpcMD, ok := gmetadata.FromIncomingContext(ctx); ok {
 		rmdVals := grpcMD["build.bazel.remote.execution.v2.requestmetadata-bin"]
-		if len(rmdVals) == 1 {
+		for _, rmdVal := range rmdVals {
 			rmd := &repb.RequestMetadata{}
-			if err := proto.Unmarshal([]byte(rmdVals[0]), rmd); err == nil {
+			if err := proto.Unmarshal([]byte(rmdVal), rmd); err == nil {
 				return rmd
 			}
 		}
