@@ -107,6 +107,7 @@ func AuthorizeWrite(ctx context.Context, acl *aclpb.ACL) error {
 		return status.InvalidArgumentError("acl cannot be nil.")
 	}
 
+	// TODO: use AuthenticatedUser instead once it contains the correct GroupID.
 	reqCtx := requestcontext.ProtoRequestContextFromContext(ctx)
 	if reqCtx.GetUserId() == nil {
 		return status.InternalError("Attempted to authorize a request that hasn't first been authenticated.")
