@@ -19,4 +19,8 @@ message CacheStats {
   int64 total_upload_size_bytes = 8;
   int64 total_download_usec = 9;
   int64 total_upload_usec = 10;
+
+  // The approximate time savings of a build based on
+  // the sum of execution time of cached objects.
+  int64 total_cached_action_exec_usec = 11;
 }
