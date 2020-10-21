@@ -64,7 +64,7 @@ func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.
 }
 
 func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, invocationID string, acl *aclpb.ACL) error {
-	p, err := perms.ToPerms(acl)
+	p, err := perms.FromACL(acl)
 	if err != nil {
 		return err
 	}

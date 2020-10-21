@@ -70,7 +70,7 @@ func ToACLProto(userID *uidpb.UserId, groupID string, perms int) *aclpb.ACL {
 	}
 }
 
-func ToPerms(acl *aclpb.ACL) (int, error) {
+func FromACL(acl *aclpb.ACL) (int, error) {
 	if acl == nil {
 		return 0, status.InvalidArgumentError("ACL is nil.")
 	}
@@ -113,7 +113,7 @@ func AuthorizeWrite(ctx context.Context, acl *aclpb.ACL) error {
 		return status.InternalError("Attempted to authorize a request that hasn't first been authenticated.")
 	}
 
-	perms, err := ToPerms(acl)
+	perms, err := FromACL(acl)
 	if err != nil {
 		return err
 	}
