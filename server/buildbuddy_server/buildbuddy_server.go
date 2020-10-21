@@ -47,6 +47,7 @@ func (s *BuildBuddyServer) redactAPIKey(ctx context.Context, rsp *inpb.GetInvoca
 	if apiKey == "" {
 		return nil
 	}
+	proto.DiscardUnknown(rsp)
 	txt := proto.MarshalTextString(rsp)
 	txt = strings.ReplaceAll(txt, apiKey, "<REDACTED>")
 	return proto.UnmarshalText(txt, rsp)
