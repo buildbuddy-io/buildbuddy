@@ -118,6 +118,19 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 	return e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti)
 }
 
+func fillInvocationFromCacheStats(cacheStats *capb.CacheStats, ti *tables.Invocation) {
+	ti.ActionCacheHits = cacheStats.GetActionCacheHits()
+	ti.ActionCacheMisses = cacheStats.GetActionCacheMisses()
+	ti.ActionCacheUploads = cacheStats.GetActionCacheUploads()
+	ti.CasCacheHits = cacheStats.GetCasCacheHits()
+	ti.CasCacheMisses = cacheStats.GetCasCacheMisses()
+	ti.CasCacheUploads = cacheStats.GetCasCacheUploads()
+	ti.TotalDownloadSizeBytes = cacheStats.GetTotalDownloadSizeBytes()
+	ti.TotalUploadSizeBytes = cacheStats.GetTotalUploadSizeBytes()
+	ti.TotalDownloadUsec = cacheStats.GetTotalDownloadUsec()
+	ti.TotalUploadUsec = cacheStats.GetTotalUploadUsec()
+}
+
 func (e *EventChannel) FinalizeInvocation(ctx context.Context, iid string) error {
 	if err := e.pw.Flush(ctx); err != nil {
 		return err
@@ -134,16 +147,7 @@ func (e *EventChannel) FinalizeInvocation(ctx context.Context, iid string) error
 
 	ti := tableInvocationFromProto(invocation, iid)
 	if cacheStats := hit_tracker.CollectCacheStats(ctx, e.env, iid); cacheStats != nil {
-		ti.ActionCacheHits = cacheStats.GetActionCacheHits()
-		ti.ActionCacheMisses = cacheStats.GetActionCacheMisses()
-		ti.ActionCacheUploads = cacheStats.GetActionCacheUploads()
-		ti.CasCacheHits = cacheStats.GetCasCacheHits()
-		ti.CasCacheMisses = cacheStats.GetCasCacheMisses()
-		ti.CasCacheUploads = cacheStats.GetCasCacheUploads()
-		ti.TotalDownloadSizeBytes = cacheStats.GetTotalDownloadSizeBytes()
-		ti.TotalUploadSizeBytes = cacheStats.GetTotalUploadSizeBytes()
-		ti.TotalDownloadUsec = cacheStats.GetTotalDownloadUsec()
-		ti.TotalUploadUsec = cacheStats.GetTotalUploadUsec()
+		fillInvocationFromCacheStats(cacheStats, ti)
 	}
 	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 		return err
@@ -254,6 +258,16 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	if err != nil {
 		return nil, err
 	}
+
+	// If this is an incomplete invocation, attempt to fill cache stats
+	// from counters rather than trying to read them from invocation b/c
+	// they won't be set yet.
+	if ti.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
+		if cacheStats := hit_tracker.CollectCacheStats(ctx, env, iid); cacheStats != nil {
+			fillInvocationFromCacheStats(cacheStats, ti)
+		}
+	}
+
 	invocation := TableInvocationToProto(ti)
 	pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), iid)
 	buildEvents := make([]*inpb.InvocationEvent, 0)
