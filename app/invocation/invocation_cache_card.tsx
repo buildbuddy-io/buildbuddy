@@ -126,6 +126,7 @@ export default class CacheCardComponent extends React.Component {
     if (a == 0 && b == 0) {
       colorA = "#eee";
       colorB = "#eee";
+      a = 1;
     }
 
     let data = [
