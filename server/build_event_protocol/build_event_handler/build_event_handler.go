@@ -129,6 +129,7 @@ func fillInvocationFromCacheStats(cacheStats *capb.CacheStats, ti *tables.Invoca
 	ti.TotalUploadSizeBytes = cacheStats.GetTotalUploadSizeBytes()
 	ti.TotalDownloadUsec = cacheStats.GetTotalDownloadUsec()
 	ti.TotalUploadUsec = cacheStats.GetTotalUploadUsec()
+	ti.TotalCachedActionExecUsec = cacheStats.GetTotalCachedActionExecUsec()
 }
 
 func (e *EventChannel) FinalizeInvocation(ctx context.Context, iid string) error {
@@ -335,16 +336,17 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	}
 	out.Acl = perms.ToACLProto(&uidpb.UserId{Id: i.UserID}, i.GroupID, i.Perms)
 	out.CacheStats = &capb.CacheStats{
-		ActionCacheHits:        i.ActionCacheHits,
-		ActionCacheMisses:      i.ActionCacheMisses,
-		ActionCacheUploads:     i.ActionCacheUploads,
-		CasCacheHits:           i.CasCacheHits,
-		CasCacheMisses:         i.CasCacheMisses,
-		CasCacheUploads:        i.CasCacheUploads,
-		TotalDownloadSizeBytes: i.TotalDownloadSizeBytes,
-		TotalUploadSizeBytes:   i.TotalUploadSizeBytes,
-		TotalDownloadUsec:      i.TotalDownloadUsec,
-		TotalUploadUsec:        i.TotalUploadUsec,
+		ActionCacheHits:           i.ActionCacheHits,
+		ActionCacheMisses:         i.ActionCacheMisses,
+		ActionCacheUploads:        i.ActionCacheUploads,
+		CasCacheHits:              i.CasCacheHits,
+		CasCacheMisses:            i.CasCacheMisses,
+		CasCacheUploads:           i.CasCacheUploads,
+		TotalDownloadSizeBytes:    i.TotalDownloadSizeBytes,
+		TotalUploadSizeBytes:      i.TotalUploadSizeBytes,
+		TotalDownloadUsec:         i.TotalDownloadUsec,
+		TotalUploadUsec:           i.TotalUploadUsec,
+		TotalCachedActionExecUsec: i.TotalCachedActionExecUsec,
 	}
 	return out
 }

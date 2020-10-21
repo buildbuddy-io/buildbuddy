@@ -14,6 +14,8 @@ go_library(
         "//server/tables:go_default_library",
         "//server/util/status:go_default_library",
         "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_jinzhu_gorm//:go_default_library",
+        "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
     ],
 )

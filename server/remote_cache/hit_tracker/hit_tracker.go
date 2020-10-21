@@ -12,10 +12,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/jinzhu/gorm"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	tspb "github.com/golang/protobuf/ptypes/timestamp"
 )
 
 type counterType int
@@ -30,6 +32,8 @@ const (
 
 	DownloadUsec
 	UploadUsec
+
+	CachedActionExecUsec
 
 	// New counter types go here!
 )
@@ -58,6 +62,8 @@ func rawCounterName(actionCache bool, ct counterType) string {
 		return "download-usec"
 	case UploadUsec:
 		return "upload-usec"
+	case CachedActionExecUsec:
+		return "cached-action-exec-usec"
 	default:
 		return "UNKNOWN-COUNTER-TYPE"
 	}
@@ -205,6 +211,12 @@ func actionResultKey(actionResult *repb.ActionResult) string {
 	return "unknown"
 }
 
+func diffTimeProtos(startPb, endPb *tspb.Timestamp) time.Duration {
+	start, _ := ptypes.Timestamp(startPb)
+	end, _ := ptypes.Timestamp(endPb)
+	return end.Sub(start)
+}
+
 // Example Usage:
 //
 // ht := NewHitTracker(ctx, env, instanceName)
@@ -214,6 +226,14 @@ func actionResultKey(actionResult *repb.ActionResult) string {
 func (h *HitTracker) TrackACDownload(d *repb.Digest) *actionTimer {
 	start := time.Now()
 	closeFn := func(actionResult *repb.ActionResult) error {
+		if md := actionResult.GetExecutionMetadata(); md != nil {
+			if h.c != nil && h.iid != "" {
+				actionExecDuration := diffTimeProtos(md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
+				if _, err := h.c.Increment(h.ctx, h.getCounter(false, CachedActionExecUsec), actionExecDuration.Microseconds()); err != nil {
+					return err
+				}
+			}
+		}
 		if h.saveActions {
 			dbHandle := h.env.GetDBHandle()
 			if dbHandle == nil {
@@ -295,6 +315,8 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 	cs.TotalUploadSizeBytes, _ = c.Read(ctx, counterName(false, UploadSizeBytes, iid))
 	cs.TotalDownloadUsec, _ = c.Read(ctx, counterName(false, DownloadUsec, iid))
 	cs.TotalUploadUsec, _ = c.Read(ctx, counterName(false, UploadUsec, iid))
+
+	cs.TotalCachedActionExecUsec, _ = c.Read(ctx, counterName(false, CachedActionExecUsec, iid))
 
 	return cs
 }
