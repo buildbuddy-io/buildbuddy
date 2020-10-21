@@ -23,6 +23,7 @@ ts_library(
         "//app/service",
         "//app/target",
         "//app/terminal",
+        "//proto:acl_ts_proto",
         "//proto:build_event_stream_ts_proto",
         "//proto:cache_ts_proto",
         "//proto:command_line_ts_proto",

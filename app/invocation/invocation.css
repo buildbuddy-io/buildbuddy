@@ -128,3 +128,21 @@
   font-weight: 600;
   margin-bottom: 8px;
 }
+
+.invocation-share-dialog .changing-permissions-disabled-explanation {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #e1f5fe;
+}
+
+.invocation-share-dialog .error-message {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #ffebee;
+}
+
+.invocation-share-dialog-footer .loading-message {
+  flex-shrink: 0;
+}

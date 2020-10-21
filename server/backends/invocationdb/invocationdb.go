@@ -2,6 +2,7 @@ package invocationdb
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -73,8 +74,10 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, invocationID str
 		if err := tx.Raw("SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?", invocationID).Scan(&in).Error; err != nil {
 			return err
 		}
+		fmt.Println("Invocation: ")
+		fmt.Println(in)
 		var group tables.Group
-		if err := tx.Raw("SELECT sharing_enabled FROM Groups WHERE group_id = ?").Scan(&group).Error; err != nil {
+		if err := tx.Raw("SELECT sharing_enabled FROM Groups WHERE group_id = ?", in.GroupID).Scan(&group).Error; err != nil {
 			return err
 		}
 		if !group.SharingEnabled {

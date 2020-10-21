@@ -36,7 +36,7 @@ export type DialogBodyProps = JSX.IntrinsicElements["div"];
 export class DialogBody extends React.Component<DialogBodyProps> {
   render() {
     const { className, ...props } = this.props;
-    return <div className={`dialog-body ${className}`} {...props} />;
+    return <div className={`dialog-body ${className || ""}`} {...props} />;
   }
 }
 
@@ -45,7 +45,7 @@ export type DialogFooterProps = JSX.IntrinsicElements["div"];
 export class DialogFooter extends React.Component<DialogFooterProps> {
   render() {
     const { className, ...props } = this.props;
-    return <div className={`dialog-footer ${className}`} {...props} />;
+    return <div className={`dialog-footer ${className || ""}`} {...props} />;
   }
 }
 
@@ -54,6 +54,6 @@ export type DialogFooterButtonsProps = JSX.IntrinsicElements["div"];
 export class DialogFooterButtons extends React.Component<DialogFooterButtonsProps> {
   render() {
     const { className, ...props } = this.props;
-    return <div className={`dialog-footer-buttons ${className}`} {...props} />;
+    return <div className={`dialog-footer-buttons ${className || ""}`} {...props} />;
   }
 }

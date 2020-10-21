@@ -30,7 +30,11 @@ export default class DenseInvocationOverviewComponent extends React.Component {
               {this.props.invocationId} ({this.props.model.getStartDate()}, {this.props.model.getStartTime()})
             </div>
           </div>
-          <InvocationShareButton user={this.props.user} model={this.props.model} />
+          <InvocationShareButton
+            user={this.props.user}
+            model={this.props.model}
+            invocationId={this.props.invocationId}
+          />
         </div>
         <div className={`dense-invocation-status-bar ${this.props.model.getStatusClass()}`}>
           <div>

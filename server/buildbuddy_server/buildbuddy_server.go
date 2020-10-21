@@ -112,11 +112,12 @@ func makeGroups(grps []*tables.Group) []*grpb.Group {
 			urlIdentifier = *g.URLIdentifier
 		}
 		r = append(r, &grpb.Group{
-			Id:            g.GroupID,
-			Name:          g.Name,
-			OwnedDomain:   g.OwnedDomain,
-			GithubLinked:  g.GithubToken != "",
-			UrlIdentifier: urlIdentifier,
+			Id:             g.GroupID,
+			Name:           g.Name,
+			OwnedDomain:    g.OwnedDomain,
+			GithubLinked:   g.GithubToken != "",
+			UrlIdentifier:  urlIdentifier,
+			SharingEnabled: g.SharingEnabled,
 		})
 	}
 	return r
@@ -302,13 +303,14 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 			return nil, err
 		}
 	}
-	if group == nil && req.GetId() != "" {
+	if group == nil {
+		if req.GetId() == "" {
+			return nil, status.InvalidArgumentError("Missing organization identifier.")
+		}
 		group, err = userDB.GetGroupByID(ctx, req.GetId())
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		return nil, status.InvalidArgumentError("Missing organization identifier.")
 	}
 	group.Name = req.GetName()
 	if urlIdentifier != "" {
@@ -320,6 +322,8 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 			return nil, err
 		}
 		group.OwnedDomain = getEmailDomain(user.Email)
+	} else {
+		group.OwnedDomain = ""
 	}
 	group.SharingEnabled = req.GetSharingEnabled()
 	if _, err := userDB.InsertOrUpdateGroup(ctx, group); err != nil {
