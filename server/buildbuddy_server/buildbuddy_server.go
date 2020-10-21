@@ -286,13 +286,14 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 			return nil, err
 		}
 	}
-	if group == nil && req.GetId() != "" {
+	if group == nil {
+		if req.GetId() == "" {
+			return nil, status.InvalidArgumentError("Missing organization identifier.")
+		}
 		group, err = userDB.GetGroupByID(ctx, req.GetId())
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		return nil, status.InvalidArgumentError("Missing organization identifier.")
 	}
 	group.Name = req.GetName()
 	if urlIdentifier != "" {
