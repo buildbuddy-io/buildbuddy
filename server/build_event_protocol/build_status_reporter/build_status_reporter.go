@@ -37,10 +37,10 @@ type GroupStatus struct {
 
 func NewBuildStatusReporter(env environment.Env, invocationID string) *BuildStatusReporter {
 	githubConfig := env.GetConfigurator().GetGithubConfig()
-	shouldReportStatusPerTest := true
+	shouldReportStatusPerTest := false
 
-	if githubConfig != nil && githubConfig.StatusPerTestTarget != nil {
-		shouldReportStatusPerTest = *githubConfig.StatusPerTestTarget
+	if githubConfig != nil {
+		shouldReportStatusPerTest = githubConfig.StatusPerTestTarget
 	}
 
 	return &BuildStatusReporter{
