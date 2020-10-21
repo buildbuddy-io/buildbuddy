@@ -136,8 +136,9 @@ func (t *transferTimer) Close() error {
 	return t.closeFn()
 }
 
-func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, dur time.Duration, actionCounter, sizeCounter, timeCounter counterType) closeFunction {
+func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.Time, actionCounter, sizeCounter, timeCounter counterType) closeFunction {
 	return func() error {
+		dur := time.Since(start)
 		if h.c == nil || h.iid == "" {
 			return nil
 		}
@@ -163,7 +164,7 @@ func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, dur time.Du
 func (h *HitTracker) TrackCASDownload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
-		closeFn: h.makeCloseFunc(false, d, time.Since(start), Hit, DownloadSizeBytes, DownloadUsec),
+		closeFn: h.makeCloseFunc(false, d, start, Hit, DownloadSizeBytes, DownloadUsec),
 	}
 }
 
@@ -176,7 +177,7 @@ func (h *HitTracker) TrackCASDownload(d *repb.Digest) *transferTimer {
 func (h *HitTracker) TrackCASUpload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
-		closeFn: h.makeCloseFunc(false, d, time.Since(start), Upload, UploadSizeBytes, UploadUsec),
+		closeFn: h.makeCloseFunc(false, d, start, Upload, UploadSizeBytes, UploadUsec),
 	}
 }
 
@@ -250,7 +251,7 @@ func (h *HitTracker) TrackACDownload(d *repb.Digest) *actionTimer {
 				return err
 			}
 		}
-		return h.makeCloseFunc(true, d, time.Since(start), Hit, DownloadSizeBytes, DownloadUsec)()
+		return h.makeCloseFunc(true, d, start, Hit, DownloadSizeBytes, DownloadUsec)()
 	}
 
 	return &actionTimer{
@@ -288,7 +289,7 @@ func (h *HitTracker) TrackACUpload(d *repb.Digest) *actionTimer {
 				return err
 			}
 		}
-		return h.makeCloseFunc(true, d, time.Since(start), Upload, UploadSizeBytes, UploadUsec)()
+		return h.makeCloseFunc(true, d, start, Upload, UploadSizeBytes, UploadUsec)()
 	}
 
 	return &actionTimer{
