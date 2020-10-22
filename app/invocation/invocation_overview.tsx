@@ -58,7 +58,11 @@ export default class InvocationOverviewComponent extends React.Component {
             )}
             <span>Invocation {this.props.invocationId}</span>
           </div>
-          <InvocationShareButton user={this.props.user} model={this.props.model} />
+          <InvocationShareButton
+            user={this.props.user}
+            model={this.props.model}
+            invocationId={this.props.invocationId}
+          />
         </div>
         <div className="titles">
           <div className="title" title={this.props.model.getAllPatterns()}>

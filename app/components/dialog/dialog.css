@@ -40,4 +40,10 @@
 
 .dialog-footer-buttons {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.dialog-footer-buttons > :not(:last-child) {
+  margin-right: 16px;
 }
