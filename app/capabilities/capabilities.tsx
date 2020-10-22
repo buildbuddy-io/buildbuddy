@@ -23,7 +23,7 @@ export class Capabilities {
     this.anonymous = window.buildbuddyConfig && window.buildbuddyConfig.anonymous_usage_enabled;
     this.enterprise = enterprise;
     this.createOrg = this.enterprise;
-    this.invocationSharing = window.localStorage["invocation_sharing"] === "true";
+    this.invocationSharing = true;
     this.paths = new Set(paths);
     window.gtag("set", {
       app_name: this.name,
