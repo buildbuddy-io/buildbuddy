@@ -74,7 +74,7 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, invocationID str
 			return err
 		}
 		var group tables.Group
-		if err := tx.Raw("SELECT sharing_enabled FROM Groups WHERE group_id = ?").Scan(&group).Error; err != nil {
+		if err := tx.Raw("SELECT sharing_enabled FROM Groups WHERE group_id = ?", in.GroupID).Scan(&group).Error; err != nil {
 			return err
 		}
 		if !group.SharingEnabled {
