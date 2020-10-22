@@ -13,19 +13,19 @@ import (
 // When adding new storage fields, always be explicit about their yaml field
 // name.
 type generalConfig struct {
-	App             appConfig              `yaml:"app"`
-	BuildEventProxy buildEventProxy        `yaml:"build_event_proxy"`
-	Database        databaseConfig         `yaml:"database"`
-	Storage         storageConfig          `yaml:"storage"`
-	Integrations    integrationsConfig     `yaml:"integrations"`
-	Cache           cacheConfig            `yaml:"cache"`
-	Auth            authConfig             `yaml:"auth"`
-	SSL             *SSLConfig             `yaml:"ssl"`
-	RemoteExecution *RemoteExecutionConfig `yaml:"remote_execution"`
-	Executor        *ExecutorConfig        `yaml:"executor"`
-	API             *APIConfig             `yaml:"api"`
-	Github          *GithubConfig          `yaml:"github"`
-	Org             *OrgConfig             `yaml:"org"`
+	App             appConfig             `yaml:"app"`
+	BuildEventProxy buildEventProxy       `yaml:"build_event_proxy"`
+	Database        databaseConfig        `yaml:"database"`
+	Storage         storageConfig         `yaml:"storage"`
+	Integrations    integrationsConfig    `yaml:"integrations"`
+	Cache           cacheConfig           `yaml:"cache"`
+	Auth            authConfig            `yaml:"auth"`
+	SSL             SSLConfig             `yaml:"ssl"`
+	RemoteExecution RemoteExecutionConfig `yaml:"remote_execution"`
+	Executor        ExecutorConfig        `yaml:"executor"`
+	API             APIConfig             `yaml:"api"`
+	Github          GithubConfig          `yaml:"github"`
+	Org             OrgConfig             `yaml:"org"`
 }
 
 type appConfig struct {
@@ -96,18 +96,18 @@ type S3CacheConfig struct {
 }
 
 type cacheConfig struct {
-	Disk            *DiskConfig     `yaml:"disk"`
-	GCS             *GCSCacheConfig `yaml:"gcs"`
-	S3              *S3CacheConfig  `yaml:"s3"`
-	InMemory        bool            `yaml:"in_memory"`
-	MaxSizeBytes    int64           `yaml:"max_size_bytes"`
-	MemcacheTargets []string        `yaml:"memcache_targets"`
-	RedisTarget     string          `yaml:"redis_target"`
+	Disk            DiskConfig     `yaml:"disk"`
+	GCS             GCSCacheConfig `yaml:"gcs"`
+	S3              S3CacheConfig  `yaml:"s3"`
+	InMemory        bool           `yaml:"in_memory"`
+	MaxSizeBytes    int64          `yaml:"max_size_bytes"`
+	MemcacheTargets []string       `yaml:"memcache_targets"`
+	RedisTarget     string         `yaml:"redis_target"`
 }
 
 type authConfig struct {
-	OauthProviders       []*OauthProvider `yaml:"oauth_providers"`
-	EnableAnonymousUsage bool             `yaml:"enable_anonymous_usage"`
+	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
+	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage"`
 }
 
 type OauthProvider struct {
@@ -134,6 +134,7 @@ type RemoteExecutionTarget struct {
 }
 
 type RemoteExecutionConfig struct {
+	EnableRemoteExec       bool                    `yaml:"enable_remote_exec"`
 	RemoteExecutionTargets []RemoteExecutionTarget `yaml:"remote_execution_targets"`
 }
 
@@ -154,7 +155,7 @@ type GithubConfig struct {
 	ClientID            string `yaml:"client_id"`
 	ClientSecret        string `yaml:"client_secret"`
 	AccessToken         string `yaml:"access_token"`
-	StatusPerTestTarget *bool  `yaml:"status_per_test_target"`
+	StatusPerTestTarget bool   `yaml:"status_per_test_target"`
 }
 
 type OrgConfig struct {
@@ -342,17 +343,26 @@ func (c *Configurator) GetCacheMaxSizeBytes() int64 {
 
 func (c *Configurator) GetCacheDiskConfig() *DiskConfig {
 	c.rereadIfStale()
-	return c.gc.Cache.Disk
+	if c.gc.Cache.Disk.RootDirectory != "" {
+		return &c.gc.Cache.Disk
+	}
+	return nil
 }
 
 func (c *Configurator) GetCacheGCSConfig() *GCSCacheConfig {
 	c.rereadIfStale()
-	return c.gc.Cache.GCS
+	if c.gc.Cache.GCS.Bucket != "" {
+		return &c.gc.Cache.GCS
+	}
+	return nil
 }
 
 func (c *Configurator) GetCacheS3Config() *S3CacheConfig {
 	c.rereadIfStale()
-	return c.gc.Cache.S3
+	if c.gc.Cache.S3.Bucket != "" {
+		return &c.gc.Cache.S3
+	}
+	return nil
 }
 
 func (c *Configurator) GetCacheMemcacheTargets() []string {
@@ -375,7 +385,7 @@ func (c *Configurator) GetAnonymousUsageEnabled() bool {
 	return len(c.gc.Auth.OauthProviders) == 0 || c.gc.Auth.EnableAnonymousUsage
 }
 
-func (c *Configurator) GetAuthOauthProviders() []*OauthProvider {
+func (c *Configurator) GetAuthOauthProviders() []OauthProvider {
 	c.rereadIfStale()
 	op := c.gc.Auth.OauthProviders
 	if len(c.gc.Auth.OauthProviders) == 1 {
@@ -388,36 +398,52 @@ func (c *Configurator) GetAuthOauthProviders() []*OauthProvider {
 
 func (c *Configurator) GetSSLConfig() *SSLConfig {
 	c.rereadIfStale()
-	return c.gc.SSL
+	if c.gc.SSL.EnableSSL {
+		return &c.gc.SSL
+	}
+	return nil
 }
 
 func (c *Configurator) GetRemoteExecutionConfig() *RemoteExecutionConfig {
 	c.rereadIfStale()
-	return c.gc.RemoteExecution
+	if c.gc.RemoteExecution.EnableRemoteExec {
+		return &c.gc.RemoteExecution
+	}
+	return nil
 }
 
 func (c *Configurator) GetExecutorConfig() *ExecutorConfig {
 	c.rereadIfStale()
-	return c.gc.Executor
+	if c.gc.Executor.RootDirectory != "" {
+		return &c.gc.Executor
+	}
+	return nil
 }
 
 func (c *Configurator) GetAPIConfig() *APIConfig {
 	c.rereadIfStale()
-	return c.gc.API
+	if c.gc.API.EnableAPI {
+		return &c.gc.API
+	}
+	return nil
 }
 
 func (c *Configurator) GetGithubConfig() *GithubConfig {
 	c.rereadIfStale()
-	ghc := c.gc.Github
-	if ghc != nil {
-		if cs := os.Getenv("BB_GITHUB_CLIENT_SECRET"); cs != "" {
-			ghc.ClientSecret = cs
-		}
+	if c.gc.Github.ClientID == "" {
+		return nil
 	}
-	return ghc
+	ghc := c.gc.Github
+	if cs := os.Getenv("BB_GITHUB_CLIENT_SECRET"); cs != "" {
+		ghc.ClientSecret = cs
+	}
+	return &ghc
 }
 
 func (c *Configurator) GetOrgConfig() *OrgConfig {
 	c.rereadIfStale()
-	return c.gc.Org
+	if c.gc.Org.Name != "" || c.gc.Org.Domain != "" {
+		return &c.gc.Org
+	}
+	return nil
 }

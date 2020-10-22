@@ -12,10 +12,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/jinzhu/gorm"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	tspb "github.com/golang/protobuf/ptypes/timestamp"
 )
 
 type counterType int
@@ -30,6 +32,8 @@ const (
 
 	DownloadUsec
 	UploadUsec
+
+	CachedActionExecUsec
 
 	// New counter types go here!
 )
@@ -58,6 +62,8 @@ func rawCounterName(actionCache bool, ct counterType) string {
 		return "download-usec"
 	case UploadUsec:
 		return "upload-usec"
+	case CachedActionExecUsec:
+		return "cached-action-exec-usec"
 	default:
 		return "UNKNOWN-COUNTER-TYPE"
 	}
@@ -130,8 +136,9 @@ func (t *transferTimer) Close() error {
 	return t.closeFn()
 }
 
-func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, dur time.Duration, actionCounter, sizeCounter, timeCounter counterType) closeFunction {
+func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.Time, actionCounter, sizeCounter, timeCounter counterType) closeFunction {
 	return func() error {
+		dur := time.Since(start)
 		if h.c == nil || h.iid == "" {
 			return nil
 		}
@@ -157,7 +164,7 @@ func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, dur time.Du
 func (h *HitTracker) TrackCASDownload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
-		closeFn: h.makeCloseFunc(false, d, time.Since(start), Hit, DownloadSizeBytes, DownloadUsec),
+		closeFn: h.makeCloseFunc(false, d, start, Hit, DownloadSizeBytes, DownloadUsec),
 	}
 }
 
@@ -170,7 +177,7 @@ func (h *HitTracker) TrackCASDownload(d *repb.Digest) *transferTimer {
 func (h *HitTracker) TrackCASUpload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
-		closeFn: h.makeCloseFunc(false, d, time.Since(start), Upload, UploadSizeBytes, UploadUsec),
+		closeFn: h.makeCloseFunc(false, d, start, Upload, UploadSizeBytes, UploadUsec),
 	}
 }
 
@@ -205,6 +212,12 @@ func actionResultKey(actionResult *repb.ActionResult) string {
 	return "unknown"
 }
 
+func diffTimeProtos(startPb, endPb *tspb.Timestamp) time.Duration {
+	start, _ := ptypes.Timestamp(startPb)
+	end, _ := ptypes.Timestamp(endPb)
+	return end.Sub(start)
+}
+
 // Example Usage:
 //
 // ht := NewHitTracker(ctx, env, instanceName)
@@ -214,6 +227,14 @@ func actionResultKey(actionResult *repb.ActionResult) string {
 func (h *HitTracker) TrackACDownload(d *repb.Digest) *actionTimer {
 	start := time.Now()
 	closeFn := func(actionResult *repb.ActionResult) error {
+		if md := actionResult.GetExecutionMetadata(); md != nil {
+			if h.c != nil && h.iid != "" {
+				actionExecDuration := diffTimeProtos(md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
+				if _, err := h.c.Increment(h.ctx, h.getCounter(false, CachedActionExecUsec), actionExecDuration.Microseconds()); err != nil {
+					return err
+				}
+			}
+		}
 		if h.saveActions {
 			dbHandle := h.env.GetDBHandle()
 			if dbHandle == nil {
@@ -230,7 +251,7 @@ func (h *HitTracker) TrackACDownload(d *repb.Digest) *actionTimer {
 				return err
 			}
 		}
-		return h.makeCloseFunc(true, d, time.Since(start), Hit, DownloadSizeBytes, DownloadUsec)()
+		return h.makeCloseFunc(true, d, start, Hit, DownloadSizeBytes, DownloadUsec)()
 	}
 
 	return &actionTimer{
@@ -268,7 +289,7 @@ func (h *HitTracker) TrackACUpload(d *repb.Digest) *actionTimer {
 				return err
 			}
 		}
-		return h.makeCloseFunc(true, d, time.Since(start), Upload, UploadSizeBytes, UploadUsec)()
+		return h.makeCloseFunc(true, d, start, Upload, UploadSizeBytes, UploadUsec)()
 	}
 
 	return &actionTimer{
@@ -295,6 +316,8 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 	cs.TotalUploadSizeBytes, _ = c.Read(ctx, counterName(false, UploadSizeBytes, iid))
 	cs.TotalDownloadUsec, _ = c.Read(ctx, counterName(false, DownloadUsec, iid))
 	cs.TotalUploadUsec, _ = c.Read(ctx, counterName(false, UploadUsec, iid))
+
+	cs.TotalCachedActionExecUsec, _ = c.Read(ctx, counterName(false, CachedActionExecUsec, iid))
 
 	return cs
 }

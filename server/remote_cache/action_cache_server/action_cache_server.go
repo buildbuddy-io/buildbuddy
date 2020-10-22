@@ -104,8 +104,10 @@ func (s *ActionCacheServer) validateActionResult(ctx context.Context, cache inte
 }
 
 func setWorkerMetadata(ar *repb.ActionResult) {
-	ar.ExecutionMetadata = &repb.ExecutedActionMetadata{
-		Worker: base64.StdEncoding.EncodeToString(uuid.NodeID()),
+	if ar.ExecutionMetadata == nil {
+		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{
+			Worker: base64.StdEncoding.EncodeToString(uuid.NodeID()),
+		}
 	}
 }
 
