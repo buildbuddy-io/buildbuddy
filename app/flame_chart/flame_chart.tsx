@@ -482,7 +482,7 @@ const MICROSECONDS_PER_SECOND = 1_000_000;
 
 class HoveredBlockInfo extends React.Component<{ buildDuration: number }, HoveredBlockInfoState> {
   state: HoveredBlockInfoState = {};
-  blockRef = React.createRef<HTMLDivElement>();
+  private blockRef = React.createRef<HTMLDivElement>();
 
   private getHorizontalOverflow() {
     if (!this.blockRef.current || !this.state.block) return 0;
