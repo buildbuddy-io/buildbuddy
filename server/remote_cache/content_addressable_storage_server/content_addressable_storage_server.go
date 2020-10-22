@@ -187,7 +187,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		if err != nil {
 			return nil, err
 		}
-		downloadTracker := ht.TrackCASUpload(readDigest)
+		downloadTracker := ht.TrackCASDownload(readDigest)
 		// defers are preetty cheap: https://tpaschalis.github.io/defer-internals/
 		// so doing 100-1000 or so in this loop is fine.
 		defer downloadTracker.Close()

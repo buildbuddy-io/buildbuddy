@@ -12,7 +12,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jinzhu/gorm"
 
+	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 type InvocationDB struct {
@@ -56,6 +58,35 @@ func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.
 			}
 		} else {
 			tx.Model(&existing).Where("invocation_id = ?", ti.InvocationID).Updates(ti)
+		}
+		return nil
+	})
+}
+
+func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, invocationID string, acl *aclpb.ACL) error {
+	p, err := perms.FromACL(acl)
+	if err != nil {
+		return err
+	}
+	return d.h.Transaction(func(tx *gorm.DB) error {
+		var in tables.Invocation
+		if err := tx.Raw("SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?", invocationID).Scan(&in).Error; err != nil {
+			return err
+		}
+		var group tables.Group
+		if err := tx.Raw("SELECT sharing_enabled FROM Groups WHERE group_id = ?").Scan(&group).Error; err != nil {
+			return err
+		}
+		if !group.SharingEnabled {
+			return status.PermissionDeniedError("Your organization does not allow this action.")
+		}
+
+		currentACL := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
+		if err := perms.AuthorizeWrite(ctx, currentACL); err != nil {
+			return err
+		}
+		if err := tx.Exec(`UPDATE Invocations SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
+			return err
 		}
 		return nil
 	})

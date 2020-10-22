@@ -3,10 +3,12 @@ package perms
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
@@ -66,6 +68,69 @@ func ToACLProto(userID *uidpb.UserId, groupID string, perms int) *aclpb.ACL {
 			Write: perms&OTHERS_WRITE != 0,
 		},
 	}
+}
+
+func FromACL(acl *aclpb.ACL) (int, error) {
+	if acl == nil {
+		return 0, status.InvalidArgumentError("ACL is nil.")
+	}
+	if acl.GetOwnerPermissions() == nil || acl.GetGroupPermissions() == nil || acl.GetOthersPermissions() == nil {
+		return 0, status.InvalidArgumentError("ACL is missing one or more required permissions fields.")
+	}
+	p := 0
+	if acl.GetOwnerPermissions().GetRead() {
+		p |= OWNER_READ
+	}
+	if acl.GetOwnerPermissions().GetWrite() {
+		p |= OWNER_WRITE
+	}
+	if acl.GetGroupPermissions().GetRead() {
+		p |= GROUP_READ
+	}
+	if acl.GetGroupPermissions().GetWrite() {
+		p |= GROUP_WRITE
+	}
+	if acl.GetOthersPermissions().GetRead() {
+		p |= OTHERS_READ
+	}
+	if acl.GetOthersPermissions().GetWrite() {
+		p |= OTHERS_WRITE
+	}
+	return p, nil
+}
+
+func AuthorizeWrite(ctx context.Context, acl *aclpb.ACL) error {
+	if ctx == nil {
+		return status.InvalidArgumentError("ctx cannot be nil.")
+	}
+	if acl == nil {
+		return status.InvalidArgumentError("acl cannot be nil.")
+	}
+
+	// TODO: use AuthenticatedUser instead once it contains the correct GroupID.
+	reqCtx := requestcontext.ProtoRequestContextFromContext(ctx)
+	if reqCtx.GetUserId() == nil {
+		return status.InternalError("Attempted to authorize a request that hasn't first been authenticated.")
+	}
+
+	perms, err := FromACL(acl)
+	if err != nil {
+		return err
+	}
+
+	if perms&OTHERS_WRITE != 0 {
+		log.Print("Ignoring request to allow OTHERS_WRITE. This should not happen!")
+	}
+	isOwner := reqCtx.GetUserId().GetId() == acl.GetUserId().GetId()
+	if isOwner && perms&OWNER_WRITE != 0 {
+		return nil
+	}
+	isGroupSelected := reqCtx.GetGroupId() == acl.GetGroupId()
+	if isGroupSelected && perms&GROUP_WRITE != 0 {
+		return nil
+	}
+
+	return status.PermissionDeniedError("You do not have permission to perform this action.")
 }
 
 func AddPermissionsCheckToQuery(ctx context.Context, env environment.Env, q *query_builder.Query) error {

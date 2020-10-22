@@ -1,4 +1,6 @@
 import React from "react";
+import { acl } from "../../proto/acl_ts_proto";
+import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
 import { FilledButton, OutlinedButton } from "../components/button/button";
@@ -12,34 +14,47 @@ import Dialog, {
 import Input from "../components/input/input";
 import Modal from "../components/modal/modal";
 import Select, { Option } from "../components/select/select";
+import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 
 export interface InvocationShareButtonComponentProps {
   user?: User;
   model: InvocationModel;
+  invocationId: string;
 }
 
 interface State {
   isOpen: boolean;
-  // TODO: Replace with request proto once it's available.
-  visibility?: VisibilitySelection;
+  isLoading: boolean;
+  acl: acl.IACL;
+  error?: string;
 }
 
-type VisibilitySelection = "owner" | "group" | "public";
+type VisibilitySelection = "group" | "public";
 
 export default class InvocationShareButtonComponent extends React.Component<
   InvocationShareButtonComponentProps,
   State
 > {
-  state: State = { isOpen: false };
+  state = this.getInitialState();
 
   private inputRef = React.createRef<HTMLInputElement>();
 
-  componentDidMount() {
-    // TODO: Fetch current invocation permissions
+  componentDidUpdate(prevProps: InvocationShareButtonComponentProps) {
+    if (prevProps.invocationId !== this.props.invocationId) {
+      this.setState(this.getInitialState());
+    }
   }
 
-  private onClick() {
+  private getInitialState(): State {
+    return { isOpen: false, acl: this.getInvocation().acl, isLoading: false };
+  }
+
+  private getInvocation() {
+    return this.props.model.invocations.find((invocation) => invocation.invocationId === this.props.invocationId);
+  }
+
+  private onShareButtonClick() {
     this.setState({ isOpen: true });
   }
 
@@ -47,15 +62,28 @@ export default class InvocationShareButtonComponent extends React.Component<
     this.setState({ isOpen: false });
   }
 
-  private onInputClick() {
+  private onLinkInputClick() {
     this.inputRef.current.select();
   }
 
-  private onVisibilityChange(e: React.ChangeEvent) {
-    const visibility = (e.target as HTMLSelectElement).value as VisibilitySelection;
-    this.setState({ visibility });
+  private async onVisibilitySelectionChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const visibility = e.target.value as VisibilitySelection;
+    const newAcl = new acl.ACL(this.getInvocation().acl);
 
-    // TODO: wire up mutate RPC
+    newAcl.othersPermissions.read = visibility === "public";
+
+    this.setState({ acl: newAcl, isLoading: true });
+
+    try {
+      await rpcService.service.updateInvocation(
+        new invocation.UpdateInvocationRequest({ invocationId: this.props.invocationId, acl: newAcl })
+      );
+    } catch (e) {
+      console.error(e);
+      this.setState({ error: "Something went wrong. Refresh the page and try again." });
+    } finally {
+      this.setState({ isLoading: false });
+    }
   }
 
   private onCopyLinkButtonClick() {
@@ -68,12 +96,15 @@ export default class InvocationShareButtonComponent extends React.Component<
       return <></>;
     }
 
-    const { visibility } = this.state;
+    const isEnabledByOrg = Boolean(this.props.user?.selectedGroup?.sharingEnabled);
+    const isUnauthenticatedBuild = Boolean(!this.getInvocation().acl?.userId?.id);
+    const canChangePermissions = isEnabledByOrg && !isUnauthenticatedBuild;
+
+    const visibility: VisibilitySelection = this.state.acl.othersPermissions.read ? "public" : "group";
 
     return (
       <>
-        {/* TODO: disable this button if the org doesn't allow sharing. */}
-        <FilledButton className="invocation-share-button" onClick={this.onClick.bind(this)}>
+        <FilledButton className="invocation-share-button" onClick={this.onShareButtonClick.bind(this)}>
           {/* TODO: Use an icon that signifies the current permissions */}
           <img src="/image/share-2-white.svg" alt="" />
           Share
@@ -90,26 +121,43 @@ export default class InvocationShareButtonComponent extends React.Component<
                   readOnly={true}
                   value={window.location.href}
                   className="link-input"
-                  onClick={this.onInputClick.bind(this)}
+                  onClick={this.onLinkInputClick.bind(this)}
                 />
                 <OutlinedButton onClick={this.onCopyLinkButtonClick.bind(this)}>Copy link</OutlinedButton>
               </div>
               <div>
                 <div className="visibility-header">Visibility</div>
-                <Select onChange={this.onVisibilityChange.bind(this)}>
-                  <Option value="owner">Private</Option>
+                <Select
+                  onChange={this.onVisibilitySelectionChange.bind(this)}
+                  value={visibility}
+                  disabled={!canChangePermissions || this.state.isLoading || Boolean(this.state.error)}>
                   <Option value="group">{this.props.user.selectedGroup.name}</Option>
                   <Option value="public">Anyone with the link</Option>
                 </Select>
                 <div className="visibility-explanation">
-                  {(visibility === "owner" || !visibility) && "Only you can view"}
-                  {visibility === "group" && `Anyone in this organization with the link can view`}
-                  {visibility === "public" && "Anyone on the Internet with this link can view"}
+                  {visibility === "group" && <>Anyone in this organization with the link can view</>}
+                  {visibility === "public" && <>Anyone on the Internet with this link can view</>}
                 </div>
               </div>
+              {!canChangePermissions && (
+                <div className="changing-permissions-disabled-explanation">
+                  {isUnauthenticatedBuild ? (
+                    <>Visibility cannot be changed since this build was performed by an unauthenticated user.</>
+                  ) : (
+                    <>Your organization does not allow editing build visibility.</>
+                  )}
+                </div>
+              )}
+              {this.state.error && <div className="error-message">{this.state.error}</div>}
             </DialogBody>
-            <DialogFooter>
+            <DialogFooter className="invocation-share-dialog-footer">
               <DialogFooterButtons>
+                {this.state.isLoading && (
+                  <>
+                    <div className="loading" />
+                    <span className="loading-message">Saving...</span>
+                  </>
+                )}
                 <FilledButton onClick={this.onRequestClose.bind(this)}>Done</FilledButton>
               </DialogFooterButtons>
             </DialogFooter>
