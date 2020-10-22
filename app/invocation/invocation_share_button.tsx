@@ -36,16 +36,13 @@ export default class InvocationShareButtonComponent extends React.Component<
   InvocationShareButtonComponentProps,
   State
 > {
-  private inputRef = React.createRef<HTMLInputElement>();
+  state = this.getInitialState();
 
-  constructor(props: InvocationShareButtonComponentProps) {
-    super(props);
-    this.state = this.getInitialState();
-  }
+  private inputRef = React.createRef<HTMLInputElement>();
 
   componentDidUpdate(prevProps: InvocationShareButtonComponentProps) {
     if (prevProps.invocationId !== this.props.invocationId) {
-      this.state = this.getInitialState();
+      this.setState(this.getInitialState());
     }
   }
 
@@ -73,7 +70,6 @@ export default class InvocationShareButtonComponent extends React.Component<
     const visibility = e.target.value as VisibilitySelection;
     const newAcl = new acl.ACL(this.getInvocation().acl);
 
-    newAcl.groupPermissions.read = visibility === "group" || visibility === "public";
     newAcl.othersPermissions.read = visibility === "public";
 
     this.setState({ acl: newAcl, isLoading: true });
