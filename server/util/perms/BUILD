@@ -10,6 +10,7 @@ go_library(
         "//proto:user_id_go_proto",
         "//server/environment:go_default_library",
         "//server/util/query_builder:go_default_library",
+        "//server/util/request_context:go_default_library",
         "//server/util/status:go_default_library",
     ],
 )

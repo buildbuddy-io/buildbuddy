@@ -88,6 +88,22 @@ func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.Searc
 	return searcher.QueryInvocations(ctx, req)
 }
 
+func (s *BuildBuddyServer) UpdateInvocation(ctx context.Context, req *inpb.UpdateInvocationRequest) (*inpb.UpdateInvocationResponse, error) {
+	auth := s.env.GetAuthenticator()
+	if auth == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	if _, err := auth.AuthenticatedUser(ctx); err != nil {
+		return nil, err
+	}
+
+	db := s.env.GetInvocationDB()
+	if err := db.UpdateInvocationACL(ctx, req.GetInvocationId(), req.GetAcl()); err != nil {
+		return nil, err
+	}
+	return &inpb.UpdateInvocationResponse{}, nil
+}
+
 func makeGroups(grps []*tables.Group) []*grpb.Group {
 	r := make([]*grpb.Group, 0)
 	for _, g := range grps {
