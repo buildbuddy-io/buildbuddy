@@ -20,8 +20,9 @@ import InvocationNotFoundComponent from "./invocation_not_found";
 import InvocationOverviewComponent from "./invocation_overview";
 import RawLogsCardComponent from "./invocation_raw_logs_card";
 import InvocationTabsComponent from "./invocation_tabs";
-import TargetsComponent from "./invocation_targets";
 import TimingCardComponent from "./invocation_timing_card";
+import ExecutionCardComponent from "./invocation_execution_card";
+import TargetsComponent from "./invocation_targets";
 
 interface State {
   loading: boolean;
@@ -224,6 +225,9 @@ export default class InvocationComponent extends React.Component {
           )}
 
           {this.props.hash == "#timing" && <TimingCardComponent model={this.state.model} />}
+          {this.props.hash == "#execution" && (
+            <ExecutionCardComponent model={this.state.model} inProgress={this.state.inProgress} />
+          )}
           {this.props.hash == "#raw" && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
         </div>
       </div>

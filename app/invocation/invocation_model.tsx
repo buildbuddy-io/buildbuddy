@@ -189,8 +189,12 @@ export default class InvocationModel {
     return "Cache on";
   }
 
+  getIsRBEEnabled() {
+    return this.optionsMap.get("remote_executor");
+  }
+
   getRBE() {
-    return this.optionsMap.get("remote_executor") ? "Remote execution on" : "Remote execution off";
+    return this.getIsRBEEnabled() ? "Remote execution on" : "Remote execution off";
   }
 
   getRepo() {
