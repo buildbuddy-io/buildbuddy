@@ -21,8 +21,8 @@ type InvocationDiff = JsDiff.Change[];
 interface State {
   status?: Status;
   error?: string | null;
-  a?: invocation.IInvocation | null;
-  b?: invocation.IInvocation | null;
+  invocationA?: invocation.IInvocation | null;
+  invocationB?: invocation.IInvocation | null;
   diff?: InvocationDiff | null;
   showChangesOnly: boolean;
 }
@@ -30,8 +30,8 @@ interface State {
 const INITIAL_STATE: State = {
   status: "INIT",
   error: null,
-  a: null,
-  b: null,
+  invocationA: null,
+  invocationB: null,
   showChangesOnly: true,
 };
 
@@ -59,17 +59,17 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     try {
       const [a, b] = await Promise.all([this.fetchInvocation(invocationAId), this.fetchInvocation(invocationBId)]);
       console.log("Comparing invocations", { a, b });
-      this.setState({ status: "LOADED", a, b, diff: this.computeDiff(a, b) });
+      this.setState({ status: "LOADED", invocationA: a, invocationB: b, diff: this.computeDiff(a, b) });
     } catch (e) {
       this.setState({ status: "ERROR", error: parseError(e).description });
     }
   }
 
-  private computeDiff(a: invocation.IInvocation, b: invocation.IInvocation) {
-    const aStr = JSON.stringify(a, null, 2);
-    const bStr = JSON.stringify(b, null, 2);
+  private computeDiff(invocationA: invocation.IInvocation, invocationB: invocation.IInvocation) {
+    const aJson = JSON.stringify(invocationA, null, 2);
+    const bJson = JSON.stringify(invocationB, null, 2);
 
-    return JsDiff.diffLines(aStr, bStr);
+    return JsDiff.diffLines(aJson, bJson);
   }
 
   private async fetchInvocation(invocationId: string) {
