@@ -90,7 +90,12 @@ export default class ExecutionCardComponent extends React.Component {
       return <div className="loading" />;
     }
     if (!this.state.executions.length) {
-      return <div>No remotely executed actions.</div>;
+      return (
+        <div className="invocation-execution-empty-state">
+          No actions remotely executed by BuildBuddy RBE for this invocation{this.props.inProgress && <span> yet</span>}
+          .
+        </div>
+      );
     }
 
     let completedCount = 0;

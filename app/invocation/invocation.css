@@ -183,3 +183,7 @@
 .invocation-execution-row-stats div {
   margin-right: 8px;
 }
+
+.invocation-execution-empty-state {
+  margin-top: 32px;
+}
