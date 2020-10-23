@@ -92,10 +92,25 @@ export default class ExecutionCardComponent extends React.Component {
     if (!this.state.executions.length) {
       return <div>No remotely executed actions.</div>;
     }
+
+    let completedCount = 0;
+    let incompleteCount = 0;
+    for (let exection of this.state.executions) {
+      // Completed
+      if (exection.stage == 4) {
+        completedCount++;
+      } else {
+        incompleteCount++;
+      }
+    }
+
     return (
       <div className={`card expanded`}>
         <div className="content">
-          <div className="title">Remotely executed actions</div>
+          <div className="title">
+            Remotely executed actions ({!!incompleteCount && <span>{incompleteCount} in progress, </span>}
+            {completedCount} completed)
+          </div>
           <div className="invocation-execution-table">
             {this.state.executions.sort(this.sort).map((execution) => (
               <div key={execution?.actionDigest?.hash} className="invocation-execution-row">
