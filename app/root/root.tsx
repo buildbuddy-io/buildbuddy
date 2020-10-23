@@ -8,6 +8,7 @@ import router, { Path } from "../router/router";
 import authService, { AuthService } from "../auth/auth_service";
 import { User } from "../auth/auth_service";
 import faviconService from "../favicon/favicon";
+import CompareInvocationsComponent from "../compare/compare_invocations";
 
 const viewModeKey = "VIEW_MODE";
 const denseModeValue = "DENSE";
@@ -65,6 +66,8 @@ export default class RootComponent extends React.Component {
 
   render() {
     let invocationId = router.getInvocationId(this.state.path);
+    let compareInvocationIds = router.getInvocationIdsForCompare(this.state.path);
+    let showSetup = !invocationId && !compareInvocationIds;
     return (
       <div className={this.state.denseMode ? "dense root" : "root"}>
         <MenuComponent
@@ -84,7 +87,14 @@ export default class RootComponent extends React.Component {
                 user={null}
               />
             )}
-            {!invocationId && <SetupComponent />}
+            {compareInvocationIds && (
+              <CompareInvocationsComponent
+                invocationAId={compareInvocationIds.a}
+                invocationBId={compareInvocationIds.b}
+                user={null}
+              />
+            )}
+            {showSetup && <SetupComponent />}
           </div>
           <FooterComponent />
         </div>
