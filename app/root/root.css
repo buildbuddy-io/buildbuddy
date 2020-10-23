@@ -1180,6 +1180,7 @@ code .comment {
 
 .login-interstitial {
   background-color: rgba(38, 50, 56, 1);
+  min-height: calc(100vh - 200px);
 }
 
 .login-interstitial,
