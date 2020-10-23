@@ -70,7 +70,7 @@ message IOStats {
 
 // Next tag: 10
 message ExecutionSummary {
-  reserved 1, 3, 4, 5, 6, 7;
+  reserved 1, 3, 4, 5, 6, 7, 9;
 
   // Any io_stats that were collected during this execution.
   IOStats io_stats = 2;
@@ -78,10 +78,6 @@ message ExecutionSummary {
   // Execution stage timings.
   build.bazel.remote.execution.v2.ExecutedActionMetadata
       executed_action_metadata = 8;
-
-  // A snippet of the command that ran as part of this execution.
-  // Ex. /usr/bin/gcc foo.cc -o foo
-  string command_snippet = 9;
 }
 
 message Execution {
