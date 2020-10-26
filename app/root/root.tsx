@@ -91,6 +91,7 @@ export default class RootComponent extends React.Component {
               <CompareInvocationsComponent
                 invocationAId={compareInvocationIds.a}
                 invocationBId={compareInvocationIds.b}
+                search={this.state.search}
                 user={null}
               />
             )}

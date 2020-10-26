@@ -116,18 +116,14 @@ class Router {
     this.navigateTo(Path.createOrgPath);
   }
 
-  updateParams(params: any) {
-    let keys = Object.keys(params);
-    let queryParam = keys.map((key) => `${key}=${params[key]}`).join("&");
-    var newUrl =
-      window.location.protocol +
-      "//" +
-      window.location.host +
-      window.location.pathname +
-      "?" +
-      queryParam +
-      window.location.hash;
+  updateParams(params: Record<string, string>) {
+    const newUrl = getModifiedUrl({ query: params });
     window.history.pushState({ path: newUrl }, "", newUrl);
+  }
+
+  replaceParams(params: Record<string, string>) {
+    const newUrl = getModifiedUrl({ query: params });
+    window.history.replaceState({ path: newUrl }, "", newUrl);
   }
 
   getLastPathComponent(path: string, pathPrefix: string) {
@@ -173,6 +169,27 @@ class Router {
     return this.getLastPathComponent(path, Path.commitHistoryPath);
   }
 }
+
+function getQueryString(params: Record<string, string>) {
+  return Object.keys(params)
+    .map((key) => `${key}=${encodeURIComponent(params[key])}`)
+    .join("&");
+}
+
+function getModifiedUrl({ query }: { query?: Record<string, string> }) {
+  const queryString = query ? getQueryString(query) : window.location.search;
+
+  return (
+    window.location.protocol +
+    "//" +
+    window.location.host +
+    window.location.pathname +
+    (queryString ? "?" : "") +
+    queryString +
+    window.location.hash
+  );
+}
+
 export class Path {
   static comparePath = "/compare/";
   static invocationPath = "/invocation/";

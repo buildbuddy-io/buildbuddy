@@ -1,6 +1,7 @@
 import React from "react";
 import JsDiff from "diff";
 import { OutlinedButton } from "../components/button/button";
+import { NOISE_REPLACEMENT_TOKEN } from "./diff_preprocessing";
 
 export type DiffChunkProps = {
   change: JsDiff.Change;
@@ -39,7 +40,7 @@ export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunk
           {added && "+"}
           {removed && "-"}
         </div>
-        <pre>{line}</pre>
+        <LineContent line={line} />
       </div>
     ));
 
@@ -58,4 +59,18 @@ export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunk
 
     return nodes;
   }
+}
+
+function LineContent({ line }: { line: string }) {
+  const parts = line.split(NOISE_REPLACEMENT_TOKEN);
+  return (
+    <div className="diff-line-content">
+      {parts.map((visibleText, i) => (
+        <>
+          <span>{visibleText}</span>
+          {i !== parts.length - 1 && <span className="hidden-data">(hidden)</span>}
+        </>
+      ))}
+    </div>
+  );
 }

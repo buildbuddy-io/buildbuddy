@@ -54,3 +54,24 @@
 .outlined-button:active {
   background: rgba(20, 20, 20, 0.2);
 }
+
+.base-button.checkbox-button {
+  padding: 0;
+}
+
+.checkbox-button label {
+  padding: 8px 8px 8px 16px;
+  box-sizing: border-box;
+  min-height: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.checkbox-button input {
+  cursor: pointer;
+}
+
+.checkbox-button label > :not(:last-child) {
+  margin-right: 8px;
+}

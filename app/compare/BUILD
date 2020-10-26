@@ -13,6 +13,7 @@ ts_library(
         "//app/router",
         "//app/service",
         "//app/util:errors",
+        "//proto:command_line_ts_proto",
         "//proto:invocation_ts_proto",
         "@npm//@types/diff",
         "@npm//@types/react",
