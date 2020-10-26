@@ -60,7 +60,7 @@
   overflow-x: hidden;
 }
 
-.compare-invocations .denoising-options {
+.compare-invocations .preprocessing-options {
   display: flex;
   align-items: center;
   padding-top: 8px;
@@ -68,17 +68,17 @@
   border-bottom: 1px solid #eee;
 }
 
-.compare-invocations .denoising-options img {
+.compare-invocations .preprocessing-options img {
   opacity: 0.7;
   width: 24px;
   height: 24px;
 }
 
-.compare-invocations .denoising-options > :not(:last-child) {
+.compare-invocations .preprocessing-options > :not(:last-child) {
   margin-right: 8px;
 }
 
-.compare-invocations .denoising-options .checkbox-button label {
+.compare-invocations .preprocessing-options .checkbox-button label {
   padding: 4px 8px;
   font-size: 14px;
 }

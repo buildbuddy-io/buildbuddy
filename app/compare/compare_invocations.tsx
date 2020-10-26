@@ -30,17 +30,16 @@ interface State {
   showChangesOnly: boolean;
 }
 
+const INITIAL_STATE: State = {
+  status: "INIT",
+  error: null,
+  invocationA: null,
+  invocationB: null,
+  showChangesOnly: true,
+};
+
 export default class CompareInvocationsComponent extends React.Component<CompareInvocationsComponentProps, State> {
-  state: State = this.getInitialState();
-  private getInitialState(): State {
-    return {
-      status: "INIT",
-      error: null,
-      invocationA: null,
-      invocationB: null,
-      showChangesOnly: true,
-    };
-  }
+  state: State = INITIAL_STATE;
 
   private preProcessingOptions: PreProcessingOptions = this.getPreProcessingOptions();
 
@@ -56,7 +55,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
       prevProps.invocationAId !== this.props.invocationAId ||
       prevProps.invocationBId !== this.props.invocationBId
     ) {
-      this.setState(this.getInitialState());
+      this.setState(INITIAL_STATE);
       this.fetchInvocations();
     } else if (prevProps.search !== this.props.search) {
       this.setState({ diff: this.computeDiff(this.state.invocationA, this.state.invocationB) });
@@ -167,7 +166,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
             </CheckboxButton>
           </header>
         </div>
-        <div className="container denoising-options">
+        <div className="container preprocessing-options">
           <img alt="Comparison options" src="/image/sliders.svg" />
           {this.renderPreProcessingOption("sortEvents", "Sort events")}
           {this.renderPreProcessingOption("hideTimingData", "Hide timing data")}
