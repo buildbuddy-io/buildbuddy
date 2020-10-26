@@ -41,6 +41,20 @@ export function durationSec(duration: number | Long) {
   return `${seconds.toPrecision(3)} s`;
 }
 
+export function bytes(bytes: number | Long) {
+  bytes = +bytes;
+  if (bytes < 100) {
+    return bytes + "B";
+  }
+  if (bytes < 1000000) {
+    return (bytes / 1000).toFixed(2) + "KB";
+  }
+  if (bytes < 1000000000) {
+    return (bytes / 1000000).toFixed(2) + "MB";
+  }
+  return (bytes / 1000000000).toFixed(2) + "GB";
+}
+
 export function sentenceCase(string: string) {
   if (!string) return "";
   return string[0].toUpperCase() + string.slice(1);
@@ -81,6 +95,7 @@ export default {
   durationUsec,
   sentenceCase,
   percent,
+  bytes,
   truncateList,
   formatTimestampUsec,
   formatTimestampMillis,

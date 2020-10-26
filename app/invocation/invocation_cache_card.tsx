@@ -1,5 +1,6 @@
 import React from "react";
 import InvocationModel from "./invocation_model";
+import format from "../format/format";
 import { ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 interface Props {
@@ -79,17 +80,12 @@ export default class CacheCardComponent extends React.Component {
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch download-color-swatch"></span>
-                            <span className="cache-stat">
-                              {(+cacheStat.totalDownloadSizeBytes / 1000000).toFixed(2)}
-                            </span>{" "}
-                            MB downloaded
+                            <span className="cache-stat">{format.bytes(cacheStat.totalDownloadSizeBytes)}</span>{" "}
+                            downloaded
                           </div>
                           <div className="cache-chart-label">
                             <span className="color-swatch upload-color-swatch"></span>
-                            <span className="cache-stat">
-                              {(+cacheStat.totalUploadSizeBytes / 1000000).toFixed(2)}
-                            </span>{" "}
-                            MB upload
+                            <span className="cache-stat">{format.bytes(cacheStat.totalUploadSizeBytes)}</span> uploaded
                           </div>
                         </div>
                       </div>

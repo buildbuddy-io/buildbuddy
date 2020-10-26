@@ -482,6 +482,15 @@ const MICROSECONDS_PER_SECOND = 1_000_000;
 
 class HoveredBlockInfo extends React.Component<{ buildDuration: number }, HoveredBlockInfoState> {
   state: HoveredBlockInfoState = {};
+  private blockRef = React.createRef<HTMLDivElement>();
+
+  private getHorizontalOverflow() {
+    if (!this.blockRef.current || !this.state.block) return 0;
+
+    const width = this.blockRef.current.getBoundingClientRect().width;
+    const rightEdgeX = this.state.x + width;
+    return Math.max(0, rightEdgeX - window.innerWidth);
+  }
 
   render() {
     const { block } = this.state;
@@ -501,11 +510,15 @@ class HoveredBlockInfo extends React.Component<{ buildDuration: number }, Hovere
     return (
       <div
         className="flame-chart-hovered-block-info"
+        ref={this.blockRef}
         style={{
           position: "fixed",
           top: (this.state.y || 0) + 16,
-          left: (this.state.x || 0) - 16,
+          left: (this.state.x || 0) - 16 - this.getHorizontalOverflow(),
           pointerEvents: "none",
+          // Make the block invisible on the first render while we compute the
+          // horizontal overflow based on the actual rendered size.
+          opacity: this.blockRef.current ? 1 : 0,
         }}>
         <div className="hovered-block-title">{name}</div>
         <div className="hovered-block-details">

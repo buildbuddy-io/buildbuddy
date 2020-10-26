@@ -130,7 +130,7 @@ class Router {
     if (!path.startsWith(pathPrefix)) {
       return null;
     }
-    return path.replace(pathPrefix, "");
+    return decodeURIComponent(path.replace(pathPrefix, ""));
   }
 
   getInvocationId(path: string) {

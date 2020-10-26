@@ -146,3 +146,44 @@
 .invocation-share-dialog-footer .loading-message {
   flex-shrink: 0;
 }
+
+.invocation-execution-table {
+  margin-top: 16px;
+}
+
+.invocation-execution-row {
+  display: flex;
+  margin-top: 16px;
+  border-top: 1px solid #eee;
+  padding-top: 16px;
+}
+
+.invocation-execution-row-image {
+  margin-right: 16px;
+}
+
+.invocation-execution-row-image .rotating {
+  animation: rotate 2s linear infinite;
+}
+
+.invocation-execution-row-stats {
+  color: #aaa;
+  font-size: 0.8em;
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.invocation-execution-row-digest {
+  font-size: 0.8em;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.invocation-execution-row-stats div {
+  margin-right: 8px;
+}
+
+.invocation-execution-empty-state {
+  margin-top: 32px;
+}

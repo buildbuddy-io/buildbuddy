@@ -38,6 +38,10 @@ export default class InvocationOverviewComponent extends React.Component {
   }
 
   handleRBEClicked() {
+    if (this.props.model.getIsRBEEnabled()) {
+      window.location.hash = "#execution";
+      return;
+    }
     router.navigateToSetup();
   }
 
