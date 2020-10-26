@@ -2,9 +2,9 @@ import { invocation as invocation_proto } from "../../proto/invocation_ts_proto"
 import { command_line } from "../../proto/command_line_ts_proto";
 
 /**
- * A unique token used to identify parts of the diff that were hidden due to denoising.
+ * A unique token used to identify parts of the diff that were hidden due to pre-processing options.
  */
-export const NOISE_REPLACEMENT_TOKEN = `/__NOISE__${Math.random()}/`;
+export const HIDDEN_TOKEN = `/__HIDDEN__${Math.random()}/`;
 
 export type PreProcessingOptions = {
   sortEvents?: boolean;
@@ -26,7 +26,7 @@ export function computeTextForDiff(
     sortByProperty(invocation.event, (event: any) => JSON.stringify(event?.buildEvent?.id));
   }
   if (hideConsoleOutput) {
-    invocation.consoleBuffer = NOISE_REPLACEMENT_TOKEN;
+    invocation.consoleBuffer = HIDDEN_TOKEN;
   }
 
   // Some CommandLine objects are empty for some reason; remove these.
@@ -55,26 +55,24 @@ export function computeTextForDiff(
 
     if (hideTimingData) {
       if (id?.workspaceStatus) {
-        event.buildEvent.workspaceStatus.item.find(
-          (item: any) => item.key === "BUILD_TIMESTAMP"
-        )!.value = NOISE_REPLACEMENT_TOKEN;
+        event.buildEvent.workspaceStatus.item.find((item: any) => item.key === "BUILD_TIMESTAMP")!.value = HIDDEN_TOKEN;
       } else if (id?.buildToolLogs) {
         event.buildEvent.buildToolLogs.log.find(
           (item: any) => item.name === "elapsed time"
         )!.contents = new Uint8Array();
         (event.buildEvent.buildToolLogs.log.find(
           (item: any) => item.name === "critical path"
-        ) as any).contents = NOISE_REPLACEMENT_TOKEN;
+        ) as any).contents = HIDDEN_TOKEN;
         (event.buildEvent.buildToolLogs.log.find(
           (item: any) => item.name === "process stats"
-        ) as any).contents = NOISE_REPLACEMENT_TOKEN;
+        ) as any).contents = HIDDEN_TOKEN;
       } else if (id?.structuredCommandLine) {
         removeTimingData(event.buildEvent.structuredCommandLine);
       }
     }
     if (hideUuids) {
       if (id?.started) {
-        event.buildEvent.started.uuid = NOISE_REPLACEMENT_TOKEN;
+        event.buildEvent.started.uuid = HIDDEN_TOKEN;
       }
     }
   }
@@ -83,17 +81,17 @@ export function computeTextForDiff(
   if (hideTimingData) {
     json = json.replace(
       /"(startTimeMillis|finishTimeMillis|seconds|nanos|createdAtUsec|updatedAtUsec|durationUsec|cpuTimeInMs|wallTimeInMs)": ("?[0-9]+"?)/g,
-      `"$1": ${NOISE_REPLACEMENT_TOKEN}`
+      `"$1": ${HIDDEN_TOKEN}`
     );
   }
   if (sortEvents) {
-    json = json.replace(/"(sequenceNumber)": ("?[0-9]+"?)/g, `"$1": ${NOISE_REPLACEMENT_TOKEN}`);
+    json = json.replace(/"(sequenceNumber)": ("?[0-9]+"?)/g, `"$1": ${HIDDEN_TOKEN}`);
   }
   if (hideInvocationIds) {
-    json = json.replace(invocationId, NOISE_REPLACEMENT_TOKEN);
+    json = json.replace(invocationId, HIDDEN_TOKEN);
   }
   if (hideUuids) {
-    json = json.replace(/"(uuid)": ("?[a-z0-9\-]+"?)/g, `"$1": ${NOISE_REPLACEMENT_TOKEN}`);
+    json = json.replace(/"(uuid)": ("?[a-z0-9\-]+"?)/g, `"$1": ${HIDDEN_TOKEN}`);
   }
   return json;
 }
@@ -103,8 +101,8 @@ function removeTimingData(commandLine: command_line.ICommandLine) {
     if (!section.optionList) continue;
     for (const option of section.optionList.option) {
       if (option.optionName === "startup_time") {
-        option.optionValue = NOISE_REPLACEMENT_TOKEN;
-        option.combinedForm = `--startup_time=${NOISE_REPLACEMENT_TOKEN}`;
+        option.optionValue = HIDDEN_TOKEN;
+        option.combinedForm = `--startup_time=${HIDDEN_TOKEN}`;
       }
     }
   }
