@@ -38,6 +38,14 @@ const INITIAL_STATE: State = {
   showChangesOnly: true,
 };
 
+const DEFAULT_PREPROCESSING_OPTIONS: PreProcessingOptions = {
+  sortEvents: true,
+  hideTimingData: true,
+  hideConsoleOutput: true,
+  hideInvocationIds: true,
+  hideUuids: true,
+};
+
 export default class CompareInvocationsComponent extends React.Component<CompareInvocationsComponentProps, State> {
   state: State = INITIAL_STATE;
 
@@ -64,15 +72,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
 
   private getPreProcessingOptions(): PreProcessingOptions {
     const optionsParam = this.props.search?.get("options");
-    return optionsParam
-      ? JSON.parse(optionsParam)
-      : {
-          sortEvents: true,
-          hideTimingData: true,
-          hideConsoleOutput: true,
-          hideInvocationIds: true,
-          hideUuids: true,
-        };
+    return optionsParam ? JSON.parse(optionsParam) : DEFAULT_PREPROCESSING_OPTIONS;
   }
 
   private async fetchInvocations() {
