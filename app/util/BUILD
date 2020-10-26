@@ -29,6 +29,11 @@ ts_library(
 )
 
 ts_library(
+    name = "errors",
+    srcs = ["errors.ts"],
+)
+
+ts_library(
     name = "time_delta",
     srcs = ["time_delta.ts"],
     deps = [

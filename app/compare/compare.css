@@ -1,0 +1,131 @@
+.compare-invocations .header {
+  display: flex;
+  align-items: center;
+}
+
+.compare-invocations .header > :not(:last-child) {
+  margin-right: 16px;
+}
+
+.compare-invocations .error-container {
+  background: #ffebee;
+  padding: 16px;
+  border-radius: 8px;
+  margin: 16px 0;
+
+  display: flex;
+  align-items: center;
+}
+
+.compare-invocations .error-container > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.compare-invocations .error-container img {
+  width: 24px;
+  height: 24px;
+}
+
+.compare-invocations .invocation-tags {
+  display: flex;
+  align-items: center;
+}
+
+.compare-invocations .invocation-tags :not(:last-child) {
+  margin-right: 8px;
+}
+
+.compare-invocations .compare-arrow {
+  width: 24px;
+  height: 24px;
+}
+
+.compare-invocations .invocation-id-tag {
+  padding: 0;
+}
+
+.compare-invocations .invocation-id-tag a {
+  display: flex;
+  padding: 8px 16px;
+}
+
+.compare-invocations .invocation-id-tag-prefix {
+  opacity: 0.7;
+}
+
+.compare-invocations .invocation-id-tag .invocation-id-tag-id {
+  max-width: 80px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-x: hidden;
+}
+
+.compare-invocations .show-changes-only-button {
+  padding: 0;
+  margin-left: auto;
+}
+
+.compare-invocations .show-changes-only-label {
+  padding: 8px 8px 8px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.compare-invocations .show-changes-only-label > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.compare-invocations .diff-line {
+  display: flex;
+}
+
+.compare-invocations .diff-line .plus-minus-cell {
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.compare-invocations .collapsed {
+  font-size: 14px;
+  font-weight: 500;
+  width: 100%;
+  background: #f8f8f8;
+  color: rgba(0, 0, 0, 0.7);
+  padding: 4px 8px;
+  margin: 8px 0;
+  border-radius: 4px;
+}
+
+.compare-invocations .collapsed:hover {
+  color: rgba(0, 0, 0, 1);
+}
+
+.compare-invocations .collapsed .maximize-icon {
+  width: 16px;
+  height: 16px;
+  transform: rotate(-45deg) scale(0.8);
+  transition: 100ms ease-out;
+  opacity: 0.7;
+}
+
+.compare-invocations .collapsed:hover .maximize-icon {
+  transform: rotate(-45deg);
+  opacity: 1;
+}
+
+.compare-invocations .diff-line pre {
+  padding: 0;
+  margin: 0;
+}
+
+.compare-invocations .diff-line.removed {
+  color: #f44336;
+}
+
+.compare-invocations .diff-line.added {
+  color: #009688;
+}

@@ -141,6 +141,18 @@ class Router {
     return this.getLastPathComponent(path, Path.invocationPath);
   }
 
+  getInvocationIdsForCompare(path: string) {
+    const idsComponent = this.getLastPathComponent(path, Path.comparePath);
+    if (!idsComponent) {
+      return null;
+    }
+    const [a, b] = idsComponent.split("...");
+    if (!a || !b) {
+      return null;
+    }
+    return { a, b };
+  }
+
   getHistoryUser(path: string) {
     return this.getLastPathComponent(path, Path.userHistoryPath);
   }
@@ -162,6 +174,7 @@ class Router {
   }
 }
 export class Path {
+  static comparePath = "/compare/";
   static invocationPath = "/invocation/";
   static userHistoryPath = "/history/user/";
   static hostHistoryPath = "/history/host/";
