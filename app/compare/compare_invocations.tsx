@@ -79,7 +79,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     const { invocationAId, invocationBId } = this.props;
 
     let error: any;
-    let invocationA: invocation.Invocation, invocationB: invocation.Invocation;
+    let invocationA: invocation.IInvocation, invocationB: invocation.IInvocation;
     try {
       [invocationA, invocationB] = await Promise.all([
         this.fetchInvocation(invocationAId),
