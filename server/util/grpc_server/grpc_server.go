@@ -2,6 +2,7 @@ package grpc_server
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"google.golang.org/grpc"
@@ -23,8 +24,10 @@ func GRPCShutdown(ctx context.Context, grpcServer *grpc.Server) error {
 	go func() {
 		select {
 		case <-ctx.Done():
+			log.Printf("Graceful stop of GRPC server suceeeded.")
 			grpcServer.Stop()
 		case <-time.After(delay):
+			log.Printf("Hard-stopping GRPC Server!")
 			grpcServer.Stop()
 		}
 	}()
