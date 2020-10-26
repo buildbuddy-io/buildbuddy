@@ -78,14 +78,26 @@ export default class CompareInvocationsComponent extends React.Component<Compare
   private async fetchInvocations() {
     const { invocationAId, invocationBId } = this.props;
 
+    let error: any;
+    let invocationA: invocation.Invocation, invocationB: invocation.Invocation;
     try {
-      const [a, b] = await Promise.all([this.fetchInvocation(invocationAId), this.fetchInvocation(invocationBId)]);
-      // TODO: Make sure invocation ID props haven't changed
-      this.setState({ status: "LOADED", invocationA: a, invocationB: b, diff: this.computeDiff(a, b) });
+      [invocationA, invocationB] = await Promise.all([
+        this.fetchInvocation(invocationAId),
+        this.fetchInvocation(invocationBId),
+      ]);
     } catch (e) {
-      console.error(e);
-      this.setState({ status: "ERROR", error: parseError(e).description });
+      error = e;
     }
+    if (invocationAId !== this.props.invocationAId || invocationBId !== this.props.invocationBId) {
+      return;
+    }
+
+    if (error) {
+      console.error(error);
+      this.setState({ status: "ERROR", error: parseError(error).description });
+      return;
+    }
+    this.setState({ status: "LOADED", invocationA, invocationB, diff: this.computeDiff(invocationA, invocationB) });
   }
 
   private computeDiff(invocationA: invocation.IInvocation, invocationB: invocation.IInvocation) {
