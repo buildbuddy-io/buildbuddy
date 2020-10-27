@@ -4,7 +4,11 @@ import { command_line } from "../../proto/command_line_ts_proto";
 /**
  * A unique token used to identify parts of the diff that were hidden due to pre-processing options.
  */
-export const HIDDEN_TOKEN = `/__HIDDEN__${Math.random()}/`;
+export const HIDDEN_TOKEN = `/__HIDDEN__2540ee7b-c0b0-4ed6-ab90-b68c220cc9ea/`;
+/**
+ * protobuf.js' JSON representation of HIDDEN_TOKEN when stored in a `bytes` field.
+ */
+const HIDDEN_TOKEN_BYTES_ENCODING = "AAAAAAAAAAAAAAACBQQAAAAHAAAAAAAAAAQAAAYAAAAJAAAABggAAgIAAAAJAAAA";
 
 export type PreProcessingOptions = {
   sortEvents?: boolean;
@@ -55,17 +59,16 @@ export function computeTextForDiff(
 
     if (hideTimingData) {
       if (id?.workspaceStatus) {
-        event.buildEvent.workspaceStatus.item.find((item: any) => item.key === "BUILD_TIMESTAMP")!.value = HIDDEN_TOKEN;
+        const timestampItem = event.buildEvent.workspaceStatus.item.find((item: any) => item.key === "BUILD_TIMESTAMP");
+        if (timestampItem) {
+          timestampItem.value = HIDDEN_TOKEN;
+        }
       } else if (id?.buildToolLogs) {
-        event.buildEvent.buildToolLogs.log.find(
-          (item: any) => item.name === "elapsed time"
-        )!.contents = new Uint8Array();
-        (event.buildEvent.buildToolLogs.log.find(
-          (item: any) => item.name === "critical path"
-        ) as any).contents = HIDDEN_TOKEN;
-        (event.buildEvent.buildToolLogs.log.find(
-          (item: any) => item.name === "process stats"
-        ) as any).contents = HIDDEN_TOKEN;
+        for (const log of event.buildEvent.buildToolLogs.log) {
+          if (["elapsed time", "critical path", "process stats"].includes(log.name)) {
+            (log as any).contents = HIDDEN_TOKEN;
+          }
+        }
       } else if (id?.structuredCommandLine) {
         removeTimingData(event.buildEvent.structuredCommandLine);
       }
@@ -78,20 +81,33 @@ export function computeTextForDiff(
   }
 
   let json = JSON.stringify(invocation, null, 2);
+  // HIDDEN_TOKEN gets mangled when stored in bytes fields; this replacement effectively de-mangles it.
+  json = replaceAll(json, HIDDEN_TOKEN_BYTES_ENCODING, HIDDEN_TOKEN);
   if (hideTimingData) {
-    json = json.replace(
-      /"(startTimeMillis|finishTimeMillis|seconds|nanos|createdAtUsec|updatedAtUsec|durationUsec|cpuTimeInMs|wallTimeInMs)": ("?[0-9]+"?)/g,
-      `"$1": ${HIDDEN_TOKEN}`
+    json = replaceAllJsonValues(
+      json,
+      [
+        "startTimeMillis",
+        "finishTimeMillis",
+        "seconds",
+        "nanos",
+        "createdAtUsec",
+        "updatedAtUsec",
+        "durationUsec",
+        "cpuTimeInMs",
+        "wallTimeInMs",
+      ],
+      HIDDEN_TOKEN
     );
   }
   if (sortEvents) {
-    json = json.replace(/"(sequenceNumber)": ("?[0-9]+"?)/g, `"$1": ${HIDDEN_TOKEN}`);
+    json = replaceAllJsonValues(json, ["sequenceNumber"], HIDDEN_TOKEN);
   }
   if (hideInvocationIds) {
-    json = json.replace(invocationId, HIDDEN_TOKEN);
+    json = replaceAll(json, invocationId, HIDDEN_TOKEN);
   }
   if (hideUuids) {
-    json = json.replace(/"(uuid)": ("?[a-z0-9\-]+"?)/g, `"$1": ${HIDDEN_TOKEN}`);
+    json = replaceAllJsonValues(json, ["uuid"], HIDDEN_TOKEN);
   }
   return json;
 }
@@ -125,4 +141,21 @@ function sortEntriesByKey(object: Record<string, any>) {
     delete object[key];
     object[key] = value;
   }
+}
+
+function replaceAll(str: string, value: string, replacement: string) {
+  return str.split(value).join(replacement);
+}
+
+function replaceAllJsonValues(json: string, keys: string[], replacement: string) {
+  // Regex notes:
+  // - The JSON key is captured in capture group $1 and later referenced in the
+  //   replacement.
+  // - The matched keys are joined with | to match any of the keys.
+  // - Quotes around the JSON value (if present) are captured in capture
+  //   groups $2 and $3 to preserve quotes around the JSON values if present.
+  // - Values are only replaced if they consist of alphanumeric characters or
+  //   hyphens ("-")
+  const regExp = new RegExp(`"(${keys.join("|")})": ("?)[A-Za-z0-9\\-]+("?)`, "g");
+  return json.replace(regExp, `"$1": $2${replacement}$3`);
 }

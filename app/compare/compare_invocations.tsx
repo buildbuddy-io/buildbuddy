@@ -71,8 +71,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
   }
 
   private getPreProcessingOptions(): PreProcessingOptions {
-    const optionsParam = this.props.search?.get("options");
-    return optionsParam ? JSON.parse(optionsParam) : DEFAULT_PREPROCESSING_OPTIONS;
+    return optionsFromSearch(this.props.search?.toString() || "");
   }
 
   private async fetchInvocations() {
@@ -125,7 +124,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
   private onClickPreProcessingOption(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, checked } = e.target;
     const preProcessingOptions = { ...this.preProcessingOptions, [name]: checked };
-    router.replaceParams({ options: JSON.stringify(preProcessingOptions) });
+    router.replaceParams(optionsToQueryParams(preProcessingOptions));
   }
 
   private renderPreProcessingOption(optionKey: keyof PreProcessingOptions, label: string) {
@@ -212,4 +211,16 @@ function InvocationIdTag({ prefix, id }: { prefix: string; id: string }) {
       </a>
     </OutlinedButton>
   );
+}
+
+function optionsToQueryParams(options: PreProcessingOptions): Record<string, string> {
+  return Object.fromEntries(Object.entries(options).map(([key, value]) => [key, String(value)]));
+}
+
+function optionsFromSearch(search: string): PreProcessingOptions {
+  const params = new URLSearchParams(search);
+  return {
+    ...DEFAULT_PREPROCESSING_OPTIONS,
+    ...Object.fromEntries([...params.entries()].map(([key, value]) => [key, value === "true"])),
+  };
 }
