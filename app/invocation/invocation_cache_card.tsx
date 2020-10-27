@@ -80,12 +80,13 @@ export default class CacheCardComponent extends React.Component {
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch download-color-swatch"></span>
-                            <span className="cache-stat">{format.bytes(cacheStat.totalDownloadSizeBytes)}</span>{" "}
+                            <span className="cache-stat">{format.bytes(cacheStat.totalDownloadSizeBytes)} </span>
                             downloaded
                           </div>
                           <div className="cache-chart-label">
                             <span className="color-swatch upload-color-swatch"></span>
-                            <span className="cache-stat">{format.bytes(cacheStat.totalUploadSizeBytes)}</span> uploaded
+                            <span className="cache-stat">{format.bytes(cacheStat.totalUploadSizeBytes)} </span>
+                            uploaded
                           </div>
                         </div>
                       </div>
