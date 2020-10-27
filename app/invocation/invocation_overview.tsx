@@ -2,6 +2,7 @@ import React from "react";
 import { User } from "../auth/auth_service";
 import format from "../format/format";
 import router from "../router/router";
+import InvocationCompareButton from "./invocation_compare_button";
 import InvocationModel from "./invocation_model";
 import InvocationShareButton from "./invocation_share_button";
 
@@ -48,7 +49,7 @@ export default class InvocationOverviewComponent extends React.Component {
   render() {
     return (
       <div className="container">
-        <div className="breadcrumbs-and-share-button">
+        <div className="breadcrumbs-and-buttons">
           <div className="breadcrumbs">
             {this.props.user && (
               <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
@@ -62,11 +63,14 @@ export default class InvocationOverviewComponent extends React.Component {
             )}
             <span>Invocation {this.props.invocationId}</span>
           </div>
-          <InvocationShareButton
-            user={this.props.user}
-            model={this.props.model}
-            invocationId={this.props.invocationId}
-          />
+          <div className="invocation-top-right-buttons">
+            <InvocationCompareButton invocationId={this.props.invocationId} />
+            <InvocationShareButton
+              user={this.props.user}
+              model={this.props.model}
+              invocationId={this.props.invocationId}
+            />
+          </div>
         </div>
         <div className="titles">
           <div className="title" title={this.props.model.getAllPatterns()}>

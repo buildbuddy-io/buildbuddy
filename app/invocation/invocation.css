@@ -81,13 +81,9 @@
   justify-content: space-between;
 }
 
-.invocation .breadcrumbs-and-share-button {
+.invocation .breadcrumbs-and-buttons {
   display: flex;
   justify-content: space-between;
-}
-
-.invocation-share-button {
-  margin-left: 8px;
 }
 
 .invocation-share-button img {
@@ -186,4 +182,51 @@
 
 .invocation-execution-empty-state {
   margin-top: 32px;
+}
+
+.invocation-top-right-buttons {
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+}
+
+.invocation-top-right-buttons > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.invocation-compare-button-container {
+  position: relative;
+  z-index: 1;
+}
+
+.comparison-buffer-illustration {
+  display: flex;
+  align-items: center;
+  margin-left: -4px;
+  margin-right: 8px;
+
+  --illustration-color: #ddd;
+}
+
+.base-button:hover .comparison-buffer-illustration,
+.comparison-buffer-illustration.buffered {
+  --illustration-color: #263238;
+}
+
+.comparison-buffer-icon {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  transition: 100ms;
+}
+
+.comparison-buffer-icon-a {
+  background: var(--illustration-color);
+  margin-right: 4px;
+}
+
+.comparison-buffer-icon-b {
+  background: transparent;
+  border: 1px solid var(--illustration-color);
 }
