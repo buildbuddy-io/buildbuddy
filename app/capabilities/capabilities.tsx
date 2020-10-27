@@ -25,7 +25,7 @@ export class Capabilities {
     this.enterprise = enterprise;
     this.createOrg = this.enterprise;
     this.invocationSharing = true;
-    this.compareInvocations = window.localStorage["compare_invocations"];
+    this.compareInvocations = window.localStorage["compare_invocations"] === "true";
     this.paths = new Set(paths);
     window.gtag("set", {
       app_name: this.name,
