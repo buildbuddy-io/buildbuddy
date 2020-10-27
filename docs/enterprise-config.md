@@ -116,6 +116,8 @@ remote_execution:
 
 You'll also need to deploy executors to handle remote builds. The recommended way of deploying these is using our [Enterprise Helm Chart](enterprise-helm.md).
 
+For more information on configuring on-prem RBE, see our [enterprise on-prem RBE setup docs](enterprise-rbe.md).
+
 ### Putting It All Together
 
 Here’s what a fully-featured config.yaml looks like which includes all of the features listed above.
