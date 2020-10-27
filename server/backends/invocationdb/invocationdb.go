@@ -88,6 +88,9 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, invocationID str
 		if err := tx.Exec(`UPDATE Invocations SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
 			return err
 		}
+		if err := tx.Exec(`UPDATE Executions SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
+			return err
+		}
 		return nil
 	})
 }
