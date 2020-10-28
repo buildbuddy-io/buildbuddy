@@ -1,9 +1,11 @@
 import React from "react";
 import authService from "../auth/auth_service";
+import { BuildBuddyError } from "../util/errors";
 
 interface Props {
   invocationId: string;
-  authorized: boolean;
+  error: BuildBuddyError | null;
+  isAuthenticated: boolean;
 }
 
 export default class InvocationNotFoundComponent extends React.Component {
@@ -15,19 +17,37 @@ export default class InvocationNotFoundComponent extends React.Component {
 
   render() {
     return (
-      <div className={this.props.authorized ? "state-page" : "login-interstitial"}>
-        {this.props.authorized && (
-          <div className="shelf">
+      <div className={this.props.isAuthenticated ? "state-page" : "login-interstitial"}>
+        {this.props.isAuthenticated && (
+          <div className="shelf invocation-not-found">
             <div className="container">
               <div className="breadcrumbs">Invocation {this.props.invocationId}</div>
-              <div className="titles">
-                <div className="title">Invocation not found!</div>
-              </div>
-              <div className="details">Double check your invocation URL and try again.</div>
+              {this.props.error?.code === "NotFound" && (
+                <>
+                  <div className="titles">
+                    <img src="/image/x-circle-regular.svg" className="not-found-icon" />
+                    <div>
+                      <div className="title">Invocation not found!</div>
+                      <div className="details">Double check your invocation URL and try again.</div>
+                    </div>
+                  </div>
+                </>
+              )}
+              {this.props.error?.code === "PermissionDenied" && (
+                <>
+                  <div className="titles">
+                    <img src="/image/lock.svg" className="not-found-icon" />
+                    <div>
+                      <div className="title">Permission denied</div>
+                      <div className="details">You are not authorized to access this invocation.</div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
-        {!this.props.authorized && (
+        {!this.props.isAuthenticated && (
           <div className="container">
             <div className="login-box">
               <div className="login-buttons">

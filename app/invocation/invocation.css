@@ -230,3 +230,25 @@
   background: transparent;
   border: 1px solid var(--illustration-color);
 }
+
+.invocation-not-found .titles {
+  background: #eceff1;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 16px;
+
+  display: inline-flex;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.invocation-not-found .title {
+  margin-bottom: 0;
+}
+
+.invocation-not-found .not-found-icon {
+  width: 32px;
+  height: 32px;
+  margin-right: 24px;
+  margin-left: 12px;
+}

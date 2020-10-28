@@ -4,7 +4,7 @@ import { User } from "../auth/auth_service";
 import { OutlinedButton } from "../components/button/button";
 import router from "../router/router";
 import rpcService from "../service/rpc_service";
-import { parseError } from "../util/errors";
+import { BuildBuddyError } from "../util/errors";
 import JsDiff from "diff";
 import DiffChunk from "./diff_chunk";
 
@@ -61,7 +61,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
       console.log("Comparing invocations", { a, b });
       this.setState({ status: "LOADED", invocationA: a, invocationB: b, diff: this.computeDiff(a, b) });
     } catch (e) {
-      this.setState({ status: "ERROR", error: parseError(e).description });
+      this.setState({ status: "ERROR", error: BuildBuddyError.parse(e).description });
     }
   }
 

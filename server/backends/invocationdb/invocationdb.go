@@ -30,6 +30,10 @@ func NewInvocationDB(env environment.Env, h *db.DBHandle) *InvocationDB {
 	}
 }
 
+func getACL(i *tables.Invocation) *aclpb.ACL {
+	return perms.ToACLProto(&uidpb.UserId{Id: i.UserID}, i.GroupID, i.Perms)
+}
+
 func (d *InvocationDB) createInvocation(tx *gorm.DB, ctx context.Context, ti *tables.Invocation) error {
 	var permissions *perms.UserGroupPerm
 	if auth := d.env.GetAuthenticator(); auth != nil {
@@ -82,8 +86,7 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 			return status.PermissionDeniedError("Your organization does not allow this action.")
 		}
 
-		currentACL := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
-		if err := perms.AuthorizeWrite(authenticatedUser, currentACL); err != nil {
+		if err := perms.AuthorizeWrite(authenticatedUser, getACL(&in)); err != nil {
 			return err
 		}
 		if err := tx.Exec(`UPDATE Invocations SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
@@ -98,15 +101,17 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 
 func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error) {
 	ti := &tables.Invocation{}
-	q := query_builder.NewQuery(`SELECT * FROM Invocations as i`)
-	q = q.AddWhereClause(`i.invocation_id = ?`, invocationID)
-	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, d.env, q, "i"); err != nil {
+	if err := d.h.Raw("SELECT * FROM Invocations WHERE invocation_id = ?", invocationID).Scan(ti).Error; err != nil {
 		return nil, err
 	}
-	queryStr, args := q.Build()
-	existingRow := d.h.Raw(queryStr, args...)
-	if err := existingRow.Scan(ti).Error; err != nil {
-		return nil, err
+	if ti.Perms&perms.OTHERS_READ == 0 {
+		u, err := perms.AuthenticatedUser(ctx, d.env)
+		if err != nil {
+			return nil, err
+		}
+		if err := perms.AuthorizeRead(&u, getACL(ti)); err != nil {
+			return nil, err
+		}
 	}
 	return ti, nil
 }
