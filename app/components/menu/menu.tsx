@@ -11,11 +11,12 @@ export type MenuItemProps = JSX.IntrinsicElements["li"] & {
 };
 
 export const MenuItem = React.forwardRef(
-  ({ className, disabled, ...props }: MenuItemProps, ref: React.Ref<HTMLLIElement>) => (
+  ({ className, disabled, onClick, ...props }: MenuItemProps, ref: React.Ref<HTMLLIElement>) => (
     <li
       ref={ref}
       role="menuitem"
       className={`menu-list-item ${disabled ? "disabled" : ""} ${className || ""}`}
+      onClick={disabled ? undefined : onClick}
       {...props}
     />
   )
