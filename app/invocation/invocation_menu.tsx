@@ -1,10 +1,8 @@
 import React from "react";
-import { User } from "../auth/auth_service";
-import FilledButton, { OutlinedButton } from "../components/button/button";
-import Modal from "../components/modal/modal";
-import InvocationModel from "./invocation_model";
-import rpcService from "../service/rpc_service";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { User } from "../auth/auth_service";
+import capabilities from "../capabilities/capabilities";
+import FilledButton, { OutlinedButton } from "../components/button/button";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -12,11 +10,11 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../components/dialog/dialog";
-import Popup from "../components/popup/popup";
 import Menu, { MenuItem } from "../components/menu/menu";
+import Modal from "../components/modal/modal";
+import Popup from "../components/popup/popup";
 import router from "../router/router";
-import capabilities from "../capabilities/capabilities";
-// import { BuildBuddyError } from "../util/errors";
+import InvocationModel from "./invocation_model";
 
 export interface InvocationMenuComponentProps {
   model: InvocationModel;
@@ -28,7 +26,7 @@ interface State {
   isMenuOpen: boolean;
   isDeleteModalOpen: boolean;
   isDeleteModalLoading: boolean;
-  // DO NOT COMMIT
+  // TODO: Change to BuildBuddyError
   error?: any;
 }
 
