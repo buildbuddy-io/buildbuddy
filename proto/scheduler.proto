@@ -31,6 +31,10 @@ message LeaseTaskRequest {
   // The task for which to request a lease. If successful, a LeaseTaskResponse
   // will be returned containing the serialized task and duration of the lease.
   string task_id = 1;
+
+  // A bit that indicates this is the last LeaseTaskRequest and this
+  // lease can now be closed.
+  bool finalize = 2;
 }
 
 message LeaseTaskResponse {
@@ -42,6 +46,9 @@ message LeaseTaskResponse {
   // client *must* send another LeaseTaskRequest before time.Now() +
   // lease_duration_seconds.
   int64 lease_duration_seconds = 2;
+
+  // Whether or not the lease was closed cleanly.
+  bool closed_cleanly = 3;
 }
 
 message TaskSize {
