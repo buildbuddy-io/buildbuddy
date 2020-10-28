@@ -39,10 +39,11 @@ If using the [BuildBuddy Enterprise Helm charts](https://github.com/buildbuddy-i
 
 By default, BuildBuddy will cache objects and store uploaded build events on the local disk. If you want to store them in a shared durable location, like a Google Cloud Storage bucket, you can do that by configuring a GCS cache or storage backend.
 
-If your BuildBuddy instance is running on a machine with Google Default Credentials, no credentials file will be necessary. If not, you should [create a service account](https://cloud.google.com/docs/authentication/getting-started) with permissions to write to cloud storage, and download the credentials .json file. The configuration below configures a cloud storage bucket to act as a storage backend and cache:
+If your BuildBuddy instance is running on a machine with Google Default Credentials, no credentials file will be necessary. If not, you should [create a service account](https://cloud.google.com/docs/authentication/getting-started) with permissions to write to cloud storage, and download the credentials .json file.
 
 We also recommend providing a Redis instance for improved remote build execution & small file performance. This can be configured automatically using the [BuildBuddy Enterprise Helm charts](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise) with the `redis.enabled` value.
 
+The configuration below configures Redis & GCS storage bucket to act as a storage backend and cache:
 ```
 storage:
   ttl_seconds: 2592000  # 30 days
@@ -70,7 +71,7 @@ storage:
     bucket: "buddybuild-bucket"
     credentials_profile: "other-profile"
 cache:
-  redis_target: "redis-master.redis-prod.svc.cluster.local:6379"
+  redis_target: "my-redis.local:6379"
   s3:
     region: "us-west-2"
     bucket: "buddybuild-bucket"
