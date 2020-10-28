@@ -33,11 +33,15 @@ database:
   data_source: "mysql://user:pass@tcp(12.34.56.78)/database_name"
 ```
 
-### GCS Based Cache / Object Storage
+If using the [BuildBuddy Enterprise Helm charts](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise), MySQL can be configured for you using the `mysql.enabled`, `mysql.username`, and `mysql.password` values.
+
+### GCS Based Cache / Object Storage / Redis
 
 By default, BuildBuddy will cache objects and store uploaded build events on the local disk. If you want to store them in a shared durable location, like a Google Cloud Storage bucket, you can do that by configuring a GCS cache or storage backend.
 
 If your BuildBuddy instance is running on a machine with Google Default Credentials, no credentials file will be necessary. If not, you should [create a service account](https://cloud.google.com/docs/authentication/getting-started) with permissions to write to cloud storage, and download the credentials .json file. The configuration below configures a cloud storage bucket to act as a storage backend and cache:
+
+We also recommend providing a Redis instance for improved remote build execution & small file performance. This can be configured automatically using the [BuildBuddy Enterprise Helm charts](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise) with the `redis.enabled` value.
 
 ```
 storage:
@@ -48,11 +52,30 @@ storage:
     project_id: "flame-build"
     credentials_file: "your_service-acct.json"
 cache:
-    gcs:
-      bucket: "buildbuddy_cache"
-      project_id: "your_gcs_project_id"
-      credentials_file: "/path/to/your/credential/file.json"
-      ttl_days: 30
+  redis_target: "my-redis.local:6379"
+  gcs:
+    bucket: "buildbuddy_cache"
+    project_id: "your_gcs_project_id"
+    credentials_file: "/path/to/your/credential/file.json"
+    ttl_days: 30
+```
+
+If using Amazon S3, you can configure your storage and cache similarly:
+```
+storage:
+  ttl_seconds: 2592000  # 30 days
+  chunk_file_size_bytes: 3000000  # 3 MB
+  aws_s3:
+    region: "us-west-2"
+    bucket: "buddybuild-bucket"
+    credentials_profile: "other-profile"
+cache:
+  redis_target: "redis-master.redis-prod.svc.cluster.local:6379"
+  s3:
+    region: "us-west-2"
+    bucket: "buddybuild-bucket"
+    credentials_profile: "other-profile"
+    ttl_days: 30
 ```
 
 ### Authentication Provider Integration
