@@ -1,10 +1,10 @@
-.bb-menu {
+.menu-list {
   margin: 0;
   padding: 8px 0;
   list-style: none;
 }
 
-.bb-menu-item {
+.menu-list-item {
   margin: 0;
   padding: 8px 16px;
   font-size: 16px;
@@ -13,11 +13,11 @@
   white-space: nowrap;
 }
 
-.bb-menu-item:hover {
+.menu-list-item:hover {
   background: #eee;
 }
 
-.bb-menu-item.disabled {
+.menu-list-item.disabled {
   opacity: 0.5;
   pointer-events: none;
 }
