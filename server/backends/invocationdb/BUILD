@@ -10,6 +10,7 @@ go_library(
         "//proto:telemetry_go_proto",
         "//proto:user_id_go_proto",
         "//server/environment:go_default_library",
+        "//server/interfaces:go_default_library",
         "//server/tables:go_default_library",
         "//server/util/db:go_default_library",
         "//server/util/perms:go_default_library",

@@ -10,6 +10,7 @@ export class Capabilities {
   anonymous: boolean;
   createOrg: boolean;
   invocationSharing: boolean;
+  compareInvocations: boolean;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
@@ -24,6 +25,7 @@ export class Capabilities {
     this.enterprise = enterprise;
     this.createOrg = this.enterprise;
     this.invocationSharing = true;
+    this.compareInvocations = window.localStorage["compare_invocations"] === "true";
     this.paths = new Set(paths);
     window.gtag("set", {
       app_name: this.name,

@@ -1,0 +1,23 @@
+.menu-list {
+  margin: 0;
+  padding: 8px 0;
+  list-style: none;
+}
+
+.menu-list-item {
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 16px;
+  cursor: pointer;
+
+  white-space: nowrap;
+}
+
+.menu-list-item:hover {
+  background: #eee;
+}
+
+.menu-list-item.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
