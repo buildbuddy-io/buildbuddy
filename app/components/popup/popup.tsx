@@ -20,8 +20,8 @@ export const Popup = React.forwardRef(
       <>
         {isOpen && (
           <>
-            <div className="bb-popup-shade" onClick={onRequestClose} />
-            <div ref={ref} className={`bb-popup ${className || ""}`} onClick={(e) => e.preventDefault()} {...props} />
+            <div className="popup-shade" onClick={onRequestClose} />
+            <div ref={ref} className={`popup ${className || ""}`} onClick={(e) => e.preventDefault()} {...props} />
           </>
         )}
       </>
