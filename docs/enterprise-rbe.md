@@ -49,7 +49,9 @@ config:
     enabled: true
 ```
 
-This configuration with 1 app instance, 3 executors, and a Redis instance will fit on a machine/cluster with at least 5 vCPUs and 24 GB of RAM. GCP's n2-standard-8 machines or similar are a good place to start. For information on scaling up and down your deployments, see the **Configuring resource** section.
+This configuration with 1 app instance, 3 executors, and a Redis instance will fit on a machine/cluster with at least 5 vCPUs and 24 GB of RAM. 
+
+GCP's [n2-standard-8 machines](https://cloud.google.com/compute/docs/machine-types#n2_standard_machine_types) or similar are a good place to start. For information on scaling up and down your deployments, see the **Configuring resource** section.
 
 You can now upgrade your install with the following command:
 ```
@@ -61,7 +63,7 @@ Once your upgrade has completed (and the rollout has finished), you can reload t
 echo `kubectl get --namespace default service buildbuddy-enterprise -o jsonpath='{.status.loadBalancer.ingress[0].*}'`
 ```
 
-You should now see a remote build execution checkbox and can try your first remote build execution. Make sure your RBE [toolchains](rbe-platforms.md) and [platforms](rbe-setup.md) are correctly configured.
+You should now see a remote build execution checkbox and can try your first remote build execution. Make sure your RBE [toolchains and platforms](rbe-setup.md) are correctly configured.
 
 ## Configuring resources
 
