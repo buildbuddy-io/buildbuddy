@@ -135,7 +135,7 @@ To enable Remote Build Execution, you'll need to add the following to your confi
 
 ```
 remote_execution:
-  enabled: true
+  enable_remote_exec: true
 ```
 
 You'll also need to deploy executors to handle remote builds. The recommended way of deploying these is using our [Enterprise Helm Chart](enterprise-helm.md).
@@ -176,7 +176,7 @@ ssl:
   client_ca_cert_file: your_ca.crt
   client_ca_key_file: your_ca.pem
 remote_execution:
-  enabled: true
+  enable_remote_exec: true
 ```
 
 ## Learn more

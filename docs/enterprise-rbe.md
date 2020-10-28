@@ -37,7 +37,7 @@ This will return an IP address that you can visit in a browser and verify that y
 
 Now that you have a basic BuildBuddy Enterprise install deployed. Let's configure it to enable Remote Build Execution.
 
-You can do so this by passing a `values.yaml` file to Helm that enabled RBE. Here's a simple `values.yaml` file with RBE enabled. This will deploy RBE with 3 executors and Redis enabled:
+You can do so this by passing a `values.yaml` file to Helm that enables RBE. Here's a simple `values.yaml` file with RBE enabled. This will deploy RBE with 3 executors and Redis enabled:
 ```
 executor:
   enabled: true
@@ -46,7 +46,7 @@ redis:
   enabled: true
 config:
   remote_execution:
-    enabled: true
+    enable_remote_exec: true
 ```
 
 This configuration with 1 app instance, 3 executors, and a Redis instance will fit on a machine/cluster with at least 5 vCPUs and 24 GB of RAM. 
@@ -102,7 +102,7 @@ redis:
       memory: "5Gi"
 config:
   remote_execution:
-    enabled: true
+    enable_remote_exec: true
 ```
 
 Note: if you scale beyond one app replica, make sure you're using MySQL instead of SQLite, and GCS/S3 instead of disk storage. For information on how to configure these, see the [enterprise configuration guide](enterprise-config.md). Scaling the number of executor replicas does not have these requirements.

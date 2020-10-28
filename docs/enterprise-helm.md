@@ -188,7 +188,7 @@ redis:
   enabled: true
 config:
   remote_execution:
-    enabled: true
+    enable_remote_exec: true
 ```
 
 ## More examples
