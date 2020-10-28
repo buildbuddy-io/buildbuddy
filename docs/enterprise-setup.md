@@ -16,6 +16,8 @@ There are three ways to run BuildBuddy Enterprise On-prem:
 
 We recommend using Helm as it includes all of the bells and whistles like nginx, remote build executors, etc. If you're not a fan of using Helm for deployment - we recommend using Helm to generate your Kubernetes deployment yaml file with `helm template`, and then running `kubectl apply` with that file.
 
+For more instructions on deploying RBE, see our [enterprise on-prem RBE docs](enterprise-rbe.md).
+
 ## Helm
 
 If you run or have access to a Kubernetes cluster and are comfortable with [Helm](https://helm.sh/), we maintain official BuildBuddy Helm charts that are easy to configure and deploy.

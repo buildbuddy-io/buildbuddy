@@ -13,7 +13,9 @@ ts_library(
         "//app/components/button",
         "//app/components/dialog",
         "//app/components/input",
+        "//app/components/menu",
         "//app/components/modal",
+        "//app/components/popup",
         "//app/components/select",
         "//app/docs",
         "//app/favicon",
@@ -41,6 +43,7 @@ ts_library(
         "@npm//protobufjs",
         "@npm//react",
         "@npm//recharts",
+        "@npm//rxjs",
         "@npm//tslib",
     ],
 )

@@ -69,9 +69,9 @@ storage:
 ```
 storage:
   aws_s3:
-     # required
-     region: "us-west-2"
-     bucket: "buddybuild-bucket"
-     # optional
-     credentials_profile: "other-profile"
+    # required
+    region: "us-west-2"
+    bucket: "buddybuild-bucket"
+    # optional
+    credentials_profile: "other-profile"
 ```

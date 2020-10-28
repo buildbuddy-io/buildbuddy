@@ -100,5 +100,5 @@ ssl:
   client_ca_cert_file: your_ca.crt
   client_ca_key_file: your_ca.pem
 remote_execution:
-  enabled: true
+  enable_remote_exec: true
 ```

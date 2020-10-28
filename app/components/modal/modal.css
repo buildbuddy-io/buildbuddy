@@ -16,6 +16,8 @@
 
   background: rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(1px) saturate(25%);
+
+  z-index: 1000;
 }
 
 .modal-content:focus {

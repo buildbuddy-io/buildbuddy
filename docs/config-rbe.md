@@ -20,13 +20,13 @@ RBE configuration must be enabled in your `config.yaml` file, but most configura
 
 **Optional**
 
-- `enabled:` True if remote execution should be enabled.
+- `enable_remote_exec:` True if remote execution should be enabled.
 
 ## Example section
 
 ```
 remote_execution:
-  enabled: true
+  enable_remote_exec: true
 ```
 
 ## Executor config
