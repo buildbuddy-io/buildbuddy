@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -63,7 +64,7 @@ func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.
 	})
 }
 
-func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, invocationID string, acl *aclpb.ACL) error {
+func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string, acl *aclpb.ACL) error {
 	p, err := perms.FromACL(acl)
 	if err != nil {
 		return err
@@ -82,7 +83,7 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, invocationID str
 		}
 
 		currentACL := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
-		if err := perms.AuthorizeWrite(ctx, currentACL); err != nil {
+		if err := perms.AuthorizeWrite(authenticatedUser, currentACL); err != nil {
 			return err
 		}
 		if err := tx.Exec(`UPDATE Invocations SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
