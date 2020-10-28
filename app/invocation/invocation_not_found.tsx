@@ -34,7 +34,7 @@ export default class InvocationNotFoundComponent extends React.Component {
 
     if (this.props.isAuthenticated) {
       return (
-        <div className="stage-page">
+        <div className="state-page">
           <div className="shelf">
             <div className="container">
               <div className="breadcrumbs">Invocation {this.props.invocationId}</div>
