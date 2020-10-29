@@ -3,6 +3,7 @@ import { User } from "../auth/auth_service";
 import format from "../format/format";
 import router from "../router/router";
 import InvocationCompareButton from "./invocation_compare_button";
+import InvocationMenuComponent from "./invocation_menu";
 import InvocationModel from "./invocation_model";
 import InvocationShareButton from "./invocation_share_button";
 
@@ -66,6 +67,11 @@ export default class InvocationOverviewComponent extends React.Component {
           <div className="invocation-top-right-buttons">
             <InvocationCompareButton invocationId={this.props.invocationId} />
             <InvocationShareButton
+              user={this.props.user}
+              model={this.props.model}
+              invocationId={this.props.invocationId}
+            />
+            <InvocationMenuComponent
               user={this.props.user}
               model={this.props.model}
               invocationId={this.props.invocationId}
