@@ -217,13 +217,17 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 	// while the invocation is still in progress.
 	if isWorkspaceStatusEvent(bazelBuildEvent) {
 		db := e.env.GetInvocationDB()
+		// TODO: Make sure the lookup/insert happens in a single transaction.
+		// This isn't an issue currently since all invocation-modifying events
+		// are coming through the PublishBuildEvent stream, but using a transaction
+		// here would make this more future-proof.
 		ti, err := db.LookupInvocation(ctx, iid)
 		if err != nil {
 			return err
 		}
-		proto := TableInvocationToProto(ti)
-		event_parser.FillInvocationFromWorkspaceStatus(bazelBuildEvent.GetWorkspaceStatus(), proto)
-		ti = tableInvocationFromProto(proto, ti.BlobID)
+		invocationProto := TableInvocationToProto(ti)
+		event_parser.FillInvocationFromWorkspaceStatus(bazelBuildEvent.GetWorkspaceStatus(), invocationProto)
+		ti = tableInvocationFromProto(invocationProto, ti.BlobID)
 		if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
 			return err
 		}
