@@ -18,6 +18,8 @@ service BuildBuddyService {
       returns (invocation.GetInvocationStatResponse);
   rpc UpdateInvocation(invocation.UpdateInvocationRequest)
         returns (invocation.UpdateInvocationResponse);
+  rpc DeleteInvocation(invocation.DeleteInvocationRequest)
+        returns (invocation.DeleteInvocationResponse);
 
   // Bazel Config API
   rpc GetBazelConfig(bazel_config.GetBazelConfigRequest)
