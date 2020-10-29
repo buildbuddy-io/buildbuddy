@@ -116,20 +116,3 @@ function sortEntriesByKey(object: Record<string, any>) {
     object[key] = value;
   }
 }
-
-function replaceAll(str: string, value: string, replacement: string) {
-  return str.split(value).join(replacement);
-}
-
-function replaceAllJsonValues(json: string, keys: string[], replacement: string) {
-  // Regex notes:
-  // - The JSON key is captured in capture group $1 and later referenced in the
-  //   replacement.
-  // - The matched keys are joined with | to match any of the keys.
-  // - Quotes around the JSON value (if present) are captured in capture
-  //   groups $2 and $3 to preserve quotes around the JSON values if present.
-  // - Values are only replaced if they consist of alphanumeric characters or
-  //   hyphens ("-")
-  const regExp = new RegExp(`"(${keys.join("|")})": ("?)[A-Za-z0-9\\-]+("?)`, "g");
-  return json.replace(regExp, `"$1": $2${replacement}$3`);
-}
