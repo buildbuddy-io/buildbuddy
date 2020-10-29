@@ -223,7 +223,7 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 		}
 		proto := TableInvocationToProto(ti)
 		event_parser.FillInvocationFromWorkspaceStatus(bazelBuildEvent.GetWorkspaceStatus(), proto)
-		ti = tableInvocationFromProto(proto /* blobId= */, "")
+		ti = tableInvocationFromProto(proto, ti.BlobID)
 		if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
 			return err
 		}
