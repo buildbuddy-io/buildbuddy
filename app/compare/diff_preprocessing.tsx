@@ -1,15 +1,6 @@
 import { invocation as invocation_proto } from "../../proto/invocation_ts_proto";
 import { command_line } from "../../proto/command_line_ts_proto";
 
-/**
- * A unique token used to identify parts of the diff that were hidden due to pre-processing options.
- */
-export const HIDDEN_TOKEN = `/__HIDDEN__2540ee7b-c0b0-4ed6-ab90-b68c220cc9ea/`;
-/**
- * protobuf.js' JSON representation of HIDDEN_TOKEN when stored in a `bytes` field.
- */
-const HIDDEN_TOKEN_BYTES_ENCODING = "AAAAAAAAAAAAAAACBQQAAAAHAAAAAAAAAAQAAAYAAAAJAAAABggAAgIAAAAJAAAA";
-
 export type PreProcessingOptions = {
   sortEvents?: boolean;
   hideTimingData?: boolean;
@@ -18,19 +9,26 @@ export type PreProcessingOptions = {
   hideUuids?: boolean;
 };
 
-export function computeTextForDiff(
+export function prepareForDiff(
   invocation: invocation_proto.IInvocation,
   { sortEvents, hideTimingData, hideConsoleOutput, hideInvocationIds, hideUuids }: PreProcessingOptions = {}
-): string {
-  const invocationId = invocation.invocationId;
+): invocation_proto.IInvocation {
   // Clone the invocation to avoid mutating the original object.
   invocation = invocation_proto.Invocation.fromObject((invocation as invocation_proto.Invocation).toJSON());
 
+  if (hideInvocationIds) {
+    delete invocation.invocationId;
+  }
   if (sortEvents) {
     sortByProperty(invocation.event, (event: any) => JSON.stringify(event?.buildEvent?.id));
   }
   if (hideConsoleOutput) {
-    invocation.consoleBuffer = HIDDEN_TOKEN;
+    delete invocation.consoleBuffer;
+  }
+  if (hideTimingData) {
+    delete invocation.durationUsec;
+    delete invocation.createdAtUsec;
+    delete invocation.updatedAtUsec;
   }
 
   // Some CommandLine objects are empty for some reason; remove these.
@@ -47,80 +45,56 @@ export function computeTextForDiff(
   }
 
   for (const event of invocation.event) {
-    const id = event?.buildEvent?.id;
+    if (sortEvents) {
+      delete event.sequenceNumber;
+    }
+
+    const buildEvent = event?.buildEvent;
+    const id = buildEvent?.id;
     if (!id) continue;
 
     if (id?.configuration) {
       // The "makeVariable" map sometimes shows the same data but rendered in a different order;
       // sorting the maps solves this problem.
-      sortEntriesByKey(event.buildEvent.configuration.makeVariable);
-      continue;
+      sortEntriesByKey(buildEvent.configuration.makeVariable);
     }
 
     if (hideTimingData) {
+      delete event.eventTime;
+
       if (id?.workspaceStatus) {
-        const timestampItem = event.buildEvent.workspaceStatus.item.find((item: any) => item.key === "BUILD_TIMESTAMP");
+        const timestampItem = buildEvent.workspaceStatus.item.find((item: any) => item.key === "BUILD_TIMESTAMP");
         if (timestampItem) {
-          timestampItem.value = HIDDEN_TOKEN;
+          delete timestampItem.value;
         }
       } else if (id?.buildToolLogs) {
-        for (const log of event.buildEvent.buildToolLogs.log) {
-          if (["elapsed time", "critical path", "process stats"].includes(log.name)) {
-            (log as any).contents = HIDDEN_TOKEN;
-          }
-        }
+        buildEvent.buildToolLogs.log = event.buildEvent.buildToolLogs.log.filter(
+          (log) => !["elapsed time", "critical path", "process stats"].includes(log.name)
+        );
       } else if (id?.structuredCommandLine) {
-        removeTimingData(event.buildEvent.structuredCommandLine);
+        removeTimingData(buildEvent.structuredCommandLine);
+      } else if (id?.buildMetrics) {
+        delete buildEvent.buildMetrics.timingMetrics;
+      } else if (id?.started) {
+        delete buildEvent.started.startTimeMillis;
+      } else if (id?.buildFinished) {
+        delete buildEvent.finished.finishTimeMillis;
       }
     }
+
     if (hideUuids) {
       if (id?.started) {
-        event.buildEvent.started.uuid = HIDDEN_TOKEN;
+        delete buildEvent.started.uuid;
       }
     }
   }
-
-  let json = JSON.stringify(invocation, null, 2);
-  // HIDDEN_TOKEN gets mangled when stored in bytes fields; this replacement effectively de-mangles it.
-  json = replaceAll(json, HIDDEN_TOKEN_BYTES_ENCODING, HIDDEN_TOKEN);
-  if (hideTimingData) {
-    json = replaceAllJsonValues(
-      json,
-      [
-        "startTimeMillis",
-        "finishTimeMillis",
-        "seconds",
-        "nanos",
-        "createdAtUsec",
-        "updatedAtUsec",
-        "durationUsec",
-        "cpuTimeInMs",
-        "wallTimeInMs",
-      ],
-      HIDDEN_TOKEN
-    );
-  }
-  if (sortEvents) {
-    json = replaceAllJsonValues(json, ["sequenceNumber"], HIDDEN_TOKEN);
-  }
-  if (hideInvocationIds) {
-    json = replaceAll(json, invocationId, HIDDEN_TOKEN);
-  }
-  if (hideUuids) {
-    json = replaceAllJsonValues(json, ["uuid"], HIDDEN_TOKEN);
-  }
-  return json;
+  return invocation;
 }
 
 function removeTimingData(commandLine: command_line.ICommandLine) {
   for (const section of commandLine.sections) {
-    if (!section.optionList) continue;
-    for (const option of section.optionList.option) {
-      if (option.optionName === "startup_time") {
-        option.optionValue = HIDDEN_TOKEN;
-        option.combinedForm = `--startup_time=${HIDDEN_TOKEN}`;
-      }
-    }
+    if (!section?.optionList?.option) continue;
+    section.optionList.option = section.optionList.option.filter((option) => option.optionName !== "startup_time");
   }
 }
 

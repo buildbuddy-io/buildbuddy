@@ -7,7 +7,7 @@ import rpcService from "../service/rpc_service";
 import { parseError } from "../util/errors";
 import JsDiff from "diff";
 import DiffChunk from "./diff_chunk";
-import { PreProcessingOptions, computeTextForDiff } from "./diff_preprocessing";
+import { PreProcessingOptions, prepareForDiff } from "./diff_preprocessing";
 import CheckboxButton from "../components/button/checkbox_button";
 
 export interface CompareInvocationsComponentProps {
@@ -101,8 +101,8 @@ export default class CompareInvocationsComponent extends React.Component<Compare
 
   private computeDiff(invocationA: invocation.IInvocation, invocationB: invocation.IInvocation) {
     return JsDiff.diffLines(
-      computeTextForDiff(invocationA, this.preProcessingOptions),
-      computeTextForDiff(invocationB, this.preProcessingOptions)
+      JSON.stringify(prepareForDiff(invocationA, this.preProcessingOptions), null, 2),
+      JSON.stringify(prepareForDiff(invocationB, this.preProcessingOptions), null, 2)
     );
   }
 
