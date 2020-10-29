@@ -134,7 +134,15 @@ export default class InvocationComponent extends React.Component {
       let completed = this.state.model.completedMap.get(targetLabel);
       let actionEvents =
         completed?.buildEvent.children
-          .flatMap((child) => this.state.model.actionMap.get(child?.actionCompleted?.label))
+          .flatMap((child) =>
+            this.state.model.actionMap
+              .get(child?.actionCompleted?.label)
+              ?.filter(
+                (event) =>
+                  event?.buildEvent?.id?.actionCompleted?.primaryOutput == child?.actionCompleted?.primaryOutput &&
+                  event?.buildEvent?.id?.actionCompleted?.configuration?.id == child?.actionCompleted?.configuration?.id
+              )
+          )
           .filter((event) => !!event) || [];
 
       return (
