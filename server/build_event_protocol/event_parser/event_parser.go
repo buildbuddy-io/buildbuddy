@@ -242,7 +242,7 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 		fillInvocationFromStructuredCommandLine(commandLine, invocation, allowedEnvVars)
 	}
 	for _, workspaceStatus := range workspaceStatuses {
-		fillInvocationFromWorkspaceStatus(workspaceStatus, invocation)
+		FillInvocationFromWorkspaceStatus(workspaceStatus, invocation)
 	}
 	for _, buildMetadatum := range buildMetadata {
 		fillInvocationFromBuildMetadata(buildMetadatum, invocation)
@@ -306,7 +306,7 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	}
 }
 
-func fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.WorkspaceStatus, invocation *inpb.Invocation) {
+func FillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.WorkspaceStatus, invocation *inpb.Invocation) {
 	for _, item := range workspaceStatus.Item {
 		if item.Value == "" {
 			continue

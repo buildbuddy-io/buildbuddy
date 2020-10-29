@@ -198,7 +198,7 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 		}
 
 		if auth := e.env.GetAuthenticator(); auth != nil {
-			options, err := extractOptionsFromBuildEvent(bazelBuildEvent)
+			options, err := extractOptionsFromStartedBuildEvent(bazelBuildEvent)
 			if err != nil {
 				return err
 			}
@@ -208,6 +208,23 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 		}
 
 		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
+			return err
+		}
+	}
+
+	// When we get the workspace status event, update the invocation in the DB
+	// so that it can be searched by its commit SHA, user name, etc. even
+	// while the invocation is still in progress.
+	if isWorkspaceStatusEvent(bazelBuildEvent) {
+		db := e.env.GetInvocationDB()
+		ti, err := db.LookupInvocation(ctx, iid)
+		if err != nil {
+			return err
+		}
+		proto := TableInvocationToProto(ti)
+		event_parser.FillInvocationFromWorkspaceStatus(bazelBuildEvent.GetWorkspaceStatus(), proto)
+		ti = tableInvocationFromProto(proto /* blobId= */, "")
+		if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
 			return err
 		}
 	}
@@ -234,7 +251,7 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 	return nil
 }
 
-func extractOptionsFromBuildEvent(event build_event_stream.BuildEvent) (string, error) {
+func extractOptionsFromStartedBuildEvent(event build_event_stream.BuildEvent) (string, error) {
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
 		return p.Started.OptionsDescription, nil
