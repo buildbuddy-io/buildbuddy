@@ -14,6 +14,7 @@ import Menu, { MenuItem } from "../components/menu/menu";
 import Modal from "../components/modal/modal";
 import Popup from "../components/popup/popup";
 import router from "../router/router";
+import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 
 export interface InvocationMenuComponentProps {
@@ -56,8 +57,9 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
   private async onClickDelete() {
     this.setState({ isDeleteModalLoading: true });
     try {
-      // TODO: Call deleteInvocation
-      await new Promise((accept) => setTimeout(accept, 1000));
+      await rpcService.service.deleteInvocation(
+        new invocation.DeleteInvocationRequest({ invocationId: this.props.invocationId })
+      );
       router.navigateHome();
     } catch (e) {
       // TODO: Use BuildBuddyError instead
