@@ -1,11 +1,12 @@
 import React from "react";
-import authService from "../auth/auth_service";
+import authService, { User } from "../auth/auth_service";
 import { BuildBuddyError } from "../util/errors";
+import capabilities from "../capabilities";
 
 interface Props {
   invocationId: string;
   error: BuildBuddyError | null;
-  isAuthenticated: boolean;
+  user?: User;
 }
 
 export default class InvocationNotFoundComponent extends React.Component {
@@ -16,7 +17,10 @@ export default class InvocationNotFoundComponent extends React.Component {
   }
 
   render() {
-    if (!this.props.isAuthenticated) {
+    const invocationExists = this.props.error?.code !== "NotFound";
+    const canLogin = capabilities.auth && !this.props.user;
+
+    if (invocationExists && canLogin) {
       return (
         <div className="login-interstitial">
           <div className="container">
@@ -32,32 +36,30 @@ export default class InvocationNotFoundComponent extends React.Component {
       );
     }
 
-    if (this.props.isAuthenticated) {
-      return (
-        <div className="state-page">
-          <div className="shelf">
-            <div className="container">
-              <div className="breadcrumbs">Invocation {this.props.invocationId}</div>
-              {this.props.error?.code === "NotFound" && (
-                <>
-                  <div className="titles">
-                    <div className="title">Invocation not found!</div>
-                  </div>
-                  <div className="details">Double check your invocation URL and try again.</div>
-                </>
-              )}
-              {this.props.error?.code === "PermissionDenied" && (
-                <>
-                  <div className="titles">
-                    <div className="title">Permission denied</div>
-                  </div>
-                  <div className="details">You are not authorized to access this invocation.</div>
-                </>
-              )}
-            </div>
+    return (
+      <div className="state-page">
+        <div className="shelf">
+          <div className="container">
+            <div className="breadcrumbs">Invocation {this.props.invocationId}</div>
+            {this.props.error?.code === "NotFound" && (
+              <>
+                <div className="titles">
+                  <div className="title">Invocation not found!</div>
+                </div>
+                <div className="details">Double check your invocation URL and try again.</div>
+              </>
+            )}
+            {this.props.error?.code === "PermissionDenied" && (
+              <>
+                <div className="titles">
+                  <div className="title">Permission denied</div>
+                </div>
+                <div className="details">You are not authorized to access this invocation.</div>
+              </>
+            )}
           </div>
         </div>
-      );
-    }
+      </div>
+    );
   }
 }

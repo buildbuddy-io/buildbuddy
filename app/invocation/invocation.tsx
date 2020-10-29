@@ -122,7 +122,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
         <InvocationNotFoundComponent
           invocationId={this.props.invocationId}
           error={this.state.error}
-          isAuthenticated={!capabilities.auth || Boolean(this.props.user)}
+          user={this.props.user}
         />
       );
     }
