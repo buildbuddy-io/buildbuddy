@@ -1,7 +1,7 @@
 import React from "react";
 import authService, { User } from "../auth/auth_service";
 import { BuildBuddyError } from "../util/errors";
-import capabilities from "../capabilities";
+import capabilities from "../capabilities/capabilities";
 
 interface Props {
   invocationId: string;
