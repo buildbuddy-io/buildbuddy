@@ -652,6 +652,14 @@ code .comment {
   text-decoration: none;
 }
 
+.setup-notice {
+  padding: 16px 24px;
+  border-radius: 8px;
+  background-color: #e1f5fe;
+  margin-top: -16px;
+  margin-bottom: 16px;
+}
+
 .group-title {
   border: 0;
   margin-right: 0;

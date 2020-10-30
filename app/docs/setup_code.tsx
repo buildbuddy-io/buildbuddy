@@ -283,6 +283,18 @@ export default class SetupCodeComponent extends React.Component {
             </span>
           )}
         </div>
+        {this.state.executionChecked && (
+          <div className="setup-notice">
+            <b>Note:</b> You've enabled remote execution. In addition to these .bazelrc flags, you'll also need to
+            configure platforms and toolchains which likely involve modifying your WORKSPACE file. See{" "}
+            <b>
+              <a target="_blank" href="https://www.buildbuddy.io/docs/rbe-setup">
+                our guide on configuring platforms and toolchains
+              </a>
+            </b>{" "}
+            for more info.
+          </div>
+        )}
         <b>Copy to your .bazelrc</b>
         <code data-header=".bazelrc">
           <div className="contents">
