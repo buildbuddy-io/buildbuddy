@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 )
 
@@ -38,20 +39,17 @@ type BufferedProtoWriter struct {
 type BufferedProtoReader struct {
 	streamID string
 	bs       interfaces.Blobstore
+	q        *blobQueue
 
 	// Read Variables
-	readMutex          sync.Mutex // protects(readBuf), protects(readSequenceNumber)
-	readBuf            *bytes.Buffer
-	readSequenceNumber int
+	readBuf *bytes.Buffer
 }
 
 func NewBufferedProtoReader(bs interfaces.Blobstore, streamID string) *BufferedProtoReader {
 	return &BufferedProtoReader{
 		streamID: streamID,
 		bs:       bs,
-
-		readBuf:            new(bytes.Buffer),
-		readSequenceNumber: 0,
+		q:        newBlobQueue(bs, streamID),
 	}
 }
 
@@ -125,17 +123,90 @@ func (w *BufferedProtoWriter) WriteProtoToStream(ctx context.Context, msg proto.
 	return nil
 }
 
+type blobReadResult struct {
+	data []byte
+	err  error
+}
+
+type blobFuture chan blobReadResult
+
+type blobQueue struct {
+	blobstore      interfaces.Blobstore
+	streamID       string
+	maxConnections int
+	futures        []blobFuture
+	numPopped      int
+	done           bool
+}
+
+func newBlobQueue(blobstore interfaces.Blobstore, streamID string) *blobQueue {
+	return &blobQueue{
+		blobstore:      blobstore,
+		streamID:       streamID,
+		maxConnections: 8,
+		futures:        make([]blobFuture, 0),
+		numPopped:      0,
+		done:           false,
+	}
+}
+
+func newBlobFuture() blobFuture {
+	return make(blobFuture, 1)
+}
+
+func (q *blobQueue) pushNewFuture(ctx context.Context) {
+	future := newBlobFuture()
+	sequenceNumber := len(q.futures)
+	q.futures = append(q.futures, future)
+	go func() {
+		defer close(future)
+
+		tmpFilePath := chunkName(q.streamID, sequenceNumber)
+		data, err := q.blobstore.ReadBlob(ctx, tmpFilePath)
+		if err != nil {
+			future <- blobReadResult{
+				data: nil,
+				err:  err,
+			}
+			return
+		}
+
+		future <- blobReadResult{
+			data: data,
+			err:  nil,
+		}
+	}()
+}
+
+func (q *blobQueue) pop(ctx context.Context) ([]byte, error) {
+	if q.done {
+		return nil, status.FailedPreconditionError("Queue has been exhausted.")
+	}
+	// Make sure maxConnections files are downloading
+	numLoading := len(q.futures) - q.numPopped
+	numNewConnections := q.maxConnections - numLoading
+	for numNewConnections > 0 {
+		q.pushNewFuture(ctx)
+		numNewConnections--
+	}
+	result := <-q.futures[q.numPopped]
+	q.numPopped++
+	if result.err != nil {
+		q.done = true
+		return nil, result.err
+	}
+	return result.data, nil
+}
+
 func (w *BufferedProtoReader) ReadProto(ctx context.Context, msg proto.Message) error {
 	for {
 		if w.readBuf == nil {
 			// Load file
-			tmpFilePath := chunkName(w.streamID, w.readSequenceNumber)
-			fileData, err := w.bs.ReadBlob(ctx, tmpFilePath)
+			fileData, err := w.q.pop(ctx)
 			if err != nil {
 				return io.EOF
 			}
 			w.readBuf = bytes.NewBuffer(fileData)
-			w.readSequenceNumber += 1
 		}
 		// read proto from buf
 		count, err := binary.ReadVarint(w.readBuf)
