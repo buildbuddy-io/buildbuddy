@@ -8,5 +8,6 @@ ts_library(
     deps = [
         "//app/capabilities",
         "//app/format",
+        "@npm//tslib",
     ],
 )
