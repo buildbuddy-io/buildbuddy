@@ -250,13 +250,8 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 	if err != nil {
 		return err
 	}
-	// TODO: Make sure the lookup/insert happens in a single transaction.
-	// This isn't an issue currently since all invocation-modifying events
-	// are coming through the PublishBuildEvent stream, but using a transaction
-	// here would make this more future-proof.
-	ti, err := db.LookupInvocation(ctx, invocationID)
-	if err != nil {
-		return err
+	ti := &tables.Invocation{
+		InvocationID: invocationID,
 	}
 	invocationProto := TableInvocationToProto(ti)
 	event_parser.FillInvocationFromEvents(events, invocationProto)
