@@ -143,7 +143,7 @@ func newBlobQueue(blobstore interfaces.Blobstore, streamID string) *blobQueue {
 	return &blobQueue{
 		blobstore:      blobstore,
 		streamID:       streamID,
-		maxConnections: 8,
+		maxConnections: 16,
 		futures:        make([]blobFuture, 0),
 		numPopped:      0,
 		done:           false,
