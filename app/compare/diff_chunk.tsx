@@ -39,7 +39,7 @@ export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunk
           {added && "+"}
           {removed && "-"}
         </div>
-        <pre>{line}</pre>
+        <div className="diff-line-content">{line}</div>
       </div>
     ));
 
