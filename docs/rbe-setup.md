@@ -163,7 +163,7 @@ While this flag can speed up your build, it makes them more sensitive to caching
 
 ### --remote_instance_name
 
-If you'd like separate remote caches, whether it's for CI builds vs local builds or other reasons, you can use the `remote_instance_name` to namespace your cache artifacts:
+If you'd like separate remote caches, whether it's for CI builds vs local builds or other reasons, you can use the `remote_instance_name` flag to namespace your cache artifacts:
 
 ```
 --remote_instance_name=buildbuddy-io/buildbuddy/ci
@@ -173,7 +173,7 @@ If you'd like separate remote caches, whether it's for CI builds vs local builds
 
 ### --disk_cache
 
-While setting a local disk cache can speed up your builds, when used in conjunction with remote execution - your local and remote state has the opportunity to get out of sync. If you suspect this is your 
+While setting a local disk cache can speed up your builds, when used in conjunction with remote execution - your local and remote state has the opportunity to get out of sync. If you suspect you're running into this problem, you can disable your local disk cache by setting this to an empty value.
 
 ```
 --disk_cache=
@@ -183,7 +183,7 @@ While setting a local disk cache can speed up your builds, when used in conjunct
 
 ### --incompatible_strict_action_env
 
-Some rules (like protobuf) are particularly sensitive to changes in environment variables and will frequently be rebuild due to resulting cache misses. To mitigate this, you can use the `incompatible_strict_action_env` which sets a static value for `PATH`.
+Some rules (like protobuf) are particularly sensitive to changes in environment variables and will frequently be rebuilt due to resulting cache misses. To mitigate this, you can use the `incompatible_strict_action_env` which sets a static value for `PATH`.
 
 ```
 --incompatible_strict_action_env
@@ -193,7 +193,7 @@ Some rules (like protobuf) are particularly sensitive to changes in environment 
 
 ### --action_env
 
-You can set environment variables that are available to actions with the `--action_env` flag. This is commonly used to set `BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN` which tells bazel not to autodetect the C++ toolchain.
+You can set environment variables that are available to actions with the `--action_env` flag. This is commonly used to set `BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN` which tells bazel not to auto-detect the C++ toolchain.
 
 ```
 --action_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
