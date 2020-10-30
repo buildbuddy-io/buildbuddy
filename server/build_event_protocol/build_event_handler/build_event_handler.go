@@ -212,27 +212,6 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 		}
 	}
 
-	// When we get the workspace status event, update the invocation in the DB
-	// so that it can be searched by its commit SHA, user name, etc. even
-	// while the invocation is still in progress.
-	if isWorkspaceStatusEvent(bazelBuildEvent) {
-		db := e.env.GetInvocationDB()
-		// TODO: Make sure the lookup/insert happens in a single transaction.
-		// This isn't an issue currently since all invocation-modifying events
-		// are coming through the PublishBuildEvent stream, but using a transaction
-		// here would make this more future-proof.
-		ti, err := db.LookupInvocation(ctx, iid)
-		if err != nil {
-			return err
-		}
-		invocationProto := TableInvocationToProto(ti)
-		event_parser.FillInvocationFromWorkspaceStatus(bazelBuildEvent.GetWorkspaceStatus(), invocationProto)
-		ti = tableInvocationFromProto(invocationProto, ti.BlobID)
-		if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
-			return err
-		}
-	}
-
 	e.statusReporter.ReportStatusForEvent(ctx, &bazelBuildEvent)
 
 	// For everything else, just save the event to our buffer and keep on chugging.
@@ -250,7 +229,40 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 	// something to show the user. Flushing the proto file here allows that when the
 	// client fetches status for the incomplete build. Also flush if we haven't in over a minute.
 	if isWorkspaceStatusEvent(bazelBuildEvent) || e.pw.TimeSinceLastWrite().Minutes() > 1 {
-		return e.pw.Flush(ctx)
+		if err := e.pw.Flush(ctx); err != nil {
+			return err
+		}
+	}
+	// When we get the workspace status event, update the invocation in the DB
+	// so that it can be searched by its commit SHA, user name, etc. even
+	// while the invocation is still in progress.
+	if isWorkspaceStatusEvent(bazelBuildEvent) {
+		if err := e.writeBuildMetadata(ctx, iid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID string) error {
+	db := e.env.GetInvocationDB()
+	events, err := e.readAllTempBlobs(ctx, invocationID)
+	if err != nil {
+		return err
+	}
+	// TODO: Make sure the lookup/insert happens in a single transaction.
+	// This isn't an issue currently since all invocation-modifying events
+	// are coming through the PublishBuildEvent stream, but using a transaction
+	// here would make this more future-proof.
+	ti, err := db.LookupInvocation(ctx, invocationID)
+	if err != nil {
+		return err
+	}
+	invocationProto := TableInvocationToProto(ti)
+	event_parser.FillInvocationFromEvents(events, invocationProto)
+	ti = tableInvocationFromProto(invocationProto, ti.BlobID)
+	if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
+		return err
 	}
 	return nil
 }
