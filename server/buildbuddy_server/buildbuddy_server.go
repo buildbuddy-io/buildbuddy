@@ -93,15 +93,34 @@ func (s *BuildBuddyServer) UpdateInvocation(ctx context.Context, req *inpb.Updat
 	if auth == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	if _, err := auth.AuthenticatedUser(ctx); err != nil {
+	authenticatedUser, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
 		return nil, err
 	}
 
 	db := s.env.GetInvocationDB()
-	if err := db.UpdateInvocationACL(ctx, req.GetInvocationId(), req.GetAcl()); err != nil {
+	if err := db.UpdateInvocationACL(ctx, &authenticatedUser, req.GetInvocationId(), req.GetAcl()); err != nil {
 		return nil, err
 	}
 	return &inpb.UpdateInvocationResponse{}, nil
+}
+
+func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.DeleteInvocationRequest) (*inpb.DeleteInvocationResponse, error) {
+	auth := s.env.GetAuthenticator()
+	if auth == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	authenticatedUser, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	db := s.env.GetInvocationDB()
+	if err := db.DeleteInvocationWithPermsCheck(ctx, &authenticatedUser, req.GetInvocationId()); err != nil {
+		return nil, err
+	}
+
+	return &inpb.DeleteInvocationResponse{}, nil
 }
 
 func makeGroups(grps []*tables.Group) []*grpb.Group {

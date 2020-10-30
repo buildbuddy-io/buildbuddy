@@ -71,6 +71,7 @@ export default class TargetTestDocumentCardComponent extends React.Component {
           this.state.cacheEnabled &&
           Array.from(this.state.testDocument.getElementsByTagName("testsuite"))
             .filter((testSuite) => testSuite.getElementsByTagName("testcase").length > 0)
+            .sort((a, b) => +(b.getAttribute("failures") || 0) - +(a.getAttribute("failures") || 0))
             .map((testSuite) => (
               <div>
                 <div className="stat-cards">
