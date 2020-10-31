@@ -437,6 +437,12 @@ button {
   border-left: 6px solid #03a9f4;
 }
 
+.card.card-suggestion {
+  border-left: 6px solid transparent;
+  background-color: #ff5252;
+  color: #fff;
+}
+
 .card.dark {
   /* background-color: #263238; */
   background-color: #222;
@@ -503,6 +509,22 @@ button {
   font-weight: 600;
   color: #aaa;
   cursor: pointer;
+}
+
+.card-suggestion-message {
+  word-break: normal;
+  max-width: 800px;
+}
+
+.card-suggestion-message a {
+  text-decoration: underline;
+}
+
+.card-suggestion-reason {
+  margin-top: 8px;
+  font-size: 0.8em;
+  opacity: 0.7;
+  max-width: 800px;
 }
 
 /** Home **/
