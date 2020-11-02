@@ -15,6 +15,7 @@ import Modal from "../components/modal/modal";
 import Popup from "../components/popup/popup";
 import router from "../router/router";
 import rpcService from "../service/rpc_service";
+import { BuildBuddyError } from "../util/errors";
 import InvocationModel from "./invocation_model";
 
 export interface InvocationMenuComponentProps {
@@ -27,8 +28,7 @@ interface State {
   isMenuOpen: boolean;
   isDeleteModalOpen: boolean;
   isDeleteModalLoading: boolean;
-  // TODO: Change to BuildBuddyError
-  error?: any;
+  error?: BuildBuddyError;
 }
 
 export default class InvocationMenuComponent extends React.Component<InvocationMenuComponentProps, State> {
@@ -62,8 +62,7 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
       );
       router.navigateHome();
     } catch (e) {
-      // TODO: Use BuildBuddyError instead
-      this.setState({ error: String(e) });
+      this.setState({ error: BuildBuddyError.parse(e) });
     } finally {
       this.setState({ isDeleteModalLoading: false });
     }
@@ -97,11 +96,14 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
           </Popup>
         </div>
         <Modal isOpen={this.state.isDeleteModalOpen} onRequestClose={this.onCloseDeleteModal.bind(this)}>
-          <Dialog>
+          <Dialog className="invocation-delete-dialog">
             <DialogHeader>
               <DialogTitle>Confirm deletion</DialogTitle>
             </DialogHeader>
-            <DialogBody>Are you sure you want to delete this invocation? This action cannot be undone.</DialogBody>
+            <DialogBody>
+              <div>Are you sure you want to delete this invocation? This action cannot be undone.</div>
+              {this.state.error && <div className="error-description">{this.state.error.description}</div>}
+            </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
                 {this.state.isDeleteModalLoading && <div className="loading" />}

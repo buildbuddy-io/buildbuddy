@@ -243,3 +243,10 @@
   padding: 0;
   justify-content: center;
 }
+
+.invocation-delete-dialog .error-description {
+  margin-top: 16px;
+  background: #ffebee;
+  padding: 16px;
+  border-radius: 8px;
+}
