@@ -93,9 +93,8 @@ export default class InvocationShareButtonComponent extends React.Component<
 
   private getOwningGroup() {
     const invocation = this.getInvocation();
-    if (!this.props.user || !invocation) {
-      return null;
-    }
+    if (!this.props.user || !invocation) return null;
+
     return this.props.user.groups.find((group) => group.id === invocation.acl.groupId);
   }
 

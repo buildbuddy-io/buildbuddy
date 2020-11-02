@@ -48,15 +48,10 @@ export default class InvocationOverviewComponent extends React.Component {
   }
 
   getOwningGroupName() {
-    const acl = this.props.model.invocations[0]?.acl;
-    if (!acl) {
-      return null;
-    }
-    const owner = this.props.user?.groups?.find((group) => group.id === acl.groupId);
-    if (!owner) {
-      return null;
-    }
-    return owner.name;
+    const invocation = this.props.model.invocations[0];
+    if (!invocation) return null;
+
+    return this.props.user?.groups?.find((group) => group.id === invocation.acl.groupId)?.name;
   }
 
   render() {
