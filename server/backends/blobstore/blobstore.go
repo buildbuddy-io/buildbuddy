@@ -300,7 +300,7 @@ func (a *AwsS3BlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte,
 
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == "NotFound" {
+			if aerr.Code() == "NoSuchKey" {
 				return nil, status.NotFoundError(err.Error())
 			}
 		}
