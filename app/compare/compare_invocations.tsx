@@ -85,7 +85,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
         this.fetchInvocation(invocationBId),
       ]);
     } catch (e) {
-      this.setState({ status: "ERROR", error: BuildBuddyError.parse(e).description });
+      error = e;
     }
     if (invocationAId !== this.props.invocationAId || invocationBId !== this.props.invocationBId) {
       return;
@@ -93,7 +93,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
 
     if (error) {
       console.error(error);
-      this.setState({ status: "ERROR", error: parseError(error).description });
+      this.setState({ status: "ERROR", error: BuildBuddyError.parse(error).description });
       return;
     }
     this.setState({ status: "LOADED", invocationA, invocationB, diff: this.computeDiff(invocationA, invocationB) });
