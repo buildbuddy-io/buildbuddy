@@ -50,7 +50,11 @@ func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
 }
 
 func ReadFile(ctx context.Context, fullPath string) ([]byte, error) {
-	return ioutil.ReadFile(fullPath)
+	data, err := ioutil.ReadFile(fullPath)
+	if os.IsNotExist(err) {
+		return nil, status.NotFoundError(err.Error())
+	}
+	return data, err
 }
 
 func DeleteFile(ctx context.Context, fullPath string) error {
@@ -73,9 +77,6 @@ func FileExists(ctx context.Context, fullPath string) (bool, error) {
 
 func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.Reader, error) {
 	f, err := os.Open(fullPath)
-	if os.IsNotExist(err) {
-		return nil, status.NotFoundError(err.Error())
-	}
 	if err != nil {
 		return nil, err
 	}
