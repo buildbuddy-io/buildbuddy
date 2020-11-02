@@ -1,23 +1,24 @@
-export type ErrorCode = "Unknown" | "NotFound";
+export type ErrorCode = "Unknown" | "NotFound" | "PermissionDenied";
 
-export type Error = {
-  code: ErrorCode;
-  description: string;
-};
-
-export function parseError(e: any): Error {
-  const error = String(e).trim();
-  if (error === "Error: record not found") {
-    return { code: "NotFound", description: "Not found" };
+export class BuildBuddyError extends Error {
+  constructor(public code: ErrorCode, public description: string) {
+    super(description);
   }
 
-  const pattern = /code = (.*?) desc = (.*)$/;
-  const match = error.match(pattern);
-  if (!match) {
-    return { code: "Unknown", description: "Internal error" };
+  static parse(e: any): BuildBuddyError {
+    const error = String(e).trim();
+    if (error === "Error: record not found") {
+      return new BuildBuddyError("NotFound", "Not found");
+    }
+
+    const pattern = /code = (.*?) desc = (.*)$/;
+    const match = error.match(pattern);
+    if (!match) {
+      return new BuildBuddyError("Unknown", "Internal error");
+    }
+
+    const [_, code, description] = match;
+
+    return new BuildBuddyError(code as ErrorCode, description);
   }
-
-  const [_, code, description] = match;
-
-  return { code: code as ErrorCode, description };
 }
