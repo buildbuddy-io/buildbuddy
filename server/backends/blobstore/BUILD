@@ -9,6 +9,7 @@ go_library(
         "//server/config:go_default_library",
         "//server/interfaces:go_default_library",
         "//server/util/disk:go_default_library",
+        "//server/util/status:go_default_library",
         "@com_github_aws_aws_sdk_go//aws:go_default_library",
         "@com_github_aws_aws_sdk_go//aws/awserr:go_default_library",
         "@com_github_aws_aws_sdk_go//aws/credentials:go_default_library",
