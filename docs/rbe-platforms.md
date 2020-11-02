@@ -23,16 +23,10 @@ You can configure BuildBuddy RBE to use a custom docker image, by adding the fol
 ```
 platform(
     name = "docker_image_platform",
-    remote_execution_properties = """
-        properties {
-           name: "OSFamily"
-           value:  "Linux"
-        }
-        properties {
-           name: "container-image"
-           value: "docker://gcr.io/YOUR:IMAGE"
-        }
-        """,
+    exec_properties = {
+        "OSFamily": "Linux",
+        "container-image": "docker://gcr.io/YOUR:IMAGE",
+    },
 )
 ```
 

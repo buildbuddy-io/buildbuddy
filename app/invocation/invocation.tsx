@@ -13,6 +13,7 @@ import BuildLogsCardComponent from "./invocation_build_logs_card";
 import CacheCardComponent from "./invocation_cache_card";
 import InvocationDetailsCardComponent from "./invocation_details_card";
 import ErrorCardComponent from "./invocation_error_card";
+import SuggestionCardComponent from "./invocation_suggestion_card";
 import InvocationFilterComponent from "./invocation_filter";
 import InvocationInProgressComponent from "./invocation_in_progress";
 import InvocationModel from "./invocation_model";
@@ -23,11 +24,12 @@ import InvocationTabsComponent from "./invocation_tabs";
 import TimingCardComponent from "./invocation_timing_card";
 import ExecutionCardComponent from "./invocation_execution_card";
 import TargetsComponent from "./invocation_targets";
+import { BuildBuddyError } from "../util/errors";
 
 interface State {
   loading: boolean;
   inProgress: boolean;
-  notFound: boolean;
+  error: BuildBuddyError | null;
 
   model: InvocationModel;
 }
@@ -43,11 +45,11 @@ interface Props {
 const largePageSize = 100;
 const smallPageSize = 10;
 
-export default class InvocationComponent extends React.Component {
+export default class InvocationComponent extends React.Component<Props, State> {
   state: State = {
     loading: true,
     inProgress: false,
-    notFound: false,
+    error: null,
 
     model: new InvocationModel(),
   };
@@ -74,9 +76,9 @@ export default class InvocationComponent extends React.Component {
     request.lookup.invocationId = this.props.invocationId;
     rpcService.service
       .getInvocation(request)
-      .then((response) => {
+      .then((response: invocation.GetInvocationResponse) => {
         console.log(response);
-        var showInProgressScreen = false;
+        let showInProgressScreen = false;
         if (
           response.invocation.length &&
           response.invocation[0].invocationStatus == invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS
@@ -97,7 +99,7 @@ export default class InvocationComponent extends React.Component {
       .catch((error: any) => {
         console.error(error);
         this.setState({
-          notFound: true,
+          error: BuildBuddyError.parse(error),
           loading: false,
         });
       });
@@ -116,11 +118,12 @@ export default class InvocationComponent extends React.Component {
       return <div className="loading"></div>;
     }
 
-    if (this.state.notFound) {
+    if (this.state.error) {
       return (
         <InvocationNotFoundComponent
           invocationId={this.props.invocationId}
-          authorized={!capabilities.auth || !!this.props.user}
+          error={this.state.error}
+          user={this.props.user}
         />
       );
     }
@@ -204,6 +207,8 @@ export default class InvocationComponent extends React.Component {
               pageSize={showAll ? smallPageSize : largePageSize}
             />
           )}
+
+          {(showAll || this.props.hash == "#log") && <SuggestionCardComponent model={this.state.model} />}
 
           {(showAll || this.props.hash == "#log") && (
             <BuildLogsCardComponent model={this.state.model} expanded={this.props.hash == "#log"} />

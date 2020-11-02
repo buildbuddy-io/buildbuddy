@@ -99,6 +99,50 @@ func FromACL(acl *aclpb.ACL) (int, error) {
 	return p, nil
 }
 
+func AuthenticatedUser(ctx context.Context, env environment.Env) (interfaces.UserInfo, error) {
+	auth := env.GetAuthenticator()
+	if auth == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	u, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+func AuthorizeRead(authenticatedUser *interfaces.UserInfo, acl *aclpb.ACL) error {
+	if authenticatedUser == nil {
+		return status.InvalidArgumentError("authenticatedUser cannot be nil.")
+	}
+	u := *authenticatedUser
+	if acl == nil {
+		return status.InvalidArgumentError("acl cannot be nil.")
+	}
+
+	perms, err := FromACL(acl)
+	if err != nil {
+		return err
+	}
+
+	if perms&OTHERS_READ != 0 {
+		return nil
+	}
+	isOwner := u.GetUserID() == acl.GetUserId().GetId()
+	if isOwner && perms&OWNER_READ != 0 {
+		return nil
+	}
+	if perms&GROUP_READ != 0 {
+		for _, groupID := range u.GetAllowedGroups() {
+			if groupID == acl.GetGroupId() {
+				return nil
+			}
+		}
+	}
+
+	return status.PermissionDeniedError("You do not have permission to perform this action.")
+}
+
 func AuthorizeWrite(authenticatedUser *interfaces.UserInfo, acl *aclpb.ACL) error {
 	if authenticatedUser == nil {
 		return status.InvalidArgumentError("authenticatedUser cannot be nil.")
