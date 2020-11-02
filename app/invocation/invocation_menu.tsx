@@ -28,7 +28,7 @@ interface State {
   isMenuOpen: boolean;
   isDeleteModalOpen: boolean;
   isDeleteModalLoading: boolean;
-  error?: BuildBuddyError;
+  deleteModalError?: BuildBuddyError | null;
 }
 
 export default class InvocationMenuComponent extends React.Component<InvocationMenuComponentProps, State> {
@@ -55,14 +55,14 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
   }
 
   private async onClickDelete() {
-    this.setState({ isDeleteModalLoading: true });
+    this.setState({ isDeleteModalLoading: true, deleteModalError: null });
     try {
       await rpcService.service.deleteInvocation(
         new invocation.DeleteInvocationRequest({ invocationId: this.props.invocationId })
       );
       router.navigateHome();
     } catch (e) {
-      this.setState({ error: BuildBuddyError.parse(e) });
+      this.setState({ deleteModalError: BuildBuddyError.parse(e) });
     } finally {
       this.setState({ isDeleteModalLoading: false });
     }
@@ -102,7 +102,9 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
             </DialogHeader>
             <DialogBody>
               <div>Are you sure you want to delete this invocation? This action cannot be undone.</div>
-              {this.state.error && <div className="error-description">{this.state.error.description}</div>}
+              {this.state.deleteModalError && (
+                <div className="error-description">{this.state.deleteModalError.description}</div>
+              )}
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
