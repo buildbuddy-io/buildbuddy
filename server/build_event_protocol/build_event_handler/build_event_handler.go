@@ -198,7 +198,7 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 		}
 
 		if auth := e.env.GetAuthenticator(); auth != nil {
-			options, err := extractOptionsFromBuildEvent(bazelBuildEvent)
+			options, err := extractOptionsFromStartedBuildEvent(bazelBuildEvent)
 			if err != nil {
 				return err
 			}
@@ -229,12 +229,40 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 	// something to show the user. Flushing the proto file here allows that when the
 	// client fetches status for the incomplete build. Also flush if we haven't in over a minute.
 	if isWorkspaceStatusEvent(bazelBuildEvent) || e.pw.TimeSinceLastWrite().Minutes() > 1 {
-		return e.pw.Flush(ctx)
+		if err := e.pw.Flush(ctx); err != nil {
+			return err
+		}
+	}
+	// When we get the workspace status event, update the invocation in the DB
+	// so that it can be searched by its commit SHA, user name, etc. even
+	// while the invocation is still in progress.
+	if isWorkspaceStatusEvent(bazelBuildEvent) {
+		if err := e.writeBuildMetadata(ctx, iid); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func extractOptionsFromBuildEvent(event build_event_stream.BuildEvent) (string, error) {
+func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID string) error {
+	db := e.env.GetInvocationDB()
+	events, err := e.readAllTempBlobs(ctx, invocationID)
+	if err != nil {
+		return err
+	}
+	ti := &tables.Invocation{
+		InvocationID: invocationID,
+	}
+	invocationProto := TableInvocationToProto(ti)
+	event_parser.FillInvocationFromEvents(events, invocationProto)
+	ti = tableInvocationFromProto(invocationProto, ti.BlobID)
+	if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
+		return err
+	}
+	return nil
+}
+
+func extractOptionsFromStartedBuildEvent(event build_event_stream.BuildEvent) (string, error) {
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
 		return p.Started.OptionsDescription, nil
