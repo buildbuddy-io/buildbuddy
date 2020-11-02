@@ -163,24 +163,16 @@ func (q *blobQueue) pushNewFuture(ctx context.Context) {
 
 		tmpFilePath := chunkName(q.streamID, sequenceNumber)
 		data, err := q.blobstore.ReadBlob(ctx, tmpFilePath)
-		if err != nil {
-			future <- blobReadResult{
-				data: nil,
-				err:  err,
-			}
-			return
-		}
-
 		future <- blobReadResult{
 			data: data,
-			err:  nil,
+			err:  err,
 		}
 	}()
 }
 
 func (q *blobQueue) pop(ctx context.Context) ([]byte, error) {
 	if q.done {
-		return nil, status.FailedPreconditionError("Queue has been exhausted.")
+		return nil, status.ResourceExhaustedError("Queue has been exhausted.")
 	}
 	// Make sure maxConnections files are downloading
 	numLoading := len(q.futures) - q.numPopped
