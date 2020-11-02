@@ -35,3 +35,9 @@ We recommend using the following flag to increase this remote timeout:
 This error occurs when your build is configured for darwin (Mac OSX) CPUs. BuildBuddy Cloud currently doesn't run Mac executors, but plan to in the coming months.
 
 In the meantime, you can configure your toolchains to target k8 - or execute your builds from a linux host using either Docker or a CI system of your choice.
+
+## rpc error: code = Unavailable desc = No registered executors.
+
+This error occurs when your build is configured for darwin (Mac OSX) CPUs. BuildBuddy Cloud currently doesn't run Mac executors, but plan to in the coming months.
+
+In the meantime, you can configure your toolchains to target k8 - or execute your builds from a linux host using either Docker or a CI system of your choice.
