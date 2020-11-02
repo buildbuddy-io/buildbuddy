@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -21,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/api/option"
 )
 
@@ -186,7 +186,7 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 	reader, err := g.bucketHandle.Object(blobName).NewReader(ctx)
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
-			return nil, os.ErrNotExist
+			return nil, status.NotFoundError(err.Error())
 		}
 		return nil, err
 	}
@@ -297,6 +297,14 @@ func (a *AwsS3BlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte,
 		Bucket: a.bucket,
 		Key:    aws.String(blobName),
 	})
+
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == "NotFound" {
+				return nil, status.NotFoundError(err.Error())
+			}
+		}
+	}
 
 	return decompress(buff.Bytes(), err)
 }

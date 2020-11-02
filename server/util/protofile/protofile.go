@@ -13,6 +13,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
+
+	gcodes "google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 )
 
 // BufferedProtoWriter chunks together and writes protos to blobstore after
@@ -196,7 +199,10 @@ func (w *BufferedProtoReader) ReadProto(ctx context.Context, msg proto.Message) 
 			// Load file
 			fileData, err := w.q.pop(ctx)
 			if err != nil {
-				return io.EOF
+				if gstatus.Code(err) == gcodes.NotFound {
+					return io.EOF
+				}
+				return err
 			}
 			w.readBuf = bytes.NewBuffer(fileData)
 		}
