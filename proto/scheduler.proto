@@ -64,6 +64,7 @@ message ScheduleTaskRequest {
   TaskSize task_size = 2;
   bytes serialized_task = 3;
   string os = 4;
+  string pool = 5;
 }
 
 message ScheduleTaskResponse {

@@ -332,6 +332,7 @@ type ExecutionTask struct {
 	ClaimedAtUsec        int64
 	AttemptCount         int64
 	OS                   string
+	Pool                 string
 }
 
 func (n *ExecutionTask) TableName() string {
