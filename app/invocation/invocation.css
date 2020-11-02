@@ -195,6 +195,7 @@
 }
 
 .invocation-compare-button-container {
+  flex-shrink: 0;
   position: relative;
   z-index: 1;
 }

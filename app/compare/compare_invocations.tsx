@@ -179,11 +179,13 @@ export default class CompareInvocationsComponent extends React.Component<Compare
         </div>
         <div className="container preprocessing-options">
           <img alt="Comparison options" src="/image/sliders.svg" />
-          {this.renderPreProcessingOption("sortEvents", "Sort events")}
-          {this.renderPreProcessingOption("hideTimingData", "Hide timing data")}
-          {this.renderPreProcessingOption("hideInvocationIds", "Hide invocation IDs")}
-          {this.renderPreProcessingOption("hideConsoleOutput", "Hide console output")}
-          {this.renderPreProcessingOption("hideUuids", "Hide Bazel-generated UUIDs")}
+          <div className="preprocessing-options-list">
+            {this.renderPreProcessingOption("sortEvents", "Sort events")}
+            {this.renderPreProcessingOption("hideTimingData", "Hide timing data")}
+            {this.renderPreProcessingOption("hideInvocationIds", "Hide invocation IDs")}
+            {this.renderPreProcessingOption("hideConsoleOutput", "Hide console output")}
+            {this.renderPreProcessingOption("hideUuids", "Hide Bazel-generated UUIDs")}
+          </div>
         </div>
         <div className="container">
           <pre>
