@@ -47,6 +47,18 @@ export default class InvocationOverviewComponent extends React.Component {
     router.navigateToSetup();
   }
 
+  getOwningGroupName() {
+    const acl = this.props.model.invocations[0]?.acl;
+    if (!acl) {
+      return null;
+    }
+    const owner = this.props.user?.groups?.find((group) => group.id === acl.groupId);
+    if (!owner) {
+      return null;
+    }
+    return owner.name;
+  }
+
   render() {
     return (
       <div className="container">
@@ -54,7 +66,7 @@ export default class InvocationOverviewComponent extends React.Component {
           <div className="breadcrumbs">
             {this.props.user && (
               <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
-                {this.props.user?.selectedGroupName()}
+                {this.getOwningGroupName()}
               </span>
             )}
             {this.props.user && (
