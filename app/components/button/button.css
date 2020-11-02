@@ -25,19 +25,30 @@
   color: #fff;
 }
 
+.filled-button.destructive {
+  background-color: #b71c1c;
+}
+
 .filled-button:hover {
   background-color: #455a64;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   transition: 100ms;
 }
 
+.filled-button.destructive:hover {
+  background-color: #c62828;
+}
+
 .filled-button:active {
   box-shadow: none;
 }
 
-.filled-button[disabled] {
+/* Extra specificity here so the [disabled] style takes precedence. */
+.filled-button.filled-button.filled-button[disabled],
+.filled-button.filled-button.filled-button[disabled]:hover {
   background: #bbb;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .outlined-button {
@@ -53,4 +64,30 @@
 
 .outlined-button:active {
   background: rgba(20, 20, 20, 0.2);
+}
+
+.outlined-button[disabled] {
+  background: #bbb;
+  cursor: not-allowed;
+}
+
+.base-button.checkbox-button {
+  padding: 0;
+}
+
+.checkbox-button label {
+  padding: 8px 8px 8px 16px;
+  box-sizing: border-box;
+  min-height: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.checkbox-button input {
+  cursor: pointer;
+}
+
+.checkbox-button label > :not(:last-child) {
+  margin-right: 8px;
 }

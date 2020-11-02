@@ -5,7 +5,7 @@ import InvocationComponent from "../invocation/invocation";
 import SetupComponent from "../docs/setup";
 import capabilities from "../capabilities/capabilities";
 import router, { Path } from "../router/router";
-import authService, { AuthService } from "../auth/auth_service";
+import authService from "../auth/auth_service";
 import { User } from "../auth/auth_service";
 import faviconService from "../favicon/favicon";
 import CompareInvocationsComponent from "../compare/compare_invocations";
@@ -91,6 +91,7 @@ export default class RootComponent extends React.Component {
               <CompareInvocationsComponent
                 invocationAId={compareInvocationIds.a}
                 invocationBId={compareInvocationIds.b}
+                search={this.state.search}
                 user={null}
               />
             )}

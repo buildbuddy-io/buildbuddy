@@ -11,6 +11,7 @@ export class Capabilities {
   createOrg: boolean;
   invocationSharing: boolean;
   compareInvocations: boolean;
+  deleteInvocation: boolean;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
@@ -26,6 +27,7 @@ export class Capabilities {
     this.createOrg = this.enterprise;
     this.invocationSharing = true;
     this.compareInvocations = window.localStorage["compare_invocations"] === "true";
+    this.deleteInvocation = window.localStorage["delete_invocation"] === "true";
     this.paths = new Set(paths);
     window.gtag("set", {
       app_name: this.name,

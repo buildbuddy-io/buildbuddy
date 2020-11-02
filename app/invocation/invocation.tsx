@@ -13,6 +13,7 @@ import BuildLogsCardComponent from "./invocation_build_logs_card";
 import CacheCardComponent from "./invocation_cache_card";
 import InvocationDetailsCardComponent from "./invocation_details_card";
 import ErrorCardComponent from "./invocation_error_card";
+import SuggestionCardComponent from "./invocation_suggestion_card";
 import InvocationFilterComponent from "./invocation_filter";
 import InvocationInProgressComponent from "./invocation_in_progress";
 import InvocationModel from "./invocation_model";
@@ -136,7 +137,15 @@ export default class InvocationComponent extends React.Component<Props, State> {
       let completed = this.state.model.completedMap.get(targetLabel);
       let actionEvents =
         completed?.buildEvent.children
-          .flatMap((child) => this.state.model.actionMap.get(child?.actionCompleted?.label))
+          .flatMap((child) =>
+            this.state.model.actionMap
+              .get(child?.actionCompleted?.label)
+              ?.filter(
+                (event) =>
+                  event?.buildEvent?.id?.actionCompleted?.primaryOutput == child?.actionCompleted?.primaryOutput &&
+                  event?.buildEvent?.id?.actionCompleted?.configuration?.id == child?.actionCompleted?.configuration?.id
+              )
+          )
           .filter((event) => !!event) || [];
 
       return (
@@ -198,6 +207,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
               pageSize={showAll ? smallPageSize : largePageSize}
             />
           )}
+
+          {(showAll || this.props.hash == "#log") && <SuggestionCardComponent model={this.state.model} />}
 
           {(showAll || this.props.hash == "#log") && (
             <BuildLogsCardComponent model={this.state.model} expanded={this.props.hash == "#log"} />

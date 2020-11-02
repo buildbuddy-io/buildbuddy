@@ -176,3 +176,23 @@ func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string
 	ti := &tables.Invocation{InvocationID: invocationID}
 	return d.h.Delete(ti).Error
 }
+
+func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
+	return d.h.Transaction(func(tx *gorm.DB) error {
+		var in tables.Invocation
+		if err := tx.Raw("SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?", invocationID).Scan(&in).Error; err != nil {
+			return err
+		}
+		acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
+		if err := perms.AuthorizeWrite(authenticatedUser, acl); err != nil {
+			return err
+		}
+		if err := tx.Exec(`DELETE FROM Invocations WHERE invocation_id = ?`, invocationID).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`DELETE FROM Executions WHERE invocation_id = ?`, invocationID).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}

@@ -7,9 +7,12 @@ import rpcService from "../service/rpc_service";
 import { BuildBuddyError } from "../util/errors";
 import JsDiff from "diff";
 import DiffChunk from "./diff_chunk";
+import { PreProcessingOptions, prepareForDiff } from "./diff_preprocessing";
+import CheckboxButton from "../components/button/checkbox_button";
 
 export interface CompareInvocationsComponentProps {
   user?: User;
+  search: URLSearchParams;
   invocationAId: string;
   invocationBId: string;
 }
@@ -35,14 +38,26 @@ const INITIAL_STATE: State = {
   showChangesOnly: true,
 };
 
+const DEFAULT_PREPROCESSING_OPTIONS: PreProcessingOptions = {
+  sortEvents: true,
+  hideTimingData: true,
+  hideConsoleOutput: true,
+  hideInvocationIds: true,
+  hideUuids: true,
+};
+
 export default class CompareInvocationsComponent extends React.Component<CompareInvocationsComponentProps, State> {
   state: State = INITIAL_STATE;
+
+  private preProcessingOptions: PreProcessingOptions = this.getPreProcessingOptions();
 
   componentDidMount() {
     this.fetchInvocations();
   }
 
-  componentDidUpdate(prevProps: CompareInvocationsComponentProps) {
+  componentDidUpdate(prevProps: CompareInvocationsComponentProps, prevState: State) {
+    this.preProcessingOptions = this.getPreProcessingOptions();
+
     if (
       prevProps.user !== this.props.user ||
       prevProps.invocationAId !== this.props.invocationAId ||
@@ -50,26 +65,45 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     ) {
       this.setState(INITIAL_STATE);
       this.fetchInvocations();
+    } else if (prevProps.search !== this.props.search) {
+      this.setState({ diff: this.computeDiff(this.state.invocationA, this.state.invocationB) });
     }
+  }
+
+  private getPreProcessingOptions(): PreProcessingOptions {
+    return optionsFromSearch(this.props.search?.toString() || "");
   }
 
   private async fetchInvocations() {
     const { invocationAId, invocationBId } = this.props;
 
+    let error: any;
+    let invocationA: invocation.IInvocation, invocationB: invocation.IInvocation;
     try {
-      const [a, b] = await Promise.all([this.fetchInvocation(invocationAId), this.fetchInvocation(invocationBId)]);
-      console.log("Comparing invocations", { a, b });
-      this.setState({ status: "LOADED", invocationA: a, invocationB: b, diff: this.computeDiff(a, b) });
+      [invocationA, invocationB] = await Promise.all([
+        this.fetchInvocation(invocationAId),
+        this.fetchInvocation(invocationBId),
+      ]);
     } catch (e) {
       this.setState({ status: "ERROR", error: BuildBuddyError.parse(e).description });
     }
+    if (invocationAId !== this.props.invocationAId || invocationBId !== this.props.invocationBId) {
+      return;
+    }
+
+    if (error) {
+      console.error(error);
+      this.setState({ status: "ERROR", error: parseError(error).description });
+      return;
+    }
+    this.setState({ status: "LOADED", invocationA, invocationB, diff: this.computeDiff(invocationA, invocationB) });
   }
 
   private computeDiff(invocationA: invocation.IInvocation, invocationB: invocation.IInvocation) {
-    const aJson = JSON.stringify(invocationA, null, 2);
-    const bJson = JSON.stringify(invocationB, null, 2);
-
-    return JsDiff.diffLines(aJson, bJson);
+    return JsDiff.diffLines(
+      JSON.stringify(prepareForDiff(invocationA, this.preProcessingOptions), null, 2),
+      JSON.stringify(prepareForDiff(invocationB, this.preProcessingOptions), null, 2)
+    );
   }
 
   private async fetchInvocation(invocationId: string) {
@@ -87,11 +121,30 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     this.setState({ showChangesOnly: !this.state.showChangesOnly });
   }
 
+  private onClickPreProcessingOption(e: React.ChangeEvent<HTMLInputElement>) {
+    const { name, checked } = e.target;
+    const preProcessingOptions = { ...this.preProcessingOptions, [name]: checked };
+    router.replaceParams(optionsToQueryParams(preProcessingOptions));
+  }
+
+  private renderPreProcessingOption(optionKey: keyof PreProcessingOptions, label: string) {
+    return (
+      <CheckboxButton
+        name={optionKey}
+        checked={this.preProcessingOptions[optionKey]}
+        onChange={this.onClickPreProcessingOption.bind(this)}>
+        {label}
+      </CheckboxButton>
+    );
+  }
+
   render() {
-    if (this.state.status === "LOADING" || this.state.status === "INIT") {
+    const { status } = this.state;
+
+    if (status === "LOADING" || status === "INIT") {
       return <div className="loading" />;
     }
-    if (this.state.status === "ERROR") {
+    if (status === "ERROR") {
       // TODO: Move this to a shared location.
       return (
         <div className="compare-invocations">
@@ -116,17 +169,21 @@ export default class CompareInvocationsComponent extends React.Component<Compare
               <img className="compare-arrow" alt="comparing to" src="/image/arrow-left.svg" />
               <InvocationIdTag prefix="compare" id={this.props.invocationBId} />
             </div>
-            <OutlinedButton className="show-changes-only-button">
-              <label className="show-changes-only-label">
-                <span>Show changes only </span>
-                <input
-                  type="checkbox"
-                  checked={this.state.showChangesOnly}
-                  onChange={this.onClickShowChangesOnly.bind(this)}
-                />
-              </label>
-            </OutlinedButton>
+            <CheckboxButton
+              className="show-changes-only-button"
+              onChange={this.onClickShowChangesOnly.bind(this)}
+              checked={this.state.showChangesOnly}>
+              Show changes only
+            </CheckboxButton>
           </header>
+        </div>
+        <div className="container preprocessing-options">
+          <img alt="Comparison options" src="/image/sliders.svg" />
+          {this.renderPreProcessingOption("sortEvents", "Sort events")}
+          {this.renderPreProcessingOption("hideTimingData", "Hide timing data")}
+          {this.renderPreProcessingOption("hideInvocationIds", "Hide invocation IDs")}
+          {this.renderPreProcessingOption("hideConsoleOutput", "Hide console output")}
+          {this.renderPreProcessingOption("hideUuids", "Hide Bazel-generated UUIDs")}
         </div>
         <div className="container">
           <pre>
@@ -154,4 +211,16 @@ function InvocationIdTag({ prefix, id }: { prefix: string; id: string }) {
       </a>
     </OutlinedButton>
   );
+}
+
+function optionsToQueryParams(options: PreProcessingOptions): Record<string, string> {
+  return Object.fromEntries(Object.entries(options).map(([key, value]) => [key, String(value)]));
+}
+
+function optionsFromSearch(search: string): PreProcessingOptions {
+  const params = new URLSearchParams(search);
+  return {
+    ...DEFAULT_PREPROCESSING_OPTIONS,
+    ...Object.fromEntries([...params.entries()].map(([key, value]) => [key, value === "true"])),
+  };
 }

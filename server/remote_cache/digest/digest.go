@@ -13,10 +13,13 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	guuid "github.com/google/uuid"
+	gcodes "google.golang.org/grpc/codes"
 	gmetadata "google.golang.org/grpc/metadata"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -193,4 +196,18 @@ func IsCacheDebuggingEnabled(ctx context.Context) bool {
 		}
 	}
 	return false
+}
+
+func MissingDigestError(d *repb.Digest) error {
+	pf := &errdetails.PreconditionFailure{}
+	pf.Violations = append(pf.Violations, &errdetails.PreconditionFailure_Violation{
+		Type:    "MISSING",
+		Subject: fmt.Sprintf("blobs/%s/%d", d.GetHash(), d.GetSizeBytes()),
+	})
+	st := gstatus.Newf(gcodes.FailedPrecondition, "Digest %v not found", d)
+	if st, err := st.WithDetails(pf); err != nil {
+		return status.InternalErrorf("Digest %v not found.", d)
+	} else {
+		return st.Err()
+	}
 }

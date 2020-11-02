@@ -20,7 +20,7 @@ interface State {
   loadingStderr: boolean;
 }
 
-export default class TargetTestLogCardComponent extends React.Component {
+export default class ActionCardComponent extends React.Component {
   props: Props;
 
   state: State = {
