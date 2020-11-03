@@ -129,7 +129,8 @@ type SSLConfig struct {
 }
 
 type RemoteExecutionConfig struct {
-	EnableRemoteExec bool `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
+	EnableRemoteExec bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
+	DefaultPoolName  string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
 }
 
 type ExecutorConfig struct {
