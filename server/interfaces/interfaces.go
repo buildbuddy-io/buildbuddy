@@ -220,11 +220,12 @@ type PubSub interface {
 	Subscribe(ctx context.Context, channelName string) Subscriber
 }
 
-// A Counter allows for incrementing and reading counter values globally. No
-// guarantees are made about the durability of counters -- they may be
+// A MetricsCollector allows for storing ephemeral values globally.
+//
+// No guarantees are made about durability of MetricsCollectors -- they may be
 // evicted from the backing store that maintains them (usually memcache or
 // redis), so they should *not* be used in critical path code.
-type Counter interface {
-	Increment(ctx context.Context, counterName string, n int64) (int64, error)
-	Read(ctx context.Context, counterName string) (int64, error)
+type MetricsCollector interface {
+	IncrementCount(ctx context.Context, counterName string, n int64) (int64, error)
+	ReadCount(ctx context.Context, counterName string) (int64, error)
 }

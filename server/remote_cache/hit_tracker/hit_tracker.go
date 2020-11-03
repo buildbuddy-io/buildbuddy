@@ -75,7 +75,7 @@ func counterName(actionCache bool, ct counterType, iid string) string {
 
 type HitTracker struct {
 	iid                string
-	c                  interfaces.Counter
+	c                  interfaces.MetricsCollector
 	ctx                context.Context
 	env                environment.Env
 	remoteInstanceName string
@@ -84,7 +84,7 @@ type HitTracker struct {
 
 func NewHitTracker(ctx context.Context, env environment.Env, remoteInstanceName string) *HitTracker {
 	return &HitTracker{
-		c:                  env.GetCounter(),
+		c:                  env.GetMetricsCollector(),
 		ctx:                ctx,
 		env:                env,
 		remoteInstanceName: remoteInstanceName,
@@ -115,7 +115,7 @@ func (h *HitTracker) TrackCASMiss(d *repb.Digest) error {
 	if h.c == nil || h.iid == "" {
 		return nil
 	}
-	_, err := h.c.Increment(h.ctx, h.casCounterName(Miss), 1)
+	_, err := h.c.IncrementCount(h.ctx, h.casCounterName(Miss), 1)
 	return err
 }
 
@@ -123,7 +123,7 @@ func (h *HitTracker) TrackEmptyCASHit() error {
 	if h.c == nil || h.iid == "" {
 		return nil
 	}
-	_, err := h.c.Increment(h.ctx, h.casCounterName(Hit), 1)
+	_, err := h.c.IncrementCount(h.ctx, h.casCounterName(Hit), 1)
 	return err
 }
 
@@ -142,13 +142,13 @@ func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.
 		if h.c == nil || h.iid == "" {
 			return nil
 		}
-		if _, err := h.c.Increment(h.ctx, h.getCounter(actionCache, actionCounter), 1); err != nil {
+		if _, err := h.c.IncrementCount(h.ctx, h.getCounter(actionCache, actionCounter), 1); err != nil {
 			return err
 		}
-		if _, err := h.c.Increment(h.ctx, h.getCounter(actionCache, sizeCounter), d.GetSizeBytes()); err != nil {
+		if _, err := h.c.IncrementCount(h.ctx, h.getCounter(actionCache, sizeCounter), d.GetSizeBytes()); err != nil {
 			return err
 		}
-		if _, err := h.c.Increment(h.ctx, h.getCounter(actionCache, timeCounter), dur.Microseconds()); err != nil {
+		if _, err := h.c.IncrementCount(h.ctx, h.getCounter(actionCache, timeCounter), dur.Microseconds()); err != nil {
 			return err
 		}
 		return nil
@@ -230,7 +230,7 @@ func (h *HitTracker) TrackACDownload(d *repb.Digest) *actionTimer {
 		if md := actionResult.GetExecutionMetadata(); md != nil {
 			if h.c != nil && h.iid != "" {
 				actionExecDuration := diffTimeProtos(md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
-				if _, err := h.c.Increment(h.ctx, h.getCounter(false, CachedActionExecUsec), actionExecDuration.Microseconds()); err != nil {
+				if _, err := h.c.IncrementCount(h.ctx, h.getCounter(false, CachedActionExecUsec), actionExecDuration.Microseconds()); err != nil {
 					return err
 				}
 			}
@@ -298,7 +298,7 @@ func (h *HitTracker) TrackACUpload(d *repb.Digest) *actionTimer {
 }
 
 func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *capb.CacheStats {
-	c := env.GetCounter()
+	c := env.GetMetricsCollector()
 	if c == nil || iid == "" {
 		return nil
 	}

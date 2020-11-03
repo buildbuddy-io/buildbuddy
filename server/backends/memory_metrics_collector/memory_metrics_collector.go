@@ -1,4 +1,4 @@
-package memory_counter
+package memory_metrics_collector
 
 import (
 	"context"
@@ -13,22 +13,22 @@ const (
 	maxNumEntries = 1000000
 )
 
-type MemoryCounter struct {
+type MemoryMetricsCollector struct {
 	l  *lru.Cache
 	mu sync.Mutex
 }
 
-func NewMemoryCounter() (*MemoryCounter, error) {
+func NewMemoryMetricsCollector() (*MemoryMetricsCollector, error) {
 	l, err := lru.New(maxNumEntries)
 	if err != nil {
 		return nil, err
 	}
-	return &MemoryCounter{
+	return &MemoryMetricsCollector{
 		l: l,
 	}, nil
 }
 
-func (m *MemoryCounter) Increment(ctx context.Context, counterName string, n int64) (int64, error) {
+func (m *MemoryMetricsCollector) IncrementCount(ctx context.Context, counterName string, n int64) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -45,7 +45,7 @@ func (m *MemoryCounter) Increment(ctx context.Context, counterName string, n int
 
 }
 
-func (m *MemoryCounter) Read(ctx context.Context, counterName string) (int64, error) {
+func (m *MemoryMetricsCollector) ReadCount(ctx context.Context, counterName string) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

@@ -57,7 +57,7 @@ type RealEnv struct {
 	remoteExecutionService          interfaces.RemoteExecutionService
 	schedulerService                interfaces.SchedulerService
 	pubSub                          interfaces.PubSub
-	counter                         interfaces.Counter
+	metricsCollector                interfaces.MetricsCollector
 	executionService                interfaces.ExecutionService
 }
 
@@ -229,11 +229,11 @@ func (r *RealEnv) SetPubSub(p interfaces.PubSub) {
 func (r *RealEnv) GetPubSub() interfaces.PubSub {
 	return r.pubSub
 }
-func (r *RealEnv) SetCounter(c interfaces.Counter) {
-	r.counter = c
+func (r *RealEnv) SetMetricsCollector(c interfaces.MetricsCollector) {
+	r.metricsCollector = c
 }
-func (r *RealEnv) GetCounter() interfaces.Counter {
-	return r.counter
+func (r *RealEnv) GetMetricsCollector() interfaces.MetricsCollector {
+	return r.metricsCollector
 }
 func (r *RealEnv) SetExecutionService(e interfaces.ExecutionService) {
 	r.executionService = e

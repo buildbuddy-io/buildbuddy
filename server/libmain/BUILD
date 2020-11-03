@@ -17,7 +17,7 @@ go_library(
         "//server/backends/github:go_default_library",
         "//server/backends/invocationdb:go_default_library",
         "//server/backends/memory_cache:go_default_library",
-        "//server/backends/memory_counter:go_default_library",
+        "//server/backends/memory_metrics_collector:go_default_library",
         "//server/backends/slack:go_default_library",
         "//server/build_event_protocol/build_event_proxy:go_default_library",
         "//server/build_event_protocol/build_event_server:go_default_library",
