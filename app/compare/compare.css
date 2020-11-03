@@ -1,10 +1,38 @@
 .compare-invocations .header {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .compare-invocations .header > :not(:last-child) {
   margin-right: 16px;
+}
+
+.compare-invocations .show-changes-only-button {
+  margin-left: auto;
+}
+
+@media (max-width: 1280px) {
+  .compare-invocations .header h2 {
+    display: none;
+  }
+}
+
+@media (max-width: 1024px) {
+  .compare-invocations .header {
+    flex-direction: column;
+    align-items: start;
+  }
+
+  .compare-invocations .header > :not(:last-child) {
+    margin-right: 0;
+    margin-bottom: 8px;
+  }
+
+  .compare-invocations .show-changes-only-button {
+    margin-left: 0;
+    margin-right: auto;
+  }
 }
 
 .compare-invocations .error-container {
@@ -78,13 +106,23 @@
   margin-right: 8px;
 }
 
+.compare-invocations .preprocessing-options-list {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: -8px;
+}
+
+.compare-invocations .preprocessing-options-list > * {
+  margin-top: 8px;
+}
+
+.compare-invocations .preprocessing-options-list > :not(:last-child) {
+  margin-right: 8px;
+}
+
 .compare-invocations .preprocessing-options .checkbox-button label {
   padding: 4px 8px;
   font-size: 14px;
-}
-
-.compare-invocations .show-changes-only-button {
-  margin-left: auto;
 }
 
 .compare-invocations .diff-line {
