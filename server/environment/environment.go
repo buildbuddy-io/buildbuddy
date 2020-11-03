@@ -57,5 +57,5 @@ type Env interface {
 	GetRemoteExecutionService() interfaces.RemoteExecutionService
 	GetSchedulerService() interfaces.SchedulerService
 	GetPubSub() interfaces.PubSub
-	GetCounter() interfaces.Counter
+	GetMetricsCollector() interfaces.MetricsCollector
 }

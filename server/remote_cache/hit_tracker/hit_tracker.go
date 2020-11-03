@@ -75,7 +75,7 @@ func counterName(actionCache bool, ct counterType, iid string) string {
 
 type HitTracker struct {
 	iid                string
-	c                  interfaces.Counter
+	c                  interfaces.MetricsCollector
 	ctx                context.Context
 	env                environment.Env
 	remoteInstanceName string
@@ -84,7 +84,7 @@ type HitTracker struct {
 
 func NewHitTracker(ctx context.Context, env environment.Env, remoteInstanceName string) *HitTracker {
 	return &HitTracker{
-		c:                  env.GetCounter(),
+		c:                  env.GetMetricsCollector(),
 		ctx:                ctx,
 		env:                env,
 		remoteInstanceName: remoteInstanceName,
@@ -115,7 +115,7 @@ func (h *HitTracker) TrackCASMiss(d *repb.Digest) error {
 	if h.c == nil || h.iid == "" {
 		return nil
 	}
-	_, err := h.c.Increment(h.ctx, h.casCounterName(Miss), 1)
+	_, err := h.c.IncrementCount(h.ctx, h.casCounterName(Miss), 1)
 	return err
 }
 
@@ -123,7 +123,7 @@ func (h *HitTracker) TrackEmptyCASHit() error {
 	if h.c == nil || h.iid == "" {
 		return nil
 	}
-	_, err := h.c.Increment(h.ctx, h.casCounterName(Hit), 1)
+	_, err := h.c.IncrementCount(h.ctx, h.casCounterName(Hit), 1)
 	return err
 }
 
@@ -142,13 +142,13 @@ func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.
 		if h.c == nil || h.iid == "" {
 			return nil
 		}
-		if _, err := h.c.Increment(h.ctx, h.getCounter(actionCache, actionCounter), 1); err != nil {
+		if _, err := h.c.IncrementCount(h.ctx, h.getCounter(actionCache, actionCounter), 1); err != nil {
 			return err
 		}
-		if _, err := h.c.Increment(h.ctx, h.getCounter(actionCache, sizeCounter), d.GetSizeBytes()); err != nil {
+		if _, err := h.c.IncrementCount(h.ctx, h.getCounter(actionCache, sizeCounter), d.GetSizeBytes()); err != nil {
 			return err
 		}
-		if _, err := h.c.Increment(h.ctx, h.getCounter(actionCache, timeCounter), dur.Microseconds()); err != nil {
+		if _, err := h.c.IncrementCount(h.ctx, h.getCounter(actionCache, timeCounter), dur.Microseconds()); err != nil {
 			return err
 		}
 		return nil
@@ -230,7 +230,7 @@ func (h *HitTracker) TrackACDownload(d *repb.Digest) *actionTimer {
 		if md := actionResult.GetExecutionMetadata(); md != nil {
 			if h.c != nil && h.iid != "" {
 				actionExecDuration := diffTimeProtos(md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
-				if _, err := h.c.Increment(h.ctx, h.getCounter(false, CachedActionExecUsec), actionExecDuration.Microseconds()); err != nil {
+				if _, err := h.c.IncrementCount(h.ctx, h.getCounter(false, CachedActionExecUsec), actionExecDuration.Microseconds()); err != nil {
 					return err
 				}
 			}
@@ -298,26 +298,26 @@ func (h *HitTracker) TrackACUpload(d *repb.Digest) *actionTimer {
 }
 
 func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *capb.CacheStats {
-	c := env.GetCounter()
+	c := env.GetMetricsCollector()
 	if c == nil || iid == "" {
 		return nil
 	}
 	cs := &capb.CacheStats{}
 
-	cs.ActionCacheHits, _ = c.Read(ctx, counterName(true, Hit, iid))
-	cs.ActionCacheMisses, _ = c.Read(ctx, counterName(true, Miss, iid))
-	cs.ActionCacheUploads, _ = c.Read(ctx, counterName(true, Upload, iid))
+	cs.ActionCacheHits, _ = c.ReadCount(ctx, counterName(true, Hit, iid))
+	cs.ActionCacheMisses, _ = c.ReadCount(ctx, counterName(true, Miss, iid))
+	cs.ActionCacheUploads, _ = c.ReadCount(ctx, counterName(true, Upload, iid))
 
-	cs.CasCacheHits, _ = c.Read(ctx, counterName(false, Hit, iid))
-	cs.CasCacheMisses, _ = c.Read(ctx, counterName(false, Miss, iid))
-	cs.CasCacheUploads, _ = c.Read(ctx, counterName(false, Upload, iid))
+	cs.CasCacheHits, _ = c.ReadCount(ctx, counterName(false, Hit, iid))
+	cs.CasCacheMisses, _ = c.ReadCount(ctx, counterName(false, Miss, iid))
+	cs.CasCacheUploads, _ = c.ReadCount(ctx, counterName(false, Upload, iid))
 
-	cs.TotalDownloadSizeBytes, _ = c.Read(ctx, counterName(false, DownloadSizeBytes, iid))
-	cs.TotalUploadSizeBytes, _ = c.Read(ctx, counterName(false, UploadSizeBytes, iid))
-	cs.TotalDownloadUsec, _ = c.Read(ctx, counterName(false, DownloadUsec, iid))
-	cs.TotalUploadUsec, _ = c.Read(ctx, counterName(false, UploadUsec, iid))
+	cs.TotalDownloadSizeBytes, _ = c.ReadCount(ctx, counterName(false, DownloadSizeBytes, iid))
+	cs.TotalUploadSizeBytes, _ = c.ReadCount(ctx, counterName(false, UploadSizeBytes, iid))
+	cs.TotalDownloadUsec, _ = c.ReadCount(ctx, counterName(false, DownloadUsec, iid))
+	cs.TotalUploadUsec, _ = c.ReadCount(ctx, counterName(false, UploadUsec, iid))
 
-	cs.TotalCachedActionExecUsec, _ = c.Read(ctx, counterName(false, CachedActionExecUsec, iid))
+	cs.TotalCachedActionExecUsec, _ = c.ReadCount(ctx, counterName(false, CachedActionExecUsec, iid))
 
 	return cs
 }
