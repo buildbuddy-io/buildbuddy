@@ -304,20 +304,20 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 	}
 	cs := &capb.CacheStats{}
 
-	cs.ActionCacheHits, _ = c.Read(ctx, counterName(true, Hit, iid))
-	cs.ActionCacheMisses, _ = c.Read(ctx, counterName(true, Miss, iid))
-	cs.ActionCacheUploads, _ = c.Read(ctx, counterName(true, Upload, iid))
+	cs.ActionCacheHits, _ = c.ReadCount(ctx, counterName(true, Hit, iid))
+	cs.ActionCacheMisses, _ = c.ReadCount(ctx, counterName(true, Miss, iid))
+	cs.ActionCacheUploads, _ = c.ReadCount(ctx, counterName(true, Upload, iid))
 
-	cs.CasCacheHits, _ = c.Read(ctx, counterName(false, Hit, iid))
-	cs.CasCacheMisses, _ = c.Read(ctx, counterName(false, Miss, iid))
-	cs.CasCacheUploads, _ = c.Read(ctx, counterName(false, Upload, iid))
+	cs.CasCacheHits, _ = c.ReadCount(ctx, counterName(false, Hit, iid))
+	cs.CasCacheMisses, _ = c.ReadCount(ctx, counterName(false, Miss, iid))
+	cs.CasCacheUploads, _ = c.ReadCount(ctx, counterName(false, Upload, iid))
 
-	cs.TotalDownloadSizeBytes, _ = c.Read(ctx, counterName(false, DownloadSizeBytes, iid))
-	cs.TotalUploadSizeBytes, _ = c.Read(ctx, counterName(false, UploadSizeBytes, iid))
-	cs.TotalDownloadUsec, _ = c.Read(ctx, counterName(false, DownloadUsec, iid))
-	cs.TotalUploadUsec, _ = c.Read(ctx, counterName(false, UploadUsec, iid))
+	cs.TotalDownloadSizeBytes, _ = c.ReadCount(ctx, counterName(false, DownloadSizeBytes, iid))
+	cs.TotalUploadSizeBytes, _ = c.ReadCount(ctx, counterName(false, UploadSizeBytes, iid))
+	cs.TotalDownloadUsec, _ = c.ReadCount(ctx, counterName(false, DownloadUsec, iid))
+	cs.TotalUploadUsec, _ = c.ReadCount(ctx, counterName(false, UploadUsec, iid))
 
-	cs.TotalCachedActionExecUsec, _ = c.Read(ctx, counterName(false, CachedActionExecUsec, iid))
+	cs.TotalCachedActionExecUsec, _ = c.ReadCount(ctx, counterName(false, CachedActionExecUsec, iid))
 
 	return cs
 }
