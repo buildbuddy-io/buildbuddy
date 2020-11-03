@@ -317,6 +317,9 @@ type ExecutionNode struct {
 	AssignableMemoryBytes int64
 	AssignableMilliCPU    int64
 	Constraints           string
+	OS                    string
+	Arch                  string
+	Pool                  string
 }
 
 func (n *ExecutionNode) TableName() string {
@@ -332,6 +335,7 @@ type ExecutionTask struct {
 	ClaimedAtUsec        int64
 	AttemptCount         int64
 	OS                   string
+	Arch                 string
 	Pool                 string
 }
 

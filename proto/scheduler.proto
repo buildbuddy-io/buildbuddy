@@ -21,6 +21,15 @@ message RegisterNodeRequest {
 
   // Matching constraints.
   repeated string constraints = 4;
+
+  // The node's operating system.
+  string os = 5;
+
+  // The node's cpu architecture.
+  string arch = 6;
+
+  // The node pool in which to register the node.
+  string pool = 7;
 }
 
 message RegisterNodeResponse {
@@ -64,7 +73,8 @@ message ScheduleTaskRequest {
   TaskSize task_size = 2;
   bytes serialized_task = 3;
   string os = 4;
-  string pool = 5;
+  string arch = 5;
+  string pool = 6;
 }
 
 message ScheduleTaskResponse {
