@@ -552,8 +552,8 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "com_github_bazelbuild_rules_go",
         importpath = "github.com/bazelbuild/rules_go",
-        sum = "h1:U1fJbrwVyl0A5wAqWzSQoRutZHolAgKnURcoKRala+8=",
-        version = "v0.22.4",
+        sum = "h1:BKNgfYF+WS0pBpmMy2w9k6TqMpxuzL3JI0oWmhZ4JRU=",
+        version = "v0.24.3",
     )
     go_repository(
         name = "com_github_chzyer_logex",
@@ -1194,4 +1194,22 @@ def install_buildbuddy_dependencies():
         importpath = "github.com/kylelemons/godebug",
         sum = "h1:MtvEpTB6LX3vkb4ax0b5D2DHbNAUsen0Gx5wZoq3lV4=",
         version = "v0.0.0-20170820004349-d65d576e9348",
+    )
+    go_repository(
+        name = "com_github_bazelbuild_bazelisk",
+        importpath = "github.com/bazelbuild/bazelisk",
+        sum = "h1:5EVldOKI7IPEExAkZjX/ZQEpzl+1OI3TSomRUnZnemw=",
+        version = "v1.7.4",
+    )
+    go_repository(
+        name = "com_github_hashicorp_go_version",
+        importpath = "github.com/hashicorp/go-version",
+        sum = "h1:zEfKbn2+PDgroKdiOzqiE8rsmLqU2uwi5PB5pBJ3TkI=",
+        version = "v1.2.1",
+    )
+    go_repository(
+        name = "com_github_mitchellh_go_homedir",
+        importpath = "github.com/mitchellh/go-homedir",
+        sum = "h1:lukF9ziXFxDFPkA1vsr5zpc1XuPDn/wFntq5mG+4E0Y=",
+        version = "v1.1.0",
     )
