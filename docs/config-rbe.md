@@ -21,6 +21,8 @@ RBE configuration must be enabled in your `config.yaml` file, but most configura
 **Optional**
 
 - `enable_remote_exec:` True if remote execution should be enabled.
+- `default_pool_name:` The default executor pool to use if one is not specified.
+
 
 ## Example section
 
@@ -65,4 +67,37 @@ cache:
     project_id: "myprojectid"
     credentials_file: "mycredentials.json"
     ttl_days: 30
+```
+
+## Executor environment variables.
+
+In addition to the config.yaml, there are also environment variables that executors consume. To get more information about their environment. All of these are optional, but can be useful for more complex configurations.
+
+- `SYS_MEMORY_BYTES`: The amount of memory (in bytes) that this executor is allowed to consume. Defaults to free system memory. 
+- `SYS_MILLICPU`: The amount of CPU (in millicpus) that this executor is allowed to consume. Defaults to system CPU.
+- `MY_NODENAME`: The name of the machine/node that the executor is running on. Defaults to empty string.
+- `MY_HOSTNAME`: The hostname by which the app can communicate to this executor. Defaults to machine hostname.
+- `MY_PORT`: The port over which the app can communicate with this executor. Defaults to the executor's gRPC port.
+- `MY_POOL`: The executor pool that this executor should be placed in. Defaults to empty string.
+
+Many of these environment variables are typically set based on Kubernetes FieldRefs like so:
+
+```
+  env:
+    - name: SYS_MEMORY_BYTES
+      valueFrom:
+        resourceFieldRef:
+          resource: limits.memory
+    - name: SYS_MILLICPU
+      valueFrom:
+        resourceFieldRef:
+          resource: limits.cpu
+    - name: MY_HOSTNAME
+      valueFrom:
+        fieldRef:
+          fieldPath: status.podIP
+    - name: MY_NODENAME
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
 ```
