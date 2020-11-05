@@ -2,11 +2,14 @@ package build_event_proxy
 
 import (
 	"context"
-	"google.golang.org/grpc"
 	"log"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/golang/protobuf/ptypes/empty"
+	"google.golang.org/grpc"
 
 	bpb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
@@ -23,7 +26,7 @@ func (c *BuildEventProxyClient) reconnectIfNecessary() {
 	}
 	c.clientMux.Lock()
 	defer c.clientMux.Unlock()
-	conn, err := grpc.Dial(c.target, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(1*time.Second))
+	conn, err := grpc_client.DialTarget(c.target)
 	if err != nil {
 		log.Printf("Unable to connect to proxy host '%s': %s", c.target, err)
 		c.client = nil
@@ -43,11 +46,12 @@ func NewBuildEventProxyClient(target string) *BuildEventProxyClient {
 	return c
 }
 
-func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *bpb.PublishLifecycleEventRequest) {
+func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *bpb.PublishLifecycleEventRequest, opts ...grpc.CallOption) (*empty.Empty, error) {
 	c.reconnectIfNecessary()
 	newContext, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	c.client.PublishLifecycleEvent(newContext, req)
+	return nil, nil
 }
 
 func (c *BuildEventProxyClient) PublishBuildToolEventStream(ctx context.Context, opts ...grpc.CallOption) (bpb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {

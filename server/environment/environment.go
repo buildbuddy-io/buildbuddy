@@ -1,12 +1,12 @@
 package environment
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -39,7 +39,8 @@ type Env interface {
 	GetAuthenticator() interfaces.Authenticator
 	SetAuthenticator(a interfaces.Authenticator)
 	GetWebhooks() []interfaces.Webhook
-	GetBuildEventProxyClients() []*build_event_proxy.BuildEventProxyClient
+	GetBuildEventHandler() interfaces.BuildEventHandler
+	GetBuildEventProxyClients() []pepb.PublishBuildEventClient
 	GetCache() interfaces.Cache
 	GetUserDB() interfaces.UserDB
 	GetAuthDB() interfaces.AuthDB

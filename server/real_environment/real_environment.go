@@ -3,12 +3,12 @@ package real_environment
 import (
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -39,10 +39,11 @@ type RealEnv struct {
 	invocationDB                    interfaces.InvocationDB
 	authenticator                   interfaces.Authenticator
 	webhooks                        []interfaces.Webhook
-	buildEventProxyClients          []*build_event_proxy.BuildEventProxyClient
+	buildEventProxyClients          []pepb.PublishBuildEventClient
 	cache                           interfaces.Cache
 	userDB                          interfaces.UserDB
 	authDB                          interfaces.AuthDB
+	buildEventHandler               interfaces.BuildEventHandler
 	invocationSearchService         interfaces.InvocationSearchService
 	invocationStatService           interfaces.InvocationStatService
 	splashPrinter                   interfaces.SplashPrinter
@@ -108,6 +109,13 @@ func (r *RealEnv) SetWebhooks(wh []interfaces.Webhook) {
 	r.webhooks = wh
 }
 
+func (r *RealEnv) GetBuildEventHandler() interfaces.BuildEventHandler {
+	return r.buildEventHandler
+}
+func (r *RealEnv) SetBuildEventHandler(b interfaces.BuildEventHandler) {
+	r.buildEventHandler = b
+}
+
 func (r *RealEnv) GetInvocationSearchService() interfaces.InvocationSearchService {
 	return r.invocationSearchService
 }
@@ -115,10 +123,10 @@ func (r *RealEnv) SetInvocationSearchService(s interfaces.InvocationSearchServic
 	r.invocationSearchService = s
 }
 
-func (r *RealEnv) GetBuildEventProxyClients() []*build_event_proxy.BuildEventProxyClient {
+func (r *RealEnv) GetBuildEventProxyClients() []pepb.PublishBuildEventClient {
 	return r.buildEventProxyClients
 }
-func (r *RealEnv) SetBuildEventProxyClients(clients []*build_event_proxy.BuildEventProxyClient) {
+func (r *RealEnv) SetBuildEventProxyClients(clients []pepb.PublishBuildEventClient) {
 	r.buildEventProxyClients = clients
 }
 
