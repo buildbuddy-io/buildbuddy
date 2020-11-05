@@ -46,7 +46,7 @@ go_image(
 go_library(
     name = "go_default_library",
     srcs = ["main.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/cmd",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/cmd/buildbuddy",
     visibility = ["//visibility:private"],
     deps = [
         "//server/config:go_default_library",
