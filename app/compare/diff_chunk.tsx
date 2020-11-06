@@ -1,15 +1,19 @@
+import DiffMatchPatch from "diff-match-patch";
 import React from "react";
-import JsDiff from "diff";
 import { OutlinedButton } from "../components/button/button";
 
 export type DiffChunkProps = {
-  change: JsDiff.Change;
+  change: DiffMatchPatch.Diff;
   defaultExpanded: boolean;
 };
 
 type DiffChunkState = {
   expanded: boolean;
 };
+
+const MIN_NUM_HIDDEN_LINES = 12;
+// Number of lines to show before and after a long segment of identical lines.
+const NUM_LINES_OF_CONTEXT = 4;
 
 export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunkState> {
   state = { expanded: this.props.defaultExpanded };
@@ -26,36 +30,62 @@ export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunk
 
   render() {
     const {
-      change: { value, added, removed },
+      change: [op, data],
     } = this.props;
+    const text = data.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-    const isUnchanged = !added && !removed;
+    switch (op) {
+      case +1:
+        return <ins className="added">{text}</ins>;
+      case -1:
+        return (
+          <del className="removed">
+            <span>{text}</span>
+          </del>
+        );
+      case 0:
+        if (!this.state.expanded) {
+          const lines = text.trimEnd().split("\n");
+          if (lines.length > NUM_LINES_OF_CONTEXT * 2 + MIN_NUM_HIDDEN_LINES) {
+            const contextBefore = [];
+            for (let i = 0; i < NUM_LINES_OF_CONTEXT; i++) {
+              contextBefore.push(
+                <>
+                  {lines[i]}
+                  <br />
+                </>
+              );
+            }
+            const contextAfter = [];
+            for (let i = lines.length - NUM_LINES_OF_CONTEXT; i < lines.length - 1; i++) {
+              contextAfter.push(
+                <>
+                  {lines[i]}
+                  <br />
+                </>
+              );
+            }
+            contextAfter.push(lines[lines.length - 1]);
+            if (text.endsWith("\n")) {
+              contextAfter.push(<br />);
+            }
 
-    const lines = value.trimEnd().split("\n");
+            return (
+              <>
+                {contextBefore}
+                <OutlinedButton className="diff-line collapsed" onClick={this.onExpand.bind(this)}>
+                  <div className="plus-minus-cell">
+                    <img className="maximize-icon" src="/image/maximize-2.svg" />
+                  </div>
+                  <pre>Show {lines.length - NUM_LINES_OF_CONTEXT * 2} identical lines</pre>
+                </OutlinedButton>
+                {contextAfter}
+              </>
+            );
+          }
+        }
 
-    const nodes = lines.map((line: string, index: number) => (
-      <div key={`${index}`} className={`diff-line ${added ? "added" : ""} ${removed ? "removed" : ""}`}>
-        <div className="plus-minus-cell">
-          {added && "+"}
-          {removed && "-"}
-        </div>
-        <div className="diff-line-content">{line}</div>
-      </div>
-    ));
-
-    if (nodes.length >= 10 && isUnchanged && !this.state.expanded) {
-      return [
-        nodes[0],
-        <OutlinedButton className="diff-line collapsed" onClick={this.onExpand.bind(this)}>
-          <div className="plus-minus-cell">
-            <img className="maximize-icon" src="/image/maximize-2.svg" />
-          </div>
-          <pre>Show {nodes.length - 2} identical lines</pre>
-        </OutlinedButton>,
-        nodes[nodes.length - 1],
-      ];
+        return <>{text}</>;
     }
-
-    return nodes;
   }
 }

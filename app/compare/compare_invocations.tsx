@@ -1,14 +1,14 @@
+import DiffMatchPatch from "diff-match-patch";
 import React from "react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
 import { OutlinedButton } from "../components/button/button";
+import CheckboxButton from "../components/button/checkbox_button";
 import router from "../router/router";
 import rpcService from "../service/rpc_service";
 import { BuildBuddyError } from "../util/errors";
-import JsDiff from "diff";
 import DiffChunk from "./diff_chunk";
-import { PreProcessingOptions, prepareForDiff } from "./diff_preprocessing";
-import CheckboxButton from "../components/button/checkbox_button";
+import { prepareForDiff, PreProcessingOptions } from "./diff_preprocessing";
 
 export interface CompareInvocationsComponentProps {
   user?: User;
@@ -19,7 +19,9 @@ export interface CompareInvocationsComponentProps {
 
 type Status = "INIT" | "LOADING" | "LOADED" | "ERROR";
 
-type InvocationDiff = JsDiff.Change[];
+const diffMatchPatch = new DiffMatchPatch.diff_match_patch();
+
+type InvocationDiff = DiffMatchPatch.Diff[];
 
 interface State {
   status?: Status;
@@ -104,18 +106,12 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     const textA = JSON.stringify(prepareForDiff(invocationA, this.preProcessingOptions), null, 2);
     const textB = JSON.stringify(prepareForDiff(invocationB, this.preProcessingOptions), null, 2);
 
-    if (isDiffProbablyTooLarge(textA, textB)) {
-      this.setState({
-        status: "ERROR",
-        error:
-          "There are too many differences between these invocations to display in the browser. Try comparing two invocations that have more in common.",
-      });
-      return;
-    }
+    const diff = diffMatchPatch.diff_main(textA, textB);
+    diffMatchPatch.diff_cleanupSemantic(diff);
 
     this.setState({
       status: "LOADED",
-      diff: JsDiff.diffLines(textA, textB),
+      diff,
       error: null,
     });
   }
@@ -202,7 +198,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
           )}
           {diff && (
             <pre>
-              {diff.map((change: JsDiff.Change, index: number) => (
+              {diff.map((change: DiffMatchPatch.Diff, index: number) => (
                 <DiffChunk key={index} change={change} defaultExpanded={!this.state.showChangesOnly} />
               ))}
             </pre>
@@ -239,39 +235,4 @@ function optionsFromSearch(search: string): PreProcessingOptions {
     ...DEFAULT_PREPROCESSING_OPTIONS,
     ...Object.fromEntries([...params.entries()].map(([key, value]) => [key, value === "true"])),
   };
-}
-
-function lineCount(text: string) {
-  return text.match(/\n/g)?.length || 0;
-}
-
-function isDiffProbablyTooLarge(textA: string, textB: string) {
-  // If the texts have a huge difference in their line count, then
-  // the diff will likely be too big.
-  if (Math.abs(lineCount(textA) - lineCount(textB)) > 2000) {
-    return true;
-  }
-
-  // If either of the texts are super long and the number of differences
-  // in just a small prefix of the texts is very long, then the diffing
-  // algorithm will run too slowly.
-  if (
-    (textA.length > 1_000_000 || textB.length > 1_000_000) &&
-    countChangedLines(textA.substring(0, 10_000), textB.substring(0, 10_000)) > 100
-  ) {
-    return true;
-  }
-
-  return false;
-}
-
-function countChangedLines(textA: string, textB: string) {
-  const diff = JsDiff.diffLines(textA, textB);
-  let count = 0;
-  for (const entry of diff) {
-    if (entry.added || entry.removed) {
-      count += entry.count;
-    }
-  }
-  return count;
 }
