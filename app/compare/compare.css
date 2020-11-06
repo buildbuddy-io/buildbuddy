@@ -178,6 +178,14 @@
   color: black;
 }
 
+.compare-invocations .collapsed.removed {
+  background: #ffebee;
+}
+
+.compare-invocations .collapsed.added {
+  background: #e8f5e9;
+}
+
 .compare-invocations ins.added {
   background: #c8e6c9;
   border-radius: 2px;

@@ -11,7 +11,8 @@ type DiffChunkState = {
   expanded: boolean;
 };
 
-const MIN_NUM_HIDDEN_LINES = 12;
+const MIN_COLLAPSED_UNCHANGED_REGION_SIZE = 16;
+const MIN_COLLAPSED_CHANGED_REGION_SIZE = 128;
 // Number of lines to show before and after a long segment of identical lines.
 const NUM_LINES_OF_CONTEXT = 4;
 
@@ -28,64 +29,107 @@ export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunk
     this.setState({ expanded: true });
   }
 
-  render() {
-    const {
-      change: [op, data],
-    } = this.props;
+  private renderAdded(text: string) {
+    return <ins className="added">{text}</ins>;
+  }
+
+  private renderRemoved(text: string) {
+    return (
+      <del className="removed">
+        <span>{text}</span>
+      </del>
+    );
+  }
+
+  private renderUnchanged(text: string) {
+    return <>{text}</>;
+  }
+
+  private renderChunk(
+    renderText: (text: string) => React.ReactNode,
+    collapsedLabel: string,
+    expandButtonClass: string,
+    minCollapsedRegionSize: number
+  ) {
+    const [_, data] = this.props.change;
     const text = data.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+    if (this.state.expanded) {
+      return renderText(text);
+    }
+
+    const lines = text.trimEnd().split("\n");
+    if (lines.length < NUM_LINES_OF_CONTEXT * 2 + minCollapsedRegionSize) {
+      return renderText(text);
+    }
+
+    // Render some lines of context, then a collapsed region, then more context.
+
+    const contextBefore = [];
+    for (let i = 0; i < NUM_LINES_OF_CONTEXT; i++) {
+      contextBefore.push(
+        <>
+          {renderText(lines[i])}
+          <br />
+        </>
+      );
+    }
+
+    const contextAfter = [];
+    for (let i = lines.length - NUM_LINES_OF_CONTEXT; i < lines.length - 1; i++) {
+      contextAfter.push(
+        <>
+          {renderText(lines[i])}
+          <br />
+        </>
+      );
+    }
+    contextAfter.push(lines[lines.length - 1]);
+    if (text.endsWith("\n")) {
+      contextAfter.push(<br />);
+    }
+
+    return (
+      <>
+        {contextBefore}
+        <OutlinedButton className={`diff-line collapsed ${expandButtonClass}`} onClick={this.onExpand.bind(this)}>
+          <div className="plus-minus-cell">
+            <img className="maximize-icon" src="/image/maximize-2.svg" />
+          </div>
+          <pre>
+            Show {lines.length - NUM_LINES_OF_CONTEXT * 2} {collapsedLabel} lines
+          </pre>
+        </OutlinedButton>
+        {contextAfter}
+      </>
+    );
+  }
+
+  render() {
+    const [op] = this.props.change;
     switch (op) {
       case +1:
-        return <ins className="added">{text}</ins>;
+        return this.renderChunk(
+          this.renderAdded.bind(this),
+          /* collapsedLabel= */ "added",
+          /* expandButtonClass= */ "added",
+          MIN_COLLAPSED_CHANGED_REGION_SIZE
+        );
       case -1:
-        return (
-          <del className="removed">
-            <span>{text}</span>
-          </del>
+        return this.renderChunk(
+          this.renderRemoved.bind(this),
+          /* collapsedLabel= */ "removed",
+          /* expandButtonClass= */ "removed",
+          MIN_COLLAPSED_CHANGED_REGION_SIZE
         );
       case 0:
-        if (!this.state.expanded) {
-          const lines = text.trimEnd().split("\n");
-          if (lines.length > NUM_LINES_OF_CONTEXT * 2 + MIN_NUM_HIDDEN_LINES) {
-            const contextBefore = [];
-            for (let i = 0; i < NUM_LINES_OF_CONTEXT; i++) {
-              contextBefore.push(
-                <>
-                  {lines[i]}
-                  <br />
-                </>
-              );
-            }
-            const contextAfter = [];
-            for (let i = lines.length - NUM_LINES_OF_CONTEXT; i < lines.length - 1; i++) {
-              contextAfter.push(
-                <>
-                  {lines[i]}
-                  <br />
-                </>
-              );
-            }
-            contextAfter.push(lines[lines.length - 1]);
-            if (text.endsWith("\n")) {
-              contextAfter.push(<br />);
-            }
-
-            return (
-              <>
-                {contextBefore}
-                <OutlinedButton className="diff-line collapsed" onClick={this.onExpand.bind(this)}>
-                  <div className="plus-minus-cell">
-                    <img className="maximize-icon" src="/image/maximize-2.svg" />
-                  </div>
-                  <pre>Show {lines.length - NUM_LINES_OF_CONTEXT * 2} identical lines</pre>
-                </OutlinedButton>
-                {contextAfter}
-              </>
-            );
-          }
-        }
-
-        return <>{text}</>;
+      default:
+        return this.renderChunk(
+          this.renderUnchanged.bind(this),
+          /* collapsedLabel= */ "identical",
+          /* expandButtonClass= */ "identical",
+          MIN_COLLAPSED_UNCHANGED_REGION_SIZE
+        );
     }
   }
 }
