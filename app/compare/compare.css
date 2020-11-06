@@ -175,7 +175,7 @@
   border-radius: 2px;
   text-decoration: line-through;
   /* Strike-through color */
-  color: rgba(0, 0, 0, 0.6);
+  color: rgba(0, 0, 0, 0.45);
 }
 
 .compare-invocations del.removed > :first-child {
