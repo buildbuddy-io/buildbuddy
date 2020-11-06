@@ -7,7 +7,7 @@ export type DiffChunkProps = {
   defaultExpanded: boolean;
 };
 
-type DiffChunkState = {
+type State = {
   expanded: boolean;
 };
 
@@ -16,13 +16,17 @@ const MIN_COLLAPSED_CHANGED_REGION_SIZE = 128;
 // Number of lines to show before and after a long segment of identical lines.
 const NUM_LINES_OF_CONTEXT = 4;
 
-export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunkState> {
-  state = { expanded: diffType === DiffMatchPatch.DIFF_EQUAL && this.props.defaultExpanded };
+export default class DiffChunk extends React.Component<DiffChunkProps, State> {
+  state: State = this.getInitialState();
+
+  private getInitialState() {
+    const [diffType] = this.props.change;
+    return { expanded: diffType === DiffMatchPatch.DIFF_EQUAL && this.props.defaultExpanded };
+  }
 
   componentDidUpdate(prevProps: DiffChunkProps) {
     if (prevProps.defaultExpanded !== this.props.defaultExpanded) {
-      const [diffType] = this.props.change;
-      this.setState({ expanded: diffType === DiffMatchPatch.DIFF_EQUAL && this.props.defaultExpanded });
+      this.setState(this.getInitialState());
     }
   }
 
