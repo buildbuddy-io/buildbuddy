@@ -11,8 +11,8 @@ type State = {
   expanded: boolean;
 };
 
-const MIN_COLLAPSED_UNCHANGED_REGION_SIZE = 16;
-const MIN_COLLAPSED_CHANGED_REGION_SIZE = 128;
+const MIN_COLLAPSED_UNCHANGED_REGION_NUM_LINES = 16;
+const MIN_COLLAPSED_CHANGED_REGION_NUM_LINES = 128;
 // Number of lines to show before and after a long segment of identical lines.
 const NUM_LINES_OF_CONTEXT = 4;
 
@@ -91,14 +91,14 @@ export default class DiffChunk extends React.Component<DiffChunkProps, State> {
           this.renderAdded.bind(this),
           /* collapsedLabel= */ "added",
           /* expandButtonClass= */ "added",
-          MIN_COLLAPSED_CHANGED_REGION_SIZE
+          MIN_COLLAPSED_CHANGED_REGION_NUM_LINES
         );
       case DiffMatchPatch.DIFF_DELETE:
         return this.renderChunk(
           this.renderRemoved.bind(this),
           /* collapsedLabel= */ "removed",
           /* expandButtonClass= */ "removed",
-          MIN_COLLAPSED_CHANGED_REGION_SIZE
+          MIN_COLLAPSED_CHANGED_REGION_NUM_LINES
         );
       case DiffMatchPatch.DIFF_EQUAL:
       default:
@@ -106,7 +106,7 @@ export default class DiffChunk extends React.Component<DiffChunkProps, State> {
           this.renderUnchanged.bind(this),
           /* collapsedLabel= */ "identical",
           /* expandButtonClass= */ "identical",
-          MIN_COLLAPSED_UNCHANGED_REGION_SIZE
+          MIN_COLLAPSED_UNCHANGED_REGION_NUM_LINES
         );
     }
   }
