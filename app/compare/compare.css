@@ -165,7 +165,7 @@
   opacity: 1;
 }
 
-.compare-invocations .diff-line pre {
+.compare-invocations pre {
   padding: 0;
   margin: 0;
 }
@@ -178,7 +178,7 @@
   color: rgba(0, 0, 0, 0.6);
 }
 
-.compare-invocations del.removed > span {
+.compare-invocations del.removed > :first-child {
   color: black;
 }
 

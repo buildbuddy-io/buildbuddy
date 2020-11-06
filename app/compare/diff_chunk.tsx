@@ -51,56 +51,29 @@ export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunk
     expandButtonClass: string,
     minCollapsedRegionSize: number
   ) {
-    const [_, data] = this.props.change;
-    const text = data.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const [_, text] = this.props.change;
 
     if (this.state.expanded) {
       return renderText(text);
     }
 
-    const lines = text.trimEnd().split("\n");
+    const lines = text.split("\n");
     if (lines.length < NUM_LINES_OF_CONTEXT * 2 + minCollapsedRegionSize) {
       return renderText(text);
     }
 
-    // Render some lines of context, then a collapsed region, then more context.
-
-    const contextBefore = [];
-    for (let i = 0; i < NUM_LINES_OF_CONTEXT; i++) {
-      contextBefore.push(
-        <>
-          {renderText(lines[i])}
-          <br />
-        </>
-      );
-    }
-
-    const contextAfter = [];
-    for (let i = lines.length - NUM_LINES_OF_CONTEXT; i < lines.length - 1; i++) {
-      contextAfter.push(
-        <>
-          {renderText(lines[i])}
-          <br />
-        </>
-      );
-    }
-    contextAfter.push(lines[lines.length - 1]);
-    if (text.endsWith("\n")) {
-      contextAfter.push(<br />);
-    }
-
     return (
       <>
-        {contextBefore}
+        {renderText(lines.slice(0, NUM_LINES_OF_CONTEXT).join("\n"))}
         <OutlinedButton className={`diff-line collapsed ${expandButtonClass}`} onClick={this.onExpand.bind(this)}>
-          <div className="plus-minus-cell">
+          <div className="maximize-icon-container">
             <img className="maximize-icon" src="/image/maximize-2.svg" />
           </div>
           <pre>
             Show {lines.length - NUM_LINES_OF_CONTEXT * 2} {collapsedLabel} lines
           </pre>
         </OutlinedButton>
-        {contextAfter}
+        {renderText(lines.slice(lines.length - NUM_LINES_OF_CONTEXT, lines.length).join("\n"))}
       </>
     );
   }
