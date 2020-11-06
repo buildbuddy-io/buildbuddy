@@ -17,7 +17,7 @@ const MIN_COLLAPSED_CHANGED_REGION_SIZE = 128;
 const NUM_LINES_OF_CONTEXT = 4;
 
 export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunkState> {
-  state = { expanded: this.props.defaultExpanded };
+  state = { expanded: diffType === DiffMatchPatch.DIFF_EQUAL && this.props.defaultExpanded };
 
   componentDidUpdate(prevProps: DiffChunkProps) {
     if (prevProps.defaultExpanded !== this.props.defaultExpanded) {
