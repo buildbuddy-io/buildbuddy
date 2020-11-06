@@ -148,6 +148,10 @@
   color: rgba(0, 0, 0, 1);
 }
 
+.compare-invocations .collapsed .maximize-icon-container {
+  margin-right: 8px;
+}
+
 .compare-invocations .collapsed .maximize-icon {
   width: 16px;
   height: 16px;
