@@ -13,6 +13,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
@@ -72,6 +73,16 @@ type Authenticator interface {
 
 	// Returns a context containing the given API key.
 	AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context
+}
+
+type BuildEventChannel interface {
+	MarkInvocationDisconnected(ctx context.Context, iid string) error
+	FinalizeInvocation(ctx context.Context, iid string) error
+	HandleEvent(ctx context.Context, event *pepb.PublishBuildToolEventStreamRequest) error
+}
+
+type BuildEventHandler interface {
+	OpenChannel(ctx context.Context, iid string) BuildEventChannel
 }
 
 // A Blobstore must allow for reading, writing, and deleting blobs.
@@ -220,11 +231,12 @@ type PubSub interface {
 	Subscribe(ctx context.Context, channelName string) Subscriber
 }
 
-// A Counter allows for incrementing and reading counter values globally. No
-// guarantees are made about the durability of counters -- they may be
+// A MetricsCollector allows for storing ephemeral values globally.
+//
+// No guarantees are made about durability of MetricsCollectors -- they may be
 // evicted from the backing store that maintains them (usually memcache or
 // redis), so they should *not* be used in critical path code.
-type Counter interface {
-	Increment(ctx context.Context, counterName string, n int64) (int64, error)
-	Read(ctx context.Context, counterName string) (int64, error)
+type MetricsCollector interface {
+	IncrementCount(ctx context.Context, counterName string, n int64) (int64, error)
+	ReadCount(ctx context.Context, counterName string) (int64, error)
 }

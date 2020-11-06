@@ -10,6 +10,7 @@ import (
 	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 func EnsureDirectoryExists(dir string) error {
@@ -49,7 +50,11 @@ func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
 }
 
 func ReadFile(ctx context.Context, fullPath string) ([]byte, error) {
-	return ioutil.ReadFile(fullPath)
+	data, err := ioutil.ReadFile(fullPath)
+	if os.IsNotExist(err) {
+		return nil, status.NotFoundError(err.Error())
+	}
+	return data, err
 }
 
 func DeleteFile(ctx context.Context, fullPath string) error {

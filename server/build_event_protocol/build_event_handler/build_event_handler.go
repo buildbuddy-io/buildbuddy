@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -37,6 +38,18 @@ type BuildEventHandler struct {
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	return &BuildEventHandler{
 		env: env,
+	}
+}
+
+func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
+	chunkFileSizeBytes := b.env.GetConfigurator().GetStorageChunkFileSizeBytes()
+	if chunkFileSizeBytes == 0 {
+		chunkFileSizeBytes = defaultChunkFileSizeBytes
+	}
+	return &EventChannel{
+		env:            b.env,
+		pw:             protofile.NewBufferedProtoWriter(b.env.GetBlobstore(), iid, chunkFileSizeBytes),
+		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, iid),
 	}
 }
 
@@ -268,18 +281,6 @@ func extractOptionsFromStartedBuildEvent(event build_event_stream.BuildEvent) (s
 		return p.Started.OptionsDescription, nil
 	}
 	return "", fmt.Errorf("First build event was not a Started event, it was %+v", event.Payload)
-}
-
-func OpenChannel(env environment.Env, ctx context.Context, iid string) *EventChannel {
-	chunkFileSizeBytes := env.GetConfigurator().GetStorageChunkFileSizeBytes()
-	if chunkFileSizeBytes == 0 {
-		chunkFileSizeBytes = defaultChunkFileSizeBytes
-	}
-	return &EventChannel{
-		env:            env,
-		pw:             protofile.NewBufferedProtoWriter(env.GetBlobstore(), iid, chunkFileSizeBytes),
-		statusReporter: build_status_reporter.NewBuildStatusReporter(env, iid),
-	}
 }
 
 func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {

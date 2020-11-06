@@ -48,7 +48,8 @@ type buildEventProxy struct {
 }
 
 type databaseConfig struct {
-	DataSource string `yaml:"data_source" usage:"The SQL database to connect to, specified as a connection string."`
+	DataSource  string `yaml:"data_source" usage:"The SQL database to connect to, specified as a connection string."`
+	ReadReplica string `yaml:"read_replica" usage:"A secondary, read-only SQL database to connect to, specified as a connection string."`
 }
 
 type storageConfig struct {
@@ -129,7 +130,8 @@ type SSLConfig struct {
 }
 
 type RemoteExecutionConfig struct {
-	EnableRemoteExec bool `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
+	EnableRemoteExec bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
+	DefaultPoolName  string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
 }
 
 type ExecutorConfig struct {
@@ -284,6 +286,10 @@ func (c *Configurator) GetStorageAWSS3Config() *AwsS3Config {
 
 func (c *Configurator) GetDBDataSource() string {
 	return c.gc.Database.DataSource
+}
+
+func (c *Configurator) GetDBReadReplica() string {
+	return c.gc.Database.ReadReplica
 }
 
 func (c *Configurator) GetAppBuildBuddyURL() string {

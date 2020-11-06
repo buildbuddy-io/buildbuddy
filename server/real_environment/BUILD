@@ -6,9 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/real_environment",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
-        "//server/build_event_protocol/build_event_proxy:go_default_library",
         "//server/config:go_default_library",
         "//server/interfaces:go_default_library",
         "//server/util/db:go_default_library",

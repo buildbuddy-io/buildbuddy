@@ -7,8 +7,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
@@ -57,7 +57,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	// Semantically, the protocol requires we ack events in order.
 	acks := make([]int, 0)
 	var streamID *bepb.StreamId
-	var channel *build_event_handler.EventChannel
+	var channel interfaces.BuildEventChannel
 
 	forwardingStreams := make([]pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, 0)
 	for _, client := range s.env.GetBuildEventProxyClients() {
@@ -91,7 +91,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		}
 		if streamID == nil {
 			streamID = in.OrderedBuildEvent.StreamId
-			channel = build_event_handler.OpenChannel(s.env, ctx, streamID.InvocationId)
+			channel = s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.InvocationId)
 		}
 
 		if err := channel.HandleEvent(ctx, in); err != nil {

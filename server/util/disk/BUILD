@@ -7,5 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/random:go_default_library",
+        "//server/util/status:go_default_library",
     ],
 )

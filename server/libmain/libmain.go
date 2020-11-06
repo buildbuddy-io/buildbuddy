@@ -13,8 +13,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_counter"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -44,7 +45,7 @@ import (
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	bpb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -96,7 +97,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	}
 	realEnv.SetWebhooks(webhooks)
 
-	buildEventProxyClients := make([]*build_event_proxy.BuildEventProxyClient, 0)
+	buildEventProxyClients := make([]pepb.PublishBuildEventClient, 0)
 	for _, target := range configurator.GetBuildEventProxyHosts() {
 		// NB: This can block for up to a second on connecting. This would be a
 		// great place to have our health checker and mark these as optional.
@@ -104,6 +105,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		log.Printf("Proxy: forwarding build events to: %s", target)
 	}
 	realEnv.SetBuildEventProxyClients(buildEventProxyClients)
+	realEnv.SetBuildEventHandler(build_event_handler.NewBuildEventHandler(realEnv))
 
 	// If configured, enable the cache.
 	var cache interfaces.Cache
@@ -133,11 +135,11 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 
 	realEnv.SetSplashPrinter(&splash.Printer{})
 
-	counter, err := memory_counter.NewMemoryCounter()
+	collector, err := memory_metrics_collector.NewMemoryMetricsCollector()
 	if err != nil {
-		log.Fatalf("Error configuring in-memory counters: %s", err.Error())
+		log.Fatalf("Error configuring in-memory metrics collector: %s", err.Error())
 	}
-	realEnv.SetCounter(counter)
+	realEnv.SetMetricsCollector(collector)
 
 	return realEnv
 }
@@ -148,7 +150,7 @@ func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) 
 	if err != nil {
 		log.Fatalf("Error initializing BuildEventProtocolServer: %s", err)
 	}
-	bpb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
+	pepb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
 
 	enableCache := env.GetCache() != nil
 	// OPTIONAL CACHE API -- only enable if configured.
