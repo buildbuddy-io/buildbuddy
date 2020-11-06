@@ -21,8 +21,8 @@ export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunk
 
   componentDidUpdate(prevProps: DiffChunkProps) {
     if (prevProps.defaultExpanded !== this.props.defaultExpanded) {
-      const [op] = this.props.change;
-      this.setState({ expanded: op === DiffMatchPatch.DIFF_EQUAL && this.props.defaultExpanded });
+      const [diffType] = this.props.change;
+      this.setState({ expanded: diffType === DiffMatchPatch.DIFF_EQUAL && this.props.defaultExpanded });
     }
   }
 
@@ -80,8 +80,8 @@ export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunk
   }
 
   render() {
-    const [op] = this.props.change;
-    switch (op) {
+    const [diffType] = this.props.change;
+    switch (diffType) {
       case DiffMatchPatch.DIFF_INSERT:
         return this.renderChunk(
           this.renderAdded.bind(this),
