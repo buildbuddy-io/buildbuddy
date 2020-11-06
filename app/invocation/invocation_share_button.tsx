@@ -95,8 +95,8 @@ export default class InvocationShareButtonComponent extends React.Component<
     if (!capabilities.invocationSharing || !this.props.user) {
       return <></>;
     }
-
-    const isEnabledByOrg = Boolean(this.props.user?.selectedGroup?.sharingEnabled);
+    const owningGroup = this.props.model.findOwnerGroup(this.props.user?.groups);
+    const isEnabledByOrg = Boolean(owningGroup?.sharingEnabled);
     const isUnauthenticatedBuild = Boolean(!this.getInvocation().acl?.userId?.id);
     const canChangePermissions = isEnabledByOrg && !isUnauthenticatedBuild;
 
@@ -131,7 +131,7 @@ export default class InvocationShareButtonComponent extends React.Component<
                   onChange={this.onVisibilitySelectionChange.bind(this)}
                   value={visibility}
                   disabled={!canChangePermissions || this.state.isLoading || Boolean(this.state.error)}>
-                  <Option value="group">{this.props.user.selectedGroup.name}</Option>
+                  <Option value="group">{owningGroup?.name}</Option>
                   <Option value="public">Anyone with the link</Option>
                 </Select>
                 <div className="visibility-explanation">
