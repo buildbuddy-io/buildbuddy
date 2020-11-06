@@ -201,7 +201,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
             </div>
           )}
           {diff && (
-            <pre>
+            <pre className="diff-container">
               {diff.map((change: DiffMatchPatch.Diff, index: number) => (
                 <DiffChunk key={index} change={change} defaultExpanded={!this.state.showChangesOnly} />
               ))}

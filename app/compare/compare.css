@@ -170,6 +170,10 @@
   margin: 0;
 }
 
+.compare-invocations .diff-container {
+  padding: 16px 0;
+}
+
 .compare-invocations del.removed {
   background: #ffcdd2;
   border-radius: 2px;
