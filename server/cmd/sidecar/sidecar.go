@@ -49,7 +49,7 @@ func main() {
 	flag.Parse()
 	configurator, err := config.NewConfigurator("")
 	if err != nil {
-		log.Fatalf("Error initializing Configurator: %s", err)
+		log.Fatalf("Error initializing Configurator: %s", err.Error())
 	}
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := real_environment.NewRealEnv(configurator, healthChecker)
@@ -58,9 +58,9 @@ func main() {
 
 	lis, err := net.Listen("tcp", *listenAddr)
 	if err != nil {
-		log.Fatalf("Failed to listen: %s", err)
+		log.Fatalf("Failed to listen: %s", err.Error())
 	}
-	log.Printf("gRPC listening on http://%s\n", *listenAddr)
+	log.Printf("gRPC listening on %q", *listenAddr)
 	grpcOptions := []grpc.ServerOption{
 		rpcfilters.GetUnaryInterceptor(env),
 		rpcfilters.GetStreamInterceptor(env),
@@ -72,13 +72,13 @@ func main() {
 
 	buildEventProxyClients := make([]pepb.PublishBuildEventClient, 0)
 	buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(*serverAddr))
-	log.Printf("Proxy: forwarding build events to: %s", *serverAddr)
+	log.Printf("Proxy: forwarding build events to: %q", *serverAddr)
 	env.SetBuildEventProxyClients(buildEventProxyClients)
 
 	// Register to handle build event protocol messages.
 	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env)
 	if err != nil {
-		log.Fatalf("Error initializing BuildEventProtocolServer: %s", err)
+		log.Fatalf("Error initializing BuildEventProtocolServer: %s", err.Error())
 	}
 	pepb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
 
