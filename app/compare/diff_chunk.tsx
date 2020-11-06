@@ -21,7 +21,8 @@ export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunk
 
   componentDidUpdate(prevProps: DiffChunkProps) {
     if (prevProps.defaultExpanded !== this.props.defaultExpanded) {
-      this.setState({ expanded: this.props.defaultExpanded });
+      const [op] = this.props.change;
+      this.setState({ expanded: op === DiffMatchPatch.DIFF_EQUAL && this.props.defaultExpanded });
     }
   }
 
@@ -81,21 +82,21 @@ export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunk
   render() {
     const [op] = this.props.change;
     switch (op) {
-      case +1:
+      case DiffMatchPatch.DIFF_INSERT:
         return this.renderChunk(
           this.renderAdded.bind(this),
           /* collapsedLabel= */ "added",
           /* expandButtonClass= */ "added",
           MIN_COLLAPSED_CHANGED_REGION_SIZE
         );
-      case -1:
+      case DiffMatchPatch.DIFF_DELETE:
         return this.renderChunk(
           this.renderRemoved.bind(this),
           /* collapsedLabel= */ "removed",
           /* expandButtonClass= */ "removed",
           MIN_COLLAPSED_CHANGED_REGION_SIZE
         );
-      case 0:
+      case DiffMatchPatch.DIFF_EQUAL:
       default:
         return this.renderChunk(
           this.renderUnchanged.bind(this),
