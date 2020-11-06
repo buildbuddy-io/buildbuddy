@@ -103,6 +103,8 @@ export default class CompareInvocationsComponent extends React.Component<Compare
   }
 
   private computeDiff(invocationA: invocation.IInvocation, invocationB: invocation.IInvocation) {
+    if (this.state.error) return;
+
     const textA = JSON.stringify(prepareForDiff(invocationA, this.preProcessingOptions), null, 2);
     const textB = JSON.stringify(prepareForDiff(invocationB, this.preProcessingOptions), null, 2);
 
@@ -111,6 +113,8 @@ export default class CompareInvocationsComponent extends React.Component<Compare
 
     this.setState({
       status: "LOADED",
+      invocationA,
+      invocationB,
       diff,
       error: null,
     });
