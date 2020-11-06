@@ -91,18 +91,11 @@ export default class InvocationShareButtonComponent extends React.Component<
     document.execCommand("copy");
   }
 
-  private getOwningGroup() {
-    const invocation = this.getInvocation();
-    if (!this.props.user || !invocation) return null;
-
-    return this.props.user.groups.find((group) => group.id === invocation.acl.groupId);
-  }
-
   render() {
     if (!capabilities.invocationSharing || !this.props.user) {
       return <></>;
     }
-    const owningGroup = this.getOwningGroup();
+    const owningGroup = this.props.model.findOwnerGroup(this.props.user?.groups);
     const isEnabledByOrg = Boolean(owningGroup?.sharingEnabled);
     const isUnauthenticatedBuild = Boolean(!this.getInvocation().acl?.userId?.id);
     const canChangePermissions = isEnabledByOrg && !isUnauthenticatedBuild;

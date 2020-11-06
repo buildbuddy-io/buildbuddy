@@ -1,11 +1,12 @@
-import React from "react";
 import moment from "moment";
-import { invocation } from "../../proto/invocation_ts_proto";
-import { cache } from "../../proto/cache_ts_proto";
+import React from "react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { cache } from "../../proto/cache_ts_proto";
 import { command_line } from "../../proto/command_line_ts_proto";
-import format from "../format/format";
+import { grp } from "../../proto/group_ts_proto";
+import { invocation } from "../../proto/invocation_ts_proto";
 import { IconType } from "../favicon/favicon";
+import format from "../format/format";
 
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
@@ -165,6 +166,25 @@ export default class InvocationModel {
       return possessive ? "Unknown user's" : "Unknown user";
     }
     return possessive ? `${username}'s` : username;
+  }
+
+  /**
+   * Returns the group which owns the invocation.
+   *
+   * If no groups are provided or if the group is not found, null is returned.
+   */
+  findOwnerGroup(groups: grp.Group[] | undefined) {
+    if (this.invocations.length > 1) {
+      console.error("findOwnerGroup may only be called from single-invocation views.");
+      return null;
+    }
+
+    if (!groups?.length) return null;
+
+    const invocation = this.invocations[0];
+    if (!invocation) return null;
+
+    return groups.find((group) => group.id === invocation.acl.groupId) || null;
   }
 
   getId() {
