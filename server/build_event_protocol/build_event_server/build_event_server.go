@@ -33,7 +33,6 @@ func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, re
 			client.PublishLifecycleEvent(ctx, req)
 		}()
 	}
-	// We don't currently handle these events.
 	return &empty.Empty{}, nil
 }
 

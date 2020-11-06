@@ -3,21 +3,22 @@ package build_event_proxy
 import (
 	"context"
 	"log"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
 
-	bpb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
+
+const eventBufferSize = 100
 
 type BuildEventProxyClient struct {
 	target    string
 	clientMux sync.Mutex // PROTECTS(client)
-	client    bpb.PublishBuildEventClient
+	client    pepb.PublishBuildEventClient
+	rootCtx   context.Context
 }
 
 func (c *BuildEventProxyClient) reconnectIfNecessary() {
@@ -32,31 +33,75 @@ func (c *BuildEventProxyClient) reconnectIfNecessary() {
 		c.client = nil
 		return
 	}
-	c.client = bpb.NewPublishBuildEventClient(conn)
+	c.client = pepb.NewPublishBuildEventClient(conn)
 }
 
 func NewBuildEventProxyClient(target string) *BuildEventProxyClient {
-	if strings.HasPrefix(target, "grpc://") {
-		target = strings.TrimPrefix(target, "grpc://")
-	}
 	c := &BuildEventProxyClient{
-		target: target,
+		target:  target,
+		rootCtx: context.Background(),
 	}
 	c.reconnectIfNecessary()
 	return c
 }
 
-func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *bpb.PublishLifecycleEventRequest, opts ...grpc.CallOption) (*empty.Empty, error) {
+func (c *BuildEventProxyClient) PublishLifecycleEvent(_ context.Context, req *pepb.PublishLifecycleEventRequest, opts ...grpc.CallOption) (*empty.Empty, error) {
 	c.reconnectIfNecessary()
-	newContext, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	c.client.PublishLifecycleEvent(newContext, req)
+	go func() {
+		_, err := c.client.PublishLifecycleEvent(c.rootCtx, req)
+		if err != nil {
+			log.Printf("Error publishing lifecycle event: %s", err.Error())
+		}
+	}()
+	return &empty.Empty{}, nil
+}
+
+type asyncStreamProxy struct {
+	pepb.PublishBuildEvent_PublishBuildToolEventStreamClient
+	ctx    context.Context
+	events chan pepb.PublishBuildToolEventStreamRequest
+}
+
+func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ...grpc.CallOption) *asyncStreamProxy {
+	asp := &asyncStreamProxy{
+		ctx:    ctx,
+		events: make(chan pepb.PublishBuildToolEventStreamRequest, eventBufferSize),
+	}
+	// Start a goroutine that will open the stream and pass along events.
+	go func() {
+		stream, err := c.client.PublishBuildToolEventStream(ctx, opts...)
+		if err != nil {
+			log.Printf("Error opening BES stream to proxy: %s", err.Error())
+			return
+		}
+		asp.PublishBuildEvent_PublishBuildToolEventStreamClient = stream
+		for {
+			for req := range asp.events {
+				if err := stream.Send(&req); err != nil {
+					log.Printf("Error sending req on stream: %s", err.Error())
+					return
+				}
+			}
+		}
+	}()
+	return asp
+}
+
+func (asp *asyncStreamProxy) Send(req *pepb.PublishBuildToolEventStreamRequest) error {
+	select {
+	case asp.events <- *req:
+		// does not fallthrough.
+	default:
+		log.Printf("BuildEventProxy dropped message.")
+	}
+	return nil
+}
+
+func (asp *asyncStreamProxy) Recv() (*pepb.PublishBuildToolEventStreamResponse, error) {
 	return nil, nil
 }
 
-func (c *BuildEventProxyClient) PublishBuildToolEventStream(ctx context.Context, opts ...grpc.CallOption) (bpb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
+func (c *BuildEventProxyClient) PublishBuildToolEventStream(_ context.Context, opts ...grpc.CallOption) (pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
 	c.reconnectIfNecessary()
-	newContext, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	return c.client.PublishBuildToolEventStream(newContext, opts...)
+	return c.newAsyncStreamProxy(c.rootCtx, opts...), nil
 }
