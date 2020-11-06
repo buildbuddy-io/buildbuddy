@@ -44,6 +44,7 @@ const DEFAULT_PREPROCESSING_OPTIONS: PreProcessingOptions = {
   hideConsoleOutput: true,
   hideInvocationIds: true,
   hideUuids: true,
+  hideProgress: true,
 };
 
 export default class CompareInvocationsComponent extends React.Component<CompareInvocationsComponentProps, State> {
@@ -66,7 +67,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
       this.setState(INITIAL_STATE);
       this.fetchInvocations();
     } else if (prevProps.search !== this.props.search) {
-      this.setState({ diff: this.computeDiff(this.state.invocationA, this.state.invocationB) });
+      this.computeDiff(this.state.invocationA, this.state.invocationB);
     }
   }
 
@@ -96,14 +97,27 @@ export default class CompareInvocationsComponent extends React.Component<Compare
       this.setState({ status: "ERROR", error: BuildBuddyError.parse(error).description });
       return;
     }
-    this.setState({ status: "LOADED", invocationA, invocationB, diff: this.computeDiff(invocationA, invocationB) });
+    this.computeDiff(invocationA, invocationB);
   }
 
   private computeDiff(invocationA: invocation.IInvocation, invocationB: invocation.IInvocation) {
-    return JsDiff.diffLines(
-      JSON.stringify(prepareForDiff(invocationA, this.preProcessingOptions), null, 2),
-      JSON.stringify(prepareForDiff(invocationB, this.preProcessingOptions), null, 2)
-    );
+    const textA = JSON.stringify(prepareForDiff(invocationA, this.preProcessingOptions), null, 2);
+    const textB = JSON.stringify(prepareForDiff(invocationB, this.preProcessingOptions), null, 2);
+
+    if (isDiffProbablyTooLarge(textA, textB)) {
+      this.setState({
+        status: "ERROR",
+        error:
+          "There are too many differences between these invocations to display in the browser. Try comparing two invocations that have more in common.",
+      });
+      return;
+    }
+
+    this.setState({
+      status: "LOADED",
+      diff: JsDiff.diffLines(textA, textB),
+      error: null,
+    });
   }
 
   private async fetchInvocation(invocationId: string) {
@@ -139,23 +153,10 @@ export default class CompareInvocationsComponent extends React.Component<Compare
   }
 
   render() {
-    const { status } = this.state;
+    const { status, error, diff } = this.state;
 
     if (status === "LOADING" || status === "INIT") {
       return <div className="loading" />;
-    }
-    if (status === "ERROR") {
-      // TODO: Move this to a shared location.
-      return (
-        <div className="compare-invocations">
-          <div className="container">
-            <div className="error-container">
-              <img src="/image/x-circle.svg" />
-              <div>{this.state.error}</div>
-            </div>
-          </div>
-        </div>
-      );
     }
 
     // TODO: Display a structured diff
@@ -169,30 +170,43 @@ export default class CompareInvocationsComponent extends React.Component<Compare
               <img className="compare-arrow" alt="comparing to" src="/image/arrow-left.svg" />
               <InvocationIdTag prefix="compare" id={this.props.invocationBId} />
             </div>
-            <CheckboxButton
-              className="show-changes-only-button"
-              onChange={this.onClickShowChangesOnly.bind(this)}
-              checked={this.state.showChangesOnly}>
-              Show changes only
-            </CheckboxButton>
+            {diff && (
+              <CheckboxButton
+                className="show-changes-only-button"
+                onChange={this.onClickShowChangesOnly.bind(this)}
+                checked={this.state.showChangesOnly}>
+                Show changes only
+              </CheckboxButton>
+            )}
           </header>
         </div>
-        <div className="container preprocessing-options">
-          <img alt="Comparison options" src="/image/sliders.svg" />
-          <div className="preprocessing-options-list">
-            {this.renderPreProcessingOption("sortEvents", "Sort events")}
-            {this.renderPreProcessingOption("hideTimingData", "Hide timing data")}
-            {this.renderPreProcessingOption("hideInvocationIds", "Hide invocation IDs")}
-            {this.renderPreProcessingOption("hideConsoleOutput", "Hide console output")}
-            {this.renderPreProcessingOption("hideUuids", "Hide Bazel-generated UUIDs")}
+        {diff && (
+          <div className="container preprocessing-options">
+            <img alt="Comparison options" src="/image/sliders.svg" />
+            <div className="preprocessing-options-list">
+              {this.renderPreProcessingOption("sortEvents", "Sort events")}
+              {this.renderPreProcessingOption("hideTimingData", "Hide timing data")}
+              {this.renderPreProcessingOption("hideProgress", "Hide progress")}
+              {this.renderPreProcessingOption("hideInvocationIds", "Hide invocation IDs")}
+              {this.renderPreProcessingOption("hideConsoleOutput", "Hide console output")}
+              {this.renderPreProcessingOption("hideUuids", "Hide Bazel-generated UUIDs")}
+            </div>
           </div>
-        </div>
+        )}
         <div className="container">
-          <pre>
-            {this.state.diff.map((change: JsDiff.Change, index: number) => (
-              <DiffChunk key={index} change={change} defaultExpanded={!this.state.showChangesOnly} />
-            ))}
-          </pre>
+          {error && (
+            <div className="error-container">
+              <img src="/image/x-circle.svg" />
+              <div>{error}</div>
+            </div>
+          )}
+          {diff && (
+            <pre>
+              {diff.map((change: JsDiff.Change, index: number) => (
+                <DiffChunk key={index} change={change} defaultExpanded={!this.state.showChangesOnly} />
+              ))}
+            </pre>
+          )}
         </div>
       </div>
     );
@@ -225,4 +239,39 @@ function optionsFromSearch(search: string): PreProcessingOptions {
     ...DEFAULT_PREPROCESSING_OPTIONS,
     ...Object.fromEntries([...params.entries()].map(([key, value]) => [key, value === "true"])),
   };
+}
+
+function lineCount(text: string) {
+  return text.match(/\n/g)?.length || 0;
+}
+
+function isDiffProbablyTooLarge(textA: string, textB: string) {
+  // If the texts have a huge difference in their line count, then
+  // the diff will likely be too big.
+  if (Math.abs(lineCount(textA) - lineCount(textB)) > 2000) {
+    return true;
+  }
+
+  // If either of the texts are super long and the number of differences
+  // in just a small prefix of the texts is very long, then the diffing
+  // algorithm will run too slowly.
+  if (
+    (textA.length > 1_000_000 || textB.length > 1_000_000) &&
+    countChangedLines(textA.substring(0, 10_000), textB.substring(0, 10_000)) > 100
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function countChangedLines(textA: string, textB: string) {
+  const diff = JsDiff.diffLines(textA, textB);
+  let count = 0;
+  for (const entry of diff) {
+    if (entry.added || entry.removed) {
+      count += entry.count;
+    }
+  }
+  return count;
 }
