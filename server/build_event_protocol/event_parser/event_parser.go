@@ -250,7 +250,10 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 	}
 
 	buildDuration := time.Duration(int64(0))
-	if endTimeMillis != undefinedTimestamp && startTimeMillis != undefinedTimestamp {
+	if startTimeMillis != undefinedTimestamp {
+		if endTimeMillis == undefinedTimestamp {
+			endTimeMillis = time.Now().UnixNano() / time.Millisecond.Nanoseconds()
+		}
 		buildDuration = time.Duration((endTimeMillis - startTimeMillis) * int64(time.Millisecond))
 	}
 	invocation.DurationUsec = buildDuration.Microseconds()
