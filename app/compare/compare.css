@@ -164,6 +164,7 @@
   transform: rotate(-45deg) scale(0.8);
   transition: 100ms ease-out;
   opacity: 0.7;
+  margin-right: 8px;
 }
 
 .compare-invocations .collapsed:hover .maximize-icon {
@@ -182,8 +183,4 @@
 
 .compare-invocations .diff-line.added {
   color: #43a047;
-}
-
-.compare-invocations .diff-line .hidden-data {
-  opacity: 0.5;
 }

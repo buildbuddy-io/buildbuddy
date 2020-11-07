@@ -1,22 +1,33 @@
+import DiffMatchPatch from "diff-match-patch";
 import React from "react";
-import JsDiff from "diff";
 import { OutlinedButton } from "../components/button/button";
 
+export type DiffChunkData = { marker: number; lines: string[] };
+
 export type DiffChunkProps = {
-  change: JsDiff.Change;
+  chunk: DiffChunkData;
   defaultExpanded: boolean;
 };
 
-type DiffChunkState = {
+type State = {
   expanded: boolean;
 };
 
-export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunkState> {
-  state = { expanded: this.props.defaultExpanded };
+const MIN_COLLAPSED_UNCHANGED_REGION_NUM_LINES = 16;
+const MIN_COLLAPSED_CHANGED_REGION_NUM_LINES = 128;
+// Number of lines to show before and after a long segment of identical lines.
+const NUM_LINES_OF_CONTEXT = 4;
+
+export default class DiffChunk extends React.Component<DiffChunkProps, State> {
+  state: State = this.getInitialState();
+
+  private getInitialState() {
+    return { expanded: this.props.chunk.marker === DiffMatchPatch.DIFF_EQUAL && this.props.defaultExpanded };
+  }
 
   componentDidUpdate(prevProps: DiffChunkProps) {
     if (prevProps.defaultExpanded !== this.props.defaultExpanded) {
-      this.setState({ expanded: this.props.defaultExpanded });
+      this.setState(this.getInitialState());
     }
   }
 
@@ -24,38 +35,86 @@ export default class DiffChunk extends React.Component<DiffChunkProps, DiffChunk
     this.setState({ expanded: true });
   }
 
-  render() {
-    const {
-      change: { value, added, removed },
-    } = this.props;
-
-    const isUnchanged = !added && !removed;
-
-    const lines = value.trimEnd().split("\n");
-
-    const nodes = lines.map((line: string, index: number) => (
-      <div key={`${index}`} className={`diff-line ${added ? "added" : ""} ${removed ? "removed" : ""}`}>
-        <div className="plus-minus-cell">
-          {added && "+"}
-          {removed && "-"}
-        </div>
-        <div className="diff-line-content">{line}</div>
+  private renderAdded(lines: string[]) {
+    return lines.map((line, i) => (
+      <div className="diff-line added" key={i}>
+        <div className="plus-minus-cell">+</div>
+        <div>{line}</div>
       </div>
     ));
+  }
 
-    if (nodes.length >= 10 && isUnchanged && !this.state.expanded) {
-      return [
-        nodes[0],
-        <OutlinedButton className="diff-line collapsed" onClick={this.onExpand.bind(this)}>
-          <div className="plus-minus-cell">
-            <img className="maximize-icon" src="/image/maximize-2.svg" />
-          </div>
-          <pre>Show {nodes.length - 2} identical lines</pre>
-        </OutlinedButton>,
-        nodes[nodes.length - 1],
-      ];
+  private renderRemoved(lines: string[]) {
+    return lines.map((line, i) => (
+      <div className="diff-line removed" key={i}>
+        <div className="plus-minus-cell">-</div>
+        <div>{line}</div>
+      </div>
+    ));
+  }
+
+  private renderUnchanged(lines: string[]) {
+    return lines.map((line, i) => (
+      <div className="diff-line" key={i}>
+        <div className="plus-minus-cell">&nbsp;</div>
+        <div>{line}</div>
+      </div>
+    ));
+  }
+
+  private renderChunk(
+    renderLines: (lines: string[]) => React.ReactNode,
+    collapsedLabel: string,
+    expandButtonClass: string,
+    minCollapsedRegionSize: number
+  ) {
+    const { lines } = this.props.chunk;
+
+    if (this.state.expanded || lines.length < NUM_LINES_OF_CONTEXT * 2 + minCollapsedRegionSize) {
+      return renderLines(lines);
     }
 
-    return nodes;
+    return (
+      <>
+        {renderLines(lines.slice(0, NUM_LINES_OF_CONTEXT))}
+        <OutlinedButton className={`diff-line collapsed ${expandButtonClass}`} onClick={this.onExpand.bind(this)}>
+          <div className="maximize-icon-container">
+            <img className="maximize-icon" src="/image/maximize-2.svg" />
+          </div>
+          <pre>
+            Show {lines.length - NUM_LINES_OF_CONTEXT * 2} {collapsedLabel} lines
+          </pre>
+        </OutlinedButton>
+        {renderLines(lines.slice(lines.length - NUM_LINES_OF_CONTEXT, lines.length))}
+      </>
+    );
+  }
+
+  render() {
+    const marker = this.props.chunk.marker;
+    switch (marker) {
+      case DiffMatchPatch.DIFF_INSERT:
+        return this.renderChunk(
+          this.renderAdded.bind(this),
+          /* collapsedLabel= */ "added",
+          /* expandButtonClass= */ "added",
+          MIN_COLLAPSED_CHANGED_REGION_NUM_LINES
+        );
+      case DiffMatchPatch.DIFF_DELETE:
+        return this.renderChunk(
+          this.renderRemoved.bind(this),
+          /* collapsedLabel= */ "removed",
+          /* expandButtonClass= */ "removed",
+          MIN_COLLAPSED_CHANGED_REGION_NUM_LINES
+        );
+      case DiffMatchPatch.DIFF_EQUAL:
+      default:
+        return this.renderChunk(
+          this.renderUnchanged.bind(this),
+          /* collapsedLabel= */ "identical",
+          /* expandButtonClass= */ "identical",
+          MIN_COLLAPSED_UNCHANGED_REGION_NUM_LINES
+        );
+    }
   }
 }

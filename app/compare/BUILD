@@ -6,7 +6,10 @@ exports_files(glob(["*.css"]))
 
 ts_library(
     name = "compare",
-    srcs = glob(["**/*.tsx"]),
+    srcs = glob([
+        "**/*.tsx",
+        "**/*.ts",
+    ]),
     deps = [
         "//app/auth",
         "//app/components/button",
@@ -15,9 +18,9 @@ ts_library(
         "//app/util:errors",
         "//proto:command_line_ts_proto",
         "//proto:invocation_ts_proto",
-        "@npm//@types/diff",
+        "@npm//@types/diff-match-patch",
         "@npm//@types/react",
-        "@npm//diff",
+        "@npm//diff-match-patch",
         "@npm//react",
         "@npm//tslib",
     ],

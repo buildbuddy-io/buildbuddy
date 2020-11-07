@@ -7,11 +7,19 @@ export type PreProcessingOptions = {
   hideConsoleOutput?: boolean;
   hideInvocationIds?: boolean;
   hideUuids?: boolean;
+  hideProgress?: boolean;
 };
 
 export function prepareForDiff(
   invocation: invocation_proto.IInvocation,
-  { sortEvents, hideTimingData, hideConsoleOutput, hideInvocationIds, hideUuids }: PreProcessingOptions = {}
+  {
+    sortEvents,
+    hideTimingData,
+    hideConsoleOutput,
+    hideInvocationIds,
+    hideUuids,
+    hideProgress,
+  }: PreProcessingOptions = {}
 ): invocation_proto.IInvocation {
   // Clone the invocation to avoid mutating the original object.
   invocation = invocation_proto.Invocation.fromObject((invocation as invocation_proto.Invocation).toJSON());
@@ -44,6 +52,7 @@ export function prepareForDiff(
     }
   }
 
+  const events: invocation_proto.IInvocationEvent[] = [];
   for (const event of invocation.event) {
     if (sortEvents) {
       delete event.sequenceNumber;
@@ -57,6 +66,12 @@ export function prepareForDiff(
       // The "makeVariable" map sometimes shows the same data but rendered in a different order;
       // sorting the maps solves this problem.
       sortEntriesByKey(buildEvent.configuration.makeVariable);
+    }
+
+    if (hideProgress) {
+      if (id?.progress) {
+        continue;
+      }
     }
 
     if (hideTimingData) {
@@ -87,7 +102,10 @@ export function prepareForDiff(
         delete buildEvent.started.uuid;
       }
     }
+
+    events.push(event);
   }
+  invocation.event = events;
   return invocation;
 }
 
