@@ -1,4 +1,4 @@
-import DiffMatchPatch from "diff-match-patch";
+import LineDiff from "line-diff";
 import React from "react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
@@ -7,8 +7,9 @@ import CheckboxButton from "../components/button/checkbox_button";
 import router from "../router/router";
 import rpcService from "../service/rpc_service";
 import { BuildBuddyError } from "../util/errors";
-import DiffChunk from "./diff_chunk";
+import DiffChunk, { DiffChunkData } from "./diff_chunk";
 import { prepareForDiff, PreProcessingOptions } from "./diff_preprocessing";
+import DiffMatchPatch from "diff-match-patch";
 
 export interface CompareInvocationsComponentProps {
   user?: User;
@@ -19,16 +20,14 @@ export interface CompareInvocationsComponentProps {
 
 type Status = "INIT" | "LOADING" | "LOADED" | "ERROR";
 
-const diffMatchPatch = new DiffMatchPatch.diff_match_patch();
-
-type InvocationDiff = DiffMatchPatch.Diff[];
+type Diff = DiffChunkData[];
 
 interface State {
   status?: Status;
   error?: string | null;
   invocationA?: invocation.IInvocation | null;
   invocationB?: invocation.IInvocation | null;
-  diff?: InvocationDiff | null;
+  diff?: Diff | null;
   showChangesOnly: boolean;
 }
 
@@ -58,7 +57,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     this.fetchInvocations();
   }
 
-  componentDidUpdate(prevProps: CompareInvocationsComponentProps, prevState: State) {
+  componentDidUpdate(prevProps: CompareInvocationsComponentProps) {
     this.preProcessingOptions = this.getPreProcessingOptions();
 
     if (
@@ -108,8 +107,12 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     const textA = JSON.stringify(prepareForDiff(invocationA, this.preProcessingOptions), null, 2);
     const textB = JSON.stringify(prepareForDiff(invocationB, this.preProcessingOptions), null, 2);
 
-    const diff = diffMatchPatch.diff_main(textA, textB);
-    diffMatchPatch.diff_cleanupSemantic(diff);
+    const lineDiffs = computeLineDiffs(textA, textB);
+
+    const diff = lineDiffs.map(([op, data]) => ({
+      marker: op,
+      lines: data.trimEnd().split("\n"),
+    }));
 
     this.setState({
       status: "LOADED",
@@ -202,8 +205,8 @@ export default class CompareInvocationsComponent extends React.Component<Compare
           )}
           {diff && (
             <pre className="diff-container">
-              {diff.map((change: DiffMatchPatch.Diff, index: number) => (
-                <DiffChunk key={index} change={change} defaultExpanded={!this.state.showChangesOnly} />
+              {diff.map((chunk: DiffChunkData, index: number) => (
+                <DiffChunk key={index} chunk={chunk} defaultExpanded={!this.state.showChangesOnly} />
               ))}
             </pre>
           )}
@@ -239,4 +242,13 @@ function optionsFromSearch(search: string): PreProcessingOptions {
     ...DEFAULT_PREPROCESSING_OPTIONS,
     ...Object.fromEntries([...params.entries()].map(([key, value]) => [key, value === "true"])),
   };
+}
+
+const dmp = new DiffMatchPatch.diff_match_patch();
+
+function computeLineDiffs(text1: string, text2: string) {
+  const { chars1, chars2, lineArray } = dmp.diff_linesToChars_(text1, text2);
+  const diffs = dmp.diff_main(chars1, chars2, false);
+  dmp.diff_charsToLines_(diffs, lineArray);
+  return diffs;
 }

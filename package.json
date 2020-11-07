@@ -64,6 +64,7 @@
     "events": "^3.2.0",
     "glob": "^7.1.4",
     "jsdoc": "^3.6.2",
+    "line-diff": "^2.1.1",
     "minimist": "^1.2.3",
     "moment": "^2.24.0",
     "oidc-client": "^1.10.1",

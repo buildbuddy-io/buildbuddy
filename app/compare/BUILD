@@ -6,7 +6,10 @@ exports_files(glob(["*.css"]))
 
 ts_library(
     name = "compare",
-    srcs = glob(["**/*.tsx"]),
+    srcs = glob([
+        "**/*.tsx",
+        "**/*.ts",
+    ]),
     deps = [
         "//app/auth",
         "//app/components/button",

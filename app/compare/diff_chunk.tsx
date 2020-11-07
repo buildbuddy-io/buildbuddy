@@ -2,8 +2,10 @@ import DiffMatchPatch from "diff-match-patch";
 import React from "react";
 import { OutlinedButton } from "../components/button/button";
 
+export type DiffChunkData = { marker: number; lines: string[] };
+
 export type DiffChunkProps = {
-  change: DiffMatchPatch.Diff;
+  chunk: DiffChunkData;
   defaultExpanded: boolean;
 };
 
@@ -20,8 +22,7 @@ export default class DiffChunk extends React.Component<DiffChunkProps, State> {
   state: State = this.getInitialState();
 
   private getInitialState() {
-    const [diffType] = this.props.change;
-    return { expanded: diffType === DiffMatchPatch.DIFF_EQUAL && this.props.defaultExpanded };
+    return { expanded: this.props.chunk.marker === DiffMatchPatch.DIFF_EQUAL && this.props.defaultExpanded };
   }
 
   componentDidUpdate(prevProps: DiffChunkProps) {
@@ -34,42 +35,48 @@ export default class DiffChunk extends React.Component<DiffChunkProps, State> {
     this.setState({ expanded: true });
   }
 
-  private renderAdded(text: string) {
-    return <ins className="added">{text}</ins>;
+  private renderAdded(lines: string[]) {
+    return lines.map((line, i) => (
+      <div className="diff-line added" key={i}>
+        <div className="plus-minus-cell">+</div>
+        <div>{line}</div>
+      </div>
+    ));
   }
 
-  private renderRemoved(text: string) {
-    return (
-      <del className="removed">
-        <span>{text}</span>
-      </del>
-    );
+  private renderRemoved(lines: string[]) {
+    return lines.map((line, i) => (
+      <div className="diff-line removed" key={i}>
+        <div className="plus-minus-cell">-</div>
+        <div>{line}</div>
+      </div>
+    ));
   }
 
-  private renderUnchanged(text: string) {
-    return <>{text}</>;
+  private renderUnchanged(lines: string[]) {
+    return lines.map((line, i) => (
+      <div className="diff-line" key={i}>
+        <div className="plus-minus-cell">&nbsp;</div>
+        <div>{line}</div>
+      </div>
+    ));
   }
 
   private renderChunk(
-    renderText: (text: string) => React.ReactNode,
+    renderLines: (lines: string[]) => React.ReactNode,
     collapsedLabel: string,
     expandButtonClass: string,
     minCollapsedRegionSize: number
   ) {
-    const [_, text] = this.props.change;
+    const { lines } = this.props.chunk;
 
-    if (this.state.expanded) {
-      return renderText(text);
-    }
-
-    const lines = text.split("\n");
-    if (lines.length < NUM_LINES_OF_CONTEXT * 2 + minCollapsedRegionSize) {
-      return renderText(text);
+    if (this.state.expanded || lines.length < NUM_LINES_OF_CONTEXT * 2 + minCollapsedRegionSize) {
+      return renderLines(lines);
     }
 
     return (
       <>
-        {renderText(lines.slice(0, NUM_LINES_OF_CONTEXT).join("\n"))}
+        {renderLines(lines.slice(0, NUM_LINES_OF_CONTEXT))}
         <OutlinedButton className={`diff-line collapsed ${expandButtonClass}`} onClick={this.onExpand.bind(this)}>
           <div className="maximize-icon-container">
             <img className="maximize-icon" src="/image/maximize-2.svg" />
@@ -78,14 +85,14 @@ export default class DiffChunk extends React.Component<DiffChunkProps, State> {
             Show {lines.length - NUM_LINES_OF_CONTEXT * 2} {collapsedLabel} lines
           </pre>
         </OutlinedButton>
-        {renderText(lines.slice(lines.length - NUM_LINES_OF_CONTEXT, lines.length).join("\n"))}
+        {renderLines(lines.slice(lines.length - NUM_LINES_OF_CONTEXT, lines.length))}
       </>
     );
   }
 
   render() {
-    const [diffType] = this.props.change;
-    switch (diffType) {
+    const marker = this.props.chunk.marker;
+    switch (marker) {
       case DiffMatchPatch.DIFF_INSERT:
         return this.renderChunk(
           this.renderAdded.bind(this),
