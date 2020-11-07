@@ -1,4 +1,4 @@
-import LineDiff from "line-diff";
+import DiffMatchPatch from "diff-match-patch";
 import React from "react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
@@ -9,7 +9,6 @@ import rpcService from "../service/rpc_service";
 import { BuildBuddyError } from "../util/errors";
 import DiffChunk, { DiffChunkData } from "./diff_chunk";
 import { prepareForDiff, PreProcessingOptions } from "./diff_preprocessing";
-import DiffMatchPatch from "diff-match-patch";
 
 export interface CompareInvocationsComponentProps {
   user?: User;
