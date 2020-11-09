@@ -29,11 +29,8 @@ message CreateApiKeyRequest {
 message CreateApiKeyResponse {
   context.ResponseContext response_context = 1;
 
-  // The ID of the newly created key.
-  string id = 2;
-
-  // The value of the newly created key.
-  string value = 3;
+  // The API key that was created.
+  ApiKey api_key = 2;
 }
 
 message GetApiKeysRequest {
