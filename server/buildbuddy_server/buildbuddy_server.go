@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -379,6 +380,108 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 	}
 
 	return &grpb.JoinGroupResponse{}, nil
+}
+
+func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	groupID := req.GetGroupId()
+	if err := s.authorizeGroupAccess(ctx, groupID); err != nil {
+		return nil, err
+	}
+	tableKeys, err := userDB.GetAPIKeys(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	protoKeys := make([]*akpb.ApiKey, len(tableKeys))
+	for _, k := range tableKeys {
+		protoKeys = append(protoKeys, &akpb.ApiKey{
+			Id:    k.APIKeyID,
+			Value: k.Value,
+			Label: k.Label,
+		})
+	}
+	return &akpb.GetApiKeysResponse{
+		ApiKey: protoKeys,
+	}, nil
+}
+
+func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApiKeyRequest) (*akpb.CreateApiKeyResponse, error) {
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	groupID := req.GetGroupId()
+	if err := s.authorizeGroupAccess(ctx, groupID); err != nil {
+		return nil, err
+	}
+	k, err := userDB.CreateAPIKey(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	return &akpb.CreateApiKeyResponse{
+		Id:    k.APIKeyID,
+		Value: k.Value,
+	}, nil
+}
+
+func (s *BuildBuddyServer) authorizeAPIKeyAccess(ctx context.Context, apiKeyID string) error {
+	if apiKeyID == "" {
+		return status.InvalidArgumentError("API key ID is required")
+	}
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return status.UnimplementedError("Not Implemented")
+	}
+	auth := s.env.GetAuthenticator()
+	if auth == nil {
+		return status.UnimplementedError("Not Implemented")
+	}
+	user, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	// Check that the user belongs to the group that owns the requested API key.
+	key, err := userDB.GetAPIKey(ctx, apiKeyID)
+	for _, allowedGroupID := range user.GetAllowedGroups() {
+		if allowedGroupID == key.GroupGroupID {
+			return nil
+		}
+	}
+	return status.PermissionDeniedError("User does not have access to the requested API key")
+}
+
+func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApiKeyRequest) (*akpb.UpdateApiKeyResponse, error) {
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	if err := s.authorizeAPIKeyAccess(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	if err := userDB.UpdateAPIKey(ctx, &tables.APIKey{
+		APIKeyID: req.GetId(),
+		Label:    req.GetLabel(),
+	}); err != nil {
+		return nil, err
+	}
+	return &akpb.UpdateApiKeyResponse{}, nil
+}
+
+func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApiKeyRequest) (*akpb.DeleteApiKeyResponse, error) {
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	if err := s.authorizeAPIKeyAccess(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	if err := userDB.DeleteAPIKey(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	return &akpb.DeleteApiKeyResponse{}, nil
 }
 
 func getEmailDomain(email string) string {

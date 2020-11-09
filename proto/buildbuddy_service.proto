@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "proto/api_key.proto";
 import "proto/bazel_config.proto";
 import "proto/execution_stats.proto";
 import "proto/grp.proto";
@@ -36,6 +37,12 @@ service BuildBuddyService {
   rpc JoinGroup(grp.JoinGroupRequest) returns (grp.JoinGroupResponse);
   rpc CreateGroup(grp.CreateGroupRequest) returns (grp.CreateGroupResponse);
   rpc UpdateGroup(grp.UpdateGroupRequest) returns (grp.UpdateGroupResponse);
+
+  // API Keys API
+  rpc GetApiKeys(api_key.GetApiKeysRequest) returns (api_key.GetApiKeysResponse);
+  rpc CreateApiKey(api_key.CreateApiKeyRequest) returns (api_key.CreateApiKeyResponse);
+  rpc UpdateApiKey(api_key.UpdateApiKeyRequest) returns (api_key.UpdateApiKeyResponse);
+  rpc DeleteApiKey(api_key.DeleteApiKeyRequest) returns (api_key.DeleteApiKeyResponse);
 
   // Execution API
   rpc GetExecution(execution_stats.GetExecutionRequest)

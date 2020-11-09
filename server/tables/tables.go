@@ -243,6 +243,20 @@ func (t *Token) TableName() string {
 	return "Tokens"
 }
 
+type APIKey struct {
+	Model
+
+	// Identifiers
+
+	APIKeyID     string `gorm:"primary_key"`
+	GroupGroupID string `gorm:"index:group_id_index"`
+
+	// Fields
+
+	Value string `gorm:"index:value_index"`
+	Label string
+}
+
 type Execution struct {
 	Model
 	// The subscriber ID, a concatenated string of the
