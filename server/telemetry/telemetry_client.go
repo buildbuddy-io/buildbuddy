@@ -88,6 +88,9 @@ func (t *TelemetryClient) Stop() {
 func (t *TelemetryClient) logTelemetryData() {
 	ctx := context.Background()
 	conn, err := grpc_client.DialTarget(*telemetryEndpoint)
+	if conn != nil {
+		defer conn.Close()
+	}
 	client := telpb.NewTelemetryClient(conn)
 
 	log := &telpb.TelemetryLog{
