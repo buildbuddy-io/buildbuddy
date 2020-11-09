@@ -413,10 +413,8 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		}
 	}
 
+	// Migrate Groups.APIKey to APIKey rows.
 	if d.HasTable("Groups") && !d.HasTable("APIKeys") {
-		// If APIKeys table doesn't exist before auto-migration, then
-		// after the APIKeys table is created, we want to insert API key rows for the
-		// existing `Group.api_key` values.
 		postMigrate = append(postMigrate, func() error {
 			rows, err := db.Raw(`SELECT group_id, api_key FROM Groups`).Rows()
 			if err != nil {
@@ -426,13 +424,14 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 
 			var g Group
 			for rows.Next() {
-				if err := rows.Scan(&g); err != nil {
+				if err := rows.Scan(&g.GroupID, &g.APIKey); err != nil {
 					return err
 				}
 				pk, err := PrimaryKeyForTable("APIKeys")
 				if err != nil {
 					return err
 				}
+
 				if err := db.Exec(
 					`INSERT INTO APIKeys (api_key_id, group_group_id, value, label) VALUES (?, ?, ?, ?)`,
 					pk, g.GroupID, g.APIKey, "Default API key").Error; err != nil {

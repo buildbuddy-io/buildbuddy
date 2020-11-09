@@ -417,13 +417,16 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 	if err := s.authorizeGroupAccess(ctx, groupID); err != nil {
 		return nil, err
 	}
-	k, err := userDB.CreateAPIKey(ctx, groupID)
+	k, err := userDB.CreateAPIKey(ctx, groupID, req.GetLabel())
 	if err != nil {
 		return nil, err
 	}
 	return &akpb.CreateApiKeyResponse{
-		Id:    k.APIKeyID,
-		Value: k.Value,
+		ApiKey: &akpb.ApiKey{
+			Id:    k.APIKeyID,
+			Value: k.Value,
+			Label: k.Label,
+		},
 	}, nil
 }
 

@@ -173,7 +173,7 @@ type UserDB interface {
 	// API Keys API
 	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
 	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
-	CreateAPIKey(ctx context.Context, groupID string) (*tables.APIKey, error)
+	CreateAPIKey(ctx context.Context, groupID string, label string) (*tables.APIKey, error)
 	UpdateAPIKey(ctx context.Context, key *tables.APIKey) error
 	DeleteAPIKey(ctx context.Context, apiKeyID string) error
 }

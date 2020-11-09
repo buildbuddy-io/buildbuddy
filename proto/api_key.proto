@@ -24,16 +24,17 @@ message CreateApiKeyRequest {
   // The ID of the group to create the API key for.
   // ex: "GR123456789"
   string group_id = 2;
+
+  // Optional. The user-specified label of this API key that helps them
+  // remember what it's for.
+  string label = 3;
 }
 
 message CreateApiKeyResponse {
   context.ResponseContext response_context = 1;
 
-  // The ID of the newly created key.
-  string id = 2;
-
-  // The value of the newly created key.
-  string value = 3;
+  // The API key that was created.
+  ApiKey api_key = 2;
 }
 
 message GetApiKeysRequest {
