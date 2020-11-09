@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "proto/context.proto";
+
 package api_key;
 
 // An API key used to access BuildBuddy.
