@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -66,6 +67,7 @@ var (
 
 	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
+	outFile         = flag.String("out_file", "", "A file to direct BuildBuddy output to")
 )
 
 // Normally this code would live in main.go -- we put it here for now because
@@ -73,6 +75,8 @@ var (
 // not substantially different enough yet to warrant the extra complexity of
 // always updating both main files.
 func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
+	configureLogOutput()
+
 	bs, err := blobstore.GetConfiguredBlobstore(configurator)
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
@@ -142,6 +146,16 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	realEnv.SetMetricsCollector(collector)
 
 	return realEnv
+}
+
+func configureLogOutput() {
+	if *outFile != "" {
+		f, err := os.OpenFile(*outFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Printf("Error opening out_file %s: %s", *outFile, err.Error())
+		}
+		log.SetOutput(f)
+	}
 }
 
 func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) {
