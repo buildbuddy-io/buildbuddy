@@ -19,7 +19,8 @@ message ApiKey {
 message CreateApiKeyRequest {
   context.RequestContext request_context = 1;
 
-  // The group to create the API key for.
+  // The ID of the group to create the API key for.
+  // ex: "GR123456789"
   string group_id = 2;
 }
 
@@ -31,6 +32,21 @@ message CreateApiKeyResponse {
 
   // The value of the newly created key.
   string value = 3;
+}
+
+message GetApiKeysRequest {
+  context.RequestContext request_context = 1;
+
+  // The ID of the group to get API keys for.
+  // ex: "GR123456789"
+  string group_id = 2;
+}
+
+message GetApiKeysResponse {
+  context.ResponseContext response_context = 1;
+
+  // The API keys owned by the requested group.
+  repeated ApiKey api_key = 2;
 }
 
 message UpdateApiKeyRequest {

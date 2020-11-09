@@ -141,7 +141,6 @@ proto_library(
         "grp.proto",
     ],
     deps = [
-        ":api_key_proto",
         ":context_proto",
         ":user_id_proto",
     ],
@@ -366,7 +365,6 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/group",
     proto = ":group_proto",
     deps = [
-        ":api_key_go_proto",
         ":context_go_proto",
         ":user_id_go_proto",
     ],

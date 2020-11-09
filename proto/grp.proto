@@ -2,7 +2,6 @@ syntax = "proto3";
 
 import "proto/context.proto";
 import "proto/user_id.proto";
-import "proto/api_key.proto";
 
 package grp;
 
@@ -33,11 +32,6 @@ message Group {
 
   // Whether sharing features are allowed by this group.
   bool sharing_enabled = 6;
-
-  // API keys owned by this group.
-  // All groups will have an API key created for them by default.
-  // Group members can also create more API keys.
-  repeated ApiKey api_key = 7;
 }
 
 message JoinGroupRequest {
