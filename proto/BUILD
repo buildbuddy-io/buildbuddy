@@ -234,7 +234,7 @@ go_proto_library(
 go_proto_library(
     name = "api_key_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/api_key",
-    proto = ":api_key",
+    proto = ":api_key_proto",
 )
 
 go_proto_library(
