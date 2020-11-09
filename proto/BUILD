@@ -13,6 +13,11 @@ proto_library(
 )
 
 proto_library(
+    name = "api_key_proto",
+    srcs = ["api_key.proto"],
+)
+
+proto_library(
     name = "build_status_proto",
     srcs = [
         "build_status.proto",
@@ -136,6 +141,7 @@ proto_library(
         "grp.proto",
     ],
     deps = [
+        ":api_key_proto",
         ":context_proto",
         ":user_id_proto",
     ],
@@ -223,6 +229,12 @@ go_proto_library(
     deps = [
         ":user_id_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "api_key_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/api_key",
+    proto = ":api_key",
 )
 
 go_proto_library(
@@ -354,6 +366,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/group",
     proto = ":group_proto",
     deps = [
+        ":api_key_go_proto",
         ":context_go_proto",
         ":user_id_go_proto",
     ],
@@ -432,6 +445,11 @@ go_proto_library(
 ts_proto_library(
     name = "acl_ts_proto",
     deps = [":acl_proto"],
+)
+
+ts_proto_library(
+    name = "api_key_ts_proto",
+    deps = [":api_key_proto"],
 )
 
 ts_proto_library(
