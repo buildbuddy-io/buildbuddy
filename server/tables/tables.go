@@ -257,6 +257,10 @@ type APIKey struct {
 	Label string
 }
 
+func (k *APIKey) TableName() string {
+	return "APIKeys"
+}
+
 type Execution struct {
 	Model
 	// The subscriber ID, a concatenated string of the
