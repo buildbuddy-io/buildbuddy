@@ -77,10 +77,18 @@ func (dbh *DBHandle) Transaction(txn txRunner) error {
 
 func maybeRunMigrations(dialect string, gdb *gorm.DB) error {
 	if *autoMigrateDB {
-		if err := tables.PreAutoMigrate(gdb); err != nil {
+		postAutoMigrateFuncs, err := tables.PreAutoMigrate(gdb)
+		if err != nil {
 			return err
 		}
 		gdb.AutoMigrate(tables.GetAllTables()...)
+		if postAutoMigrateFuncs != nil {
+			for _, f := range postAutoMigrateFuncs {
+				if err := f(); err != nil {
+					return err
+				}
+			}
+		}
 		if err := tables.PostAutoMigrate(gdb); err != nil {
 			return err
 		}
