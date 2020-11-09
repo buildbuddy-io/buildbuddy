@@ -1,14 +1,14 @@
+import DiffMatchPatch from "diff-match-patch";
 import React from "react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
 import { OutlinedButton } from "../components/button/button";
+import CheckboxButton from "../components/button/checkbox_button";
 import router from "../router/router";
 import rpcService from "../service/rpc_service";
 import { BuildBuddyError } from "../util/errors";
-import JsDiff from "diff";
-import DiffChunk from "./diff_chunk";
-import { PreProcessingOptions, prepareForDiff } from "./diff_preprocessing";
-import CheckboxButton from "../components/button/checkbox_button";
+import DiffChunk, { DiffChunkData } from "./diff_chunk";
+import { prepareForDiff, PreProcessingOptions } from "./diff_preprocessing";
 
 export interface CompareInvocationsComponentProps {
   user?: User;
@@ -19,14 +19,14 @@ export interface CompareInvocationsComponentProps {
 
 type Status = "INIT" | "LOADING" | "LOADED" | "ERROR";
 
-type InvocationDiff = JsDiff.Change[];
+type Diff = DiffChunkData[];
 
 interface State {
   status?: Status;
   error?: string | null;
   invocationA?: invocation.IInvocation | null;
   invocationB?: invocation.IInvocation | null;
-  diff?: InvocationDiff | null;
+  diff?: Diff | null;
   showChangesOnly: boolean;
 }
 
@@ -44,6 +44,7 @@ const DEFAULT_PREPROCESSING_OPTIONS: PreProcessingOptions = {
   hideConsoleOutput: true,
   hideInvocationIds: true,
   hideUuids: true,
+  hideProgress: true,
 };
 
 export default class CompareInvocationsComponent extends React.Component<CompareInvocationsComponentProps, State> {
@@ -55,7 +56,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     this.fetchInvocations();
   }
 
-  componentDidUpdate(prevProps: CompareInvocationsComponentProps, prevState: State) {
+  componentDidUpdate(prevProps: CompareInvocationsComponentProps) {
     this.preProcessingOptions = this.getPreProcessingOptions();
 
     if (
@@ -66,7 +67,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
       this.setState(INITIAL_STATE);
       this.fetchInvocations();
     } else if (prevProps.search !== this.props.search) {
-      this.setState({ diff: this.computeDiff(this.state.invocationA, this.state.invocationB) });
+      this.computeDiff(this.state.invocationA, this.state.invocationB);
     }
   }
 
@@ -96,14 +97,29 @@ export default class CompareInvocationsComponent extends React.Component<Compare
       this.setState({ status: "ERROR", error: BuildBuddyError.parse(error).description });
       return;
     }
-    this.setState({ status: "LOADED", invocationA, invocationB, diff: this.computeDiff(invocationA, invocationB) });
+    this.computeDiff(invocationA, invocationB);
   }
 
   private computeDiff(invocationA: invocation.IInvocation, invocationB: invocation.IInvocation) {
-    return JsDiff.diffLines(
-      JSON.stringify(prepareForDiff(invocationA, this.preProcessingOptions), null, 2),
-      JSON.stringify(prepareForDiff(invocationB, this.preProcessingOptions), null, 2)
-    );
+    if (this.state.error) return;
+
+    const textA = JSON.stringify(prepareForDiff(invocationA, this.preProcessingOptions), null, 2);
+    const textB = JSON.stringify(prepareForDiff(invocationB, this.preProcessingOptions), null, 2);
+
+    const lineDiffs = computeLineDiffs(textA, textB);
+
+    const diff = lineDiffs.map(([op, data]) => ({
+      marker: op,
+      lines: data.trimEnd().split("\n"),
+    }));
+
+    this.setState({
+      status: "LOADED",
+      invocationA,
+      invocationB,
+      diff,
+      error: null,
+    });
   }
 
   private async fetchInvocation(invocationId: string) {
@@ -139,23 +155,10 @@ export default class CompareInvocationsComponent extends React.Component<Compare
   }
 
   render() {
-    const { status } = this.state;
+    const { status, error, diff } = this.state;
 
     if (status === "LOADING" || status === "INIT") {
       return <div className="loading" />;
-    }
-    if (status === "ERROR") {
-      // TODO: Move this to a shared location.
-      return (
-        <div className="compare-invocations">
-          <div className="container">
-            <div className="error-container">
-              <img src="/image/x-circle.svg" />
-              <div>{this.state.error}</div>
-            </div>
-          </div>
-        </div>
-      );
     }
 
     // TODO: Display a structured diff
@@ -169,30 +172,43 @@ export default class CompareInvocationsComponent extends React.Component<Compare
               <img className="compare-arrow" alt="comparing to" src="/image/arrow-left.svg" />
               <InvocationIdTag prefix="compare" id={this.props.invocationBId} />
             </div>
-            <CheckboxButton
-              className="show-changes-only-button"
-              onChange={this.onClickShowChangesOnly.bind(this)}
-              checked={this.state.showChangesOnly}>
-              Show changes only
-            </CheckboxButton>
+            {diff && (
+              <CheckboxButton
+                className="show-changes-only-button"
+                onChange={this.onClickShowChangesOnly.bind(this)}
+                checked={this.state.showChangesOnly}>
+                Show changes only
+              </CheckboxButton>
+            )}
           </header>
         </div>
-        <div className="container preprocessing-options">
-          <img alt="Comparison options" src="/image/sliders.svg" />
-          <div className="preprocessing-options-list">
-            {this.renderPreProcessingOption("sortEvents", "Sort events")}
-            {this.renderPreProcessingOption("hideTimingData", "Hide timing data")}
-            {this.renderPreProcessingOption("hideInvocationIds", "Hide invocation IDs")}
-            {this.renderPreProcessingOption("hideConsoleOutput", "Hide console output")}
-            {this.renderPreProcessingOption("hideUuids", "Hide Bazel-generated UUIDs")}
+        {diff && (
+          <div className="container preprocessing-options">
+            <img alt="Comparison options" src="/image/sliders.svg" />
+            <div className="preprocessing-options-list">
+              {this.renderPreProcessingOption("sortEvents", "Sort events")}
+              {this.renderPreProcessingOption("hideTimingData", "Hide timing data")}
+              {this.renderPreProcessingOption("hideProgress", "Hide progress")}
+              {this.renderPreProcessingOption("hideInvocationIds", "Hide invocation IDs")}
+              {this.renderPreProcessingOption("hideConsoleOutput", "Hide console output")}
+              {this.renderPreProcessingOption("hideUuids", "Hide Bazel-generated UUIDs")}
+            </div>
           </div>
-        </div>
+        )}
         <div className="container">
-          <pre>
-            {this.state.diff.map((change: JsDiff.Change, index: number) => (
-              <DiffChunk key={index} change={change} defaultExpanded={!this.state.showChangesOnly} />
-            ))}
-          </pre>
+          {error && (
+            <div className="error-container">
+              <img src="/image/x-circle.svg" />
+              <div>{error}</div>
+            </div>
+          )}
+          {diff && (
+            <pre className="diff-container">
+              {diff.map((chunk: DiffChunkData, index: number) => (
+                <DiffChunk key={index} chunk={chunk} defaultExpanded={!this.state.showChangesOnly} />
+              ))}
+            </pre>
+          )}
         </div>
       </div>
     );
@@ -225,4 +241,13 @@ function optionsFromSearch(search: string): PreProcessingOptions {
     ...DEFAULT_PREPROCESSING_OPTIONS,
     ...Object.fromEntries([...params.entries()].map(([key, value]) => [key, value === "true"])),
   };
+}
+
+const dmp = new DiffMatchPatch.diff_match_patch();
+
+function computeLineDiffs(text1: string, text2: string) {
+  const { chars1, chars2, lineArray } = dmp.diff_linesToChars_(text1, text2);
+  const diffs = dmp.diff_main(chars1, chars2, false);
+  dmp.diff_charsToLines_(diffs, lineArray);
+  return diffs;
 }

@@ -73,18 +73,20 @@ export default class SetupCodeComponent extends React.Component {
     return this.getResponse()?.configOption.find((option: any) => option.flagName == "bes_results_url")?.body;
   }
 
-  getEventStream(otherFile?: boolean) {
+  getEventStream() {
     let url = this.getResponse()?.configOption.find((option: any) => option.flagName == "bes_backend")?.body;
-    return this.state.auth == "key" && (!this.state.separateAuth || (this.state.separateAuth && otherFile))
-      ? url
-      : this.stripAPIKey(url);
+    return this.stripAPIKey(url);
   }
 
-  getCache(otherFile?: boolean) {
+  getAPIKey() {
+    let url = this.getResponse()?.configOption.find((option: any) => option.flagName == "bes_backend")?.body;
+    let matches = url.match(/\:\/\/(?<apikey>.*)\@/);
+    return matches?.groups?.apikey;
+  }
+
+  getCache() {
     let url = this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_cache")?.body;
-    return this.state.auth == "key" && (!this.state.separateAuth || (this.state.separateAuth && otherFile))
-      ? url
-      : this.stripAPIKey(url);
+    return this.stripAPIKey(url);
   }
 
   getCacheOptions() {
@@ -109,20 +111,30 @@ export default class SetupCodeComponent extends React.Component {
     return <span>build --remote_timeout=3600</span>;
   }
 
-  getRemoteExecution(otherFile?: boolean) {
+  getRemoteExecution() {
     let url = this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_executor")?.body;
-    return this.state.auth == "key" && (!this.state.separateAuth || (this.state.separateAuth && otherFile))
-      ? url
-      : this.stripAPIKey(url);
+    return this.stripAPIKey(url);
   }
 
   getCredentials() {
-    return (
-      <div>
-        <div>build --tls_client_certificate=buildbuddy-cert.pem</div>
-        <div>build --tls_client_key=buildbuddy-key.pem</div>
-      </div>
-    );
+    if (this.state.auth == "cert") {
+      return (
+        <div>
+          <div>build --tls_client_certificate=buildbuddy-cert.pem</div>
+          <div>build --tls_client_key=buildbuddy-key.pem</div>
+        </div>
+      );
+    }
+
+    if (this.state.auth == "key") {
+      return (
+        <div>
+          <div>build --remote_header=x-buildbuddy-api-key={this.getAPIKey()}</div>
+        </div>
+      );
+    }
+
+    return null;
   }
 
   isAuthEnabled() {
@@ -304,7 +316,7 @@ export default class SetupCodeComponent extends React.Component {
             {this.state.cacheChecked && <div>{this.getCacheOptions()}</div>}
             {(this.state.cacheChecked || this.state.executionChecked) && <div>{this.getRemoteOptions()}</div>}
             {this.state.executionChecked && <div>{this.getRemoteExecution()}</div>}
-            {this.state.auth == "cert" && !this.state.separateAuth && <div>{this.getCredentials()}</div>}
+            {!this.state.separateAuth && <div>{this.getCredentials()}</div>}
           </div>
           <button onClick={this.handleCopyClicked.bind(this)}>Copy</button>
         </code>
@@ -316,10 +328,7 @@ export default class SetupCodeComponent extends React.Component {
             <span className="code">.bazelrc</span> file.
             <code data-header="~/.bazelrc">
               <div className="contents">
-                {this.state.auth != "cert" && <div>{this.getEventStream(true)}</div>}
-                {this.state.auth != "cert" && this.state.cacheChecked && <div>{this.getCache(true)}</div>}
-                {this.state.auth != "cert" && this.state.executionChecked && <div>{this.getRemoteExecution(true)}</div>}
-                {this.state.auth == "cert" && <div>{this.getCredentials()}</div>}
+                <div>{this.getCredentials()}</div>
               </div>
               <button onClick={this.handleCopyClicked.bind(this)}>Copy</button>
             </code>

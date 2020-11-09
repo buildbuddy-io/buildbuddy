@@ -1,5 +1,5 @@
 .dialog-card {
-  max-width: 100%;
+  max-width: 80vw;
   width: 640px;
   background: white;
   border-radius: 8px;
@@ -12,7 +12,8 @@
 .dialog-card .dialog-header {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 16px;
+  margin-top: 8px;
   padding: 0 var(--dialog-side-padding);
 }
 
@@ -21,7 +22,7 @@
 }
 
 .dialog-title {
-  font-size: 24px;
+  font-size: 28px;
 }
 
 .dialog-body {

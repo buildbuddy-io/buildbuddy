@@ -84,6 +84,8 @@
 .invocation .breadcrumbs-and-buttons {
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap-reverse;
+  gap: 8px;
 }
 
 .invocation-share-button img {
@@ -108,7 +110,7 @@
 }
 
 .invocation-share-dialog > :not(:last-child) {
-  margin-bottom: 16px;
+  margin-bottom: 32px;
 }
 
 .invocation-share-dialog .visibility-explanation {
@@ -188,6 +190,9 @@
   display: flex;
   align-items: center;
   margin-left: 8px;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  flex-grow: 1;
 }
 
 .invocation-top-right-buttons > :not(:last-child) {

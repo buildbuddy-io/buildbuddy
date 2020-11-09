@@ -220,6 +220,8 @@ button {
   font-size: 16px;
   color: #aaa;
   margin-bottom: 8px;
+  width: 260px;
+  flex-grow: 10;
 }
 
 .breadcrumbs span:after {

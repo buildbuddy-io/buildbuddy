@@ -48,19 +48,21 @@ export default class InvocationOverviewComponent extends React.Component {
   }
 
   render() {
+    const ownerGroup = this.props.model.findOwnerGroup(this.props.user?.groups);
+
     return (
       <div className="container">
         <div className="breadcrumbs-and-buttons">
           <div className="breadcrumbs">
-            {this.props.user && (
-              <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
-                {this.props.user?.selectedGroupName()}
-              </span>
-            )}
-            {this.props.user && (
-              <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
-                Builds
-              </span>
+            {this.props.user && ownerGroup && (
+              <>
+                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                  {ownerGroup.name}
+                </span>
+                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                  Builds
+                </span>
+              </>
             )}
             <span>Invocation {this.props.invocationId}</span>
           </div>
