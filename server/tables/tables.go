@@ -270,12 +270,13 @@ type Execution struct {
 	GroupID     string `gorm:"index:executions_group_id"`
 	Perms       int    `gorm:"index:executions_perms"`
 
-	Stage               int64
-	SerializedOperation []byte `gorm:"size:max"` // deprecated.
-	StatusCode          int32
-	StatusMessage       string
-	CachedResult        bool
-	InvocationID        string `gorm:"index:execution_invocation_id"`
+	Stage                   int64
+	SerializedOperation     []byte `gorm:"size:max"` // deprecated.
+	StatusCode              int32
+	StatusMessage           string
+	SerializedStatusDetails []byte `gorm:"size:max"`
+	CachedResult            bool
+	InvocationID            string `gorm:"index:execution_invocation_id"`
 
 	// IOStats
 	FileDownloadCount        int64
