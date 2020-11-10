@@ -448,6 +448,9 @@ func (s *BuildBuddyServer) authorizeAPIKeyAccess(ctx context.Context, apiKeyID s
 	}
 	// Check that the user belongs to the group that owns the requested API key.
 	key, err := userDB.GetAPIKey(ctx, apiKeyID)
+	if err != nil {
+		return err
+	}
 	for _, allowedGroupID := range user.GetAllowedGroups() {
 		if allowedGroupID == key.GroupGroupID {
 			return nil
