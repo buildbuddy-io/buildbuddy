@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package api_key;
+
+// An API key used to access BuildBuddy.
+message ApiKey {
+  // The unique ID of this API key.
+  // ex: "AK123456789"
+  string id = 1;
+
+  // The string value of this API key which is passed in API requests.
+  string value = 2;
+
+  // Optional. The user-specified label of this API key that helps them
+  // remember what it's for.
+  string label = 3;
+}
+
+message CreateApiKeyRequest {
+  context.RequestContext request_context = 1;
+
+  // The ID of the group to create the API key for.
+  // ex: "GR123456789"
+  string group_id = 2;
+}
+
+message CreateApiKeyResponse {
+  context.ResponseContext response_context = 1;
+
+  // The API key that was created.
+  ApiKey api_key = 2;
+}
+
+message GetApiKeysRequest {
+  context.RequestContext request_context = 1;
+
+  // The ID of the group to get API keys for.
+  // ex: "GR123456789"
+  string group_id = 2;
+}
+
+message GetApiKeysResponse {
+  context.ResponseContext response_context = 1;
+
+  // The API keys owned by the requested group.
+  repeated ApiKey api_key = 2;
+}
+
+message UpdateApiKeyRequest {
+  context.RequestContext request_context = 1;
+
+  // The unique ID of the API key to be updated.
+  // ex: "AK123456789"
+  string id = 2;
+
+  // Optional. The user-specified label of this API key that helps them
+  // remember what it's for.
+  string label = 3;
+}
+
+message UpdateApiKeyResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message DeleteApiKeyRequest {
+  context.RequestContext request_context = 1;
+
+  // The unique ID of the API key to be updated.
+  // ex: "AK123456789"
+  string id = 2;
+}
+
+message DeleteApiKeyResponse {
+  context.ResponseContext response_context = 1;
+}
