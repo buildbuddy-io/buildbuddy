@@ -18,9 +18,9 @@ service BuildBuddyService {
   rpc GetInvocationStat(invocation.GetInvocationStatRequest)
       returns (invocation.GetInvocationStatResponse);
   rpc UpdateInvocation(invocation.UpdateInvocationRequest)
-        returns (invocation.UpdateInvocationResponse);
+      returns (invocation.UpdateInvocationResponse);
   rpc DeleteInvocation(invocation.DeleteInvocationRequest)
-        returns (invocation.DeleteInvocationResponse);
+      returns (invocation.DeleteInvocationResponse);
 
   // Bazel Config API
   rpc GetBazelConfig(bazel_config.GetBazelConfigRequest)
@@ -32,17 +32,23 @@ service BuildBuddyService {
 
   // Groups API
   rpc GetGroup(grp.GetGroupRequest) returns (grp.GetGroupResponse);
-  rpc GetGroupUsers(grp.GetGroupUsersRequest) returns (grp.GetGroupUsersResponse);
-  rpc UpdateGroupUsers(grp.UpdateGroupUsersRequest) returns (grp.UpdateGroupUsersResponse);
+  rpc GetGroupUsers(grp.GetGroupUsersRequest)
+      returns (grp.GetGroupUsersResponse);
+  rpc UpdateGroupUsers(grp.UpdateGroupUsersRequest)
+      returns (grp.UpdateGroupUsersResponse);
   rpc JoinGroup(grp.JoinGroupRequest) returns (grp.JoinGroupResponse);
   rpc CreateGroup(grp.CreateGroupRequest) returns (grp.CreateGroupResponse);
   rpc UpdateGroup(grp.UpdateGroupRequest) returns (grp.UpdateGroupResponse);
 
   // API Keys API
-  rpc GetApiKeys(api_key.GetApiKeysRequest) returns (api_key.GetApiKeysResponse);
-  rpc CreateApiKey(api_key.CreateApiKeyRequest) returns (api_key.CreateApiKeyResponse);
-  rpc UpdateApiKey(api_key.UpdateApiKeyRequest) returns (api_key.UpdateApiKeyResponse);
-  rpc DeleteApiKey(api_key.DeleteApiKeyRequest) returns (api_key.DeleteApiKeyResponse);
+  rpc GetApiKeys(api_key.GetApiKeysRequest)
+      returns (api_key.GetApiKeysResponse);
+  rpc CreateApiKey(api_key.CreateApiKeyRequest)
+      returns (api_key.CreateApiKeyResponse);
+  rpc UpdateApiKey(api_key.UpdateApiKeyRequest)
+      returns (api_key.UpdateApiKeyResponse);
+  rpc DeleteApiKey(api_key.DeleteApiKeyRequest)
+      returns (api_key.DeleteApiKeyResponse);
 
   // Execution API
   rpc GetExecution(execution_stats.GetExecutionRequest)
