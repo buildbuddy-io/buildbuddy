@@ -51,6 +51,7 @@ genrule(
     name = "style",
     srcs = [
         "//app/root:root.css",
+        "//app/errors:errors.css",
         "//app/compare:compare.css",
         "//app/invocation:invocation.css",
         "//app/components/button:button.css",
