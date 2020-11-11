@@ -18,6 +18,7 @@ const (
 	envVarOptionName          = "client_env"
 	envVarSeparator           = "="
 	envVarRedactedPlaceholder = "<REDACTED>"
+	undefinedTimestamp        = int64(-1)
 )
 
 var (
@@ -106,8 +107,8 @@ func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
 }
 
 func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *inpb.Invocation) {
-	startTimeMillis := time.Now().UnixNano() / time.Millisecond.Nanoseconds()
-	endTimeMillis := startTimeMillis
+	startTimeMillis := undefinedTimestamp
+	endTimeMillis := undefinedTimestamp
 
 	var consoleBuffer bytes.Buffer
 	var allowedEnvVars = []string{"USER", "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID"}
@@ -248,7 +249,10 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 		fillInvocationFromBuildMetadata(buildMetadatum, invocation)
 	}
 
-	buildDuration := time.Duration((endTimeMillis - startTimeMillis) * int64(time.Millisecond))
+	buildDuration := time.Duration(int64(0))
+	if endTimeMillis != undefinedTimestamp && startTimeMillis != undefinedTimestamp {
+		buildDuration = time.Duration((endTimeMillis - startTimeMillis) * int64(time.Millisecond))
+	}
 	invocation.DurationUsec = buildDuration.Microseconds()
 	// TODO(siggisim): Do this rendering once on write, rather than on every read.
 	invocation.ConsoleBuffer = string(terminal.RenderAsANSI(consoleBuffer.Bytes()))
