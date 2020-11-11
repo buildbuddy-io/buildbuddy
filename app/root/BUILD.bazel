@@ -12,6 +12,7 @@ ts_library(
         "//app/capabilities",
         "//app/compare",
         "//app/docs",
+        "//app/errors",
         "//app/favicon",
         "//app/footer",
         "//app/invocation",
