@@ -38,6 +38,7 @@ go_binary(
     goarch = "amd64",
     goos = "darwin",
     pure = "on",
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
