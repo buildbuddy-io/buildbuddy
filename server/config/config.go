@@ -17,7 +17,7 @@ import (
 type generalConfig struct {
 	App             appConfig             `yaml:"app"`
 	BuildEventProxy buildEventProxy       `yaml:"build_event_proxy"`
-	Database        databaseConfig        `yaml:"database"`
+	Database        DatabaseConfig        `yaml:"database"`
 	Storage         storageConfig         `yaml:"storage"`
 	Integrations    integrationsConfig    `yaml:"integrations"`
 	Cache           cacheConfig           `yaml:"cache"`
@@ -47,9 +47,12 @@ type buildEventProxy struct {
 	Hosts []string `yaml:"hosts" usage:"The list of hosts to pass build events onto."`
 }
 
-type databaseConfig struct {
-	DataSource  string `yaml:"data_source" usage:"The SQL database to connect to, specified as a connection string."`
-	ReadReplica string `yaml:"read_replica" usage:"A secondary, read-only SQL database to connect to, specified as a connection string."`
+type DatabaseConfig struct {
+	DataSource             string `yaml:"data_source" usage:"The SQL database to connect to, specified as a connection string."`
+	ReadReplica            string `yaml:"read_replica" usage:"A secondary, read-only SQL database to connect to, specified as a connection string."`
+	MaxOpenConns           int    `yaml:"max_open_conns" usage:"The maximum number of open connections to maintain to the db"`
+	MaxIdleConns           int    `yaml:"max_idle_conns" usage:"The maximum number of idle connections to maintain to the db"`
+	ConnMaxLifetimeSeconds int    `yaml:"conn_max_lifetime_seconds" usage:"The maximum lifetime of a connection to the db"`
 }
 
 type storageConfig struct {
@@ -282,6 +285,10 @@ func (c *Configurator) GetStorageGCSConfig() *GCSConfig {
 
 func (c *Configurator) GetStorageAWSS3Config() *AwsS3Config {
 	return &c.gc.Storage.AwsS3
+}
+
+func (c *Configurator) GetDatabaseConfig() *DatabaseConfig {
+	return &c.gc.Database
 }
 
 func (c *Configurator) GetDBDataSource() string {
