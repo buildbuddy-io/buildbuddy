@@ -220,9 +220,9 @@ def create_release_and_upload_artifacts(repo, version, artifacts):
             )
 
 def main():
-    #if not workspace_is_clean():
-    #    die('Your workspace has uncommitted changes. ' +
-    #        'Please run this in a clean workspace!')
+    if not workspace_is_clean():
+        die('Your workspace has uncommitted changes. ' +
+            'Please run this in a clean workspace!')
     gh_token = os.environ.get('GITHUB_TOKEN')
     if not gh_token or gh_token == '':
         die('GITHUB_TOKEN env variable not set. Please go get a repo_token from'
