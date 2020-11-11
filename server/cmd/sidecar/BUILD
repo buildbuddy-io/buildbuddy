@@ -53,6 +53,7 @@ go_binary(
     goarch = "amd64",
     goos = "linux",
     pure = "on",
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
@@ -78,5 +79,6 @@ go_binary(
     goarch = "amd64",
     goos = "windows",
     pure = "on",
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
