@@ -67,6 +67,7 @@ go_binary(
     goarch = "arm64",
     goos = "linux",
     pure = "on",
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
