@@ -250,7 +250,7 @@ def main():
     ## Don't need this because github automatically creates a source archive when we
     ## make a new tag. Useful when we have artifacts to upload.
     artifacts = build_artifacts(repo_name, new_version)
-    create_release_and_upload_artifacts("/".join(org_name, repo_name), new_version, artifacts)
+    create_release_and_upload_artifacts("/".join([org_name, repo_name]), new_version, artifacts)
 
     print("Release (%s) complete. Go enjoy a cold one!" % new_version)
 
