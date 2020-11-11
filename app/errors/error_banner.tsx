@@ -21,7 +21,7 @@ export default class ErrorBannerComponent extends React.Component<{}, State> {
       clearTimeout(this.timeout);
     }
     this.setState({ isVisible: true, error });
-    setTimeout(() => this.setState({ isVisible: false }), DISPLAY_DURATION_MS);
+    this.timeout = setTimeout(() => this.setState({ isVisible: false }), DISPLAY_DURATION_MS);
   }
 
   componentWillUnmount() {
