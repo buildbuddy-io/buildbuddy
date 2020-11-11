@@ -14,12 +14,7 @@ export default class ErrorBannerComponent extends React.Component<{}, State> {
   state: State = { isVisible: false, error: null };
 
   private timeout: any = null;
-  private subscription: Subscription;
-
-  constructor(props: {}) {
-    super(props);
-    this.subscription = errorService.errorStream.subscribe(this.onError.bind(this));
-  }
+  private subscription: Subscription = errorService.errorStream.subscribe(this.onError.bind(this));
 
   private onError(error: BuildBuddyError) {
     if (this.timeout) {
