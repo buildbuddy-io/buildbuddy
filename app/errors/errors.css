@@ -5,13 +5,7 @@
   left: 50%;
   transform: translateX(-50%);
   margin-top: 32px;
-}
 
-.error-banner.hidden {
-  pointer-events: none;
-}
-
-.error-banner {
   background: #ffcdd2;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27), 0 3px 5px rgba(0, 0, 0, 0.12);
   border-radius: 8px;
@@ -21,8 +15,11 @@
   align-items: start;
 }
 
-.error-banner > :not(:last-child) {
-  margin-right: 8px;
+.error-banner.hidden {
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-16px);
+  transition: 128ms ease-in;
 }
 
 .error-banner.visible {
@@ -31,8 +28,6 @@
   transition: 128ms ease-out;
 }
 
-.error-banner.hidden {
-  opacity: 0;
-  transform: translateY(-16px);
-  transition: 128ms ease-in;
+.error-banner > :not(:last-child) {
+  margin-right: 8px;
 }
