@@ -13,15 +13,15 @@ const DISPLAY_DURATION_MS = 4000;
 export default class ErrorBannerComponent extends React.Component<{}, State> {
   state: State = { isVisible: false, error: null };
 
-  private timeout: any = null;
+  private hideTimeout: any = null;
   private subscription: Subscription = errorService.errorStream.subscribe(this.onError.bind(this));
 
   private onError(error: BuildBuddyError) {
-    if (this.timeout) {
-      clearTimeout(this.timeout);
+    if (this.hideTimeout) {
+      clearTimeout(this.hideTimeout);
     }
     this.setState({ isVisible: true, error });
-    this.timeout = setTimeout(() => this.setState({ isVisible: false }), DISPLAY_DURATION_MS);
+    this.hideTimeout = setTimeout(() => this.setState({ isVisible: false }), DISPLAY_DURATION_MS);
   }
 
   componentWillUnmount() {
