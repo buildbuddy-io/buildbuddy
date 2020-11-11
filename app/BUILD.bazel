@@ -51,6 +51,7 @@ genrule(
     name = "style",
     srcs = [
         "//app/root:root.css",
+        "//app/errors:errors.css",
         "//app/compare:compare.css",
         "//app/invocation:invocation.css",
         "//app/components/button:button.css",
@@ -62,7 +63,7 @@ genrule(
         "//app/components/select:select.css",
     ],
     outs = ["style.css"],
-    cmd_bash = ("""
+    cmd_bash = """
         touch out;
         for f in $(SRCS); do
             if [[ ! -d $$f ]]; then
@@ -70,5 +71,5 @@ genrule(
             fi;
         done;
         cat out > $@;
-    """),
+    """,
 )

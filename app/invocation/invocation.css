@@ -88,6 +88,11 @@
   gap: 8px;
 }
 
+.invocation .breadcrumbs-and-buttons .breadcrumbs {
+  width: 260px;
+  flex-grow: 10;
+}
+
 .invocation-share-button img {
   margin-right: 12px;
   margin-left: -4px;
