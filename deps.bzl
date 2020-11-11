@@ -1213,3 +1213,15 @@ def install_buildbuddy_dependencies():
         sum = "h1:lukF9ziXFxDFPkA1vsr5zpc1XuPDn/wFntq5mG+4E0Y=",
         version = "v1.1.0",
     )
+    go_repository(
+        name = "com_github_google_go_github",
+        importpath = "github.com/google/go-github",
+        sum = "h1:N0LgJ1j65A7kfXrZnUDaYCs/Sf4rEjNlfyDHW9dolSY=",
+        version = "v17.0.0+incompatible",
+    )
+    go_repository(
+        name = "com_github_google_go_querystring",
+        importpath = "github.com/google/go-querystring",
+        sum = "h1:Xkwi/a1rcvNg1PPYe5vI8GbeBY/jrVuDX5ASuANWTrk=",
+        version = "v1.0.0",
+    )
