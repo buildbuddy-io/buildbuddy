@@ -63,12 +63,13 @@ func (s *BuildBuddyServer) redactAPIKeys(ctx context.Context, rsp *inpb.GetInvoc
 	// or "bes_backend=$API_KEY@domain.com".
 
 	// Here we match 20 alphanum chars occurring at the start of a line.
-	pat = regexp.MustCompile("^[A-Za-z0-9]{20}@")
+	pat = regexp.MustCompile("^[[:alnum:]]{20}@")
 	txt = pat.ReplaceAllLiteralString(txt, "<REDACTED>@")
+
 	// Here we match 20 alphanum chars anywhere in the line, preceded by a non-
 	// alphanum char (to ensure the match is exactly 20 alphanum chars long).
-	pat = regexp.MustCompile("([^A-Za-z0-9])[A-Za-z0-9]{20}@")
-	txt = pat.ReplaceAllLiteralString(txt, "$1<REDACTED>@")
+	pat = regexp.MustCompile("([^[:alnum:]])[[:alnum:]]{20}@")
+	txt = pat.ReplaceAllString(txt, "$1<REDACTED>@")
 
 	configuredKey := s.getConfiguredAPIKey()
 	if configuredKey != "" {
