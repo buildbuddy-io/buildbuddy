@@ -58,20 +58,17 @@ func (s *BuildBuddyServer) redactAPIKeys(ctx context.Context, rsp *inpb.GetInvoc
 	pat := regexp.MustCompile("x-buildbuddy-api-key=[A-Za-z0-9]{20}")
 	txt = pat.ReplaceAllLiteralString(txt, "x-buildbuddy-api-key=<REDACTED>")
 
-	pat = regexp.MustCompile(fmt.Sprintf(
-		// Match exactly 20 alphanumeric chars immediately followed by @,
-		// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
-		// or "bes_backend=$API_KEY@domain.com".
-		//
-		// Here we match one of two patterns followed by "@" ...
-		"(%s|%s)@",
-		// Pattern 1: 20 alphanum chars occurring at the start of a line
-		"^[A-Za-z0-9]{20}",
-		// Pattern 2: 20 alphanum chars anywhere in the line, as long as they're not
-		// preceded by another alphanum char.
-		"(?<![^A-Za-z0-9])[A-Za-z0-9]{20}",
-	))
+	// Match exactly 20 alphanumeric chars immediately followed by @,
+	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
+	// or "bes_backend=$API_KEY@domain.com".
+
+	// Here we match 20 alphanum chars occurring at the start of a line.
+	pat = regexp.MustCompile("^[A-Za-z0-9]{20}@")
 	txt = pat.ReplaceAllLiteralString(txt, "<REDACTED>@")
+	// Here we match 20 alphanum chars anywhere in the line, preceded by a non-
+	// alphanum char (to ensure the match is exactly 20 alphanum chars long).
+	pat = regexp.MustCompile("([^A-Za-z0-9])[A-Za-z0-9]{20}@")
+	txt = pat.ReplaceAllLiteralString(txt, "$1<REDACTED>@")
 
 	configuredKey := s.getConfiguredAPIKey()
 	if configuredKey != "" {
