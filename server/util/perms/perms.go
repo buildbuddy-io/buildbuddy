@@ -125,7 +125,7 @@ func AuthorizeRead(authenticatedUser *interfaces.UserInfo, acl *aclpb.ACL) error
 		return err
 	}
 
-	if perms&OTHERS_READ != 0 {
+	if perms&OTHERS_READ != 0 || u.IsAdmin() {
 		return nil
 	}
 	isOwner := u.GetUserID() == acl.GetUserId().GetId()
