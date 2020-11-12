@@ -40,8 +40,7 @@ message GetBazelConfigResponse {
   context.ResponseContext response_context = 1;
 
   // The BazelConfig for the requesting user and this buildbuddy instance.
-  // And references to "${API_KEY}" are replaced with the user selected
-  // credentials.
+  // Occurrences of "${API_KEY}" are replaced with the user selected credentials.
   repeated ConfigOption config_option = 2;
 
   reserved 3;
