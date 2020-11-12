@@ -2,7 +2,10 @@ import React from "react";
 import { bazel_config } from "../../proto/bazel_config_ts_proto";
 import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
+import FilledButton from "../components/button/button";
+import Select, { Option } from "../components/select/select";
 import rpcService from "../service/rpc_service";
+import router from "../router/router";
 
 interface Props {
   bazelConfigResponse?: bazel_config.GetBazelConfigResponse;
@@ -11,18 +14,20 @@ interface Props {
 interface State {
   bazelConfigResponse: bazel_config.GetBazelConfigResponse;
   user: User;
+  selectedCredentialIndex: number | null;
 
-  auth: string;
-  cacheChecked: boolean;
-  cache: string;
-  executionChecked: boolean;
+  auth: "none" | "cert" | "key";
   separateAuth: boolean;
+  cache: "read" | "top" | "full";
+  cacheChecked: boolean;
+  executionChecked: boolean;
 }
 
 export default class SetupCodeComponent extends React.Component {
   props: Props;
   state: State = {
     bazelConfigResponse: null,
+    selectedCredentialIndex: null,
     user: authService.user,
 
     auth: "key",
@@ -38,15 +43,36 @@ export default class SetupCodeComponent extends React.Component {
     });
 
     if (this.props.bazelConfigResponse) {
+      this.setConfigResponse(this.props.bazelConfigResponse);
       return;
     }
     let request = new bazel_config.GetBazelConfigRequest();
     request.host = window.location.host;
     request.protocol = window.location.protocol;
     request.includeCertificate = true;
-    rpcService.service.getBazelConfig(request).then((response: bazel_config.GetBazelConfigResponse) => {
-      this.setState({ ...this.state, bazelConfigResponse: response });
-    });
+    rpcService.service.getBazelConfig(request).then(this.setConfigResponse.bind(this));
+  }
+
+  componentDidUpdate(prevProps: Props) {
+    if (this.props.bazelConfigResponse !== prevProps.bazelConfigResponse) {
+      this.setConfigResponse(this.props.bazelConfigResponse);
+    }
+  }
+
+  setConfigResponse(response: bazel_config.GetBazelConfigResponse) {
+    if (!response) {
+      this.setState({ bazelConfigResponse: null, selectedCredentialIndex: null });
+      return;
+    }
+
+    this.setState({ bazelConfigResponse: response, selectedCredentialIndex: response.credential?.length ? 0 : null });
+  }
+
+  getSelectedCredential() {
+    const { bazelConfigResponse: response, selectedCredentialIndex: index } = this.state;
+    if (index === null || !response?.credential) return null;
+
+    return response.credential[index];
   }
 
   handleInputChange(event: any) {
@@ -65,27 +91,20 @@ export default class SetupCodeComponent extends React.Component {
     });
   }
 
-  getResponse() {
-    return this.props.bazelConfigResponse || this.state.bazelConfigResponse;
-  }
-
   getResultsUrl() {
-    return this.getResponse()?.configOption.find((option: any) => option.flagName == "bes_results_url")?.body;
+    return this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "bes_results_url")
+      ?.body;
   }
 
   getEventStream() {
-    let url = this.getResponse()?.configOption.find((option: any) => option.flagName == "bes_backend")?.body;
+    let url = this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "bes_backend")
+      ?.body;
     return this.stripAPIKey(url);
   }
 
-  getAPIKey() {
-    let url = this.getResponse()?.configOption.find((option: any) => option.flagName == "bes_backend")?.body;
-    let matches = url.match(/\:\/\/(?<apikey>.*)\@/);
-    return matches?.groups?.apikey;
-  }
-
   getCache() {
-    let url = this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_cache")?.body;
+    let url = this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_cache")
+      ?.body;
     return this.stripAPIKey(url);
   }
 
@@ -112,7 +131,8 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   getRemoteExecution() {
-    let url = this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_executor")?.body;
+    let url = this.state.bazelConfigResponse?.configOption?.find((option: any) => option.flagName == "remote_executor")
+      ?.body;
     return this.stripAPIKey(url);
   }
 
@@ -127,9 +147,12 @@ export default class SetupCodeComponent extends React.Component {
     }
 
     if (this.state.auth == "key") {
+      const selectedCredential = this.getSelectedCredential();
+      if (!selectedCredential) return null;
+
       return (
         <div>
-          <div>build --remote_header=x-buildbuddy-api-key={this.getAPIKey()}</div>
+          <div>build --remote_header=x-buildbuddy-api-key={selectedCredential.apiKey.value}</div>
         </div>
       );
     }
@@ -142,18 +165,19 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   isCacheEnabled() {
-    return !!this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_cache");
+    return !!this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_cache");
   }
 
   isExecutionEnabled() {
     return (
       (this.isAuthenticated() || !capabilities.auth) &&
-      !!this.getResponse()?.configOption.find((option: any) => option.flagName == "remote_executor")
+      !!this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_executor")
     );
   }
 
   isCertEnabled() {
-    return this.getResponse()?.certificate?.cert && this.getResponse()?.certificate?.key;
+    const certificate = this.getSelectedCredential()?.certificate;
+    return Boolean(certificate && certificate.cert && certificate.key);
   }
 
   stripAPIKey(url: string) {
@@ -175,123 +199,161 @@ export default class SetupCodeComponent extends React.Component {
     event.target.innerText = "Copied!";
   }
 
+  onChangeCredential(e: React.ChangeEvent<HTMLSelectElement>) {
+    this.setState({ selectedCredentialIndex: Number(e.target.value) });
+  }
+
+  onClickManageKeys(e: React.MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault();
+    router.navigateToSettings();
+  }
+
   render() {
+    const selectedCredential = this.getSelectedCredential();
+
     return (
       <div className="setup">
         <div className="setup-controls">
-          <span className="group-title">Select options</span>
           {this.isAuthEnabled() && (
-            <span className="group">
-              {capabilities.anonymous && (
-                <input
-                  id="auth-none"
-                  checked={this.state.auth == "none"}
-                  onChange={this.handleInputChange.bind(this)}
-                  value="none"
-                  name="auth"
-                  type="radio"
-                />
-              )}
-              {capabilities.anonymous && <label htmlFor="auth-none">No auth</label>}
-              <input
-                id="auth-key"
-                checked={this.state.auth == "key"}
-                onChange={this.handleInputChange.bind(this)}
-                value="key"
-                name="auth"
-                type="radio"
-              />
-              <label htmlFor="auth-key">API Key</label>
-              {this.isCertEnabled() && (
-                <span className="group-section">
+            <span className="group-container">
+              <span className="group">
+                {capabilities.anonymous && (
                   <input
-                    id="auth-cert"
-                    checked={this.state.auth == "cert"}
+                    id="auth-none"
+                    checked={this.state.auth == "none"}
                     onChange={this.handleInputChange.bind(this)}
-                    value="cert"
+                    value="none"
                     name="auth"
                     type="radio"
                   />
-                  <label htmlFor="auth-cert">Certificate</label>
-                </span>
-              )}
+                )}
+                {capabilities.anonymous && <label htmlFor="auth-none">No auth</label>}
+                <input
+                  id="auth-key"
+                  checked={this.state.auth == "key"}
+                  onChange={this.handleInputChange.bind(this)}
+                  value="key"
+                  name="auth"
+                  type="radio"
+                />
+                <label htmlFor="auth-key">API Key</label>
+                {this.isCertEnabled() && (
+                  <span className="group-section">
+                    <input
+                      id="auth-cert"
+                      checked={this.state.auth == "cert"}
+                      onChange={this.handleInputChange.bind(this)}
+                      value="cert"
+                      name="auth"
+                      type="radio"
+                    />
+                    <label htmlFor="auth-cert">Certificate</label>
+                  </span>
+                )}
+              </span>
             </span>
           )}
 
+          {(this.state.auth === "cert" || this.state.auth === "key") &&
+            (this.state.bazelConfigResponse?.credential?.length || 0) > 1 && (
+              <span>
+                <Select
+                  title="Select API key"
+                  className="credential-picker"
+                  name="selectedCredential"
+                  value={this.state.selectedCredentialIndex}
+                  onChange={this.onChangeCredential.bind(this)}>
+                  {this.state.bazelConfigResponse.credential.map(({ apiKey: { label, value } }, index) => (
+                    <Option key={index} value={index}>
+                      {label || "Untitled key"} - {value}
+                    </Option>
+                  ))}
+                </Select>
+              </span>
+            )}
+
           {this.isAuthenticated() && (
-            <span>
-              <input
-                id="split"
-                checked={this.state.separateAuth}
-                onChange={this.handleCheckboxChange.bind(this)}
-                name="separateAuth"
-                type="checkbox"
-              />
-              <label htmlFor="split">
-                <span>Separate auth file</span>
-              </label>
+            <span className="group-container">
+              <span className="group">
+                <input
+                  id="split"
+                  checked={this.state.separateAuth}
+                  onChange={this.handleCheckboxChange.bind(this)}
+                  name="separateAuth"
+                  type="checkbox"
+                />
+                <label htmlFor="split">
+                  <span>Separate auth file</span>
+                </label>
+              </span>
             </span>
           )}
 
           {this.isCacheEnabled() && (
-            <span>
-              <input
-                id="cache"
-                checked={this.state.cacheChecked}
-                onChange={this.handleCheckboxChange.bind(this)}
-                name="cacheChecked"
-                type="checkbox"
-              />
-              <label htmlFor="cache">
-                <span>Enable cache</span>
-              </label>
+            <span className="group-container">
+              <span className="group">
+                <input
+                  id="cache"
+                  checked={this.state.cacheChecked}
+                  onChange={this.handleCheckboxChange.bind(this)}
+                  name="cacheChecked"
+                  type="checkbox"
+                />
+                <label htmlFor="cache">
+                  <span>Enable cache</span>
+                </label>
+              </span>
             </span>
           )}
 
           {this.state.cacheChecked && (
-            <span className="group">
-              <input
-                id="cache-full"
-                checked={this.state.cache == "full"}
-                onChange={this.handleInputChange.bind(this)}
-                value="full"
-                name="cache"
-                type="radio"
-              />
-              <label htmlFor="cache-full">Full cache</label>
-              <input
-                id="cache-read"
-                checked={this.state.cache == "read"}
-                onChange={this.handleInputChange.bind(this)}
-                value="read"
-                name="cache"
-                type="radio"
-              />
-              <label htmlFor="cache-read">Read only</label>
-              <input
-                id="cache-top"
-                checked={this.state.cache == "top"}
-                onChange={this.handleInputChange.bind(this)}
-                value="top"
-                name="cache"
-                type="radio"
-              />
-              <label htmlFor="cache-top">Top level</label>
+            <span className="group-container">
+              <span className="group">
+                <input
+                  id="cache-full"
+                  checked={this.state.cache == "full"}
+                  onChange={this.handleInputChange.bind(this)}
+                  value="full"
+                  name="cache"
+                  type="radio"
+                />
+                <label htmlFor="cache-full">Full cache</label>
+                <input
+                  id="cache-read"
+                  checked={this.state.cache == "read"}
+                  onChange={this.handleInputChange.bind(this)}
+                  value="read"
+                  name="cache"
+                  type="radio"
+                />
+                <label htmlFor="cache-read">Read only</label>
+                <input
+                  id="cache-top"
+                  checked={this.state.cache == "top"}
+                  onChange={this.handleInputChange.bind(this)}
+                  value="top"
+                  name="cache"
+                  type="radio"
+                />
+                <label htmlFor="cache-top">Top level</label>
+              </span>
             </span>
           )}
 
           {this.isExecutionEnabled() && (
-            <span>
-              <input
-                id="execution"
-                checked={this.state.executionChecked}
-                onChange={this.handleCheckboxChange.bind(this)}
-                name="executionChecked"
-                type="checkbox"
-              />
-              <label htmlFor="execution">
-                <span>Enable remote execution</span>
-              </label>
+            <span className="group-container">
+              <span className="group">
+                <input
+                  id="execution"
+                  checked={this.state.executionChecked}
+                  onChange={this.handleCheckboxChange.bind(this)}
+                  name="executionChecked"
+                  type="checkbox"
+                />
+                <label htmlFor="execution">
+                  <span>Enable remote execution</span>
+                </label>
+              </span>
             </span>
           )}
         </div>
@@ -307,69 +369,84 @@ export default class SetupCodeComponent extends React.Component {
             for more info.
           </div>
         )}
-        <b>Copy to your .bazelrc</b>
-        <code data-header=".bazelrc">
-          <div className="contents">
-            <div>{this.getResultsUrl()}</div>
-            <div>{this.getEventStream()}</div>
-            {this.state.cacheChecked && <div>{this.getCache()}</div>}
-            {this.state.cacheChecked && <div>{this.getCacheOptions()}</div>}
-            {(this.state.cacheChecked || this.state.executionChecked) && <div>{this.getRemoteOptions()}</div>}
-            {this.state.executionChecked && <div>{this.getRemoteExecution()}</div>}
-            {!this.state.separateAuth && <div>{this.getCredentials()}</div>}
-          </div>
-          <button onClick={this.handleCopyClicked.bind(this)}>Copy</button>
-        </code>
-        {this.state.separateAuth && this.isAuthenticated() && (
-          <div>
-            The file below contains your auth credentials - place it in your home directory at{" "}
-            <span className="code">~/.bazelrc</span> or place it anywhere you'd like and add{" "}
-            <span className="code">try-import /path/to/your/.bazelrc</span> in your primary{" "}
-            <span className="code">.bazelrc</span> file.
-            <code data-header="~/.bazelrc">
+        {selectedCredential ? (
+          <>
+            <b>Copy to your .bazelrc</b>
+            <code data-header=".bazelrc">
               <div className="contents">
-                <div>{this.getCredentials()}</div>
+                <div>{this.getResultsUrl()}</div>
+                <div>{this.getEventStream()}</div>
+                {this.state.cacheChecked && <div>{this.getCache()}</div>}
+                {this.state.cacheChecked && <div>{this.getCacheOptions()}</div>}
+                {(this.state.cacheChecked || this.state.executionChecked) && <div>{this.getRemoteOptions()}</div>}
+                {this.state.executionChecked && <div>{this.getRemoteExecution()}</div>}
+                {!this.state.separateAuth && <div>{this.getCredentials()}</div>}
               </div>
               <button onClick={this.handleCopyClicked.bind(this)}>Copy</button>
             </code>
-          </div>
-        )}
-        {this.state.auth == "cert" && (
-          <div>
-            <div className="downloads">
-              {this.getResponse()?.certificate?.cert && (
-                <div>
-                  <a
-                    download="buildbuddy-cert.pem"
-                    href={window.URL.createObjectURL(
-                      new Blob([this.getResponse()?.certificate?.cert], {
-                        type: "text/plain",
-                      })
-                    )}>
-                    Download buildbuddy-cert.pem
-                  </a>
+            {this.state.separateAuth && this.isAuthenticated() && (
+              <div>
+                The file below contains your auth credentials - place it in your home directory at{" "}
+                <span className="code">~/.bazelrc</span> or place it anywhere you'd like and add{" "}
+                <span className="code">try-import /path/to/your/.bazelrc</span> in your primary{" "}
+                <span className="code">.bazelrc</span> file.
+                <code data-header="~/.bazelrc">
+                  <div className="contents">
+                    <div>{this.getCredentials()}</div>
+                  </div>
+                  <button onClick={this.handleCopyClicked.bind(this)}>Copy</button>
+                </code>
+              </div>
+            )}
+            {this.state.auth == "cert" && (
+              <div>
+                <div className="downloads">
+                  {selectedCredential?.certificate?.cert && (
+                    <div>
+                      <a
+                        download="buildbuddy-cert.pem"
+                        href={window.URL.createObjectURL(
+                          new Blob([selectedCredential.certificate.cert], {
+                            type: "text/plain",
+                          })
+                        )}>
+                        Download buildbuddy-cert.pem
+                      </a>
+                    </div>
+                  )}
+                  {selectedCredential?.certificate?.key && (
+                    <div>
+                      <a
+                        download="buildbuddy-key.pem"
+                        href={window.URL.createObjectURL(
+                          new Blob([selectedCredential.certificate.key], {
+                            type: "text/plain",
+                          })
+                        )}>
+                        Download buildbuddy-key.pem
+                      </a>
+                    </div>
+                  )}
                 </div>
-              )}
-              {this.getResponse()?.certificate?.key && (
-                <div>
-                  <a
-                    download="buildbuddy-key.pem"
-                    href={window.URL.createObjectURL(
-                      new Blob([this.getResponse()?.certificate?.key], {
-                        type: "text/plain",
-                      })
-                    )}>
-                    Download buildbuddy-key.pem
-                  </a>
-                </div>
-              )}
+                To use certificate based auth, download the two files above and place them in your workspace directory.
+                If you place them outside of your workspace, update the paths in your{" "}
+                <span className="code">.bazelrc</span> file to point to the correct location.
+                <br />
+                <br />
+                Note: Certificate based auth is only compatible with Bazel version 3.1 and above.
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="no-api-keys">
+            <div>Looks like your organization doesn't have any API keys.</div>
+            <div>
+              <FilledButton className="manage-keys-button">
+                <a href="/settings/" onClick={this.onClickManageKeys.bind(this)}>
+                  Manage keys
+                </a>
+              </FilledButton>
             </div>
-            To use certificate based auth. Download the two files above and place them in your workspace directory. If
-            you place them outside of your workspace - make sure to update the paths in your .bazelrc file to point to
-            the correct location.
-            <br />
-            <br />
-            Note: Certificate based auth is only compatible with Bazel version 3.1 and above.
           </div>
         )}
       </div>

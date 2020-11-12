@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -43,14 +44,40 @@ func NewBuildBuddyServer(env environment.Env, sslService *ssl.SSLService) (*Buil
 	}, nil
 }
 
-func (s *BuildBuddyServer) redactAPIKey(ctx context.Context, rsp *inpb.GetInvocationResponse) error {
-	apiKey := s.getGroupAPIKey(ctx)
-	if apiKey == "" {
-		return nil
+func (s *BuildBuddyServer) getConfiguredAPIKey() string {
+	if apiConfig := s.env.GetConfigurator().GetAPIConfig(); apiConfig != nil {
+		return apiConfig.APIKey
 	}
+	return ""
+}
+
+func (s *BuildBuddyServer) redactAPIKeys(ctx context.Context, rsp *inpb.GetInvocationResponse) error {
 	proto.DiscardUnknown(rsp)
 	txt := proto.MarshalTextString(rsp)
-	txt = strings.ReplaceAll(txt, apiKey, "<REDACTED>")
+
+	pat := regexp.MustCompile("x-buildbuddy-api-key=[A-Za-z0-9]{20}")
+	txt = pat.ReplaceAllLiteralString(txt, "x-buildbuddy-api-key=<REDACTED>")
+
+	pat = regexp.MustCompile(fmt.Sprintf(
+		// Match exactly 20 alphanumeric chars immediately followed by @,
+		// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
+		// or "bes_backend=$API_KEY@domain.com".
+		//
+		// Here we match one of two patterns followed by "@" ...
+		"(%s|%s)@",
+		// Pattern 1: 20 alphanum chars occurring at the start of a line
+		"^[A-Za-z0-9]{20}",
+		// Pattern 2: 20 alphanum chars anywhere in the line, as long as they're not
+		// preceded by another alphanum char.
+		"(?<![^A-Za-z0-9])[A-Za-z0-9]{20}",
+	))
+	txt = pat.ReplaceAllLiteralString(txt, "<REDACTED>@")
+
+	configuredKey := s.getConfiguredAPIKey()
+	if configuredKey != "" {
+		txt = strings.ReplaceAll(txt, configuredKey, "<REDACTED>")
+	}
+
 	return proto.UnmarshalText(txt, rsp)
 }
 
@@ -69,7 +96,7 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 			inv,
 		},
 	}
-	if err := s.redactAPIKey(ctx, rsp); err != nil {
+	if err := s.redactAPIKeys(ctx, rsp); err != nil {
 		return nil, err
 	}
 	return rsp, nil
@@ -218,7 +245,7 @@ func (s *BuildBuddyServer) authorizeGroupAccess(ctx context.Context, groupID str
 			return nil
 		}
 	}
-	return status.PermissionDeniedError("User does not have access to the requested group")
+	return status.PermissionDeniedError("You do not have access to the requested group")
 }
 
 func (s *BuildBuddyServer) GetGroupUsers(ctx context.Context, req *grpb.GetGroupUsersRequest) (*grpb.GetGroupUsersResponse, error) {
@@ -382,6 +409,18 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 	return &grpb.JoinGroupResponse{}, nil
 }
 
+func toProtoAPIKeys(tableKeys []*tables.APIKey) []*akpb.ApiKey {
+	protoKeys := make([]*akpb.ApiKey, len(tableKeys))
+	for i, k := range tableKeys {
+		protoKeys[i] = &akpb.ApiKey{
+			Id:    k.APIKeyID,
+			Value: k.Value,
+			Label: k.Label,
+		}
+	}
+	return protoKeys
+}
+
 func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
@@ -395,16 +434,8 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 	if err != nil {
 		return nil, err
 	}
-	protoKeys := make([]*akpb.ApiKey, len(tableKeys))
-	for i, k := range tableKeys {
-		protoKeys[i] = &akpb.ApiKey{
-			Id:    k.APIKeyID,
-			Value: k.Value,
-			Label: k.Label,
-		}
-	}
 	return &akpb.GetApiKeysResponse{
-		ApiKey: protoKeys,
+		ApiKey: toProtoAPIKeys(tableKeys),
 	}, nil
 }
 
@@ -520,45 +551,38 @@ func assembleURL(host, scheme, port string) string {
 	return url
 }
 
-func (s *BuildBuddyServer) getGroupAPIKey(ctx context.Context) string {
+func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]*akpb.ApiKey, error) {
 	groupID := ""
 	if reqCtx := requestcontext.ProtoRequestContextFromContext(ctx); reqCtx != nil {
 		groupID = reqCtx.GetGroupId()
+	} else {
+		return nil, status.PermissionDeniedError("")
 	}
-
-	if userDB := s.env.GetUserDB(); userDB != nil {
-		if tu, _ := userDB.GetUser(ctx); tu != nil {
-			if groupID != "" {
-				for _, g := range tu.Groups {
-					if g.GroupID == groupID {
-						return g.APIKey
-					}
-				}
-				// If group ID was provided explicitly, it would be unexpected behavior
-				// if we used an API key from another group, so return empty string.
-				return ""
+	if err := s.authorizeGroupAccess(ctx, groupID); err != nil {
+		return nil, err
+	}
+	auth := s.env.GetAuthenticator()
+	if auth == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	authenticatedUser, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	for _, allowedGroupID := range authenticatedUser.GetAllowedGroups() {
+		if allowedGroupID == groupID {
+			tableKeys, err := userDB.GetAPIKeys(ctx, groupID)
+			if err != nil {
+				return nil, err
 			}
-			for _, g := range tu.Groups {
-				if g.OwnedDomain != "" && g.APIKey != "" {
-					return g.APIKey
-				}
-			}
-			// Still here? This user might have a self-owned group, let's check for that.
-			for _, g := range tu.Groups {
-				if g.GroupID == strings.Replace(tu.UserID, "US", "GR", 1) && g.APIKey != "" {
-					return g.APIKey
-				}
-			}
-			// Finally, fall back to any group with a WriteToken. This will be the
-			// default group for on-prem use cases.
-			for _, g := range tu.Groups {
-				if g.APIKey != "" {
-					return g.APIKey
-				}
-			}
+			return toProtoAPIKeys(tableKeys), nil
 		}
 	}
-	return ""
+	return nil, status.InternalError("Could not find the requested group ID. This should never happen.")
 }
 
 func insertPassword(rawURL, password string) string {
@@ -591,8 +615,11 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 	if eventsAPIURL == "" {
 		eventsAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 	}
-	groupAPIKey := s.getGroupAPIKey(ctx)
-	eventsAPIURL = insertPassword(eventsAPIURL, groupAPIKey)
+	groupAPIKeys, err := s.getAPIKeysForAuthorizedGroup(ctx)
+	if err != nil {
+		return nil, err
+	}
+	eventsAPIURL = insertPassword(eventsAPIURL, "${API_KEY}")
 	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", eventsAPIURL))
 
 	if s.env.GetCache() != nil {
@@ -600,7 +627,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		if cacheAPIURL == "" {
 			cacheAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		cacheAPIURL = insertPassword(cacheAPIURL, groupAPIKey)
+		cacheAPIURL = insertPassword(cacheAPIURL, "${API_KEY}")
 		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", cacheAPIURL))
 	}
 
@@ -609,25 +636,33 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		if remoteExecutionAPIURL == "" {
 			remoteExecutionAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		remoteExecutionAPIURL = insertPassword(remoteExecutionAPIURL, groupAPIKey)
+		remoteExecutionAPIURL = insertPassword(remoteExecutionAPIURL, "${API_KEY}")
 		configOptions = append(configOptions, makeConfigOption("build", "remote_executor", remoteExecutionAPIURL))
 	}
 
-	cerificate := &bzpb.Certificate{}
-	if req.GetIncludeCertificate() && s.sslService.IsCertGenerationEnabled() && groupAPIKey != "" {
-		cert, key, err := s.sslService.GenerateCerts(groupAPIKey)
-		if err != nil {
-			return nil, fmt.Errorf("Error generating cert: %+v", err)
+	credentials := make([]*bzpb.Credentials, len(groupAPIKeys))
+	for i, apiKey := range groupAPIKeys {
+		credentials[i] = &bzpb.Credentials{
+			ApiKey: apiKey,
 		}
-		cerificate = &bzpb.Certificate{
-			Cert: cert,
-			Key:  key,
+	}
+
+	if req.GetIncludeCertificate() && s.sslService.IsCertGenerationEnabled() {
+		for _, c := range credentials {
+			cert, key, err := s.sslService.GenerateCerts(c.ApiKey.Value)
+			if err != nil {
+				return nil, status.InternalError(fmt.Sprintf("Error generating cert: %+v", err))
+			}
+			c.Certificate = &bzpb.Certificate{
+				Cert: cert,
+				Key:  key,
+			}
 		}
 	}
 
 	return &bzpb.GetBazelConfigResponse{
 		ConfigOption: configOptions,
-		Certificate:  cerificate,
+		Credential:   credentials,
 	}, nil
 }
 

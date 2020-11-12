@@ -632,18 +632,22 @@ code .comment {
   margin-bottom: 32px;
 }
 
-.setup-controls > * {
-  margin-top: 8px;
+.setup-controls .group-container {
   background-color: #fafafa;
   border: 1px solid #eee;
   padding: 4px 16px 4px 0;
-  display: block;
-  margin-right: 8px;
+  min-height: 40px;
+  box-sizing: border-box;
   border-radius: 4px;
+  flex-grow: 0;
   display: flex;
   justify-content: center;
   align-items: center;
-  flex-grow: 1;
+}
+
+.setup-controls > * {
+  margin-top: 8px;
+  margin-right: 8px;
 }
 
 .setup-controls input {
@@ -654,11 +658,36 @@ code .comment {
 .setup-controls label {
   padding-left: 8px;
   vertical-align: middle;
+  user-select: none;
+}
+
+.setup-controls input,
+.setup-controls label {
+  cursor: pointer;
 }
 
 .setup-controls .group {
   display: flex;
   align-items: baseline;
+}
+
+.setup-controls .credential-picker {
+  max-width: 256px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setup .manage-keys-button {
+  padding: 0;
+}
+
+.setup .manage-keys-button a {
+  padding: 16px 32px;
+  text-decoration: none;
+}
+
+.setup .no-api-keys > :not(:last-child) {
+  margin-bottom: 8px;
 }
 
 .setup .downloads {
@@ -682,16 +711,6 @@ code .comment {
   background-color: #e1f5fe;
   margin-top: -16px;
   margin-bottom: 16px;
-}
-
-.group-title {
-  border: 0;
-  margin-right: 0;
-  background: transparent;
-  font-weight: 600;
-  flex-grow: 0;
-  width: 100%;
-  justify-content: flex-start;
 }
 
 .group-section {
