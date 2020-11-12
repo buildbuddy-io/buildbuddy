@@ -680,6 +680,25 @@ func parseByteStreamURL(bsURL, filename string) (*bsLookup, error) {
 	return nil, fmt.Errorf("unparsable bytestream URL: '%s'", bsURL)
 }
 
+func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invocationID string) (*tables.APIKey, error) {
+	in, err := s.env.GetInvocationDB().LookupInvocation(ctx, invocationID)
+	if err != nil {
+		return nil, err
+	}
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	apiKeys, err := userDB.GetAPIKeys(ctx, in.GroupID)
+	if err != nil {
+		return nil, err
+	}
+	if len(apiKeys) == 0 {
+		return nil, status.NotFoundError("The group that owns this invocation doesn't have any API keys configured.")
+	}
+	return apiKeys[0], nil
+}
+
 // Handle requests for build logs and artifacts by looking them up in from our
 // cache servers using the bytestream API.
 func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -690,9 +709,11 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	group, err := s.env.GetInvocationDB().LookupGroupFromInvocation(r.Context(), params.Get("invocation_id"))
-	if err == nil && group != nil && lookup.URL.User == nil {
-		lookup.URL.User = url.User(group.APIKey)
+	if lookup.URL.User == nil {
+		apiKey, _ := s.getAnyAPIKeyForInvocation(r.Context(), params.Get("invocation_id"))
+		if apiKey != nil {
+			lookup.URL.User = url.User(apiKey.Value)
+		}
 	}
 
 	// Stream the file back to our client
