@@ -10,24 +10,12 @@
     "outDir": "dist",
     "target": "ES2016",
     "baseUrl": ".",
-    "lib": [
-      "es2017",
-      "es2019",
-      "dom",
-      "dom.iterable"
-    ],
+    "lib": ["es2017", "es2019", "dom", "dom.iterable"],
+    "rootDirs": [".", "bazel-bin"],
     "paths": {
-      "buildbuddy/*": [
-        "*",
-        "bazel-bin/*"
-      ],
-      "*": [
-        "node_modules/*"
-      ]
+      "buildbuddy/*": ["*", "bazel-bin/*"],
+      "*": ["node_modules/*"]
     }
   },
-  "exclude": [
-    "bazel-out",
-    "bazel-bin"
-  ]
+  "exclude": ["bazel-out", "bazel-bin"]
 }
