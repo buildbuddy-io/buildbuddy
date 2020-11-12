@@ -66,6 +66,8 @@ export default class SuggestionCardComponent extends React.Component {
   }
 
   updateSuggestion() {
+    if (!this.props.model.consoleBuffer) return;
+
     for (let potentialSuggestion of this.suggestionMap) {
       let matches = this.props.model.consoleBuffer.match(potentialSuggestion.regex);
       if (matches) {
