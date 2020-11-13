@@ -307,7 +307,6 @@ func StartAndRunServices(env environment.Env) {
 			log.Fatalf("Error initializing dev server proxy: %s", err)
 		}
 		mux.Handle("/app/app_bundle.js", p)
-		mux.Handle("/react.js", p)
 	}
 
 	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", buildBuddyProtoHandlers))
