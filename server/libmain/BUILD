@@ -24,6 +24,7 @@ go_library(
         "//server/build_event_protocol/build_event_server:go_default_library",
         "//server/buildbuddy_server:go_default_library",
         "//server/config:go_default_library",
+        "//server/devserverproxy:go_default_library",
         "//server/environment:go_default_library",
         "//server/http/filters:go_default_library",
         "//server/http/protolet:go_default_library",

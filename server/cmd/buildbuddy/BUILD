@@ -10,15 +10,20 @@ go_binary(
         "--config_file=config/buildbuddy.local.yaml",
         "--max_shutdown_duration=3s",
     ] + select({
-        "//app:fastbuild": ["--js_entry_point_path=/app/app_bundle.js"],
+        "//app:fastbuild": [
+            "--js_entry_point_path=/app/app_bundle.js",
+            "--devserver_proxy=true",
+        ],
         "//conditions:default": ["--js_entry_point_path=/app/app_bundle.min.js"],
     }),
     data = [
         "//:config_files",
-        "//app:app_js_entry_point",
         "//app:style.css",
         "//static",
-    ],
+    ] + select({
+        "//app:fastbuild": [],
+        "//conditions:default": ["//app:app_bundle.min.js"],
+    }),
     embed = [":go_default_library"],
     visibility = ["//visibility:public"],
 )
