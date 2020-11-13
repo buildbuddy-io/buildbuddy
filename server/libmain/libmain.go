@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
-	"github.com/buildbuddy-io/buildbuddy/server/devserverproxy"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -67,8 +66,6 @@ var (
 
 	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
-
-	enableDevServerProxy = flag.Bool("devserver_proxy", false, "whether to proxy app requests to the dev server")
 )
 
 // Normally this code would live in main.go -- we put it here for now because
@@ -301,14 +298,6 @@ func StartAndRunServices(env environment.Env) {
 	// Register all of our HTTP handlers on the default mux.
 	mux.Handle("/", httpfilters.WrapExternalHandler(env, staticFileServer))
 	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
-	if *enableDevServerProxy {
-		p, err := devserverproxy.NewDevServerProxy()
-		if err != nil {
-			log.Fatalf("Error initializing dev server proxy: %s", err)
-		}
-		mux.Handle("/app/app_bundle.js", p)
-	}
-
 	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", buildBuddyProtoHandlers))
 	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, buildBuddyServer))
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())

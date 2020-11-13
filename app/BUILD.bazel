@@ -16,6 +16,11 @@ ts_devserver(
     ],
 )
 
+config_setting(
+    name = "use_devserver",
+    values = {"define": "use_devserver=true"},
+)
+
 rollup_bundle(
     name = "app_bundle",
     config_file = "rollup.config.js",
@@ -32,11 +37,6 @@ rollup_bundle(
 terser_minified(
     name = "app_bundle.min",
     src = ":app_bundle",
-)
-
-config_setting(
-    name = "fastbuild",
-    values = {"compilation_mode": "fastbuild"},
 )
 
 ts_library(
