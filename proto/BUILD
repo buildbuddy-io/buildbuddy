@@ -84,6 +84,17 @@ proto_library(
 )
 
 proto_library(
+    name = "target_proto",
+    srcs = [
+        "target.proto",
+    ],
+    deps = [
+        ":context_proto",
+        "//proto/api/v1:common_proto",
+    ],
+)
+
+proto_library(
     name = "build_event_stream_proto",
     srcs = ["build_event_stream.proto"],
     deps = [
@@ -294,6 +305,16 @@ go_proto_library(
     deps = [
         ":command_line_go_proto",
         ":invocation_policy_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "target_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/target",
+    proto = ":target_proto",
+    deps = [
+        ":context_go_proto",
+        "//proto/api/v1:common_go_proto",
     ],
 )
 

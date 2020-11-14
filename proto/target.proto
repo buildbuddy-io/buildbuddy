@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+import "proto/api/v1/common.proto";
+
+package target;
+
+// A single "Target" that is part of a build.
+message Target {
+  // The id of this target.
+  // For example: "TS12345".
+  string id = 1;
+
+  // The label of the target.
+  // For example: "//server/test:foo"
+  string label = 2;
+
+  // The type of the target rule.
+  // For example: java_binary
+  string rule_type = 3;
+
+  // The (enum) type of this target.
+  // For example: APPLICATION, BINARY, TEST.
+  api.v1.TargetType target_type = 4;
+
+  // The (enum) size of this target.
+  // For example: SMALL, MEDIUM, ENORMOUS.
+  api.v1.TestSize test_size = 5;
+}
+
+message TargetStatus {
+  // The target that was run.
+  Target target = 1;
+
+  // The aggregate status of the target. Targets can be run multiple times by
+  // bazel which computes an "aggregate" enum status, like PASSED, FAILED, or
+  // FLAKY.
+  api.v1.Status status = 3;
+
+  // When this target started and its duration.
+  api.v1.Timing timing = 4;
+}
+
+message InvocationTargets {
+  // The invocation identifier itself.
+  string invocation_id = 1;
+
+  // The commit SHA that this invocation was for.
+  // For example: "e6a712c7c15b87ea772e13468fdbf78ecf3ed43d"
+  string commit_sha = 2;
+
+  // The git repo the build was for.
+  // For example: "buildbuddy-io/buildbuddy"
+  string repo_url = 3;
+
+  // A list of targets and their status that were run during this invocation.
+  repeated TargetStatus target_status = 4;
+}
+
+// NB: InvocationTargetQuery params apply to both invocations and their
+// child targets. For example, filtering to role: "CI" and target_type: TEST
+// will only return invocations that were run via CI and within each of those
+// only targets of type TEST.
+message InvocationTargetQuery {
+  // The search parameters in this query will be ANDed when performing a
+  // query -- so if a client specifies both "user" and "host", all results
+  // returned must match both fields.
+
+  // The unix-user who performed the build.
+  string user = 1;
+
+  // The host this build was executed on.
+  string host = 2;
+
+  // The specific invocation to fetch.
+  string invocation_id = 3;
+
+  // The git repo the build was for.
+  string repo_url = 4;
+
+  // The commit sha used for the build.
+  string commit_sha = 5;
+
+  // The role played by the build. Ex: "CI"
+  string role = 6;
+
+  // The type of target to return.
+  // For example: TEST.
+  api.v1.TargetType target_type = 7;
+}
+
+message GetInvocationTargetsRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // The filters to apply to this query. Required.
+  InvocationTargetQuery query = 2;
+
+  // The number of *invocations* to return. Optional.
+  // NB: Invocations can have thousands of targets each, so
+  // be careful setting this too high.
+  // If unset, the server will pick a reasonable page size.
+  int32 count = 3;
+
+  // The next_page_token value returned from a previous request, if any.
+  // Optional.
+  string page_token = 4;
+}
+
+message GetTargetResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  // The Invocations and their targets that matched the query.
+  repeated InvocationTargets invocation_targets = 2;
+
+  // Token to retrieve the next page of results, or empty if there are no
+  // more results in the list.
+  string next_page_token = 3;
+}
