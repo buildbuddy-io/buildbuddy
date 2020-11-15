@@ -432,7 +432,7 @@ func (c *Configurator) GetAPIConfig() *APIConfig {
 }
 
 func (c *Configurator) GetGithubConfig() *GithubConfig {
-	if c.gc.Github.ClientID == "" {
+	if c.gc.Github == (GithubConfig{}) {
 		return nil
 	}
 	ghc := c.gc.Github
