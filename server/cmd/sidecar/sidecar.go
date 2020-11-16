@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"net"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
@@ -56,7 +57,13 @@ func main() {
 	env.SetAuthenticator(&nullauth.NullAuthenticator{})
 	env.SetBuildEventHandler(&DevNullBuildEventHandler{})
 
-	lis, err := net.Listen("tcp", *listenAddr)
+	var lis net.Listener
+	if strings.HasPrefix(*listenAddr, "unix://") {
+		sockPath := strings.TrimPrefix(*listenAddr, "unix://")
+		lis, err = net.Listen("unix", sockPath)
+	} else {
+		lis, err = net.Listen("tcp", *listenAddr)
+	}
 	if err != nil {
 		log.Fatalf("Failed to listen: %s", err.Error())
 	}

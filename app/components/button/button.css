@@ -57,6 +57,10 @@
   transition: 200ms ease;
 }
 
+.outlined-button.destructive {
+  color: #c62828;
+}
+
 .outlined-button:hover {
   border: 1px solid transparent;
   background: rgba(20, 20, 20, 0.1);

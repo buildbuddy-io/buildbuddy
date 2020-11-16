@@ -49,10 +49,10 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 	}
 
 	conn, err := grpc_client.DialTargetWithOptions(url.String(), grpcs)
-
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 	client := bspb.NewByteStreamClient(conn)
 
 	// Request the file bytestream
@@ -66,7 +66,6 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 		return err
 	}
 
-	defer conn.Close()
 	for {
 		rsp, err := readClient.Recv()
 		if err == io.EOF {

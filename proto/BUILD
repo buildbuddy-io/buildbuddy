@@ -1,6 +1,6 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("//rules:typescript_proto_library.bzl", "ts_proto_library")
+load("@npm//@bazel/labs:index.bzl", ts_proto_library = "protobufjs_ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -80,6 +80,17 @@ proto_library(
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:empty_proto",
         "@go_googleapis//google/api:annotations_proto",
+    ],
+)
+
+proto_library(
+    name = "target_proto",
+    srcs = [
+        "target.proto",
+    ],
+    deps = [
+        ":context_proto",
+        "//proto/api/v1:common_proto",
     ],
 )
 
@@ -294,6 +305,16 @@ go_proto_library(
     deps = [
         ":command_line_go_proto",
         ":invocation_policy_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "target_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/target",
+    proto = ":target_proto",
+    deps = [
+        ":context_go_proto",
+        "//proto/api/v1:common_go_proto",
     ],
 )
 

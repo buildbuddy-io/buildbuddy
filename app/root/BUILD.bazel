@@ -1,4 +1,4 @@
-load("@npm_bazel_typescript//:index.bzl", "ts_library")
+load("@npm//@bazel/typescript:index.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -12,6 +12,7 @@ ts_library(
         "//app/capabilities",
         "//app/compare",
         "//app/docs",
+        "//app/errors",
         "//app/favicon",
         "//app/footer",
         "//app/invocation",

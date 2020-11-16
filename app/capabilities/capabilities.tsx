@@ -12,6 +12,7 @@ export class Capabilities {
   invocationSharing: boolean;
   compareInvocations: boolean;
   deleteInvocation: boolean;
+  manageApiKeys: boolean;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
@@ -28,6 +29,7 @@ export class Capabilities {
     this.invocationSharing = true;
     this.compareInvocations = true;
     this.deleteInvocation = true;
+    this.manageApiKeys = window.localStorage["manage_api_keys"] === "true";
     this.paths = new Set(paths);
     window.gtag("set", {
       app_name: this.name,
