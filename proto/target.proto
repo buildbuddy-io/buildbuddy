@@ -29,8 +29,12 @@ message Target {
 }
 
 message TargetStatus {
-  // The target that was run.
-  Target target = 1;
+  // The invocation identifier itself.
+  string invocation_id = 1;
+
+  // The commit SHA that this invocation was for.
+  // For example: "e6a712c7c15b87ea772e13468fdbf78ecf3ed43d"
+  string commit_sha = 2;
 
   // The aggregate status of the target. Targets can be run multiple times by
   // bazel which computes an "aggregate" enum status, like PASSED, FAILED, or
@@ -41,27 +45,25 @@ message TargetStatus {
   api.v1.Timing timing = 4;
 }
 
-message InvocationTargets {
-  // The invocation identifier itself.
-  string invocation_id = 1;
-
-  // The commit SHA that this invocation was for.
-  // For example: "e6a712c7c15b87ea772e13468fdbf78ecf3ed43d"
-  string commit_sha = 2;
+message TargetHistory {
+  // The target that was run.
+  Target target = 1;
 
   // The git repo the build was for.
   // For example: "buildbuddy-io/buildbuddy"
-  string repo_url = 3;
+  string repo_url = 2;
 
-  // A list of targets and their status that were run during this invocation.
-  repeated TargetStatus target_status = 4;
+  // A list of target statuses run across a range of invocations / commits.
+  // If multiple targets were run at the same commit, the latest run will be
+  // returned.
+  repeated TargetStatus target_status = 3;
 }
 
-// NB: InvocationTargetQuery params apply to both invocations and their
-// child targets. For example, filtering to role: "CI" and target_type: TEST
-// will only return invocations that were run via CI and within each of those
-// only targets of type TEST.
-message InvocationTargetQuery {
+// NB: TargetQuery params apply to both invocations and their child targets. For
+// example, filtering to role: "CI" and target_type: TEST will only return
+// invocations that were run via CI and within each of those only targets of
+// type TEST.
+message TargetQuery {
   // The search parameters in this query will be ANDed when performing a
   // query -- so if a client specifies both "user" and "host", all results
   // returned must match both fields.
@@ -72,49 +74,44 @@ message InvocationTargetQuery {
   // The host this build was executed on.
   string host = 2;
 
-  // The specific invocation to fetch.
-  string invocation_id = 3;
-
   // The git repo the build was for.
-  string repo_url = 4;
+  string repo_url = 3;
 
   // The commit sha used for the build.
-  string commit_sha = 5;
+  string commit_sha = 4;
 
   // The role played by the build. Ex: "CI"
-  string role = 6;
+  string role = 5;
 
   // The type of target to return.
   // For example: TEST.
-  api.v1.TargetType target_type = 7;
+  api.v1.TargetType target_type = 6;
 }
 
-message GetInvocationTargetsRequest {
+message GetTargetsRequest {
   // The request context.
   context.RequestContext request_context = 1;
 
   // The filters to apply to this query. Required.
-  InvocationTargetQuery query = 2;
+  TargetQuery query = 2;
 
-  // The number of *invocations* to return. Optional.
-  // NB: Invocations can have thousands of targets each, so
-  // be careful setting this too high.
-  // If unset, the server will pick a reasonable page size.
-  int32 count = 3;
+  // Return records that were run *after* this timestamp.
+  int64 start_time_usec = 3;
 
-  // The next_page_token value returned from a previous request, if any.
-  // Optional.
-  string page_token = 4;
+  // Return records that were run *before* this timestamp.
+  int64 end_time_usec = 4;
 }
 
 message GetTargetResponse {
   // The response context.
   context.ResponseContext response_context = 1;
 
-  // The Invocations and their targets that matched the query.
-  repeated InvocationTargets invocation_targets = 2;
+  // The targets and statuses that matched the query, ordered by
+  // the time they were executed, descending.
+  repeated TargetHistory invocation_targets = 2;
 
-  // Token to retrieve the next page of results, or empty if there are no
-  // more results in the list.
-  string next_page_token = 3;
+  // Indicates if the server had to truncate results because of size. If true,
+  // the client should fetch additional time ranges working backwards from the
+  // oldest timestamp returned.
+  bool truncated_results = 3;
 }
