@@ -392,17 +392,17 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 	if err != nil {
 		return nil, err
 	}
-	protoKeys := make([]*akpb.ApiKey, 0, len(tableKeys))
+	rsp := &akpb.GetApiKeysResponse{
+		ApiKey: make([]*akpb.ApiKey, 0, len(tableKeys)),
+	}
 	for _, k := range tableKeys {
-		protoKeys = append(protoKeys, &akpb.ApiKey{
+		rsp.ApiKey = append(rsp.ApiKey, &akpb.ApiKey{
 			Id:    k.APIKeyID,
 			Value: k.Value,
 			Label: k.Label,
 		})
 	}
-	return &akpb.GetApiKeysResponse{
-		ApiKey: protoKeys,
-	}, nil
+	return rsp, nil
 }
 
 func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApiKeyRequest) (*akpb.CreateApiKeyResponse, error) {
@@ -456,10 +456,11 @@ func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApi
 	if err := s.authorizeAPIKeyWrite(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	if err := userDB.UpdateAPIKey(ctx, &tables.APIKey{
+	tk := &tables.APIKey{
 		APIKeyID: req.GetId(),
 		Label:    req.GetLabel(),
-	}); err != nil {
+	}
+	if err := userDB.UpdateAPIKey(ctx, tk); err != nil {
 		return nil, err
 	}
 	return &akpb.UpdateApiKeyResponse{}, nil

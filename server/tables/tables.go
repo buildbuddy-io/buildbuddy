@@ -247,11 +247,11 @@ type APIKey struct {
 	Model
 
 	APIKeyID     string `gorm:"primary_key"`
-	GroupGroupID string `gorm:"index:group_id_index"`
+	GroupGroupID string `gorm:"index:api_key_group_id_index"`
 	// The user that created this API key.
 	UserUserID string
 	// The API key token used for authentication.
-	Value string `gorm:"index:value_index"`
+	Value string `gorm:"index:api_key_value_index"`
 	// The user-specified description of the API key that helps them
 	// remember what it's for.
 	Label string
