@@ -392,13 +392,13 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 	if err != nil {
 		return nil, err
 	}
-	protoKeys := make([]*akpb.ApiKey, len(tableKeys))
-	for i, k := range tableKeys {
-		protoKeys[i] = &akpb.ApiKey{
+	protoKeys := make([]*akpb.ApiKey, 0, len(tableKeys))
+	for _, k := range tableKeys {
+		protoKeys = append(protoKeys, &akpb.ApiKey{
 			Id:    k.APIKeyID,
 			Value: k.Value,
 			Label: k.Label,
-		}
+		})
 	}
 	return &akpb.GetApiKeysResponse{
 		ApiKey: protoKeys,
