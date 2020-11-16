@@ -80,7 +80,7 @@ export default class SetupCodeComponent extends React.Component {
 
   getAPIKey() {
     let url = this.getResponse()?.configOption.find((option: any) => option.flagName == "bes_backend")?.body;
-    let matches = url.match(/\:\/\/(?<apikey>.*)\@/);
+    let matches = url?.match(/\:\/\/(?<apikey>.*)\@/);
     return matches?.groups?.apikey;
   }
 
@@ -157,7 +157,7 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   stripAPIKey(url: string) {
-    return url.replace(/\:\/\/.*\@/gi, "://");
+    return url?.replace(/\:\/\/.*\@/gi, "://");
   }
 
   isAuthenticated() {
@@ -176,6 +176,9 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   render() {
+    if (!this.getResponse()) {
+      return <div className="loading"></div>;
+    }
     return (
       <div className="setup">
         <div className="setup-controls">

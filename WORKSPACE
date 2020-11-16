@@ -36,7 +36,7 @@ go_rules_dependencies()
 
 go_register_toolchains(nogo = "@//:vet")
 
-load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
+load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
 
 gazelle_dependencies()
 
@@ -44,8 +44,8 @@ gazelle_dependencies()
 
 http_archive(
     name = "build_bazel_rules_nodejs",
-    sha256 = "d14076339deb08e5460c221fae5c5e9605d2ef4848eee1f0c81c9ffdc1ab31c1",
-    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/1.6.1/rules_nodejs-1.6.1.tar.gz"],
+    sha256 = "452bef42c4b2fbe0f509a2699ffeb3ae2c914087736b16314dbd356f3641d7e5",
+    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/2.3.0/rules_nodejs-2.3.0.tar.gz"],
 )
 
 load("@build_bazel_rules_nodejs//:index.bzl", "yarn_install")
@@ -56,15 +56,11 @@ yarn_install(
     yarn_lock = "//:yarn.lock",
 )
 
-load("@npm//:install_bazel_dependencies.bzl", "install_bazel_dependencies")
+# @bazel/labs (for ts_proto_library)
 
-install_bazel_dependencies()
+load("@npm//@bazel/labs:package.bzl", "npm_bazel_labs_dependencies")
 
-# Typescript
-
-load("@npm_bazel_typescript//:index.bzl", "ts_setup_workspace")
-
-ts_setup_workspace()
+npm_bazel_labs_dependencies()
 
 # Docker
 
@@ -107,15 +103,13 @@ http_archive(
     urls = ["https://github.com/bazelbuild/rules_k8s/releases/download/v0.3.1/rules_k8s-v0.3.1.tar.gz"],
 )
 
-load("@io_bazel_rules_k8s//k8s:k8s.bzl", "k8s_repositories")
+load("@io_bazel_rules_k8s//k8s:k8s.bzl", "k8s_defaults", "k8s_repositories")
 
 k8s_repositories()
 
 load("@io_bazel_rules_k8s//k8s:k8s_go_deps.bzl", k8s_go_deps = "deps")
 
 k8s_go_deps()
-
-load("@io_bazel_rules_k8s//k8s:k8s.bzl", "k8s_defaults")
 
 k8s_defaults(
     name = "k8s_deploy",
