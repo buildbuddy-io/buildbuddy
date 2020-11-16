@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -44,38 +43,14 @@ func NewBuildBuddyServer(env environment.Env, sslService *ssl.SSLService) (*Buil
 	}, nil
 }
 
-func (s *BuildBuddyServer) getConfiguredAPIKey() string {
-	if apiConfig := s.env.GetConfigurator().GetAPIConfig(); apiConfig != nil {
-		return apiConfig.APIKey
+func (s *BuildBuddyServer) redactAPIKey(ctx context.Context, rsp *inpb.GetInvocationResponse) error {
+	apiKey := s.getGroupAPIKey(ctx)
+	if apiKey == "" {
+		return nil
 	}
-	return ""
-}
-
-func (s *BuildBuddyServer) redactAPIKeys(ctx context.Context, rsp *inpb.GetInvocationResponse) error {
 	proto.DiscardUnknown(rsp)
 	txt := proto.MarshalTextString(rsp)
-
-	pat := regexp.MustCompile("x-buildbuddy-api-key=[A-Za-z0-9]{20}")
-	txt = pat.ReplaceAllLiteralString(txt, "x-buildbuddy-api-key=<REDACTED>")
-
-	// Match exactly 20 alphanumeric chars immediately followed by @,
-	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
-	// or "bes_backend=$API_KEY@domain.com".
-
-	// Here we match 20 alphanum chars occurring at the start of a line.
-	pat = regexp.MustCompile("^[[:alnum:]]{20}@")
-	txt = pat.ReplaceAllLiteralString(txt, "<REDACTED>@")
-
-	// Here we match 20 alphanum chars anywhere in the line, preceded by a non-
-	// alphanum char (to ensure the match is exactly 20 alphanum chars long).
-	pat = regexp.MustCompile("([^[:alnum:]])[[:alnum:]]{20}@")
-	txt = pat.ReplaceAllString(txt, "$1<REDACTED>@")
-
-	configuredKey := s.getConfiguredAPIKey()
-	if configuredKey != "" {
-		txt = strings.ReplaceAll(txt, configuredKey, "<REDACTED>")
-	}
-
+	txt = strings.ReplaceAll(txt, apiKey, "<REDACTED>")
 	return proto.UnmarshalText(txt, rsp)
 }
 
@@ -94,7 +69,7 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 			inv,
 		},
 	}
-	if err := s.redactAPIKeys(ctx, rsp); err != nil {
+	if err := s.redactAPIKey(ctx, rsp); err != nil {
 		return nil, err
 	}
 	return rsp, nil
