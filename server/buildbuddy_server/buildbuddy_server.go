@@ -43,6 +43,13 @@ func NewBuildBuddyServer(env environment.Env, sslService *ssl.SSLService) (*Buil
 	}, nil
 }
 
+func (s *BuildBuddyServer) getConfiguredAPIKey() string {
+	if apiConfig := s.env.GetConfigurator().GetAPIConfig(); apiConfig != nil {
+		return apiConfig.APIKey
+	}
+	return ""
+}
+
 func (s *BuildBuddyServer) redactAPIKeys(ctx context.Context, rsp *inpb.GetInvocationResponse) error {
 	proto.DiscardUnknown(rsp)
 	txt := proto.MarshalTextString(rsp)
@@ -91,7 +98,7 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 			inv,
 		},
 	}
-	if err := s.redactAPIKey(ctx, rsp); err != nil {
+	if err := s.redactAPIKeys(ctx, rsp); err != nil {
 		return nil, err
 	}
 	return rsp, nil
