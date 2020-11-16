@@ -246,15 +246,16 @@ func (t *Token) TableName() string {
 type APIKey struct {
 	Model
 
-	// Identifiers
-
 	APIKeyID     string `gorm:"primary_key"`
 	GroupGroupID string `gorm:"index:group_id_index"`
-
-	// Fields
-
+	// The user that created this API key.
+	UserUserID string
+	// The API key token used for authentication.
 	Value string `gorm:"index:value_index"`
+	// The user-specified description of the API key that helps them
+	// remember what it's for.
 	Label string
+	Perms int
 }
 
 func (k *APIKey) TableName() string {
