@@ -445,7 +445,7 @@ func (s *BuildBuddyServer) authorizeAPIKeyWrite(ctx context.Context, apiKeyID st
 		return err
 	}
 	acl := perms.ToACLProto( /* userID= */ nil, key.GroupID, key.Perms)
-	return perms.AuthorizeWrite(user, acl)
+	return perms.AuthorizeWrite(&user, acl)
 }
 
 func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApiKeyRequest) (*akpb.UpdateApiKeyResponse, error) {
