@@ -116,7 +116,7 @@ type Invocation struct {
 	TotalDownloadUsec         int64
 	TotalUploadUsec           int64
 	TotalCachedActionExecUsec int64
-	InvocationPK              int64
+	InvocationPK              int64 `gorm:"unique_index:invocation_invocation_pk"`
 }
 
 func (i *Invocation) TableName() string {

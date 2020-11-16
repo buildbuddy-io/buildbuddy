@@ -2,6 +2,8 @@ package build_event_handler
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
@@ -145,6 +147,11 @@ func fillInvocationFromCacheStats(cacheStats *capb.CacheStats, ti *tables.Invoca
 	ti.TotalCachedActionExecUsec = cacheStats.GetTotalCachedActionExecUsec()
 }
 
+func md5Int64(text string) int64 {
+	hash := md5.Sum([]byte(text))
+	return int64(binary.BigEndian.Uint64(hash[:8]))
+}
+
 func (e *EventChannel) FinalizeInvocation(ctx context.Context, iid string) error {
 	if err := e.pw.Flush(ctx); err != nil {
 		return err
@@ -207,6 +214,7 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 		log.Printf("First event! project_id: %s, notification_keywords: %s", event.ProjectId, event.NotificationKeywords)
 		ti := &tables.Invocation{
 			InvocationID:     iid,
+			InvocationPK:     md5Int64(iid),
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
 		}
 
