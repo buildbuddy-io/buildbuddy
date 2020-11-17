@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 
@@ -226,13 +225,6 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 			}
 			if apiKey := auth.ParseAPIKeyFromString(options); apiKey != "" {
 				ctx = auth.AuthContextFromAPIKey(ctx, apiKey)
-				authError := ctx.Value(interfaces.AuthContextUserErrorKey)
-				if authError != nil {
-					if err, ok := authError.(error); ok {
-						return err
-					}
-					return status.UnknownError(fmt.Sprintf("%v", authError))
-				}
 			}
 		}
 

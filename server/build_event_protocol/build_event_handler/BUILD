@@ -20,7 +20,6 @@ go_library(
         "//server/tables:go_default_library",
         "//server/util/perms:go_default_library",
         "//server/util/protofile:go_default_library",
-        "//server/util/status:go_default_library",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
     ],
