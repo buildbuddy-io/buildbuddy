@@ -53,6 +53,7 @@ type DatabaseConfig struct {
 	MaxOpenConns           int    `yaml:"max_open_conns" usage:"The maximum number of open connections to maintain to the db"`
 	MaxIdleConns           int    `yaml:"max_idle_conns" usage:"The maximum number of idle connections to maintain to the db"`
 	ConnMaxLifetimeSeconds int    `yaml:"conn_max_lifetime_seconds" usage:"The maximum lifetime of a connection to the db"`
+	LogQueries             bool   `yaml:"log_queries" usage:"If true, log all queries"`
 }
 
 type storageConfig struct {
