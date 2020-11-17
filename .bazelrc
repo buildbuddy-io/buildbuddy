@@ -30,6 +30,7 @@ build:remote --host_platform=@buildbuddy_toolchain//:platform
 build:remote --platforms=@buildbuddy_toolchain//:platform
 build:remote --crosstool_top=@buildbuddy_toolchain//:toolchain
 build:remote --remote_timeout=600
+build:remote --remote_download_minimal
 build:remote --jobs=100
 
 # Configuration used for CI
