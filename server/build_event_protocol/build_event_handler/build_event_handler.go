@@ -324,6 +324,15 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	return invocation, nil
 }
 
+// TODO(siggisim): pull this out somewhere central
+func truncatedJoin(list []string, maxItems int) string {
+	length := len(list)
+	if length > maxItems {
+		return fmt.Sprintf("%s and %d more", strings.Join(list[0:maxItems], ", "), length-maxItems)
+	}
+	return strings.Join(list, ", ")
+}
+
 func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocation {
 	i := &tables.Invocation{}
 	i.InvocationID = p.InvocationId // Required.
@@ -336,7 +345,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 	i.Role = p.Role
 	i.Command = p.Command
 	if p.Pattern != nil {
-		i.Pattern = strings.Join(p.Pattern, ", ")
+		i.Pattern = truncatedJoin(p.Pattern, 3)
 	}
 	i.ActionCount = p.ActionCount
 	i.BlobID = blobID
