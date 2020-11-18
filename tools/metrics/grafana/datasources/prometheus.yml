@@ -8,6 +8,6 @@ datasources:
   - isDefault: true
   # When running docker with --net=host, need to use 127.0.0.1 instead
   # of localhost.
-  - url: http://127.0.0.1:9090
+  - url: http://127.0.0.1:9100
   - version: 1
   - editable: false

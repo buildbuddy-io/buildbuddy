@@ -1,12 +1,20 @@
 version: "3.3"
 services:
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:v2.22.2
     network_mode: "host"
     volumes:
       - ${PWD}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      [
+        "--config.file=/etc/prometheus/prometheus.yml",
+        "--storage.tsdb.path=/prometheus",
+        "--web.console.libraries=/usr/share/prometheus/console_libraries",
+        "--web.console.templates=/usr/share/prometheus/consoles",
+        "--web.listen-address=0.0.0.0:9100",
+      ]
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana:7.3.3
     network_mode: "host"
     environment:
       - GF_SERVER_HTTP_PORT=4500
