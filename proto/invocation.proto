@@ -301,7 +301,7 @@ message InvocationStat {
 
 message InvocationStatQuery {
   // The search parameters in this query will be ANDed when performing a
-  // query -- so if a client species both "user" and "host", all results
+  // query -- so if a client specifies both "user" and "host", all results
   // returned must match both fields.
 
   // The unix-user who performed the build.
