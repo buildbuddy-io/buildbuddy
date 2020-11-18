@@ -30,6 +30,7 @@ build:remote --host_platform=@buildbuddy_toolchain//:platform
 build:remote --platforms=@buildbuddy_toolchain//:platform
 build:remote --crosstool_top=@buildbuddy_toolchain//:toolchain
 build:remote --remote_timeout=600
+build:remote --remote_download_minimal
 build:remote --jobs=100
 
 # Configuration used for CI
@@ -45,6 +46,8 @@ build:ci --disk_cache=
 # Configuration used for untrusted CI
 build:untrusted-ci --config=remote
 build:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
+build:untrusted-ci --repository_cache=/home/runner/repo-cache/untrusted/
+build:untrusted-ci --disk_cache=
 
 # By default, build logs get sent to the production server
 build --bes_results_url=https://app.buildbuddy.io/invocation/
