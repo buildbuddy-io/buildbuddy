@@ -244,6 +244,24 @@ func (t *Token) TableName() string {
 	return "Tokens"
 }
 
+type APIKey struct {
+	Model
+
+	APIKeyID string `gorm:"primary_key"`
+	UserID   string
+	GroupID  string `gorm:"index:api_key_group_id_index"`
+	Perms    int
+	// The API key token used for authentication.
+	Value string `gorm:"unique_index:api_key_value_index"`
+	// The user-specified description of the API key that helps them
+	// remember what it's for.
+	Label string
+}
+
+func (k *APIKey) TableName() string {
+	return "APIKeys"
+}
+
 type Execution struct {
 	Model
 	// The subscriber ID, a concatenated string of the
@@ -389,17 +407,26 @@ func (ts *TargetStatus) TableName() string {
 	return "TargetStatuses"
 }
 
+type PostAutoMigrateLogic func() error
+
 // Manual migration called before auto-migration.
-func PreAutoMigrate(db *gorm.DB) error {
+//
+// May return a list of functions to be executed after auto-migration.
+// This is useful in cases where some logic needs to be executed in PostAutoMigrate,
+// but some info is needed before the migration takes place in order to know what
+// to do.
+func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
+	postMigrate := make([]PostAutoMigrateLogic, 0)
+
 	d := db.Dialect()
 
 	// Initialize UserGroups.membership_status to 1 if the column doesn't exist.
 	if d.HasTable("UserGroups") && !d.HasColumn("UserGroups", "membership_status") {
 		if err := db.Exec("ALTER TABLE UserGroups ADD membership_status int").Error; err != nil {
-			return err
+			return nil, err
 		}
 		if err := db.Exec("UPDATE UserGroups SET membership_status = ?", int32(grpb.GroupMembershipStatus_MEMBER)).Error; err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -408,18 +435,47 @@ func PreAutoMigrate(db *gorm.DB) error {
 		// Remove the old url_identifier_index.
 		if d.HasIndex("Groups", "url_identifier_index") {
 			if err := d.RemoveIndex("Groups", "url_identifier_index"); err != nil {
-				return err
+				return nil, err
 			}
 		}
 		// Before creating a unique index, need to replace empty strings with NULL.
 		if !d.HasIndex("Groups", "url_identifier_unique_index") {
 			if err := db.Exec(`UPDATE Groups SET url_identifier = NULL WHERE url_identifier = ""`).Error; err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 
-	return nil
+	// Migrate Groups.APIKey to APIKey rows.
+	if d.HasTable("Groups") && !d.HasTable("APIKeys") {
+		postMigrate = append(postMigrate, func() error {
+			rows, err := db.Raw(`SELECT group_id, api_key FROM Groups`).Rows()
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+
+			var g Group
+			for rows.Next() {
+				if err := rows.Scan(&g.GroupID, &g.APIKey); err != nil {
+					return err
+				}
+				pk, err := PrimaryKeyForTable("APIKeys")
+				if err != nil {
+					return err
+				}
+
+				if err := db.Exec(
+					`INSERT INTO APIKeys (api_key_id, group_id, value, label) VALUES (?, ?, ?, ?)`,
+					pk, g.GroupID, g.APIKey, "Default API key").Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+
+	return postMigrate, nil
 }
 
 // Manual migration called after auto-migration.
@@ -438,6 +494,7 @@ func init() {
 	registerTable("US", &User{})
 	registerTable("GR", &Group{})
 	registerTable("UG", &UserGroup{})
+	registerTable("AK", &APIKey{})
 	registerTable("TO", &Token{})
 	registerTable("EX", &Execution{})
 	registerTable("TL", &TelemetryLog{})
