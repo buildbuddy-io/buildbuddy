@@ -169,6 +169,13 @@ type UserDB interface {
 	RequestToJoinGroup(ctx context.Context, userID string, groupID string) error
 	GetGroupUsers(ctx context.Context, groupID string, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error)
 	UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error
+
+	// API Keys API
+	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
+	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+	CreateAPIKey(ctx context.Context, groupID string, label string) (*tables.APIKey, error)
+	UpdateAPIKey(ctx context.Context, key *tables.APIKey) error
+	DeleteAPIKey(ctx context.Context, apiKeyID string) error
 }
 
 // A webhook can be called when a build is completed.
