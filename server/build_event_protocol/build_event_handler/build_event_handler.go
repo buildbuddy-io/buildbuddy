@@ -50,6 +50,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 	}
 	return &EventChannel{
 		env:            b.env,
+		ctx:            ctx,
 		pw:             protofile.NewBufferedProtoWriter(b.env.GetBlobstore(), iid, chunkFileSizeBytes),
 		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, iid),
 	}
@@ -80,6 +81,7 @@ func readBazelEvent(obe *pepb.OrderedBuildEvent, out *build_event_stream.BuildEv
 }
 
 type EventChannel struct {
+	ctx            context.Context
 	env            environment.Env
 	pw             *protofile.BufferedProtoWriter
 	statusReporter *build_status_reporter.BuildStatusReporter
@@ -152,25 +154,25 @@ func md5Int64(text string) int64 {
 	return int64(binary.BigEndian.Uint64(hash[:8]))
 }
 
-func (e *EventChannel) FinalizeInvocation(ctx context.Context, iid string) error {
-	if err := e.pw.Flush(ctx); err != nil {
+func (e *EventChannel) FinalizeInvocation(iid string) error {
+	if err := e.pw.Flush(e.ctx); err != nil {
 		return err
 	}
 	invocation := &inpb.Invocation{
 		InvocationId:     iid,
 		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
 	}
-	events, err := e.readAllTempBlobs(ctx, iid)
+	events, err := e.readAllTempBlobs(e.ctx, iid)
 	if err != nil {
 		return err
 	}
 	event_parser.FillInvocationFromEvents(events, invocation)
 
 	ti := tableInvocationFromProto(invocation, iid)
-	if cacheStats := hit_tracker.CollectCacheStats(ctx, e.env, iid); cacheStats != nil {
+	if cacheStats := hit_tracker.CollectCacheStats(e.ctx, e.env, iid); cacheStats != nil {
 		fillInvocationFromCacheStats(cacheStats, ti)
 	}
-	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
+	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
 		return err
 	}
 
@@ -194,7 +196,7 @@ func (e *EventChannel) FinalizeInvocation(ctx context.Context, iid string) error
 	return nil
 }
 
-func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuildToolEventStreamRequest) error {
+func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
 	seqNo := event.OrderedBuildEvent.SequenceNumber
 	streamID := event.OrderedBuildEvent.StreamId
 	iid := streamID.InvocationId
@@ -224,19 +226,19 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 				return err
 			}
 			if apiKey := auth.ParseAPIKeyFromString(options); apiKey != "" {
-				ctx = auth.AuthContextFromAPIKey(ctx, apiKey)
+				e.ctx = auth.AuthContextFromAPIKey(e.ctx, apiKey)
 			}
 		}
 
-		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
+		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
 			return err
 		}
 	}
 
-	e.statusReporter.ReportStatusForEvent(ctx, &bazelBuildEvent)
+	e.statusReporter.ReportStatusForEvent(e.ctx, &bazelBuildEvent)
 
 	// For everything else, just save the event to our buffer and keep on chugging.
-	err := e.pw.WriteProtoToStream(ctx, &inpb.InvocationEvent{
+	err := e.pw.WriteProtoToStream(e.ctx, &inpb.InvocationEvent{
 		EventTime:      event.OrderedBuildEvent.Event.EventTime,
 		BuildEvent:     &bazelBuildEvent,
 		SequenceNumber: event.OrderedBuildEvent.SequenceNumber,
@@ -250,7 +252,7 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 	// something to show the user. Flushing the proto file here allows that when the
 	// client fetches status for the incomplete build. Also flush if we haven't in over a minute.
 	if isWorkspaceStatusEvent(bazelBuildEvent) || e.pw.TimeSinceLastWrite().Minutes() > 1 {
-		if err := e.pw.Flush(ctx); err != nil {
+		if err := e.pw.Flush(e.ctx); err != nil {
 			return err
 		}
 	}
@@ -258,10 +260,11 @@ func (e *EventChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuild
 	// so that it can be searched by its commit SHA, user name, etc. even
 	// while the invocation is still in progress.
 	if isWorkspaceStatusEvent(bazelBuildEvent) {
-		if err := e.writeBuildMetadata(ctx, iid); err != nil {
+		if err := e.writeBuildMetadata(e.ctx, iid); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 

@@ -93,7 +93,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			channel = s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.InvocationId)
 		}
 
-		if err := channel.HandleEvent(ctx, in); err != nil {
+		if err := channel.HandleEvent(in); err != nil {
 			log.Printf("Error handling event; this means a broken build command: %s", err)
 			return disconnectWithErr(err)
 		}
@@ -117,7 +117,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		}
 	}
 
-	if err := channel.FinalizeInvocation(ctx, streamID.InvocationId); err != nil {
+	if err := channel.FinalizeInvocation(streamID.InvocationId); err != nil {
 		return disconnectWithErr(err)
 	}
 

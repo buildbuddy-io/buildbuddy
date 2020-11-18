@@ -35,8 +35,8 @@ type DevNullChannel struct{}
 func (c *DevNullChannel) MarkInvocationDisconnected(ctx context.Context, iid string) error {
 	return nil
 }
-func (c *DevNullChannel) FinalizeInvocation(ctx context.Context, iid string) error { return nil }
-func (c *DevNullChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuildToolEventStreamRequest) error {
+func (c *DevNullChannel) FinalizeInvocation(iid string) error { return nil }
+func (c *DevNullChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
 	return nil
 }
 

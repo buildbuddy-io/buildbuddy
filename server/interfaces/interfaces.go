@@ -77,8 +77,8 @@ type Authenticator interface {
 
 type BuildEventChannel interface {
 	MarkInvocationDisconnected(ctx context.Context, iid string) error
-	FinalizeInvocation(ctx context.Context, iid string) error
-	HandleEvent(ctx context.Context, event *pepb.PublishBuildToolEventStreamRequest) error
+	FinalizeInvocation(iid string) error
+	HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error
 }
 
 type BuildEventHandler interface {
