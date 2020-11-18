@@ -116,6 +116,7 @@ type Invocation struct {
 	TotalDownloadUsec         int64
 	TotalUploadUsec           int64
 	TotalCachedActionExecUsec int64
+	InvocationPK              int64 `gorm:"unique_index:invocation_invocation_pk"`
 }
 
 func (i *Invocation) TableName() string {
@@ -373,6 +374,37 @@ type CacheLog struct {
 
 func (c *CacheLog) TableName() string {
 	return "CacheLogs"
+}
+
+type Target struct {
+	Model
+	RepoURL    string `gorm:"primary_key"`
+	TargetID   int64  `gorm:"primary_key"`
+	UserID     string `gorm:"index:target_user_id"`
+	GroupID    string `gorm:"index:target_group_id"`
+	Perms      int    `gorm:"index:target_perms"`
+	Label      string
+	RuleType   string
+	TargetType int32
+	TestSize   int32
+}
+
+func (t *Target) TableName() string {
+	return "Targets"
+}
+
+// The Status of a target.
+type TargetStatus struct {
+	Model
+	TargetID      int64 `gorm:"primary_key"`
+	InvocationPK  int64 `gorm:"primary_key"`
+	Status        int32
+	StartTimeUsec int64
+	DurationUsec  int64
+}
+
+func (ts *TargetStatus) TableName() string {
+	return "TargetStatuses"
 }
 
 type PostAutoMigrateLogic func() error

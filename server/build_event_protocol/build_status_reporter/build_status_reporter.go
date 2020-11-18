@@ -318,12 +318,21 @@ func (r *BuildStatusReporter) groupStatusFromLabel(label string) *GroupStatus {
 	return nil
 }
 
+// TODO(siggisim): pull this out somewhere central
+func truncatedJoin(list []string, maxItems int) string {
+	length := len(list)
+	if length > maxItems {
+		return fmt.Sprintf("%s and %d more", strings.Join(list[0:maxItems], ", "), length-maxItems)
+	}
+	return strings.Join(list, ", ")
+}
+
 func patternFromEvent(event *build_event_stream.BuildEvent) string {
 	for _, child := range event.Children {
 		switch c := child.Id.(type) {
 		case *build_event_stream.BuildEventId_Pattern:
 			{
-				return strings.Join(c.Pattern.Pattern, " ")
+				return truncatedJoin(c.Pattern.Pattern, 3)
 			}
 		}
 	}

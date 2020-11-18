@@ -103,7 +103,6 @@ func openDB(dialect string, args ...interface{}) (*gorm.DB, error) {
 		return nil, err
 	}
 	gdb.SingularTable(true)
-	gdb.LogMode(false)
 	return gdb, nil
 }
 
@@ -135,6 +134,8 @@ func setDBOptions(c *config.Configurator, dialect string, gdb *gorm.DB) {
 			gdb.DB().SetConnMaxLifetime(time.Duration(connMaxLifetimeSecs) * time.Second)
 		}
 	}
+	gdb.LogMode(c.GetDatabaseConfig().LogQueries)
+
 }
 func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
 	if c.GetDBDataSource() == "" {

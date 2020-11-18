@@ -62,19 +62,23 @@ export default class SetupComponent extends React.Component {
           Now you can ⌘ click / double click on these urls to see the results of your build!
           <br />
           <br />
-          Visit your <a href="/">build history</a> to make sure that your builds are associated with your account.
-          <br />
-          <br />
-          {capabilities.anonymous && (
-            <span>
-              Note: Builds using the <b>No auth</b> option will not appear in your history, as they can't be associated
-              with your account.
-            </span>
+          {capabilities.enterprise && (
+            <>
+              Visit your <a href="/">build history</a> to make sure that your builds are associated with your account.
+              <br />
+              <br />
+              {capabilities.anonymous && (
+                <span>
+                  Note: Builds using the <b>No auth</b> option will not appear in your history, as they can't be
+                  associated with your account.
+                </span>
+              )}
+            </>
           )}
           {!capabilities.enterprise && (
             <div>
               <h2>Enterprise BuildBuddy</h2>
-              Want enterprise features like SSO, organization build history, user build history, and more?
+              Want enterprise features like SSO, organization build history, trends, remote build execution and more?
               <br />
               <br />
               <b>
