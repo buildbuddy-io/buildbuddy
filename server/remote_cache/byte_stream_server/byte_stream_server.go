@@ -99,19 +99,19 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		return err
 	}
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, instanceName)
+	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 	cache := s.getCache(instanceName)
 	if d.GetHash() == digest.EmptySha256 {
-		ht.TrackEmptyCASHit()
+		ht.TrackEmptyHit()
 		return nil
 	}
 	reader, err := cache.Reader(ctx, d, req.ReadOffset)
 	if err != nil {
-		ht.TrackCASMiss(d)
+		ht.TrackMiss(d)
 		return err
 	}
 
-	downloadTracker := ht.TrackCASDownload(d)
+	downloadTracker := ht.TrackDownload(d)
 	buf := make([]byte, minInt64(int64(readBufSizeBytes), d.GetSizeBytes()))
 	if len(buf) > 0 { // safety check -- should always be true.
 		_, err = io.CopyBuffer(&streamWriter{stream}, reader, buf)
@@ -148,7 +148,6 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 type writeState struct {
 	activeResourceName string
 	d                  *repb.Digest
-	instanceName       string
 	writer             io.WriteCloser
 	bytesWritten       int64
 	alreadyExists      bool
@@ -206,7 +205,6 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	ws := &writeState{
 		activeResourceName: req.ResourceName,
 		d:                  d,
-		instanceName:       instanceName,
 	}
 
 	// The protocol says it is *optional* to allow overwriting, but does
@@ -266,8 +264,8 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 					CommittedSize: streamState.bytesWritten,
 				})
 			}
-			ht := hit_tracker.NewHitTracker(ctx, s.env, streamState.instanceName)
-			uploadTracker := ht.TrackCASUpload(streamState.d)
+			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
+			uploadTracker := ht.TrackUpload(streamState.d)
 			defer uploadTracker.Close()
 		} else { // Subsequent messages
 			if err := checkSubsequentPreconditions(req, streamState); err != nil {

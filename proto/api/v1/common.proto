@@ -5,7 +5,6 @@ package api.v1;
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
-// Status of a resource.
 enum Status {
   // The implicit default enum value. Should never be set.
   STATUS_UNSPECIFIED = 0;
@@ -58,6 +57,48 @@ enum Status {
   // Displays as "Skipped". Means building and testing were skipped.
   // (E.g. Restricted to a different configuration.)
   SKIPPED = 13;
+}
+
+// These correspond to the suffix of the rule name. Eg cc_test has type TEST.
+enum TargetType {
+  // Unspecified by the build system.
+  TARGET_TYPE_UNSPECIFIED = 0;
+
+  // An application e.g. ios_application.
+  APPLICATION = 1;
+
+  // A binary target e.g. cc_binary.
+  BINARY = 2;
+
+  // A library target e.g. java_library
+  LIBRARY = 3;
+
+  // A package
+  PACKAGE = 4;
+
+  // Any test target, in bazel that means a rule with a '_test' suffix.
+  TEST = 5;
+}
+
+// Indicates how big the user indicated the test action was.
+enum TestSize {
+  // Unspecified by the user.
+  TEST_SIZE_UNSPECIFIED = 0;
+
+  // Unit test taking less than 1 minute.
+  SMALL = 1;
+
+  // Integration tests taking less than 5 minutes.
+  MEDIUM = 2;
+
+  // End-to-end tests taking less than 15 minutes.
+  LARGE = 3;
+
+  // Even bigger than LARGE.
+  ENORMOUS = 4;
+
+  // Something that doesn't fit into the above categories.
+  OTHER_SIZE = 5;
 }
 
 // The timing of a particular Invocation, Action, etc. The start_time is

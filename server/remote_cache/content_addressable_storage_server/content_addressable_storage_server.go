@@ -115,7 +115,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 	cache := s.getCache(req.GetInstanceName())
 	rsp.Responses = make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(req.Requests))
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, req.GetInstanceName())
+	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 	kvs := make(map[*repb.Digest][]byte, len(req.Requests))
 	for _, uploadRequest := range req.Requests {
 		uploadDigest := uploadRequest.GetDigest()
@@ -123,7 +123,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		if err != nil {
 			return nil, err
 		}
-		uploadTracker := ht.TrackCASUpload(uploadDigest)
+		uploadTracker := ht.TrackUpload(uploadDigest)
 		// defers are preetty cheap: https://tpaschalis.github.io/defer-internals/
 		// so doing 100-1000 or so in this loop is fine.
 		defer uploadTracker.Close()
@@ -181,13 +181,13 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	cache := s.getCache(req.GetInstanceName())
 	cacheRequest := make([]*repb.Digest, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
-	ht := hit_tracker.NewHitTracker(ctx, s.env, req.GetInstanceName())
+	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 	for _, readDigest := range req.GetDigests() {
 		_, err := digest.Validate(readDigest)
 		if err != nil {
 			return nil, err
 		}
-		downloadTracker := ht.TrackCASDownload(readDigest)
+		downloadTracker := ht.TrackDownload(readDigest)
 		// defers are preetty cheap: https://tpaschalis.github.io/defer-internals/
 		// so doing 100-1000 or so in this loop is fine.
 		defer downloadTracker.Close()

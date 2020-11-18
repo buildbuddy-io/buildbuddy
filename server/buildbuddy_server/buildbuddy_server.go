@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 
@@ -43,14 +45,43 @@ func NewBuildBuddyServer(env environment.Env, sslService *ssl.SSLService) (*Buil
 	}, nil
 }
 
-func (s *BuildBuddyServer) redactAPIKey(ctx context.Context, rsp *inpb.GetInvocationResponse) error {
-	apiKey := s.getGroupAPIKey(ctx)
-	if apiKey == "" {
-		return nil
+func (s *BuildBuddyServer) getConfiguredAPIKey() string {
+	if apiConfig := s.env.GetConfigurator().GetAPIConfig(); apiConfig != nil {
+		return apiConfig.APIKey
 	}
+	return ""
+}
+
+func (s *BuildBuddyServer) redactAPIKeys(ctx context.Context, rsp *inpb.GetInvocationResponse) error {
 	proto.DiscardUnknown(rsp)
 	txt := proto.MarshalTextString(rsp)
-	txt = strings.ReplaceAll(txt, apiKey, "<REDACTED>")
+
+	// NB: this implementation depends on the way we generate API keys
+	// (20 alphanumeric characters).
+
+	// Replace x-buildbuddy-api-key header.
+	pat := regexp.MustCompile("x-buildbuddy-api-key=[[:alnum:]]{20}")
+	txt = pat.ReplaceAllLiteralString(txt, "x-buildbuddy-api-key=<REDACTED>")
+
+	// Replace sequences that look like API keys immediately followed by '@',
+	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
+	// or "bes_backend=$API_KEY@domain.com".
+
+	// Here we match 20 alphanum chars occurring at the start of a line.
+	pat = regexp.MustCompile("^[[:alnum:]]{20}@")
+	txt = pat.ReplaceAllLiteralString(txt, "<REDACTED>@")
+	// Here we match 20 alphanum chars anywhere in the line, preceded by a non-
+	// alphanum char (to ensure the match is exactly 20 alphanum chars long).
+	pat = regexp.MustCompile("([^[:alnum:]])[[:alnum:]]{20}@")
+	txt = pat.ReplaceAllString(txt, "$1<REDACTED>@")
+
+	// Replace the literal API key in the configuration, which does not need
+	// to conform to the way we generate API keys.
+	configuredKey := s.getConfiguredAPIKey()
+	if configuredKey != "" {
+		txt = strings.ReplaceAll(txt, configuredKey, "<REDACTED>")
+	}
+
 	return proto.UnmarshalText(txt, rsp)
 }
 
@@ -69,7 +100,7 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 			inv,
 		},
 	}
-	if err := s.redactAPIKey(ctx, rsp); err != nil {
+	if err := s.redactAPIKeys(ctx, rsp); err != nil {
 		return nil, err
 	}
 	return rsp, nil
@@ -205,11 +236,7 @@ func (s *BuildBuddyServer) authorizeGroupAccess(ctx context.Context, groupID str
 	if groupID == "" {
 		return status.InvalidArgumentError("group ID is required")
 	}
-	auth := s.env.GetAuthenticator()
-	if auth == nil {
-		return status.UnimplementedError("Not Implemented")
-	}
-	user, err := auth.AuthenticatedUser(ctx)
+	user, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
 		return err
 	}
@@ -382,18 +409,6 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 	return &grpb.JoinGroupResponse{}, nil
 }
 
-func toProtoAPIKeys(tableKeys []*tables.APIKey) []*akpb.ApiKey {
-	protoKeys := make([]*akpb.ApiKey, len(tableKeys))
-	for i, k := range tableKeys {
-		protoKeys[i] = &akpb.ApiKey{
-			Id:    k.APIKeyID,
-			Value: k.Value,
-			Label: k.Label,
-		}
-	}
-	return protoKeys
-}
-
 func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
@@ -407,9 +422,17 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 	if err != nil {
 		return nil, err
 	}
-	return &akpb.GetApiKeysResponse{
-		ApiKey: toProtoAPIKeys(tableKeys),
-	}, nil
+	rsp := &akpb.GetApiKeysResponse{
+		ApiKey: make([]*akpb.ApiKey, 0, len(tableKeys)),
+	}
+	for _, k := range tableKeys {
+		rsp.ApiKey = append(rsp.ApiKey, &akpb.ApiKey{
+			Id:    k.APIKeyID,
+			Value: k.Value,
+			Label: k.Label,
+		})
+	}
+	return rsp, nil
 }
 
 func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApiKeyRequest) (*akpb.CreateApiKeyResponse, error) {
@@ -434,33 +457,25 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 	}, nil
 }
 
-func (s *BuildBuddyServer) authorizeAPIKeyAccess(ctx context.Context, apiKeyID string) error {
+func (s *BuildBuddyServer) authorizeAPIKeyWrite(ctx context.Context, apiKeyID string) error {
 	if apiKeyID == "" {
 		return status.InvalidArgumentError("API key ID is required")
+	}
+	user, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		return err
 	}
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return status.UnimplementedError("Not Implemented")
-	}
-	auth := s.env.GetAuthenticator()
-	if auth == nil {
-		return status.UnimplementedError("Not Implemented")
-	}
-	user, err := auth.AuthenticatedUser(ctx)
-	if err != nil {
-		return err
 	}
 	// Check that the user belongs to the group that owns the requested API key.
 	key, err := userDB.GetAPIKey(ctx, apiKeyID)
 	if err != nil {
 		return err
 	}
-	for _, allowedGroupID := range user.GetAllowedGroups() {
-		if allowedGroupID == key.GroupGroupID {
-			return nil
-		}
-	}
-	return status.PermissionDeniedError("User does not have access to the requested API key")
+	acl := perms.ToACLProto( /* userID= */ nil, key.GroupID, key.Perms)
+	return perms.AuthorizeWrite(&user, acl)
 }
 
 func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApiKeyRequest) (*akpb.UpdateApiKeyResponse, error) {
@@ -468,13 +483,14 @@ func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApi
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	if err := s.authorizeAPIKeyAccess(ctx, req.GetId()); err != nil {
+	if err := s.authorizeAPIKeyWrite(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	if err := userDB.UpdateAPIKey(ctx, &tables.APIKey{
+	tk := &tables.APIKey{
 		APIKeyID: req.GetId(),
 		Label:    req.GetLabel(),
-	}); err != nil {
+	}
+	if err := userDB.UpdateAPIKey(ctx, tk); err != nil {
 		return nil, err
 	}
 	return &akpb.UpdateApiKeyResponse{}, nil
@@ -485,7 +501,7 @@ func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApi
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	if err := s.authorizeAPIKeyAccess(ctx, req.GetId()); err != nil {
+	if err := s.authorizeAPIKeyWrite(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
 	if err := userDB.DeleteAPIKey(ctx, req.GetId()); err != nil {
@@ -522,6 +538,18 @@ func assembleURL(host, scheme, port string) string {
 		url = url + ":" + port
 	}
 	return url
+}
+
+func toProtoAPIKeys(tableKeys []*tables.APIKey) []*akpb.ApiKey {
+	protoKeys := make([]*akpb.ApiKey, len(tableKeys))
+	for i, k := range tableKeys {
+		protoKeys[i] = &akpb.ApiKey{
+			Id:    k.APIKeyID,
+			Value: k.Value,
+			Label: k.Label,
+		}
+	}
+	return protoKeys
 }
 
 func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]*akpb.ApiKey, error) {
@@ -688,6 +716,25 @@ func parseByteStreamURL(bsURL, filename string) (*bsLookup, error) {
 	return nil, fmt.Errorf("unparsable bytestream URL: '%s'", bsURL)
 }
 
+func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invocationID string) (*tables.APIKey, error) {
+	in, err := s.env.GetInvocationDB().LookupInvocation(ctx, invocationID)
+	if err != nil {
+		return nil, err
+	}
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	apiKeys, err := userDB.GetAPIKeys(ctx, in.GroupID)
+	if err != nil {
+		return nil, err
+	}
+	if len(apiKeys) == 0 {
+		return nil, status.NotFoundError("The group that owns this invocation doesn't have any API keys configured.")
+	}
+	return apiKeys[0], nil
+}
+
 // Handle requests for build logs and artifacts by looking them up in from our
 // cache servers using the bytestream API.
 func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -698,9 +745,11 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	group, err := s.env.GetInvocationDB().LookupGroupFromInvocation(r.Context(), params.Get("invocation_id"))
-	if err == nil && group != nil && lookup.URL.User == nil {
-		lookup.URL.User = url.User(group.APIKey)
+	if lookup.URL.User == nil {
+		apiKey, _ := s.getAnyAPIKeyForInvocation(r.Context(), params.Get("invocation_id"))
+		if apiKey != nil {
+			lookup.URL.User = url.User(apiKey.Value)
+		}
 	}
 
 	// Stream the file back to our client

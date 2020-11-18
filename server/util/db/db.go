@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/jinzhu/gorm"
 	// We support MySQL (preferred), Postgresql, and Sqlite3
@@ -93,11 +94,6 @@ func maybeRunMigrations(dialect string, gdb *gorm.DB) error {
 			return err
 		}
 	}
-	// SQLITE Special! To avoid "database is locked errors":
-	if dialect == sqliteDialect {
-		gdb.DB().SetMaxOpenConns(1)
-		gdb.Exec("PRAGMA journal_mode=WAL;")
-	}
 	return nil
 }
 
@@ -107,7 +103,6 @@ func openDB(dialect string, args ...interface{}) (*gorm.DB, error) {
 		return nil, err
 	}
 	gdb.SingularTable(true)
-	gdb.LogMode(false)
 	return gdb, nil
 }
 
@@ -123,6 +118,25 @@ func parseDatasource(datasource string) (string, string, error) {
 	return "", "", fmt.Errorf("No database configured -- please specify at least one in the config")
 }
 
+func setDBOptions(c *config.Configurator, dialect string, gdb *gorm.DB) {
+	// SQLITE Special! To avoid "database is locked errors":
+	if dialect == sqliteDialect {
+		gdb.DB().SetMaxOpenConns(1)
+		gdb.Exec("PRAGMA journal_mode=WAL;")
+	} else {
+		if maxOpenConns := c.GetDatabaseConfig().MaxOpenConns; maxOpenConns != 0 {
+			gdb.DB().SetMaxOpenConns(maxOpenConns)
+		}
+		if maxIdleConns := c.GetDatabaseConfig().MaxIdleConns; maxIdleConns != 0 {
+			gdb.DB().SetMaxIdleConns(maxIdleConns)
+		}
+		if connMaxLifetimeSecs := c.GetDatabaseConfig().ConnMaxLifetimeSeconds; connMaxLifetimeSecs != 0 {
+			gdb.DB().SetConnMaxLifetime(time.Duration(connMaxLifetimeSecs) * time.Second)
+		}
+	}
+	gdb.LogMode(c.GetDatabaseConfig().LogQueries)
+
+}
 func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
 	if c.GetDBDataSource() == "" {
 		return nil, fmt.Errorf("No database configured -- please specify one in the config")
@@ -135,6 +149,7 @@ func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
 	if err != nil {
 		return nil, err
 	}
+	setDBOptions(c, dialect, primaryDB)
 	if err := maybeRunMigrations(dialect, primaryDB); err != nil {
 		return nil, err
 	}
@@ -154,6 +169,7 @@ func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
 		if err != nil {
 			return nil, err
 		}
+		setDBOptions(c, readDialect, replicaDB)
 		log.Print("Read replica was present -- connecting to it.")
 		dbh.readReplicaDB = replicaDB
 	}

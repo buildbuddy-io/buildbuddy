@@ -2,6 +2,7 @@ package invocationdb
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -62,7 +63,10 @@ func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.
 				return d.createInvocation(tx, ctx, ti)
 			}
 		} else {
-			tx.Model(&existing).Where("invocation_id = ?", ti.InvocationID).Updates(ti)
+			err := tx.Model(&existing).Where("invocation_id = ?", ti.InvocationID).Updates(ti).Error
+			if err != nil {
+				log.Printf("Error updating invocation %s: %s", ti.InvocationID, err.Error())
+			}
 		}
 		return nil
 	})

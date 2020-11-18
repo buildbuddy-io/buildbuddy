@@ -9,6 +9,7 @@ import authService from "../auth/auth_service";
 import { User } from "../auth/auth_service";
 import faviconService from "../favicon/favicon";
 import CompareInvocationsComponent from "../compare/compare_invocations";
+import ErrorBannerComponent from "../errors/error_banner";
 
 const viewModeKey = "VIEW_MODE";
 const denseModeValue = "DENSE";
@@ -98,6 +99,7 @@ export default class RootComponent extends React.Component {
             {showSetup && <SetupComponent />}
           </div>
           <FooterComponent />
+          <ErrorBannerComponent />
         </div>
       </div>
     );

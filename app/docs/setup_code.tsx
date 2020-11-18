@@ -181,7 +181,7 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   stripAPIKey(url: string) {
-    return url.replace(/\:\/\/.*\@/gi, "://");
+    return url?.replace(/\:\/\/.*\@/gi, "://");
   }
 
   isAuthenticated() {
@@ -209,8 +209,10 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   render() {
+    if (!this.state.bazelConfigResponse) {
+      return <div className="loading"></div>;
+    }
     const selectedCredential = this.getSelectedCredential();
-
     return (
       <div className="setup">
         <div className="setup-controls">

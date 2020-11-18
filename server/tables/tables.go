@@ -116,6 +116,7 @@ type Invocation struct {
 	TotalDownloadUsec         int64
 	TotalUploadUsec           int64
 	TotalCachedActionExecUsec int64
+	InvocationPK              int64 `gorm:"unique_index:invocation_invocation_pk"`
 }
 
 func (i *Invocation) TableName() string {
@@ -246,14 +247,14 @@ func (t *Token) TableName() string {
 type APIKey struct {
 	Model
 
-	// Identifiers
-
-	APIKeyID     string `gorm:"primary_key"`
-	GroupGroupID string `gorm:"index:group_id_index"`
-
-	// Fields
-
-	Value string `gorm:"index:value_index"`
+	APIKeyID string `gorm:"primary_key"`
+	UserID   string
+	GroupID  string `gorm:"index:api_key_group_id_index"`
+	Perms    int
+	// The API key token used for authentication.
+	Value string `gorm:"unique_index:api_key_value_index"`
+	// The user-specified description of the API key that helps them
+	// remember what it's for.
 	Label string
 }
 
@@ -375,6 +376,37 @@ func (c *CacheLog) TableName() string {
 	return "CacheLogs"
 }
 
+type Target struct {
+	Model
+	RepoURL    string `gorm:"primary_key"`
+	TargetID   int64  `gorm:"primary_key"`
+	UserID     string `gorm:"index:target_user_id"`
+	GroupID    string `gorm:"index:target_group_id"`
+	Perms      int    `gorm:"index:target_perms"`
+	Label      string
+	RuleType   string
+	TargetType int32
+	TestSize   int32
+}
+
+func (t *Target) TableName() string {
+	return "Targets"
+}
+
+// The Status of a target.
+type TargetStatus struct {
+	Model
+	TargetID      int64 `gorm:"primary_key"`
+	InvocationPK  int64 `gorm:"primary_key"`
+	Status        int32
+	StartTimeUsec int64
+	DurationUsec  int64
+}
+
+func (ts *TargetStatus) TableName() string {
+	return "TargetStatuses"
+}
+
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.
@@ -434,7 +466,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 				}
 
 				if err := db.Exec(
-					`INSERT INTO APIKeys (api_key_id, group_group_id, value, label) VALUES (?, ?, ?, ?)`,
+					`INSERT INTO APIKeys (api_key_id, group_id, value, label) VALUES (?, ?, ?, ?)`,
 					pk, g.GroupID, g.APIKey, "Default API key").Error; err != nil {
 					return err
 				}

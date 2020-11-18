@@ -3,9 +3,7 @@ module github.com/buildbuddy-io/buildbuddy
 go 1.14
 
 require (
-	cloud.google.com/go v0.57.0 // indirect
-	cloud.google.com/go/bigquery v1.7.0 // indirect
-	cloud.google.com/go/storage v1.7.0
+	cloud.google.com/go/storage v1.12.0
 	dmitri.shuralyov.com/gpu/mtl v0.0.0-20191203043605-d42048ed14fd // indirect
 	github.com/Azure/go-autorest/autorest v0.9.6 // indirect
 	github.com/BurntSushi/xgb v0.0.0-20200324125942-20f126ea2843 // indirect
@@ -29,8 +27,9 @@ require (
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/golang/protobuf v1.4.2
+	github.com/google/go-github v17.0.0+incompatible // indirect
+	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/google/gofuzz v1.1.0 // indirect
-	github.com/google/pprof v0.0.0-20200507031123-427632fa3b1c // indirect
 	github.com/google/uuid v1.1.2
 	github.com/googleapis/gnostic v0.4.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
@@ -39,6 +38,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334 // indirect
 	github.com/ianlancetaylor/demangle v0.0.0-20200414190113-039b1ae3a340 // indirect
+	github.com/jessevdk/go-flags v1.4.0 // indirect
 	github.com/jinzhu/gorm v1.9.12
 	github.com/jinzhu/now v1.1.1 // indirect
 	github.com/json-iterator/go v1.1.10 // indirect
@@ -54,18 +54,17 @@ require (
 	github.com/prometheus/client_golang v1.6.0
 	github.com/rogpeppe/go-internal v1.6.0 // indirect
 	github.com/stretchr/objx v0.2.0 // indirect
-	github.com/yuin/goldmark v1.1.30 // indirect
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/exp v0.0.0-20200331195152-e8c3332aa8e5 // indirect
 	golang.org/x/image v0.0.0-20200430140353-33d19683fad8 // indirect
 	golang.org/x/mobile v0.0.0-20200329125638-4c31acba0007 // indirect
+	golang.org/x/mod v0.3.0 // indirect
 	golang.org/x/net v0.0.0-20201009032441-dbdefad45b89 // indirect
-	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
+	golang.org/x/sync v0.0.0-20200625203802-6e8e738ad208
 	golang.org/x/sys v0.0.0-20201009025420-dfb3f7c4e634 // indirect
 	golang.org/x/text v0.3.3 // indirect
 	golang.org/x/time v0.0.0-20200416051211-89c76fbcd5d1 // indirect
-	golang.org/x/tools v0.0.0-20200507205054-480da3ebd79c // indirect
-	google.golang.org/api v0.23.0
+	google.golang.org/api v0.32.0
 	google.golang.org/genproto v0.0.0-20201009135657-4d944d34d83c
 	google.golang.org/grpc v1.33.0
 	google.golang.org/protobuf v1.25.0 // indirect

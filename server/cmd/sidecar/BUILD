@@ -26,3 +26,59 @@ go_binary(
     embed = [":go_default_library"],
     visibility = ["//visibility:public"],
 )
+
+go_binary(
+    name = "sidecar-darwin",
+    out = "sidecar-darwin-amd64",
+    embed = [":go_default_library"],
+    gc_linkopts = [
+        "-s",
+        "-w",
+    ],
+    goarch = "amd64",
+    goos = "darwin",
+    pure = "on",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+go_binary(
+    name = "sidecar-linux",
+    out = "sidecar-linux-amd64",
+    embed = [":go_default_library"],
+    gc_linkopts = [
+        "-s",
+        "-w",
+    ],
+    goarch = "amd64",
+    goos = "linux",
+    pure = "on",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+go_binary(
+    name = "sidecar-linux-arm64",
+    out = "sidecar-linux-arm64",
+    embed = [":go_default_library"],
+    gc_linkopts = [
+        "-s",
+        "-w",
+    ],
+    goarch = "arm64",
+    goos = "linux",
+    pure = "on",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+go_binary(
+    name = "sidecar-windows",
+    out = "sidecar-windows-amd64.exe",
+    embed = [":go_default_library"],
+    goarch = "amd64",
+    goos = "windows",
+    pure = "on",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
