@@ -1,0 +1,14 @@
+version: "3.3"
+services:
+  prometheus:
+    image: prom/prometheus
+    network_mode: "host"
+    volumes:
+      - ${PWD}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+  grafana:
+    image: grafana/grafana
+    network_mode: "host"
+    environment:
+      - GF_SERVER_HTTP_PORT=4500
+    volumes:
+      - ./grafana:/etc/grafana/provisioning

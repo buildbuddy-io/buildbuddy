@@ -62,7 +62,7 @@ var (
 	sslPort        = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
 	gRPCPort       = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
 	gRPCSPort      = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
-	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
+	monitoringPort = flag.Int("monitoring_port", 9100, "The port to listen for monitoring traffic on")
 
 	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
