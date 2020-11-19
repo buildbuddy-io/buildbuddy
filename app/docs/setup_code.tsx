@@ -204,7 +204,7 @@ export default class SetupCodeComponent extends React.Component {
             {capabilities.anonymous ? (
               <>Looks like your organization doesn't have any API keys.</>
             ) : (
-              <>This BuildBuddy installation requires API key authentication, but no API keys are set up.</>
+              <>This BuildBuddy installation requires authentication, but no API keys are set up.</>
             )}
           </div>
           <div>
