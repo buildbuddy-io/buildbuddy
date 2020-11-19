@@ -14,7 +14,7 @@ interface Props {
 interface State {
   bazelConfigResponse: bazel_config.GetBazelConfigResponse;
   user: User;
-  selectedCredentialIndex: number | null;
+  selectedCredentialIndex: number;
 
   auth: "none" | "cert" | "key";
   separateAuth: boolean;
@@ -27,10 +27,10 @@ export default class SetupCodeComponent extends React.Component {
   props: Props;
   state: State = {
     bazelConfigResponse: null,
-    selectedCredentialIndex: null,
+    selectedCredentialIndex: 0,
     user: authService.user,
 
-    auth: "key",
+    auth: capabilities.auth ? "key" : "none",
     cacheChecked: false,
     cache: "read",
     executionChecked: false,
@@ -60,19 +60,14 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   setConfigResponse(response: bazel_config.GetBazelConfigResponse) {
-    if (!response) {
-      this.setState({ bazelConfigResponse: null, selectedCredentialIndex: null });
-      return;
-    }
-
-    this.setState({ bazelConfigResponse: response, selectedCredentialIndex: response.credential?.length ? 0 : null });
+    this.setState({ bazelConfigResponse: response, selectedCredentialIndex: 0 });
   }
 
   getSelectedCredential() {
     const { bazelConfigResponse: response, selectedCredentialIndex: index } = this.state;
-    if (index === null || !response?.credential) return null;
+    if (!response?.credential) return null;
 
-    return response.credential[index];
+    return response.credential[index] || null;
   }
 
   handleInputChange(event: any) {
@@ -97,15 +92,11 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   getEventStream() {
-    let url = this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "bes_backend")
-      ?.body;
-    return this.stripAPIKey(url);
+    return this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "bes_backend")?.body;
   }
 
   getCache() {
-    let url = this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_cache")
-      ?.body;
-    return this.stripAPIKey(url);
+    return this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_cache")?.body;
   }
 
   getCacheOptions() {
@@ -131,9 +122,8 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   getRemoteExecution() {
-    let url = this.state.bazelConfigResponse?.configOption?.find((option: any) => option.flagName == "remote_executor")
+    return this.state.bazelConfigResponse?.configOption?.find((option: any) => option.flagName == "remote_executor")
       ?.body;
-    return this.stripAPIKey(url);
   }
 
   getCredentials() {
@@ -161,27 +151,25 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   isAuthEnabled() {
-    return !!capabilities.auth && !!this.state.user;
+    return Boolean(capabilities.auth && this.state.user);
   }
 
   isCacheEnabled() {
-    return !!this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_cache");
+    return Boolean(
+      this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_cache")
+    );
   }
 
   isExecutionEnabled() {
     return (
       (this.isAuthenticated() || !capabilities.auth) &&
-      !!this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_executor")
+      Boolean(this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_executor"))
     );
   }
 
   isCertEnabled() {
     const certificate = this.getSelectedCredential()?.certificate;
     return Boolean(certificate && certificate.cert && certificate.key);
-  }
-
-  stripAPIKey(url: string) {
-    return url?.replace(/\:\/\/.*\@/gi, "://");
   }
 
   isAuthenticated() {
@@ -203,9 +191,32 @@ export default class SetupCodeComponent extends React.Component {
     this.setState({ selectedCredentialIndex: Number(e.target.value) });
   }
 
-  onClickManageKeys(e: React.MouseEvent<HTMLAnchorElement>) {
+  onClickLink(href: string, e: React.MouseEvent<HTMLAnchorElement>) {
     e.preventDefault();
-    router.navigateToSettings();
+    router.navigateTo(href);
+  }
+
+  renderMissingApiKeysNotice() {
+    return (
+      <div className="no-api-keys">
+        <div className="no-api-keys-content">
+          <div>
+            {capabilities.anonymous ? (
+              <>Looks like your organization doesn't have any API keys.</>
+            ) : (
+              <>This BuildBuddy installation requires API key authentication, but no API keys are set up.</>
+            )}
+          </div>
+          <div>
+            <FilledButton className="manage-keys-button">
+              <a href="/settings/" onClick={this.onClickLink.bind(this, "/settings")}>
+                Manage keys
+              </a>
+            </FilledButton>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   render() {
@@ -213,8 +224,16 @@ export default class SetupCodeComponent extends React.Component {
       return <div className="loading"></div>;
     }
     const selectedCredential = this.getSelectedCredential();
+
+    if (!capabilities.anonymous && !selectedCredential) {
+      // TODO(bduffany): Ideally we'd hide the entire setup page and direct the user to set up
+      // API keys before taking any further steps.
+      return <div className="setup">{this.renderMissingApiKeysNotice()}</div>;
+    }
+
     return (
       <div className="setup">
+        <div className="setup-step-header">Select options</div>
         <div className="setup-controls">
           {this.isAuthEnabled() && (
             <span className="group-container">
@@ -371,7 +390,7 @@ export default class SetupCodeComponent extends React.Component {
             for more info.
           </div>
         )}
-        {selectedCredential ? (
+        {!(this.isAuthenticated() && !selectedCredential) && (
           <>
             <b>Copy to your .bazelrc</b>
             <code data-header=".bazelrc">
@@ -439,18 +458,8 @@ export default class SetupCodeComponent extends React.Component {
               </div>
             )}
           </>
-        ) : (
-          <div className="no-api-keys">
-            <div>Looks like your organization doesn't have any API keys.</div>
-            <div>
-              <FilledButton className="manage-keys-button">
-                <a href="/settings/" onClick={this.onClickManageKeys.bind(this)}>
-                  Manage keys
-                </a>
-              </FilledButton>
-            </div>
-          </div>
         )}
+        {this.isAuthenticated() && !selectedCredential && this.renderMissingApiKeysNotice()}
       </div>
     );
   }

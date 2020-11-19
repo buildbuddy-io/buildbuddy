@@ -474,7 +474,11 @@ func (s *BuildBuddyServer) authorizeAPIKeyWrite(ctx context.Context, apiKeyID st
 	if err != nil {
 		return err
 	}
+	fmt.Printf("API key: %v\n", key)
 	acl := perms.ToACLProto( /* userID= */ nil, key.GroupID, key.Perms)
+	fmt.Println("ACL for API key:")
+	fmt.Println(proto.MarshalTextString(acl))
+	fmt.Printf("Authenticated user info: %v\n", user)
 	return perms.AuthorizeWrite(&user, acl)
 }
 
@@ -552,12 +556,17 @@ func toProtoAPIKeys(tableKeys []*tables.APIKey) []*akpb.ApiKey {
 	return protoKeys
 }
 
-func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]*akpb.ApiKey, error) {
-	groupID := ""
+func getGroupIDFromRequestContext(ctx context.Context) string {
 	if reqCtx := requestcontext.ProtoRequestContextFromContext(ctx); reqCtx != nil {
-		groupID = reqCtx.GetGroupId()
-	} else {
-		return nil, status.PermissionDeniedError("")
+		return reqCtx.GetGroupId()
+	}
+	return ""
+}
+
+func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]*akpb.ApiKey, error) {
+	groupID := getGroupIDFromRequestContext(ctx)
+	if groupID == "" {
+		return nil, status.UnauthenticatedError("Request must specify an organization.")
 	}
 	if err := s.authorizeGroupAccess(ctx, groupID); err != nil {
 		return nil, err
@@ -586,13 +595,6 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	return nil, status.InternalError("Could not find the requested group ID. This should never happen.")
 }
 
-func insertPassword(rawURL, password string) string {
-	if password == "" {
-		return rawURL
-	}
-	return strings.Replace(rawURL, "://", "://"+password+"@", 1)
-}
-
 func getIntFlag(flagName string, defaultVal string) string {
 	f := flag.Lookup(flagName)
 	if f == nil {
@@ -616,11 +618,16 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 	if eventsAPIURL == "" {
 		eventsAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 	}
-	groupAPIKeys, err := s.getAPIKeysForAuthorizedGroup(ctx)
-	if err != nil {
-		return nil, err
+	var groupAPIKeys []*akpb.ApiKey
+	groupID := getGroupIDFromRequestContext(ctx)
+	if isRequestingAuth := (groupID != ""); isRequestingAuth {
+		k, err := s.getAPIKeysForAuthorizedGroup(ctx)
+		if err != nil {
+			return nil, err
+		}
+		groupAPIKeys = k
 	}
-	eventsAPIURL = insertPassword(eventsAPIURL, "${API_KEY}")
+
 	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", eventsAPIURL))
 
 	if s.env.GetCache() != nil {
@@ -628,7 +635,6 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		if cacheAPIURL == "" {
 			cacheAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		cacheAPIURL = insertPassword(cacheAPIURL, "${API_KEY}")
 		configOptions = append(configOptions, makeConfigOption("build", "remote_cache", cacheAPIURL))
 	}
 
@@ -637,7 +643,6 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		if remoteExecutionAPIURL == "" {
 			remoteExecutionAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
-		remoteExecutionAPIURL = insertPassword(remoteExecutionAPIURL, "${API_KEY}")
 		configOptions = append(configOptions, makeConfigOption("build", "remote_executor", remoteExecutionAPIURL))
 	}
 

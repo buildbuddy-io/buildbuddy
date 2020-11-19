@@ -39,13 +39,15 @@ message GetBazelConfigRequest {
 message GetBazelConfigResponse {
   context.ResponseContext response_context = 1;
 
-  // The BazelConfig for the requesting user and this buildbuddy instance.
-  // Occurrences of "${API_KEY}" are replaced with the user selected credentials.
+  // The Bazel configuration for the requesting user and this buildbuddy instance.
   repeated ConfigOption config_option = 2;
 
   reserved 3;
 
-  // Credentials used to access the app.
+  // Credentials used to access the app, which may be needed to populate auth-related
+  // config options. These options are not included in the config_option field, but
+  // are instead rendered by the client, since the user may need to decide which
+  // credential they want to use in order to access BuildBuddy.
   repeated Credentials credential = 4;
 }
 
