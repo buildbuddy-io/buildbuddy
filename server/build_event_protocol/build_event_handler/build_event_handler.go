@@ -9,6 +9,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -48,11 +49,13 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 	if chunkFileSizeBytes == 0 {
 		chunkFileSizeBytes = defaultChunkFileSizeBytes
 	}
+	buildEventAccumulator := accumulator.NewBEValues(iid)
 	return &EventChannel{
 		env:            b.env,
 		ctx:            ctx,
 		pw:             protofile.NewBufferedProtoWriter(b.env.GetBlobstore(), iid, chunkFileSizeBytes),
-		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, iid),
+		beValues:       buildEventAccumulator,
+		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
 	}
 }
 
@@ -84,6 +87,7 @@ type EventChannel struct {
 	ctx            context.Context
 	env            environment.Env
 	pw             *protofile.BufferedProtoWriter
+	beValues       *accumulator.BEValues
 	statusReporter *build_status_reporter.BuildStatusReporter
 }
 
@@ -210,6 +214,8 @@ func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamReques
 		log.Printf("error reading bazel event: %s", err)
 		return err
 	}
+
+	e.beValues.AddEvent(&bazelBuildEvent) // in-memory structure to hold common values we want from the event.
 
 	// If this is the first event, keep track of the project ID and save any notification keywords.
 	if seqNo == 1 {

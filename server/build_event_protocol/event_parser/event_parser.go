@@ -354,3 +354,15 @@ func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inp
 		invocation.ReadPermission = inpb.InvocationPermission_PUBLIC
 	}
 }
+
+func ExtractUserRepoFromRepoUrl(repoURL string) string {
+	// TODO(siggisim): Come up with a regex here.
+	repoURL = strings.ReplaceAll(repoURL, "ssh://", "")
+	repoURL = strings.ReplaceAll(repoURL, "http://", "")
+	repoURL = strings.ReplaceAll(repoURL, "https://", "")
+	repoURL = strings.ReplaceAll(repoURL, "git@", "")
+	repoURL = strings.ReplaceAll(repoURL, ".git", "")
+	repoURL = strings.ReplaceAll(repoURL, "github.com/", "")
+	repoURL = strings.ReplaceAll(repoURL, "github.com:", "")
+	return repoURL
+}
