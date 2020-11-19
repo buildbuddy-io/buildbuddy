@@ -474,11 +474,7 @@ func (s *BuildBuddyServer) authorizeAPIKeyWrite(ctx context.Context, apiKeyID st
 	if err != nil {
 		return err
 	}
-	fmt.Printf("API key: %v\n", key)
 	acl := perms.ToACLProto( /* userID= */ nil, key.GroupID, key.Perms)
-	fmt.Println("ACL for API key:")
-	fmt.Println(proto.MarshalTextString(acl))
-	fmt.Printf("Authenticated user info: %v\n", user)
 	return perms.AuthorizeWrite(&user, acl)
 }
 
