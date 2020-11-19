@@ -26,8 +26,9 @@ import (
 var (
 	serverType = flag.String("server_type", "sidecar", "The server type to match on health checks")
 
-	listenAddr = flag.String("listen_addr", "localhost:1991", "Local address to listen on.")
-	serverAddr = flag.String("server_addr", "grpcs://cloud.buildbuddy.io:443", "Server address to proxy events to.")
+	listenAddr  = flag.String("listen_addr", "localhost:1991", "Local address to listen on.")
+	besBackend  = flag.String("bes_backend", "grpcs://cloud.buildbuddy.io:443", "Server address to proxy build events to.")
+	remoteCache = flag.String("remote_cache", "grpcs://cloud.buildbuddy.io:443", "Server address to cache events to.")
 )
 
 type DevNullChannel struct{}
@@ -35,8 +36,8 @@ type DevNullChannel struct{}
 func (c *DevNullChannel) MarkInvocationDisconnected(ctx context.Context, iid string) error {
 	return nil
 }
-func (c *DevNullChannel) FinalizeInvocation(ctx context.Context, iid string) error { return nil }
-func (c *DevNullChannel) HandleEvent(ctx context.Context, event *pepb.PublishBuildToolEventStreamRequest) error {
+func (c *DevNullChannel) FinalizeInvocation(iid string) error { return nil }
+func (c *DevNullChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
 	return nil
 }
 
@@ -78,8 +79,8 @@ func main() {
 	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
 
 	buildEventProxyClients := make([]pepb.PublishBuildEventClient, 0)
-	buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(*serverAddr))
-	log.Printf("Proxy: forwarding build events to: %q", *serverAddr)
+	buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(*besBackend))
+	log.Printf("Proxy: forwarding build events to: %q", *besBackend)
 	env.SetBuildEventProxyClients(buildEventProxyClients)
 
 	// Register to handle build event protocol messages.

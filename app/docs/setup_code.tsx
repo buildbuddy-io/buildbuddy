@@ -25,7 +25,7 @@ export default class SetupCodeComponent extends React.Component {
     bazelConfigResponse: null,
     user: authService.user,
 
-    auth: "key",
+    auth: capabilities.auth ? "key" : "none",
     cacheChecked: false,
     cache: "read",
     executionChecked: false,

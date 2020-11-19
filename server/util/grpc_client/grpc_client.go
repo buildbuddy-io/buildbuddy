@@ -32,6 +32,10 @@ func DialTargetWithOptions(target string, grpcsBytestream bool, extraOptions ...
 		} else {
 			dialOptions = append(dialOptions, grpc.WithInsecure())
 		}
+
+		if u.Scheme == "grpcs" && u.Port() == "" {
+			u.Host += ":443"
+		}
 		target = u.Host
 	}
 

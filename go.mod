@@ -38,6 +38,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334 // indirect
 	github.com/ianlancetaylor/demangle v0.0.0-20200414190113-039b1ae3a340 // indirect
+	github.com/jessevdk/go-flags v1.4.0 // indirect
 	github.com/jinzhu/gorm v1.9.12
 	github.com/jinzhu/now v1.1.1 // indirect
 	github.com/json-iterator/go v1.1.10 // indirect

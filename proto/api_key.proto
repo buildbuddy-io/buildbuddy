@@ -24,6 +24,10 @@ message CreateApiKeyRequest {
   // The ID of the group to create the API key for.
   // ex: "GR123456789"
   string group_id = 2;
+
+  // Optional. The user-specified label of this API key that helps them
+  // remember what it's for.
+  string label = 3;
 }
 
 message CreateApiKeyResponse {

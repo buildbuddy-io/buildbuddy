@@ -6,8 +6,9 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 )
 
@@ -15,13 +16,7 @@ type BuildStatusReporter struct {
 	env                       environment.Env
 	githubClient              *github.GithubClient
 	shouldReportStatusPerTest bool
-	invocationID              string
-	command                   string
-	pattern                   string
-	role                      string
-	repoURL                   string
-	commitSHA                 string
-	workspaceLoaded           bool
+	buildEventAccumulator     *accumulator.BEValues
 	payloads                  []*github.GithubStatusPayload
 	groups                    map[string]*GroupStatus
 	inFlight                  map[string]bool
@@ -35,7 +30,7 @@ type GroupStatus struct {
 	numAborted int
 }
 
-func NewBuildStatusReporter(env environment.Env, invocationID string) *BuildStatusReporter {
+func NewBuildStatusReporter(env environment.Env, buildEventAccumulator *accumulator.BEValues) *BuildStatusReporter {
 	githubConfig := env.GetConfigurator().GetGithubConfig()
 	shouldReportStatusPerTest := false
 
@@ -47,7 +42,7 @@ func NewBuildStatusReporter(env environment.Env, invocationID string) *BuildStat
 		env:                       env,
 		githubClient:              github.NewGithubClient(env),
 		shouldReportStatusPerTest: shouldReportStatusPerTest,
-		invocationID:              invocationID,
+		buildEventAccumulator:     buildEventAccumulator,
 		payloads:                  make([]*github.GithubStatusPayload, 0),
 		inFlight:                  make(map[string]bool),
 	}
@@ -56,18 +51,8 @@ func NewBuildStatusReporter(env environment.Env, invocationID string) *BuildStat
 func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
 	var githubPayload *github.GithubStatusPayload
 
-	switch p := event.Payload.(type) {
-	case *build_event_stream.BuildEvent_Started:
-		r.populateWorkspaceInfoFromStartedEvent(event)
-
-	case *build_event_stream.BuildEvent_StructuredCommandLine:
-		r.populateWorkspaceInfoFromStructuredCommandLine(p.StructuredCommandLine)
-
-	case *build_event_stream.BuildEvent_BuildMetadata:
-		r.populateWorkspaceInfoFromBuildMetadata(p.BuildMetadata)
-
+	switch event.Payload.(type) {
 	case *build_event_stream.BuildEvent_WorkspaceStatus:
-		r.populateWorkspaceInfoFromWorkspaceStatus(p.WorkspaceStatus)
 		githubPayload = r.githubPayloadFromWorkspaceStatusEvent(event)
 
 	case *build_event_stream.BuildEvent_Configured:
@@ -85,7 +70,8 @@ func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *b
 		githubPayload = r.githubPayloadFromFinishedEvent(event)
 	}
 
-	if githubPayload != nil && r.role == "CI" {
+	role := r.buildEventAccumulator.Role()
+	if githubPayload != nil && role == "CI" {
 		r.payloads = append(r.payloads, githubPayload)
 		r.flushPayloadsIfWorkspaceLoaded(ctx)
 	}
@@ -99,7 +85,7 @@ func (r *BuildStatusReporter) ReportDisconnect(ctx context.Context) {
 }
 
 func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context) {
-	if !r.workspaceLoaded {
+	if !r.buildEventAccumulator.WorkspaceIsLoaded() {
 		return // If we haven't loaded the workspace, we can't flush payloads yet.
 	}
 
@@ -111,71 +97,12 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 		}
 
 		// TODO(siggisim): Kick these into a queue or something (but maintain order).
-		r.githubClient.CreateStatus(ctx, extractUserRepoFromRepoUrl(r.repoURL), r.commitSHA, payload)
+		repoURL := r.buildEventAccumulator.RepoURL()
+		commitSHA := r.buildEventAccumulator.CommitSHA()
+		r.githubClient.CreateStatus(ctx, event_parser.ExtractUserRepoFromRepoUrl(repoURL), commitSHA, payload)
 	}
 
 	r.payloads = make([]*github.GithubStatusPayload, 0)
-}
-
-func (r *BuildStatusReporter) populateWorkspaceInfoFromStartedEvent(event *build_event_stream.BuildEvent) {
-	r.command = event.GetStarted().Command
-	r.pattern = patternFromEvent(event)
-}
-
-func (r *BuildStatusReporter) populateWorkspaceInfoFromStructuredCommandLine(commandLine *command_line.CommandLine) {
-	for _, section := range commandLine.Sections {
-		if list := section.GetOptionList(); list == nil {
-			continue
-		}
-		for _, option := range section.GetOptionList().Option {
-			if option.OptionName != "ENV" && option.OptionName != "client_env" {
-				continue
-			}
-			parts := strings.Split(option.OptionValue, "=")
-			if len(parts) != 2 {
-				continue
-			}
-			environmentVariable := parts[0]
-			value := parts[1]
-			switch environmentVariable {
-			case "CIRCLE_REPOSITORY_URL", "GITHUB_REPOSITORY", "BUILDKITE_REPO", "TRAVIS_REPO_SLUG", "GIT_URL", "CI_REPOSITORY_URL":
-				r.repoURL = value
-			case "CIRCLE_SHA1", "GITHUB_SHA", "BUILDKITE_COMMIT", "TRAVIS_COMMIT", "GIT_COMMIT", "CI_COMMIT_SHA":
-				r.commitSHA = value
-			case "CI":
-				r.role = "CI"
-			}
-		}
-	}
-}
-
-func (r *BuildStatusReporter) populateWorkspaceInfoFromBuildMetadata(metadata *build_event_stream.BuildMetadata) {
-	if url, ok := metadata.Metadata["REPO_URL"]; ok && url != "" {
-		r.repoURL = url
-	}
-
-	if sha, ok := metadata.Metadata["COMMIT_SHA"]; ok && sha != "" {
-		r.commitSHA = sha
-	}
-
-	if role, ok := metadata.Metadata["ROLE"]; ok && role != "" {
-		r.role = role
-	}
-	if testGroups, ok := metadata.Metadata["TEST_GROUPS"]; ok && testGroups != "" {
-		r.initializeGroups(testGroups)
-	}
-}
-
-func (r *BuildStatusReporter) populateWorkspaceInfoFromWorkspaceStatus(workspace *build_event_stream.WorkspaceStatus) {
-	for _, item := range workspace.Item {
-		if item.Key == "REPO_URL" && item.Value != "" {
-			r.repoURL = item.Value
-		}
-		if item.Key == "COMMIT_SHA" && item.Value != "" {
-			r.commitSHA = item.Value
-		}
-	}
-	r.workspaceLoaded = true
 }
 
 func (r *BuildStatusReporter) githubPayloadFromWorkspaceStatusEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
@@ -257,11 +184,13 @@ func (r *BuildStatusReporter) githubPayloadFromAbortedEvent(event *build_event_s
 }
 
 func (r *BuildStatusReporter) invocationLabel() string {
-	return fmt.Sprintf("bazel %s %s", r.command, r.pattern)
+	command := r.buildEventAccumulator.Command()
+	pattern := r.buildEventAccumulator.Pattern()
+	return fmt.Sprintf("bazel %s %s", command, pattern)
 }
 
 func (r *BuildStatusReporter) invocationURL() string {
-	return fmt.Sprintf("%s/invocation/%s", r.appURL(), r.invocationID)
+	return fmt.Sprintf("%s/invocation/%s", r.appURL(), r.buildEventAccumulator.InvocationID())
 }
 
 func (r *BuildStatusReporter) groupURL(label string) string {
@@ -318,27 +247,6 @@ func (r *BuildStatusReporter) groupStatusFromLabel(label string) *GroupStatus {
 	return nil
 }
 
-// TODO(siggisim): pull this out somewhere central
-func truncatedJoin(list []string, maxItems int) string {
-	length := len(list)
-	if length > maxItems {
-		return fmt.Sprintf("%s and %d more", strings.Join(list[0:maxItems], ", "), length-maxItems)
-	}
-	return strings.Join(list, ", ")
-}
-
-func patternFromEvent(event *build_event_stream.BuildEvent) string {
-	for _, child := range event.Children {
-		switch c := child.Id.(type) {
-		case *build_event_stream.BuildEventId_Pattern:
-			{
-				return truncatedJoin(c.Pattern.Pattern, 3)
-			}
-		}
-	}
-	return ""
-}
-
 func descriptionFromOverallStatus(overallStatus build_event_stream.TestStatus) string {
 	switch overallStatus {
 	case build_event_stream.TestStatus_PASSED:
@@ -364,16 +272,4 @@ func descriptionFromOverallStatus(overallStatus build_event_stream.TestStatus) s
 
 func descriptionFromExitCodeName(exitCodeName string) string {
 	return strings.Title(strings.ToLower(strings.ReplaceAll(exitCodeName, "_", " ")))
-}
-
-func extractUserRepoFromRepoUrl(repoURL string) string {
-	// TODO(siggisim): Come up with a regex here.
-	repoURL = strings.ReplaceAll(repoURL, "ssh://", "")
-	repoURL = strings.ReplaceAll(repoURL, "http://", "")
-	repoURL = strings.ReplaceAll(repoURL, "https://", "")
-	repoURL = strings.ReplaceAll(repoURL, "git@", "")
-	repoURL = strings.ReplaceAll(repoURL, ".git", "")
-	repoURL = strings.ReplaceAll(repoURL, "github.com/", "")
-	repoURL = strings.ReplaceAll(repoURL, "github.com:", "")
-	return repoURL
 }

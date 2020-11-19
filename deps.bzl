@@ -1225,3 +1225,15 @@ def install_buildbuddy_dependencies():
         sum = "h1:Xkwi/a1rcvNg1PPYe5vI8GbeBY/jrVuDX5ASuANWTrk=",
         version = "v1.0.0",
     )
+    go_repository(
+        name = "com_github_google_martian_v3",
+        importpath = "github.com/google/martian/v3",
+        sum = "h1:pMen7vLs8nvgEYhywH3KDWJIJTeEr2ULsVWHWYHQyBs=",
+        version = "v3.0.0",
+    )
+    go_repository(
+        name = "com_github_jessevdk_go_flags",
+        importpath = "github.com/jessevdk/go-flags",
+        sum = "h1:4IU2WS7AumrZ/40jfhf4QVDMsQwqA7VEHozFRrGARJA=",
+        version = "v1.4.0",
+    )
