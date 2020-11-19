@@ -412,4 +412,13 @@ export default class InvocationModel {
     }
     return "";
   }
+
+  getLinks() {
+    let links = this.buildMetadataMap?.get("BUILDBUDDY_LINKS")?.split(",");
+    return (
+      links
+        ?.map((link) => link?.match(/\[(?<linkText>.*)\]\((?<linkUrl>.*)\)/)?.groups)
+        ?.filter((link) => link?.linkUrl?.startsWith("http://") || link?.linkUrl?.startsWith("https://")) || []
+    );
+  }
 }
