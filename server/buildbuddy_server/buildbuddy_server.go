@@ -552,17 +552,13 @@ func toProtoAPIKeys(tableKeys []*tables.APIKey) []*akpb.ApiKey {
 	return protoKeys
 }
 
-func getGroupIDFromRequestContext(ctx context.Context) string {
-	if reqCtx := requestcontext.ProtoRequestContextFromContext(ctx); reqCtx != nil {
-		return reqCtx.GetGroupId()
-	}
-	return ""
-}
-
 func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]*akpb.ApiKey, error) {
-	groupID := getGroupIDFromRequestContext(ctx)
+	groupID := ""
+	if reqCtx := requestcontext.ProtoRequestContextFromContext(ctx); reqCtx != nil {
+		groupID = reqCtx.GetGroupId()
+	}
 	if groupID == "" {
-		return nil, status.UnauthenticatedError("Request must specify an organization.")
+		return []*akpb.ApiKey{}, nil
 	}
 	if err := s.authorizeGroupAccess(ctx, groupID); err != nil {
 		return nil, err
@@ -614,14 +610,9 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 	if eventsAPIURL == "" {
 		eventsAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 	}
-	var groupAPIKeys []*akpb.ApiKey
-	groupID := getGroupIDFromRequestContext(ctx)
-	if isRequestingAuth := (groupID != ""); isRequestingAuth {
-		k, err := s.getAPIKeysForAuthorizedGroup(ctx)
-		if err != nil {
-			return nil, err
-		}
-		groupAPIKeys = k
+	groupAPIKeys, err := s.getAPIKeysForAuthorizedGroup(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", eventsAPIURL))
