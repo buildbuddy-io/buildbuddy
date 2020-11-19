@@ -156,6 +156,12 @@ export default class InvocationOverviewComponent extends React.Component {
             <img className="icon" src="/image/cloud-regular.svg" />
             {this.props.model.getRBE()}
           </div>
+          {this.props.model.getLinks().map((link) => (
+            <a className="detail clickable" href={link.linkUrl} target="_blank">
+              <img className="icon" src="/image/link.svg" />
+              {link.linkText}
+            </a>
+          ))}
         </div>
       </div>
     );
