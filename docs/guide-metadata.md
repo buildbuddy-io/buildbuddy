@@ -148,6 +148,15 @@ build --workspace_status_command=$(pwd)/workspace_status.sh
 
 Then you'll need to add a `workspace_status.sh` file to the root of your workspace that prints `HOST yourhost`.
 
+### Custom Links
+
+You can add custom links to the BuildBuddy overview page using the `BUILDBUDDY_LINKS` build metadata flag. These links must be comma separated, and in the form [link text](https://linkurl.com). Urls must begin with either `http://` or `https://`.
+
+Example:
+```
+--build_metadata=BUILDBUDDY_LINKS="[Search Github](https://github.com/search),[GCP Dashboard](https://console.cloud.google.com/home/dashboard)"
+```
+
 ## Environment variable redacting
 
 By default, all environment variables are redacted by BuildBuddy except for `USER`, `GITHUB_ACTOR`, `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_RUN_ID` which are displayed in the BuildBuddy UI.
