@@ -456,6 +456,15 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			defer rows.Close()
 
 			var g Group
+
+			// These constants are already defined in perms.go, but we can't reference that
+			// due to a circular dep (tables -> perms -> interfaces -> tables).
+			// Probably not worth refactoring right now, since eventually we want to
+			// release a new version with this migration logic removed.
+			groupRead := 0o040
+			groupWrite := 0o020
+			apiKeyPerms := groupRead | groupWrite
+
 			for rows.Next() {
 				if err := rows.Scan(&g.GroupID, &g.APIKey); err != nil {
 					return err
@@ -466,8 +475,8 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 				}
 
 				if err := db.Exec(
-					`INSERT INTO APIKeys (api_key_id, group_id, value, label) VALUES (?, ?, ?, ?)`,
-					pk, g.GroupID, g.APIKey, "Default API key").Error; err != nil {
+					`INSERT INTO APIKeys (api_key_id, group_id, perms, value, label) VALUES (?, ?, ?, ?, ?)`,
+					pk, g.GroupID, apiKeyPerms, g.APIKey, "Default API key").Error; err != nil {
 					return err
 				}
 			}
