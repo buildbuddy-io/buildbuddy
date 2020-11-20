@@ -234,7 +234,7 @@ func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamReques
 			}
 			if apiKey := auth.ParseAPIKeyFromString(options); apiKey != "" {
 				e.ctx = auth.AuthContextFromAPIKey(e.ctx, apiKey)
-				authError := ctx.Value(interfaces.AuthContextUserErrorKey)
+				authError := e.ctx.Value(interfaces.AuthContextUserErrorKey)
 				if authError != nil {
 					if err, ok := authError.(error); ok {
 						return err
