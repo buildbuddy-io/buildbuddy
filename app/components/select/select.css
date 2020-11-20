@@ -5,6 +5,7 @@
 
 .select {
   font-size: inherit;
+  font-family: inherit;
   height: 40px;
   padding: 8px 16px;
   box-sizing: border-box;

@@ -217,6 +217,7 @@ proto_library(
     name = "bazel_config_proto",
     srcs = ["bazel_config.proto"],
     deps = [
+        ":api_key_proto",
         ":context_proto",
     ],
 )
@@ -419,6 +420,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/bazel_config",
     proto = ":bazel_config_proto",
     deps = [
+        ":api_key_go_proto",
         ":context_go_proto",
     ],
 )

@@ -41,7 +41,6 @@ export default class SetupComponent extends React.Component {
           If you don't have a <b>.bazelrc</b> file - create one in the same directory as your Bazel <b>WORKSPACE</b>{" "}
           file.
           <h2>1. Configure your .bazelrc</h2>
-          Select options, then copy the results to your <b>.bazelrc</b> file.
           {this.state.bazelConfigResponse && (
             <SetupCodeComponent bazelConfigResponse={this.state.bazelConfigResponse} />
           )}

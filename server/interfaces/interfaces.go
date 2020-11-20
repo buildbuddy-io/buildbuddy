@@ -42,6 +42,11 @@ type UserInfo interface {
 	IsAdmin() bool
 }
 
+// Authenticator constants
+const (
+	AuthContextUserErrorKey = "auth.error"
+)
+
 type Authenticator interface {
 	// Redirect to configured authentication provider.
 	Login(w http.ResponseWriter, r *http.Request)
