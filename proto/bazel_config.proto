@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "proto/api_key.proto";
 import "proto/context.proto";
 
 package bazel_config;
@@ -38,11 +39,26 @@ message GetBazelConfigRequest {
 message GetBazelConfigResponse {
   context.ResponseContext response_context = 1;
 
-  // The BazelConfig for the requesting user and this buildbuddy instance.
+  // The Bazel configuration for the requesting user and this buildbuddy instance.
   repeated ConfigOption config_option = 2;
 
-  // The certificate info used for certificate based authentication.
-  Certificate certificate = 3;
+  reserved 3;
+
+  // Credentials used to access the app, which may be needed to populate auth-related
+  // config options. These options are not included in the config_option field, but
+  // are instead rendered by the client, since the user may need to decide which
+  // credential they want to use in order to access BuildBuddy.
+  repeated Credentials credential = 4;
+}
+
+message Credentials {
+  // The API key used to access BuildBuddy.
+  api_key.ApiKey api_key = 1;
+
+  // The certificate corresponding to this API key.
+  // Will not be present if certificate generation is not requested or
+  // not configured.
+  Certificate certificate = 2;
 }
 
 message Certificate {
