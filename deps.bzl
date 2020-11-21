@@ -1157,6 +1157,12 @@ def install_buildbuddy_dependencies():
         importpath = "github.com/go-redis/redis/v8",
         sum = "h1:Wcla0pl4iobatJy3CmQonbmZOPF6w94xOaGkVFWH/rQ=",
         version = "v8.1.3",
+        build_directives = [
+            "gazelle:resolve go go.opentelemetry.io/otel/api/global @io_opentelemetry_go_otel//api/global:go_default_library",
+            "gazelle:resolve go go.opentelemetry.io/otel/api/metric @io_opentelemetry_go_otel//api/metric:go_default_library",
+            "gazelle:resolve go go.opentelemetry.io/otel/api/trace @io_opentelemetry_go_otel//api/trace:go_default_library",
+            "gazelle:resolve go go.opentelemetry.io/otel/label @io_opentelemetry_go_otel//label:go_default_library",
+        ],
     )
     go_repository(
         name = "com_github_nxadm_tail",
