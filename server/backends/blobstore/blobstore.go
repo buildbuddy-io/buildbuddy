@@ -27,7 +27,7 @@ import (
 // Returns whatever blobstore is specified in the config.
 func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error) {
 	if c.GetStorageDiskRootDir() != "" {
-		return NewDiskBlobStore(c.GetStorageDiskRootDir()), nil
+		return NewDiskBlobStore(c.GetStorageDiskRootDir())
 	}
 	if gcsConfig := c.GetStorageGCSConfig(); gcsConfig != nil && gcsConfig.Bucket != "" {
 		opts := make([]option.ClientOption, 0)
@@ -49,10 +49,13 @@ type DiskBlobStore struct {
 	rootDir string
 }
 
-func NewDiskBlobStore(rootDir string) *DiskBlobStore {
+func NewDiskBlobStore(rootDir string) (*DiskBlobStore, error) {
+	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
+		return nil, err
+	}
 	return &DiskBlobStore{
 		rootDir: rootDir,
-	}
+	}, nil
 }
 
 func decompress(in []byte, err error) ([]byte, error) {
