@@ -29,7 +29,7 @@ export class Capabilities {
     this.invocationSharing = true;
     this.compareInvocations = true;
     this.deleteInvocation = true;
-    this.manageApiKeys = window.localStorage["manage_api_keys"] === "true";
+    this.manageApiKeys = true;
     this.paths = new Set(paths);
     window.gtag("set", {
       app_name: this.name,
