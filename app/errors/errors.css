@@ -3,7 +3,6 @@
   z-index: 9000;
 
   left: 50%;
-  transform: translateX(-50%);
   margin-top: 32px;
 
   background: #ffcdd2;
@@ -18,13 +17,13 @@
 .error-banner.hidden {
   pointer-events: none;
   opacity: 0;
-  transform: translateY(-16px);
+  transform: translateX(-50%) translateY(-16px);
   transition: 128ms ease-in;
 }
 
 .error-banner.visible {
   opacity: 1;
-  transform: none;
+  transform: translateX(-50%);
   transition: 128ms ease-out;
 }
 
