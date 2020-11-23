@@ -29,22 +29,25 @@ DASHBOARD_FILE_PATH="./grafana/dashboards/buildbuddy.json"
 
 function sync () {
   local json=$(curl "$DASHBOARD_URL" 2>/dev/null)
-  if [[ -z "$json" ]] ; then return ; fi
+  if [[ -z "$json" ]] ; then
+    echo "$0: WARNING: Could not download dashboard from $DASHBOARD_URL"
+    return
+  fi
 
-  json=$(echo "$json" \
-      | python3 -c "import json, sys
-print(json.dumps(json.loads(sys.stdin.read())['dashboard'], indent=2))")
+  json=$(echo "$json" | jq -r "$dashboard")
+  current=$(cat "$DASHBOARD_FILE_PATH")
   # If the dashboard hasn't changed, don't write a new JSON file, to avoid
   # updating the file timestamp (causing Grafana to show "someone else updated
   # this dashboard")
-  if ! echo "$json" | diff "$DASHBOARD_FILE_PATH" - &>/dev/null ; then return ; fi
+  if [ "$json" == "$current" ] ; then return; fi
+  echo "Detected change in Grafana dashboard. Saving to $DASHBOARD_FILE_PATH"
   echo "$json" > "$DASHBOARD_FILE_PATH"
 }
 
 # Poll for dashboard changes and update the local JSON files.
 (
   while true ; do
-    sleep 10
+    sleep 5
     sync
   done
 ) &
