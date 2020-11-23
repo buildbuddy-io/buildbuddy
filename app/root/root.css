@@ -782,6 +782,11 @@ code .comment {
   font-size: 24px;
   flex-shrink: 0;
   margin-right: 16px;
+
+  max-width: 100%;
+  overflow-x: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .card .subtitle {
