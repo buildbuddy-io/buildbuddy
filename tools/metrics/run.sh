@@ -34,20 +34,20 @@ function sync () {
     return
   fi
 
-  json=$(echo "$json" | jq -r "$dashboard")
-  current=$(cat "$DASHBOARD_FILE_PATH")
+  json=$(echo "$json" | jq -M -r '.dashboard | del(.version)')
+  current=$(cat "$DASHBOARD_FILE_PATH" | jq -M -r 'del(.version)')
   # If the dashboard hasn't changed, don't write a new JSON file, to avoid
   # updating the file timestamp (causing Grafana to show "someone else updated
   # this dashboard")
   if [ "$json" == "$current" ] ; then return; fi
-  echo "Detected change in Grafana dashboard. Saving to $DASHBOARD_FILE_PATH"
+  echo "$0: Detected change in Grafana dashboard. Saving to $DASHBOARD_FILE_PATH"
   echo "$json" > "$DASHBOARD_FILE_PATH"
 }
 
 # Poll for dashboard changes and update the local JSON files.
 (
   while true ; do
-    sleep 5
+    sleep 3
     sync
   done
 ) &
