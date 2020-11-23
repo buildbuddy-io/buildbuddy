@@ -17,6 +17,7 @@ go_library(
         "//server/build_event_protocol/event_parser:go_default_library",
         "//server/environment:go_default_library",
         "//server/interfaces:go_default_library",
+        "//server/metrics:go_default_library",
         "//server/remote_cache/hit_tracker:go_default_library",
         "//server/tables:go_default_library",
         "//server/util/perms:go_default_library",
@@ -24,5 +25,7 @@ go_library(
         "//server/util/status:go_default_library",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
+        "@com_github_prometheus_client_golang//prometheus:go_default_library",
+        "@org_golang_google_grpc//status:go_default_library",
     ],
 )
