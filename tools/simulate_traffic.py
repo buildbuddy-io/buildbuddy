@@ -111,7 +111,7 @@ def main():
     def spawn_developer(data_dir):
         Developer(data_dir).develop()
 
-    num_developers = NUM_DEVELOPERS
+    num_developers = NUM_SIMULATED_DEVELOPERS
     procs = []
     for developer_id in range(1, num_developers + 1):
         developer_data_dir = os.path.join(DATA_DIR, f"developer_{developer_id}")
