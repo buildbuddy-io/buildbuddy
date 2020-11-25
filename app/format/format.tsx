@@ -2,6 +2,7 @@ import Long from "long";
 import moment from "moment";
 
 export function percent(percent: number | Long) {
+  if (!percent) return "0";
   return `${(+percent * 100).toFixed(0)}`;
 }
 
@@ -17,7 +18,7 @@ export function durationMillis(duration: number | Long) {
 
 export function durationSec(duration: number | Long) {
   let seconds = +duration;
-  if (seconds < 0) {
+  if (!seconds || seconds < 0) {
     return "0 s";
   }
   if (seconds > 60 * 60 * 24 * 365) {
