@@ -154,6 +154,66 @@ func fillInvocationFromCacheStats(cacheStats *capb.CacheStats, ti *tables.Invoca
 	ti.TotalCachedActionExecUsec = cacheStats.GetTotalCachedActionExecUsec()
 }
 
+func invocationStatusLabel(ti *tables.Invocation) string {
+	if ti.InvocationStatus == int64(inpb.Invocation_COMPLETE_INVOCATION_STATUS) {
+		if ti.Success {
+			return "success"
+		}
+		return "failure"
+	}
+	if ti.InvocationStatus == int64(inpb.Invocation_DISCONNECTED_INVOCATION_STATUS) {
+		return "disconnected"
+	}
+	return "unknown"
+}
+
+func recordCacheMetrics(ti *tables.Invocation) {
+	statusLabel := invocationStatusLabel(ti)
+	metrics.CacheEvents.With(prometheus.Labels{
+		metrics.InvocationStatusLabel: statusLabel,
+		metrics.CacheTypeLabel:        "action",
+		metrics.CacheEventTypeLabel:   "hit",
+	}).Observe(float64(ti.ActionCacheHits))
+	metrics.CacheEvents.With(prometheus.Labels{
+		metrics.InvocationStatusLabel: statusLabel,
+		metrics.CacheTypeLabel:        "action",
+		metrics.CacheEventTypeLabel:   "miss",
+	}).Observe(float64(ti.ActionCacheMisses))
+	metrics.CacheEvents.With(prometheus.Labels{
+		metrics.InvocationStatusLabel: statusLabel,
+		metrics.CacheTypeLabel:        "action",
+		metrics.CacheEventTypeLabel:   "upload",
+	}).Observe(float64(ti.ActionCacheUploads))
+	metrics.CacheEvents.With(prometheus.Labels{
+		metrics.InvocationStatusLabel: statusLabel,
+		metrics.CacheTypeLabel:        "cas",
+		metrics.CacheEventTypeLabel:   "hit",
+	}).Observe(float64(ti.CasCacheHits))
+	metrics.CacheEvents.With(prometheus.Labels{
+		metrics.InvocationStatusLabel: statusLabel,
+		metrics.CacheTypeLabel:        "cas",
+		metrics.CacheEventTypeLabel:   "miss",
+	}).Observe(float64(ti.CasCacheMisses))
+	metrics.CacheEvents.With(prometheus.Labels{
+		metrics.InvocationStatusLabel: statusLabel,
+		metrics.CacheTypeLabel:        "cas",
+		metrics.CacheEventTypeLabel:   "upload",
+	}).Observe(float64(ti.CasCacheUploads))
+	metrics.CacheDownloadSizeBytes.With(prometheus.Labels{
+		metrics.InvocationStatusLabel: statusLabel,
+	}).Observe(float64(ti.TotalDownloadSizeBytes))
+	metrics.CacheUploadSizeBytes.With(prometheus.Labels{
+		metrics.InvocationStatusLabel: statusLabel,
+	}).Observe(float64(ti.TotalUploadSizeBytes))
+}
+
+func recordInvocationMetrics(ti *tables.Invocation) {
+	statusLabel := invocationStatusLabel(ti)
+	metrics.InvocationDurationUs.With(prometheus.Labels{
+		metrics.InvocationStatusLabel: statusLabel,
+	}).Observe(float64(ti.DurationUsec))
+
+
 func md5Int64(text string) int64 {
 	hash := md5.Sum([]byte(text))
 	return int64(binary.BigEndian.Uint64(hash[:8]))
@@ -176,7 +236,9 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	ti := tableInvocationFromProto(invocation, iid)
 	if cacheStats := hit_tracker.CollectCacheStats(e.ctx, e.env, iid); cacheStats != nil {
 		fillInvocationFromCacheStats(cacheStats, ti)
+		recordCacheMetrics(ti)
 	}
+	recordInvocationMetrics(ti)
 	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
 		return err
 	}
@@ -202,6 +264,16 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 }
 
 func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
+	tStart := time.Now()
+	err := e.handleEvent(event)
+	duration := time.Since(tStart)
+	metrics.BuildEventHandlerDurationUs.With(prometheus.Labels{
+		metrics.StatusLabel: fmt.Sprintf("%d", gstatus.Code(err)),
+	}).Observe(float64(duration.Microseconds()))
+	return err
+}
+
+func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
 	seqNo := event.OrderedBuildEvent.SequenceNumber
 	streamID := event.OrderedBuildEvent.StreamId
 	iid := streamID.InvocationId
