@@ -8,12 +8,14 @@ import (
 	"io"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -21,6 +23,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"github.com/prometheus/client_golang/prometheus"
+
+	gstatus "google.golang.org/grpc/status"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 
@@ -202,6 +207,17 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 }
 
 func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
+	tStart := time.Now()
+	err := e.handleEvent(event)
+	duration := time.Since(tStart)
+	status := gstatus.Code(err)
+	metrics.BuildEventHandlerDuration.With(prometheus.Labels{
+		"status": fmt.Sprintf("%d", status),
+	}).Observe(float64(duration.Microseconds()))
+	return err
+}
+
+func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
 	seqNo := event.OrderedBuildEvent.SequenceNumber
 	streamID := event.OrderedBuildEvent.StreamId
 	iid := streamID.InvocationId
