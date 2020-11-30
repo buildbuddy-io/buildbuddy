@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/server/metrics/buckets"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -45,7 +44,7 @@ var (
 		Namespace: "buildbuddy",
 		Subsystem: "invocation",
 		Name:      "duration_us",
-		Buckets:   []float64{0, 1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000, 100_000_000},
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "The total duration of each invocation, in **microseconds**.",
 	}, []string{
 		// TODO: Slice on build vs. test
@@ -61,7 +60,7 @@ var (
 		Namespace: "buildbuddy",
 		Subsystem: "remote_cache",
 		Name:      "events",
-		Buckets:   []float64{0, 1, 10, 100, 1_000, 10_000, 100_000, 1_000_000},
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Number of cache events handled in each invocation. Use the **`_sum`** suffix to get the total number of cache events across all invocations.",
 	}, []string{
 		InvocationStatusLabel,
@@ -73,7 +72,7 @@ var (
 		Namespace: "buildbuddy",
 		Subsystem: "remote_cache",
 		Name:      "download_size_bytes",
-		Buckets:   []float64{0, 1_000, 1_000_000, 1_000_000_000},
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Number of bytes downloaded from the remote cache per invocation. Use the **`_sum`** suffix to get the total downloaded bytes across all invocations.",
 	}, []string{
 		InvocationStatusLabel,
@@ -83,7 +82,7 @@ var (
 		Namespace: "buildbuddy",
 		Subsystem: "remote_cache",
 		Name:      "upload_size_bytes",
-		Buckets:   []float64{0, 1_000, 1_000_000, 1_000_000_000},
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Number of bytes uploaded to the remote cache per invocation. Use the **`_sum`** suffix to get the total uploaded bytes across all invocations.",
 	}, []string{
 		InvocationStatusLabel,
@@ -102,7 +101,7 @@ var (
 		Namespace: "buildbuddy",
 		Subsystem: "build_event_handler",
 		Name:      "duration_us",
-		Buckets:   buckets.HighVariabilityMicrosecondBuckets,
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "The time spent handling each build event in **microseconds**. Use the **`_count`** suffix to get the total number of build events handled.",
 	}, []string{
 		StatusLabel,
