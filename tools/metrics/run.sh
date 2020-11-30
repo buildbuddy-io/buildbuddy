@@ -55,9 +55,6 @@ function sync () {
   done
 ) &
 
-echo "USE_KUBE:"
-echo "$use_kube"
-
 docker_compose_args=("-f" "docker-compose.grafana.yml")
 if [[ "$1" == "kube" ]] ; then
   # Start a thread to forward port 9100 locally to the Prometheus server on Kube.
