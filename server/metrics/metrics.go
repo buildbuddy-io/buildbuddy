@@ -124,7 +124,7 @@ var (
 		Subsystem: "build_event_handler",
 		Name:      "duration_us",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "The time spent handling each build event in **microseconds**. Use the **`_count`** suffix to get the total number of build events handled.",
+		Help:      "The time spent handling each build event in **microseconds**.",
 	}, []string{
 		StatusLabel,
 	})
