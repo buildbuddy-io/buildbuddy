@@ -62,16 +62,6 @@ func checkReadPreconditions(req *bspb.ReadRequest) error {
 	return nil
 }
 
-type StreamWriter struct {
-	stream bspb.ByteStream_ReadServer
-}
-
-func (s *StreamWriter) Write(data []byte) (int, error) {
-	return len(data), s.stream.Send(&bspb.ReadResponse{
-		Data: data,
-	})
-}
-
 type streamWriter struct {
 	stream bspb.ByteStream_ReadServer
 }
