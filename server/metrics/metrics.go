@@ -29,9 +29,13 @@ const (
 	/// Cache type: `action` for action cache, `cas` for content-addressable storage.
 	CacheTypeLabel = "cache_type"
 
-	// TODO(bduffany): Explain the difference between `miss` and `upload`
+	// TODO(bduffany): Document the difference between `miss` and `upload`
 	/// Cache event type: `hit`, `miss`, or `upload`.
 	CacheEventTypeLabel = "cache_event_type"
+)
+
+const (
+	ns = "buildbuddy"
 )
 
 var (
@@ -41,7 +45,7 @@ var (
 	/// which means that these metrics provide _approximate_ real-time signals.
 
 	InvocationDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "buildbuddy",
+		Namespace: ns,
 		Subsystem: "invocation",
 		Name:      "duration_us",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
@@ -56,36 +60,54 @@ var (
 	/// NOTE: Cache metrics are recorded at the end of each invocation,
 	/// which means that these metrics provide _approximate_ real-time signals.
 
-	CacheEvents = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "buildbuddy",
+	CacheEvents = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: ns,
 		Subsystem: "remote_cache",
 		Name:      "events",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Number of cache events handled in each invocation. Use the **`_sum`** suffix to get the total number of cache events across all invocations.",
+		Help:      "Number of cache events handled.",
 	}, []string{
-		InvocationStatusLabel,
 		CacheTypeLabel,
 		CacheEventTypeLabel,
 	})
 
 	CacheDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "buildbuddy",
+		Namespace: ns,
 		Subsystem: "remote_cache",
 		Name:      "download_size_bytes",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Number of bytes downloaded from the remote cache per invocation. Use the **`_sum`** suffix to get the total downloaded bytes across all invocations.",
+		Help:      "Number of bytes downloaded from the remote cache in each download. Use the **`_sum`** suffix to get the total downloaded bytes and the **`_count`** suffix to get the number of downloaded files.",
 	}, []string{
-		InvocationStatusLabel,
+		CacheTypeLabel,
+	})
+
+	CacheDownloadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: ns,
+		Subsystem: "remote_cache",
+		Name:      "download_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Download duration for each file downloaded from the remote cache, in **microseconds**.",
+	}, []string{
+		CacheTypeLabel,
 	})
 
 	CacheUploadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "buildbuddy",
+		Namespace: ns,
 		Subsystem: "remote_cache",
 		Name:      "upload_size_bytes",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Number of bytes uploaded to the remote cache per invocation. Use the **`_sum`** suffix to get the total uploaded bytes across all invocations.",
+		Help:      "Number of bytes uploaded to the remote cache in each upload. Use the **`_sum`** suffix to get the total uploaded bytes and the **`_count`** suffix to get the number of uploaded files.",
 	}, []string{
-		InvocationStatusLabel,
+		CacheTypeLabel,
+	})
+
+	CacheUploadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: ns,
+		Subsystem: "remote_cache",
+		Name:      "upload_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Upload duration for each file uploaded to the remote cache, in **microseconds**.",
+	}, []string{
+		CacheTypeLabel,
 	})
 
 	/// ## Internal metrics
@@ -98,7 +120,7 @@ var (
 	/// as part of the Build Event Protocol.
 
 	BuildEventHandlerDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "buildbuddy",
+		Namespace: ns,
 		Subsystem: "build_event_handler",
 		Name:      "duration_us",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),

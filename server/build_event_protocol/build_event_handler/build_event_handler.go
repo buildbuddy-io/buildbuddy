@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -22,6 +23,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"github.com/prometheus/client_golang/prometheus"
+
+	gstatus "google.golang.org/grpc/status"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 
@@ -168,46 +172,6 @@ func invocationStatusLabel(ti *tables.Invocation) string {
 	return "unknown"
 }
 
-func recordCacheMetrics(ti *tables.Invocation) {
-	statusLabel := invocationStatusLabel(ti)
-	metrics.CacheEvents.With(prometheus.Labels{
-		metrics.InvocationStatusLabel: statusLabel,
-		metrics.CacheTypeLabel:        "action",
-		metrics.CacheEventTypeLabel:   "hit",
-	}).Observe(float64(ti.ActionCacheHits))
-	metrics.CacheEvents.With(prometheus.Labels{
-		metrics.InvocationStatusLabel: statusLabel,
-		metrics.CacheTypeLabel:        "action",
-		metrics.CacheEventTypeLabel:   "miss",
-	}).Observe(float64(ti.ActionCacheMisses))
-	metrics.CacheEvents.With(prometheus.Labels{
-		metrics.InvocationStatusLabel: statusLabel,
-		metrics.CacheTypeLabel:        "action",
-		metrics.CacheEventTypeLabel:   "upload",
-	}).Observe(float64(ti.ActionCacheUploads))
-	metrics.CacheEvents.With(prometheus.Labels{
-		metrics.InvocationStatusLabel: statusLabel,
-		metrics.CacheTypeLabel:        "cas",
-		metrics.CacheEventTypeLabel:   "hit",
-	}).Observe(float64(ti.CasCacheHits))
-	metrics.CacheEvents.With(prometheus.Labels{
-		metrics.InvocationStatusLabel: statusLabel,
-		metrics.CacheTypeLabel:        "cas",
-		metrics.CacheEventTypeLabel:   "miss",
-	}).Observe(float64(ti.CasCacheMisses))
-	metrics.CacheEvents.With(prometheus.Labels{
-		metrics.InvocationStatusLabel: statusLabel,
-		metrics.CacheTypeLabel:        "cas",
-		metrics.CacheEventTypeLabel:   "upload",
-	}).Observe(float64(ti.CasCacheUploads))
-	metrics.CacheDownloadSizeBytes.With(prometheus.Labels{
-		metrics.InvocationStatusLabel: statusLabel,
-	}).Observe(float64(ti.TotalDownloadSizeBytes))
-	metrics.CacheUploadSizeBytes.With(prometheus.Labels{
-		metrics.InvocationStatusLabel: statusLabel,
-	}).Observe(float64(ti.TotalUploadSizeBytes))
-}
-
 func recordInvocationMetrics(ti *tables.Invocation) {
 	statusLabel := invocationStatusLabel(ti)
 	metrics.InvocationDurationUs.With(prometheus.Labels{
@@ -237,7 +201,6 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	ti := tableInvocationFromProto(invocation, iid)
 	if cacheStats := hit_tracker.CollectCacheStats(e.ctx, e.env, iid); cacheStats != nil {
 		fillInvocationFromCacheStats(cacheStats, ti)
-		recordCacheMetrics(ti)
 	}
 	recordInvocationMetrics(ti)
 	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
