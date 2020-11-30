@@ -19,4 +19,5 @@ services:
     environment:
       - GF_SERVER_HTTP_PORT=4500
     volumes:
-      - ./grafana:/etc/grafana/provisioning
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
