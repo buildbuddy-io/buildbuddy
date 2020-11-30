@@ -8,7 +8,7 @@ To use these metrics tools, you'll need to install the following on your
 machine:
 
 - `docker-compose`
-- `gcloud` (if you want to view metrics in dev)
+- `gcloud` (if you want to view metrics from a Kubernetes cluster)
 
 ## View metrics from your local BuildBuddy server in a local Grafana instance
 

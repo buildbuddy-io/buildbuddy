@@ -18,14 +18,6 @@ KUBE_PROM_SERVER_PORT=${KUBE_PROM_SERVER_PORT:-9090}
 
 use_kube=$(( "$1" == "kube" ))
 
-if (( "$use_kube" )) ; then
-  # Start a thread to forward port 9100 locally to the Prometheus server on Kube.
-  (
-    kubectl --namespace="${KUBE_NAMESPACE}" \
-        port-forward "$KUBE_PROM_SERVER_RESOURCE" 9100:"${KUBE_PROM_SERVER_PORT}"
-  ) &
-fi
-
 # Open Grafana dashboard when the server is up and running
 (
   open=$(which open &>/dev/null && echo "open" || echo "xdg-open")
@@ -66,7 +58,13 @@ function sync () {
 ) &
 
 docker_compose_args=("-f" "docker-compose.grafana.yml")
-if ! (( "$use_kube" )) ; then
+if (( "$use_kube" )) ; then
+  # Start a thread to forward port 9100 locally to the Prometheus server on Kube.
+  (
+    kubectl --namespace="${KUBE_NAMESPACE}" \
+        port-forward "$KUBE_PROM_SERVER_RESOURCE" 9100:"${KUBE_PROM_SERVER_PORT}"
+  ) &
+else
   # Run the Prometheus server locally.
   docker_compose_args+=("-f" "docker-compose.prometheus.yml")
 fi
