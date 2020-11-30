@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
@@ -212,7 +213,7 @@ func recordInvocationMetrics(ti *tables.Invocation) {
 	metrics.InvocationDurationUs.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,
 	}).Observe(float64(ti.DurationUsec))
-
+}
 
 func md5Int64(text string) int64 {
 	hash := md5.Sum([]byte(text))
