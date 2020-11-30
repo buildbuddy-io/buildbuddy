@@ -22,7 +22,7 @@ machine:
 ### View metrics from a Kubernetes cluster in a local Grafana instance
 
 Follow the same steps as above, using the `kube` argument: `./run.sh kube`.
-This will point Grafana at the prod instance of Prometheus (using port
+This will point Grafana at Prometheus running in Kubernetes (using port
 forwarding) instead of running Prometheus locally.
 
 The following env variables can be provided to this command:
