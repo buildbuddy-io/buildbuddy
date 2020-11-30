@@ -16,7 +16,8 @@ KUBE_NAMESPACE=${KUBE_NAMESPACE:-"monitor-dev"}
 KUBE_PROM_SERVER_RESOURCE=${KUBE_PROM_SERVER_RESOURCE:-"deployment/prometheus-server"}
 KUBE_PROM_SERVER_PORT=${KUBE_PROM_SERVER_PORT:-9090}
 
-use_kube=$(( "$1" == "kube" ))
+kube_arg="$1"
+use_kube=$(( kube_arg == "kube" ))
 
 # Open Grafana dashboard when the server is up and running
 (
