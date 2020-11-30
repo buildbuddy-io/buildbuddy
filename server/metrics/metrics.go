@@ -39,10 +39,19 @@ const (
 )
 
 var (
-	/// ## Invocation metrics (builds and tests)
+	/// ## Invocation log uploads
 	///
-	/// NOTE: Invocation metrics are recorded at the end of each invocation,
-	/// which means that these metrics provide _approximate_ real-time signals.
+	/// All invocation metrics are recorded at the _end_ of each invocation.
+
+	InvocationCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: ns,
+		Subsystem: "invocation",
+		Name:      "count",
+		Help:      "The total number of invocations whose logs were uploaded to BuildBuddy.",
+	}, []string{
+		// TODO: Slice on build vs. test?
+		InvocationStatusLabel,
+	})
 
 	InvocationDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: ns,
