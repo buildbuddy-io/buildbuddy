@@ -56,7 +56,7 @@ var (
 	InvocationDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: ns,
 		Subsystem: "invocation",
-		Name:      "duration_us",
+		Name:      "duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "The total duration of each invocation, in **microseconds**.",
 	}, []string{
@@ -131,7 +131,7 @@ var (
 	BuildEventHandlerDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: ns,
 		Subsystem: "build_event_handler",
-		Name:      "duration_us",
+		Name:      "duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "The time spent handling each build event in **microseconds**.",
 	}, []string{

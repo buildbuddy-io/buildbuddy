@@ -16,7 +16,7 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": 2,
-  "iteration": 1606324108592,
+  "iteration": 1606347824571,
   "links": [],
   "panels": [
     {
@@ -46,7 +46,7 @@
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
-        "h": 7,
+        "h": 8,
         "w": 9,
         "x": 0,
         "y": 1
@@ -58,7 +58,7 @@
         "current": false,
         "max": false,
         "min": false,
-        "show": true,
+        "show": false,
         "total": false,
         "values": false
       },
@@ -79,7 +79,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "up",
+          "expr": "sum(up)",
           "interval": "",
           "legendFormat": "",
           "queryType": "randomWalk",
@@ -106,14 +106,16 @@
       },
       "yaxes": [
         {
+          "$$hashKey": "object:571",
           "format": "short",
           "label": null,
           "logBase": 1,
           "max": null,
-          "min": null,
+          "min": "0",
           "show": true
         },
         {
+          "$$hashKey": "object:572",
           "format": "short",
           "label": null,
           "logBase": 1,
@@ -134,7 +136,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 9
       },
       "id": 11,
       "panels": [],
@@ -161,7 +163,7 @@
         "h": 8,
         "w": 9,
         "x": 0,
-        "y": 9
+        "y": 10
       },
       "hiddenSeries": false,
       "id": 13,
@@ -192,26 +194,26 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "rate(buildbuddy_invocation_duration_us_count{invocation_status=\"success\"}[${window}])",
+          "expr": "rate(buildbuddy_invocation_duration_usec_count{invocation_status=\"success\"}[${window}])",
           "interval": "",
           "legendFormat": "Success",
           "queryType": "randomWalk",
           "refId": "A"
         },
         {
-          "expr": "rate(buildbuddy_invocation_duration_us_count{invocation_status=\"failure\"}[${window}])",
+          "expr": "rate(buildbuddy_invocation_duration_usec_count{invocation_status=\"failure\"}[${window}])",
           "interval": "",
           "legendFormat": "Failure",
           "refId": "B"
         },
         {
-          "expr": "rate(buildbuddy_invocation_duration_us_count{invocation_status=\"disconnected\"}[${window}])",
+          "expr": "rate(buildbuddy_invocation_duration_usec_count{invocation_status=\"disconnected\"}[${window}])",
           "interval": "",
           "legendFormat": "Disconnected",
           "refId": "C"
         },
         {
-          "expr": "rate(buildbuddy_invocation_duration_us_count{invocation_status=\"unknown\"}[${window}])",
+          "expr": "rate(buildbuddy_invocation_duration_usec_count{invocation_status=\"unknown\"}[${window}])",
           "interval": "",
           "legendFormat": "Unknown status",
           "refId": "D"
@@ -237,14 +239,16 @@
       },
       "yaxes": [
         {
+          "$$hashKey": "object:529",
           "format": "short",
           "label": null,
           "logBase": 1,
           "max": null,
-          "min": null,
+          "min": "0",
           "show": true
         },
         {
+          "$$hashKey": "object:530",
           "format": "short",
           "label": null,
           "logBase": 1,
@@ -274,9 +278,9 @@
       "fillGradient": 0,
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 10,
         "x": 9,
-        "y": 9
+        "y": 10
       },
       "hiddenSeries": false,
       "id": 25,
@@ -306,7 +310,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_invocation_duration_us_bucket[${window}])) by (le))",
+          "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_invocation_duration_usec_bucket[${window}])) by (le))",
           "interval": "",
           "legendFormat": "",
           "queryType": "randomWalk",
@@ -317,7 +321,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Median invocation duration (microseconds)",
+      "title": "Median invocation duration",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -333,14 +337,16 @@
       },
       "yaxes": [
         {
-          "format": "short",
+          "$$hashKey": "object:59",
+          "format": "µs",
           "label": null,
           "logBase": 1,
           "max": null,
-          "min": null,
+          "min": "0",
           "show": true
         },
         {
+          "$$hashKey": "object:60",
           "format": "short",
           "label": null,
           "logBase": 1,
@@ -361,7 +367,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 18
       },
       "id": 15,
       "panels": [],
@@ -386,7 +392,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 18
+        "y": 19
       },
       "hiddenSeries": false,
       "id": 17,
@@ -443,14 +449,16 @@
       },
       "yaxes": [
         {
-          "format": "short",
+          "$$hashKey": "object:111",
+          "format": "binBps",
           "label": null,
           "logBase": 1,
           "max": null,
-          "min": null,
+          "min": "0",
           "show": true
         },
         {
+          "$$hashKey": "object:112",
           "format": "short",
           "label": null,
           "logBase": 1,
@@ -482,7 +490,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 18
+        "y": 19
       },
       "hiddenSeries": false,
       "id": 19,
@@ -512,7 +520,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(buildbuddy_remote_cache_upload_size_bytes_sum)",
+          "expr": "sum(rate(buildbuddy_remote_cache_upload_size_bytes_sum[${window}]))",
           "interval": "",
           "legendFormat": "",
           "queryType": "randomWalk",
@@ -539,14 +547,16 @@
       },
       "yaxes": [
         {
-          "format": "short",
+          "$$hashKey": "object:163",
+          "format": "binBps",
           "label": null,
           "logBase": 1,
           "max": null,
-          "min": null,
+          "min": "0",
           "show": true
         },
         {
+          "$$hashKey": "object:164",
           "format": "short",
           "label": null,
           "logBase": 1,
@@ -567,7 +577,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 27
       },
       "id": 6,
       "panels": [],
@@ -592,10 +602,10 @@
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
-        "h": 10,
+        "h": 9,
         "w": 12,
         "x": 0,
-        "y": 27
+        "y": 28
       },
       "hiddenSeries": false,
       "id": 4,
@@ -684,7 +694,7 @@
           "label": null,
           "logBase": 1,
           "max": null,
-          "min": null,
+          "min": "0",
           "show": true
         },
         {
@@ -694,7 +704,7 @@
           "logBase": 1,
           "max": null,
           "min": null,
-          "show": true
+          "show": false
         }
       ],
       "yaxis": {
@@ -720,10 +730,10 @@
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
-        "h": 10,
+        "h": 9,
         "w": 12,
         "x": 12,
-        "y": 27
+        "y": 28
       },
       "hiddenSeries": false,
       "id": 9,
@@ -799,7 +809,7 @@
           "label": null,
           "logBase": 1,
           "max": null,
-          "min": null,
+          "min": "0",
           "show": true
         },
         {
@@ -859,13 +869,13 @@
       "legend": {
         "alignAsTable": true,
         "avg": false,
-        "current": true,
+        "current": false,
         "max": false,
         "min": false,
         "rightSide": true,
         "show": true,
         "total": false,
-        "values": true
+        "values": false
       },
       "lines": true,
       "linewidth": 1,
@@ -884,20 +894,20 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_build_event_handler_duration_us_bucket[5m])) by (le))",
+          "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket[5m])) by (le))",
           "interval": "",
           "legendFormat": "Median",
           "queryType": "randomWalk",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.90, sum(rate(buildbuddy_build_event_handler_duration_us_bucket[5m])) by (le))",
+          "expr": "histogram_quantile(0.90, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket[5m])) by (le))",
           "interval": "",
           "legendFormat": "90th %",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_build_event_handler_duration_us_bucket[5m])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket[5m])) by (le))",
           "instant": false,
           "interval": "",
           "legendFormat": "95th %",
@@ -925,11 +935,11 @@
       "yaxes": [
         {
           "$$hashKey": "object:33",
-          "format": "short",
-          "label": "Duration (microseconds)",
+          "format": "µs",
+          "label": "",
           "logBase": 1,
           "max": null,
-          "min": null,
+          "min": "0",
           "show": true
         },
         {
@@ -939,7 +949,7 @@
           "logBase": 1,
           "max": null,
           "min": null,
-          "show": true
+          "show": false
         }
       ],
       "yaxis": {
