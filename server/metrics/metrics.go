@@ -64,6 +64,15 @@ var (
 		InvocationStatusLabel,
 	})
 
+	BuildEventCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: ns,
+		Subsystem: "invocation",
+		Name:      "build_event_count",
+		Help:      "Number of [build events](https://docs.bazel.build/versions/master/build-event-protocol.html) uploaded to BuildBuddy.",
+	}, []string{
+		StatusLabel,
+	})
+
 	/// ## Remote cache metrics
 	///
 	/// NOTE: Cache metrics are recorded at the end of each invocation,
