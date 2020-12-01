@@ -18,6 +18,17 @@ type CacheMode int
 type counterType int
 
 const (
+	// Prometheus CacheEventTypeLabel values
+
+	hitLabel    = "hit"
+	missLabel   = "miss"
+	uploadLabel = "upload"
+
+	// Prometheus CacheTypeLabel values
+
+	actionCacheLabel = "action_cache"
+	casLabel         = "cas"
+
 	CAS         CacheMode = iota // CAS cache
 	ActionCache                  // Action cache
 
@@ -34,21 +45,6 @@ const (
 	CachedActionExecUsec
 
 	// New counter types go here!
-)
-
-const (
-	// Prometheus label values
-
-	// CacheEventTypeLabel values
-
-	hitLabel    = "hit"
-	missLabel   = "miss"
-	uploadLabel = "upload"
-
-	// CacheTypeLabel values
-
-	actionCacheLabel = "action_cache"
-	casLabel         = "cas"
 )
 
 func cacheTypePrefix(actionCache bool, name string) string {

@@ -75,14 +75,14 @@ func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ..
 			return
 		}
 		asp.PublishBuildEvent_PublishBuildToolEventStreamClient = stream
-		for {
-			for req := range asp.events {
-				if err := stream.Send(&req); err != nil {
-					log.Printf("Error sending req on stream: %s", err.Error())
-					return
-				}
+		for req := range asp.events {
+			err := stream.Send(&req)
+			if err != nil {
+				log.Printf("Error sending req on stream: %s", err.Error())
+				break
 			}
 		}
+		stream.CloseSend()
 	}()
 	return asp
 }
@@ -99,6 +99,11 @@ func (asp *asyncStreamProxy) Send(req *pepb.PublishBuildToolEventStreamRequest) 
 
 func (asp *asyncStreamProxy) Recv() (*pepb.PublishBuildToolEventStreamResponse, error) {
 	return nil, nil
+}
+
+func (asp *asyncStreamProxy) CloseSend() error {
+	close(asp.events)
+	return nil
 }
 
 func (c *BuildEventProxyClient) PublishBuildToolEventStream(_ context.Context, opts ...grpc.CallOption) (pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {

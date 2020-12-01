@@ -234,9 +234,11 @@ func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamReques
 	tStart := time.Now()
 	err := e.handleEvent(event)
 	duration := time.Since(tStart)
-	metrics.BuildEventHandlerDurationUs.With(prometheus.Labels{
+	labels := prometheus.Labels{
 		metrics.StatusLabel: fmt.Sprintf("%d", gstatus.Code(err)),
-	}).Observe(float64(duration.Microseconds()))
+	}
+	metrics.BuildEventCount.With(labels).Inc()
+	metrics.BuildEventHandlerDurationUs.With(labels).Observe(float64(duration.Microseconds()))
 	return err
 }
 
