@@ -6,7 +6,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/prometheus/client_golang/prometheus"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -16,6 +18,17 @@ type CacheMode int
 type counterType int
 
 const (
+	// Prometheus CacheEventTypeLabel values
+
+	hitLabel    = "hit"
+	missLabel   = "miss"
+	uploadLabel = "upload"
+
+	// Prometheus CacheTypeLabel values
+
+	actionCacheLabel = "action_cache"
+	casLabel         = "cas"
+
 	CAS         CacheMode = iota // CAS cache
 	ActionCache                  // Action cache
 
@@ -89,6 +102,13 @@ func (h *HitTracker) counterName(ct counterType) string {
 	return counterName(h.actionCache, ct, h.iid)
 }
 
+func (h *HitTracker) cacheTypeLabel() string {
+	if h.actionCache {
+		return actionCacheLabel
+	}
+	return casLabel
+}
+
 // Example Usage:
 //
 // ht := NewHitTracker(env, invocationID, false /*=actionCache*/)
@@ -99,6 +119,10 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 	if h.c == nil || h.iid == "" {
 		return nil
 	}
+	metrics.CacheEvents.With(prometheus.Labels{
+		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
+		metrics.CacheEventTypeLabel: missLabel,
+	}).Inc()
 	_, err := h.c.IncrementCount(h.ctx, h.counterName(Miss), 1)
 	return err
 }
@@ -107,6 +131,10 @@ func (h *HitTracker) TrackEmptyHit() error {
 	if h.c == nil || h.iid == "" {
 		return nil
 	}
+	metrics.CacheEvents.With(prometheus.Labels{
+		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
+		metrics.CacheEventTypeLabel: hitLabel,
+	}).Inc()
 	_, err := h.c.IncrementCount(h.ctx, h.counterName(Hit), 1)
 	return err
 }
@@ -121,21 +149,61 @@ func (t *transferTimer) Close() error {
 	return t.closeFn()
 }
 
+func cacheEventTypeLabel(c counterType) string {
+	if c == Hit {
+		return hitLabel
+	}
+	if c == Miss {
+		return missLabel
+	}
+	return uploadLabel
+}
+
+func sizeMetric(ct counterType) *prometheus.HistogramVec {
+	if ct == UploadSizeBytes {
+		return metrics.CacheUploadSizeBytes
+	}
+	return metrics.CacheDownloadSizeBytes
+}
+
+func durationMetric(ct counterType) *prometheus.HistogramVec {
+	if ct == UploadUsec {
+		return metrics.CacheUploadDurationUsec
+	}
+	return metrics.CacheDownloadDurationUsec
+}
+
 func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.Time, actionCounter, sizeCounter, timeCounter counterType) closeFunction {
 	return func() error {
 		dur := time.Since(start)
 		if h.c == nil || h.iid == "" {
 			return nil
 		}
+
 		if _, err := h.c.IncrementCount(h.ctx, h.counterName(actionCounter), 1); err != nil {
 			return err
 		}
+		et := cacheEventTypeLabel(actionCounter)
+		ct := h.cacheTypeLabel()
+		metrics.CacheEvents.With(prometheus.Labels{
+			metrics.CacheTypeLabel:      ct,
+			metrics.CacheEventTypeLabel: et,
+		}).Inc()
+
 		if _, err := h.c.IncrementCount(h.ctx, h.counterName(sizeCounter), d.GetSizeBytes()); err != nil {
 			return err
 		}
+		sizeMetric(sizeCounter).With(prometheus.Labels{
+			metrics.CacheTypeLabel: ct,
+		}).Observe(float64(d.GetSizeBytes()))
+
 		if _, err := h.c.IncrementCount(h.ctx, h.counterName(timeCounter), dur.Microseconds()); err != nil {
 			return err
 		}
+		sizeMetric(timeCounter).With(prometheus.Labels{
+			metrics.CacheTypeLabel: ct,
+		}).Observe(float64(dur.Microseconds()))
+
 		return nil
 	}
 }
