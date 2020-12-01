@@ -8,10 +8,13 @@ cd "$__dir__"
 
 GRAFANA_PORT=${GRAFANA_PORT:-4500}
 GRAFANA_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
-
 GRAFANA_STARTUP_URL="http://localhost:$GRAFANA_PORT/d/1rsE5yoGz/buildbuddy-metrics?orgId=1&refresh=5s"
-DASHBOARD_URL="http://admin:$GRAFANA_ADMIN_PASSWORD@localhost:$GRAFANA_PORT/api/dashboards/db/buildbuddy-metrics"
-DASHBOARD_FILE_PATH="./grafana/dashboards/buildbuddy.json"
+GRAFANA_DASHBOARD_URL="http://admin:$GRAFANA_ADMIN_PASSWORD@localhost:$GRAFANA_PORT/api/dashboards/db/buildbuddy-metrics"
+GRAFANA_DASHBOARD_FILE_PATH="./grafana/dashboards/buildbuddy.json"
+
+KUBE_NAMESPACE=${KUBE_NAMESPACE:-"monitor-dev"}
+KUBE_PROM_SERVER_RESOURCE=${KUBE_PROM_SERVER_RESOURCE:-"deployment/prometheus-server"}
+KUBE_PROM_SERVER_PORT=${KUBE_PROM_SERVER_PORT:-9090}
 
 # Open Grafana dashboard when the server is up and running
 (
@@ -28,20 +31,20 @@ DASHBOARD_FILE_PATH="./grafana/dashboards/buildbuddy.json"
 ) &
 
 function sync () {
-  local json=$(curl "$DASHBOARD_URL" 2>/dev/null)
+  local json=$(curl "$GRAFANA_DASHBOARD_URL" 2>/dev/null)
   if [[ -z "$json" ]] ; then
-    echo "$0: WARNING: Could not download dashboard from $DASHBOARD_URL"
+    echo "$0: WARNING: Could not download dashboard from $GRAFANA_DASHBOARD_URL"
     return
   fi
 
   json=$(echo "$json" | jq -M -r '.dashboard | del(.version)')
-  current=$(cat "$DASHBOARD_FILE_PATH" | jq -M -r 'del(.version)')
+  current=$(cat "$GRAFANA_DASHBOARD_FILE_PATH" | jq -M -r 'del(.version)')
   # If the dashboard hasn't changed, don't write a new JSON file, to avoid
   # updating the file timestamp (causing Grafana to show "someone else updated
   # this dashboard")
   if [ "$json" == "$current" ] ; then return; fi
-  echo "$0: Detected change in Grafana dashboard. Saving to $DASHBOARD_FILE_PATH"
-  echo "$json" > "$DASHBOARD_FILE_PATH"
+  echo "$0: Detected change in Grafana dashboard. Saving to $GRAFANA_DASHBOARD_FILE_PATH"
+  echo "$json" > "$GRAFANA_DASHBOARD_FILE_PATH"
 }
 
 # Poll for dashboard changes and update the local JSON files.
@@ -52,5 +55,16 @@ function sync () {
   done
 ) &
 
-# Run Grafana and Prometheus
-docker-compose up
+docker_compose_args=("-f" "docker-compose.grafana.yml")
+if [[ "$1" == "kube" ]] ; then
+  # Start a thread to forward port 9100 locally to the Prometheus server on Kube.
+  (
+    kubectl --namespace="$KUBE_NAMESPACE" \
+        port-forward "$KUBE_PROM_SERVER_RESOURCE" 9100:"$KUBE_PROM_SERVER_PORT"
+  ) &
+else
+  # Run the Prometheus server locally.
+  docker_compose_args+=("-f" "docker-compose.prometheus.yml")
+fi
+
+docker-compose "${docker_compose_args[@]}" up
