@@ -16,9 +16,13 @@ const (
 	versionFilename = "VERSION"
 )
 
+// This is set by x_defs the BUILD file.
+//    x_defs = {
+//        "commitSha": "{COMMIT_SHA}",
+//    },
 var commitSha string
 
-func init() {
+func Print() {
 	appVersion := fmt.Sprintf("BuildBuddy %s", AppVersion())
 	if commitHash := Commit(); commitHash != unknownValue {
 		appVersion = fmt.Sprintf("%s (%s)", appVersion, commitHash)

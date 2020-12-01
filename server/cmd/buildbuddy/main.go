@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/libmain"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+	"github.com/buildbuddy-io/buildbuddy/server/version"
 )
 
 var (
@@ -24,6 +25,7 @@ var (
 func main() {
 	// Parse all flags, once and for all.
 	flag.Parse()
+	version.Print()
 	configurator, err := config.NewConfigurator(*configFile)
 	if err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
