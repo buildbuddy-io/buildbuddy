@@ -159,6 +159,29 @@ func fillInvocationFromCacheStats(cacheStats *capb.CacheStats, ti *tables.Invoca
 	ti.TotalCachedActionExecUsec = cacheStats.GetTotalCachedActionExecUsec()
 }
 
+func invocationStatusLabel(ti *tables.Invocation) string {
+	if ti.InvocationStatus == int64(inpb.Invocation_COMPLETE_INVOCATION_STATUS) {
+		if ti.Success {
+			return "success"
+		}
+		return "failure"
+	}
+	if ti.InvocationStatus == int64(inpb.Invocation_DISCONNECTED_INVOCATION_STATUS) {
+		return "disconnected"
+	}
+	return "unknown"
+}
+
+func recordInvocationMetrics(ti *tables.Invocation) {
+	statusLabel := invocationStatusLabel(ti)
+	metrics.InvocationCount.With(prometheus.Labels{
+		metrics.InvocationStatusLabel: statusLabel,
+	}).Inc()
+	metrics.InvocationDurationUs.With(prometheus.Labels{
+		metrics.InvocationStatusLabel: statusLabel,
+	}).Observe(float64(ti.DurationUsec))
+}
+
 func md5Int64(text string) int64 {
 	hash := md5.Sum([]byte(text))
 	return int64(binary.BigEndian.Uint64(hash[:8]))
@@ -182,6 +205,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	if cacheStats := hit_tracker.CollectCacheStats(e.ctx, e.env, iid); cacheStats != nil {
 		fillInvocationFromCacheStats(cacheStats, ti)
 	}
+	recordInvocationMetrics(ti)
 	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
 		return err
 	}
@@ -210,10 +234,11 @@ func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamReques
 	tStart := time.Now()
 	err := e.handleEvent(event)
 	duration := time.Since(tStart)
-	status := gstatus.Code(err)
-	metrics.BuildEventHandlerDuration.With(prometheus.Labels{
-		"status": fmt.Sprintf("%d", status),
-	}).Observe(float64(duration.Microseconds()))
+	labels := prometheus.Labels{
+		metrics.StatusLabel: fmt.Sprintf("%d", gstatus.Code(err)),
+	}
+	metrics.BuildEventCount.With(labels).Inc()
+	metrics.BuildEventHandlerDurationUs.With(labels).Observe(float64(duration.Microseconds()))
 	return err
 }
 
