@@ -32,6 +32,9 @@ const (
 	// TODO(bduffany): Document the difference between `miss` and `upload`
 	/// Cache event type: `hit`, `miss`, or `upload`.
 	CacheEventTypeLabel = "cache_event_type"
+
+	/// Process exit code of an executed action.
+	ExitCodeLabel = "exit_code"
 )
 
 const (
@@ -117,6 +120,65 @@ var (
 		Help:      "Upload duration for each file uploaded to the remote cache, in **microseconds**.",
 	}, []string{
 		CacheTypeLabel,
+	})
+
+	/// ## Remote execution metrics
+
+	RemoteExecutionCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: ns,
+		Subsystem: "remote_execution",
+		Name:      "count",
+		Help:      "Number of actions executed remotely.",
+	}, []string{
+		ExitCodeLabel,
+	})
+
+	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: ns,
+		Subsystem: "remote_execution",
+		Name:      "file_download_count",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Number of files downloaded during remote execution.",
+	})
+
+	FileDownloadSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: ns,
+		Subsystem: "remote_execution",
+		Name:      "file_download_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Total number of bytes downloaded during remote execution.",
+	})
+
+	FileDownloadDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: ns,
+		Subsystem: "remote_execution",
+		Name:      "file_download_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Download duration during remote execution, in **microseconds**.",
+	})
+
+	FileUploadCount = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: ns,
+		Subsystem: "remote_execution",
+		Name:      "file_upload_count",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Number of files uploaded during remote execution.",
+	})
+
+	FileUploadSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: ns,
+		Subsystem: "remote_execution",
+		Name:      "file_upload_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Total number of bytes uploaded during remote execution.",
+	})
+
+	FileUploadDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: ns,
+		Subsystem: "remote_execution",
+		Name:      "file_upload_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "upload duration during remote execution, in **microseconds**.",
 	})
 
 	/// ## Internal metrics
