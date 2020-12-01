@@ -38,7 +38,7 @@ const (
 )
 
 const (
-	ns = "buildbuddy"
+	bbNamespace = "buildbuddy"
 )
 
 var (
@@ -47,7 +47,7 @@ var (
 	/// All invocation metrics are recorded at the _end_ of each invocation.
 
 	InvocationCount = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "invocation",
 		Name:      "count",
 		Help:      "The total number of invocations whose logs were uploaded to BuildBuddy.",
@@ -57,7 +57,7 @@ var (
 	})
 
 	InvocationDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "invocation",
 		Name:      "duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
@@ -68,7 +68,7 @@ var (
 	})
 
 	BuildEventCount = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "invocation",
 		Name:      "build_event_count",
 		Help:      "Number of [build events](https://docs.bazel.build/versions/master/build-event-protocol.html) uploaded to BuildBuddy.",
@@ -82,7 +82,7 @@ var (
 	/// which means that these metrics provide _approximate_ real-time signals.
 
 	CacheEvents = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "events",
 		Help:      "Number of cache events handled.",
@@ -92,7 +92,7 @@ var (
 	})
 
 	CacheDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "download_size_bytes",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
@@ -102,7 +102,7 @@ var (
 	})
 
 	CacheDownloadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "download_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
@@ -112,7 +112,7 @@ var (
 	})
 
 	CacheUploadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "upload_size_bytes",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
@@ -122,7 +122,7 @@ var (
 	})
 
 	CacheUploadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "upload_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
@@ -134,7 +134,7 @@ var (
 	/// ## Remote execution metrics
 
 	RemoteExecutionCount = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "count",
 		Help:      "Number of actions executed remotely.",
@@ -143,7 +143,7 @@ var (
 	})
 
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "file_download_count",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
@@ -151,7 +151,7 @@ var (
 	})
 
 	FileDownloadSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "file_download_size_bytes",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
@@ -159,7 +159,7 @@ var (
 	})
 
 	FileDownloadDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "file_download_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
@@ -167,7 +167,7 @@ var (
 	})
 
 	FileUploadCount = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "file_upload_count",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
@@ -175,7 +175,7 @@ var (
 	})
 
 	FileUploadSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "file_upload_size_bytes",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
@@ -183,7 +183,7 @@ var (
 	})
 
 	FileUploadDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "file_upload_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
@@ -200,7 +200,7 @@ var (
 	/// as part of the Build Event Protocol.
 
 	BuildEventHandlerDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: ns,
+		Namespace: bbNamespace,
 		Subsystem: "build_event_handler",
 		Name:      "duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
