@@ -13,11 +13,3 @@ services:
         "--web.console.templates=/usr/share/prometheus/consoles",
         "--web.listen-address=0.0.0.0:9100",
       ]
-  grafana:
-    image: grafana/grafana:7.3.3
-    network_mode: "host"
-    environment:
-      - GF_SERVER_HTTP_PORT=4500
-    volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./grafana/dashboards:/var/lib/grafana/dashboards
