@@ -378,15 +378,13 @@ func (c *CacheLog) TableName() string {
 
 type Target struct {
 	Model
-	RepoURL    string `gorm:"primary_key"`
-	TargetID   int64  `gorm:"primary_key"`
-	UserID     string `gorm:"index:target_user_id"`
-	GroupID    string `gorm:"index:target_group_id"`
-	Perms      int    `gorm:"index:target_perms"`
-	Label      string
-	RuleType   string
-	TargetType int32
-	TestSize   int32
+	UserID   string `gorm:"primaryKey"`
+	GroupID  string `gorm:"primaryKey"`
+	RepoURL  string `gorm:"primaryKey"`
+	TargetID int64  `gorm:"primaryKey"`
+	Perms    int    `gorm:"index:target_perms"`
+	Label    string
+	RuleType string
 }
 
 func (t *Target) TableName() string {
@@ -396,8 +394,10 @@ func (t *Target) TableName() string {
 // The Status of a target.
 type TargetStatus struct {
 	Model
-	TargetID      int64 `gorm:"primary_key"`
-	InvocationPK  int64 `gorm:"primary_key"`
+	TargetID      int64 `gorm:"primaryKey"`
+	InvocationPK  int64 `gorm:"primaryKey"`
+	TargetType    int32
+	TestSize      int32
 	Status        int32
 	StartTimeUsec int64
 	DurationUsec  int64
@@ -510,4 +510,6 @@ func init() {
 	registerTable("EN", &ExecutionNode{})
 	registerTable("ET", &ExecutionTask{})
 	registerTable("CL", &CacheLog{})
+	registerTable("TA", &Target{})
+	registerTable("TS", &TargetStatus{})
 }

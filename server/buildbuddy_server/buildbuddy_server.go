@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
@@ -23,6 +24,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	gcodes "google.golang.org/grpc/codes"
@@ -671,6 +673,10 @@ func (s *BuildBuddyServer) GetExecution(ctx context.Context, req *espb.GetExecut
 		return es.GetExecution(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
+	return target.GetTarget(ctx, s.env, req)
 }
 
 type bsLookup struct {

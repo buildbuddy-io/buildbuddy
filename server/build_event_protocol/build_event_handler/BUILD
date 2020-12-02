@@ -15,6 +15,7 @@ go_library(
         "//server/build_event_protocol/accumulator:go_default_library",
         "//server/build_event_protocol/build_status_reporter:go_default_library",
         "//server/build_event_protocol/event_parser:go_default_library",
+        "//server/build_event_protocol/target_tracker:go_default_library",
         "//server/environment:go_default_library",
         "//server/interfaces:go_default_library",
         "//server/metrics:go_default_library",

@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -62,6 +63,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		pw:             protofile.NewBufferedProtoWriter(b.env.GetBlobstore(), iid, chunkFileSizeBytes),
 		beValues:       buildEventAccumulator,
 		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
+		targetTracker:  target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 	}
 }
 
@@ -95,6 +97,7 @@ type EventChannel struct {
 	pw             *protofile.BufferedProtoWriter
 	beValues       *accumulator.BEValues
 	statusReporter *build_status_reporter.BuildStatusReporter
+	targetTracker  *target_tracker.TargetTracker
 }
 
 func (e *EventChannel) readAllTempBlobs(ctx context.Context, blobID string) ([]*inpb.InvocationEvent, error) {
@@ -290,6 +293,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 	}
 
+	e.targetTracker.TrackTargetsForEvent(e.ctx, &bazelBuildEvent)
 	e.statusReporter.ReportStatusForEvent(e.ctx, &bazelBuildEvent)
 
 	// For everything else, just save the event to our buffer and keep on chugging.

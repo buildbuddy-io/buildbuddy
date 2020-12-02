@@ -88,7 +88,7 @@ message TargetQuery {
   api.v1.TargetType target_type = 6;
 }
 
-message GetTargetsRequest {
+message GetTargetRequest {
   // The request context.
   context.RequestContext request_context = 1;
 

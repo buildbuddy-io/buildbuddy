@@ -5,6 +5,7 @@ import "proto/bazel_config.proto";
 import "proto/execution_stats.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
+import "proto/target.proto";
 import "proto/user.proto";
 
 package buildbuddy.service;
@@ -53,4 +54,7 @@ service BuildBuddyService {
   // Execution API
   rpc GetExecution(execution_stats.GetExecutionRequest)
       returns (execution_stats.GetExecutionResponse);
+
+  // Target API
+  rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);
 }
