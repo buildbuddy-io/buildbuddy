@@ -121,8 +121,8 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "org_golang_x_net",
         importpath = "golang.org/x/net",
-        sum = "h1:1GKfLldebiSdhTlt3nalwrb7L40Tixr/0IH+kSbRgmk=",
-        version = "v0.0.0-20201009032441-dbdefad45b89",
+        sum = "h1:uwuIcX0g4Yl1NC5XAz37xsr2lTtcqevgzYNVt49waME=",
+        version = "v0.0.0-20201110031124-69a78807bb2b",
     )
 
     go_repository(
@@ -359,15 +359,15 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "com_github_aws_aws_sdk_go",
         importpath = "github.com/aws/aws-sdk-go",
-        sum = "h1:1Npeg2q6hicbrHoFu6MoeqZdcQf8187BI0VwKxEfLAY=",
-        version = "v1.30.23",
+        sum = "h1:XA71k5PofXJ/eeXdWrTQiuWPEEyq8liguR+Y/QUELhI=",
+        version = "v1.35.37",
     )
 
     go_repository(
         name = "com_github_jmespath_go_jmespath",
         importpath = "github.com/jmespath/go-jmespath",
-        sum = "h1:OS12ieG61fsCg5+qLJ+SsW9NicxNkg3b25OyT2yCeUc=",
-        version = "v0.3.0",
+        sum = "h1:BEgLn5cpjn8UN1mAw4NjwDrS35OdebyEtFe+9YPoQUg=",
+        version = "v0.4.0",
     )
 
     go_repository(
@@ -1154,15 +1154,15 @@ def install_buildbuddy_dependencies():
     )
     go_repository(
         name = "com_github_go_redis_redis_v8",
-        importpath = "github.com/go-redis/redis/v8",
-        sum = "h1:Wcla0pl4iobatJy3CmQonbmZOPF6w94xOaGkVFWH/rQ=",
-        version = "v8.1.3",
         build_directives = [
             "gazelle:resolve go go.opentelemetry.io/otel/api/global @io_opentelemetry_go_otel//api/global:go_default_library",
             "gazelle:resolve go go.opentelemetry.io/otel/api/metric @io_opentelemetry_go_otel//api/metric:go_default_library",
             "gazelle:resolve go go.opentelemetry.io/otel/api/trace @io_opentelemetry_go_otel//api/trace:go_default_library",
             "gazelle:resolve go go.opentelemetry.io/otel/label @io_opentelemetry_go_otel//label:go_default_library",
         ],
+        importpath = "github.com/go-redis/redis/v8",
+        sum = "h1:Wcla0pl4iobatJy3CmQonbmZOPF6w94xOaGkVFWH/rQ=",
+        version = "v8.1.3",
     )
     go_repository(
         name = "com_github_nxadm_tail",
@@ -1242,4 +1242,10 @@ def install_buildbuddy_dependencies():
         importpath = "github.com/jessevdk/go-flags",
         sum = "h1:4IU2WS7AumrZ/40jfhf4QVDMsQwqA7VEHozFRrGARJA=",
         version = "v1.4.0",
+    )
+    go_repository(
+        name = "com_github_jmespath_go_jmespath_internal_testify",
+        importpath = "github.com/jmespath/go-jmespath/internal/testify",
+        sum = "h1:shLQSRRSCCPj3f2gpwzGwWFoC7ycTf1rcQZHOlsJ6N8=",
+        version = "v1.5.1",
     )

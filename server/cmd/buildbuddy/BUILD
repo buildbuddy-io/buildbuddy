@@ -58,5 +58,6 @@ go_library(
         "//server/libmain:go_default_library",
         "//server/telemetry:go_default_library",
         "//server/util/healthcheck:go_default_library",
+        "//server/version:go_default_library",
     ],
 )
