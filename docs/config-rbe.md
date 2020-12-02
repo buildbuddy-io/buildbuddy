@@ -35,7 +35,7 @@ remote_execution:
 
 BuildBuddy RBE executors take their own configuration file that is pulled from `/config.yaml` on the executor docker image. Using BuildBuddy's [Enterprise Helm chart](enterprise-helm.md) will take care of most of this configuration for you.
 
-Here is a minimal example:
+Here is a minimal example (recommended):
 
 ```
 executor:
