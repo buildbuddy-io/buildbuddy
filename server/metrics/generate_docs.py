@@ -41,7 +41,9 @@ def fatal(msg: str, line_index=None):
 
 
 class DocsGenerator(object):
-    def __init__(self):
+    def __init__(self, metrics_go_path):
+        self.metrics_go_path = metrics_go_path
+
         self.state = None
         self.output_lines = [FILE_HEADER]
 
@@ -63,9 +65,7 @@ class DocsGenerator(object):
         self.label_value = ""
 
     def parse(self):
-        metrics_go_path = "./metrics.go"
-
-        with open(metrics_go_path, "r") as f:
+        with open(self.metrics_go_path, "r") as f:
             lines = f.readlines()
             for (i, line) in enumerate(lines):
                 self.process_line(i, line)
@@ -186,26 +186,25 @@ class DocsGenerator(object):
             [
                 part
                 for part in [
-                    metric.get("namespace"),
+                    metric.get("namespace", "buildbuddy"),
                     metric.get("subsystem"),
                     metric.get("name"),
                 ]
                 if part is not None
             ]
         )
-        self.output_lines.append(
-            f"""### **`{metric_name}`** ({metric["type"]})
-
-{help_main}.
-
-{". ".join(help_details)}
-"""
+        self.output_lines.extend(
+            [
+                "",
+                f'### **`{metric_name}`** ({metric["type"]})',
+                "",
+                f'{help_main}{"." if len(help_details) else ""}',
+            ]
         )
+        if len(help_details):
+            self.output_lines.extend(["", f'{". ".join(help_details)}'])
         if "labels" in metric:
-            self.output_lines.append(
-                """#### Labels
-"""
-            )
+            self.output_lines.extend(["", "#### Labels", ""])
             for label in metric["labels"]:
                 self.output_lines.append(
                     f'- **{label["name"]}**: {" ".join(label["comments"])}'
@@ -239,7 +238,7 @@ def main():
         )
         sys.exit(0)
     os.chdir(sys.path[0])
-    lines = DocsGenerator().parse()
+    lines = DocsGenerator("./metrics.go").parse()
     docs_path = "../../docs/guide-metrics.md"
     with open(docs_path, "w") as f:
         f.write("\n".join(lines))
