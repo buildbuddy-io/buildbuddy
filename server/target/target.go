@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -199,11 +200,18 @@ func readTargetHistory(ctx context.Context, env environment.Env, tq *trpb.Target
 			jStart := statuses[targetID][j].GetTiming().GetStartTime().GetSeconds()
 			return iStart < jStart
 		})
-		targetHistories = append(targetHistories, &trpb.TargetHistory{
-			Target:       target,
-			TargetStatus: statuses[targetID],
-			RepoUrl:      tq.GetRepoUrl(),
-		})
+		if len(statuses[targetID]) > 0 {
+			targetHistories = append(targetHistories, &trpb.TargetHistory{
+				Target:       target,
+				TargetStatus: statuses[targetID],
+				RepoUrl:      tq.GetRepoUrl(),
+			})
+		}
 	}
+
+	sort.Slice(targetHistories, func(i, j int) bool {
+		return strings.Compare(targetHistories[i].GetTarget().GetLabel(), targetHistories[j].GetTarget().GetLabel()) < 0
+	})
+
 	return targetHistories, nil
 }
