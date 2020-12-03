@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -60,7 +61,7 @@ func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequ
 	if et := req.GetEndTimeUsec(); et != 0 {
 		endUsec = et
 	}
-	targetHistory, err := readTargets(ctx, env, req.GetQuery(), startUsec, endUsec)
+	targetHistory, err := readTargetHistory(ctx, env, req.GetQuery(), startUsec, endUsec)
 	if err != nil {
 		return nil, err
 	}
@@ -69,20 +70,59 @@ func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequ
 	}, nil
 }
 
-func readTargets(ctx context.Context, env environment.Env, tq *trpb.TargetQuery, startUsec, endUsec int64) ([]*trpb.TargetHistory, error) {
+func readTargets(ctx context.Context, env environment.Env, tq *trpb.TargetQuery) ([]*tables.Target, error) {
 	if env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}
-	q := query_builder.NewQuery(`SELECT t.target_id, t.label, t.rule_type, ts.target_type,
-                                     ts.test_size, ts.status, ts.start_time_usec, ts.duration_usec,
-                                     i.invocation_id, i.commit_sha, i.repo_url, i.created_at_usec
-                                     FROM Targets as t
-                                     JOIN TargetStatuses AS ts ON t.target_id == ts.target_id
-                                     JOIN Invocations AS i ON ts.invocation_pk == i.invocation_pk`)
-	// Adds user / permissions to targets (t) table.
+	q := query_builder.NewQuery(`SELECT * FROM Targets as t`)
+	q.AddWhereClause("t.repo_url = ?", tq.GetRepoUrl())
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
 		return nil, err
 	}
+	queryStr, args := q.Build()
+	targets := make([]*tables.Target, 0)
+	err := env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+		rows, err := tx.Raw(queryStr, args...).Rows()
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			t := tables.Target{}
+			if err := tx.ScanRows(rows, &t); err != nil {
+				return err
+			}
+			targets = append(targets, &t)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return targets, nil
+}
+
+func readTargetHistory(ctx context.Context, env environment.Env, tq *trpb.TargetQuery, startUsec, endUsec int64) ([]*trpb.TargetHistory, error) {
+	if env.GetDBHandle() == nil {
+		return nil, status.FailedPreconditionError("database not configured")
+	}
+	allTargets, err := readTargets(ctx, env, tq)
+	if err != nil {
+		return nil, err
+	}
+	targets := make(map[int64]*trpb.Target, 0)
+	for _, t := range allTargets {
+		targets[t.TargetID] = &trpb.Target{
+			Id:       fmt.Sprintf("%d", t.TargetID),
+			Label:    t.Label,
+			RuleType: t.RuleType,
+		}
+	}
+
+	q := query_builder.NewQuery(`SELECT ts.target_id, ts.target_type, ts.test_size, ts.status, ts.start_time_usec,
+                                     ts.duration_usec, i.invocation_id, i.commit_sha, i.repo_url, i.created_at_usec
+                                     FROM TargetStatuses AS ts
+                                     JOIN Invocations AS i ON ts.invocation_pk == i.invocation_pk`)
 	// Adds user / permissions to invocations (i) table.
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "i"); err != nil {
 		return nil, err
@@ -90,7 +130,6 @@ func readTargets(ctx context.Context, env environment.Env, tq *trpb.TargetQuery,
 	q.AddWhereClause("i.created_at_usec > ?", startUsec)
 	q.AddWhereClause("i.created_at_usec + i.duration_usec < ?", endUsec)
 	q.AddWhereClause("i.repo_url = ?", tq.GetRepoUrl())
-
 	if user := tq.GetUser(); user != "" {
 		q.AddWhereClause("i.user = ?", user)
 	}
@@ -107,11 +146,9 @@ func readTargets(ctx context.Context, env environment.Env, tq *trpb.TargetQuery,
 		q.AddWhereClause("ts.target_type = ?", int32(targetType))
 	}
 	queryStr, args := q.Build()
-
-	targets := make(map[int64]*trpb.Target, 0)
 	statuses := make(map[int64][]*trpb.TargetStatus, 0)
 
-	err := env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+	err = env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
 		rows, err := tx.Raw(queryStr, args...).Rows()
 		if err != nil {
 			return err
@@ -120,8 +157,6 @@ func readTargets(ctx context.Context, env environment.Env, tq *trpb.TargetQuery,
 		for rows.Next() {
 			row := struct {
 				TargetID      int64
-				Label         string
-				RuleType      string
 				TargetType    int32
 				TestSize      int32
 				Status        int32
@@ -135,14 +170,9 @@ func readTargets(ctx context.Context, env environment.Env, tq *trpb.TargetQuery,
 			if err := tx.ScanRows(rows, &row); err != nil {
 				return err
 			}
-			if _, ok := targets[row.TargetID]; !ok {
-				targets[row.TargetID] = &trpb.Target{
-					Id:         fmt.Sprintf("%d", row.TargetID),
-					Label:      row.Label,
-					RuleType:   row.RuleType,
-					TargetType: cmpb.TargetType(row.TargetType),
-					TestSize:   cmpb.TestSize(row.TestSize),
-				}
+			if _, ok := targets[row.TargetID]; ok {
+				targets[row.TargetID].TargetType = cmpb.TargetType(row.TargetType)
+				targets[row.TargetID].TestSize = cmpb.TestSize(row.TestSize)
 			}
 
 			tsPb, _ := ptypes.TimestampProto(time.Unix(0, row.StartTimeUsec*int64(time.Microsecond)))
