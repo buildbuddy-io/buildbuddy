@@ -499,6 +499,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "target_ts_proto",
+    deps = [":target_proto"],
+)
+
+ts_proto_library(
     name = "command_line_ts_proto",
     deps = [":command_line_proto"],
 )
