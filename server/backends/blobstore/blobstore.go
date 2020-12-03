@@ -9,6 +9,7 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/aws/aws-sdk-go/aws"
@@ -19,9 +20,21 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/option"
+
+	gstatus "google.golang.org/grpc/status"
+)
+
+const (
+	// Prometheus BlobstoreTypeLabel values
+
+	diskLabel  = "disk"
+	gcsLabel   = "gcs"
+	awsS3Label = "aws_s3"
 )
 
 // Returns whatever blobstore is specified in the config.
@@ -41,6 +54,72 @@ func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error
 		return NewAwsS3BlobStore(awsConfig)
 	}
 	return nil, fmt.Errorf("No storage backend configured -- please specify at least one in the config")
+}
+
+type writeFunc func() (int, error)
+
+func trackWrite(typeLabel string, write writeFunc) (int, error) {
+	startTime := time.Now()
+	size := 0
+	var err error
+	defer func() {
+		duration := time.Since(startTime)
+		metrics.BlobstoreWriteCount.With(prometheus.Labels{
+			metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
+			metrics.BlobstoreTypeLabel: typeLabel,
+		}).Inc()
+		metrics.BlobstoreWriteDurationUsec.With(prometheus.Labels{
+			metrics.BlobstoreTypeLabel: typeLabel,
+		}).Observe(float64(duration.Microseconds()))
+		metrics.BlobstoreWriteSizeBytes.With(prometheus.Labels{
+			metrics.BlobstoreTypeLabel: typeLabel,
+		}).Observe(float64(size))
+	}()
+	size, err = write()
+	return size, err
+}
+
+type readFunc func() ([]byte, error)
+
+func trackRead(typeLabel string, read readFunc) ([]byte, error) {
+	startTime := time.Now()
+	var b []byte
+	var err error
+	defer func() {
+		duration := time.Since(startTime)
+		size := len(b)
+		metrics.BlobstoreReadCount.With(prometheus.Labels{
+			metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
+			metrics.BlobstoreTypeLabel: typeLabel,
+		}).Inc()
+		metrics.BlobstoreReadDurationUsec.With(prometheus.Labels{
+			metrics.BlobstoreTypeLabel: typeLabel,
+		}).Observe(float64(duration.Microseconds()))
+		metrics.BlobstoreReadSizeBytes.With(prometheus.Labels{
+			metrics.BlobstoreTypeLabel: typeLabel,
+		}).Observe(float64(size))
+	}()
+	b, err = read()
+	return b, err
+}
+
+type deleteFunc func() error
+
+func trackDelete(typeLabel string, delete deleteFunc) error {
+	startTime := time.Now()
+	var err error
+	defer func() {
+		duration := time.Since(startTime)
+		metrics.BlobstoreDeleteCount.With(prometheus.Labels{
+			metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
+			metrics.BlobstoreTypeLabel: typeLabel,
+		})
+		metrics.BlobstoreDeleteDurationUsec.With(prometheus.Labels{
+			metrics.BlobstoreTypeLabel: typeLabel,
+		}).Observe(float64(duration.Microseconds()))
+	}()
+	err = delete()
+	return err
 }
 
 // A Disk-based blob storage implementation that reads and writes blobs to/from
@@ -124,7 +203,9 @@ func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []b
 	if err != nil {
 		return 0, err
 	}
-	return disk.WriteFile(ctx, fullPath, compressedData)
+	return trackWrite(diskLabel, func() (int, error) {
+		return disk.WriteFile(ctx, fullPath, compressedData)
+	})
 }
 
 func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
@@ -132,7 +213,9 @@ func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	return decompress(disk.ReadFile(ctx, fullPath))
+	return decompress(trackRead(diskLabel, func() ([]byte, error) {
+		return disk.ReadFile(ctx, fullPath)
+	}))
 }
 
 func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
@@ -140,7 +223,9 @@ func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	if err != nil {
 		return err
 	}
-	return disk.DeleteFile(ctx, fullPath)
+	return trackDelete(diskLabel, func() error {
+		return disk.DeleteFile(ctx, fullPath)
+	})
 }
 
 func (d *DiskBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
@@ -193,7 +278,9 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 		}
 		return nil, err
 	}
-	return decompress(ioutil.ReadAll(reader))
+	return decompress(trackRead(gcsLabel, func() ([]byte, error) {
+		return ioutil.ReadAll(reader)
+	}))
 }
 
 func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
@@ -203,11 +290,15 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 	if err != nil {
 		return 0, err
 	}
-	return writer.Write(compressedData)
+	return trackWrite(gcsLabel, func() (int, error) {
+		return writer.Write(compressedData)
+	})
 }
 
 func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
-	return g.bucketHandle.Object(blobName).Delete(ctx)
+	return trackDelete(gcsLabel, func() error {
+		return g.bucketHandle.Object(blobName).Delete(ctx)
+	})
 }
 
 func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
@@ -296,20 +387,22 @@ func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName
 func (a *AwsS3BlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
 	buff := &aws.WriteAtBuffer{}
 
-	_, err := a.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
-		Bucket: a.bucket,
-		Key:    aws.String(blobName),
-	})
+	return decompress(trackRead(awsS3Label, func() ([]byte, error) {
+		_, err := a.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
+			Bucket: a.bucket,
+			Key:    aws.String(blobName),
+		})
 
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == "NoSuchKey" {
-				return nil, status.NotFoundError(err.Error())
+		if err != nil {
+			if aerr, ok := err.(awserr.Error); ok {
+				if aerr.Code() == "NoSuchKey" {
+					return nil, status.NotFoundError(err.Error())
+				}
 			}
 		}
-	}
 
-	return decompress(buff.Bytes(), err)
+		return buff.Bytes(), nil
+	}))
 }
 
 func (a *AwsS3BlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
@@ -322,10 +415,12 @@ func (a *AwsS3BlobStore) WriteBlob(ctx context.Context, blobName string, data []
 		Key:    aws.String(blobName),
 		Body:   bytes.NewReader(compressedData),
 	}
-	if _, err := a.uploader.UploadWithContext(ctx, uploadParams); err != nil {
-		return -1, err
-	}
-	return len(compressedData), nil
+	return trackWrite(awsS3Label, func() (int, error) {
+		if _, err := a.uploader.UploadWithContext(ctx, uploadParams); err != nil {
+			return -1, err
+		}
+		return len(compressedData), nil
+	})
 }
 
 func (a *AwsS3BlobStore) DeleteBlob(ctx context.Context, blobName string) error {
@@ -334,13 +429,15 @@ func (a *AwsS3BlobStore) DeleteBlob(ctx context.Context, blobName string) error 
 		Key:    aws.String(blobName),
 	}
 
-	if _, err := a.s3.DeleteObjectWithContext(ctx, deleteParams); err != nil {
-		return err
-	}
+	return trackDelete(awsS3Label, func() error {
+		if _, err := a.s3.DeleteObjectWithContext(ctx, deleteParams); err != nil {
+			return err
+		}
 
-	return a.s3.WaitUntilObjectNotExistsWithContext(ctx, &s3.HeadObjectInput{
-		Bucket: a.bucket,
-		Key:    aws.String(blobName),
+		return a.s3.WaitUntilObjectNotExistsWithContext(ctx, &s3.HeadObjectInput{
+			Bucket: a.bucket,
+			Key:    aws.String(blobName),
+		})
 	})
 }
 
