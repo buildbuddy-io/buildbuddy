@@ -122,8 +122,7 @@ func readTargetHistory(ctx context.Context, env environment.Env, tq *trpb.Target
 
 	q := query_builder.NewQuery(`SELECT ts.target_id, ts.target_type, ts.test_size, ts.status, ts.start_time_usec,
                                      ts.duration_usec, i.invocation_id, i.commit_sha, i.repo_url, i.created_at_usec
-                                     FROM TargetStatuses AS ts
-                                     JOIN Invocations AS i ON ts.invocation_pk == i.invocation_pk`)
+                                     FROM TargetStatuses AS ts JOIN Invocations AS i ON ts.invocation_pk = i.invocation_pk`)
 	// Adds user / permissions to invocations (i) table.
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "i"); err != nil {
 		return nil, err
