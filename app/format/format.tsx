@@ -42,6 +42,32 @@ export function durationSec(duration: number | Long) {
   return `${seconds.toPrecision(3)} s`;
 }
 
+export function compactDurationSec(duration: number | Long) {
+  let seconds = +duration;
+  if (!seconds || seconds < 0) {
+    return "0s";
+  }
+  if (seconds > 60 * 60 * 24 * 365) {
+    return `${(seconds / (60 * 60 * 24 * 365)).toFixed(0)}y`;
+  }
+  if (seconds > 60 * 60 * 24 * 30) {
+    return `${(seconds / (60 * 60 * 24 * 30)).toFixed(0)}m`;
+  }
+  if (seconds > 60 * 60 * 24 * 7) {
+    return `${(seconds / (60 * 60 * 24 * 7)).toFixed(0)}w`;
+  }
+  if (seconds > 60 * 60 * 24) {
+    return `${(seconds / (60 * 60 * 24)).toFixed(0)}d`;
+  }
+  if (seconds > 60 * 60) {
+    return `${(seconds / (60 * 60)).toFixed(0)}h`;
+  }
+  if (seconds > 60) {
+    return `${(seconds / 60).toFixed(0)}m`;
+  }
+  return `${seconds.toFixed(0)}s`;
+}
+
 export function bytes(bytes: number | Long) {
   bytes = +bytes;
   if (bytes < 100) {
@@ -91,6 +117,7 @@ export function formatCommitHash(commit: string) {
 }
 
 export default {
+  compactDurationSec,
   durationSec,
   durationMillis,
   durationUsec,

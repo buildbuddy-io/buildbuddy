@@ -56,6 +56,14 @@ class Router {
     this.navigateTo(Path.trendsPath);
   }
 
+  navigateToTap() {
+    if (!capabilities.canNavigateToPath(Path.tapPath)) {
+      alert(`The test dashboard is not available in ${capabilities.name}`);
+      return;
+    }
+    this.navigateTo(Path.tapPath);
+  }
+
   navigateToInvocation(invocationId: string) {
     if (!capabilities.canNavigateToPath(Path.invocationPath)) {
       alert(`Invocations are not available in ${capabilities.name}`);
@@ -202,6 +210,7 @@ export class Path {
   static createOrgPath = "/org/create";
   static editOrgPath = "/org/edit";
   static trendsPath = "/trends/";
+  static tapPath = "/tests/";
 }
 
 export default new Router();
