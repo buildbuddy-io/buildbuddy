@@ -98,6 +98,7 @@ func protoID(beid *build_event_stream.BuildEventId) string {
 }
 
 func targetTypeFromRuleType(ruleType string) cmpb.TargetType {
+	ruleType = strings.TrimSuffix(ruleType, " rule")
 	switch {
 	case strings.HasSuffix(ruleType, "application"):
 		return cmpb.TargetType_APPLICATION
@@ -339,7 +340,7 @@ func insertOrUpdateTargets(ctx context.Context, env environment.Env, targets []*
 	if env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
 	}
-	chunkList := chunkTargetsBy(targets, 500)
+	chunkList := chunkTargetsBy(targets, 100)
 	for _, chunk := range chunkList {
 		valueStrings := []string{}
 		valueArgs := []interface{}{}
@@ -378,7 +379,7 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 	if env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
 	}
-	chunkList := chunkStatusesBy(statuses, 500)
+	chunkList := chunkStatusesBy(statuses, 100)
 	for _, chunk := range chunkList {
 		valueStrings := []string{}
 		valueArgs := []interface{}{}
