@@ -374,7 +374,6 @@ func NewAwsS3BlobStore(awsConfig *config.AwsS3Config) (*AwsS3BlobStore, error) {
 			return nil, err
 		}
 	}
-	upload
 	return awsBlobStore, nil
 }
 
