@@ -293,7 +293,9 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 	}
 
-	e.targetTracker.TrackTargetsForEvent(e.ctx, &bazelBuildEvent)
+	if e.env.GetConfigurator().EnableTargetTracking() {
+		e.targetTracker.TrackTargetsForEvent(e.ctx, &bazelBuildEvent)
+	}
 	e.statusReporter.ReportStatusForEvent(e.ctx, &bazelBuildEvent)
 
 	// For everything else, just save the event to our buffer and keep on chugging.
