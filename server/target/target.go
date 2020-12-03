@@ -14,8 +14,34 @@ import (
 	"github.com/jinzhu/gorm"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
+	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 )
+
+func convertToCommonStatus(in build_event_stream.TestStatus) cmpb.Status {
+	switch in {
+	case build_event_stream.TestStatus_NO_STATUS:
+		return cmpb.Status_STATUS_UNSPECIFIED
+	case build_event_stream.TestStatus_PASSED:
+		return cmpb.Status_PASSED
+	case build_event_stream.TestStatus_FLAKY:
+		return cmpb.Status_FLAKY
+	case build_event_stream.TestStatus_TIMEOUT:
+		return cmpb.Status_TIMED_OUT
+	case build_event_stream.TestStatus_FAILED:
+		return cmpb.Status_FAILED
+	case build_event_stream.TestStatus_INCOMPLETE:
+		return cmpb.Status_INCOMPLETE
+	case build_event_stream.TestStatus_REMOTE_FAILURE:
+		return cmpb.Status_TOOL_FAILED
+	case build_event_stream.TestStatus_FAILED_TO_BUILD:
+		return cmpb.Status_FAILED_TO_BUILD
+	case build_event_stream.TestStatus_TOOL_HALTED_BEFORE_TESTING:
+		return cmpb.Status_INCOMPLETE
+	default:
+		return cmpb.Status_STATUS_UNSPECIFIED
+	}
+}
 
 func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
 	auth := env.GetAuthenticator()
@@ -123,7 +149,7 @@ func readTargets(ctx context.Context, env environment.Env, tq *trpb.TargetQuery,
 			statuses[row.TargetID] = append(statuses[row.TargetID], &trpb.TargetStatus{
 				InvocationId: row.InvocationID,
 				CommitSha:    row.CommitSHA,
-				Status:       cmpb.Status(row.Status),
+				Status:       convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
 				Timing: &cmpb.Timing{
 					StartTime: tsPb,
 					Duration:  ptypes.DurationProto(time.Microsecond * time.Duration(row.DurationUsec)),

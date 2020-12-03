@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/target",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:build_event_stream_go_proto",
         "//proto:target_go_proto",
         "//proto/api/v1:common_go_proto",
         "//server/environment:go_default_library",
@@ -14,7 +15,5 @@ go_library(
         "//server/util/status:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_jinzhu_gorm//:go_default_library",
-        "@io_bazel_rules_go//proto/wkt:duration_go_proto",
-        "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
     ],
 )
