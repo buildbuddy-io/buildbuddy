@@ -68,6 +68,11 @@ func trackWrite(typeLabel string, write writeFunc) (int, error) {
 			metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
 			metrics.BlobstoreTypeLabel: typeLabel,
 		}).Inc()
+		// Don't track duration or size if there's an error, but do track
+		// count (above) so we can measure failure rates.
+		if err != nil {
+			return
+		}
 		metrics.BlobstoreWriteDurationUsec.With(prometheus.Labels{
 			metrics.BlobstoreTypeLabel: typeLabel,
 		}).Observe(float64(duration.Microseconds()))
@@ -92,6 +97,11 @@ func trackRead(typeLabel string, read readFunc) ([]byte, error) {
 			metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
 			metrics.BlobstoreTypeLabel: typeLabel,
 		}).Inc()
+		// Don't track duration or size if there's an error, but do track
+		// count (above) so we can measure failure rates.
+		if err != nil {
+			return
+		}
 		metrics.BlobstoreReadDurationUsec.With(prometheus.Labels{
 			metrics.BlobstoreTypeLabel: typeLabel,
 		}).Observe(float64(duration.Microseconds()))
@@ -114,6 +124,11 @@ func trackDelete(typeLabel string, delete deleteFunc) error {
 			metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
 			metrics.BlobstoreTypeLabel: typeLabel,
 		})
+		// Don't track duration if there's an error, but do track
+		// count (above) so we can measure failure rates.
+		if err != nil {
+			return
+		}
 		metrics.BlobstoreDeleteDurationUsec.With(prometheus.Labels{
 			metrics.BlobstoreTypeLabel: typeLabel,
 		}).Observe(float64(duration.Microseconds()))
@@ -359,7 +374,7 @@ func NewAwsS3BlobStore(awsConfig *config.AwsS3Config) (*AwsS3BlobStore, error) {
 			return nil, err
 		}
 	}
-
+	upload
 	return awsBlobStore, nil
 }
 
