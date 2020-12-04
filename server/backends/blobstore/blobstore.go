@@ -56,85 +56,59 @@ func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error
 	return nil, fmt.Errorf("No storage backend configured -- please specify at least one in the config")
 }
 
-type writeFunc func() (int, error)
-
-func trackWrite(typeLabel string, write writeFunc) (int, error) {
-	startTime := time.Now()
-	size := 0
-	var err error
-	defer func() {
-		duration := time.Since(startTime)
-		metrics.BlobstoreWriteCount.With(prometheus.Labels{
-			metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
-			metrics.BlobstoreTypeLabel: typeLabel,
-		}).Inc()
-		// Don't track duration or size if there's an error, but do track
-		// count (above) so we can measure failure rates.
-		if err != nil {
-			return
-		}
-		metrics.BlobstoreWriteDurationUsec.With(prometheus.Labels{
-			metrics.BlobstoreTypeLabel: typeLabel,
-		}).Observe(float64(duration.Microseconds()))
-		metrics.BlobstoreWriteSizeBytes.With(prometheus.Labels{
-			metrics.BlobstoreTypeLabel: typeLabel,
-		}).Observe(float64(size))
-	}()
-	size, err = write()
-	return size, err
+func recordWriteMetrics(typeLabel string, startTime time.Time, size int, err error) {
+	duration := time.Since(startTime)
+	metrics.BlobstoreWriteCount.With(prometheus.Labels{
+		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.BlobstoreTypeLabel: typeLabel,
+	}).Inc()
+	// Don't track duration or size if there's an error, but do track
+	// count (above) so we can measure failure rates.
+	if err != nil {
+		return
+	}
+	metrics.BlobstoreWriteDurationUsec.With(prometheus.Labels{
+		metrics.BlobstoreTypeLabel: typeLabel,
+	}).Observe(float64(duration.Microseconds()))
+	metrics.BlobstoreWriteSizeBytes.With(prometheus.Labels{
+		metrics.BlobstoreTypeLabel: typeLabel,
+	}).Observe(float64(size))
 }
 
-type readFunc func() ([]byte, error)
-
-func trackRead(typeLabel string, read readFunc) ([]byte, error) {
-	startTime := time.Now()
-	var b []byte
-	var err error
-	defer func() {
-		duration := time.Since(startTime)
-		size := len(b)
-		metrics.BlobstoreReadCount.With(prometheus.Labels{
-			metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
-			metrics.BlobstoreTypeLabel: typeLabel,
-		}).Inc()
-		// Don't track duration or size if there's an error, but do track
-		// count (above) so we can measure failure rates.
-		if err != nil {
-			return
-		}
-		metrics.BlobstoreReadDurationUsec.With(prometheus.Labels{
-			metrics.BlobstoreTypeLabel: typeLabel,
-		}).Observe(float64(duration.Microseconds()))
-		metrics.BlobstoreReadSizeBytes.With(prometheus.Labels{
-			metrics.BlobstoreTypeLabel: typeLabel,
-		}).Observe(float64(size))
-	}()
-	b, err = read()
-	return b, err
+func recordReadMetrics(typeLabel string, startTime time.Time, b []byte, err error) {
+	duration := time.Since(startTime)
+	size := len(b)
+	metrics.BlobstoreReadCount.With(prometheus.Labels{
+		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.BlobstoreTypeLabel: typeLabel,
+	}).Inc()
+	// Don't track duration or size if there's an error, but do track
+	// count (above) so we can measure failure rates.
+	if err != nil {
+		return
+	}
+	metrics.BlobstoreReadDurationUsec.With(prometheus.Labels{
+		metrics.BlobstoreTypeLabel: typeLabel,
+	}).Observe(float64(duration.Microseconds()))
+	metrics.BlobstoreReadSizeBytes.With(prometheus.Labels{
+		metrics.BlobstoreTypeLabel: typeLabel,
+	}).Observe(float64(size))
 }
 
-type deleteFunc func() error
-
-func trackDelete(typeLabel string, delete deleteFunc) error {
-	startTime := time.Now()
-	var err error
-	defer func() {
-		duration := time.Since(startTime)
-		metrics.BlobstoreDeleteCount.With(prometheus.Labels{
-			metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
-			metrics.BlobstoreTypeLabel: typeLabel,
-		})
-		// Don't track duration if there's an error, but do track
-		// count (above) so we can measure failure rates.
-		if err != nil {
-			return
-		}
-		metrics.BlobstoreDeleteDurationUsec.With(prometheus.Labels{
-			metrics.BlobstoreTypeLabel: typeLabel,
-		}).Observe(float64(duration.Microseconds()))
-	}()
-	err = delete()
-	return err
+func recordDeleteMetrics(typeLabel string, startTime time.Time, err error) {
+	duration := time.Since(startTime)
+	metrics.BlobstoreDeleteCount.With(prometheus.Labels{
+		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.BlobstoreTypeLabel: typeLabel,
+	})
+	// Don't track duration if there's an error, but do track
+	// count (above) so we can measure failure rates.
+	if err != nil {
+		return
+	}
+	metrics.BlobstoreDeleteDurationUsec.With(prometheus.Labels{
+		metrics.BlobstoreTypeLabel: typeLabel,
+	}).Observe(float64(duration.Microseconds()))
 }
 
 // A Disk-based blob storage implementation that reads and writes blobs to/from
@@ -218,9 +192,10 @@ func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []b
 	if err != nil {
 		return 0, err
 	}
-	return trackWrite(diskLabel, func() (int, error) {
-		return disk.WriteFile(ctx, fullPath, compressedData)
-	})
+	start := time.Now()
+	n, err := disk.WriteFile(ctx, fullPath, compressedData)
+	recordWriteMetrics(diskLabel, start, n, err)
+	return n, err
 }
 
 func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
@@ -228,9 +203,10 @@ func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	return decompress(trackRead(diskLabel, func() ([]byte, error) {
-		return disk.ReadFile(ctx, fullPath)
-	}))
+	start := time.Now()
+	b, err := disk.ReadFile(ctx, fullPath)
+	recordReadMetrics(diskLabel, start, b, err)
+	return decompress(b, err)
 }
 
 func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
@@ -238,9 +214,10 @@ func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	if err != nil {
 		return err
 	}
-	return trackDelete(diskLabel, func() error {
-		return disk.DeleteFile(ctx, fullPath)
-	})
+	start := time.Now()
+	err = disk.DeleteFile(ctx, fullPath)
+	recordDeleteMetrics(diskLabel, start, err)
+	return err
 }
 
 func (d *DiskBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
@@ -293,9 +270,10 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 		}
 		return nil, err
 	}
-	return decompress(trackRead(gcsLabel, func() ([]byte, error) {
-		return ioutil.ReadAll(reader)
-	}))
+	start := time.Now()
+	b, err := ioutil.ReadAll(reader)
+	recordReadMetrics(gcsLabel, start, b, err)
+	return decompress(b, err)
 }
 
 func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
@@ -305,15 +283,17 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 	if err != nil {
 		return 0, err
 	}
-	return trackWrite(gcsLabel, func() (int, error) {
-		return writer.Write(compressedData)
-	})
+	start := time.Now()
+	n, err := writer.Write(compressedData)
+	recordWriteMetrics(gcsLabel, start, n, err)
+	return n, err
 }
 
 func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
-	return trackDelete(gcsLabel, func() error {
-		return g.bucketHandle.Object(blobName).Delete(ctx)
-	})
+	start := time.Now()
+	err := g.bucketHandle.Object(blobName).Delete(ctx)
+	recordDeleteMetrics(gcsLabel, start, err)
+	return err
 }
 
 func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
@@ -399,24 +379,29 @@ func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName
 }
 
 func (a *AwsS3BlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
+	start := time.Now()
+	b, err := a.download(ctx, blobName)
+	recordReadMetrics(awsS3Label, start, b, err)
+	return decompress(b, err)
+}
+
+func (a *AwsS3BlobStore) download(ctx context.Context, blobName string) ([]byte, error) {
 	buff := &aws.WriteAtBuffer{}
 
-	return decompress(trackRead(awsS3Label, func() ([]byte, error) {
-		_, err := a.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
-			Bucket: a.bucket,
-			Key:    aws.String(blobName),
-		})
+	_, err := a.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
+		Bucket: a.bucket,
+		Key:    aws.String(blobName),
+	})
 
-		if err != nil {
-			if aerr, ok := err.(awserr.Error); ok {
-				if aerr.Code() == "NoSuchKey" {
-					return nil, status.NotFoundError(err.Error())
-				}
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == "NoSuchKey" {
+				return nil, status.NotFoundError(err.Error())
 			}
 		}
+	}
 
-		return buff.Bytes(), nil
-	}))
+	return buff.Bytes(), nil
 }
 
 func (a *AwsS3BlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
@@ -424,34 +409,44 @@ func (a *AwsS3BlobStore) WriteBlob(ctx context.Context, blobName string, data []
 	if err != nil {
 		return 0, err
 	}
+	start := time.Now()
+	n, err := a.upload(ctx, blobName, compressedData)
+	recordWriteMetrics(awsS3Label, start, n, err)
+	return n, err
+}
+
+func (a *AwsS3BlobStore) upload(ctx context.Context, blobName string, compressedData []byte) (int, error) {
 	uploadParams := &s3manager.UploadInput{
 		Bucket: a.bucket,
 		Key:    aws.String(blobName),
 		Body:   bytes.NewReader(compressedData),
 	}
-	return trackWrite(awsS3Label, func() (int, error) {
-		if _, err := a.uploader.UploadWithContext(ctx, uploadParams); err != nil {
-			return -1, err
-		}
-		return len(compressedData), nil
-	})
+	if _, err := a.uploader.UploadWithContext(ctx, uploadParams); err != nil {
+		return -1, err
+	}
+	return len(compressedData), nil
 }
 
 func (a *AwsS3BlobStore) DeleteBlob(ctx context.Context, blobName string) error {
+	start := time.Now()
+	err := a.delete(ctx, blobName)
+	recordDeleteMetrics(awsS3Label, start, err)
+	return err
+}
+
+func (a *AwsS3BlobStore) delete(ctx context.Context, blobName string) error {
 	deleteParams := &s3.DeleteObjectInput{
 		Bucket: a.bucket,
 		Key:    aws.String(blobName),
 	}
 
-	return trackDelete(awsS3Label, func() error {
-		if _, err := a.s3.DeleteObjectWithContext(ctx, deleteParams); err != nil {
-			return err
-		}
+	if _, err := a.s3.DeleteObjectWithContext(ctx, deleteParams); err != nil {
+		return err
+	}
 
-		return a.s3.WaitUntilObjectNotExistsWithContext(ctx, &s3.HeadObjectInput{
-			Bucket: a.bucket,
-			Key:    aws.String(blobName),
-		})
+	return a.s3.WaitUntilObjectNotExistsWithContext(ctx, &s3.HeadObjectInput{
+		Bucket: a.bucket,
+		Key:    aws.String(blobName),
 	})
 }
 
