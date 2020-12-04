@@ -128,13 +128,13 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 }
 
 func (h *HitTracker) TrackEmptyHit() error {
-	if h.c == nil || h.iid == "" {
-		return nil
-	}
 	metrics.CacheEvents.With(prometheus.Labels{
 		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
 		metrics.CacheEventTypeLabel: hitLabel,
 	}).Inc()
+	if h.c == nil || h.iid == "" {
+		return nil
+	}
 	_, err := h.c.IncrementCount(h.ctx, h.counterName(Hit), 1)
 	return err
 }
@@ -176,6 +176,20 @@ func durationMetric(ct counterType) *prometheus.HistogramVec {
 func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.Time, actionCounter, sizeCounter, timeCounter counterType) closeFunction {
 	return func() error {
 		dur := time.Since(start)
+
+		et := cacheEventTypeLabel(actionCounter)
+		ct := h.cacheTypeLabel()
+		metrics.CacheEvents.With(prometheus.Labels{
+			metrics.CacheTypeLabel:      ct,
+			metrics.CacheEventTypeLabel: et,
+		}).Inc()
+		sizeMetric(sizeCounter).With(prometheus.Labels{
+			metrics.CacheTypeLabel: ct,
+		}).Observe(float64(d.GetSizeBytes()))
+		sizeMetric(timeCounter).With(prometheus.Labels{
+			metrics.CacheTypeLabel: ct,
+		}).Observe(float64(dur.Microseconds()))
+
 		if h.c == nil || h.iid == "" {
 			return nil
 		}
@@ -183,26 +197,12 @@ func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.
 		if _, err := h.c.IncrementCount(h.ctx, h.counterName(actionCounter), 1); err != nil {
 			return err
 		}
-		et := cacheEventTypeLabel(actionCounter)
-		ct := h.cacheTypeLabel()
-		metrics.CacheEvents.With(prometheus.Labels{
-			metrics.CacheTypeLabel:      ct,
-			metrics.CacheEventTypeLabel: et,
-		}).Inc()
-
 		if _, err := h.c.IncrementCount(h.ctx, h.counterName(sizeCounter), d.GetSizeBytes()); err != nil {
 			return err
 		}
-		sizeMetric(sizeCounter).With(prometheus.Labels{
-			metrics.CacheTypeLabel: ct,
-		}).Observe(float64(d.GetSizeBytes()))
-
 		if _, err := h.c.IncrementCount(h.ctx, h.counterName(timeCounter), dur.Microseconds()); err != nil {
 			return err
 		}
-		sizeMetric(timeCounter).With(prometheus.Labels{
-			metrics.CacheTypeLabel: ct,
-		}).Observe(float64(dur.Microseconds()))
 
 		return nil
 	}
