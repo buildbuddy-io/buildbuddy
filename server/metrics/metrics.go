@@ -36,6 +36,7 @@ const (
 	/// Process exit code of an executed action.
 	ExitCodeLabel = "exit_code"
 
+	/// SQL query before substituting template parameters.
 	SQLQueryTemplateLabel = "sql_query_template"
 )
 
