@@ -127,7 +127,7 @@ type sqlLogger struct {
 	delegate   gorm.Logger
 }
 
-func (b sqlLogger) Print(v ...interface{}) {
+func (l sqlLogger) Print(v ...interface{}) {
 	if len(v) == 0 {
 		return
 	}
@@ -141,7 +141,7 @@ func (b sqlLogger) Print(v ...interface{}) {
 	// just for the sake of future-proofing.
 	if logType == "log" || logType == "error" {
 		// Always log errors to the console.
-		b.delegate.Print(v...)
+		l.delegate.Print(v...)
 
 		if len(v) < 3 {
 			return
@@ -154,8 +154,8 @@ func (b sqlLogger) Print(v ...interface{}) {
 		return
 	}
 	if logType == "sql" {
-		if b.logQueries {
-			b.delegate.Print(v...)
+		if l.logQueries {
+			l.delegate.Print(v...)
 		}
 		if len(v) < 6 {
 			return
