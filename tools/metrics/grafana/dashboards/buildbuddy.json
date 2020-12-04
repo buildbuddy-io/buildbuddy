@@ -16,10 +16,11 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": 2,
-  "iteration": 1606347824571,
+  "iteration": 1606871483017,
   "links": [],
   "panels": [
     {
+      "collapsed": false,
       "datasource": null,
       "gridPos": {
         "h": 1,
@@ -28,6 +29,8 @@
         "y": 0
       },
       "id": 23,
+      "panels": [],
+      "repeat": null,
       "title": "System status",
       "type": "row"
     },
@@ -46,8 +49,8 @@
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
-        "h": 8,
-        "w": 9,
+        "h": 7,
+        "w": 12,
         "x": 0,
         "y": 1
       },
@@ -58,6 +61,7 @@
         "current": false,
         "max": false,
         "min": false,
+        "rightSide": true,
         "show": false,
         "total": false,
         "values": false
@@ -73,13 +77,14 @@
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
+      "repeat": "job",
       "seriesOverrides": [],
       "spaceLength": 10,
       "stack": false,
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(up)",
+          "expr": "sum(up{job=\"${job}\"})",
           "interval": "",
           "legendFormat": "",
           "queryType": "randomWalk",
@@ -90,7 +95,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Running instances",
+      "title": "${job} instances",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -107,6 +112,7 @@
       "yaxes": [
         {
           "$$hashKey": "object:571",
+          "decimals": 0,
           "format": "short",
           "label": null,
           "logBase": 1,
@@ -121,7 +127,7 @@
           "logBase": 1,
           "max": null,
           "min": null,
-          "show": true
+          "show": false
         }
       ],
       "yaxis": {
@@ -136,7 +142,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 9
+        "y": 8
       },
       "id": 11,
       "panels": [],
@@ -163,7 +169,7 @@
         "h": 8,
         "w": 9,
         "x": 0,
-        "y": 10
+        "y": 9
       },
       "hiddenSeries": false,
       "id": 13,
@@ -223,7 +229,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Invocations by status",
+      "title": "Invocations per second",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -240,7 +246,7 @@
       "yaxes": [
         {
           "$$hashKey": "object:529",
-          "format": "short",
+          "format": "ops",
           "label": null,
           "logBase": 1,
           "max": null,
@@ -280,7 +286,7 @@
         "h": 8,
         "w": 10,
         "x": 9,
-        "y": 10
+        "y": 9
       },
       "hiddenSeries": false,
       "id": 25,
@@ -367,11 +373,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 17
       },
       "id": 15,
       "panels": [],
-      "title": "Cache throughput",
+      "title": "Remote cache",
       "type": "row"
     },
     {
@@ -380,6 +386,7 @@
       "dashLength": 10,
       "dashes": false,
       "datasource": "Prometheus",
+      "description": "Total number of bytes downloaded by consumers of the cache, per second. This does _not_ represent the average download speed across cache requests.",
       "fieldConfig": {
         "defaults": {
           "custom": {}
@@ -392,7 +399,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 19
+        "y": 18
       },
       "hiddenSeries": false,
       "id": 17,
@@ -433,7 +440,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Downloaded bytes",
+      "title": "Total downloaded bytes per second",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -478,6 +485,7 @@
       "dashLength": 10,
       "dashes": false,
       "datasource": "Prometheus",
+      "description": "Total number of bytes uploaded by consumers of the cache, per second. This does _not_ represent the average upload speed across cache requests.",
       "fieldConfig": {
         "defaults": {
           "custom": {}
@@ -490,7 +498,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 18
       },
       "hiddenSeries": false,
       "id": 19,
@@ -531,7 +539,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Uploaded bytes",
+      "title": "Total uploaded bytes per second",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -571,20 +579,6 @@
       }
     },
     {
-      "collapsed": false,
-      "datasource": null,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 27
-      },
-      "id": 6,
-      "panels": [],
-      "title": "Cache hit rate",
-      "type": "row"
-    },
-    {
       "aliasColors": {
         "Misses": "red"
       },
@@ -605,7 +599,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 28
+        "y": 26
       },
       "hiddenSeries": false,
       "id": 4,
@@ -650,30 +644,18 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_remote_cache_events_bucket{cache_type=\"action\",cache_event_type=\"hit\"}[${window}])) by (le))",
+          "expr": "rate(buildbuddy_remote_cache_events{cache_type=\"action_cache\"}[5m])",
           "interval": "",
-          "legendFormat": "Hits",
+          "legendFormat": "{{cache_event_type}}",
           "queryType": "randomWalk",
           "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_remote_cache_events_bucket{cache_type=\"action\",cache_event_type=\"miss\"}[${window}])) by (le))",
-          "interval": "",
-          "legendFormat": "Misses",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_remote_cache_events_bucket{cache_type=\"action\",cache_event_type=\"upload\"}[${window}])) by (le))",
-          "interval": "",
-          "legendFormat": "Uploads",
-          "refId": "C"
         }
       ],
       "thresholds": [],
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Median action cache events per invocation",
+      "title": "Action cache events per second",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -690,7 +672,7 @@
       "yaxes": [
         {
           "$$hashKey": "object:22",
-          "format": "short",
+          "format": "ops",
           "label": null,
           "logBase": 1,
           "max": null,
@@ -733,7 +715,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 26
       },
       "hiddenSeries": false,
       "id": 9,
@@ -765,30 +747,18 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_remote_cache_events_bucket{cache_type=\"cas\",cache_event_type=\"hit\"}[${window}])) by (le))",
+          "expr": "rate(buildbuddy_remote_cache_events{cache_type=\"cas\"}[5m])",
           "interval": "",
-          "legendFormat": "Hits",
+          "legendFormat": "{{cache_event_type}}",
           "queryType": "randomWalk",
           "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_remote_cache_events_bucket{cache_type=\"cas\",cache_event_type=\"miss\"}[${window}])) by (le))",
-          "interval": "",
-          "legendFormat": "Misses",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_remote_cache_events_bucket{cache_type=\"cas\",cache_event_type=\"upload\"}[${window}])) by (le))",
-          "interval": "",
-          "legendFormat": "Uploads",
-          "refId": "C"
         }
       ],
       "thresholds": [],
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Median CAS cache events per invocation",
+      "title": "CAS events per second",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -805,7 +775,7 @@
       "yaxes": [
         {
           "$$hashKey": "object:22",
-          "format": "short",
+          "format": "ops",
           "label": null,
           "logBase": 1,
           "max": null,
@@ -834,17 +804,15 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 37
+        "y": 35
       },
-      "id": 8,
+      "id": 28,
       "panels": [],
-      "title": "Internal",
+      "title": "Remote execution",
       "type": "row"
     },
     {
-      "aliasColors": {
-        "95th %": "dark-purple"
-      },
+      "aliasColors": {},
       "bars": false,
       "dashLength": 10,
       "dashes": false,
@@ -859,10 +827,321 @@
       "fill": 1,
       "fillGradient": 0,
       "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 36
+      },
+      "hiddenSeries": false,
+      "id": 33,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "7.3.3",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum[${window}]))",
+          "interval": "",
+          "legendFormat": "",
+          "queryType": "randomWalk",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Total downloaded bytes per second",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:95",
+          "format": "binBps",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:96",
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 36
+      },
+      "hiddenSeries": false,
+      "id": 35,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "7.3.3",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum[${window}]))",
+          "interval": "",
+          "legendFormat": "",
+          "queryType": "randomWalk",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Total uploaded bytes per second",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:219",
+          "format": "binBps",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:220",
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 44
+      },
+      "hiddenSeries": false,
+      "id": 31,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "7.3.3",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "sum(rate(buildbuddy_remote_execution_count[${window}]))",
+          "interval": "",
+          "legendFormat": "",
+          "queryType": "randomWalk",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Actions executed per second",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:83",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:84",
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "collapsed": false,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      },
+      "id": 8,
+      "panels": [],
+      "title": "Internal",
+      "type": "row"
+    },
+    {
+      "aliasColors": {
+        "95th %": "dark-purple"
+      },
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "description": "Measures the time spent handling build events. In a healthy state, this should be very small (on the order of microseconds) in most cases, since the build event handler needs to be very high throughput.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 38
+        "y": 53
       },
       "hiddenSeries": false,
       "id": 2,
@@ -894,20 +1173,20 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket[5m])) by (le))",
+          "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket[${window}])) by (le))",
           "interval": "",
           "legendFormat": "Median",
           "queryType": "randomWalk",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.90, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket[5m])) by (le))",
+          "expr": "histogram_quantile(0.90, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket[${window}])) by (le))",
           "interval": "",
           "legendFormat": "90th %",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket[5m])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket[${window}])) by (le))",
           "instant": false,
           "interval": "",
           "legendFormat": "95th %",
@@ -967,9 +1246,9 @@
       {
         "allValue": null,
         "current": {
-          "selected": true,
-          "text": "5m",
-          "value": "5m"
+          "selected": false,
+          "text": "30s",
+          "value": "30s"
         },
         "error": null,
         "hide": 0,
@@ -979,7 +1258,7 @@
         "name": "window",
         "options": [
           {
-            "selected": false,
+            "selected": true,
             "text": "30s",
             "value": "30s"
           },
@@ -989,7 +1268,7 @@
             "value": "1m"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "5m",
             "value": "5m"
           },
@@ -1068,6 +1347,37 @@
         "queryValue": "",
         "skipUrlSync": false,
         "type": "custom"
+      },
+      {
+        "allValue": null,
+        "current": {
+          "selected": false,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": "Prometheus",
+        "definition": "label_values(job)",
+        "error": null,
+        "hide": 2,
+        "includeAll": true,
+        "label": "Jobs",
+        "multi": true,
+        "name": "job",
+        "options": [],
+        "query": "label_values(job)",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "tagValuesQuery": "",
+        "tags": [],
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
       }
     ]
   },
@@ -1076,7 +1386,18 @@
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"]
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ]
   },
   "timezone": "",
   "title": "BuildBuddy Metrics",
