@@ -35,6 +35,8 @@ const (
 
 	/// Process exit code of an executed action.
 	ExitCodeLabel = "exit_code"
+
+	SQLQueryTemplateLabel = "sql_query_template"
 )
 
 const (
@@ -163,7 +165,7 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "file_download_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Download duration during remote execution, in **microseconds**.",
+		Help:      "Per-file download duration during remote execution, in **microseconds**.",
 	})
 
 	FileUploadCount = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -187,7 +189,37 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "file_upload_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "upload duration during remote execution, in **microseconds**.",
+		Help:      "Per-file upload duration during remote execution, in **microseconds**.",
+	})
+
+	/// ## SQL metrics
+	///
+	/// These metrics are for monitoring the configured SQL database.
+
+	SQLQueryCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "query_count",
+		Help:      "Number of SQL queries executed.",
+	}, []string{
+		SQLQueryTemplateLabel,
+	})
+
+	SQLQueryDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "query_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "SQL query duration, in **microseconds**.",
+	}, []string{
+		SQLQueryTemplateLabel,
+	})
+
+	SQLErrorCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "error_count",
+		Help:      "Number of SQL queries that resulted in an error.",
 	})
 
 	/// ## Internal metrics
