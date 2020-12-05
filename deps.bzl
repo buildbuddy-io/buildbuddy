@@ -8,8 +8,8 @@ def install_buildbuddy_dependencies():
         name = "org_golang_google_grpc",
         build_file_proto_mode = "disable",
         importpath = "google.golang.org/grpc",
-        sum = "h1:IBKSUNL2uBS2DkJBncPP+TwT0sp9tgA8A75NjHt6umg=",
-        version = "v1.33.0",
+        sum = "h1:raiipEjMOIC/TO2AvyTxP25XFdLxNIBwzDh3FM3XztI=",
+        version = "v1.34.0",
     )
 
     go_repository(
@@ -58,8 +58,8 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "com_github_golang_protobuf",
         importpath = "github.com/golang/protobuf",
-        sum = "h1:+Z5KGCizgyZCbGh1KZqA0fcLLkwbsjIzS4aV2v7wJX0=",
-        version = "v1.4.2",
+        sum = "h1:JjCZWpVbqXDqFVmTfYWEVTMIYrL/NPdPSCHPJ0T/raM=",
+        version = "v1.4.3",
     )
 
     go_repository(
@@ -121,22 +121,22 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "org_golang_x_net",
         importpath = "golang.org/x/net",
-        sum = "h1:uwuIcX0g4Yl1NC5XAz37xsr2lTtcqevgzYNVt49waME=",
-        version = "v0.0.0-20201110031124-69a78807bb2b",
+        sum = "h1:eBmm0M9fYhWpKZLjQUUKka/LtIxf46G4fxeEz5KJr9U=",
+        version = "v0.0.0-20201202161906-c7110b5ffcbb",
     )
 
     go_repository(
         name = "org_golang_x_sys",
         importpath = "golang.org/x/sys",
-        sum = "h1:bNEHhJCnrwMKNMmOx3yAynp5vs5/gRy+XWFtZFu7NBM=",
-        version = "v0.0.0-20201009025420-dfb3f7c4e634",
+        sum = "h1:KmZPnMocC93w341XZp26yTJg8Za7lhb2KhkYmixoeso=",
+        version = "v0.0.0-20201204225414-ed752295db88",
     )
 
     go_repository(
         name = "org_golang_x_text",
         importpath = "golang.org/x/text",
-        sum = "h1:cokOdA+Jmi5PJGXLlLllQSgYigAEfHXJAERHVMaCc2k=",
-        version = "v0.3.3",
+        sum = "h1:0YWbFKbhXG/wIiuHDSKpS0Iy7FSA+u45VtBMfQcFTTc=",
+        version = "v0.3.4",
     )
 
     go_repository(
@@ -184,8 +184,8 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "com_github_envoyproxy_go_control_plane",
         importpath = "github.com/envoyproxy/go-control-plane",
-        sum = "h1:lRJIqDD8yjV1YyPRqecMdytjDLs2fTXq363aCib5xPU=",
-        version = "v0.9.5",
+        sum = "h1:EARl0OvqMoxq/UMgMSCLnXzkaXbxzskluEBlMQCJPms=",
+        version = "v0.9.7",
     )
 
     go_repository(
@@ -436,8 +436,8 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "org_golang_google_genproto",
         importpath = "google.golang.org/genproto",
-        sum = "h1:YhtyeaRgEDy6amoaijBY0B6uzaztIKKZbUcaO2OIFps=",
-        version = "v0.0.0-20201009135657-4d944d34d83c",
+        sum = "h1:65ppmIPdaZE+BO34gntwqexoTYr30IRNGmS0OGOHu3A=",
+        version = "v0.0.0-20201204160425-06b3db808446",
     )
 
     go_repository(
@@ -576,8 +576,8 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "com_github_cncf_udpa_go",
         importpath = "github.com/cncf/udpa/go",
-        sum = "h1:wP75JfNoHgEnmT+77wAUNQ2shW0sK83RPDQIvYIz47E=",
-        version = "v0.0.0-20200327203949-e8cd3a4bb307",
+        sum = "h1:9kRtNpqLHbZVO/NNxhHp2ymxFxsHOe3x2efJGn//Tas=",
+        version = "v0.0.0-20200629203442-efcf912fb354",
     )
     go_repository(
         name = "com_github_creack_pty",
