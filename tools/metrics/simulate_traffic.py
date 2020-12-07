@@ -1,20 +1,13 @@
+#!/usr/bin/env python3
 """This script runs a bunch of builds against BuildBuddy in a loop."""
 
+import argparse
+import multiprocessing
 import os
 import random
-import shutil
-import signal
 import subprocess
 import sys
-import tempfile
 import time
-import multiprocessing
-
-# This value can be increased depending on the local machine's specs.
-# The more parallel builds, the better the simulation.
-MAX_PARALLEL_INVOCATIONS = 2
-
-BAZEL_CONFIG = "local"
 
 
 def sh(cmd):
@@ -23,33 +16,32 @@ def sh(cmd):
 
 def sh_get_list(cmd):
     stdout = subprocess.run(cmd, shell=True, capture_output=True).stdout
-    return all_except_empty(stdout.decode("utf-8").splitlines())
+    return get_nonblank(stdout.decode("utf-8").splitlines())
 
 
-def all_except_empty(lines):
-    return [line for line in lines if line]
+def get_nonblank(lines):
+    return [line for line in (line.strip() for line in lines) if line]
 
 
 def random_file(extensions):
     all_paths = sh_get_list("find . -type f")
-    candidates = [
-        file_path
-        for file_path in all_paths
-        if any((file_path.endswith(extension) for extension in extensions))
-    ]
-    return random.choice(candidates)
+    return random.choice(
+        [
+            file_path
+            for file_path in all_paths
+            if any((file_path.endswith(extension) for extension in extensions))
+        ]
+    )
 
 
 def random_code_char():
-    chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789() \n"
-    return random.choice(chars)
-
-
-bazel_lock = multiprocessing.BoundedSemaphore(MAX_PARALLEL_INVOCATIONS)
+    return random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789() \n")
 
 
 class Developer:
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, bazel_configs, bazel_lock):
+        self.bazel_lock = bazel_lock
+        self.bazel_configs = bazel_configs
         self.data_dir = data_dir
 
     def develop(self):
@@ -61,8 +53,11 @@ class Developer:
             self.maybe_scrap_all_edits()
 
     def build(self):
-        with bazel_lock:
-            sh(f"bazel build //server --config={BAZEL_CONFIG}")
+        with self.bazel_lock:
+            config_flags = " ".join(
+                [f"--config={config}" for config in self.bazel_configs or ["local"]]
+            )
+            sh(f"bazel build //server {config_flags}")
 
     def init_repo(self):
         sh(f"mkdir -p {self.data_dir}")
@@ -92,6 +87,33 @@ class Developer:
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-c",
+        "--bazel-config",
+        help=(
+            "Bazel --config flag values to use. "
+            "Configs are sourced from the .bazelrc defined in the BuildBuddy repo at HEAD (on GitHub) "
+            "as well as the local ~/.bazelrc."
+        ),
+        action="append",
+    )
+    parser.add_argument(
+        "-p",
+        "--max-parallel-invocations",
+        help="Max number of parallel bazel invocations.",
+        type=int,
+        default=2,
+    )
+    parser.add_argument(
+        "-n",
+        "--num-developers",
+        help="Number of developers in the simulation.",
+        type=int,
+        default=5,
+    )
+    args = parser.parse_args()
+
     os.chdir(sys.path[0])
 
     data_dir = "/tmp/tmp_buildbuddy_simulate_traffic"
@@ -103,10 +125,13 @@ def main():
     if not os.path.exists("buildbuddy"):
         sh("git clone https://github.com/buildbuddy-io/buildbuddy")
 
-    def spawn_developer(data_dir):
-        Developer(data_dir).develop()
+    bazel_lock = multiprocessing.BoundedSemaphore(args.max_parallel_invocations)
+    bazel_configs = args.bazel_config
 
-    num_developers = 5
+    def spawn_developer(data_dir):
+        Developer(data_dir, bazel_configs, bazel_lock).develop()
+
+    num_developers = args.num_developers
     procs = []
     for developer_id in range(1, num_developers + 1):
         developer_data_dir = os.path.join(data_dir, f"developer_{developer_id}")
