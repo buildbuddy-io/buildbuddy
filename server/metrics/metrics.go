@@ -35,6 +35,9 @@ const (
 
 	/// Process exit code of an executed action.
 	ExitCodeLabel = "exit_code"
+
+	/// `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
+	BlobstoreTypeLabel = "blobstore_type"
 )
 
 const (
@@ -188,6 +191,92 @@ var (
 		Name:      "file_upload_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "upload duration during remote execution, in **microseconds**.",
+	})
+
+	/// ## Blobstore metrics
+	///
+	/// "Blobstore" refers to the backing storage that BuildBuddy uses to
+	/// store objects in the cache, as well as certain pieces of temporary
+	/// data (such as invocation events while an invocation is in progress).
+
+	BlobstoreReadCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "read_count",
+		Help:      "Number of files read from the blobstore.",
+	}, []string{
+		StatusLabel,
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreReadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "read_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Number of bytes read from the blobstore per file.",
+	}, []string{
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreReadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "read_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Duration per blobstore file read, in **microseconds**.",
+	}, []string{
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreWriteCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "write_count",
+		Help:      "Number of files written to the blobstore.",
+	}, []string{
+		StatusLabel,
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreWriteSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "write_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Number of bytes written to the blobstore per file.",
+	}, []string{
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreWriteDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "write_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Duration per blobstore file write, in **microseconds**.",
+	}, []string{
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreDeleteCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "delete_count",
+		Help:      "Number of files deleted from the blobstore.",
+	}, []string{
+		StatusLabel,
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreDeleteDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "delete_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Delete duration per blobstore file deletion, in **microseconds**.",
+	}, []string{
+		BlobstoreTypeLabel,
 	})
 
 	/// ## Internal metrics
