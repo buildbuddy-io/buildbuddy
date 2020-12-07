@@ -1229,13 +1229,111 @@
       }
     },
     {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "hiddenSeries": false,
+      "id": 65,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "7.3.3",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "sum(rate(buildbuddy_invocation_build_event_count[5m]))",
+          "interval": "",
+          "legendFormat": "",
+          "queryType": "randomWalk",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Build events uploaded per second",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:318",
+          "format": "ops",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:319",
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
       "collapsed": true,
       "datasource": null,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 18
       },
       "id": 15,
       "panels": [
@@ -1258,7 +1356,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 11
+            "y": 3
           },
           "hiddenSeries": false,
           "id": 17,
@@ -1357,7 +1455,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 11
+            "y": 3
           },
           "hiddenSeries": false,
           "id": 19,
@@ -1458,7 +1556,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 19
+            "y": 11
           },
           "hiddenSeries": false,
           "id": 4,
@@ -1574,7 +1672,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 19
+            "y": 11
           },
           "hiddenSeries": false,
           "id": 9,
@@ -1667,7 +1765,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 19
       },
       "id": 28,
       "panels": [
@@ -1977,7 +2075,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 20
       },
       "id": 38,
       "panels": [
@@ -2420,7 +2518,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 21
       },
       "id": 48,
       "panels": [
@@ -2442,7 +2540,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 13
+            "y": 6
           },
           "hiddenSeries": false,
           "id": 50,
@@ -2542,7 +2640,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 13
+            "y": 6
           },
           "hiddenSeries": false,
           "id": 53,
@@ -2642,7 +2740,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 21
+            "y": 14
           },
           "hiddenSeries": false,
           "id": 51,
@@ -2742,7 +2840,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 21
+            "y": 14
           },
           "hiddenSeries": false,
           "id": 55,
@@ -2833,7 +2931,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 22
       },
       "id": 8,
       "panels": [
