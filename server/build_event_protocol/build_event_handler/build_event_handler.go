@@ -400,6 +400,7 @@ func truncatedJoin(list []string, maxItems int) string {
 func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocation {
 	i := &tables.Invocation{}
 	i.InvocationID = p.InvocationId // Required.
+	i.InvocationPK = md5Int64(p.InvocationId)
 	i.Success = p.Success
 	i.User = p.User
 	i.DurationUsec = p.DurationUsec
