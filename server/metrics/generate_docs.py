@@ -1,8 +1,10 @@
-import subprocess
-import sys
+#!/usr/bin/env python3
+
 import os
 import re
-
+import shlex
+import subprocess
+import sys
 
 FILE_HEADER = """<!--
 {
@@ -63,6 +65,10 @@ class DocsGenerator(object):
 
         self.label_comments = []
         self.label_value = ""
+
+        # Fields for PROMQL state (promql code block in markdown)
+
+        self.promql_lines = []
 
     def parse(self):
         with open(self.metrics_go_path, "r") as f:
@@ -168,6 +174,9 @@ class DocsGenerator(object):
         # Insert markdown if applicable.
         if line.startswith("///"):
             if line == "///":
+                if self.state == "PROMQL":
+                    self.promql_lines.append("")
+                    return
                 self.output_lines.append("")
                 return
             m = re.match("^///\s(.*)", line)
@@ -176,6 +185,22 @@ class DocsGenerator(object):
                     f'Doc comments (///) should start with "/// ".',
                     line_index=line_index,
                 )
+
+            if self.state == "PROMQL":
+                if line.startswith("/// ```"):
+                    # End promql syntax highlighting
+                    self.output_lines.append(syntax_highlight_promql(self.promql_lines))
+                    self.promql_lines = []
+                    self.state = None
+                    return
+                # Accumulate promql code
+                self.promql_lines.append(m.group(1))
+                return
+            # Most markdown syntax highlighting libs don't support promql;
+            # use pygmentize to colorize promql.
+            if line.startswith("/// ```promql"):
+                self.state = "PROMQL"
+                return
             self.output_lines.append(m.group(1))
             return
 
@@ -228,6 +253,17 @@ class DocsGenerator(object):
         if self.metric is None:
             self.metric = {}
         self.metric[name] = value
+
+
+def syntax_highlight_promql(lines):
+    proc = subprocess.run(
+        shlex.split(
+            "pygmentize -l promql -f html -P style=monokai -P noclasses -P lineseparator='<br>'",
+        ),
+        input="\n".join(lines).encode("utf-8"),
+        capture_output=True,
+    )
+    return proc.stdout.decode("utf-8")
 
 
 def main():

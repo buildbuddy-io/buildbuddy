@@ -59,6 +59,18 @@ var (
 		InvocationStatusLabel,
 	})
 
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Number of invocations per second by invocation status
+	/// sum by (invocation_status) (rate(buildbuddy_invocation_count[5m]))
+	///
+	/// # Invocation success rate
+	/// sum(rate(buildbuddy_invocation_count{invocation_status="success"}[5m]))
+	///   /
+	/// sum(rate(buildbuddy_invocation_count[5m]))
+	/// ```
+
 	InvocationDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
@@ -70,6 +82,16 @@ var (
 		InvocationStatusLabel,
 	})
 
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median invocation duration in the past 5 minutes
+	/// histogram_quantile(
+	///   0.5,
+	///   sum(rate(buildbuddy_invocation_duration_usec_bucket[5m])) by (le)
+	/// )
+	/// ```
+
 	BuildEventCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
@@ -78,6 +100,18 @@ var (
 	}, []string{
 		StatusLabel,
 	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Build events uploaded per second
+	/// sum(rate(buildbuddy_invocation_build_event_count[5m]))
+	///
+	/// # Approximate error rate of build event upload handler
+	/// sum(rate(buildbuddy_invocation_build_event_count{status="0"}[5m]))
+	///   /
+	/// sum(rate(buildbuddy_invocation_build_event_count[5m]))
+	/// ```
 
 	/// ## Remote cache metrics
 	///
@@ -104,6 +138,13 @@ var (
 		CacheTypeLabel,
 	})
 
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Cache download rate (bytes per second)
+	/// sum(rate(buildbuddy_cache_download_size_bytes_sum[5m]))
+	/// ```
+
 	CacheDownloadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -113,6 +154,16 @@ var (
 	}, []string{
 		CacheTypeLabel,
 	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median download duration for content-addressable store (CAS)
+	/// histogram_quantile(
+	///   0.5,
+	///   sum(rate(buildbuddy_remote_cache_download_duration_usec{cache_type="cas"}[5m])) by (le)
+	/// )
+	/// ```
 
 	CacheUploadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -124,6 +175,13 @@ var (
 		CacheTypeLabel,
 	})
 
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Cache upload rate (bytes per second)
+	/// sum(rate(buildbuddy_cache_upload_size_bytes_sum[5m]))
+	/// ```
+
 	CacheUploadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -133,6 +191,16 @@ var (
 	}, []string{
 		CacheTypeLabel,
 	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median upload duration for content-addressable store (CAS)
+	/// histogram_quantile(
+	///   0.5,
+	///   sum(rate(buildbuddy_remote_cache_upload_duration_usec{cache_type="cas"}[5m])) by (le)
+	/// )
+	/// ```
 
 	/// ## Remote execution metrics
 
@@ -144,6 +212,13 @@ var (
 	}, []string{
 		ExitCodeLabel,
 	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Total number of actions executed per second
+	/// sum(rate(buildbuddy_remote_execution_count[5m]))
+	/// ```
 
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -166,7 +241,7 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "file_download_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Download duration during remote execution, in **microseconds**.",
+		Help:      "Per-file download duration during remote execution, in **microseconds**.",
 	})
 
 	FileUploadCount = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -190,7 +265,7 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "file_upload_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "upload duration during remote execution, in **microseconds**.",
+		Help:      "Per-file upload duration during remote execution, in **microseconds**.",
 	})
 
 	/// ## Blobstore metrics
@@ -219,6 +294,11 @@ var (
 		BlobstoreTypeLabel,
 	})
 
+	/// ```promql
+	/// # Bytes downloaded per second
+	/// sum(rate(buildbuddy_blobstore_read_size_bytes[5m]))
+	/// ```
+
 	BlobstoreReadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "blobstore",
@@ -238,6 +318,11 @@ var (
 		StatusLabel,
 		BlobstoreTypeLabel,
 	})
+
+	/// ```promql
+	/// # Bytes uploaded per second
+	/// sum(rate(buildbuddy_blobstore_write_size_bytes[5m]))
+	/// ```
 
 	BlobstoreWriteSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
