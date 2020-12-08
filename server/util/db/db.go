@@ -170,7 +170,7 @@ func (r *dbStatsRecorder) recordStats() {
 	// increment by.
 	last := r.lastRecordedStats
 	metrics.SQLWaitCount.Add(float64(stats.WaitCount - last.WaitCount))
-	metrics.SQLWaitDuration.Add(float64(stats.WaitDuration - last.WaitDuration))
+	metrics.SQLWaitDuration.Add(float64((stats.WaitDuration - last.WaitDuration).Microseconds()))
 	metrics.SQLMaxIdleClosed.Add(float64(stats.MaxIdleClosed - last.MaxIdleClosed))
 	metrics.SQLMaxIdleTimeClosed.Add(float64(stats.MaxIdleTimeClosed - last.MaxIdleTimeClosed))
 	metrics.SQLMaxLifetimeClosed.Add(float64(stats.MaxLifetimeClosed - last.MaxLifetimeClosed))
