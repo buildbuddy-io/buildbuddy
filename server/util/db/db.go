@@ -144,6 +144,7 @@ func setDBOptions(c *config.Configurator, dialect string, gdb *gorm.DB) {
 
 type dbStatsRecorder struct {
 	db                *sql.DB
+	role              string
 	lastRecordedStats sql.DBStats
 }
 
@@ -157,23 +158,31 @@ func (r *dbStatsRecorder) poll(interval time.Duration) {
 func (r *dbStatsRecorder) recordStats() {
 	stats := r.db.Stats()
 
-	metrics.SQLMaxOpenConnections.Set(float64(stats.MaxOpenConnections))
+	roleLabel := prometheus.Labels{
+		metrics.SQLDBRoleLabel: r.role,
+	}
+
+	metrics.SQLMaxOpenConnections.With(roleLabel).Set(float64(stats.MaxOpenConnections))
 	metrics.SQLOpenConnections.With(prometheus.Labels{
 		metrics.SQLConnectionStatusLabel: "in_use",
+		metrics.SQLDBRoleLabel:           r.role,
 	}).Set(float64(stats.InUse))
 	metrics.SQLOpenConnections.With(prometheus.Labels{
 		metrics.SQLConnectionStatusLabel: "idle",
+		metrics.SQLDBRoleLabel:           r.role,
 	}).Set(float64(stats.Idle))
 
 	// The following DBStats fields are already counters, so we have
 	// to subtract from the last observed value to know how much to
 	// increment by.
 	last := r.lastRecordedStats
-	metrics.SQLWaitCount.Add(float64(stats.WaitCount - last.WaitCount))
-	metrics.SQLWaitDuration.Add(float64(stats.WaitDuration-last.WaitDuration) / float64(time.Microsecond))
-	metrics.SQLMaxIdleClosed.Add(float64(stats.MaxIdleClosed - last.MaxIdleClosed))
-	metrics.SQLMaxIdleTimeClosed.Add(float64(stats.MaxIdleTimeClosed - last.MaxIdleTimeClosed))
-	metrics.SQLMaxLifetimeClosed.Add(float64(stats.MaxLifetimeClosed - last.MaxLifetimeClosed))
+
+	metrics.SQLWaitCount.With(roleLabel).Add(float64(stats.WaitCount - last.WaitCount))
+	metrics.SQLWaitDuration.With(roleLabel).Add(float64(stats.WaitDuration-last.WaitDuration) / float64(time.Microsecond))
+	metrics.SQLMaxIdleClosed.With(roleLabel).Add(float64(stats.MaxIdleClosed - last.MaxIdleClosed))
+	metrics.SQLMaxIdleTimeClosed.With(roleLabel).Add(float64(stats.MaxIdleTimeClosed - last.MaxIdleTimeClosed))
+	metrics.SQLMaxLifetimeClosed.With(roleLabel).Add(float64(stats.MaxLifetimeClosed - last.MaxLifetimeClosed))
+
 	r.lastRecordedStats = stats
 }
 
@@ -191,13 +200,17 @@ func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
 	}
 	setDBOptions(c, dialect, primaryDB)
 
-	statsRecorder := &dbStatsRecorder{db: primaryDB.DB()}
 	statsPollInterval := defaultDbStatsPollInterval
 	dbConf := c.GetDatabaseConfig()
 	if dbConf != nil && dbConf.StatsPollInterval != "" {
 		if statsPollInterval, err = time.ParseDuration(dbConf.StatsPollInterval); err != nil {
 			return nil, err
 		}
+	}
+
+	statsRecorder := &dbStatsRecorder{
+		db:   primaryDB.DB(),
+		role: "primary",
 	}
 	go statsRecorder.poll(statsPollInterval)
 
@@ -223,6 +236,12 @@ func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
 		setDBOptions(c, readDialect, replicaDB)
 		log.Print("Read replica was present -- connecting to it.")
 		dbh.readReplicaDB = replicaDB
+
+		statsRecorder := &dbStatsRecorder{
+			db:   replicaDB.DB(),
+			role: "read_replica",
+		}
+		go statsRecorder.poll(statsPollInterval)
 	}
 	return dbh, nil
 }

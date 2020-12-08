@@ -41,6 +41,10 @@ const (
 
 	/// Status of the database connection: `in_use` or `idle`
 	SQLConnectionStatusLabel = "connection_status"
+
+	/// SQL DB replica role: `primary` for read+write replicas, or
+	/// `read_replica` for read-only DB replicas.
+	SQLDBRoleLabel = "sql_db_role"
 )
 
 const (
@@ -290,11 +294,13 @@ var (
 	/// [DBStats](https://golang.org/pkg/database/sql/#DBStats) from the
 	/// `database/sql` Go package.
 
-	SQLMaxOpenConnections = promauto.NewGauge(prometheus.GaugeOpts{
+	SQLMaxOpenConnections = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "sql",
 		Name:      "max_open_connections",
 		Help:      "Maximum number of open connections to the database.",
+	}, []string{
+		SQLDBRoleLabel,
 	})
 
 	SQLOpenConnections = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -304,41 +310,52 @@ var (
 		Help:      "The number of established connections to the database.",
 	}, []string{
 		SQLConnectionStatusLabel,
+		SQLDBRoleLabel,
 	})
 
-	SQLWaitCount = promauto.NewCounter(prometheus.CounterOpts{
+	SQLWaitCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "sql",
 		Name:      "wait_count",
 		Help:      "The total number of connections waited for.",
+	}, []string{
+		SQLDBRoleLabel,
 	})
 
-	SQLWaitDuration = promauto.NewCounter(prometheus.CounterOpts{
+	SQLWaitDuration = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "sql",
 		Name:      "wait_duration_usec",
 		Help:      "The total time blocked waiting for a new connection, in **microseconds**.",
+	}, []string{
+		SQLDBRoleLabel,
 	})
 
-	SQLMaxIdleClosed = promauto.NewCounter(prometheus.CounterOpts{
+	SQLMaxIdleClosed = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "sql",
 		Name:      "max_idle_closed",
 		Help:      "The total number of connections closed due to SetMaxIdleConns.",
+	}, []string{
+		SQLDBRoleLabel,
 	})
 
-	SQLMaxIdleTimeClosed = promauto.NewCounter(prometheus.CounterOpts{
+	SQLMaxIdleTimeClosed = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "sql",
 		Name:      "max_idle_time_closed",
 		Help:      "The total number of connections closed due to SetConnMaxIdleTime.",
+	}, []string{
+		SQLDBRoleLabel,
 	})
 
-	SQLMaxLifetimeClosed = promauto.NewCounter(prometheus.CounterOpts{
+	SQLMaxLifetimeClosed = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "sql",
 		Name:      "max_lifetime_closed",
 		Help:      "The total number of connections closed due to SetConnMaxLifetime.",
+	}, []string{
+		SQLDBRoleLabel,
 	})
 
 	/// ## Internal metrics
