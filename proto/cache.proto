@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package cache;
 
+// Next Tag: 14
 message CacheStats {
   // Server-side Action-cache stats.
   int64 action_cache_hits = 1;
@@ -13,12 +14,16 @@ message CacheStats {
   int64 cas_cache_misses = 5;
   int64 cas_cache_uploads = 6;
 
-  // Rough throughput can be computed using the total cache bytes
-  // {uploaded,downloaded}/{upload_time,download_time}.
+  // Do not use these numbers to compute throughput, they are the sum total of
+  // many concurrent uploads.
   int64 total_download_size_bytes = 7;
   int64 total_upload_size_bytes = 8;
   int64 total_download_usec = 9;
   int64 total_upload_usec = 10;
+
+  // Mean throughput numbers computed from all uploads and downloads.
+  int64 download_throughput_bytes_per_second = 12;
+  int64 upload_throughput_bytes_per_second = 13;
 
   // The approximate time savings of a build based on
   // the sum of execution time of cached objects.

@@ -1,0 +1,11 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+  - type: prometheus
+  - access: proxy
+  - uid: prom
+  - isDefault: true
+  - url: http://prometheus-server.monitor-%{ENV}
+  - version: 1
+  - editable: false

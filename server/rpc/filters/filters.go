@@ -19,9 +19,6 @@ var (
 	headerContextKeys map[string]string
 
 	once sync.Once
-
-	// *context.CancelFunc -> *context.CancelFunc
-	activeCancelFuncs sync.Map
 )
 
 func init() {
@@ -29,35 +26,6 @@ func init() {
 		"x-buildbuddy-jwt": "x-buildbuddy-jwt",
 		"build.bazel.remote.execution.v2.requestmetadata-bin": "build.bazel.remote.execution.v2.requestmetadata-bin",
 	}
-}
-
-func startCancelRoutine(ctx context.Context) error {
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		return nil
-	}
-	go func() {
-		delay := deadline.Sub(time.Now()) - time.Second
-		ctx, cancel := context.WithTimeout(ctx, delay)
-		defer cancel()
-		select {
-		case <-ctx.Done():
-			cancelActiveContexts(ctx)
-		case <-time.After(delay):
-			cancelActiveContexts(ctx)
-		}
-	}()
-	return nil
-}
-
-func cancelActiveContexts(ctx context.Context) {
-	activeCancelFuncs.Range(func(key, value interface{}) bool {
-		cancelFunc, ok := value.(*context.CancelFunc)
-		if ok && cancelFunc != nil {
-			(*cancelFunc)()
-		}
-		return true
-	})
 }
 
 type wrappedServerStreamWithContext struct {
@@ -182,38 +150,6 @@ func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 	}
 }
 
-// shutdownContextUnaryServerInterceptor cancels the context if the server is
-// shutting down.
-func shutdownContextUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
-	once.Do(func() {
-		env.GetHealthChecker().RegisterShutdownFunction(startCancelRoutine)
-	})
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		activeCancelFuncs.Store(&cancel, &cancel)
-		r, err := handler(ctx, req)
-		activeCancelFuncs.Delete(&cancel)
-		return r, err
-	}
-}
-
-// shutdownContextStreamServerInterceptor cancels the context if the server is
-// shutting down.
-func shutdownContextStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
-	once.Do(func() {
-		env.GetHealthChecker().RegisterShutdownFunction(startCancelRoutine)
-	})
-	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		ctx, cancel := context.WithCancel(stream.Context())
-		defer cancel()
-		activeCancelFuncs.Store(&cancel, &cancel)
-		err := handler(srv, &wrappedServerStreamWithContext{stream, ctx})
-		activeCancelFuncs.Delete(&cancel)
-		return err
-	}
-}
-
 // copyHeadersStreamInterceptor is a server interceptor that copies certain
 // headers present in the grpc metadata into the context.
 func copyHeadersStreamServerInterceptor() grpc.StreamServerInterceptor {
@@ -244,7 +180,6 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 		logRequestUnaryServerInterceptor(),
 		authUnaryServerInterceptor(env),
 		copyHeadersUnaryServerInterceptor(),
-		shutdownContextUnaryServerInterceptor(env),
 	)
 }
 
@@ -254,7 +189,6 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 		logRequestStreamServerInterceptor(),
 		authStreamServerInterceptor(env),
 		copyHeadersStreamServerInterceptor(),
-		shutdownContextStreamServerInterceptor(env),
 	)
 }
 

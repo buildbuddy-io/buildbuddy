@@ -101,23 +101,6 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     push_tag_cmd = 'git push origin %s' % new_version
     run_or_die(push_tag_cmd)
 
-def build_artifacts(repo_name, new_version):
-    arch_outputs = {
-        "darwin": "sidecar-darwin-amd64",
-        "linux": "sidecar-linux-amd64",
-        "linux-arm64": "sidecar-linux-arm64",
-        "windows": "sidecar-windows-amd64.exe",
-    }
-    targets = ["server/cmd/sidecar:sidecar-" + arch for arch in arch_outputs]
-    sidecar_build_cmd = 'bazel build -c opt --stamp --define version=sidecar-%s --define release=true %s' % (new_version, " ".join(targets))
-    run_or_die(sidecar_build_cmd)
-    artifacts = []
-    for ft in arch_outputs.values():
-        real_path = glob.glob('bazel-out/*-opt-*/bin/server/cmd/sidecar/%s' % ft)
-        if len(real_path) == 1:
-            artifacts.append(real_path[0])
-    return artifacts
-
 def update_docker_image(new_version):
     version_build_cmd = 'bazel run -c opt --stamp --define version=server-image-%s --define release=true deployment:release_onprem' % new_version
     run_or_die(version_build_cmd)
@@ -249,8 +232,8 @@ def main():
 
     ## Don't need this because github automatically creates a source archive when we
     ## make a new tag. Useful when we have artifacts to upload.
-    artifacts = build_artifacts(repo_name, new_version)
-    create_release_and_upload_artifacts("/".join([org_name, repo_name]), new_version, artifacts)
+    #artifacts = build_artifacts(repo_name, new_version)
+    #create_release_and_upload_artifacts("/".join([org_name, repo_name]), new_version, artifacts)
 
     print("Release (%s) complete. Go enjoy a cold one!" % new_version)
 

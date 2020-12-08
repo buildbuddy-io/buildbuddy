@@ -89,34 +89,36 @@ func (m *Model) BeforeUpdate(tx *gorm.DB) (err error) {
 
 type Invocation struct {
 	Model
-	InvocationID              string `gorm:"primary_key;"`
-	UserID                    string `gorm:"index:user_id"`
-	GroupID                   string `gorm:"index:group_id"`
-	Perms                     int    `gorm:"index:perms"`
-	Success                   bool
-	User                      string `gorm:"index:user_index"`
-	DurationUsec              int64
-	Host                      string `gorm:"index:host_index"`
-	RepoURL                   string `gorm:"index:repo_url_index"`
-	CommitSHA                 string `gorm:"index:commit_sha_index"`
-	Role                      string `gorm:"index:role_index"`
-	Command                   string
-	Pattern                   string `gorm:"type:text;"`
-	ActionCount               int64
-	BlobID                    string
-	InvocationStatus          int64 `gorm:"index:invocation_status_idx"`
-	ActionCacheHits           int64
-	ActionCacheMisses         int64
-	ActionCacheUploads        int64
-	CasCacheHits              int64
-	CasCacheMisses            int64
-	CasCacheUploads           int64
-	TotalDownloadSizeBytes    int64
-	TotalUploadSizeBytes      int64
-	TotalDownloadUsec         int64
-	TotalUploadUsec           int64
-	TotalCachedActionExecUsec int64
-	InvocationPK              int64 `gorm:"unique_index:invocation_invocation_pk"`
+	InvocationID                     string `gorm:"primary_key;"`
+	UserID                           string `gorm:"index:user_id"`
+	GroupID                          string `gorm:"index:group_id"`
+	Perms                            int    `gorm:"index:perms"`
+	Success                          bool
+	User                             string `gorm:"index:user_index"`
+	DurationUsec                     int64
+	Host                             string `gorm:"index:host_index"`
+	RepoURL                          string `gorm:"index:repo_url_index"`
+	CommitSHA                        string `gorm:"index:commit_sha_index"`
+	Role                             string `gorm:"index:role_index"`
+	Command                          string
+	Pattern                          string `gorm:"type:text;"`
+	ActionCount                      int64
+	BlobID                           string
+	InvocationStatus                 int64 `gorm:"index:invocation_status_idx"`
+	ActionCacheHits                  int64
+	ActionCacheMisses                int64
+	ActionCacheUploads               int64
+	CasCacheHits                     int64
+	CasCacheMisses                   int64
+	CasCacheUploads                  int64
+	TotalDownloadSizeBytes           int64
+	TotalUploadSizeBytes             int64
+	TotalDownloadUsec                int64
+	TotalUploadUsec                  int64
+	TotalCachedActionExecUsec        int64
+	DownloadThroughputBytesPerSecond int64
+	UploadThroughputBytesPerSecond   int64
+	InvocationPK                     int64 `gorm:"unique_index:invocation_invocation_pk"`
 }
 
 func (i *Invocation) TableName() string {

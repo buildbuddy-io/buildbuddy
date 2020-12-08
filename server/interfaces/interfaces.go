@@ -125,11 +125,6 @@ type Cache interface {
 	// Low level interface used for seeking and stream-writing.
 	Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error)
 	Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error)
-
-	// Begin garbage collection and any other necessary background tasks.
-	Start() error
-	// Stop garbage collection etc.
-	Stop() error
 }
 
 type InvocationDB interface {

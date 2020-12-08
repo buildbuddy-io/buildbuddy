@@ -68,6 +68,10 @@ var (
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
 )
 
+func init() {
+	grpc.EnableTracing = false
+}
+
 // Normally this code would live in main.go -- we put it here for now because
 // the environments used by the open-core version and the enterprise version are
 // not substantially different enough yet to warrant the extra complexity of
@@ -128,7 +132,6 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		cache = c
 	}
 	if cache != nil {
-		cache.Start()
 		realEnv.SetCache(cache)
 		log.Printf("Cache: BuildBuddy cache API enabled!")
 	}

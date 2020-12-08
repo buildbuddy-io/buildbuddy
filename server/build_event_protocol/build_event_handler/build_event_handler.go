@@ -159,6 +159,8 @@ func fillInvocationFromCacheStats(cacheStats *capb.CacheStats, ti *tables.Invoca
 	ti.TotalUploadSizeBytes = cacheStats.GetTotalUploadSizeBytes()
 	ti.TotalDownloadUsec = cacheStats.GetTotalDownloadUsec()
 	ti.TotalUploadUsec = cacheStats.GetTotalUploadUsec()
+	ti.DownloadThroughputBytesPerSecond = cacheStats.GetDownloadThroughputBytesPerSecond()
+	ti.UploadThroughputBytesPerSecond = cacheStats.GetUploadThroughputBytesPerSecond()
 	ti.TotalCachedActionExecUsec = cacheStats.GetTotalCachedActionExecUsec()
 }
 
@@ -293,7 +295,9 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 	}
 
-	e.targetTracker.TrackTargetsForEvent(e.ctx, &bazelBuildEvent)
+	if e.env.GetConfigurator().EnableTargetTracking() {
+		e.targetTracker.TrackTargetsForEvent(e.ctx, &bazelBuildEvent)
+	}
 	e.statusReporter.ReportStatusForEvent(e.ctx, &bazelBuildEvent)
 
 	// For everything else, just save the event to our buffer and keep on chugging.
@@ -398,6 +402,7 @@ func truncatedJoin(list []string, maxItems int) string {
 func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocation {
 	i := &tables.Invocation{}
 	i.InvocationID = p.InvocationId // Required.
+	i.InvocationPK = md5Int64(p.InvocationId)
 	i.Success = p.Success
 	i.User = p.User
 	i.DurationUsec = p.DurationUsec
@@ -444,17 +449,19 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	}
 	out.Acl = perms.ToACLProto(&uidpb.UserId{Id: i.UserID}, i.GroupID, i.Perms)
 	out.CacheStats = &capb.CacheStats{
-		ActionCacheHits:           i.ActionCacheHits,
-		ActionCacheMisses:         i.ActionCacheMisses,
-		ActionCacheUploads:        i.ActionCacheUploads,
-		CasCacheHits:              i.CasCacheHits,
-		CasCacheMisses:            i.CasCacheMisses,
-		CasCacheUploads:           i.CasCacheUploads,
-		TotalDownloadSizeBytes:    i.TotalDownloadSizeBytes,
-		TotalUploadSizeBytes:      i.TotalUploadSizeBytes,
-		TotalDownloadUsec:         i.TotalDownloadUsec,
-		TotalUploadUsec:           i.TotalUploadUsec,
-		TotalCachedActionExecUsec: i.TotalCachedActionExecUsec,
+		ActionCacheHits:                  i.ActionCacheHits,
+		ActionCacheMisses:                i.ActionCacheMisses,
+		ActionCacheUploads:               i.ActionCacheUploads,
+		CasCacheHits:                     i.CasCacheHits,
+		CasCacheMisses:                   i.CasCacheMisses,
+		CasCacheUploads:                  i.CasCacheUploads,
+		TotalDownloadSizeBytes:           i.TotalDownloadSizeBytes,
+		TotalUploadSizeBytes:             i.TotalUploadSizeBytes,
+		TotalDownloadUsec:                i.TotalDownloadUsec,
+		TotalUploadUsec:                  i.TotalUploadUsec,
+		TotalCachedActionExecUsec:        i.TotalCachedActionExecUsec,
+		DownloadThroughputBytesPerSecond: i.DownloadThroughputBytesPerSecond,
+		UploadThroughputBytesPerSecond:   i.UploadThroughputBytesPerSecond,
 	}
 	return out
 }

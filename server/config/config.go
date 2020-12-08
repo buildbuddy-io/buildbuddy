@@ -41,6 +41,7 @@ type appConfig struct {
 	GRPCOverHTTPPortEnabled bool   `yaml:"grpc_over_http_port_enabled" usage:"Cloud-Only"`
 	DefaultToDenseMode      bool   `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
 	GRPCMaxRecvMsgSizeBytes int    `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
+	EnableTargetTracking    bool   `yaml:"enable_target_tracking" usage:"Cloud-Only"`
 }
 
 type buildEventProxy struct {
@@ -343,6 +344,10 @@ func (c *Configurator) GetGRPCMaxRecvMsgSizeBytes() int {
 		return 50000000
 	}
 	return n
+}
+
+func (c *Configurator) EnableTargetTracking() bool {
+	return c.gc.App.EnableTargetTracking
 }
 
 func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {
