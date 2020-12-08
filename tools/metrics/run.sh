@@ -32,8 +32,6 @@ GRAFANA_DASHBOARD_FILE_PATH="./grafana/dashboards/buildbuddy.json"
   "$open" "$GRAFANA_STARTUP_URL"
 ) &
 
-sleep 1
-
 function sync () {
   local json=$(curl "$GRAFANA_DASHBOARD_URL" 2>/dev/null)
   if [[ -z "$json" ]] ; then
