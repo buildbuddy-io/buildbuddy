@@ -154,10 +154,6 @@ func (r *dbStatsRecorder) poll(interval time.Duration) {
 	}
 }
 
-func usecFloat64(d time.Duration) float64 {
-	return d.Seconds() * (float64(time.Second) / float64(time.Microsecond))
-}
-
 func (r *dbStatsRecorder) recordStats() {
 	stats := r.db.Stats()
 
@@ -174,7 +170,7 @@ func (r *dbStatsRecorder) recordStats() {
 	// increment by.
 	last := r.lastRecordedStats
 	metrics.SQLWaitCount.Add(float64(stats.WaitCount - last.WaitCount))
-	metrics.SQLWaitDuration.Add(usecFloat64(stats.WaitDuration - last.WaitDuration))
+	metrics.SQLWaitDuration.Add(float64(stats.WaitDuration-last.WaitDuration) / float64(time.Microsecond))
 	metrics.SQLMaxIdleClosed.Add(float64(stats.MaxIdleClosed - last.MaxIdleClosed))
 	metrics.SQLMaxIdleTimeClosed.Add(float64(stats.MaxIdleTimeClosed - last.MaxIdleTimeClosed))
 	metrics.SQLMaxLifetimeClosed.Add(float64(stats.MaxLifetimeClosed - last.MaxLifetimeClosed))
