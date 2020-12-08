@@ -152,6 +152,13 @@ var (
 		ExitCodeLabel,
 	})
 
+	RemoteExecutionQueueLength = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "queue_length",
+		Help:      "Number of actions currently waiting in the executor queue.",
+	})
+
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
