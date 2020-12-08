@@ -209,6 +209,13 @@ var (
 		SQLQueryTemplateLabel,
 	})
 
+	/// #### Examples
+	///
+	/// ```promql
+	/// # SQL queries per second (by query template).
+	/// sum by (sql_query_template) (rate(buildbuddy_sql_query_count[5m]))
+	/// ```
+
 	SQLQueryDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "sql",
@@ -219,12 +226,31 @@ var (
 		SQLQueryTemplateLabel,
 	})
 
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median SQL query duration
+	/// histogram_quantile(
+	///	  0.5,
+	///   sum(rate(buildbuddy_sql_query_duration_usec_bucket[5m])) by (le)
+	/// )
+	/// ```
+
 	SQLErrorCount = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "sql",
 		Name:      "error_count",
 		Help:      "Number of SQL queries that resulted in an error.",
 	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # SQL error rate
+	/// sum(rate(buildbuddy_sql_error_count[5m]))
+	///   /
+	/// sum(rate(buildbuddy_sql_query_count[5m]))
+	/// ```
 
 	/// ## Blobstore metrics
 	///
