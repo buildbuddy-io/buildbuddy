@@ -55,6 +55,7 @@ type DatabaseConfig struct {
 	MaxIdleConns           int    `yaml:"max_idle_conns" usage:"The maximum number of idle connections to maintain to the db"`
 	ConnMaxLifetimeSeconds int    `yaml:"conn_max_lifetime_seconds" usage:"The maximum lifetime of a connection to the db"`
 	LogQueries             bool   `yaml:"log_queries" usage:"If true, log all queries"`
+	StatsPollInterval      string `yaml:"stats_poll_interval" usage:"How often to poll the DB client for connection stats (default: "5s")."`
 }
 
 type storageConfig struct {

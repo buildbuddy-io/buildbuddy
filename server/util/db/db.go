@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"flag"
 	"fmt"
 	"log"
@@ -8,6 +9,8 @@ import (
 	"time"
 
 	"github.com/jinzhu/gorm"
+	"github.com/prometheus/client_golang/prometheus"
+
 	// We support MySQL (preferred), Postgresql, and Sqlite3
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
@@ -16,11 +19,13 @@ import (
 	// Allow for "cloudsql" type connections that support workload identity.
 	_ "github.com/GoogleCloudPlatform/cloudsql-proxy/proxy/dialers/mysql"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 )
 
 const (
-	sqliteDialect = "sqlite3"
+	sqliteDialect              = "sqlite3"
+	defaultDbStatsPollInterval = 5 * time.Second
 )
 
 var (
@@ -135,8 +140,43 @@ func setDBOptions(c *config.Configurator, dialect string, gdb *gorm.DB) {
 		}
 	}
 	gdb.LogMode(c.GetDatabaseConfig().LogQueries)
-
 }
+
+type dbStatsRecorder struct {
+	db                *sql.DB
+	lastRecordedStats sql.DBStats
+}
+
+func (r *dbStatsRecorder) poll(interval time.Duration) {
+	for {
+		r.recordStats()
+		time.Sleep(interval)
+	}
+}
+
+func (r *dbStatsRecorder) recordStats() {
+	stats := r.db.Stats()
+
+	metrics.SQLMaxOpenConnections.Set(float64(stats.MaxOpenConnections))
+	metrics.SQLOpenConnections.With(prometheus.Labels{
+		metrics.SQLConnectionStatusLabel: "in_use",
+	}).Set(float64(stats.InUse))
+	metrics.SQLOpenConnections.With(prometheus.Labels{
+		metrics.SQLConnectionStatusLabel: "idle",
+	}).Set(float64(stats.Idle))
+
+	// The following DBStats fields are already counters, so we have
+	// to subtract from the last observed value to know how much to
+	// increment by.
+	last := r.lastRecordedStats
+	metrics.SQLWaitCount.Add(float64(stats.WaitCount - last.WaitCount))
+	metrics.SQLWaitDuration.Add(float64(stats.WaitDuration - last.WaitDuration))
+	metrics.SQLMaxIdleClosed.Add(float64(stats.MaxIdleClosed - last.MaxIdleClosed))
+	metrics.SQLMaxIdleTimeClosed.Add(float64(stats.MaxIdleTimeClosed - last.MaxIdleTimeClosed))
+	metrics.SQLMaxLifetimeClosed.Add(float64(stats.MaxLifetimeClosed - last.MaxLifetimeClosed))
+	r.lastRecordedStats = stats
+}
+
 func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
 	if c.GetDBDataSource() == "" {
 		return nil, fmt.Errorf("No database configured -- please specify one in the config")
@@ -150,6 +190,17 @@ func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
 		return nil, err
 	}
 	setDBOptions(c, dialect, primaryDB)
+
+	statsRecorder := &dbStatsRecorder{db: primaryDB.DB()}
+	statsPollInterval := defaultDbStatsPollInterval
+	dbConf := c.GetDatabaseConfig()
+	if dbConf != nil && dbConf.StatsPollInterval != "" {
+		if statsPollInterval, err = time.ParseDuration(dbConf.StatsPollInterval); err != nil {
+			return nil, err
+		}
+	}
+	go statsRecorder.poll(statsPollInterval)
+
 	if err := maybeRunMigrations(dialect, primaryDB); err != nil {
 		return nil, err
 	}
