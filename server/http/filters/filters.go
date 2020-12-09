@@ -141,7 +141,7 @@ func LogRequest(next http.Handler) http.Handler {
 			ResponseWriter: w,
 		}
 		next.ServeHTTP(ow, r)
-		duration := time.Now().Sub(start)
+		duration := time.Since(start)
 		log.LogHTTPRequest(r.Context(), r.URL.Path, duration, nil)
 		recordResponseMetrics(route, method, ow, duration)
 	})
