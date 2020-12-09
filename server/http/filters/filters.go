@@ -109,6 +109,10 @@ func RequestID(next http.Handler) http.Handler {
 type instrumentedResponseWriter struct {
 	http.ResponseWriter
 
+	metrics *responseMetrics // pointer since writers are passed around by value.
+}
+
+type responseMetrics struct {
 	statusCode        int
 	responseSizeBytes int
 }
@@ -117,11 +121,11 @@ func (w instrumentedResponseWriter) Header() http.Header {
 	return w.ResponseWriter.Header()
 }
 func (w instrumentedResponseWriter) Write(bytes []byte) (int, error) {
-	w.responseSizeBytes += len(bytes)
+	w.metrics.responseSizeBytes += len(bytes)
 	return w.ResponseWriter.Write(bytes)
 }
 func (w instrumentedResponseWriter) WriteHeader(statusCode int) {
-	w.statusCode = statusCode
+	w.metrics.statusCode = statusCode
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 func (w instrumentedResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
@@ -134,20 +138,24 @@ func (w instrumentedResponseWriter) Flush() {
 func LogRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		method := getMethod(r)
-		route := getRoute(r)
-		recordRequestMetrics(route, method)
+		m := method(r)
+		rt := route(r)
+		recordRequestMetrics(rt, m)
 		ow := instrumentedResponseWriter{
 			ResponseWriter: w,
+			metrics: &responseMetrics{
+				// net/http defaults to 200 if not written.
+				statusCode: 200,
+			},
 		}
 		next.ServeHTTP(ow, r)
 		duration := time.Since(start)
-		log.LogHTTPRequest(r.Context(), r.URL.Path, duration, nil)
-		recordResponseMetrics(route, method, ow, duration)
+		log.LogHTTPRequest(r.Context(), r.URL.Path, duration, ow.metrics.statusCode, nil)
+		recordResponseMetrics(rt, m, ow, duration)
 	})
 }
 
-func getRoute(r *http.Request) string {
+func route(r *http.Request) string {
 	path := r.URL.Path
 
 	// TODO(bduffany): migrate to a routing solution that doesn't require
@@ -155,8 +163,8 @@ func getRoute(r *http.Request) string {
 
 	// Strip prefixes on large static file directories to avoid
 	// creating new metrics series for every static file that we serve.
-	if strings.HasPrefix(path, "/images/") {
-		return "/images/:path"
+	if strings.HasPrefix(path, "/image/") {
+		return "/image/:path"
 	}
 	if strings.HasPrefix(path, "/favicon/") {
 		return "/favicon/:path"
@@ -170,7 +178,7 @@ func getRoute(r *http.Request) string {
 	return uuidV4Regexp.ReplaceAllLiteralString(path, ":id")
 }
 
-func getMethod(r *http.Request) string {
+func method(r *http.Request) string {
 	if r.Method == "" {
 		return "GET"
 	}
@@ -188,10 +196,10 @@ func recordResponseMetrics(route, method string, w instrumentedResponseWriter, d
 	labels := prometheus.Labels{
 		metrics.HTTPRouteLabel:        route,
 		metrics.HTTPMethodLabel:       method,
-		metrics.HTTPResponseCodeLabel: strconv.Itoa(w.statusCode),
+		metrics.HTTPResponseCodeLabel: strconv.Itoa(w.metrics.statusCode),
 	}
 	metrics.HTTPRequestHandlerDurationUsec.With(labels).Observe(float64(duration.Microseconds()))
-	metrics.HTTPResponseSizeBytes.With(labels).Observe(float64(w.responseSizeBytes))
+	metrics.HTTPResponseSizeBytes.With(labels).Observe(float64(w.metrics.responseSizeBytes))
 }
 
 type wrapFn func(http.Handler) http.Handler
