@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"path"
 	"time"
 
@@ -71,5 +72,5 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 
 func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCode int) {
 	reqID, _ := uuid.GetFromContext(ctx) // Ignore error, we're logging anyway.
-	log.Printf("HTTP %s %q HTTP %d", reqID, url, statusCode, formatDuration(dur))
+	log.Printf("HTTP %s %q %d %s [%s]", reqID, url, statusCode, http.StatusText(statusCode), formatDuration(dur))
 }
