@@ -8,6 +8,7 @@ export class Capabilities {
   github: boolean;
   auth: string;
   anonymous: boolean;
+  test: boolean;
   createOrg: boolean;
   invocationSharing: boolean;
   compareInvocations: boolean;
@@ -24,6 +25,7 @@ export class Capabilities {
       window.buildbuddyConfig.configured_issuers[0];
     this.github = window.buildbuddyConfig && window.buildbuddyConfig.github_enabled;
     this.anonymous = window.buildbuddyConfig && window.buildbuddyConfig.anonymous_usage_enabled;
+    this.test = window.buildbuddyConfig && window.buildbuddyConfig.test_dashboard_enabled;
     this.enterprise = enterprise;
     this.createOrg = this.enterprise;
     this.invocationSharing = true;

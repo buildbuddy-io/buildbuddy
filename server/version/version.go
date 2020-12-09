@@ -27,15 +27,21 @@ func Print() {
 	if commitHash := Commit(); commitHash != unknownValue {
 		appVersion = fmt.Sprintf("%s (%s)", appVersion, commitHash)
 	}
-	log.Printf("%s compiled with go: %s", appVersion, GoVersion())
+	log.Printf("%s compiled with %s", appVersion, GoVersion())
 }
 
-func AppVersion() string {
-	if rfp, err := bazel.RunfilesPath(); err == nil {
+func AppVersion(in ...[]byte) string {
+	var versionBytes []byte
+	if len(in) > 0 {
+		versionBytes = in[0]
+	} else if rfp, err := bazel.RunfilesPath(); err == nil {
 		versionFile := filepath.Join(rfp, versionFilename)
-		if versionBytes, err := ioutil.ReadFile(versionFile); err == nil {
-			return strings.TrimSpace(string(versionBytes))
+		if b, err := ioutil.ReadFile(versionFile); err == nil {
+			versionBytes = b
 		}
+	}
+	if versionBytes != nil {
+		return strings.TrimSpace(string(versionBytes))
 	}
 	return unknownValue
 }

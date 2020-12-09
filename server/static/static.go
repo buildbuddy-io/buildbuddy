@@ -86,6 +86,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 		DefaultToDenseMode:    env.GetConfigurator().GetDefaultToDenseMode(),
 		GithubEnabled:         env.GetConfigurator().GetGithubConfig() != nil,
 		AnonymousUsageEnabled: env.GetConfigurator().GetAnonymousUsageEnabled(),
+		TestDashboardEnabled:  env.GetConfigurator().EnableTargetTracking(),
 	}
 	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendTemplateData{
 		Config:           &config,
