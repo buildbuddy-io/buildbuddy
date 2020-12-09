@@ -48,6 +48,16 @@ const (
 	/// SQL DB replica role: `primary` for read+write replicas, or
 	/// `read_replica` for read-only DB replicas.
 	SQLDBRoleLabel = "sql_db_role"
+
+	/// HTTP route before substituting path parameters
+	/// (`/invocation/:id`, `/settings`, ...)
+	HTTPRouteLabel = "route"
+
+	/// HTTP method: `GET`, `POST`, ...
+	HTTPMethodLabel = "method"
+
+	/// HTTP response code: `200`, `302`, `401`, `404`, `500`, ...
+	HTTPResponseCodeLabel = "code"
 )
 
 const (
@@ -423,6 +433,74 @@ var (
 	}, []string{
 		SQLDBRoleLabel,
 	})
+
+	/// ## HTTP metrics
+
+	HTTPRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "http",
+		Name:      "request_count",
+		Help:      "HTTP request count.",
+	}, []string{
+		HTTPRouteLabel,
+		HTTPMethodLabel,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Requests per second, by status code
+	/// sum by (code) (rate(buildbuddy_http_request_count[5m]))
+	///
+	/// # 5xx error ratio
+	/// sum(rate(buildbuddy_http_request_count{code=~"5.."}[5m]))
+	///   /
+	/// sum(rate(buildbuddy_http_request_count[5m]))
+	/// ```
+
+	HTTPRequestHandlerDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "http",
+		Name:      "request_handler_duration_usec",
+		Help:      "Time taken to handle each HTTP request in **microseconds**.",
+	}, []string{
+		HTTPRouteLabel,
+		HTTPMethodLabel,
+		HTTPResponseCodeLabel,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median request duration for successfuly processed (2xx) requests.
+	/// # Other status codes may be associated with early-exits and are
+	/// # likely to add too much noise.
+	/// histogram_quantile(
+	///   0.5,
+	///   sum by (le)	(rate(buildbuddy_http_request_handler_duration_usec{code=~"2.."}[5m]))
+	/// )
+	/// ```
+
+	HTTPResponseSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "http",
+		Name:      "response_size_bytes",
+		Help:      "Response size of each HTTP response in **bytes**.",
+	}, []string{
+		HTTPRouteLabel,
+		HTTPMethodLabel,
+		HTTPResponseCodeLabel,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median HTTP response size
+	/// histogram_quantile(
+	///   0.5,
+	///   sum by (le)	(rate(buildbuddy_http_response_size_bytes[5m]))
+	/// )
+	/// ```
 
 	/// ## Internal metrics
 	///
