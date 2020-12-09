@@ -1,11 +1,9 @@
 package filters
 
 import (
-	"bufio"
 	"compress/gzip"
 	"io"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -108,8 +106,7 @@ func RequestID(next http.Handler) http.Handler {
 // Prometheus metrics.
 type instrumentedResponseWriter struct {
 	http.ResponseWriter
-
-	metrics *responseMetrics // pointer since writers are passed around by value.
+	metrics responseMetrics
 }
 
 type responseMetrics struct {
@@ -117,22 +114,13 @@ type responseMetrics struct {
 	responseSizeBytes int
 }
 
-func (w instrumentedResponseWriter) Header() http.Header {
-	return w.ResponseWriter.Header()
-}
-func (w instrumentedResponseWriter) Write(bytes []byte) (int, error) {
+func (w *instrumentedResponseWriter) Write(bytes []byte) (int, error) {
 	w.metrics.responseSizeBytes += len(bytes)
 	return w.ResponseWriter.Write(bytes)
 }
-func (w instrumentedResponseWriter) WriteHeader(statusCode int) {
+func (w *instrumentedResponseWriter) WriteHeader(statusCode int) {
 	w.metrics.statusCode = statusCode
 	w.ResponseWriter.WriteHeader(statusCode)
-}
-func (w instrumentedResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	return w.ResponseWriter.(http.Hijacker).Hijack()
-}
-func (w instrumentedResponseWriter) Flush() {
-	w.ResponseWriter.(http.Flusher).Flush()
 }
 
 func LogRequest(next http.Handler) http.Handler {
@@ -141,17 +129,17 @@ func LogRequest(next http.Handler) http.Handler {
 		m := method(r)
 		rt := route(r)
 		recordRequestMetrics(rt, m)
-		ow := instrumentedResponseWriter{
+		irw := &instrumentedResponseWriter{
 			ResponseWriter: w,
-			metrics: &responseMetrics{
+			metrics: responseMetrics{
 				// net/http defaults to 200 if not written.
 				statusCode: 200,
 			},
 		}
-		next.ServeHTTP(ow, r)
+		next.ServeHTTP(irw, r)
 		duration := time.Since(start)
-		log.LogHTTPRequest(r.Context(), r.URL.Path, duration, ow.metrics.statusCode, nil)
-		recordResponseMetrics(rt, m, ow, duration)
+		log.LogHTTPRequest(r.Context(), r.URL.Path, duration, irw.metrics.statusCode, nil)
+		recordResponseMetrics(rt, m, &irw.metrics, duration)
 	})
 }
 
@@ -192,14 +180,14 @@ func recordRequestMetrics(route, method string) {
 	}).Inc()
 }
 
-func recordResponseMetrics(route, method string, w instrumentedResponseWriter, duration time.Duration) {
+func recordResponseMetrics(route, method string, rm *responseMetrics, duration time.Duration) {
 	labels := prometheus.Labels{
 		metrics.HTTPRouteLabel:        route,
 		metrics.HTTPMethodLabel:       method,
-		metrics.HTTPResponseCodeLabel: strconv.Itoa(w.metrics.statusCode),
+		metrics.HTTPResponseCodeLabel: strconv.Itoa(rm.statusCode),
 	}
 	metrics.HTTPRequestHandlerDurationUsec.With(labels).Observe(float64(duration.Microseconds()))
-	metrics.HTTPResponseSizeBytes.With(labels).Observe(float64(w.metrics.responseSizeBytes))
+	metrics.HTTPResponseSizeBytes.With(labels).Observe(float64(rm.responseSizeBytes))
 }
 
 type wrapFn func(http.Handler) http.Handler
