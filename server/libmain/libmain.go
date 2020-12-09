@@ -256,7 +256,8 @@ func StartAndRunServices(env environment.Env) {
 	if err := rlimit.MaxRLimit(); err != nil {
 		log.Printf("Error raising open files limit: %s", err)
 	}
-	staticFileServer, err := static.NewStaticFileServer(env, *staticDirectory, []string{"/invocation/", "/compare/", "/history/", "/docs/", "/settings/", "/org/", "/trends/", "/join/", "/tests/"})
+	uiPathPrefixes := []string{"/invocation/", "/compare/", "/history/", "/docs/", "/settings/", "/org/", "/trends/", "/join/", "/tests/"}
+	staticFileServer, err := static.NewStaticFileServer(env, *staticDirectory, uiPathPrefixes)
 
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)
@@ -338,6 +339,15 @@ func StartAndRunServices(env environment.Env) {
 	if sp := env.GetSplashPrinter(); sp != nil {
 		sp.PrintSplashScreen(*port, *gRPCPort)
 	}
+
+
+	mw := middleware.New(middleware.Config{
+		Recorder: gohttpmetrics.NewRecorder(gohttpmetrics.Config{
+			Prefix: "buildbuddy",
+			DurationBuckets: prometheus.ExponentialBuckets(1, 10, 9),
+		})
+	})
+	handler = middlewarestd.Handler(/* handlerID= */ "", mw, handler)
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", *listen, *port),

@@ -45,6 +45,16 @@ const (
 	/// SQL DB replica role: `primary` for read+write replicas, or
 	/// `read_replica` for read-only DB replicas.
 	SQLDBRoleLabel = "sql_db_role"
+
+	/// HTTP route before substituting path parameters
+	/// (`/invocation/:id`, `/settings`, ...)
+	HTTPRouteLabel = "route"
+
+	/// HTTP method: `GET`, `POST`, ...
+	HTTPMethodLabel = "method"
+
+	/// HTTP response code: `200`, `302`, `401`, `404`, `500`, ...
+	HTTPResponseCodeLabel = "code"
 )
 
 const (
@@ -363,6 +373,40 @@ var (
 		Help:      "The total number of connections closed due to SetConnMaxLifetime.",
 	}, []string{
 		SQLDBRoleLabel,
+	})
+
+	/// ## HTTP metrics
+
+	HTTPRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "http",
+		Name:      "request_count",
+		Help:      "HTTP request count.",
+	}, []string{
+		HTTPRouteLabel,
+		HTTPMethodLabel,
+	})
+
+	HTTPRequestHandlerDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "http",
+		Name:      "request_handler_duration_usec",
+		Help:      "Time taken to handle each HTTP request in **microseconds**.",
+	}, []string{
+		HTTPRouteLabel,
+		HTTPMethodLabel,
+		HTTPResponseCodeLabel,
+	})
+
+	HTTPResponseSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "http",
+		Name:      "response_size_bytes",
+		Help:      "Response size of each HTTP response in **bytes**.",
+	}, []string{
+		HTTPRouteLabel,
+		HTTPMethodLabel,
+		HTTPResponseCodeLabel,
 	})
 
 	/// ## Internal metrics
