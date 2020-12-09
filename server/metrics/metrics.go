@@ -387,6 +387,18 @@ var (
 		HTTPMethodLabel,
 	})
 
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Requests per second, by status code
+	/// sum by (code) (rate(buildbuddy_http_request_count[5m]))
+	///
+	/// # 5xx error ratio
+	/// sum(rate(buildbuddy_http_request_count{code=~"5.."}[5m]))
+	///   /
+	/// sum(rate(buildbuddy_http_request_count[5m]))
+	/// ```
+
 	HTTPRequestHandlerDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "http",
@@ -398,6 +410,18 @@ var (
 		HTTPResponseCodeLabel,
 	})
 
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median request duration for successfuly processed (2xx) requests.
+	/// # Other status codes may be associated with early-exits and are
+	/// # likely to add too much noise.
+	/// histogram_quantile(
+	///   0.5,
+	///   sum by (le)	(rate(buildbuddy_http_request_handler_duration_usec{code=~"2.."}[5m]))
+	/// )
+	/// ```
+
 	HTTPResponseSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "http",
@@ -408,6 +432,16 @@ var (
 		HTTPMethodLabel,
 		HTTPResponseCodeLabel,
 	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median HTTP response size
+	/// histogram_quantile(
+	///   0.5,
+	///   sum by (le)	(rate(buildbuddy_http_response_size_bytes[5m]))
+	/// )
+	/// ```
 
 	/// ## Internal metrics
 	///
