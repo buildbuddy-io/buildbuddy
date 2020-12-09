@@ -132,7 +132,7 @@ func LogRequest(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(irw, r)
 		duration := time.Since(start)
-		log.LogHTTPRequest(r.Context(), r.URL.Path, duration, irw.statusCode, nil)
+		log.LogHTTPRequest(r.Context(), r.URL.Path, duration, irw.statusCode)
 		recordResponseMetrics(rt, m, irw.statusCode, irw.responseSizeBytes, duration)
 	})
 }

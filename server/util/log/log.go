@@ -69,7 +69,7 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 	}
 }
 
-func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCode int, err error) {
+func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCode int) {
 	reqID, _ := uuid.GetFromContext(ctx) // Ignore error, we're logging anyway.
-	log.Printf("HTTP %s %q HTTP %d / grpc %s [%s]", reqID, url, statusCode, fmtErr(err), formatDuration(dur))
+	log.Printf("HTTP %s %q HTTP %d", reqID, url, statusCode, formatDuration(dur))
 }
