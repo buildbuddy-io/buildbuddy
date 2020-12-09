@@ -106,20 +106,16 @@ func RequestID(next http.Handler) http.Handler {
 // Prometheus metrics.
 type instrumentedResponseWriter struct {
 	http.ResponseWriter
-	metrics responseMetrics
-}
-
-type responseMetrics struct {
 	statusCode        int
 	responseSizeBytes int
 }
 
 func (w *instrumentedResponseWriter) Write(bytes []byte) (int, error) {
-	w.metrics.responseSizeBytes += len(bytes)
+	w.responseSizeBytes += len(bytes)
 	return w.ResponseWriter.Write(bytes)
 }
 func (w *instrumentedResponseWriter) WriteHeader(statusCode int) {
-	w.metrics.statusCode = statusCode
+	w.statusCode = statusCode
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
@@ -131,15 +127,13 @@ func LogRequest(next http.Handler) http.Handler {
 		recordRequestMetrics(rt, m)
 		irw := &instrumentedResponseWriter{
 			ResponseWriter: w,
-			metrics: responseMetrics{
-				// net/http defaults to 200 if not written.
-				statusCode: 200,
-			},
+			// net/http defaults to 200 if not written.
+			statusCode: 200,
 		}
 		next.ServeHTTP(irw, r)
 		duration := time.Since(start)
-		log.LogHTTPRequest(r.Context(), r.URL.Path, duration, irw.metrics.statusCode, nil)
-		recordResponseMetrics(rt, m, &irw.metrics, duration)
+		log.LogHTTPRequest(r.Context(), r.URL.Path, duration, irw.statusCode, nil)
+		recordResponseMetrics(rt, m, irw.statusCode, irw.responseSizeBytes, duration)
 	})
 }
 
@@ -180,14 +174,14 @@ func recordRequestMetrics(route, method string) {
 	}).Inc()
 }
 
-func recordResponseMetrics(route, method string, rm *responseMetrics, duration time.Duration) {
+func recordResponseMetrics(route, method string, statusCode, responseSizeBytes int, duration time.Duration) {
 	labels := prometheus.Labels{
 		metrics.HTTPRouteLabel:        route,
 		metrics.HTTPMethodLabel:       method,
-		metrics.HTTPResponseCodeLabel: strconv.Itoa(rm.statusCode),
+		metrics.HTTPResponseCodeLabel: strconv.Itoa(statusCode),
 	}
 	metrics.HTTPRequestHandlerDurationUsec.With(labels).Observe(float64(duration.Microseconds()))
-	metrics.HTTPResponseSizeBytes.With(labels).Observe(float64(rm.responseSizeBytes))
+	metrics.HTTPResponseSizeBytes.With(labels).Observe(float64(responseSizeBytes))
 }
 
 type wrapFn func(http.Handler) http.Handler
