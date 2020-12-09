@@ -36,6 +36,9 @@ const (
 	/// Process exit code of an executed action.
 	ExitCodeLabel = "exit_code"
 
+	/// SQL query before substituting template parameters.
+	SQLQueryTemplateLabel = "sql_query_template"
+
 	/// `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
 	BlobstoreTypeLabel = "blobstore_type"
 
@@ -180,7 +183,7 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "file_download_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Download duration during remote execution, in **microseconds**.",
+		Help:      "Per-file download duration during remote execution, in **microseconds**.",
 	})
 
 	FileUploadCount = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -204,8 +207,64 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "file_upload_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "upload duration during remote execution, in **microseconds**.",
+		Help:      "Per-file upload duration during remote execution, in **microseconds**.",
 	})
+
+	/// ## SQL metrics
+	///
+	/// These metrics are for monitoring the configured SQL database.
+
+	SQLQueryCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "query_count",
+		Help:      "Number of SQL queries executed.",
+	}, []string{
+		SQLQueryTemplateLabel,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # SQL queries per second (by query template).
+	/// sum by (sql_query_template) (rate(buildbuddy_sql_query_count[5m]))
+	/// ```
+
+	SQLQueryDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "query_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "SQL query duration, in **microseconds**.",
+	}, []string{
+		SQLQueryTemplateLabel,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median SQL query duration
+	/// histogram_quantile(
+	///	  0.5,
+	///   sum(rate(buildbuddy_sql_query_duration_usec_bucket[5m])) by (le)
+	/// )
+	/// ```
+
+	SQLErrorCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "error_count",
+		Help:      "Number of SQL queries that resulted in an error.",
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # SQL error rate
+	/// sum(rate(buildbuddy_sql_error_count[5m]))
+	///   /
+	/// sum(rate(buildbuddy_sql_query_count[5m]))
+	/// ```
 
 	/// ## Blobstore metrics
 	///

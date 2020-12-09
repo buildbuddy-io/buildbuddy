@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -123,6 +124,64 @@ func parseDatasource(datasource string) (string, string, error) {
 	return "", "", fmt.Errorf("No database configured -- please specify at least one in the config")
 }
 
+type sqlLogger struct {
+	logQueries bool
+	delegate   gorm.Logger
+}
+
+func (l sqlLogger) Print(v ...interface{}) {
+	if len(v) == 0 {
+		return
+	}
+	logType := v[0]
+	// Note: a quirk of gorm is that when it logs errors, it sets
+	// the log type to `log` when in "detailed" mode and `error`
+	// when in "default" mode.
+	//
+	// By calling `LogMode(true)` we've set the log mode to "detailed"
+	// so that we can log SQL queries, but we also check `error` here
+	// just for the sake of future-proofing.
+	if logType == "log" || logType == "error" {
+		// Always log errors to the console.
+		l.delegate.Print(v...)
+
+		if len(v) < 3 {
+			return
+		}
+		_, ok := v[2].(error)
+		if !ok {
+			return
+		}
+		metrics.SQLErrorCount.Inc()
+		return
+	}
+	if logType == "sql" {
+		if l.logQueries {
+			l.delegate.Print(v...)
+		}
+		if len(v) < 6 {
+			return
+		}
+		duration, ok := v[2].(time.Duration)
+		if !ok {
+			return
+		}
+		// TODO(bduffany): Find a way to associate errors with query templates.
+		// We could maybe check whether the previous log call was an error log,
+		// but that seems brittle.
+		queryTemplate, ok := v[3].(string)
+		if !ok {
+			return
+		}
+		labels := prometheus.Labels{
+			metrics.SQLQueryTemplateLabel: queryTemplate,
+		}
+		metrics.SQLQueryCount.With(labels).Inc()
+		metrics.SQLQueryDurationUsec.With(labels).Observe(float64(duration.Microseconds()))
+		return
+	}
+}
+
 func setDBOptions(c *config.Configurator, dialect string, gdb *gorm.DB) {
 	// SQLITE Special! To avoid "database is locked errors":
 	if dialect == sqliteDialect {
@@ -139,7 +198,14 @@ func setDBOptions(c *config.Configurator, dialect string, gdb *gorm.DB) {
 			gdb.DB().SetConnMaxLifetime(time.Duration(connMaxLifetimeSecs) * time.Second)
 		}
 	}
-	gdb.LogMode(c.GetDatabaseConfig().LogQueries)
+	// Note: Although we're setting gorm to "detailed" log mode here,
+	// SQL logs are only printed to stdout if `LogQueries` is configured.
+	// (See the impl of sqlLogger#Print)
+	gdb.LogMode(true)
+	gdb.SetLogger(sqlLogger{
+		logQueries: c.GetDatabaseConfig().LogQueries,
+		delegate:   gorm.Logger{log.New(os.Stdout, "\r\n", 0)},
+	})
 }
 
 type dbStatsRecorder struct {
