@@ -339,15 +339,6 @@ func StartAndRunServices(env environment.Env) {
 		sp.PrintSplashScreen(*port, *gRPCPort)
 	}
 
-
-	mw := middleware.New(middleware.Config{
-		Recorder: gohttpmetrics.NewRecorder(gohttpmetrics.Config{
-			Prefix: "buildbuddy",
-			DurationBuckets: prometheus.ExponentialBuckets(1, 10, 9),
-		})
-	})
-	handler = middlewarestd.Handler(/* handlerID= */ "", mw, handler)
-
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
 		Handler: handler,
