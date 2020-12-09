@@ -159,7 +159,7 @@
             "y": 1
           },
           "hiddenSeries": false,
-          "id": 69,
+          "id": 97,
           "legend": {
             "avg": false,
             "current": false,
@@ -181,7 +181,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1607462817507,
+          "repeatIteration": 1607482973410,
           "repeatPanelId": 21,
           "scopedVars": {
             "job": {
@@ -285,7 +285,7 @@
             "h": 8,
             "w": 9,
             "x": 0,
-            "y": 9
+            "y": 2
           },
           "hiddenSeries": false,
           "id": 13,
@@ -384,7 +384,7 @@
             "h": 8,
             "w": 10,
             "x": 9,
-            "y": 9
+            "y": 2
           },
           "hiddenSeries": false,
           "id": 25,
@@ -482,7 +482,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 17
+            "y": 10
           },
           "hiddenSeries": false,
           "id": 65,
@@ -596,7 +596,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 26
+            "y": 19
           },
           "hiddenSeries": false,
           "id": 17,
@@ -695,7 +695,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 26
+            "y": 19
           },
           "hiddenSeries": false,
           "id": 19,
@@ -796,7 +796,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 34
+            "y": 27
           },
           "hiddenSeries": false,
           "id": 4,
@@ -912,7 +912,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 34
+            "y": 27
           },
           "hiddenSeries": false,
           "id": 9,
@@ -1564,7 +1564,7 @@
             },
             "overrides": []
           },
-          "fill": 1,
+          "fill": 0,
           "fillGradient": 0,
           "gridPos": {
             "h": 14,
