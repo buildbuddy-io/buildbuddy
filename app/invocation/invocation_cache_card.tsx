@@ -25,10 +25,8 @@ export default class CacheCardComponent extends React.Component {
           {this.props.model.cacheStats.length && (
             <div className="details">
               {this.props.model.cacheStats.map((cacheStat) => {
-                let downloadThroughput =
-                  +cacheStat.totalDownloadSizeBytes / 1000000 / (+cacheStat.totalDownloadUsec / 1000000) || 0;
-                let uploadThroughput =
-                  +cacheStat.totalUploadSizeBytes / 1000000 / (+cacheStat.totalUploadUsec / 1000000) || 0;
+                let downloadThroughput = +cacheStat.downloadThroughputBytesPerSecond / 1000000 || 0;
+                let uploadThroughput = +cacheStat.uploadThroughputBytesPerSecond / 1000000 || 0;
                 return (
                   <div className="cache-sections">
                     <div className="cache-section">
@@ -94,7 +92,7 @@ export default class CacheCardComponent extends React.Component {
 
                     <div className="cache-section">
                       <div className="cache-title">Throughput</div>
-                      <div className="cache-subtitle">Upload / download speed (per parallelized cache request)</div>
+                      <div className="cache-subtitle">Upload / download speed (time-weighted avg)</div>
                       <div className="cache-chart">
                         {this.drawChart(downloadThroughput, "#03A9F4", uploadThroughput, "#607D8B")}
                         <div>

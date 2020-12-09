@@ -203,22 +203,25 @@ func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.
 		if _, err := h.c.IncrementCount(h.ctx, h.counterName(actionCounter), 1); err != nil {
 			return err
 		}
-		totalBytesTransferred, err := h.c.IncrementCount(h.ctx, h.counterName(sizeCounter), d.GetSizeBytes())
-		if err != nil {
+		if _, err := h.c.IncrementCount(h.ctx, h.counterName(sizeCounter), d.GetSizeBytes()); err != nil {
 			return err
 		}
-		if _, err := h.c.IncrementCount(h.ctx, h.counterName(timeCounter), dur.Microseconds()); err != nil {
+		totalMicroseconds, err := h.c.IncrementCount(h.ctx, h.counterName(timeCounter), dur.Microseconds())
+		if err != nil {
 			return err
 		}
 
 		// Weighted streaming throughput calculation (see Welford's).
 		// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Weighted_incremental_algorithm
 		bytesPerSecond := int64(float64(d.GetSizeBytes()) / dur.Seconds())
+
+		// Weight by the duration of the upload / download.
+		weight := float64(dur.Microseconds()) / float64(totalMicroseconds)
 		oldMeanThroughput, err := h.c.ReadCount(h.ctx, h.counterName(throughputCounter))
 		if err != nil {
 			return err
 		}
-		throughputDelta := int64(float64(bytesPerSecond-oldMeanThroughput) * (float64(d.GetSizeBytes()) / float64(totalBytesTransferred)))
+		throughputDelta := int64(float64(bytesPerSecond-oldMeanThroughput) * weight)
 		if _, err := h.c.IncrementCount(h.ctx, h.counterName(throughputCounter), throughputDelta); err != nil {
 			return err
 		}

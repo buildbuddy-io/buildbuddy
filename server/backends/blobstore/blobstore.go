@@ -225,7 +225,7 @@ func (d *DiskBlobStore) BlobExists(ctx context.Context, blobName string) (bool, 
 	if err != nil {
 		return false, err
 	}
-	return disk.FileExists(ctx, fullPath)
+	return disk.FileExists(fullPath)
 }
 
 // GCSBlobStore implements the blobstore API on top of the google cloud storage API.

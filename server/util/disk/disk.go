@@ -61,7 +61,7 @@ func DeleteFile(ctx context.Context, fullPath string) error {
 	return os.Remove(fullPath)
 }
 
-func FileExists(ctx context.Context, fullPath string) (bool, error) {
+func FileExists(fullPath string) (bool, error) {
 	_, err := os.Stat(fullPath)
 	// Verbose for clarity.
 	if os.IsNotExist(err) {
