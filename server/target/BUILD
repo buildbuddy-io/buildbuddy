@@ -10,7 +10,6 @@ go_library(
         "//proto:target_go_proto",
         "//proto/api/v1:common_go_proto",
         "//server/environment:go_default_library",
-        "//server/tables:go_default_library",
         "//server/util/perms:go_default_library",
         "//server/util/query_builder:go_default_library",
         "//server/util/status:go_default_library",
