@@ -25,4 +25,7 @@ message FrontendConfig {
 
   // Whether anonymous usage is enabled.
   bool anonymous_usage_enabled = 5;
+
+  // Whether or not the test dashboard is enabled.
+  bool test_dashboard_enabled = 6;
 }

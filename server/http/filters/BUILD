@@ -8,8 +8,10 @@ go_library(
     deps = [
         "//server/environment:go_default_library",
         "//server/http/protolet:go_default_library",
+        "//server/metrics:go_default_library",
         "//server/util/log:go_default_library",
         "//server/util/uuid:go_default_library",
+        "@com_github_prometheus_client_golang//prometheus:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
     ],
 )

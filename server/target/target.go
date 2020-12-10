@@ -129,7 +129,9 @@ func readTargetHistory(ctx context.Context, env environment.Env, tq *trpb.Target
 	}
 	q.AddWhereClause("i.created_at_usec > ?", startUsec)
 	q.AddWhereClause("i.created_at_usec + i.duration_usec < ?", endUsec)
-	q.AddWhereClause("i.repo_url = ?", tq.GetRepoUrl())
+	if repo := tq.GetRepoUrl(); repo != "" {
+		q.AddWhereClause("i.repo_url = ?", repo)
+	}
 	if user := tq.GetUser(); user != "" {
 		q.AddWhereClause("i.user = ?", user)
 	}
@@ -197,7 +199,7 @@ func readTargetHistory(ctx context.Context, env environment.Env, tq *trpb.Target
 		sort.Slice(statuses[targetID], func(i, j int) bool {
 			iStart := statuses[targetID][i].GetTiming().GetStartTime().GetSeconds()
 			jStart := statuses[targetID][j].GetTiming().GetStartTime().GetSeconds()
-			return iStart < jStart
+			return iStart > jStart
 		})
 		if len(statuses[targetID]) > 0 {
 			targetHistories = append(targetHistories, &trpb.TargetHistory{

@@ -36,8 +36,28 @@ const (
 	/// Process exit code of an executed action.
 	ExitCodeLabel = "exit_code"
 
+	/// SQL query before substituting template parameters.
+	SQLQueryTemplateLabel = "sql_query_template"
+
 	/// `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
 	BlobstoreTypeLabel = "blobstore_type"
+
+	/// Status of the database connection: `in_use` or `idle`
+	SQLConnectionStatusLabel = "connection_status"
+
+	/// SQL DB replica role: `primary` for read+write replicas, or
+	/// `read_replica` for read-only DB replicas.
+	SQLDBRoleLabel = "sql_db_role"
+
+	/// HTTP route before substituting path parameters
+	/// (`/invocation/:id`, `/settings`, ...)
+	HTTPRouteLabel = "route"
+
+	/// HTTP method: `GET`, `POST`, ...
+	HTTPMethodLabel = "method"
+
+	/// HTTP response code: `200`, `302`, `401`, `404`, `500`, ...
+	HTTPResponseCodeLabel = "code"
 )
 
 const (
@@ -220,6 +240,13 @@ var (
 	/// sum(rate(buildbuddy_remote_execution_count[5m]))
 	/// ```
 
+	RemoteExecutionQueueLength = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "queue_length",
+		Help:      "Number of actions currently waiting in the executor queue.",
+	})
+
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
@@ -363,6 +390,206 @@ var (
 	}, []string{
 		BlobstoreTypeLabel,
 	})
+
+	/// # SQL metrics
+	///
+	/// The following metrics are for monitoring the SQL database configured
+	/// for BuildBuddy.
+	///
+	/// If you'd like to see an up-to-date catalog of what BuildBuddy stores in
+	/// its SQL database, see the table definitions [here](https://github.com/buildbuddy-io/buildbuddy/blob/master/server/tables/tables.go).
+	///
+	/// ## Query / error rate metrics
+
+	SQLQueryCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "query_count",
+		Help:      "Number of SQL queries executed.",
+	}, []string{
+		SQLQueryTemplateLabel,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # SQL queries per second (by query template).
+	/// sum by (sql_query_template) (rate(buildbuddy_sql_query_count[5m]))
+	/// ```
+
+	SQLQueryDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "query_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "SQL query duration, in **microseconds**.",
+	}, []string{
+		SQLQueryTemplateLabel,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median SQL query duration
+	/// histogram_quantile(
+	///	  0.5,
+	///   sum(rate(buildbuddy_sql_query_duration_usec_bucket[5m])) by (le)
+	/// )
+	/// ```
+
+	SQLErrorCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "error_count",
+		Help:      "Number of SQL queries that resulted in an error.",
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # SQL error rate
+	/// sum(rate(buildbuddy_sql_error_count[5m]))
+	///   /
+	/// sum(rate(buildbuddy_sql_query_count[5m]))
+	/// ```
+
+	/// ## `database/sql` metrics
+	///
+	/// The following metrics directly expose
+	/// [DBStats](https://golang.org/pkg/database/sql/#DBStats) from the
+	/// `database/sql` Go package.
+
+	SQLMaxOpenConnections = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "max_open_connections",
+		Help:      "Maximum number of open connections to the database.",
+	}, []string{
+		SQLDBRoleLabel,
+	})
+
+	SQLOpenConnections = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "open_connections",
+		Help:      "The number of established connections to the database.",
+	}, []string{
+		SQLConnectionStatusLabel,
+		SQLDBRoleLabel,
+	})
+
+	SQLWaitCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "wait_count",
+		Help:      "The total number of connections waited for.",
+	}, []string{
+		SQLDBRoleLabel,
+	})
+
+	SQLWaitDuration = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "wait_duration_usec",
+		Help:      "The total time blocked waiting for a new connection, in **microseconds**.",
+	}, []string{
+		SQLDBRoleLabel,
+	})
+
+	SQLMaxIdleClosed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "max_idle_closed",
+		Help:      "The total number of connections closed due to SetMaxIdleConns.",
+	}, []string{
+		SQLDBRoleLabel,
+	})
+
+	SQLMaxIdleTimeClosed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "max_idle_time_closed",
+		Help:      "The total number of connections closed due to SetConnMaxIdleTime.",
+	}, []string{
+		SQLDBRoleLabel,
+	})
+
+	SQLMaxLifetimeClosed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "sql",
+		Name:      "max_lifetime_closed",
+		Help:      "The total number of connections closed due to SetConnMaxLifetime.",
+	}, []string{
+		SQLDBRoleLabel,
+	})
+
+	/// ## HTTP metrics
+
+	HTTPRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "http",
+		Name:      "request_count",
+		Help:      "HTTP request count.",
+	}, []string{
+		HTTPRouteLabel,
+		HTTPMethodLabel,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Requests per second, by status code
+	/// sum by (code) (rate(buildbuddy_http_request_count[5m]))
+	///
+	/// # 5xx error ratio
+	/// sum(rate(buildbuddy_http_request_count{code=~"5.."}[5m]))
+	///   /
+	/// sum(rate(buildbuddy_http_request_count[5m]))
+	/// ```
+
+	HTTPRequestHandlerDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "http",
+		Name:      "request_handler_duration_usec",
+		Help:      "Time taken to handle each HTTP request in **microseconds**.",
+	}, []string{
+		HTTPRouteLabel,
+		HTTPMethodLabel,
+		HTTPResponseCodeLabel,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median request duration for successfuly processed (2xx) requests.
+	/// # Other status codes may be associated with early-exits and are
+	/// # likely to add too much noise.
+	/// histogram_quantile(
+	///   0.5,
+	///   sum by (le)	(rate(buildbuddy_http_request_handler_duration_usec{code=~"2.."}[5m]))
+	/// )
+	/// ```
+
+	HTTPResponseSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "http",
+		Name:      "response_size_bytes",
+		Help:      "Response size of each HTTP response in **bytes**.",
+	}, []string{
+		HTTPRouteLabel,
+		HTTPMethodLabel,
+		HTTPResponseCodeLabel,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median HTTP response size
+	/// histogram_quantile(
+	///   0.5,
+	///   sum by (le)	(rate(buildbuddy_http_response_size_bytes[5m]))
+	/// )
+	/// ```
 
 	/// ## Internal metrics
 	///
