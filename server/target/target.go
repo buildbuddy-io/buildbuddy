@@ -125,7 +125,7 @@ func readTargets(ctx context.Context, env environment.Env, tq *trpb.TargetQuery,
 	if targetType := tq.GetTargetType(); targetType != cmpb.TargetType_TARGET_TYPE_UNSPECIFIED {
 		q.AddWhereClause("ts.target_type = ?", int32(targetType))
 	}
-	q.SetOrderBy("t.label, ts.start_time_usec + ts.duration_usec", true /*=ascending*/)
+	q.SetOrderBy("t.label ASC, ts.start_time_usec", false /*=ascending*/)
 	queryStr, outerArgs := q.Build()
 	args := append(innerArgs, outerArgs...)
 
