@@ -79,6 +79,18 @@ var (
 		InvocationStatusLabel,
 	})
 
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Number of invocations per second by invocation status
+	/// sum by (invocation_status) (rate(buildbuddy_invocation_count[5m]))
+	///
+	/// # Invocation success rate
+	/// sum(rate(buildbuddy_invocation_count{invocation_status="success"}[5m]))
+	///   /
+	/// sum(rate(buildbuddy_invocation_count[5m]))
+	/// ```
+
 	InvocationDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
@@ -90,6 +102,16 @@ var (
 		InvocationStatusLabel,
 	})
 
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median invocation duration in the past 5 minutes
+	/// histogram_quantile(
+	///   0.5,
+	///   sum(rate(buildbuddy_invocation_duration_usec_bucket[5m])) by (le)
+	/// )
+	/// ```
+
 	BuildEventCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
@@ -98,6 +120,18 @@ var (
 	}, []string{
 		StatusLabel,
 	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Build events uploaded per second
+	/// sum(rate(buildbuddy_invocation_build_event_count[5m]))
+	///
+	/// # Approximate error rate of build event upload handler
+	/// sum(rate(buildbuddy_invocation_build_event_count{status="0"}[5m]))
+	///   /
+	/// sum(rate(buildbuddy_invocation_build_event_count[5m]))
+	/// ```
 
 	/// ## Remote cache metrics
 	///
@@ -124,6 +158,13 @@ var (
 		CacheTypeLabel,
 	})
 
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Cache download rate (bytes per second)
+	/// sum(rate(buildbuddy_cache_download_size_bytes_sum[5m]))
+	/// ```
+
 	CacheDownloadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -133,6 +174,16 @@ var (
 	}, []string{
 		CacheTypeLabel,
 	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median download duration for content-addressable store (CAS)
+	/// histogram_quantile(
+	///   0.5,
+	///   sum(rate(buildbuddy_remote_cache_download_duration_usec{cache_type="cas"}[5m])) by (le)
+	/// )
+	/// ```
 
 	CacheUploadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -144,6 +195,13 @@ var (
 		CacheTypeLabel,
 	})
 
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Cache upload rate (bytes per second)
+	/// sum(rate(buildbuddy_cache_upload_size_bytes_sum[5m]))
+	/// ```
+
 	CacheUploadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -153,6 +211,16 @@ var (
 	}, []string{
 		CacheTypeLabel,
 	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median upload duration for content-addressable store (CAS)
+	/// histogram_quantile(
+	///   0.5,
+	///   sum(rate(buildbuddy_remote_cache_upload_duration_usec{cache_type="cas"}[5m])) by (le)
+	/// )
+	/// ```
 
 	/// ## Remote execution metrics
 
@@ -165,12 +233,26 @@ var (
 		ExitCodeLabel,
 	})
 
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Total number of actions executed per second
+	/// sum(rate(buildbuddy_remote_execution_count[5m]))
+	/// ```
+
 	RemoteExecutionQueueLength = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "queue_length",
 		Help:      "Number of actions currently waiting in the executor queue.",
 	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median queue length across all executors
+	/// quantile(0.5, buildbuddy_remote_execution_queue_length)
+	/// ```
 
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
@@ -220,9 +302,111 @@ var (
 		Help:      "Per-file upload duration during remote execution, in **microseconds**.",
 	})
 
-	/// ## SQL metrics
+	/// ## Blobstore metrics
 	///
-	/// These metrics are for monitoring the configured SQL database.
+	/// "Blobstore" refers to the backing storage that BuildBuddy uses to
+	/// store objects in the cache, as well as certain pieces of temporary
+	/// data (such as invocation events while an invocation is in progress).
+
+	BlobstoreReadCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "read_count",
+		Help:      "Number of files read from the blobstore.",
+	}, []string{
+		StatusLabel,
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreReadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "read_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Number of bytes read from the blobstore per file.",
+	}, []string{
+		BlobstoreTypeLabel,
+	})
+
+	/// ```promql
+	/// # Bytes downloaded per second
+	/// sum(rate(buildbuddy_blobstore_read_size_bytes[5m]))
+	/// ```
+
+	BlobstoreReadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "read_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Duration per blobstore file read, in **microseconds**.",
+	}, []string{
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreWriteCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "write_count",
+		Help:      "Number of files written to the blobstore.",
+	}, []string{
+		StatusLabel,
+		BlobstoreTypeLabel,
+	})
+
+	/// ```promql
+	/// # Bytes uploaded per second
+	/// sum(rate(buildbuddy_blobstore_write_size_bytes[5m]))
+	/// ```
+
+	BlobstoreWriteSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "write_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Number of bytes written to the blobstore per file.",
+	}, []string{
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreWriteDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "write_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Duration per blobstore file write, in **microseconds**.",
+	}, []string{
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreDeleteCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "delete_count",
+		Help:      "Number of files deleted from the blobstore.",
+	}, []string{
+		StatusLabel,
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreDeleteDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "delete_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Delete duration per blobstore file deletion, in **microseconds**.",
+	}, []string{
+		BlobstoreTypeLabel,
+	})
+
+	/// # SQL metrics
+	///
+	/// The following metrics are for monitoring the SQL database configured
+	/// for BuildBuddy.
+	///
+	/// If you'd like to see an up-to-date catalog of what BuildBuddy stores in
+	/// its SQL database, see the table definitions [here](https://github.com/buildbuddy-io/buildbuddy/blob/master/server/tables/tables.go).
+	///
+	/// ## Query / error rate metrics
 
 	SQLQueryCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -276,94 +460,6 @@ var (
 	/// sum(rate(buildbuddy_sql_query_count[5m]))
 	/// ```
 
-	/// ## Blobstore metrics
-	///
-	/// "Blobstore" refers to the backing storage that BuildBuddy uses to
-	/// store objects in the cache, as well as certain pieces of temporary
-	/// data (such as invocation events while an invocation is in progress).
-
-	BlobstoreReadCount = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "blobstore",
-		Name:      "read_count",
-		Help:      "Number of files read from the blobstore.",
-	}, []string{
-		StatusLabel,
-		BlobstoreTypeLabel,
-	})
-
-	BlobstoreReadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "blobstore",
-		Name:      "read_size_bytes",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Number of bytes read from the blobstore per file.",
-	}, []string{
-		BlobstoreTypeLabel,
-	})
-
-	BlobstoreReadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "blobstore",
-		Name:      "read_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Duration per blobstore file read, in **microseconds**.",
-	}, []string{
-		BlobstoreTypeLabel,
-	})
-
-	BlobstoreWriteCount = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "blobstore",
-		Name:      "write_count",
-		Help:      "Number of files written to the blobstore.",
-	}, []string{
-		StatusLabel,
-		BlobstoreTypeLabel,
-	})
-
-	BlobstoreWriteSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "blobstore",
-		Name:      "write_size_bytes",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Number of bytes written to the blobstore per file.",
-	}, []string{
-		BlobstoreTypeLabel,
-	})
-
-	BlobstoreWriteDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "blobstore",
-		Name:      "write_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Duration per blobstore file write, in **microseconds**.",
-	}, []string{
-		BlobstoreTypeLabel,
-	})
-
-	BlobstoreDeleteCount = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "blobstore",
-		Name:      "delete_count",
-		Help:      "Number of files deleted from the blobstore.",
-	}, []string{
-		StatusLabel,
-		BlobstoreTypeLabel,
-	})
-
-	BlobstoreDeleteDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "blobstore",
-		Name:      "delete_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Delete duration per blobstore file deletion, in **microseconds**.",
-	}, []string{
-		BlobstoreTypeLabel,
-	})
-
-	/// # SQL metrics
-	///
 	/// ## `database/sql` metrics
 	///
 	/// The following metrics directly expose
