@@ -6,8 +6,8 @@ import re
 
 FILE_HEADER = """<!--
 {
-  "name": "Metrics Guide",
-  "category": "5f84be4816a46768724ca126",
+  "name": "Prometheus Metrics",
+  "category": "5fcfd1ede5ded705a0bf5fd0",
   "priority": 1000
 }
 -->

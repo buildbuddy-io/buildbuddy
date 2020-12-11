@@ -5,6 +5,11 @@ providers:
     orgId: 1
     disableDeletion: false
     allowUiUpdates: true
+    # For all practical purposes, this disables Grafana's
+    # behavior of polling the local repo for updates.
+    # During local development we only want to do a one-way
+    # sync from Grafana to Git, except on first load of Grafana.
+    updateIntervalSeconds: 2000000000
     options:
       path: /var/lib/grafana/dashboards
       foldersFromFilesStructure: true
