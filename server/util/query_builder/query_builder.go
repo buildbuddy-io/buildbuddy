@@ -7,6 +7,7 @@ import (
 
 const (
 	whereSQLKeyword  = "WHERE"
+	groupBySQLPhrase = "GROUP BY"
 	orderBySQLPhrase = "ORDER BY"
 	limitSQLKeyword  = "LIMIT"
 	offsetSQLKeyword = "OFFSET"
@@ -29,6 +30,7 @@ type Query struct {
 	whereClauses []string
 	arguments    []interface{}
 	orderBy      string
+	groupBy      string
 	ascending    bool
 	limit        *int64
 	offset       *int64
@@ -57,6 +59,11 @@ func (q *Query) SetOrderBy(orderByField string, ascending bool) *Query {
 	return q
 }
 
+func (q *Query) SetGroupBy(groupByField string) *Query {
+	q.groupBy = groupByField
+	return q
+}
+
 func (q *Query) SetLimit(limit int64) *Query {
 	q.limit = &limit
 	return q
@@ -72,6 +79,9 @@ func (q *Query) Build() (string, []interface{}) {
 	if len(q.whereClauses) > 0 {
 		whereRestrict := strings.Join(q.whereClauses, andQueryJoiner)
 		fullQuery += pad(whereSQLKeyword) + pad(whereRestrict)
+	}
+	if q.groupBy != "" {
+		fullQuery += pad(groupBySQLPhrase) + pad(q.groupBy)
 	}
 	if q.orderBy != "" {
 		fullQuery += pad(orderBySQLPhrase) + pad(q.orderBy)

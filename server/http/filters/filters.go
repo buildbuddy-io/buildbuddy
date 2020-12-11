@@ -5,6 +5,8 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -13,7 +15,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
+
+	metrics "github.com/buildbuddy-io/buildbuddy/server/metrics"
+)
+
+var (
+	uuidV4Regexp = regexp.MustCompile("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 )
 
 func RedirectHTTPS(env environment.Env, next http.Handler) http.Handler {
@@ -93,12 +102,86 @@ func RequestID(next http.Handler) http.Handler {
 	})
 }
 
+// instrumentedResponseWriter wraps http.ResponseWriter, recording info needed for
+// Prometheus metrics.
+type instrumentedResponseWriter struct {
+	http.ResponseWriter
+	statusCode        int
+	responseSizeBytes int
+}
+
+func (w *instrumentedResponseWriter) Write(bytes []byte) (int, error) {
+	w.responseSizeBytes += len(bytes)
+	return w.ResponseWriter.Write(bytes)
+}
+func (w *instrumentedResponseWriter) WriteHeader(statusCode int) {
+	w.statusCode = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
 func LogRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		next.ServeHTTP(w, r)
-		log.LogHTTPRequest(r.Context(), r.URL.Path, time.Now().Sub(start), nil)
+		m := method(r)
+		rt := route(r)
+		recordRequestMetrics(rt, m)
+		irw := &instrumentedResponseWriter{
+			ResponseWriter: w,
+			// net/http defaults to 200 if not written.
+			statusCode: 200,
+		}
+		next.ServeHTTP(irw, r)
+		duration := time.Since(start)
+		log.LogHTTPRequest(r.Context(), r.URL.Path, duration, irw.statusCode)
+		recordResponseMetrics(rt, m, irw.statusCode, irw.responseSizeBytes, duration)
 	})
+}
+
+func route(r *http.Request) string {
+	path := r.URL.Path
+
+	// TODO(bduffany): migrate to a routing solution that doesn't require
+	// updating this function when we add new HTTP routes.
+
+	// Strip prefixes on large static file directories to avoid
+	// creating new metrics series for every static file that we serve.
+	if strings.HasPrefix(path, "/image/") {
+		return "/image/:path"
+	}
+	if strings.HasPrefix(path, "/favicon/") {
+		return "/favicon/:path"
+	}
+
+	// Replace path parameters to avoid creating a series for
+	// every possible parameter value.
+
+	// Currently we only use UUID v4 path params so this
+	// find-and-replace is good enough for now.
+	return uuidV4Regexp.ReplaceAllLiteralString(path, ":id")
+}
+
+func method(r *http.Request) string {
+	if r.Method == "" {
+		return "GET"
+	}
+	return r.Method
+}
+
+func recordRequestMetrics(route, method string) {
+	metrics.HTTPRequestCount.With(prometheus.Labels{
+		metrics.HTTPRouteLabel:  route,
+		metrics.HTTPMethodLabel: method,
+	}).Inc()
+}
+
+func recordResponseMetrics(route, method string, statusCode, responseSizeBytes int, duration time.Duration) {
+	labels := prometheus.Labels{
+		metrics.HTTPRouteLabel:        route,
+		metrics.HTTPMethodLabel:       method,
+		metrics.HTTPResponseCodeLabel: strconv.Itoa(statusCode),
+	}
+	metrics.HTTPRequestHandlerDurationUsec.With(labels).Observe(float64(duration.Microseconds()))
+	metrics.HTTPResponseSizeBytes.With(labels).Observe(float64(responseSizeBytes))
 }
 
 type wrapFn func(http.Handler) http.Handler
