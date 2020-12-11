@@ -247,6 +247,13 @@ var (
 		Help:      "Number of actions currently waiting in the executor queue.",
 	})
 
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median queue length across all executors
+	/// quantile(0.5, buildbuddy_remote_execution_queue_length)
+	/// ```
+
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
