@@ -308,10 +308,12 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 		t.errGroup = eg
 		t.errGroup.Go(func() error { return t.writeTestTargetStatuses(gctx) })
 	case *build_event_stream.BuildEvent_Finished:
+		if t.errGroup == nil {
+			break
+		}
 		// Synchronization point: make sure that all statuses were written.
 		if err := t.errGroup.Wait(); err != nil {
 			log.Printf("Error writing target statuses: %s", err.Error())
-			break
 		}
 	}
 }
