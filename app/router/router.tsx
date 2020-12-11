@@ -180,6 +180,7 @@ class Router {
 
 function getQueryString(params: Record<string, string>) {
   return Object.keys(params)
+    .filter((key) => Boolean(params[key]))
     .map((key) => `${key}=${encodeURIComponent(params[key])}`)
     .join("&");
 }

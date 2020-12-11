@@ -383,9 +383,9 @@ type Target struct {
 	UserID   string `gorm:"primaryKey"`
 	GroupID  string `gorm:"primaryKey"`
 	RepoURL  string `gorm:"primaryKey"`
-	TargetID int64  `gorm:"primaryKey"`
+	Label    string `gorm:"primaryKey"`
+	TargetID int64  `gorm:"index:target_target_id"`
 	Perms    int    `gorm:"index:target_perms"`
-	Label    string
 	RuleType string
 }
 

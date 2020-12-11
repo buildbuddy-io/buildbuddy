@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/jinzhu/gorm"
+	"golang.org/x/sync/errgroup"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -42,6 +43,7 @@ type result struct {
 type target struct {
 	id                  int64
 	label               string
+	targetType          cmpb.TargetType
 	ruleType            string
 	testSize            build_event_stream.TestSize
 	buildSuccess        bool
@@ -71,6 +73,7 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Configured:
 		t.ruleType = p.Configured.GetTargetKind()
+		t.targetType = targetTypeFromRuleType(t.ruleType)
 		t.testSize = p.Configured.GetTestSize()
 		t.state = targetStateConfigured
 	case *build_event_stream.BuildEvent_Completed:
@@ -120,6 +123,7 @@ type TargetTracker struct {
 	buildEventAccumulator *accumulator.BEValues
 	targets               map[string]*target
 	openClosures          map[string]targetClosure
+	errGroup              *errgroup.Group
 }
 
 func NewTargetTracker(env environment.Env, buildEventAccumulator *accumulator.BEValues) *TargetTracker {
@@ -169,7 +173,7 @@ func (t *TargetTracker) allTargetsInState(state targetState) bool {
 	return true
 }
 
-func (t *TargetTracker) writeAllTargets(ctx context.Context) {
+func (t *TargetTracker) writeTestTargets(ctx context.Context) error {
 	var permissions *perms.UserGroupPerm
 	if auth := t.env.GetAuthenticator(); auth != nil {
 		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
@@ -177,48 +181,58 @@ func (t *TargetTracker) writeAllTargets(ctx context.Context) {
 		}
 	}
 	if permissions == nil {
-		log.Printf("Permissions were nil -- not writing target data.")
-		return
+		return status.FailedPreconditionError("Permissions were nil -- not writing target data.")
 	}
 	repoURL := t.buildEventAccumulator.RepoURL()
 	knownTargets, err := readRepoTargets(ctx, t.env, repoURL)
 	if err != nil {
-		log.Printf("error reading targets: %s", err.Error())
+		return err
 	}
 	knownTargetsByLabel := make(map[string]*tables.Target, len(knownTargets))
 	for _, knownTarget := range knownTargets {
 		knownTargetsByLabel[knownTarget.Label] = knownTarget
 	}
-	newTargets := make([]*target, 0)
+	newTargets := make([]*tables.Target, 0)
+	updatedTargets := make([]*tables.Target, 0)
 	for label, target := range t.targets {
-		// Is this already in the DB?
-		_, ok := knownTargetsByLabel[label]
+		if target.targetType != cmpb.TargetType_TEST {
+			continue
+		}
+		tableTarget := &tables.Target{
+			RepoURL:  repoURL,
+			TargetID: target.id,
+			UserID:   permissions.UserID,
+			GroupID:  permissions.GroupID,
+			Perms:    permissions.Perms,
+			Label:    target.label,
+			RuleType: target.ruleType,
+		}
+		knownTarget, ok := knownTargetsByLabel[label]
 		if !ok {
-			newTargets = append(newTargets, target)
-		} else {
-			log.Printf("Target %s was already known!", label)
+			newTargets = append(newTargets, tableTarget)
+			continue
+		}
+		if knownTarget.RuleType != target.ruleType {
+			updatedTargets = append(updatedTargets, tableTarget)
+			continue
+		}
+	}
+	if len(updatedTargets) > 0 {
+		if err := updateTargets(ctx, t.env, updatedTargets); err != nil {
+			log.Printf("Error updating targets: %s", err.Error())
+			return err
 		}
 	}
 	if len(newTargets) > 0 {
-		tableTargets := make([]*tables.Target, 0, len(newTargets))
-		for _, target := range newTargets {
-			tableTargets = append(tableTargets, &tables.Target{
-				RepoURL:  repoURL,
-				TargetID: target.id,
-				UserID:   permissions.UserID,
-				GroupID:  permissions.GroupID,
-				Perms:    permissions.Perms,
-				Label:    target.label,
-				RuleType: target.ruleType,
-			})
-		}
-		if err := insertOrUpdateTargets(ctx, t.env, tableTargets); err != nil {
+		if err := insertTargets(ctx, t.env, newTargets); err != nil {
 			log.Printf("Error inserting targets: %s", err.Error())
+			return err
 		}
 	}
+	return nil
 }
 
-func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context) {
+func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context) error {
 	var permissions *perms.UserGroupPerm
 	if auth := t.env.GetAuthenticator(); auth != nil {
 		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
@@ -226,8 +240,7 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context) {
 		}
 	}
 	if permissions == nil {
-		log.Printf("Permissions were nil -- not writing target data.")
-		return
+		return status.FailedPreconditionError("Permissions were nil -- not writing target data.")
 	}
 	invocationPK := md5Int64(t.buildEventAccumulator.InvocationID())
 	newTargetStatuses := make([]*tables.TargetStatus, 0)
@@ -238,7 +251,7 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context) {
 		newTargetStatuses = append(newTargetStatuses, &tables.TargetStatus{
 			TargetID:      target.id,
 			InvocationPK:  invocationPK,
-			TargetType:    int32(targetTypeFromRuleType(target.ruleType)),
+			TargetType:    int32(target.targetType),
 			TestSize:      int32(target.testSize),
 			Status:        int32(target.overallStatus),
 			StartTimeUsec: int64(target.firstStartMillis * 1000),
@@ -247,7 +260,9 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context) {
 	}
 	if err := insertOrUpdateTargetStatuses(ctx, t.env, newTargetStatuses); err != nil {
 		log.Printf("Error inserting target statuses: %s", err.Error())
+		return err
 	}
+	return nil
 }
 
 func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
@@ -270,21 +285,35 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 		t.handleEvent(event)
 		if t.allTargetsInState(targetStateConfigured) {
 			if t.buildEventAccumulator.Role() == "CI" {
-				t.writeAllTargets(ctx)
+				eg, gctx := errgroup.WithContext(ctx)
+				t.errGroup = eg
+				t.errGroup.Go(func() error { return t.writeTestTargets(gctx) })
 			}
 		}
 	case *build_event_stream.BuildEvent_Completed:
 		t.handleEvent(event)
-		if t.allTargetsInState(targetStateCompleted) {
-		}
 	case *build_event_stream.BuildEvent_TestResult:
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_TestSummary:
 		t.handleEvent(event)
-		if t.testTargetsInState(targetStateSummary) {
-			if t.buildEventAccumulator.Role() == "CI" {
-				t.writeTestTargetStatuses(ctx)
-			}
+		if !t.testTargetsInState(targetStateSummary) || t.buildEventAccumulator.Role() != "CI" || t.errGroup == nil {
+			break
+		}
+		// Synchronization point: make sure that all targets were read (or written).
+		if err := t.errGroup.Wait(); err != nil {
+			log.Printf("Error getting targets: %s", err.Error())
+			break
+		}
+		eg, gctx := errgroup.WithContext(ctx)
+		t.errGroup = eg
+		t.errGroup.Go(func() error { return t.writeTestTargetStatuses(gctx) })
+	case *build_event_stream.BuildEvent_Finished:
+		if t.errGroup == nil {
+			break
+		}
+		// Synchronization point: make sure that all statuses were written.
+		if err := t.errGroup.Wait(); err != nil {
+			log.Printf("Error writing target statuses: %s", err.Error())
 		}
 	}
 }
@@ -336,7 +365,26 @@ func chunkTargetsBy(items []*tables.Target, chunkSize int) (chunks [][]*tables.T
 	return append(chunks, items)
 }
 
-func insertOrUpdateTargets(ctx context.Context, env environment.Env, targets []*tables.Target) error {
+func updateTargets(ctx context.Context, env environment.Env, targets []*tables.Target) error {
+	if env.GetDBHandle() == nil {
+		return status.FailedPreconditionError("database not configured")
+	}
+	for _, t := range targets {
+		err := env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+			var existing tables.Target
+			if err := tx.Where("target_id = ?", t.TargetID).First(&existing).Error; err != nil {
+				return err
+			}
+			return tx.Model(&existing).Where("target_id = ?", t.TargetID).Updates(t).Error
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func insertTargets(ctx context.Context, env environment.Env, targets []*tables.Target) error {
 	if env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
 	}
