@@ -25,14 +25,19 @@ var (
 	uuidV4Regexp = regexp.MustCompile("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 )
 
-func RedirectHTTPS(env environment.Env, next http.Handler) http.Handler {
+func SetSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		next.ServeHTTP(w, r)
+	})
+}
 
+func RedirectIfNotForwardedHTTPS(env environment.Env, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		protocol := r.Header.Get("X-Forwarded-Proto") // Set by load balancer
-		if sslConfig := env.GetConfigurator().GetSSLConfig(); sslConfig != nil && sslConfig.EnableSSL && protocol == "http" {
+		if sslConfig := env.GetConfigurator().GetSSLConfig(); sslConfig != nil && sslConfig.UpgradeInsecure && protocol != "https" {
 			http.Redirect(w, r, "https://"+r.Host+r.URL.String(), http.StatusMovedPermanently)
 			return
 		}
@@ -203,7 +208,7 @@ func WrapAuthenticatedExternalProtoletHandler(env environment.Env, httpPrefix st
 		func(h http.Handler) http.Handler {
 			return http.StripPrefix(httpPrefix, handlers.BodyParserMiddleware(h))
 		},
-		func(h http.Handler) http.Handler { return RedirectHTTPS(env, h) },
+		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
 	})
@@ -214,7 +219,7 @@ func WrapExternalHandler(env environment.Env, next http.Handler) http.Handler {
 	// called last before the handler itself is called.
 	return wrapHandler(env, next, &[]wrapFn{
 		Gzip,
-		func(h http.Handler) http.Handler { return RedirectHTTPS(env, h) },
+		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
 	})
@@ -226,7 +231,7 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 	return wrapHandler(env, next, &[]wrapFn{
 		Gzip,
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
-		func(h http.Handler) http.Handler { return RedirectHTTPS(env, h) },
+		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
 	})

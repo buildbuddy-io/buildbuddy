@@ -308,9 +308,9 @@ func StartAndRunServices(env environment.Env) {
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
 	if auth := env.GetAuthenticator(); auth != nil {
-		mux.Handle("/login/", httpfilters.RedirectHTTPS(env, http.HandlerFunc(auth.Login)))
-		mux.Handle("/auth/", httpfilters.RedirectHTTPS(env, http.HandlerFunc(auth.Auth)))
-		mux.Handle("/logout/", httpfilters.RedirectHTTPS(env, http.HandlerFunc(auth.Logout)))
+		mux.Handle("/login/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.Login)))
+		mux.Handle("/auth/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.Auth)))
+		mux.Handle("/logout/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.Logout)))
 	}
 
 	if githubConfig := env.GetConfigurator().GetGithubConfig(); githubConfig != nil {
@@ -363,7 +363,7 @@ func StartAndRunServices(env environment.Env) {
 			sslServer.ListenAndServeTLS("", "")
 		}()
 		go func() {
-			http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), sslHandler)
+			http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), httpfilters.RedirectIfNotForwardedHTTPS(env, sslHandler))
 		}()
 	} else {
 		// If no SSL is enabled, we'll just serve things as-is.
