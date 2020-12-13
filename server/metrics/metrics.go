@@ -58,6 +58,13 @@ const (
 
 	/// HTTP response code: `200`, `302`, `401`, `404`, `500`, ...
 	HTTPResponseCodeLabel = "code"
+
+	/// Cache type: `gcs` (Google Cloud Storage) or `aws_s3`.
+	CloudCacheTypeLabel = "cache_type"
+
+	/// Cache write method: `stream` for streaming uploads to the cache,
+	/// or `single` for single upload requests.
+	CloudCacheWriteMethodLabel = "write_type"
 )
 
 const (
@@ -519,5 +526,128 @@ var (
 		Help:      "The time spent handling each build event in **microseconds**.",
 	}, []string{
 		StatusLabel,
+	})
+
+	/// ### Cloud cache
+
+	CloudCacheReadCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cloud_cache",
+		Name:      "read_count",
+		Help:      "Number of reads from the cloud cache.",
+	}, []string{
+		StatusLabel,
+		CloudCacheTypeLabel,
+	})
+
+	CloudCacheReadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cloud_cache",
+		Name:      "read_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "The time spent reading each file from the cloud cache, in **microseconds**. This is recorded only for successful reads.",
+	}, []string{
+		CloudCacheTypeLabel,
+	})
+
+	CloudCacheReadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cloud_cache",
+		Name:      "read_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Size of each file downloaded from the cloud cache, in **bytes**. This is recorded only for successful reads.",
+	}, []string{
+		CloudCacheTypeLabel,
+	})
+
+	CloudCacheWriteCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cloud_cache",
+		Name:      "write_count",
+		Help:      "Number of `set(data)` requests to the cloud cache. This will be incremented both for the initial attempt as well as retries.",
+	}, []string{
+		StatusLabel,
+		CloudCacheTypeLabel,
+		CloudCacheWriteMethodLabel,
+	})
+
+	CloudCacheWriteDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cloud_cache",
+		Name:      "write_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "The time spent writing each file to the cloud cache, in **microseconds**. This is recorded only for successful writes.",
+	}, []string{
+		CloudCacheTypeLabel,
+		CloudCacheWriteMethodLabel,
+	})
+
+	CloudCacheWriteSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cloud_cache",
+		Name:      "write_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Size of each file uploaded to the cloud cache, in **bytes**. This is recorded only for successful writes.",
+	}, []string{
+		CloudCacheTypeLabel,
+		CloudCacheWriteMethodLabel,
+	})
+
+	CloudCacheWriteRetryCount = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cloud_cache",
+		Name:      "write_retries",
+		Buckets:   prometheus.LinearBuckets(0, 1, 10),
+		Help:      "Number of retries required to fulfill each write request to the cloud cache (an observed value of 0 means the transfer succeeded on the first try).",
+	}, []string{
+		CloudCacheTypeLabel,
+		CloudCacheWriteMethodLabel,
+	})
+
+	CloudCacheDeleteCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cloud_cache",
+		Name:      "delete_count",
+		Help:      "Number of deletes from the cache.",
+	}, []string{
+		StatusLabel,
+		CloudCacheTypeLabel,
+	})
+
+	CloudCacheDeleteDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cloud_cache",
+		Name:      "delete_duration_usec",
+		Help:      "Duration of each cloud cache deletion, in **microseconds**.",
+	}, []string{
+		CloudCacheTypeLabel,
+	})
+
+	CloudCacheContainsCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cloud_cache",
+		Name:      "contains_count",
+		Help:      "Number of `contains(key)` requests made to the cache.",
+	}, []string{
+		StatusLabel,
+		CloudCacheTypeLabel,
+	})
+
+	CloudCacheContainsDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cloud_cache",
+		Name:      "contains_duration_usec",
+		Help:      "Duration of each each `contains(key)` request, in **microseconds**.",
+	}, []string{
+		CloudCacheTypeLabel,
+	})
+
+	CloudCacheContainsRetryCount = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cloud_cache",
+		Name:      "contains_retry_count",
+		Help:      "Number of retries required to fulfill each `contains(key)` request to the cache (an observed value of 0 means the request succeeded on the first try).",
+	}, []string{
+		CloudCacheTypeLabel,
 	})
 )
