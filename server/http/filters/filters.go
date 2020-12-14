@@ -36,8 +36,9 @@ func SetSecurityHeaders(next http.Handler) http.Handler {
 
 func RedirectIfNotForwardedHTTPS(env environment.Env, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		protocol := r.Header.Get("X-Forwarded-Proto") // Set by load balancer
-		if sslConfig := env.GetConfigurator().GetSSLConfig(); sslConfig != nil && sslConfig.UpgradeInsecure && protocol != "https" {
+		protocol := r.Header.Get("X-Forwarded-Proto")      // Set by load balancer
+		isHealthCheck := r.Header.Get("server-type") != "" // Set by health checks
+		if sslConfig := env.GetConfigurator().GetSSLConfig(); sslConfig != nil && sslConfig.UpgradeInsecure && !isHealthCheck && protocol != "https" {
 			http.Redirect(w, r, "https://"+r.Host+r.URL.String(), http.StatusMovedPermanently)
 			return
 		}
