@@ -8,7 +8,7 @@ cd "$__dir__"
 
 : ${GRAFANA_PORT:=4500}
 : ${GRAFANA_ADMIN_PASSWORD:="admin"}
-GRAFANA_STARTUP_URL="http://localhost:$GRAFANA_PORT/d/1rsE5yoGz/buildbuddy-metrics?orgId=1&refresh=5s"
+GRAFANA_STARTUP_URL="http://localhost:$GRAFANA_PORT?orgId=1&refresh=5s"
 GRAFANA_DASHBOARD_URL="http://admin:$GRAFANA_ADMIN_PASSWORD@localhost:$GRAFANA_PORT/api/dashboards/db/buildbuddy-metrics"
 GRAFANA_DASHBOARD_FILE_PATH="./grafana/dashboards/buildbuddy.json"
 
