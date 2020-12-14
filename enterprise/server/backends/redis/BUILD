@@ -11,6 +11,7 @@ go_library(
         "//server/remote_cache/digest:go_default_library",
         "//server/util/prefix:go_default_library",
         "//server/util/status:go_default_library",
+        "@com_github_buildbuddy_io_buildbuddy//server/util/cache:go_default_library",
         "@com_github_go_redis_redis_v8//:go_default_library",
     ],
 )

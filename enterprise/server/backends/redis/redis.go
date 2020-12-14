@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cache"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -19,6 +20,13 @@ import (
 const (
 	mcCutoffSizeBytes = 512000000 - 1        // 512 MB
 	ttl               = 259200 * time.Second // 3 days
+)
+
+var (
+	cacheMetrics = cache.CacheMetrics{
+		Backend: "redis",
+		Layer:   cache.MemoryCacheLayer,
+	}
 )
 
 func eligibleForCache(d *repb.Digest) bool {
@@ -115,7 +123,9 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	op := cacheMetrics.BeginCacheOperation()
 	found, err := c.rdb.Expire(ctx, key, ttl).Result()
+	op.EndContains(err)
 	return found, err
 }
 
@@ -161,7 +171,10 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 		return nil, err
 	}
 
-	return c.rdbGet(ctx, k)
+	op := cacheMetrics.BeginCacheOperation()
+	b, err := c.rdbGet(ctx, k)
+	op.EndGet(len(b), err)
+	return b, err
 }
 
 func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
@@ -202,7 +215,10 @@ func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 		return err
 	}
 
-	return c.rdbSet(ctx, k, data)
+	op := cacheMetrics.BeginCacheOperation()
+	err = c.rdbSet(ctx, k, data)
+	op.EndSet(len(data), err)
+	return err
 }
 
 func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
@@ -222,7 +238,10 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	if err != nil {
 		return err
 	}
-	return c.rdb.Del(ctx, k).Err()
+	op := cacheMetrics.BeginCacheOperation()
+	err = c.rdb.Del(ctx, k).Err()
+	op.EndDelete(err)
+	return err
 }
 
 func offsetLimReader(data []byte, offset, length int64) io.Reader {
@@ -254,7 +273,7 @@ func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Re
 	if length > 0 {
 		return io.LimitReader(r, length), nil
 	}
-	return r, nil
+	return cacheMetrics.NewInstrumentedReader(r), nil
 }
 
 type closeFn func(b *bytes.Buffer) error
@@ -276,13 +295,13 @@ func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, err
 		return nil, err
 	}
 	var buffer bytes.Buffer
-	return &setOnClose{
+	return cacheMetrics.NewInstrumentedWriteCloser(&setOnClose{
 		Buffer: &buffer,
 		c: func(b *bytes.Buffer) error {
 			// Locking and key prefixing are handled in Set.
 			return c.rdbSet(ctx, k, b.Bytes())
 		},
-	}, nil
+	}), nil
 }
 
 func (c *Cache) Start() error {
