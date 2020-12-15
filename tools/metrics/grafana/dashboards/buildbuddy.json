@@ -4284,8 +4284,8 @@
         "allValue": null,
         "current": {
           "selected": true,
-          "text": "30s",
-          "value": "30s"
+          "text": "1m",
+          "value": "1m"
         },
         "error": null,
         "hide": 0,
@@ -4295,12 +4295,12 @@
         "name": "window",
         "options": [
           {
-            "selected": true,
+            "selected": false,
             "text": "30s",
             "value": "30s"
           },
           {
-            "selected": false,
+            "selected": true,
             "text": "1m",
             "value": "1m"
           },
