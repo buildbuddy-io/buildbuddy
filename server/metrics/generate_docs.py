@@ -260,7 +260,7 @@ class DocsGenerator(object):
 def syntax_highlight_promql(lines):
     proc = subprocess.run(
         shlex.split(
-            "pygmentize -l promql -f html -P style=monokai -P noclasses -P lineseparator='<br>'",
+            "pygmentize -l promql -f html -P style=monokai -P noclasses -P lineseparator='<br>' -P wrapcode",
         ),
         input="\n".join(lines).encode("utf-8"),
         capture_output=True,
