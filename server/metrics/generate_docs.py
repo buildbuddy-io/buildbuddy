@@ -6,6 +6,8 @@ import shlex
 import subprocess
 import sys
 
+GENERATED_FILE_NAME = "prometheus-metrics.md"
+
 FILE_HEADER = """<!--
 {
   "name": "Prometheus Metrics",
@@ -275,7 +277,7 @@ def main():
         sys.exit(0)
     os.chdir(sys.path[0])
     lines = DocsGenerator("./metrics.go").parse()
-    docs_path = "../../docs/guide-metrics.md"
+    docs_path = f"../../docs/{GENERATED_FILE_NAME}"
     with open(docs_path, "w") as f:
         f.write("\n".join(lines))
 
