@@ -160,7 +160,7 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 
 func (h *HealthChecker) ReadinessHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reqServerType := r.Header.Get("server-type")
+		reqServerType := serverType(r)
 		if reqServerType == h.serverType {
 			h.lock.RLock()
 			ready := h.readyToServe
@@ -182,7 +182,7 @@ func (h *HealthChecker) ReadinessHandler() http.Handler {
 
 func (h *HealthChecker) LivenessHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reqServerType := r.Header.Get("server-type")
+		reqServerType := serverType(r)
 		if reqServerType == h.serverType {
 			w.Write([]byte("OK"))
 			return
@@ -191,4 +191,13 @@ func (h *HealthChecker) LivenessHandler() http.Handler {
 		log.Printf("Liveness check returning error: %s", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	})
+}
+
+// serverType is dervied from either the headers or a query parameter
+func serverType(r *http.Request) string {
+	if r.Header.Get("server-type") != "" {
+		return r.Header.Get("server-type")
+	}
+	// GCP load balancer healthchecks do not allow sending headers.
+	return r.URL.Query().Get("server-type")
 }
