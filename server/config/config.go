@@ -117,6 +117,7 @@ type cacheConfig struct {
 type authConfig struct {
 	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
+	JWTKey               string          `yaml:"jwt_key" usage:"The key to use when signing JWT tokens."`
 }
 
 type OauthProvider struct {
@@ -399,6 +400,10 @@ func (c *Configurator) GetCacheInMemory() bool {
 
 func (c *Configurator) GetAnonymousUsageEnabled() bool {
 	return len(c.gc.Auth.OauthProviders) == 0 || c.gc.Auth.EnableAnonymousUsage
+}
+
+func (c *Configurator) GetAuthJWTKey() string {
+	return c.gc.Auth.JWTKey
 }
 
 func (c *Configurator) GetAuthOauthProviders() []OauthProvider {
