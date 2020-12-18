@@ -62,8 +62,10 @@ const (
 	/// Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 	CacheBackendLabel = "backend"
 
-	/// Cache layer: `memory` or `cloud`.
-	CacheLayerLabel = "layer"
+	/// Cache tier: `memory` or `cloud`. This label can be used to write Prometheus
+	/// queries that don't break if the cache backend is swapped out for
+	/// a different backend.
+	CacheTierLabel = "tier"
 )
 
 const (
@@ -549,7 +551,7 @@ var (
 		Help:      "Number of cache get requests.",
 	}, []string{
 		StatusLabel,
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -560,7 +562,7 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "The time spent retrieving each entry from the cache, in **microseconds**. This is recorded only for successful gets.",
 	}, []string{
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -571,7 +573,7 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Size of each entry retrieved from the cache, in **bytes**. This is recorded only for successful gets.",
 	}, []string{
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -586,7 +588,7 @@ var (
 		Help:      "Number of streamed cache reads started. This is incremented once for each started stream, **not** for each chunk in the stream.",
 	}, []string{
 		StatusLabel,
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -597,7 +599,7 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "The total time spent for each read stream, in **microseconds**. This is recorded only for successful reads, and measures the entire read stream (not just individual chunks).",
 	}, []string{
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -608,7 +610,7 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Total size of each entry retrieved from the cache via streaming, in **bytes**. This is recorded only on success, and measures the entire stream (not just individual chunks).",
 	}, []string{
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -624,7 +626,7 @@ var (
 		Help:      "Number of cache set requests.",
 	}, []string{
 		StatusLabel,
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -635,7 +637,7 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "The time spent writing each entry to the cache, in **microseconds**. This is recorded only for successful sets.",
 	}, []string{
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -646,7 +648,7 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Size of the value stored in each set operation, in **bytes**. This is recorded only for successful sets.",
 	}, []string{
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -657,7 +659,7 @@ var (
 		Buckets:   prometheus.LinearBuckets(0, 1, 10),
 		Help:      "Number of retries required to fulfill the set request (an observed value of 0 means the transfer succeeded on the first try).",
 	}, []string{
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -672,7 +674,7 @@ var (
 		Help:      "Number of streamed cache writes started. This is incremented once for each started stream, **not** for each chunk in the stream.",
 	}, []string{
 		StatusLabel,
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -683,7 +685,7 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "The time spent for each streamed write to the cache, in **microseconds**. This is recorded only on success, and measures the entire stream (not just individual chunks).",
 	}, []string{
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -694,7 +696,7 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Size of each entry written to the cache via streaming, in **bytes**. This is recorded only on success, and measures the entire stream (not just individual chunks).",
 	}, []string{
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -705,7 +707,7 @@ var (
 		Buckets:   prometheus.LinearBuckets(0, 1, 10),
 		Help:      "Number of retries required to write each chunk in the stream (an observed value of 0 means the transfer succeeded on the first try).",
 	}, []string{
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -718,7 +720,7 @@ var (
 		Help:      "Number of deletes from the cache.",
 	}, []string{
 		StatusLabel,
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -728,7 +730,7 @@ var (
 		Name:      "delete_duration_usec",
 		Help:      "Duration of each cache deletion, in **microseconds**.",
 	}, []string{
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -739,7 +741,7 @@ var (
 		Help:      "Number of `contains(key)` requests made to the cache.",
 	}, []string{
 		StatusLabel,
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -749,7 +751,7 @@ var (
 		Name:      "contains_duration_usec",
 		Help:      "Duration of each each `contains(key)` request, in **microseconds**.",
 	}, []string{
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 
@@ -759,7 +761,7 @@ var (
 		Name:      "contains_retry_count",
 		Help:      "Number of retries required to fulfill each `contains(key)` request to the cache (an observed value of 0 means the request succeeded on the first try).",
 	}, []string{
-		CacheLayerLabel,
+		CacheTierLabel,
 		CacheBackendLabel,
 	})
 )

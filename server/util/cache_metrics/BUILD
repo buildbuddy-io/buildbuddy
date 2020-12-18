@@ -2,8 +2,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "go_default_library",
-    srcs = ["cache.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/cache",
+    srcs = ["cache_metrics.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics",
     visibility = ["//visibility:public"],
     deps = [
         "//server/metrics:go_default_library",

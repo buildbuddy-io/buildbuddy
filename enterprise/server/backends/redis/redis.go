@@ -9,7 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/cache"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -23,10 +23,7 @@ const (
 )
 
 var (
-	cacheMetrics = cache.CacheMetrics{
-		Backend: "redis",
-		Layer:   cache.MemoryCacheLayer,
-	}
+	cacheLabels = cache_metrics.MakeCacheLabels(cache_metrics.MemoryCacheTier, "redis")
 )
 
 func eligibleForCache(d *repb.Digest) bool {
@@ -123,9 +120,9 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	op := cacheMetrics.BeginCacheOperation()
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	found, err := c.rdb.Expire(ctx, key, ttl).Result()
-	op.EndContains(err)
+	timer.EndContains(err)
 	return found, err
 }
 
@@ -171,9 +168,9 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 		return nil, err
 	}
 
-	op := cacheMetrics.BeginCacheOperation()
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	b, err := c.rdbGet(ctx, k)
-	op.EndGet(len(b), err)
+	timer.EndGet(len(b), err)
 	return b, err
 }
 
@@ -215,9 +212,9 @@ func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 		return err
 	}
 
-	op := cacheMetrics.BeginCacheOperation()
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	err = c.rdbSet(ctx, k, data)
-	op.EndSet(len(data), err)
+	timer.EndSet(len(data), err)
 	return err
 }
 
@@ -238,9 +235,9 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	if err != nil {
 		return err
 	}
-	op := cacheMetrics.BeginCacheOperation()
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	err = c.rdb.Del(ctx, k).Err()
-	op.EndDelete(err)
+	timer.EndDelete(err)
 	return err
 }
 
@@ -273,17 +270,21 @@ func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Re
 	if length > 0 {
 		return io.LimitReader(r, length), nil
 	}
-	return cacheMetrics.NewInstrumentedReader(r), nil
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	return timer.NewInstrumentedReader(r, length), nil
 }
 
 type closeFn func(b *bytes.Buffer) error
 type setOnClose struct {
 	*bytes.Buffer
-	c closeFn
+	timer *cache_metrics.CacheTimer
+	c     closeFn
 }
 
 func (d *setOnClose) Close() error {
-	return d.c(d.Buffer)
+	err := d.c(d.Buffer)
+	d.timer.EndWrite(int64(d.Buffer.Len()), err)
+	return err
 }
 
 func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
@@ -295,13 +296,13 @@ func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, err
 		return nil, err
 	}
 	var buffer bytes.Buffer
-	return cacheMetrics.NewInstrumentedWriteCloser(&setOnClose{
+	return &setOnClose{
 		Buffer: &buffer,
 		c: func(b *bytes.Buffer) error {
 			// Locking and key prefixing are handled in Set.
 			return c.rdbSet(ctx, k, b.Bytes())
 		},
-	}), nil
+	}, nil
 }
 
 func (c *Cache) Start() error {
