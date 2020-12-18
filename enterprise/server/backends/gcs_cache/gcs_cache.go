@@ -357,7 +357,7 @@ func isRetryableGCSError(err error) bool {
 type gcsDedupingWriteCloser struct {
 	io.WriteCloser
 	timer *cache_metrics.CacheTimer
-	size int64
+	size  int64
 }
 
 func (wc *gcsDedupingWriteCloser) Write(in []byte) (int, error) {
@@ -400,8 +400,8 @@ func (g *GCSCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, 
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	return &gcsDedupingWriteCloser{
 		WriteCloser: writer,
-		timer: timer,
-		size: d.GetSizeBytes(),
+		timer:       timer,
+		size:        d.GetSizeBytes(),
 	}, nil
 }
 

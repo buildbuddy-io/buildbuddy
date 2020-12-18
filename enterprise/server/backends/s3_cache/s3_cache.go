@@ -402,8 +402,8 @@ func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (i
 type waitForUploadWriteCloser struct {
 	io.WriteCloser
 	finishedWrite chan struct{}
-	timer *cache_metrics.CacheTimer
-	size int64
+	timer         *cache_metrics.CacheTimer
+	size          int64
 }
 
 func (w *waitForUploadWriteCloser) Close() error {
@@ -430,8 +430,8 @@ func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser,
 	closer := &waitForUploadWriteCloser{
 		WriteCloser:   w,
 		finishedWrite: make(chan struct{}),
-		timer: timer,
-		size: d.GetSizeBytes(),
+		timer:         timer,
+		size:          d.GetSizeBytes(),
 	}
 	go func() {
 		if _, err = s3c.uploader.UploadWithContext(ctx, uploadParams); err != nil {
