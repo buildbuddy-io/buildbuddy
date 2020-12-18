@@ -93,20 +93,47 @@ func (s *SSLService) populateTLSConfig() error {
 		clientCACertPool.AddCert(s.AuthorityCert)
 	}
 
+	// List based on Mozilla recommended ciphers:
+	// https://wiki.mozilla.org/Security/Server_Side_TLS
+	//
+	// This matches this list, with all CBC ciphers removed:
+	// https://golang.org/src/crypto/tls/cipher_suites.go?s=1340:1374#L40
+	//
+	// This isn't the default in go for (outdated according to Mozilla) compatibility reasons:
+	// https://github.com/golang/go/issues/13385
+	cipherSuites := []uint16{
+		tls.TLS_AES_128_GCM_SHA256,
+		tls.TLS_AES_256_GCM_SHA384,
+		tls.TLS_CHACHA20_POLY1305_SHA256,
+
+		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+
+		tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+	}
+
 	httpTLSConfig := &tls.Config{
 		NextProtos:               []string{"http/1.1"},
-		MinVersion:               tls.VersionTLS10,
+		MinVersion:               tls.VersionTLS12,
 		SessionTicketsDisabled:   true,
 		PreferServerCipherSuites: true,
+		CipherSuites:             cipherSuites,
 	}
 
 	grpcTLSConfig := &tls.Config{
 		NextProtos:               []string{"http/1.1"},
-		MinVersion:               tls.VersionTLS10,
+		MinVersion:               tls.VersionTLS12,
 		SessionTicketsDisabled:   true,
 		PreferServerCipherSuites: true,
 		ClientAuth:               tls.VerifyClientCertIfGiven,
 		ClientCAs:                clientCACertPool,
+		CipherSuites:             cipherSuites,
 	}
 
 	if sslConf.KeyFile != "" && sslConf.CertFile != "" {

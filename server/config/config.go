@@ -117,6 +117,7 @@ type cacheConfig struct {
 type authConfig struct {
 	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
+	JWTKey               string          `yaml:"jwt_key" usage:"The key to use when signing JWT tokens."`
 }
 
 type OauthProvider struct {
@@ -132,6 +133,7 @@ type SSLConfig struct {
 	KeyFile          string   `yaml:"key_file" usage:"Path to a PEM encoded key file to use for TLS if not using ACME."`
 	ClientCACertFile string   `yaml:"client_ca_cert_file" usage:"Path to a PEM encoded certificate authority file used to issue client certificates for mTLS auth."`
 	ClientCAKeyFile  string   `yaml:"client_ca_key_file" usage:"Path to a PEM encoded certificate authority key file used to issue client certificates for mTLS auth."`
+	UpgradeInsecure  bool     `yaml:"upgrade_insecure" usage:"True if http requests should be redirected to https"`
 	HostWhitelist    []string `yaml:"host_whitelist" usage:"Cloud-Only"`
 }
 
@@ -398,6 +400,10 @@ func (c *Configurator) GetCacheInMemory() bool {
 
 func (c *Configurator) GetAnonymousUsageEnabled() bool {
 	return len(c.gc.Auth.OauthProviders) == 0 || c.gc.Auth.EnableAnonymousUsage
+}
+
+func (c *Configurator) GetAuthJWTKey() string {
+	return c.gc.Auth.JWTKey
 }
 
 func (c *Configurator) GetAuthOauthProviders() []OauthProvider {

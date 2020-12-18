@@ -43,15 +43,20 @@ export class AuthService {
         if (error.includes("not found")) {
           this.createUser();
         } else {
-          this.emitUser(null);
+          this.onUserRpcError(error);
         }
       });
   }
 
   refreshUser() {
-    return rpcService.service.getUser(new user.GetUserRequest()).then((response: user.GetUserResponse) => {
-      this.emitUser(this.userFromResponse(response));
-    });
+    return rpcService.service
+      .getUser(new user.GetUserRequest())
+      .then((response: user.GetUserResponse) => {
+        this.emitUser(this.userFromResponse(response));
+      })
+      .catch((error: any) => {
+        this.onUserRpcError(error);
+      });
   }
 
   createUser() {
@@ -59,13 +64,17 @@ export class AuthService {
     rpcService.service
       .createUser(request)
       .then((response: user.CreateUserResponse) => {
-        this.register();
+        this.refreshUser();
       })
       .catch((error: any) => {
-        console.log(error);
-        this.emitUser(null);
-        // TODO(siggisim): figure out what we should do in this case.
+        this.onUserRpcError(error);
       });
+  }
+
+  onUserRpcError(error: any) {
+    console.log(error);
+    this.emitUser(null);
+    // TODO(siggisim): figure out what we should do in this case.
   }
 
   userFromResponse(response: user.GetUserResponse) {
