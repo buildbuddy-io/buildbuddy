@@ -6,6 +6,8 @@ import shlex
 import subprocess
 import sys
 
+GENERATED_FILE_NAME = "prometheus-metrics.md"
+
 FILE_HEADER = """<!--
 {
   "name": "Prometheus Metrics",
@@ -258,7 +260,7 @@ class DocsGenerator(object):
 def syntax_highlight_promql(lines):
     proc = subprocess.run(
         shlex.split(
-            "pygmentize -l promql -f html -P style=monokai -P noclasses -P lineseparator='<br>'",
+            "pygmentize -l promql -f html -P style=monokai -P noclasses -P lineseparator='<br>' -P wrapcode",
         ),
         input="\n".join(lines).encode("utf-8"),
         capture_output=True,
@@ -275,7 +277,7 @@ def main():
         sys.exit(0)
     os.chdir(sys.path[0])
     lines = DocsGenerator("./metrics.go").parse()
-    docs_path = "../../docs/guide-metrics.md"
+    docs_path = f"../../docs/{GENERATED_FILE_NAME}"
     with open(docs_path, "w") as f:
         f.write("\n".join(lines))
 
