@@ -257,8 +257,8 @@ var (
 	RemoteExecutionTasksExecuting = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
-		Name: "tasks_executing",
-		Help: "Number of tasks currently being executed by the executor.",
+		Name:      "tasks_executing",
+		Help:      "Number of tasks currently being executed by the executor.",
 	})
 
 	/// #### Examples
@@ -273,15 +273,15 @@ var (
 	RemoteExecutionAssignedRAMBytes = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
-		Name: "assigned_ram_bytes",
-		Help: "Estimated RAM on the executor that is currently allocated for task execution, in **bytes**.",
+		Name:      "assigned_ram_bytes",
+		Help:      "Estimated RAM on the executor that is currently allocated for task execution, in **bytes**.",
 	})
 
 	RemoteExecutionAssignedMilliCPU = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
-		Name: "assigned_milli_cpu",
-		Help: "Estimated CPU time on the executor that is currently allocated for task execution, in Kubernetes milliCPU.",
+		Name:      "assigned_milli_cpu",
+		Help:      "Estimated CPU time on the executor that is currently allocated for task execution, in Kubernetes milliCPU.",
 	})
 
 	/// #### Examples
@@ -296,8 +296,8 @@ var (
 	///	  on (pod_name) (label_replace(
 	///     kube_pod_container_resource_limits_cpu_cores{pod=~"executor-.*"},
 	///     "pod_name", "$1", "pod", "(.*)"
-  ///   ) * 1000 * 0.6)
-  /// )
+	///   ) * 1000 * 0.6)
+	/// )
 	/// ```
 
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
