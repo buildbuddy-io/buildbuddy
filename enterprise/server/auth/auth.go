@@ -114,6 +114,9 @@ func (c *Claims) IsAdmin() bool {
 }
 
 func assembleJWT(ctx context.Context, userID, groupID string, allowedGroups []string) (string, error) {
+	if userID == "" {
+		return "", status.InternalError("JWT cannot have an empty user ID")
+	}
 	expirationTime := time.Now().Add(defaultBuildBuddyJWTDuration)
 	deadline, ok := ctx.Deadline()
 	if ok {
@@ -314,7 +317,7 @@ func (a *OpenIDAuthenticator) lookupUserFromSubID(subID string) (*tables.User, e
 	}
 	user := &tables.User{}
 	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
-		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ?`, subID)
+		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC LIMIT 1`, subID)
 		if err := userRow.Scan(user).Error; err != nil {
 			return err
 		}
