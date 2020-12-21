@@ -63,7 +63,7 @@ func (ir *InstrumentedReader) Read(p []byte) (int, error) {
 	n, err := ir.Reader.Read(p)
 	// Record metrics on the last read.
 	if err != nil {
-		ir.timer.EndRead(ir.readSizeBytes, err)
+		ir.timer.ObserveRead(ir.readSizeBytes, err)
 	}
 	return n, err
 }
@@ -104,7 +104,7 @@ func (t *CacheTimer) NewInstrumentedReader(r io.Reader, size int64) *Instrumente
 // an error, but do track count (recording the status code) so we can measure
 // failure rates.
 
-func (t *CacheTimer) EndGet(size int, err error) {
+func (t *CacheTimer) ObserveGet(size int, err error) {
 	duration := time.Since(t.startTime)
 	metrics.CacheGetCount.With(appendLabels(t.labels, prometheus.Labels{
 		metrics.StatusLabel: fmt.Sprintf("%d", gstatus.Code(err)),
@@ -116,7 +116,7 @@ func (t *CacheTimer) EndGet(size int, err error) {
 	metrics.CacheGetSizeBytes.With(t.labels).Observe(float64(size))
 }
 
-func (t *CacheTimer) EndSet(size int, err error) {
+func (t *CacheTimer) ObserveSet(size int, err error) {
 	duration := time.Since(t.startTime)
 	metrics.CacheSetCount.With(appendLabels(t.labels, prometheus.Labels{
 		metrics.StatusLabel: fmt.Sprintf("%d", gstatus.Code(err)),
@@ -128,7 +128,7 @@ func (t *CacheTimer) EndSet(size int, err error) {
 	metrics.CacheSetSizeBytes.With(t.labels).Observe(float64(size))
 }
 
-func (t *CacheTimer) EndDelete(err error) {
+func (t *CacheTimer) ObserveDelete(err error) {
 	duration := time.Since(t.startTime)
 	metrics.CacheDeleteCount.With(appendLabels(t.labels, prometheus.Labels{
 		metrics.StatusLabel: fmt.Sprintf("%d", gstatus.Code(err)),
@@ -139,7 +139,7 @@ func (t *CacheTimer) EndDelete(err error) {
 	metrics.CacheDeleteDurationUsec.With(t.labels).Observe(float64(duration.Microseconds()))
 }
 
-func (t *CacheTimer) EndContains(err error) {
+func (t *CacheTimer) ObserveContains(err error) {
 	duration := time.Since(t.startTime)
 	metrics.CacheContainsCount.With(appendLabels(t.labels, prometheus.Labels{
 		metrics.StatusLabel: fmt.Sprintf("%d", gstatus.Code(err)),
@@ -150,7 +150,7 @@ func (t *CacheTimer) EndContains(err error) {
 	metrics.CacheContainsDurationUsec.With(t.labels).Observe(float64(duration.Microseconds()))
 }
 
-func (t *CacheTimer) EndRead(size int64, err error) {
+func (t *CacheTimer) ObserveRead(size int64, err error) {
 	duration := time.Since(t.startTime)
 	metrics.CacheReadCount.With(appendLabels(t.labels, prometheus.Labels{
 		metrics.StatusLabel: fmt.Sprintf("%d", gstatus.Code(err)),
@@ -162,7 +162,7 @@ func (t *CacheTimer) EndRead(size int64, err error) {
 	metrics.CacheReadSizeBytes.With(t.labels).Observe(float64(size))
 }
 
-func (t *CacheTimer) EndWrite(size int64, err error) {
+func (t *CacheTimer) ObserveWrite(size int64, err error) {
 	duration := time.Since(t.startTime)
 	metrics.CacheWriteCount.With(appendLabels(t.labels, prometheus.Labels{
 		metrics.StatusLabel: fmt.Sprintf("%d", gstatus.Code(err)),

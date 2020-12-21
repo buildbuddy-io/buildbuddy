@@ -140,7 +140,7 @@ func (g *GCSCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	b, err := ioutil.ReadAll(reader)
-	timer.EndGet(len(b), err)
+	timer.ObserveGet(len(b), err)
 	// Note, if we decide to retry reads in the future, be sure to
 	// add a new metric for retry count.
 	return b, err
@@ -210,7 +210,7 @@ func (g *GCSCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 		if _, err = writer.Write(data); err == nil {
 			err = swallowGCSAlreadyExistsError(writer.Close())
 		}
-		timer.EndSet(len(data), err)
+		timer.ObserveSet(len(data), err)
 		numAttempts++
 		if !isRetryableGCSError(err) || numAttempts > maxNumRetries {
 			break
@@ -246,7 +246,7 @@ func (g *GCSCache) Delete(ctx context.Context, d *repb.Digest) error {
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	err = g.bucketHandle.Object(k).Delete(ctx)
-	timer.EndDelete(err)
+	timer.ObserveDelete(err)
 	// Note, if we decide to retry deletions in the future, be sure to
 	// add a new metric for retry count.
 	return err
@@ -277,7 +277,7 @@ func (g *GCSCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	for {
 		timer := cache_metrics.NewCacheTimer(cacheLabels)
 		attrs, err := g.bucketHandle.Object(k).Attrs(ctx)
-		timer.EndContains(err)
+		timer.ObserveContains(err)
 		numAttempts++
 		finalErr = err
 		if err == storage.ErrObjectNotExist {

@@ -122,7 +122,7 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	found, err := c.rdb.Expire(ctx, key, ttl).Result()
-	timer.EndContains(err)
+	timer.ObserveContains(err)
 	return found, err
 }
 
@@ -170,7 +170,7 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	b, err := c.rdbGet(ctx, k)
-	timer.EndGet(len(b), err)
+	timer.ObserveGet(len(b), err)
 	return b, err
 }
 
@@ -214,7 +214,7 @@ func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	err = c.rdbSet(ctx, k, data)
-	timer.EndSet(len(data), err)
+	timer.ObserveSet(len(data), err)
 	return err
 }
 
@@ -237,7 +237,7 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	err = c.rdb.Del(ctx, k).Err()
-	timer.EndDelete(err)
+	timer.ObserveDelete(err)
 	return err
 }
 
@@ -283,7 +283,7 @@ type setOnClose struct {
 
 func (d *setOnClose) Close() error {
 	err := d.c(d.Buffer)
-	d.timer.EndWrite(int64(d.Buffer.Len()), err)
+	d.timer.ObserveWrite(int64(d.Buffer.Len()), err)
 	return err
 }
 

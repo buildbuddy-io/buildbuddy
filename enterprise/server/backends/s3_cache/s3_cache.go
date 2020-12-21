@@ -200,7 +200,7 @@ func (s3c *S3Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	b, err := s3c.get(ctx, d, k)
-	timer.EndGet(len(b), err)
+	timer.ObserveGet(len(b), err)
 	return b, err
 }
 
@@ -255,7 +255,7 @@ func (s3c *S3Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error 
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	_, err = s3c.uploader.UploadWithContext(ctx, uploadParams)
-	timer.EndSet(len(data), err)
+	timer.ObserveSet(len(data), err)
 	return err
 }
 
@@ -285,7 +285,7 @@ func (s3c *S3Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	err = s3c.delete(ctx, k)
-	timer.EndDelete(err)
+	timer.ObserveDelete(err)
 	return err
 }
 
@@ -332,7 +332,7 @@ func (s3c *S3Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) 
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	c, err := s3c.contains(ctx, k)
-	timer.EndContains(err)
+	timer.ObserveContains(err)
 	return c, err
 }
 
