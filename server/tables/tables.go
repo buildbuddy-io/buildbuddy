@@ -451,7 +451,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	// Migrate Groups.APIKey to APIKey rows.
 	if d.HasTable("Groups") && !d.HasTable("APIKeys") {
 		postMigrate = append(postMigrate, func() error {
-			rows, err := db.Raw(`SELECT group_id, api_key FROM Groups`).Rows()
+			rows, err := db.Raw(`SELECT group_id, api_key FROM ` + "`Groups`" + ``).Rows()
 			if err != nil {
 				return err
 			}

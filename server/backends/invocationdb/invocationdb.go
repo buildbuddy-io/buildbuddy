@@ -83,7 +83,7 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 			return err
 		}
 		var group tables.Group
-		if err := tx.Raw(`SELECT sharing_enabled FROM Groups WHERE group_id = ?`, in.GroupID).Scan(&group).Error; err != nil {
+		if err := tx.Raw(`SELECT sharing_enabled FROM `+"`Groups`"+` WHERE group_id = ?`, in.GroupID).Scan(&group).Error; err != nil {
 			return err
 		}
 		if !group.SharingEnabled {
@@ -122,7 +122,7 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 
 func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error) {
 	ti := &tables.Group{}
-	q := query_builder.NewQuery(`SELECT * FROM Groups as g JOIN Invocations as i ON g.group_id = i.group_id`)
+	q := query_builder.NewQuery(`SELECT * FROM ` + "`Groups`" + ` as g JOIN Invocations as i ON g.group_id = i.group_id`)
 	q = q.AddWhereClause(`i.invocation_id = ?`, invocationID)
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, d.env, q, "i"); err != nil {
 		return nil, err
