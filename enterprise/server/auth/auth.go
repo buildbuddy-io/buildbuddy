@@ -114,9 +114,6 @@ func (c *Claims) IsAdmin() bool {
 }
 
 func assembleJWT(ctx context.Context, userID, groupID string, allowedGroups []string) (string, error) {
-	if userID == "" {
-		return "", status.InternalError("JWT cannot have an empty user ID")
-	}
 	expirationTime := time.Now().Add(defaultBuildBuddyJWTDuration)
 	deadline, ok := ctx.Deadline()
 	if ok {
