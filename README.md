@@ -1,7 +1,7 @@
 <p align="center">
   <img width="40%" src="https://uploads-ssl.webflow.com/5eeba6a68ba54530ffd09006/5ef50dd56e5da25b1e65f1ad_header.png"><br/>
   <a href="https://buildbuddy.io">BuildBuddy</a> is an open source Bazel build event viewer, result store, and remote cache.<br/><br/>
-  <a href="https://github.com/buildbuddy-io/buildbuddy/blob/master/LICENSE"><img src="https://img.shields.io/badge/Licence-MIT-green.svg" /></a>
+  <a href="https://github.com/buildbuddy-io/buildbuddy/blob/master/LICENSE"><img src="https://img.shields.io/badge/Licence-MIT-brightgreen.svg" /></a>
   <a href="https://github.com/buildbuddy-io/buildbuddy/actions"><img src="https://img.shields.io/github/workflow/status/buildbuddy-io/buildbuddy/CI" /></a>
   <a href="https://github.com/buildbuddy-io/buildbuddy/releases"><img src="https://img.shields.io/github/v/release/buildbuddy-io/buildbuddy?color=brightgreen" /></a>
   <a href="https://slack.buildbuddy.io"><img src="https://img.shields.io/badge/slack-join-brightgreen" /></a>
