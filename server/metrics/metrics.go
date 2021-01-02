@@ -58,6 +58,9 @@ const (
 
 	/// HTTP response code: `200`, `302`, `401`, `404`, `500`, ...
 	HTTPResponseCodeLabel = "code"
+
+	/// Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ...
+	BazelCommand = "bazel_command"
 )
 
 const (
@@ -75,8 +78,8 @@ var (
 		Name:      "count",
 		Help:      "The total number of invocations whose logs were uploaded to BuildBuddy.",
 	}, []string{
-		// TODO: Slice on build vs. test?
 		InvocationStatusLabel,
+		BazelCommand,
 	})
 
 	/// #### Examples
@@ -98,8 +101,8 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "The total duration of each invocation, in **microseconds**.",
 	}, []string{
-		// TODO: Slice on build vs. test
 		InvocationStatusLabel,
+		BazelCommand,
 	})
 
 	/// #### Examples
