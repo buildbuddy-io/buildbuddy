@@ -20,11 +20,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+var (
+	cacheLabels = cache_metrics.MakeCacheLabels(cache_metrics.CloudCacheTier, "aws_s3")
 )
 
 // AWS stuff
@@ -193,10 +198,17 @@ func (s3c *S3Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	b, err := s3c.get(ctx, d, k)
+	timer.ObserveGet(len(b), err)
+	return b, err
+}
+
+func (s3c *S3Cache) get(ctx context.Context, d *repb.Digest, key string) ([]byte, error) {
 	buff := &aws.WriteAtBuffer{}
-	_, err = s3c.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
+	_, err := s3c.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
 		Bucket: s3c.bucket,
-		Key:    aws.String(k),
+		Key:    aws.String(key),
 	})
 	if isNotFoundErr(err) {
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
@@ -241,7 +253,9 @@ func (s3c *S3Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error 
 		Key:    aws.String(k),
 		Body:   bytes.NewReader(data),
 	}
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	_, err = s3c.uploader.UploadWithContext(ctx, uploadParams)
+	timer.ObserveSet(len(data), err)
 	return err
 }
 
@@ -269,20 +283,26 @@ func (s3c *S3Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	if err != nil {
 		return err
 	}
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	err = s3c.delete(ctx, k)
+	timer.ObserveDelete(err)
+	return err
+}
+
+func (s3c *S3Cache) delete(ctx context.Context, key string) error {
 	deleteParams := &s3.DeleteObjectInput{
 		Bucket: s3c.bucket,
-		Key:    aws.String(k),
+		Key:    aws.String(key),
 	}
 
 	if _, err := s3c.s3.DeleteObjectWithContext(ctx, deleteParams); err != nil {
 		return err
 	}
 
-	err = s3c.s3.WaitUntilObjectNotExistsWithContext(ctx, &s3.HeadObjectInput{
+	return s3c.s3.WaitUntilObjectNotExistsWithContext(ctx, &s3.HeadObjectInput{
 		Bucket: s3c.bucket,
-		Key:    aws.String(k),
+		Key:    aws.String(key),
 	})
-	return err
 }
 
 func (s3c *S3Cache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) bool {
@@ -310,9 +330,16 @@ func (s3c *S3Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) 
 	if err != nil {
 		return false, err
 	}
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	c, err := s3c.contains(ctx, k)
+	timer.ObserveContains(err)
+	return c, err
+}
+
+func (s3c *S3Cache) contains(ctx context.Context, key string) (bool, error) {
 	params := &s3.HeadObjectInput{
 		Bucket: s3c.bucket,
-		Key:    aws.String(k),
+		Key:    aws.String(key),
 	}
 
 	head, err := s3c.s3.HeadObjectWithContext(ctx, params)
@@ -322,7 +349,7 @@ func (s3c *S3Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) 
 		}
 		return false, err
 	}
-	return s3c.bumpTTLIfStale(ctx, k, *head.LastModified), nil
+	return s3c.bumpTTLIfStale(ctx, key, *head.LastModified), nil
 }
 
 func (s3c *S3Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
@@ -358,6 +385,8 @@ func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (i
 	if err != nil {
 		return nil, err
 	}
+	// TODO(bduffany): track this as a contains() request, or find a way to
+	// track it as part of the read
 	result, err := s3c.s3.GetObjectWithContext(ctx, &s3.GetObjectInput{
 		Bucket: s3c.bucket,
 		Key:    aws.String(k),
@@ -366,12 +395,15 @@ func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (i
 	if isNotFoundErr(err) {
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
-	return result.Body, err
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	return timer.NewInstrumentedReader(result.Body, d.GetSizeBytes()), err
 }
 
 type waitForUploadWriteCloser struct {
 	io.WriteCloser
 	finishedWrite chan struct{}
+	timer         *cache_metrics.CacheTimer
+	size          int64
 }
 
 func (w *waitForUploadWriteCloser) Close() error {
@@ -394,9 +426,12 @@ func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser,
 		Key:    aws.String(k),
 		Body:   r,
 	}
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	closer := &waitForUploadWriteCloser{
 		WriteCloser:   w,
 		finishedWrite: make(chan struct{}),
+		timer:         timer,
+		size:          d.GetSizeBytes(),
 	}
 	go func() {
 		if _, err = s3c.uploader.UploadWithContext(ctx, uploadParams); err != nil {

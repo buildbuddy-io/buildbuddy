@@ -13,6 +13,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
@@ -23,7 +24,11 @@ import (
 )
 
 const (
-	numRetries = 3
+	maxNumRetries = 3
+)
+
+var (
+	cacheLabels = cache_metrics.MakeCacheLabels(cache_metrics.CloudCacheTier, "gcs")
 )
 
 type GCSCache struct {
@@ -133,7 +138,12 @@ func (g *GCSCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 		}
 		return nil, err
 	}
-	return ioutil.ReadAll(reader)
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	b, err := ioutil.ReadAll(reader)
+	timer.ObserveGet(len(b), err)
+	// Note, if we decide to retry reads in the future, be sure to
+	// add a new metric for retry count.
+	return b, err
 }
 
 func (g *GCSCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
@@ -191,18 +201,22 @@ func (g *GCSCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 	if err != nil {
 		return err
 	}
-	for i := 0; i <= numRetries; i += 1 {
+	numAttempts := 0
+	for {
 		obj := g.bucketHandle.Object(k)
 		writer := obj.If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
 		setChunkSize(d, writer)
+		timer := cache_metrics.NewCacheTimer(cacheLabels)
 		if _, err = writer.Write(data); err == nil {
 			err = swallowGCSAlreadyExistsError(writer.Close())
 		}
-		if isRetryableGCSError(err) {
-			continue
+		timer.ObserveSet(len(data), err)
+		numAttempts++
+		if !isRetryableGCSError(err) || numAttempts > maxNumRetries {
+			break
 		}
-		break
 	}
+	cache_metrics.RecordSetRetries(cacheLabels, numAttempts-1)
 	return err
 }
 
@@ -230,7 +244,12 @@ func (g *GCSCache) Delete(ctx context.Context, d *repb.Digest) error {
 	if err != nil {
 		return err
 	}
-	return g.bucketHandle.Object(k).Delete(ctx)
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	err = g.bucketHandle.Object(k).Delete(ctx)
+	timer.ObserveDelete(err)
+	// Note, if we decide to retry deletions in the future, be sure to
+	// add a new metric for retry count.
+	return err
 }
 
 func (g *GCSCache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) bool {
@@ -254,8 +273,12 @@ func (g *GCSCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 		return false, err
 	}
 	finalErr := error(nil)
-	for i := 0; i <= numRetries; i += 1 {
+	numAttempts := 0
+	for {
+		timer := cache_metrics.NewCacheTimer(cacheLabels)
 		attrs, err := g.bucketHandle.Object(k).Attrs(ctx)
+		timer.ObserveContains(err)
+		numAttempts++
 		finalErr = err
 		if err == storage.ErrObjectNotExist {
 			return false, nil
@@ -267,6 +290,7 @@ func (g *GCSCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 		}
 		break
 	}
+	cache_metrics.RecordSetRetries(cacheLabels, numAttempts-1)
 	return false, finalErr
 }
 
@@ -310,7 +334,8 @@ func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io
 		}
 		return nil, err
 	}
-	return reader, nil
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	return timer.NewInstrumentedReader(reader, d.GetSizeBytes()), nil
 }
 
 func isRetryableGCSError(err error) bool {
@@ -331,15 +356,20 @@ func isRetryableGCSError(err error) bool {
 
 type gcsDedupingWriteCloser struct {
 	io.WriteCloser
+	timer *cache_metrics.CacheTimer
+	size  int64
 }
 
 func (wc *gcsDedupingWriteCloser) Write(in []byte) (int, error) {
 	n, err := wc.WriteCloser.Write(in)
 
-	for i := 0; isRetryableGCSError(err) && i < numRetries; i += 1 {
+	numRetries := 0
+	for isRetryableGCSError(err) && numRetries < maxNumRetries {
 		log.Printf("Retrying GCS write after error: %s", err.Error())
+		numRetries++
 		n, err = wc.WriteCloser.Write(in)
 	}
+	cache_metrics.RecordWriteRetries(cacheLabels, numRetries)
 
 	return n, err
 }
@@ -367,7 +397,12 @@ func (g *GCSCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, 
 	obj := g.bucketHandle.Object(k)
 	writer := obj.If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
 	setChunkSize(d, writer)
-	return &gcsDedupingWriteCloser{writer}, nil
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	return &gcsDedupingWriteCloser{
+		WriteCloser: writer,
+		timer:       timer,
+		size:        d.GetSizeBytes(),
+	}, nil
 }
 
 func (g *GCSCache) Start() error {

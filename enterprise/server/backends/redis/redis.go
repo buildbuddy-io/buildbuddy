@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -19,6 +20,10 @@ import (
 const (
 	mcCutoffSizeBytes = 512000000 - 1        // 512 MB
 	ttl               = 259200 * time.Second // 3 days
+)
+
+var (
+	cacheLabels = cache_metrics.MakeCacheLabels(cache_metrics.MemoryCacheTier, "redis")
 )
 
 func eligibleForCache(d *repb.Digest) bool {
@@ -115,7 +120,9 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	found, err := c.rdb.Expire(ctx, key, ttl).Result()
+	timer.ObserveContains(err)
 	return found, err
 }
 
@@ -161,7 +168,10 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 		return nil, err
 	}
 
-	return c.rdbGet(ctx, k)
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	b, err := c.rdbGet(ctx, k)
+	timer.ObserveGet(len(b), err)
+	return b, err
 }
 
 func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
@@ -202,7 +212,10 @@ func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 		return err
 	}
 
-	return c.rdbSet(ctx, k, data)
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	err = c.rdbSet(ctx, k, data)
+	timer.ObserveSet(len(data), err)
+	return err
 }
 
 func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
@@ -222,7 +235,10 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	if err != nil {
 		return err
 	}
-	return c.rdb.Del(ctx, k).Err()
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	err = c.rdb.Del(ctx, k).Err()
+	timer.ObserveDelete(err)
+	return err
 }
 
 func offsetLimReader(data []byte, offset, length int64) io.Reader {
@@ -254,17 +270,21 @@ func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Re
 	if length > 0 {
 		return io.LimitReader(r, length), nil
 	}
-	return r, nil
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	return timer.NewInstrumentedReader(r, length), nil
 }
 
 type closeFn func(b *bytes.Buffer) error
 type setOnClose struct {
 	*bytes.Buffer
-	c closeFn
+	timer *cache_metrics.CacheTimer
+	c     closeFn
 }
 
 func (d *setOnClose) Close() error {
-	return d.c(d.Buffer)
+	err := d.c(d.Buffer)
+	d.timer.ObserveWrite(int64(d.Buffer.Len()), err)
+	return err
 }
 
 func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {

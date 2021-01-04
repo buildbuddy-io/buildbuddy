@@ -59,6 +59,14 @@ const (
 	/// HTTP response code: `200`, `302`, `401`, `404`, `500`, ...
 	HTTPResponseCodeLabel = "code"
 
+	/// Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+	CacheBackendLabel = "backend"
+
+	/// Cache tier: `memory` or `cloud`. This label can be used to write Prometheus
+	/// queries that don't break if the cache backend is swapped out for
+	/// a different backend.
+	CacheTierLabel = "tier"
+
 	/// Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ...
 	BazelCommand = "bazel_command"
 )
@@ -664,5 +672,241 @@ var (
 		Help:      "The time spent handling each build event in **microseconds**.",
 	}, []string{
 		StatusLabel,
+	})
+
+	/// ### Cache
+	///
+	/// "Cache" refers to the cache backend(s) that BuildBuddy uses to
+	/// accelerate file IO operations, which are common in different
+	/// subsystems such as the remote cache and the fetch server (for
+	/// downloading invocation artifacts).
+	///
+	/// BuildBuddy can be configured to use multiple layers of caching
+	/// (an in-memory layer, coupled with a cloud storage layer).
+	///
+	/// #### `get` metrics
+	///
+	/// `get` metrics track non-streamed cache reads (all data is fetched
+	/// from the cache in a single request).
+
+	CacheGetCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "get_count",
+		Help:      "Number of cache get requests.",
+	}, []string{
+		StatusLabel,
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	CacheGetDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "get_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "The time spent retrieving each entry from the cache, in **microseconds**. This is recorded only for successful gets.",
+	}, []string{
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	CacheGetSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "get_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Size of each entry retrieved from the cache, in **bytes**. This is recorded only for successful gets.",
+	}, []string{
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	/// #### `read` metrics
+	///
+	/// `read` metrics track streamed cache reads.
+
+	CacheReadCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "read_count",
+		Help:      "Number of streamed cache reads started. This is incremented once for each started stream, **not** for each chunk in the stream.",
+	}, []string{
+		StatusLabel,
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	CacheReadDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "read_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "The total time spent for each read stream, in **microseconds**. This is recorded only for successful reads, and measures the entire read stream (not just individual chunks).",
+	}, []string{
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	CacheReadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "read_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Total size of each entry retrieved from the cache via streaming, in **bytes**. This is recorded only on success, and measures the entire stream (not just individual chunks).",
+	}, []string{
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	/// #### `set` metrics
+	///
+	/// `set` metrics track non-streamed cache writes (all data is wrtiten
+	/// in a single request).
+
+	CacheSetCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "set_count",
+		Help:      "Number of cache set requests.",
+	}, []string{
+		StatusLabel,
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	CacheSetDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "set_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "The time spent writing each entry to the cache, in **microseconds**. This is recorded only for successful sets.",
+	}, []string{
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	CacheSetSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "set_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Size of the value stored in each set operation, in **bytes**. This is recorded only for successful sets.",
+	}, []string{
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	CacheSetRetryCount = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "set_retries",
+		Buckets:   prometheus.LinearBuckets(0, 1, 10),
+		Help:      "Number of retries required to fulfill the set request (an observed value of 0 means the transfer succeeded on the first try).",
+	}, []string{
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	/// #### `write` metrics
+	///
+	/// `write` metrics track streamed cache writes.
+
+	CacheWriteCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "write_count",
+		Help:      "Number of streamed cache writes started. This is incremented once for each started stream, **not** for each chunk in the stream.",
+	}, []string{
+		StatusLabel,
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	CacheWriteDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "write_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "The time spent for each streamed write to the cache, in **microseconds**. This is recorded only on success, and measures the entire stream (not just individual chunks).",
+	}, []string{
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	CacheWriteSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "write_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Size of each entry written to the cache via streaming, in **bytes**. This is recorded only on success, and measures the entire stream (not just individual chunks).",
+	}, []string{
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	CacheWriteRetryCount = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "write_retries",
+		Buckets:   prometheus.LinearBuckets(0, 1, 10),
+		Help:      "Number of retries required to write each chunk in the stream (an observed value of 0 means the transfer succeeded on the first try).",
+	}, []string{
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	/// ### Other cache metrics
+
+	CacheDeleteCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "delete_count",
+		Help:      "Number of deletes from the cache.",
+	}, []string{
+		StatusLabel,
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	CacheDeleteDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "delete_duration_usec",
+		Help:      "Duration of each cache deletion, in **microseconds**.",
+	}, []string{
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	CacheContainsCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "contains_count",
+		Help:      "Number of `contains(key)` requests made to the cache.",
+	}, []string{
+		StatusLabel,
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	CacheContainsDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "contains_duration_usec",
+		Help:      "Duration of each each `contains(key)` request, in **microseconds**.",
+	}, []string{
+		CacheTierLabel,
+		CacheBackendLabel,
+	})
+
+	CacheContainsRetryCount = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cache",
+		Name:      "contains_retry_count",
+		Help:      "Number of retries required to fulfill each `contains(key)` request to the cache (an observed value of 0 means the request succeeded on the first try).",
+	}, []string{
+		CacheTierLabel,
+		CacheBackendLabel,
 	})
 )
