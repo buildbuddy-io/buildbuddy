@@ -66,6 +66,9 @@ const (
 	/// queries that don't break if the cache backend is swapped out for
 	/// a different backend.
 	CacheTierLabel = "tier"
+
+	/// Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ...
+	BazelCommand = "bazel_command"
 )
 
 const (
@@ -83,8 +86,8 @@ var (
 		Name:      "count",
 		Help:      "The total number of invocations whose logs were uploaded to BuildBuddy.",
 	}, []string{
-		// TODO: Slice on build vs. test?
 		InvocationStatusLabel,
+		BazelCommand,
 	})
 
 	/// #### Examples
@@ -106,8 +109,8 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "The total duration of each invocation, in **microseconds**.",
 	}, []string{
-		// TODO: Slice on build vs. test
 		InvocationStatusLabel,
+		BazelCommand,
 	})
 
 	/// #### Examples
@@ -260,6 +263,52 @@ var (
 	/// ```promql
 	/// # Median queue length across all executors
 	/// quantile(0.5, buildbuddy_remote_execution_queue_length)
+	/// ```
+
+	RemoteExecutionTasksExecuting = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "tasks_executing",
+		Help:      "Number of tasks currently being executed by the executor.",
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Fraction of idle executors
+	/// count_values(0, buildbuddy_remote_execution_tasks_executing)
+	///   /
+	/// count(buildbuddy_remote_execution_tasks_executing)
+	/// ```
+
+	RemoteExecutionAssignedRAMBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assigned_ram_bytes",
+		Help:      "Estimated RAM on the executor that is currently allocated for task execution, in **bytes**.",
+	})
+
+	RemoteExecutionAssignedMilliCPU = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assigned_milli_cpu",
+		Help:      "Estimated CPU time on the executor that is currently allocated for task execution, in Kubernetes milliCPU.",
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Average CPU allocated to tasks (average is computed across executor instances).
+	/// # `label_replace` is needed because we export k8s pod name as "pod_name" in Prometheus,
+	/// # while k8s exports it as "pod".
+	/// avg(
+	///   buildbuddy_remote_execution_used_milli_cpu
+	///     /
+	///	  on (pod_name) (label_replace(
+	///     kube_pod_container_resource_limits_cpu_cores{pod=~"executor-.*"},
+	///     "pod_name", "$1", "pod", "(.*)"
+	///   ) * 1000 * 0.6)
+	/// )
 	/// ```
 
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{

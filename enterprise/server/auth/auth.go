@@ -314,11 +314,11 @@ func (a *OpenIDAuthenticator) lookupUserFromSubID(subID string) (*tables.User, e
 	}
 	user := &tables.User{}
 	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
-		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ?`, subID)
+		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC LIMIT 1`, subID)
 		if err := userRow.Scan(user).Error; err != nil {
 			return err
 		}
-		groupRows, err := tx.Raw(`SELECT g.* FROM Groups as g JOIN UserGroups as ug
+		groupRows, err := tx.Raw(`SELECT g.* FROM `+"`Groups`"+` as g JOIN UserGroups as ug
                                           ON g.group_id = ug.group_group_id
                                           WHERE ug.user_user_id = ?`, user.UserID).Rows()
 		if err != nil {
@@ -345,7 +345,7 @@ func (a *OpenIDAuthenticator) lookupGroupFromAPIKey(apiKey string) (*tables.Grou
 	tg := &tables.Group{}
 	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
 		existingRow := tx.Raw(`
-			SELECT g.* FROM Groups AS g, APIKeys AS ak
+			SELECT g.* FROM `+"`Groups`"+` AS g, APIKeys AS ak
 			WHERE g.group_id = ak.group_id AND ak.value = ?`,
 			apiKey)
 		return existingRow.Scan(tg).Error
@@ -366,7 +366,7 @@ func (a *OpenIDAuthenticator) lookupGroupFromBasicAuth(login, pass string) (*tab
 	}
 	tg := &tables.Group{}
 	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
-		existingRow := tx.Raw(`SELECT * FROM Groups as g
+		existingRow := tx.Raw(`SELECT * FROM `+"`Groups`"+` as g
                                        WHERE g.group_id = ? AND g.write_token = ?`, login, pass)
 		return existingRow.Scan(tg).Error
 	})

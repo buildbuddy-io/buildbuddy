@@ -181,9 +181,11 @@ func recordInvocationMetrics(ti *tables.Invocation) {
 	statusLabel := invocationStatusLabel(ti)
 	metrics.InvocationCount.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,
+		metrics.BazelCommand:          ti.Command,
 	}).Inc()
 	metrics.InvocationDurationUs.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,
+		metrics.BazelCommand:          ti.Command,
 	}).Observe(float64(ti.DurationUsec))
 }
 

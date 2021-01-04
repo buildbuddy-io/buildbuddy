@@ -215,7 +215,7 @@ func (c *GithubClient) populateTokenIfNecessary(ctx context.Context) error {
 	}
 
 	var group tables.Group
-	err = dbHandle.Raw("SELECT github_token FROM Groups WHERE group_id = ?",
+	err = dbHandle.Raw(`SELECT github_token FROM `+"`Groups`"+` WHERE group_id = ?`,
 		userInfo.GetGroupID()).First(&group).Error
 	if err != nil {
 		return err
