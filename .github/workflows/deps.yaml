@@ -34,8 +34,9 @@ jobs:
         git commit -m "Update OSS commit SHA" -a
 
     - name: Push changes
-      uses: ad-m/github-push-action@master
+      uses: ad-m/github-push-action@v0.6.0
       with:
         directory: ../buildbuddy-internal
         repository: buildbuddy-io/buildbuddy-internal
         github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+        branch: master
