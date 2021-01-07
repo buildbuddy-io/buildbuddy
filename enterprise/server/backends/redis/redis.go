@@ -298,6 +298,7 @@ func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, err
 	var buffer bytes.Buffer
 	return &setOnClose{
 		Buffer: &buffer,
+		timer:  cache_metrics.NewCacheTimer(cacheLabels),
 		c: func(b *bytes.Buffer) error {
 			// Locking and key prefixing are handled in Set.
 			return c.rdbSet(ctx, k, b.Bytes())
