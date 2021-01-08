@@ -29,5 +29,13 @@ func (ctx disconnectedContext) Value(key interface{}) interface{} {
 // to make a copy of your expired context and do your cleanup work.
 func ExtendContextForFinalization(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	ctx := disconnectedContext{parent: parent}
+	// If the original context already had a deadline, ensure that the given timeout
+	// doesn't result in a new deadline that's even shorter.
+	if originalDeadline, ok := parent.Deadline(); ok {
+		remainingTime := originalDeadline.Sub(time.Now())
+		if remainingTime > timeout {
+			timeout = remainingTime
+		}
+	}
 	return context.WithTimeout(ctx, timeout)
 }
