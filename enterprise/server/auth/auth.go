@@ -235,6 +235,7 @@ func (a *authenticator) verifyTokenAndExtractUser(ctx context.Context, jwt strin
 
 type OpenIDAuthenticator struct {
 	env            environment.Env
+	myURL          *url.URL
 	authenticators []*authenticator
 }
 
@@ -248,7 +249,11 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAu
 		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
 	}
 
-	myURL, err := url.Parse(env.GetConfigurator().GetAppBuildBuddyURL())
+	configuredAppURL := env.GetConfigurator().GetAppBuildBuddyURL()
+	if configuredAppURL == "" {
+		return nil, status.FailedPreconditionError("The app build buddy URL is unset: auth redirects cannot be configured.")
+	}
+	myURL, err := url.Parse(configuredAppURL)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +261,7 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAu
 	if err != nil {
 		return nil, err
 	}
-
+	oia.myURL = myURL
 	oia.authenticators = make([]*authenticator, 0)
 	for _, authConfig := range authConfigs {
 		provider, err := oidc.NewProvider(ctx, authConfig.IssuerURL)
@@ -289,7 +294,7 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAu
 	return oia, nil
 }
 
-func sameHost(urlStringA, urlStringB string) bool {
+func sameHostname(urlStringA, urlStringB string) bool {
 	if urlA, err := url.Parse(urlStringA); err == nil {
 		if urlB, err := url.Parse(urlStringB); err == nil {
 			return urlA.Hostname() == urlB.Hostname()
@@ -298,9 +303,16 @@ func sameHost(urlStringA, urlStringB string) bool {
 	return false
 }
 
+func (a *OpenIDAuthenticator) validateRedirectURL(redirectURL string) error {
+	if !sameHostname(redirectURL, a.myURL.String()) {
+		return status.FailedPreconditionErrorf("Redirect url %q was not on this domain %q!", redirectURL, a.myURL.Host)
+	}
+	return nil
+}
+
 func (a *OpenIDAuthenticator) getAuthConfig(issuer string) *authenticator {
 	for _, a := range a.authenticators {
-		if sameHost(a.issuer, issuer) {
+		if sameHostname(a.issuer, issuer) {
 			return a
 		}
 	}
@@ -633,9 +645,15 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	state := fmt.Sprintf("%d", random.RandUint64())
 	setCookie(w, stateCookie, state, time.Now().Add(tempCookieDuration))
 
+	redirectURL := r.URL.Query().Get(authRedirectParam)
+	if err := a.validateRedirectURL(redirectURL); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
 	// Set the redirection URL in a cookie so we can use it after validating
 	// the user in our /auth callback.
-	setCookie(w, redirCookie, r.URL.Query().Get(authRedirectParam), time.Now().Add(tempCookieDuration))
+	setCookie(w, redirCookie, redirectURL, time.Now().Add(tempCookieDuration))
 
 	// Set the issuer cookie so we remember which issuer to use when exchanging
 	// a token later in our /auth callback.
