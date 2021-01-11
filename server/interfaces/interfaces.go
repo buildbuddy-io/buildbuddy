@@ -225,6 +225,46 @@ type ExecutionService interface {
 	GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error)
 }
 
+// CommandRunner executes commands. Implementations should run untrusted commands
+// in sandboxed environments.
+type CommandRunner interface {
+	// Run the given command.
+	Run(ctx context.Context, command *repb.Command, workingDir string) *CommandResult
+}
+
+// CommandResult captures the output and details of an executed command.
+type CommandResult struct {
+	// ExitCode is one of the following:
+	// * The exit code returned by the executed command
+	// * -1 if the process was killed or did not exit
+	// * -2 (NoExitCode) if the exit code could not be determined because it returned
+	//   an error other than exec.ExitError. This case typically means it failed to start.
+	ExitCode int
+	// Error is populated only if the command was unable to be started, or if it was
+	// started but never completed.
+	//
+	// In particular, if the command runs and returns a non-zero exit code (such as 1),
+	// this is considered a successful execution, and this error will NOT be populated.
+	//
+	// In some cases, the command may have failed to start due to an issue with the
+	// CommandRunner itself. For example, the runner may execute the command in a
+	// sandboxed environment but fail to create the sandbox. In these cases, the
+	// Error field here should be populated with a gRPC error code indicating why the
+	// command failed to start, and the ExitCode field should contain the exit code
+	// from the sandboxing process, rather than the command itself.
+	//
+	// If the call to `exec.Cmd#Run` returned -1, meaning that the command was killed or
+	// never exited, this field should be populated with a gRPC error code indicating the
+	// reason, such as DEADLINE_EXCEEDED (if the command times out), UNAVAILABLE (if
+	// there is a transient error that can be retried), or RESOURCE_EXHAUSTED (if the
+	// command ran out of memory while executing).
+	Error error
+	// Stdout from the command. This may contain data even if there was an Error.
+	Stdout []byte
+	// Stderr from the command. This may contain data even if there was an Error.
+	Stderr []byte
+}
+
 type Subscriber interface {
 	Close() error
 	Chan() <-chan string
