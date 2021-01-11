@@ -160,6 +160,26 @@ Number of actions currently waiting in the executor queue.
 <div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Median queue length across all executors</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">quantile</span><span style="color: #f92672">(</span><span style="color: #ae81ff">0.5</span><span style="color: #f8f8f2">, buildbuddy_remote_execution_queue_length</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br></code></pre></div>
 
 
+### **`buildbuddy_remote_execution_tasks_executing`** (Gauge)
+
+Number of tasks currently being executed by the executor.
+#### Examples
+
+<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Fraction of idle executors</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">count_values</span><span style="color: #f92672">(</span><span style="color: #ae81ff">0</span><span style="color: #f8f8f2">, buildbuddy_remote_execution_tasks_executing</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  </span><span style="color: #f92672">/</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">count</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_remote_execution_tasks_executing</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br></code></pre></div>
+
+
+### **`buildbuddy_remote_execution_assigned_ram_bytes`** (Gauge)
+
+Estimated RAM on the executor that is currently allocated for task execution, in **bytes**.
+
+### **`buildbuddy_remote_execution_assigned_milli_cpu`** (Gauge)
+
+Estimated CPU time on the executor that is currently allocated for task execution, in Kubernetes milliCPU.
+#### Examples
+
+<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Average CPU allocated to tasks (average is computed across executor instances).</span><span style="color: #f8f8f2"></span><br><span style="color: #75715e"># `label_replace` is needed because we export k8s pod name as &quot;pod_name&quot; in Prometheus,</span><span style="color: #f8f8f2"></span><br><span style="color: #75715e"># while k8s exports it as &quot;pod&quot;.</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">avg</span><span style="color: #f92672">(</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  buildbuddy_remote_execution_used_milli_cpu</span><br><span style="color: #f8f8f2">    </span><span style="color: #f92672">/</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  </span><span style="color: #66d9ef">on</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #f8f8f2">pod_name</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #66d9ef">label_replace</span><span style="color: #f92672">(</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">    kube_pod_container_resource_limits_cpu_cores{pod</span><span style="color: #f92672">=~</span><span style="color: #f8f8f2">&quot;</span><span style="color: #e6db74">executor-.*</span><span style="color: #f8f8f2">&quot;},</span><br><span style="color: #f8f8f2">    &quot;</span><span style="color: #e6db74">pod_name</span><span style="color: #f8f8f2">&quot;, &quot;</span><span style="color: #e6db74">$1</span><span style="color: #f8f8f2">&quot;, &quot;</span><span style="color: #e6db74">pod</span><span style="color: #f8f8f2">&quot;, &quot;</span><span style="color: #e6db74">(.*)</span><span style="color: #f8f8f2">&quot;</span><br><span style="color: #f8f8f2">  </span><span style="color: #f92672">)</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">*</span><span style="color: #f8f8f2"> </span><span style="color: #ae81ff">1000</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">*</span><span style="color: #f8f8f2"> </span><span style="color: #ae81ff">0.6</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br></code></pre></div>
+
+
 ### **`buildbuddy_remote_execution_file_download_count`** (Histogram)
 
 Number of files downloaded during remote execution.
@@ -440,4 +460,245 @@ The time spent handling each build event in **microseconds**.
 #### Labels
 
 - **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+
+### Cache
+
+"Cache" refers to the cache backend(s) that BuildBuddy uses to
+accelerate file IO operations, which are common in different
+subsystems such as the remote cache and the fetch server (for
+downloading invocation artifacts).
+
+BuildBuddy can be configured to use multiple layers of caching
+(an in-memory layer, coupled with a cloud storage layer).
+
+#### `get` metrics
+
+`get` metrics track non-streamed cache reads (all data is fetched
+from the cache in a single request).
+
+### **`buildbuddy_cache_get_count`** (Counter)
+
+Number of cache get requests.
+
+#### Labels
+
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+
+### **`buildbuddy_cache_get_duration_usec`** (Histogram)
+
+The time spent retrieving each entry from the cache, in **microseconds**.
+
+This is recorded only for successful gets.
+
+#### Labels
+
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+
+### **`buildbuddy_cache_get_size_bytes`** (Histogram)
+
+Size of each entry retrieved from the cache, in **bytes**.
+
+This is recorded only for successful gets.
+
+#### Labels
+
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+#### `read` metrics
+
+`read` metrics track streamed cache reads.
+
+### **`buildbuddy_cache_read_count`** (Counter)
+
+Number of streamed cache reads started.
+
+This is incremented once for each started stream, **not** for each chunk in the stream.
+
+#### Labels
+
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+
+### **`buildbuddy_cache_read_duration_usec`** (Histogram)
+
+The total time spent for each read stream, in **microseconds**.
+
+This is recorded only for successful reads, and measures the entire read stream (not just individual chunks).
+
+#### Labels
+
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+
+### **`buildbuddy_cache_read_size_bytes`** (Histogram)
+
+Total size of each entry retrieved from the cache via streaming, in **bytes**.
+
+This is recorded only on success, and measures the entire stream (not just individual chunks).
+
+#### Labels
+
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+#### `set` metrics
+
+`set` metrics track non-streamed cache writes (all data is wrtiten
+in a single request).
+
+### **`buildbuddy_cache_set_count`** (Counter)
+
+Number of cache set requests.
+
+#### Labels
+
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+
+### **`buildbuddy_cache_set_duration_usec`** (Histogram)
+
+The time spent writing each entry to the cache, in **microseconds**.
+
+This is recorded only for successful sets.
+
+#### Labels
+
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+
+### **`buildbuddy_cache_set_size_bytes`** (Histogram)
+
+Size of the value stored in each set operation, in **bytes**.
+
+This is recorded only for successful sets.
+
+#### Labels
+
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+
+### **`buildbuddy_cache_set_retries`** (Histogram)
+
+Number of retries required to fulfill the set request (an observed value of 0 means the transfer succeeded on the first try).
+
+#### Labels
+
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+#### `write` metrics
+
+`write` metrics track streamed cache writes.
+
+### **`buildbuddy_cache_write_count`** (Counter)
+
+Number of streamed cache writes started.
+
+This is incremented once for each started stream, **not** for each chunk in the stream.
+
+#### Labels
+
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+
+### **`buildbuddy_cache_write_duration_usec`** (Histogram)
+
+The time spent for each streamed write to the cache, in **microseconds**.
+
+This is recorded only on success, and measures the entire stream (not just individual chunks).
+
+#### Labels
+
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+
+### **`buildbuddy_cache_write_size_bytes`** (Histogram)
+
+Size of each entry written to the cache via streaming, in **bytes**.
+
+This is recorded only on success, and measures the entire stream (not just individual chunks).
+
+#### Labels
+
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+
+### **`buildbuddy_cache_write_retries`** (Histogram)
+
+Number of retries required to write each chunk in the stream (an observed value of 0 means the transfer succeeded on the first try).
+
+#### Labels
+
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+### Other cache metrics
+
+### **`buildbuddy_cache_delete_count`** (Counter)
+
+Number of deletes from the cache.
+
+#### Labels
+
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+
+### **`buildbuddy_cache_delete_duration_usec`** (Histogram)
+
+Duration of each cache deletion, in **microseconds**.
+
+#### Labels
+
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+
+### **`buildbuddy_cache_contains_count`** (Counter)
+
+Number of `contains(key)` requests made to the cache.
+
+#### Labels
+
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+
+### **`buildbuddy_cache_contains_duration_usec`** (Histogram)
+
+Duration of each each `contains(key)` request, in **microseconds**.
+
+#### Labels
+
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+
+### **`buildbuddy_cache_contains_retry_count`** (Histogram)
+
+Number of retries required to fulfill each `contains(key)` request to the cache (an observed value of 0 means the request succeeded on the first try).
+
+#### Labels
+
+- **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
+- **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 
