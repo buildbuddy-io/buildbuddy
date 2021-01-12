@@ -249,11 +249,7 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAu
 		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
 	}
 
-	configuredAppURL := env.GetConfigurator().GetAppBuildBuddyURL()
-	if configuredAppURL == "" {
-		return nil, status.FailedPreconditionError("The app build buddy URL is unset: auth redirects cannot be configured.")
-	}
-	myURL, err := url.Parse(configuredAppURL)
+	myURL, err := url.Parse(env.GetConfigurator().GetAppBuildBuddyURL())
 	if err != nil {
 		return nil, err
 	}
@@ -304,6 +300,10 @@ func sameHostname(urlStringA, urlStringB string) bool {
 }
 
 func (a *OpenIDAuthenticator) validateRedirectURL(redirectURL string) error {
+	if a.myURL.Host == "" {
+		return status.FailedPreconditionError("You must specify a build_buddy_url in your config to enable authentication. For more information, see: https://www.buildbuddy.io/docs/config-app")
+	}
+
 	if !sameHostname(redirectURL, a.myURL.String()) {
 		return status.FailedPreconditionErrorf("Redirect url %q was not on this domain %q!", redirectURL, a.myURL.Host)
 	}
