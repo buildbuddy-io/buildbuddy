@@ -251,6 +251,40 @@ var (
 	/// sum(rate(buildbuddy_remote_execution_count[5m]))
 	/// ```
 
+	RemoteExecutionQueueDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "queue_duration_usec",
+		Help:      "Time each action spends waiting in the queue, in **microseconds**.",
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median action queue duration
+	/// histogram_quantile(
+	///	  0.5,
+	///   sum(rate(buildbuddy_remote_execution_queue_duration_usec_bucket[5m])) by (le)
+	/// )
+	/// ```
+
+	RemoteExecutionCommandDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "command_duration_usec",
+		Help:      "Time spent executing the command in each action, in **microseconds**.",
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median command duration
+	/// histogram_quantile(
+	///	  0.5,
+	///   sum(rate(buildbuddy_remote_execution_command_duration_usec_bucket[5m])) by (le)
+	/// )
+	/// ```
+
 	RemoteExecutionQueueLength = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
