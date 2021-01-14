@@ -794,6 +794,9 @@ message Digest {
 }
 
 // ExecutedActionMetadata contains details about a completed execution.
+//
+// Any null timestamps for an execution stage indicate that the stage
+// did not apply to the execution.
 message ExecutedActionMetadata {
   // The name of the worker which ran the execution.
   string worker = 1;
@@ -806,6 +809,12 @@ message ExecutedActionMetadata {
 
   // When the worker completed the action, including all stages.
   google.protobuf.Timestamp worker_completed_timestamp = 4;
+
+  // When the worker started checking the cache for the action result.
+  google.protobuf.Timestamp cache_check_start_timestamp = 11;
+
+  // When the worker finished checking the cache for the action result.
+  google.protobuf.Timestamp cache_check_completed_timestamp = 12;
 
   // When the worker started fetching action inputs.
   google.protobuf.Timestamp input_fetch_start_timestamp = 5;

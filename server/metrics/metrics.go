@@ -72,8 +72,8 @@ const (
 
 	/// Command execution phase. Execution is split into the following parts: `queue`: the command
 	/// waits to be executed; `cache_check`: the executor checks whether the action result is cached;
-	/// `download`: the executor downloads action inputs; `execute`: the executor runs the command;
-	/// `upload`: the executor uploads the command's results.
+	/// `download_inputs`: the executor downloads action inputs; `execute`: the executor runs the command;
+	/// `upload_results`: the executor uploads the action's result and outputs.
 	CommandPhaseLabel = "phase"
 )
 
