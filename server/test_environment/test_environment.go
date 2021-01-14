@@ -28,7 +28,13 @@ cache:
   max_size_bytes: 1000000000  # 1 GB
   #in_memory: true
   disk:
-    root_directory: /tmp/buildbuddy_cache`
+    root_directory: /tmp/buildbuddy_cache
+executor:
+  root_directory: "/tmp/remote_build"
+  app_target: "grpc://localhost:1985"
+  local_cache_directory: "/tmp/filecache"
+  local_cache_size_bytes: 1000000000  # 1GB
+`
 
 type TestEnv struct {
 	*real_environment.RealEnv
