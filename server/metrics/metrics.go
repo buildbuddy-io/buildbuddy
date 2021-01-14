@@ -259,16 +259,6 @@ var (
 	/// sum(rate(buildbuddy_remote_execution_count[5m]))
 	/// ```
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Median action queue duration
-	/// histogram_quantile(
-	///	  0.5,
-	///   sum(rate(buildbuddy_remote_execution_queue_duration_usec_bucket[5m])) by (le)
-	/// )
-	/// ```
-
 	RemoteExecutionExecutedActionMetadataDurationsUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
@@ -281,16 +271,16 @@ var (
 	/// #### Examples
 	///
 	/// ```promql
-	/// # Median duration of all command phases
+	/// # Median duration of all command stages
 	/// histogram_quantile(
 	///	  0.5,
-	///   sum(rate(buildbuddy_remote_execution_command_phase_duration_usec_bucket[5m])) by (le, phase)
+	///   sum(rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket[5m])) by (le, stage)
 	/// )
 	///
-	/// # p90 duration of just the command execution phase
+	/// # p90 duration of just the command execution stage
 	/// histogram_quantile(
 	///	  0.9,
-	///   sum(rate(buildbuddy_remote_execution_command_phase_duration_usec_bucket{phase="execute"}[5m])) by (le)
+	///   sum(rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{stage="execution"}[5m])) by (le)
 	/// )
 	/// ```
 
