@@ -69,6 +69,12 @@ const (
 
 	/// Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ...
 	BazelCommand = "bazel_command"
+
+	/// Command execution phase. Execution is split into the following parts: `queue`: the command
+	/// waits to be executed; `cache_check`: the executor checks whether the action result is cached;
+	/// `download`: the executor downloads action inputs; `execute`: the executor runs the command;
+	/// `upload`: the executor uploads the command's results.
+	CommandPhaseLabel = "phase"
 )
 
 const (
@@ -251,13 +257,6 @@ var (
 	/// sum(rate(buildbuddy_remote_execution_count[5m]))
 	/// ```
 
-	RemoteExecutionQueueDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "remote_execution",
-		Name:      "queue_duration_usec",
-		Help:      "Time each action spends waiting in the queue, in **microseconds**.",
-	})
-
 	/// #### Examples
 	///
 	/// ```promql
@@ -268,20 +267,28 @@ var (
 	/// )
 	/// ```
 
-	RemoteExecutionCommandDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+	RemoteExecutionCommandPhaseDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
-		Name:      "command_duration_usec",
-		Help:      "Time spent executing the command in each action, in **microseconds**.",
+		Name:      "command_phase_duration_usec",
+		Help:      "Time spent in each phase of command execution, in **microseconds**. Queries should either filter or group by the `phase` label.",
+	}, []string{
+		CommandPhaseLabel,
 	})
 
 	/// #### Examples
 	///
 	/// ```promql
-	/// # Median command duration
+	/// # Median duration of all command phases
 	/// histogram_quantile(
 	///	  0.5,
-	///   sum(rate(buildbuddy_remote_execution_command_duration_usec_bucket[5m])) by (le)
+	///   sum(rate(buildbuddy_remote_execution_command_phase_duration_usec_bucket[5m])) by (le, phase)
+	/// )
+	///
+	/// # p90 duration of just the command execution phase
+	/// histogram_quantile(
+	///	  0.9,
+	///   sum(rate(buildbuddy_remote_execution_command_phase_duration_usec_bucket{phase="execute"}[5m])) by (le)
 	/// )
 	/// ```
 
