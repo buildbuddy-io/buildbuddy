@@ -70,11 +70,13 @@ const (
 	/// Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ...
 	BazelCommand = "bazel_command"
 
-	/// Command execution phase. Execution is split into the following parts: `queue`: the command
-	/// waits to be executed; `cache_check`: the executor checks whether the action result is cached;
-	/// `download_inputs`: the executor downloads action inputs; `execute`: the executor runs the command;
-	/// `upload_results`: the executor uploads the action's result and outputs.
-	CommandPhaseLabel = "phase"
+	/// Executed action stage. Action execution is split into stages corresponding to
+	/// the timestamps defined in
+	/// [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797):
+	/// `queued`, `input_fetch`, `execution`, and `output_upload`. An additional stage,
+	/// `worker`, includes all stages during which a worker is handling the action,
+	/// which is all stages except the `queued` stage.
+	ExecutedActionStageLabel = "stage"
 )
 
 const (
@@ -267,13 +269,13 @@ var (
 	/// )
 	/// ```
 
-	RemoteExecutionCommandPhaseDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	RemoteExecutionExecutedActionMetadataDurationsUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
-		Name:      "command_phase_duration_usec",
-		Help:      "Time spent in each phase of command execution, in **microseconds**. Queries should either filter or group by the `phase` label.",
+		Name:      "executed_action_metadata_durations_usec",
+		Help:      "Time spent in each stage of action execution, in **microseconds**. Queries should filter or group by the `stage` label, taking care not to aggregate different stages.",
 	}, []string{
-		CommandPhaseLabel,
+		ExecutedActionStageLabel,
 	})
 
 	/// #### Examples
