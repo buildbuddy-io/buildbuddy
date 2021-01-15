@@ -69,6 +69,14 @@ const (
 
 	/// Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ...
 	BazelCommand = "bazel_command"
+
+	/// Executed action stage. Action execution is split into stages corresponding to
+	/// the timestamps defined in
+	/// [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797):
+	/// `queued`, `input_fetch`, `execution`, and `output_upload`. An additional stage,
+	/// `worker`, includes all stages during which a worker is handling the action,
+	/// which is all stages except the `queued` stage.
+	ExecutedActionStageLabel = "stage"
 )
 
 const (
@@ -249,6 +257,31 @@ var (
 	/// ```promql
 	/// # Total number of actions executed per second
 	/// sum(rate(buildbuddy_remote_execution_count[5m]))
+	/// ```
+
+	RemoteExecutionExecutedActionMetadataDurationsUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "executed_action_metadata_durations_usec",
+		Help:      "Time spent in each stage of action execution, in **microseconds**. Queries should filter or group by the `stage` label, taking care not to aggregate different stages.",
+	}, []string{
+		ExecutedActionStageLabel,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Median duration of all command stages
+	/// histogram_quantile(
+	///	  0.5,
+	///   sum(rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket[5m])) by (le, stage)
+	/// )
+	///
+	/// # p90 duration of just the command execution stage
+	/// histogram_quantile(
+	///	  0.9,
+	///   sum(rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{stage="execution"}[5m])) by (le)
+	/// )
 	/// ```
 
 	RemoteExecutionQueueLength = promauto.NewGauge(prometheus.GaugeOpts{
