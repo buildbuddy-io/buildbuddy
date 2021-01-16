@@ -19,22 +19,27 @@ http_archive(
 
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "86c6d481b3f7aedc1d60c1c211c6f76da282ae197c3b3160f54bd3a8f847896f",
+    # TODO: Remove this patch once github.com/bazelbuild/bazel-gazelle/pull/979 is released.
+    patches = ["//patches:bazel_gazelle_pr_979.patch"],
+    sha256 = "222e49f034ca7a1d1231422cdb67066b885819885c356673cb1f72f748a3c9d4",
     urls = [
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.19.1/bazel-gazelle-v0.19.1.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.22.3/bazel-gazelle-v0.22.3.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.22.3/bazel-gazelle-v0.22.3.tar.gz",
     ],
 )
 
-load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
-
-go_download_sdk(
-    name = "go_sdk",
-    version = "1.15",
-)
+load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
 
 go_rules_dependencies()
 
 go_register_toolchains(nogo = "@//:vet")
+
+load(":deps.bzl", "install_buildbuddy_dependencies")
+
+# Install gazelle dependencies after ours so that our go module versions take precedence.
+
+# gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
+install_buildbuddy_dependencies()
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
 
@@ -129,11 +134,6 @@ http_archive(
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
 
 protobuf_deps()
-
-load(":deps.bzl", "install_buildbuddy_dependencies")
-
-# gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
-install_buildbuddy_dependencies()
 
 load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
 
