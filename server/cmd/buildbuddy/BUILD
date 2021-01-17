@@ -59,7 +59,5 @@ go_library(
         "//server/telemetry:go_default_library",
         "//server/util/healthcheck:go_default_library",
         "//server/version:go_default_library",
-        # DO NOT MERGE
-        "@com_github_containerd_containerd//:go_default_library",
     ],
 )
