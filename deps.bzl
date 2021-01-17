@@ -1437,30 +1437,6 @@ def install_buildbuddy_dependencies():
         version = "v2.2.0+incompatible",
     )
     go_repository(
-        name = "org_uber_go_atomic",
-        importpath = "go.uber.org/atomic",
-        sum = "h1:OI5t8sDa1Or+q8AeE+yKeB/SDYioSHAgcVljj9JIETY=",
-        version = "v1.5.0",
-    )
-    go_repository(
-        name = "org_uber_go_config",
-        importpath = "go.uber.org/config",
-        sum = "h1:upnMPpMm6WlbZtXoasNkK4f0FhxwS+W4Iqz5oNznehQ=",
-        version = "v1.4.0",
-    )
-    go_repository(
-        name = "org_uber_go_multierr",
-        importpath = "go.uber.org/multierr",
-        sum = "h1:f3WCSC2KzAcBXGATIxAB1E2XuCpNU255wNKZ505qi3E=",
-        version = "v1.4.0",
-    )
-    go_repository(
-        name = "org_uber_go_tools",
-        importpath = "go.uber.org/tools",
-        sum = "h1:0mgffUl7nfd+FpvXMVz4IDEaUSmT1ysygQC7qYo7sG4=",
-        version = "v0.0.0-20190618225709-2cfd321de3ee",
-    )
-    go_repository(
         name = "com_github_miracl_conflate",
         importpath = "github.com/miracl/conflate",
         sum = "h1:QlB+Hjh8vnPIjimCK2VKEvtLVxVGIVxNQ4K95JRpi90=",
