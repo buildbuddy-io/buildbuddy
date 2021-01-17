@@ -90,8 +90,7 @@ type Opt func(*TestEnv) error
 func GetTestEnv(opts ...Opt) (*TestEnv, error) {
 	te := &TestEnv{yamlConfigs: [][]byte{[]byte(testConfigFileContents)}}
 	for _, opt := range opts {
-		err := opt(te)
-		if err != nil {
+		if err := opt(te); err != nil {
 			return nil, err
 		}
 	}
