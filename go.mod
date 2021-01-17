@@ -55,6 +55,7 @@ require (
 	github.com/lib/pq v1.5.2 // indirect
 	github.com/lyft/protoc-gen-star v0.4.14 // indirect
 	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
+	github.com/miracl/conflate v1.2.1 // indirect
 	github.com/nbutton23/zxcvbn-go v0.0.0-20180912185939-ae427f1e4c1d // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/opencontainers/image-spec v1.0.1 // indirect

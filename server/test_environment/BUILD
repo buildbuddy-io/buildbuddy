@@ -10,6 +10,7 @@ go_library(
         "//server/config:go_default_library",
         "//server/real_environment:go_default_library",
         "//server/util/healthcheck:go_default_library",
+        "@com_github_miracl_conflate//:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//test/bufconn:go_default_library",
     ],
