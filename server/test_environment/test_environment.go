@@ -11,13 +11,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
-	"github.com/miracl/conflate"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
 )
 
-const testConfigFileContents = `
+const testConfigFileContents string = `
 app:
   build_buddy_url: "http://localhost:8080"
 database:
@@ -39,8 +38,7 @@ executor:
 
 type TestEnv struct {
 	*real_environment.RealEnv
-	lis         *bufconn.Listener
-	yamlConfigs [][]byte
+	lis *bufconn.Listener
 }
 
 func (te *TestEnv) bufDialer(context.Context, string) (net.Conn, error) {
@@ -62,40 +60,19 @@ func (te *TestEnv) LocalGRPCConn(ctx context.Context) (*grpc.ClientConn, error) 
 	return grpc.DialContext(ctx, "bufnet", grpc.WithContextDialer(te.bufDialer), grpc.WithInsecure())
 }
 
-func (te *TestEnv) writeTmpConfigFile() (string, error) {
-	configs := make([][]byte, 0, len(te.yamlConfigs))
-	for _, yaml := range te.yamlConfigs {
-		configs = append(configs, []byte(yaml))
-	}
-	c, err := conflate.FromData(configs...)
-	if err != nil {
-		return "", err
-	}
-	yaml, err := c.MarshalYAML()
-	if err != nil {
-		return "", err
-	}
+func writeTmpConfigFile() (string, error) {
 	tmpFile, err := ioutil.TempFile(os.TempDir(), "config-*.yaml")
 	if err != nil {
 		return "", err
 	}
-	if _, err := tmpFile.Write(yaml); err != nil {
+	if _, err := tmpFile.Write([]byte(testConfigFileContents)); err != nil {
 		return "", err
 	}
 	return tmpFile.Name(), nil
 }
 
-type Opt func(*TestEnv) error
-
-func GetTestEnv(opts ...Opt) (*TestEnv, error) {
-	te := &TestEnv{yamlConfigs: [][]byte{[]byte(testConfigFileContents)}}
-	for _, opt := range opts {
-		if err := opt(te); err != nil {
-			return nil, err
-		}
-	}
-
-	tmpConfigFile, err := te.writeTmpConfigFile()
+func GetTestEnv() (*TestEnv, error) {
+	tmpConfigFile, err := writeTmpConfigFile()
 	if err != nil {
 		return nil, err
 	}
@@ -104,18 +81,13 @@ func GetTestEnv(opts ...Opt) (*TestEnv, error) {
 		return nil, err
 	}
 	healthChecker := healthcheck.NewHealthChecker("test-server-type")
-	te.RealEnv = real_environment.NewRealEnv(configurator, healthChecker)
+	te := &TestEnv{
+		RealEnv: real_environment.NewRealEnv(configurator, healthChecker),
+	}
 	c, err := memory_cache.NewMemoryCache(1000 * 1000 * 1000 /* 1GB */)
 	if err != nil {
 		return nil, err
 	}
 	te.SetCache(c)
 	return te, nil
-}
-
-func WithConfigOverride(configYAML string) Opt {
-	return func(te *TestEnv) error {
-		te.yamlConfigs = append(te.yamlConfigs, []byte(configYAML))
-		return nil
-	}
 }
