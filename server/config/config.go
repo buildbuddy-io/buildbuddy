@@ -151,17 +151,12 @@ type RemoteExecutionConfig struct {
 }
 
 type ExecutorConfig struct {
-	AppTarget           string          `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
-	RootDirectory       string          `yaml:"root_directory" usage:"The root directory to use for build files."`
-	LocalCacheDirectory string          `yaml:"local_cache_directory" usage:"A local on-disk cache directory."`
-	LocalCacheSizeBytes int64           `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
-	DockerSocket        string          `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
-	ContainerdSocket    string          `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
-	Container           ContainerConfig `yaml:"container" usage:"(UNSTABLE) Container options. Only works with containerd, currently."`
-}
-
-type ContainerConfig struct {
-	MemoryLimitBytes uint64 `yaml:"memory_limit_bytes" usage:"Total memory limit (RAM + swap) to apply to the container."`
+	AppTarget           string `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
+	RootDirectory       string `yaml:"root_directory" usage:"The root directory to use for build files."`
+	LocalCacheDirectory string `yaml:"local_cache_directory" usage:"A local on-disk cache directory."`
+	LocalCacheSizeBytes int64  `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
+	DockerSocket        string `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
+	ContainerdSocket    string `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
 }
 
 type APIConfig struct {
@@ -447,13 +442,6 @@ func (c *Configurator) GetSSLConfig() *SSLConfig {
 func (c *Configurator) GetRemoteExecutionConfig() *RemoteExecutionConfig {
 	if c.gc.RemoteExecution.EnableRemoteExec {
 		return &c.gc.RemoteExecution
-	}
-	return nil
-}
-
-func (c *Configurator) GetContainerConfig() *ContainerConfig {
-	if ec := c.GetExecutorConfig(); ec != nil {
-		return &ec.Container
 	}
 	return nil
 }
