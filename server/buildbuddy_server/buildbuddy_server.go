@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -762,7 +763,8 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		log.Printf("Error downloading file: %s", err.Error())
+		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
 }
