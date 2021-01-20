@@ -263,6 +263,8 @@ type CommandResult struct {
 	Stdout []byte
 	// Stderr from the command. This may contain data even if there was an Error.
 	Stderr []byte
+	// CommandDebugString indicates the command that was run, for debugging purposes only.
+	CommandDebugString string
 }
 
 type Subscriber interface {

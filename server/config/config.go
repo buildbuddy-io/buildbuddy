@@ -156,6 +156,7 @@ type ExecutorConfig struct {
 	LocalCacheDirectory string `yaml:"local_cache_directory" usage:"A local on-disk cache directory."`
 	LocalCacheSizeBytes int64  `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
 	DockerSocket        string `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
+	ContainerdSocket    string `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
 }
 
 type APIConfig struct {
