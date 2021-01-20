@@ -268,7 +268,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 	// If this is the first event, keep track of the project ID and save any notification keywords.
 	if seqNo == 1 {
-		log.Printf("First event! project_id: %s, notification_keywords: %s", event.ProjectId, event.NotificationKeywords)
+		log.Printf("First event! invocation_id: %s, project_id: %s, notification_keywords: %s", iid, event.ProjectId, event.NotificationKeywords)
 		ti := &tables.Invocation{
 			InvocationID:     iid,
 			InvocationPK:     md5Int64(iid),

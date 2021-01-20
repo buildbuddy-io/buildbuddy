@@ -71,6 +71,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 
 	disconnectWithErr := func(e error) error {
 		if channel != nil && streamID != nil {
+			log.Printf("Marking invocation %q as disconnected: %s", streamID.InvocationId, e)
 			ctx, cancel := background.ExtendContextForFinalization(ctx, 3*time.Second)
 			defer cancel()
 			if err := channel.MarkInvocationDisconnected(ctx, streamID.InvocationId); err != nil {
@@ -86,6 +87,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			break
 		}
 		if err != nil {
+			log.Printf("Error receiving build event stream for invocation %q: %s", streamID.InvocationId, err)
 			return disconnectWithErr(err)
 		}
 		if streamID == nil {
@@ -118,6 +120,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	}
 
 	if err := channel.FinalizeInvocation(streamID.InvocationId); err != nil {
+		log.Printf("Error finalizing invocation %q: %s", streamID.InvocationId, err)
 		return disconnectWithErr(err)
 	}
 
@@ -128,6 +131,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			SequenceNumber: int64(ack),
 		}
 		if err := stream.Send(rsp); err != nil {
+			log.Printf("Error sending ack stream for invocation %q: %s", streamID.InvocationId, err)
 			return disconnectWithErr(err)
 		}
 	}
