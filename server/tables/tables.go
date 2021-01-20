@@ -397,7 +397,7 @@ func (t *Target) TableName() string {
 type TargetStatus struct {
 	Model
 	TargetID      int64 `gorm:"primaryKey"`
-	InvocationPK  int64 `gorm:"primaryKey"`
+	InvocationPK  int64 `gorm:"primaryKey;index:target_status_invocation_pk"`
 	TargetType    int32
 	TestSize      int32
 	Status        int32
