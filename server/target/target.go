@@ -63,7 +63,7 @@ func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequ
 	if et := req.GetEndTimeUsec(); et != 0 {
 		endUsec = et
 	}
-	targetHistory, err := readTargets(ctx, env, req.GetQuery(), startUsec, endUsec)
+	targetHistory, err := readTargets(ctx, env, req, startUsec, endUsec)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequ
 	}, nil
 }
 
-func readTargets(ctx context.Context, env environment.Env, tq *trpb.TargetQuery, startUsec, endUsec int64) ([]*trpb.TargetHistory, error) {
+func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRequest, startUsec, endUsec int64) ([]*trpb.TargetHistory, error) {
 	if env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}
@@ -82,6 +82,10 @@ func readTargets(ctx context.Context, env environment.Env, tq *trpb.TargetQuery,
 	} else {
 		innerQ = query_builder.NewQuery(`SELECT ANY_VALUE(invocation_id) as invocation_id, MAX(created_at_usec) FROM Invocations`)
 	}
+	if err := perms.AuthorizeGroupAccess(ctx, env, req.GetRequestContext().GetGroupId()); err != nil {
+		return nil, err
+	}
+	innerQ.AddWhereClause("group_id = ?", req.GetRequestContext().GetGroupId())
 	// Adds user / permissions check.
 	if err := perms.AddPermissionsCheckToQuery(ctx, env, innerQ); err != nil {
 		return nil, err
@@ -107,6 +111,7 @@ func readTargets(ctx context.Context, env environment.Env, tq *trpb.TargetQuery,
 	q.AddWhereClause("i.created_at_usec > ?", startUsec)
 	q.AddWhereClause("i.created_at_usec + i.duration_usec < ?", endUsec)
 
+	tq := req.GetQuery()
 	if repo := tq.GetRepoUrl(); repo != "" {
 		q.AddWhereClause("i.repo_url = ?", repo)
 	}
