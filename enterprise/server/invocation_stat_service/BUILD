@@ -10,7 +10,6 @@ go_library(
         "//server/environment:go_default_library",
         "//server/util/db:go_default_library",
         "//server/util/perms:go_default_library",
-        "//server/util/request_context:go_default_library",
         "//server/util/status:go_default_library",
     ],
 )
