@@ -2,11 +2,10 @@ package invocation_stat_service
 
 import (
 	"context"
-	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -43,45 +42,13 @@ func (i *InvocationStatService) getAggColumn(aggType inpb.AggType) string {
 	}
 }
 
-// TODO(tylerw): Unify this function across handlers. It's duplicated (almost) in
-// buildbuddy_server.go when generating the bazelrc config.
-func (i *InvocationStatService) getGroupID(ctx context.Context) (string, error) {
-	if reqCtx := requestcontext.ProtoRequestContextFromContext(ctx); reqCtx != nil {
-		return reqCtx.GetGroupId(), nil
-	}
-
-	tu, err := i.env.GetUserDB().GetUser(ctx)
-	if err != nil {
-		return "", err
-	}
-	for _, g := range tu.Groups {
-		if g.OwnedDomain != "" || !i.env.GetConfigurator().GetAppNoDefaultUserGroup() {
-			return g.GroupID, nil
-		}
-	}
-	// Still here? This user might have a self-owned group, let's check for that.
-	for _, g := range tu.Groups {
-		if g.GroupID == strings.Replace(tu.UserID, "US", "GR", 1) {
-			return g.GroupID, nil
-		}
-	}
-	// Finally, fall back to any group with a write token
-	for _, g := range tu.Groups {
-		if g.WriteToken != "" {
-			return g.GroupID, nil
-		}
-	}
-	return "", status.FailedPreconditionError("User not in any searchable groups")
-}
-
 func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb.GetInvocationStatRequest) (*inpb.GetInvocationStatResponse, error) {
 	if req.GetAggregationType() == inpb.AggType_UNKNOWN_AGGREGATION_TYPE {
 		return nil, status.InvalidArgumentError("A valid aggregation type must be provided")
 	}
 
-	// Check user was set, and then determine user's group_id.
-	groupID, err := i.getGroupID(ctx)
-	if err != nil {
+	groupID := req.GetRequestContext().GetGroupId()
+	if err := perms.AuthorizeGroupAccess(ctx, i.env, groupID); err != nil {
 		return nil, err
 	}
 
