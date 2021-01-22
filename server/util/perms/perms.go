@@ -225,3 +225,19 @@ func AddPermissionsCheckToQueryWithTableAlias(ctx context.Context, env environme
 	q = q.AddWhereClause("("+orQuery+")", orArgs...)
 	return nil
 }
+
+func AuthorizeGroupAccess(ctx context.Context, env environment.Env, groupID string) error {
+	if groupID == "" {
+		return status.InvalidArgumentError("group ID is required")
+	}
+	user, err := AuthenticatedUser(ctx, env)
+	if err != nil {
+		return err
+	}
+	for _, allowedGroupID := range user.GetAllowedGroups() {
+		if allowedGroupID == groupID {
+			return nil
+		}
+	}
+	return status.PermissionDeniedError("You do not have access to the requested group")
+}
