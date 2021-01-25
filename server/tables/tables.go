@@ -409,6 +409,23 @@ func (ts *TargetStatus) TableName() string {
 	return "TargetStatuses"
 }
 
+// The Status of a target.
+type Workflow struct {
+	Model
+	WorkflowID  string `gorm:"primaryKey"`
+	UserID      string `gorm:"index:workflow_user_id"`
+	GroupID     string `gorm:"index:workflow_group_id"`
+	Perms       int    `gorm:"index:workflow_perms"`
+	Name        string
+	RepoURL     string
+	AccessToken string
+	WebhookID   string `gorm:"unique_index:workflow_webhook_id_index"`
+}
+
+func (wf *Workflow) TableName() string {
+	return "Workflows"
+}
+
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.
@@ -514,4 +531,5 @@ func init() {
 	registerTable("CL", &CacheLog{})
 	registerTable("TA", &Target{})
 	registerTable("TS", &TargetStatus{})
+	registerTable("WF", &Workflow{})
 }
