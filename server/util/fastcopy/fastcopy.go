@@ -7,7 +7,7 @@ import (
 )
 
 func FastCopy(source, destination string) error {
-	err := os.Link(path, outputPath)
+	err := os.Link(source, destination)
 	if !os.IsExist(err) {
 		return err
 	}
