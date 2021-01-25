@@ -14,8 +14,9 @@ import (
 )
 
 func FastCopy(source, destination string) error {
-	if err := C.clonefile(C.CString(source), C.CString(destination), C.uint32_t(0)); err != 0 {
-		return fmt.Errorf("Error cloning file: %v", syscall.Errno(err))
+	ret, err := C.clonefile(C.CString(source), C.CString(destination), C.uint32_t(0))
+	if errno, ok := err.(syscall.Errno); ret == -1 && ok && errno != syscall.EEXIST {
+		return err
 	}
 	return nil
 }
