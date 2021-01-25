@@ -9,7 +9,6 @@ package fastcopy
 import "C"
 
 import (
-	"fmt"
 	"syscall"
 )
 
