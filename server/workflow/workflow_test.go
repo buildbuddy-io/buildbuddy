@@ -2,7 +2,6 @@ package workflow_test
 
 import (
 	"context"
-	"log"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -61,4 +60,3 @@ func TestCreate(t *testing.T) {
 	assert.Regexp(t, "^WF.*", rsp.GetId(), "workflow ID should exist and match WF.*")
 	assert.Regexp(t, "^.*/webhooks/workflow/.*", rsp.GetWebhookUrl(), "workflow webhook URL should exist and match /webhooks/workflow/.*")
 }
-

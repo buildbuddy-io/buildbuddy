@@ -74,7 +74,6 @@ func (a *TestAuthenticator) AuthenticateHTTPRequest(w http.ResponseWriter, r *ht
 	headerVal := r.Header.Get(TestApiKeyHeader)
 	user, ok := a.testUsers[headerVal]
 	if ok {
-		log.Printf("HTTP: Set value in context!")
 		return context.WithValue(r.Context(), testAuthenticationHeader, user)
 	}
 	return r.Context()
@@ -86,7 +85,6 @@ func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) context
 		for _, headerVal := range headerVals {
 			user, ok := a.testUsers[headerVal]
 			if ok {
-				log.Printf("GRPC: Set value in context!")
 				return context.WithValue(ctx, testAuthenticationHeader, user)
 			}
 		}
@@ -95,7 +93,6 @@ func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) context
 }
 
 func (a *TestAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
-	log.Printf("AuthenticatedUSER")
 	uVal := ctx.Value(testAuthenticationHeader)
 	u, ok := uVal.(interfaces.UserInfo)
 	if ok {
