@@ -10,10 +10,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
+
+	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
 )
 
 const testConfigFileContents string = `
@@ -47,7 +50,11 @@ func (te *TestEnv) bufDialer(context.Context, string) (net.Conn, error) {
 
 func (te *TestEnv) LocalGRPCServer() (*grpc.Server, func()) {
 	te.lis = bufconn.Listen(1024 * 1024)
-	srv := grpc.NewServer()
+	grpcOptions := []grpc.ServerOption{
+		rpcfilters.GetUnaryInterceptor(te),
+		rpcfilters.GetStreamInterceptor(te),
+	}
+	srv := grpc.NewServer(grpcOptions...)
 	runFunc := func() {
 		if err := srv.Serve(te.lis); err != nil {
 			log.Fatal(err)
@@ -89,5 +96,8 @@ func GetTestEnv() (*TestEnv, error) {
 		return nil, err
 	}
 	te.SetCache(c)
+	dbHandle, err := db.GetConfiguredDatabase(configurator)
+	te.SetDBHandle(dbHandle)
+
 	return te, nil
 }
