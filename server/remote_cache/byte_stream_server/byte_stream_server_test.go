@@ -18,7 +18,7 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-func runByteStreamServer(ctx context.Context, env *test_environment.TestEnv, t *testing.T) *grpc.ClientConn {
+func runByteStreamServer(ctx context.Context, env *environment.TestEnv, t *testing.T) *grpc.ClientConn {
 	byteStreamServer, err := NewByteStreamServer(env)
 	if err != nil {
 		t.Error(err)
@@ -63,7 +63,7 @@ func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.Ins
 
 func TestRPCRead(t *testing.T) {
 	ctx := context.Background()
-	te, err := test_environment.GetTestEnv()
+	te, err := environment.GetTestEnv()
 	if err != nil {
 		t.Error(err)
 	}

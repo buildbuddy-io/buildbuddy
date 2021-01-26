@@ -15,7 +15,7 @@ import (
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 )
 
-func runBBServer(ctx context.Context, env *test_environment.TestEnv, t *testing.T) *grpc.ClientConn {
+func runBBServer(ctx context.Context, env *environment.TestEnv, t *testing.T) *grpc.ClientConn {
 	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env /*sslService=*/, nil)
 	if err != nil {
 		t.Error(err)
@@ -36,11 +36,11 @@ func runBBServer(ctx context.Context, env *test_environment.TestEnv, t *testing.
 
 func TestCreate(t *testing.T) {
 	ctx := context.Background()
-	te, err := test_environment.GetTestEnv()
+	te, err := environment.GetTestEnv()
 	if err != nil {
 		t.Error(err)
 	}
-	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	authenticator := auth.NewTestAuthenticator(auth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(authenticator)
 
 	clientConn := runBBServer(ctx, te, t)
@@ -52,7 +52,7 @@ func TestCreate(t *testing.T) {
 			RepoUrl: "git@github.com:buildbuddy-io/buildbuddy.git",
 		},
 	}
-	ctx = metadata.AppendToOutgoingContext(ctx, testauth.TestApiKeyHeader, "USER1")
+	ctx = metadata.AppendToOutgoingContext(ctx, auth.TestApiKeyHeader, "USER1")
 	rsp, err := bbClient.CreateWorkflow(ctx, req)
 	if err != nil {
 		t.Fatal(err)

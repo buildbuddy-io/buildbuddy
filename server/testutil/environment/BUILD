@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "go_default_library",
-    srcs = ["test_environment.go"],
+    srcs = ["environment.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/environment",
     visibility = ["//visibility:public"],
     deps = [

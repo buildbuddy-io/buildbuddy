@@ -1,4 +1,4 @@
-package testauth
+package auth
 
 import (
 	"context"

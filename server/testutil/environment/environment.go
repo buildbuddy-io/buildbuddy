@@ -1,4 +1,4 @@
-package test_environment
+package environment
 
 import (
 	"context"
