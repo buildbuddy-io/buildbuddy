@@ -135,7 +135,7 @@ func DeleteWorkflow(ctx context.Context, env environment.Env, req *trpb.DeleteWo
 		if err := perms.AuthorizeWrite(&authenticatedUser, acl); err != nil {
 			return err
 		}
-		return tx.Exec(`DELETE FROM Workflows WHERE invocation_id = ?`, req.GetId()).Error
+		return tx.Exec(`DELETE FROM Workflows WHERE workflow_id = ?`, req.GetId()).Error
 	})
 	return &trpb.DeleteWorkflowResponse{}, err
 }
@@ -150,6 +150,7 @@ func ListWorkflow(ctx context.Context, env environment.Env, req *trpb.ListWorkfl
 	if err := perms.AddPermissionsCheckToQuery(ctx, env, q); err != nil {
 		return nil, err
 	}
+	q.SetOrderBy("created_at_usec" /*ascending=*/, true)
 	qStr, qArgs := q.Build()
 	err := env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
 		rows, err := tx.Raw(qStr, qArgs...).Rows()
