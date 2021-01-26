@@ -26,7 +26,7 @@ go_test(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/digest:go_default_library",
-        "//server/test_environment:go_default_library",
+        "//server/testutil/environment:go_default_library",
         "//server/util/prefix:go_default_library",
         "//server/util/random:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",

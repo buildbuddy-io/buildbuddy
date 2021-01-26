@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/test_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 

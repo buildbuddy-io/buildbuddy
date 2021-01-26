@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
-	"github.com/buildbuddy-io/buildbuddy/server/test_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/auth"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
