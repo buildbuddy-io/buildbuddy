@@ -5,5 +5,4 @@ go_library(
     srcs = ["flags.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/testing/flags",
     visibility = ["//visibility:public"],
-    deps = [],
 )
