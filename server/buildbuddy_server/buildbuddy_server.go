@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/workflow"
 	"github.com/golang/protobuf/proto"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -662,6 +663,16 @@ func (s *BuildBuddyServer) GetExecution(ctx context.Context, req *espb.GetExecut
 
 func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
 	return target.GetTarget(ctx, s.env, req)
+}
+
+func (s *BuildBuddyServer) CreateWorkflow(ctx context.Context, req *trpb.CreateWorkflowRequest) (*trpb.CreateWorkflowResponse, error) {
+	return workflow.CreateWorkflow(ctx, s.env, req)
+}
+func (s *BuildBuddyServer) DeleteWorkflow(ctx context.Context, req *trpb.DeleteWorkflowRequest) (*trpb.DeleteWorkflowResponse, error) {
+	return workflow.DeleteWorkflow(ctx, s.env, req)
+}
+func (s *BuildBuddyServer) ListWorkflow(ctx context.Context, req *trpb.ListWorkflowRequest) (*trpb.ListWorkflowResponse, error) {
+	return workflow.ListWorkflow(ctx, s.env, req)
 }
 
 type bsLookup struct {

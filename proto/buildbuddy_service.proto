@@ -57,4 +57,9 @@ service BuildBuddyService {
 
   // Target API
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);
+
+  // Workflow API
+  rpc CreateWorkflow(target.CreateWorkflowRequest) returns (target.CreateWorkflowResponse);
+  rpc DeleteWorkflow(target.DeleteWorkflowRequest) returns (target.DeleteWorkflowResponse);
+  rpc ListWorkflow(target.ListWorkflowRequest) returns (target.ListWorkflowResponse);
 }
