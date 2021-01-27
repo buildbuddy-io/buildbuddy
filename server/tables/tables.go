@@ -380,12 +380,13 @@ func (c *CacheLog) TableName() string {
 
 type Target struct {
 	Model
-	UserID   string `gorm:"primaryKey"`
-	GroupID  string `gorm:"primaryKey"`
-	RepoURL  string `gorm:"primaryKey"`
-	Label    string `gorm:"primaryKey"`
-	TargetID int64  `gorm:"index:target_target_id"`
-	Perms    int    `gorm:"index:target_perms"`
+	// TargetID is made up of repoURL + label.
+	TargetID int64  `gorm:"unique_index:target_target_id"`
+	UserID   string `gorm:"index:target_user_id"`
+	GroupID  string `gorm:"index:target_group_id"`
+	RepoURL  string
+	Label    string
+	Perms    int `gorm:"index:target_perms"`
 	RuleType string
 }
 
@@ -396,8 +397,8 @@ func (t *Target) TableName() string {
 // The Status of a target.
 type TargetStatus struct {
 	Model
-	TargetID      int64 `gorm:"primaryKey"`
-	InvocationPK  int64 `gorm:"primaryKey;index:target_status_invocation_pk"`
+	TargetID      int64 `gorm:"primary_key;auto_increment:false"`
+	InvocationPK  int64 `gorm:"primary_key;auto_increment:false"`
 	TargetType    int32
 	TestSize      int32
 	Status        int32
@@ -412,7 +413,7 @@ func (ts *TargetStatus) TableName() string {
 // The Status of a target.
 type Workflow struct {
 	Model
-	WorkflowID  string `gorm:"primaryKey"`
+	WorkflowID  string `gorm:"primary_key"`
 	UserID      string `gorm:"index:workflow_user_id"`
 	GroupID     string `gorm:"index:workflow_group_id"`
 	Perms       int    `gorm:"index:workflow_perms"`

@@ -63,7 +63,6 @@ func md5Int64(text string) int64 {
 
 func newTarget(label string) *target {
 	return &target{
-		id:    md5Int64(label),
 		label: label,
 		state: targetStateExpanded,
 	}
@@ -200,7 +199,7 @@ func (t *TargetTracker) writeTestTargets(ctx context.Context) error {
 		}
 		tableTarget := &tables.Target{
 			RepoURL:  repoURL,
-			TargetID: target.id,
+			TargetID: md5Int64(repoURL + target.label),
 			UserID:   permissions.UserID,
 			GroupID:  permissions.GroupID,
 			Perms:    permissions.Perms,
@@ -242,6 +241,7 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context) error {
 	if permissions == nil {
 		return status.FailedPreconditionError("Permissions were nil -- not writing target data.")
 	}
+	repoURL := t.buildEventAccumulator.RepoURL()
 	invocationPK := md5Int64(t.buildEventAccumulator.InvocationID())
 	newTargetStatuses := make([]*tables.TargetStatus, 0)
 	for _, target := range t.targets {
@@ -249,7 +249,7 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context) error {
 			continue
 		}
 		newTargetStatuses = append(newTargetStatuses, &tables.TargetStatus{
-			TargetID:      target.id,
+			TargetID:      md5Int64(repoURL + target.label),
 			InvocationPK:  invocationPK,
 			TargetType:    int32(target.targetType),
 			TestSize:      int32(target.testSize),
