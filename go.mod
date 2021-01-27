@@ -29,6 +29,8 @@ require (
 	github.com/elastic/gosigar v0.11.0 // indirect
 	github.com/elazarl/goproxy v0.0.0-20180725130230-947c36da3153 // indirect
 	github.com/envoyproxy/protoc-gen-validate v0.3.0 // indirect
+	github.com/go-git/go-git v4.7.0+incompatible // indirect
+	github.com/go-git/go-git/v5 v5.2.0 // indirect
 	github.com/go-gl/glfw v0.0.0-20200420212212-258d9bec320e // indirect
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20200420212212-258d9bec320e // indirect
 	github.com/go-redis/redis/v8 v8.1.3
@@ -66,6 +68,7 @@ require (
 	github.com/pquerna/cachecontrol v0.0.0-20201205024021-ac21108117ac // indirect
 	github.com/prometheus/client_golang v1.6.0
 	github.com/rogpeppe/go-internal v1.6.0 // indirect
+	github.com/sergi/go-diff v1.1.0 // indirect
 	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/stretchr/testify v1.7.0 // indirect
 	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635 // indirect
@@ -86,6 +89,7 @@ require (
 	google.golang.org/protobuf v1.25.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
+	gopkg.in/src-d/go-git.v4 v4.13.1 // indirect
 	gopkg.in/yaml.v2 v2.3.0
 	k8s.io/client-go v0.16.11 // indirect
 	k8s.io/gengo v0.0.0-20200413195148-3a45101e95ac // indirect

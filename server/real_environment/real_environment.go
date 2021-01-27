@@ -60,6 +60,7 @@ type RealEnv struct {
 	pubSub                          interfaces.PubSub
 	metricsCollector                interfaces.MetricsCollector
 	executionService                interfaces.ExecutionService
+	repoDownloader                  interfaces.RepoDownloader
 }
 
 func NewRealEnv(c *config.Configurator, h *healthcheck.HealthChecker) *RealEnv {
@@ -248,4 +249,10 @@ func (r *RealEnv) SetExecutionService(e interfaces.ExecutionService) {
 }
 func (r *RealEnv) GetExecutionService() interfaces.ExecutionService {
 	return r.executionService
+}
+func (r *RealEnv) GetRepoDownloader() interfaces.RepoDownloader {
+	return r.repoDownloader
+}
+func (r *RealEnv) SetRepoDownloader(d interfaces.RepoDownloader) {
+	r.repoDownloader = d
 }

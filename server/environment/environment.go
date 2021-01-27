@@ -59,4 +59,5 @@ type Env interface {
 	GetSchedulerService() interfaces.SchedulerService
 	GetPubSub() interfaces.PubSub
 	GetMetricsCollector() interfaces.MetricsCollector
+	GetRepoDownloader() interfaces.RepoDownloader
 }

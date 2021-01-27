@@ -289,3 +289,8 @@ type MetricsCollector interface {
 	IncrementCount(ctx context.Context, counterName string, n int64) (int64, error)
 	ReadCount(ctx context.Context, counterName string) (int64, error)
 }
+
+// A RepoDownloader allows testing a git-repo to see if it's downloadable.
+type RepoDownloader interface {
+	TestRepoAccess(ctx context.Context, repoURL, accessToken string) error
+}

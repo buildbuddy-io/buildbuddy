@@ -45,6 +45,10 @@ func getWebhookURL(env environment.Env, webhookID string) (string, error) {
 // testRepo will call "git ls-repo repoURL" to verify that the repo is valid and
 // the accessToken (if non-empty) works.
 func testRepo(ctx context.Context, env environment.Env, repoURL, accessToken string) error {
+	rdl := env.GetRepoDownloader()
+	if rdl != nil {
+		return rdl.TestRepoAccess(ctx, repoURL, accessToken)
+	}
 	return nil
 }
 
