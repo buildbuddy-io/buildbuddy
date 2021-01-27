@@ -117,9 +117,9 @@ func (v *BEValues) populateWorkspaceInfoFromStructuredCommandLine(commandLine *c
 			environmentVariable := parts[0]
 			value := parts[1]
 			switch environmentVariable {
-			case "CIRCLE_REPOSITORY_URL", "GITHUB_REPOSITORY", "BUILDKITE_REPO", "TRAVIS_REPO_SLUG", "GIT_URL", "CI_REPOSITORY_URL":
+			case "CIRCLE_REPOSITORY_URL", "GITHUB_REPOSITORY", "BUILDKITE_REPO", "TRAVIS_REPO_SLUG", "GIT_URL", "CI_REPOSITORY_URL", "REPO_URL":
 				v.setStringValue(repoURLFieldName, value)
-			case "CIRCLE_SHA1", "GITHUB_SHA", "BUILDKITE_COMMIT", "TRAVIS_COMMIT", "GIT_COMMIT", "CI_COMMIT_SHA":
+			case "CIRCLE_SHA1", "GITHUB_SHA", "BUILDKITE_COMMIT", "TRAVIS_COMMIT", "GIT_COMMIT", "CI_COMMIT_SHA", "COMMIT_SHA":
 				v.setStringValue(commitSHAFieldName, value)
 			case "CI":
 				v.setStringValue(roleFieldName, "CI")
