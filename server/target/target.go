@@ -76,30 +76,14 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 	if env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}
-	var innerQ *query_builder.Query
-	if env.GetDBHandle().Dialect().GetName() == sqlite3Dialect {
-		innerQ = query_builder.NewQuery(`SELECT invocation_id, MAX(created_at_usec) FROM Invocations`)
-	} else {
-		innerQ = query_builder.NewQuery(`SELECT ANY_VALUE(invocation_id) as invocation_id, MAX(created_at_usec) FROM Invocations`)
-	}
-	if err := perms.AuthorizeGroupAccess(ctx, env, req.GetRequestContext().GetGroupId()); err != nil {
-		return nil, err
-	}
-	innerQ.AddWhereClause("group_id = ?", req.GetRequestContext().GetGroupId())
-	// Adds user / permissions check.
-	if err := perms.AddPermissionsCheckToQuery(ctx, env, innerQ); err != nil {
-		return nil, err
-	}
-	innerQ.SetGroupBy("commit_sha")
-	innerQueryStr, innerArgs := innerQ.Build()
-
 	q := query_builder.NewQuery(`SELECT t.target_id, t.label, t.rule_type, ts.target_type,
                                      ts.test_size, ts.status, ts.start_time_usec, ts.duration_usec,
                                      i.invocation_id, i.commit_sha, i.repo_url, i.created_at_usec
                                      FROM Targets as t
                                      JOIN TargetStatuses AS ts ON t.target_id = ts.target_id
-                                     JOIN Invocations AS i ON ts.invocation_pk = i.invocation_pk
-                                     JOIN (` + innerQueryStr + `) as ci ON i.invocation_id = ci.invocation_id`)
+                                     JOIN Invocations AS i ON ts.invocation_pk = i.invocation_pk`)
+	q.AddWhereClause("i.group_id = ?", req.GetRequestContext().GetGroupId())
+	q.AddWhereClause("t.group_id = ?", req.GetRequestContext().GetGroupId())
 	// Adds user / permissions to targets (t) table.
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
 		return nil, err
@@ -131,8 +115,7 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 		q.AddWhereClause("ts.target_type = ?", int32(targetType))
 	}
 	q.SetOrderBy("t.label ASC, i.created_at_usec", false /*=ascending*/)
-	queryStr, outerArgs := q.Build()
-	args := append(innerArgs, outerArgs...)
+	queryStr, args := q.Build()
 
 	seenTargets := make(map[string]struct{}, 0)
 	targets := make([]*trpb.Target, 0)
