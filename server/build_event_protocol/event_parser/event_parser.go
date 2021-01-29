@@ -106,156 +106,188 @@ func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
 	return false
 }
 
-func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *inpb.Invocation) {
-	startTimeMillis := undefinedTimestamp
-	endTimeMillis := undefinedTimestamp
+type StreamingEventParser struct {
+	startTimeMillis int64
+	endTimeMillis   int64
+	consoleBuffer   bytes.Buffer
+	allowedEnvVars  []string
 
-	var consoleBuffer bytes.Buffer
-	var allowedEnvVars = []string{"USER", "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID"}
+	structuredCommandLines []*command_line.CommandLine
+	workspaceStatuses      []*build_event_stream.WorkspaceStatus
+	buildMetadata          []map[string]string
 
-	structuredCommandLines := make([]*command_line.CommandLine, 0)
-	workspaceStatuses := make([]*build_event_stream.WorkspaceStatus, 0)
-	buildMetadata := make([]map[string]string, 0)
+	events      []*inpb.InvocationEvent
+	pattern     []string
+	command     string
+	success     bool
+	actionCount int64
+}
 
-	for _, event := range buildEvents {
-		invocation.Event = append(invocation.Event, event)
+func NewStreamingEventParser() *StreamingEventParser {
+	return &StreamingEventParser{
+		startTimeMillis:        undefinedTimestamp,
+		endTimeMillis:          undefinedTimestamp,
+		allowedEnvVars:         []string{"USER", "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID"},
+		structuredCommandLines: make([]*command_line.CommandLine, 0),
+		workspaceStatuses:      make([]*build_event_stream.WorkspaceStatus, 0),
+		buildMetadata:          make([]map[string]string, 0),
+		events:                 make([]*inpb.InvocationEvent, 0),
+	}
+}
 
-		switch p := event.BuildEvent.Payload.(type) {
-		case *build_event_stream.BuildEvent_Progress:
-			{
-				consoleBuffer.Write([]byte(p.Progress.Stderr))
-				consoleBuffer.Write([]byte(p.Progress.Stdout))
-				// Clear progress event values as we've got them via ConsoleBuffer and they take up a lot of space.
-				p.Progress.Stderr = ""
-				p.Progress.Stdout = ""
-			}
-		case *build_event_stream.BuildEvent_Aborted:
-			{
-			}
-		case *build_event_stream.BuildEvent_Started:
-			{
-				p.Started.OptionsDescription = stripURLSecrets(p.Started.OptionsDescription)
-				startTimeMillis = p.Started.StartTimeMillis
-				invocation.Command = p.Started.Command
-				for _, child := range event.BuildEvent.Children {
-					// Here we are then. Knee-deep.
-					switch c := child.Id.(type) {
-					case *build_event_stream.BuildEventId_Pattern:
-						{
-							invocation.Pattern = c.Pattern.Pattern
-						}
+func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
+	sep.events = append(sep.events, event)
+	switch p := event.BuildEvent.Payload.(type) {
+	case *build_event_stream.BuildEvent_Progress:
+		{
+			sep.consoleBuffer.Write([]byte(p.Progress.Stderr))
+			sep.consoleBuffer.Write([]byte(p.Progress.Stdout))
+			// Clear progress event values as we've got them via ConsoleBuffer and they take up a lot of space.
+			p.Progress.Stderr = ""
+			p.Progress.Stdout = ""
+		}
+	case *build_event_stream.BuildEvent_Aborted:
+		{
+		}
+	case *build_event_stream.BuildEvent_Started:
+		{
+			p.Started.OptionsDescription = stripURLSecrets(p.Started.OptionsDescription)
+			sep.startTimeMillis = p.Started.StartTimeMillis
+			sep.command = p.Started.Command
+			for _, child := range event.BuildEvent.Children {
+				// Here we are then. Knee-deep.
+				switch c := child.Id.(type) {
+				case *build_event_stream.BuildEventId_Pattern:
+					{
+						sep.pattern = c.Pattern.Pattern
 					}
 				}
 			}
-		case *build_event_stream.BuildEvent_UnstructuredCommandLine:
-			{
-				// Clear the unstructured command line so we don't have to redact it.
-				p.UnstructuredCommandLine.Args = []string{}
+		}
+	case *build_event_stream.BuildEvent_UnstructuredCommandLine:
+		{
+			// Clear the unstructured command line so we don't have to redact it.
+			p.UnstructuredCommandLine.Args = []string{}
+		}
+	case *build_event_stream.BuildEvent_StructuredCommandLine:
+		{
+			sep.structuredCommandLines = append(sep.structuredCommandLines, p.StructuredCommandLine)
+		}
+	case *build_event_stream.BuildEvent_OptionsParsed:
+		{
+			p.OptionsParsed.CmdLine = stripURLSecretsFromList(p.OptionsParsed.CmdLine)
+			p.OptionsParsed.ExplicitCmdLine = stripURLSecretsFromList(p.OptionsParsed.ExplicitCmdLine)
+		}
+	case *build_event_stream.BuildEvent_WorkspaceStatus:
+		{
+			sep.workspaceStatuses = append(sep.workspaceStatuses, p.WorkspaceStatus)
+		}
+	case *build_event_stream.BuildEvent_Fetch:
+		{
+		}
+	case *build_event_stream.BuildEvent_Configuration:
+		{
+		}
+	case *build_event_stream.BuildEvent_Expanded:
+		{
+		}
+	case *build_event_stream.BuildEvent_Configured:
+		{
+		}
+	case *build_event_stream.BuildEvent_Action:
+		{
+			p.Action.Stdout = stripURLSecretsFromFile(p.Action.Stdout)
+			p.Action.Stderr = stripURLSecretsFromFile(p.Action.Stderr)
+			p.Action.PrimaryOutput = stripURLSecretsFromFile(p.Action.PrimaryOutput)
+			p.Action.ActionMetadataLogs = stripURLSecretsFromFiles(p.Action.ActionMetadataLogs)
+		}
+	case *build_event_stream.BuildEvent_NamedSetOfFiles:
+		{
+			p.NamedSetOfFiles.Files = stripURLSecretsFromFiles(p.NamedSetOfFiles.Files)
+		}
+	case *build_event_stream.BuildEvent_Completed:
+		{
+			p.Completed.ImportantOutput = stripURLSecretsFromFiles(p.Completed.ImportantOutput)
+		}
+	case *build_event_stream.BuildEvent_TestResult:
+		{
+			p.TestResult.TestActionOutput = stripURLSecretsFromFiles(p.TestResult.TestActionOutput)
+		}
+	case *build_event_stream.BuildEvent_TestSummary:
+		{
+			p.TestSummary.Passed = stripURLSecretsFromFiles(p.TestSummary.Passed)
+			p.TestSummary.Failed = stripURLSecretsFromFiles(p.TestSummary.Failed)
+		}
+	case *build_event_stream.BuildEvent_Finished:
+		{
+			sep.endTimeMillis = p.Finished.FinishTimeMillis
+			sep.success = p.Finished.ExitCode.Code == 0
+		}
+	case *build_event_stream.BuildEvent_BuildToolLogs:
+		{
+			p.BuildToolLogs.Log = stripURLSecretsFromFiles(p.BuildToolLogs.Log)
+		}
+	case *build_event_stream.BuildEvent_BuildMetrics:
+		{
+			sep.actionCount = p.BuildMetrics.ActionSummary.ActionsExecuted
+		}
+	case *build_event_stream.BuildEvent_WorkspaceInfo:
+		{
+		}
+	case *build_event_stream.BuildEvent_BuildMetadata:
+		{
+			metadata := p.BuildMetadata.Metadata
+			if metadata == nil {
+				return
 			}
-		case *build_event_stream.BuildEvent_StructuredCommandLine:
-			{
-				structuredCommandLines = append(structuredCommandLines, p.StructuredCommandLine)
-			}
-		case *build_event_stream.BuildEvent_OptionsParsed:
-			{
-				p.OptionsParsed.CmdLine = stripURLSecretsFromList(p.OptionsParsed.CmdLine)
-				p.OptionsParsed.ExplicitCmdLine = stripURLSecretsFromList(p.OptionsParsed.ExplicitCmdLine)
-			}
-		case *build_event_stream.BuildEvent_WorkspaceStatus:
-			{
-				workspaceStatuses = append(workspaceStatuses, p.WorkspaceStatus)
-			}
-		case *build_event_stream.BuildEvent_Fetch:
-			{
-			}
-		case *build_event_stream.BuildEvent_Configuration:
-			{
-			}
-		case *build_event_stream.BuildEvent_Expanded:
-			{
-			}
-		case *build_event_stream.BuildEvent_Configured:
-			{
-			}
-		case *build_event_stream.BuildEvent_Action:
-			{
-				p.Action.Stdout = stripURLSecretsFromFile(p.Action.Stdout)
-				p.Action.Stderr = stripURLSecretsFromFile(p.Action.Stderr)
-				p.Action.PrimaryOutput = stripURLSecretsFromFile(p.Action.PrimaryOutput)
-				p.Action.ActionMetadataLogs = stripURLSecretsFromFiles(p.Action.ActionMetadataLogs)
-			}
-		case *build_event_stream.BuildEvent_NamedSetOfFiles:
-			{
-				p.NamedSetOfFiles.Files = stripURLSecretsFromFiles(p.NamedSetOfFiles.Files)
-			}
-		case *build_event_stream.BuildEvent_Completed:
-			{
-				p.Completed.ImportantOutput = stripURLSecretsFromFiles(p.Completed.ImportantOutput)
-			}
-		case *build_event_stream.BuildEvent_TestResult:
-			{
-				p.TestResult.TestActionOutput = stripURLSecretsFromFiles(p.TestResult.TestActionOutput)
-			}
-		case *build_event_stream.BuildEvent_TestSummary:
-			{
-				p.TestSummary.Passed = stripURLSecretsFromFiles(p.TestSummary.Passed)
-				p.TestSummary.Failed = stripURLSecretsFromFiles(p.TestSummary.Failed)
-			}
-		case *build_event_stream.BuildEvent_Finished:
-			{
-				endTimeMillis = p.Finished.FinishTimeMillis
-				invocation.Success = p.Finished.ExitCode.Code == 0
-			}
-		case *build_event_stream.BuildEvent_BuildToolLogs:
-			{
-				p.BuildToolLogs.Log = stripURLSecretsFromFiles(p.BuildToolLogs.Log)
-			}
-		case *build_event_stream.BuildEvent_BuildMetrics:
-			{
-				invocation.ActionCount = p.BuildMetrics.ActionSummary.ActionsExecuted
-			}
-		case *build_event_stream.BuildEvent_WorkspaceInfo:
-			{
-			}
-		case *build_event_stream.BuildEvent_BuildMetadata:
-			{
-				metadata := p.BuildMetadata.Metadata
-				if metadata == nil {
-					continue
-				}
-				buildMetadata = append(buildMetadata, metadata)
-				if allowed, ok := metadata["ALLOW_ENV"]; ok && allowed != "" {
-					allowedEnvVars = append(allowedEnvVars, strings.Split(allowed, ",")...)
-				}
-			}
-		case *build_event_stream.BuildEvent_ConvenienceSymlinksIdentified:
-			{
+			sep.buildMetadata = append(sep.buildMetadata, metadata)
+			if allowed, ok := metadata["ALLOW_ENV"]; ok && allowed != "" {
+				sep.allowedEnvVars = append(sep.allowedEnvVars, strings.Split(allowed, ",")...)
 			}
 		}
+	case *build_event_stream.BuildEvent_ConvenienceSymlinksIdentified:
+		{
+		}
 	}
+}
+
+func (sep *StreamingEventParser) FillInvocation(invocation *inpb.Invocation) {
+	invocation.Command = sep.command
+	invocation.Pattern = sep.pattern
+	invocation.Event = sep.events
+	invocation.Success = sep.success
+	invocation.ActionCount = sep.actionCount
 
 	// Fill invocation in a deterministic order:
 	// - Environment variables
 	// - Workspace status
 	// - Build metadata
 
-	for _, commandLine := range structuredCommandLines {
-		fillInvocationFromStructuredCommandLine(commandLine, invocation, allowedEnvVars)
+	for _, commandLine := range sep.structuredCommandLines {
+		fillInvocationFromStructuredCommandLine(commandLine, invocation, sep.allowedEnvVars)
 	}
-	for _, workspaceStatus := range workspaceStatuses {
+	for _, workspaceStatus := range sep.workspaceStatuses {
 		fillInvocationFromWorkspaceStatus(workspaceStatus, invocation)
 	}
-	for _, buildMetadatum := range buildMetadata {
+	for _, buildMetadatum := range sep.buildMetadata {
 		fillInvocationFromBuildMetadata(buildMetadatum, invocation)
 	}
 
 	buildDuration := time.Duration(int64(0))
-	if endTimeMillis != undefinedTimestamp && startTimeMillis != undefinedTimestamp {
-		buildDuration = time.Duration((endTimeMillis - startTimeMillis) * int64(time.Millisecond))
+	if sep.endTimeMillis != undefinedTimestamp && sep.startTimeMillis != undefinedTimestamp {
+		buildDuration = time.Duration((sep.endTimeMillis - sep.startTimeMillis) * int64(time.Millisecond))
 	}
 	invocation.DurationUsec = buildDuration.Microseconds()
 	// TODO(siggisim): Do this rendering once on write, rather than on every read.
-	invocation.ConsoleBuffer = string(terminal.RenderAsANSI(consoleBuffer.Bytes()))
+	invocation.ConsoleBuffer = string(terminal.RenderAsANSI(sep.consoleBuffer.Bytes()))
+}
+
+func FillInvocationFromEvents(events []*inpb.InvocationEvent, invocation *inpb.Invocation) {
+	parser := NewStreamingEventParser()
+	for _, event := range events {
+		parser.ParseEvent(event)
+	}
+	parser.FillInvocation(invocation)
 }
 
 func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine, invocation *inpb.Invocation, allowedEnvVars []string) {
