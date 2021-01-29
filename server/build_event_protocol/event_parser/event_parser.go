@@ -150,7 +150,7 @@ func FillInvocationFromEvents(buildEvents []*inpb.InvocationEvent, invocation *i
 		case *build_event_stream.BuildEvent_UnstructuredCommandLine:
 			{
 				// Clear the unstructured command line so we don't have to redact it.
-				p.UnstructuredCommandLine = &build_event_stream.UnstructuredCommandLine{}
+				p.UnstructuredCommandLine.Args = []string{}
 			}
 		case *build_event_stream.BuildEvent_StructuredCommandLine:
 			{

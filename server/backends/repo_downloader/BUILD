@@ -8,7 +8,6 @@ go_library(
     deps = [
         "@com_github_go_git_go_git_v5//:go_default_library",
         "@com_github_go_git_go_git_v5//config:go_default_library",
-        "@com_github_go_git_go_git_v5//plumbing/transport/http:go_default_library",
         "@com_github_go_git_go_git_v5//storage/memory:go_default_library",
     ],
 )
