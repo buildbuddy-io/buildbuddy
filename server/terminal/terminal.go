@@ -26,3 +26,25 @@ func RenderAsANSI(input []byte) []byte {
 	output := screen.asANSI()
 	return output
 }
+
+// lol who named this thing :P
+// ScreenWriter allows streaming data to a virtual screen
+// that will be rendered after all writes are complete.
+type ScreenWriter struct {
+	s screen
+}
+
+func NewScreenWriter() *ScreenWriter {
+	return &ScreenWriter{
+		s: screen{},
+	}
+}
+
+func (sw *ScreenWriter) Write(data []byte) (int, error) {
+	sw.s.parse(data)
+	return len(data), nil
+}
+
+func (sw *ScreenWriter) RenderAsANSI() []byte {
+	return sw.s.asANSI()
+}
