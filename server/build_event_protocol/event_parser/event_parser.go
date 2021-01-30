@@ -284,14 +284,6 @@ func (sep *StreamingEventParser) FillInvocation(invocation *inpb.Invocation) {
 	invocation.ConsoleBuffer = string(sep.screenWriter.RenderAsANSI())
 }
 
-func FillInvocationFromEvents(events []*inpb.InvocationEvent, invocation *inpb.Invocation) {
-	parser := NewStreamingEventParser()
-	for _, event := range events {
-		parser.ParseEvent(event)
-	}
-	parser.FillInvocation(invocation)
-}
-
 func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine, invocation *inpb.Invocation, allowedEnvVars []string) {
 	filteredCL, envVarMap := parseAndFilterCommandLine(commandLine, allowedEnvVars)
 	if filteredCL != nil {

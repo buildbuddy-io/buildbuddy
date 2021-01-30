@@ -100,22 +100,24 @@ type EventChannel struct {
 	targetTracker  *target_tracker.TargetTracker
 }
 
-func (e *EventChannel) readAllTempBlobs(ctx context.Context, blobID string) ([]*inpb.InvocationEvent, error) {
-	events := make([]*inpb.InvocationEvent, 0)
-	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), blobID)
+func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string, invocation *inpb.Invocation) error {
+	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), iid)
+	parser := event_parser.NewStreamingEventParser()
+	parser.FillInvocation(invocation)
 	for {
 		event := &inpb.InvocationEvent{}
 		err := pr.ReadProto(ctx, event)
 		if err == nil {
-			events = append(events, event)
+			parser.ParseEvent(event)
 		} else if err == io.EOF {
 			break
 		} else {
 			log.Printf("returning some other error: %s", err)
-			return nil, err
+			return err
 		}
 	}
-	return events, nil
+	parser.FillInvocation(invocation)
+	return nil
 }
 
 func (e *EventChannel) writeCompletedBlob(ctx context.Context, blobID string, invocation *inpb.Invocation) error {
@@ -138,11 +140,10 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 		InvocationStatus: inpb.Invocation_DISCONNECTED_INVOCATION_STATUS,
 	}
 
-	events, err := e.readAllTempBlobs(ctx, iid)
+	err := e.fillInvocationFromEvents(ctx, iid, invocation)
 	if err != nil {
 		return err
 	}
-	event_parser.FillInvocationFromEvents(events, invocation)
 
 	ti := tableInvocationFromProto(invocation, iid)
 	return e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti)
@@ -202,11 +203,10 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		InvocationId:     iid,
 		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
 	}
-	events, err := e.readAllTempBlobs(e.ctx, iid)
+	err := e.fillInvocationFromEvents(e.ctx, iid, invocation)
 	if err != nil {
 		return err
 	}
-	event_parser.FillInvocationFromEvents(events, invocation)
 
 	ti := tableInvocationFromProto(invocation, iid)
 	if cacheStats := hit_tracker.CollectCacheStats(e.ctx, e.env, iid); cacheStats != nil {
@@ -335,15 +335,14 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID string) error {
 	db := e.env.GetInvocationDB()
-	events, err := e.readAllTempBlobs(ctx, invocationID)
-	if err != nil {
-		return err
-	}
 	ti := &tables.Invocation{
 		InvocationID: invocationID,
 	}
 	invocationProto := TableInvocationToProto(ti)
-	event_parser.FillInvocationFromEvents(events, invocationProto)
+	err := e.fillInvocationFromEvents(ctx, invocationID, invocationProto)
+	if err != nil {
+		return err
+	}
 	ti = tableInvocationFromProto(invocationProto, ti.BlobID)
 	if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
 		return err

@@ -195,7 +195,11 @@ func TestFillInvocation(t *testing.T) {
 		InvocationId:     "test-invocation",
 		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
 	}
-	event_parser.FillInvocationFromEvents(events, invocation)
+	parser := event_parser.NewStreamingEventParser()
+	for _, event := range events {
+		parser.ParseEvent(event)
+	}
+	parser.FillInvocation(invocation)
 
 	assert.Equal(t, "test-invocation", invocation.InvocationId)
 	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
