@@ -28,7 +28,16 @@ http_archive(
 load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
 
 go_download_sdk(
-    name = "go_sdk",
+    name = "go_sdk_linux",
+    goarch = "amd64",
+    goos = "linux",
+    version = "1.15.7",
+)
+
+go_download_sdk(
+    name = "go_sdk_darwin",
+    goarch = "amd64",
+    goos = "darwin",
     version = "1.15.7",
 )
 
