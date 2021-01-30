@@ -1,7 +1,6 @@
 package event_parser
 
 import (
-	"bytes"
 	"regexp"
 	"strings"
 	"time"
@@ -109,7 +108,7 @@ func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
 type StreamingEventParser struct {
 	startTimeMillis int64
 	endTimeMillis   int64
-	consoleBuffer   bytes.Buffer
+	screenWriter    *terminal.ScreenWriter
 	allowedEnvVars  []string
 
 	structuredCommandLines []*command_line.CommandLine
@@ -127,6 +126,7 @@ func NewStreamingEventParser() *StreamingEventParser {
 	return &StreamingEventParser{
 		startTimeMillis:        undefinedTimestamp,
 		endTimeMillis:          undefinedTimestamp,
+		screenWriter:           terminal.NewScreenWriter(),
 		allowedEnvVars:         []string{"USER", "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID"},
 		structuredCommandLines: make([]*command_line.CommandLine, 0),
 		workspaceStatuses:      make([]*build_event_stream.WorkspaceStatus, 0),
@@ -140,9 +140,11 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		{
-			sep.consoleBuffer.Write([]byte(p.Progress.Stderr))
-			sep.consoleBuffer.Write([]byte(p.Progress.Stdout))
-			// Clear progress event values as we've got them via ConsoleBuffer and they take up a lot of space.
+			sep.screenWriter.Write([]byte(p.Progress.Stderr))
+			sep.screenWriter.Write([]byte(p.Progress.Stdout))
+			// Now that we've updated our screenwriter, zero out
+			// progress output in the event so they don't eat up
+			// memory.
 			p.Progress.Stderr = ""
 			p.Progress.Stdout = ""
 		}
@@ -279,7 +281,7 @@ func (sep *StreamingEventParser) FillInvocation(invocation *inpb.Invocation) {
 	}
 	invocation.DurationUsec = buildDuration.Microseconds()
 	// TODO(siggisim): Do this rendering once on write, rather than on every read.
-	invocation.ConsoleBuffer = string(terminal.RenderAsANSI(sep.consoleBuffer.Bytes()))
+	invocation.ConsoleBuffer = string(sep.screenWriter.RenderAsANSI())
 }
 
 func FillInvocationFromEvents(events []*inpb.InvocationEvent, invocation *inpb.Invocation) {
