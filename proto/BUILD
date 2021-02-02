@@ -95,6 +95,16 @@ proto_library(
 )
 
 proto_library(
+    name = "workflow_proto",
+    srcs = [
+        "workflow.proto",
+    ],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+proto_library(
     name = "build_event_stream_proto",
     srcs = ["build_event_stream.proto"],
     deps = [
@@ -179,6 +189,7 @@ proto_library(
         ":invocation_proto",
         ":target_proto",
         ":user_proto",
+        ":workflow_proto",
     ],
 )
 
@@ -321,6 +332,15 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "workflow_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/workflow",
+    proto = ":workflow_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "invocation_policy_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/blaze.invocation_policy",
     proto = ":invocation_policy_proto",
@@ -367,6 +387,7 @@ go_proto_library(
         ":invocation_go_proto",
         ":target_go_proto",
         ":user_go_proto",
+        ":workflow_go_proto",
     ],
 )
 
@@ -501,6 +522,11 @@ ts_proto_library(
 ts_proto_library(
     name = "target_ts_proto",
     deps = [":target_proto"],
+)
+
+ts_proto_library(
+    name = "workflow_ts_proto",
+    deps = [":workflow_proto"],
 )
 
 ts_proto_library(

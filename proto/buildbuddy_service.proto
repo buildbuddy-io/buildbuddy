@@ -7,6 +7,7 @@ import "proto/grp.proto";
 import "proto/invocation.proto";
 import "proto/target.proto";
 import "proto/user.proto";
+import "proto/workflow.proto";
 
 package buildbuddy.service;
 
@@ -59,7 +60,7 @@ service BuildBuddyService {
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);
 
   // Workflow API
-  rpc CreateWorkflow(target.CreateWorkflowRequest) returns (target.CreateWorkflowResponse);
-  rpc DeleteWorkflow(target.DeleteWorkflowRequest) returns (target.DeleteWorkflowResponse);
-  rpc ListWorkflow(target.ListWorkflowRequest) returns (target.ListWorkflowResponse);
+  rpc CreateWorkflow(workflow.CreateWorkflowRequest) returns (workflow.CreateWorkflowResponse);
+  rpc DeleteWorkflow(workflow.DeleteWorkflowRequest) returns (workflow.DeleteWorkflowResponse);
+  rpc GetWorkflows(workflow.GetWorkflowsRequest) returns (workflow.GetWorkflowsResponse);
 }
