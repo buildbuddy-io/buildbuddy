@@ -31,6 +31,7 @@ build:remote --platforms=@buildbuddy_toolchain//:platform
 build:remote --crosstool_top=@buildbuddy_toolchain//:toolchain
 build:remote --remote_timeout=600
 build:remote --remote_download_minimal
+build:remote --experimental_repo_remote_exec
 build:remote --jobs=100
 
 # Configuration used for CI
