@@ -13,6 +13,7 @@ go_library(
         "//proto:invocation_go_proto",
         "//proto:target_go_proto",
         "//proto:user_go_proto",
+        "//proto:workflow_go_proto",
         "//server/build_event_protocol/build_event_handler:go_default_library",
         "//server/bytestream:go_default_library",
         "//server/environment:go_default_library",

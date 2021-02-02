@@ -13,8 +13,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jinzhu/gorm"
 
-	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	guuid "github.com/google/uuid"
 )
 
@@ -52,7 +52,7 @@ func testRepo(ctx context.Context, env environment.Env, repoURL, accessToken str
 	return nil
 }
 
-func CreateWorkflow(ctx context.Context, env environment.Env, req *trpb.CreateWorkflowRequest) (*trpb.CreateWorkflowResponse, error) {
+func CreateWorkflow(ctx context.Context, env environment.Env, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
 	// Validate the request.
 	repoReq := req.GetGitRepo()
 	if repoReq.GetRepoUrl() == "" {
@@ -88,7 +88,7 @@ func CreateWorkflow(ctx context.Context, env environment.Env, req *trpb.CreateWo
 		return nil, status.InternalError(err.Error())
 	}
 
-	rsp := &trpb.CreateWorkflowResponse{}
+	rsp := &wfpb.CreateWorkflowResponse{}
 	err = env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
 		workflowID, err := tables.PrimaryKeyForTable("Workflows")
 		if err != nil {
@@ -114,7 +114,7 @@ func CreateWorkflow(ctx context.Context, env environment.Env, req *trpb.CreateWo
 	return rsp, nil
 }
 
-func DeleteWorkflow(ctx context.Context, env environment.Env, req *trpb.DeleteWorkflowRequest) (*trpb.DeleteWorkflowResponse, error) {
+func DeleteWorkflow(ctx context.Context, env environment.Env, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
 	if env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}
@@ -141,14 +141,14 @@ func DeleteWorkflow(ctx context.Context, env environment.Env, req *trpb.DeleteWo
 		}
 		return tx.Exec(`DELETE FROM Workflows WHERE workflow_id = ?`, req.GetId()).Error
 	})
-	return &trpb.DeleteWorkflowResponse{}, err
+	return &wfpb.DeleteWorkflowResponse{}, err
 }
 
-func ListWorkflow(ctx context.Context, env environment.Env, req *trpb.ListWorkflowRequest) (*trpb.ListWorkflowResponse, error) {
+func GetWorkflows(ctx context.Context, env environment.Env, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
 	if env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}
-	rsp := &trpb.ListWorkflowResponse{}
+	rsp := &wfpb.GetWorkflowsResponse{}
 	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url FROM Workflows`)
 	// Adds user / permissions check.
 	if err := perms.AddPermissionsCheckToQuery(ctx, env, q); err != nil {
@@ -163,9 +163,9 @@ func ListWorkflow(ctx context.Context, env environment.Env, req *trpb.ListWorkfl
 		}
 		defer rows.Close()
 
-		rsp.Workflow = make([]*trpb.ListWorkflowResponse_Workflow, 0)
+		rsp.Workflow = make([]*wfpb.GetWorkflowsResponse_Workflow, 0)
 		for rows.Next() {
-			wf := &trpb.ListWorkflowResponse_Workflow{}
+			wf := &wfpb.GetWorkflowsResponse_Workflow{}
 			if err := tx.ScanRows(rows, &wf); err != nil {
 				return err
 			}

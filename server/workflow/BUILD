@@ -6,8 +6,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/workflow",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:target_go_proto",
         "//proto:user_id_go_proto",
+        "//proto:workflow_go_proto",
         "//server/environment:go_default_library",
         "//server/tables:go_default_library",
         "//server/util/perms:go_default_library",
@@ -24,7 +24,7 @@ go_test(
     embed = [":go_default_library"],
     deps = [
         "//proto:buildbuddy_service_go_proto",
-        "//proto:target_go_proto",
+        "//proto:workflow_go_proto",
         "//server/buildbuddy_server:go_default_library",
         "//server/tables:go_default_library",
         "//server/testutil/auth:go_default_library",

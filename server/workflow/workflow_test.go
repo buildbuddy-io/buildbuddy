@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
+	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 )
 
 func runBBServer(ctx context.Context, env *environment.TestEnv, t *testing.T) *grpc.ClientConn {
@@ -47,9 +47,9 @@ func TestCreate(t *testing.T) {
 	clientConn := runBBServer(ctx, te, t)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 
-	req := &trpb.CreateWorkflowRequest{
+	req := &wfpb.CreateWorkflowRequest{
 		Name: "BuildBuddy OS Workflow",
-		GitRepo: &trpb.CreateWorkflowRequest_GitRepo{
+		GitRepo: &wfpb.CreateWorkflowRequest_GitRepo{
 			RepoUrl: "git@github.com:buildbuddy-io/buildbuddy.git",
 		},
 	}
@@ -91,7 +91,7 @@ func TestDelete(t *testing.T) {
 	err = te.GetDBHandle().Create(&row).Error
 	assert.Nil(t, err)
 
-	req := &trpb.DeleteWorkflowRequest{Id: "WF1"}
+	req := &wfpb.DeleteWorkflowRequest{Id: "WF1"}
 	ctx = metadata.AppendToOutgoingContext(ctx, auth.TestApiKeyHeader, "USER1")
 	_, err = bbClient.DeleteWorkflow(ctx, req)
 	assert.Nil(t, err)
@@ -149,14 +149,14 @@ func TestList(t *testing.T) {
 	err = te.GetDBHandle().Create(&row3).Error
 	assert.Nil(t, err)
 
-	req := &trpb.ListWorkflowRequest{}
+	req := &wfpb.GetWorkflowsRequest{}
 	ctx1 := metadata.AppendToOutgoingContext(ctx, auth.TestApiKeyHeader, "USER1")
-	rsp, err := bbClient.ListWorkflow(ctx1, req)
+	rsp, err := bbClient.GetWorkflows(ctx1, req)
 	assert.Nil(t, err)
 	assert.Equal(t, 2, len(rsp.GetWorkflow()), "Two workflows owned by USER1 should be returned")
 
 	ctx2 := metadata.AppendToOutgoingContext(ctx, auth.TestApiKeyHeader, "USER2")
-	rsp, err = bbClient.ListWorkflow(ctx2, req)
+	rsp, err = bbClient.GetWorkflows(ctx2, req)
 	assert.Nil(t, err)
 	assert.Equal(t, 1, len(rsp.GetWorkflow()), "One workflow owned by USER2 should be returned")
 }

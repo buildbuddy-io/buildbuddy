@@ -28,6 +28,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
+	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
@@ -665,14 +666,14 @@ func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetReq
 	return target.GetTarget(ctx, s.env, req)
 }
 
-func (s *BuildBuddyServer) CreateWorkflow(ctx context.Context, req *trpb.CreateWorkflowRequest) (*trpb.CreateWorkflowResponse, error) {
+func (s *BuildBuddyServer) CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
 	return workflow.CreateWorkflow(ctx, s.env, req)
 }
-func (s *BuildBuddyServer) DeleteWorkflow(ctx context.Context, req *trpb.DeleteWorkflowRequest) (*trpb.DeleteWorkflowResponse, error) {
+func (s *BuildBuddyServer) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
 	return workflow.DeleteWorkflow(ctx, s.env, req)
 }
-func (s *BuildBuddyServer) ListWorkflow(ctx context.Context, req *trpb.ListWorkflowRequest) (*trpb.ListWorkflowResponse, error) {
-	return workflow.ListWorkflow(ctx, s.env, req)
+func (s *BuildBuddyServer) GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
+	return workflow.GetWorkflows(ctx, s.env, req)
 }
 
 type bsLookup struct {
