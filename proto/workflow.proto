@@ -81,5 +81,6 @@ message GetWorkflowsResponse {
     // Ex. "https://github.com/buildbuddy-io/buildbuddy-internal"
     string repo_url = 3;
   }
+
   repeated Workflow workflow = 2;
 }
