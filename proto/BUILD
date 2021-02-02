@@ -189,6 +189,7 @@ proto_library(
         ":invocation_proto",
         ":target_proto",
         ":user_proto",
+        ":workflow_proto",
     ],
 )
 
@@ -386,6 +387,7 @@ go_proto_library(
         ":invocation_go_proto",
         ":target_go_proto",
         ":user_go_proto",
+        ":workflow_go_proto",
     ],
 )
 

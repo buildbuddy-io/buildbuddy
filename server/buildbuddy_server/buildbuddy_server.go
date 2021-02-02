@@ -666,13 +666,13 @@ func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetReq
 	return target.GetTarget(ctx, s.env, req)
 }
 
-func (s *BuildBuddyServer) CreateWorkflow(ctx context.Context, req *trpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
+func (s *BuildBuddyServer) CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
 	return workflow.CreateWorkflow(ctx, s.env, req)
 }
-func (s *BuildBuddyServer) DeleteWorkflow(ctx context.Context, req *trpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
+func (s *BuildBuddyServer) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
 	return workflow.DeleteWorkflow(ctx, s.env, req)
 }
-func (s *BuildBuddyServer) GetWorkflows(ctx context.Context, req *trpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
+func (s *BuildBuddyServer) GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
 	return workflow.GetWorkflows(ctx, s.env, req)
 }
 
