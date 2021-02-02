@@ -52,11 +52,23 @@ function getThreadNames(events: TraceEvent[]) {
   return threadNameByTid;
 }
 
+function normalizeThreadNames(events: TraceEvent[]) {
+  for (const event of events as ThreadEvent[]) {
+    if (event.name === "thread_name") {
+      // Job threads ("skyframe evaluators") will sometimes have inconsistent dashes.
+      if (event.args.name.startsWith("skyframe")) {
+        event.args.name = event.args.name.replace(/^skyframe[ \-]evaluator[ \-]/, "skyframe evaluator ");
+      }
+    }
+  }
+}
+
 /**
  * Builds the ThreadTimeline structures given the flat list of trace events
  * from the profile.
  */
 export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold = 0 } = {}): ThreadTimeline[] {
+  normalizeThreadNames(events);
   const threadNameByTid = getThreadNames(events);
 
   events = events.filter(
