@@ -8,6 +8,9 @@ message FrontendTemplateData {
 
   // Path to the JS entry point.
   string js_entry_point_path = 2;
+
+  // Whether or not to render GA tag.
+  bool ga_enabled = 3;
 }
 
 message FrontendConfig {

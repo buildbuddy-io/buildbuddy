@@ -20,6 +20,7 @@ const (
 
 var (
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle.min.js", "Absolute URL path of the app JS entry point")
+	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
 )
 
 // StaticFileServer implements a static file http server that serves static
@@ -91,6 +92,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendTemplateData{
 		Config:           &config,
 		JsEntryPointPath: *jsEntryPointPath,
+		GaEnabled:        !*disableGA,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

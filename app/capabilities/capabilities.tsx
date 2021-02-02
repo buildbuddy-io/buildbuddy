@@ -33,12 +33,14 @@ export class Capabilities {
     this.deleteInvocation = true;
     this.manageApiKeys = true;
     this.paths = new Set(paths);
-    window.gtag("set", {
-      app_name: this.name,
-      app_version: this.version,
-      app_installer_id: window.location.host,
-    });
-    window.gtag("config", "UA-156160991-2");
+    if (window.gtag) {
+      window.gtag("set", {
+        app_name: this.name,
+        app_version: this.version,
+        app_installer_id: window.location.host,
+      });
+      window.gtag("config", "UA-156160991-2");
+    }
     this.didNavigateToPath();
   }
 
@@ -47,10 +49,12 @@ export class Capabilities {
   }
 
   didNavigateToPath() {
-    window.gtag("event", "path", {
-      event_category: "navigate",
-      event_label: window.location.pathname + window.location.search + window.location.hash,
-    });
+    if (window.gtag) {
+      window.gtag("event", "path", {
+        event_category: "navigate",
+        event_label: window.location.pathname + window.location.search + window.location.hash,
+      });
+    }
   }
 }
 
