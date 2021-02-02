@@ -4,7 +4,7 @@ import "proto/context.proto";
 
 package workflow;
 
-message CreateWorkflowRequest{
+message CreateWorkflowRequest {
   // The request context.
   context.RequestContext request_context = 1;
 
