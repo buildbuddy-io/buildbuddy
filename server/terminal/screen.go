@@ -8,14 +8,21 @@ import (
 
 // A terminal 'screen'. Current cursor position, cursor style, and characters
 type screen struct {
-	x      int
-	y      int
-	screen [][]node
-	style  *style
+	x        int
+	y        int
+	screen   [][]node
+	style    *style
+	maxLines int
 }
 
 const screenEndOfLine = -1
 const screenStartOfLine = 0
+
+func newScreen(maxLines int) *screen {
+	return &screen{
+		maxLines: maxLines,
+	}
+}
 
 // Clear part (or all) of a line on the screen
 func (s *screen) clear(y int, xStart int, xEnd int) {
@@ -72,6 +79,13 @@ func (s *screen) backward(i string) {
 func (s *screen) growScreenHeight() {
 	for i := len(s.screen); i <= s.y; i++ {
 		s.screen = append(s.screen, make([]node, 0, 80))
+	}
+	if s.maxLines > 0 {
+		extraLines := len(s.screen) - s.maxLines
+		if extraLines > 0 {
+			s.screen = s.screen[extraLines:]
+			s.y -= extraLines
+		}
 	}
 }
 
@@ -158,16 +172,6 @@ func (s *screen) parse(ansi []byte) {
 	s.style = &emptyStyle
 
 	parseANSIToScreen(s, ansi)
-}
-
-func (s *screen) asHTML() []byte {
-	var lines []string
-
-	for _, line := range s.screen {
-		lines = append(lines, outputLineAsHTML(line))
-	}
-
-	return []byte(strings.Join(lines, "\n"))
 }
 
 func (s *screen) asANSI() []byte {

@@ -9,39 +9,30 @@ Modified version of https://github.com/buildkite/terminal-to-html
 */
 package terminal
 
-import "bytes"
-
-// RenderAsHTML converts ANSI to HTML and returns the result.
-func RenderAsHTML(input []byte) []byte {
-	screen := screen{}
-	screen.parse(input)
-	output := bytes.Replace(screen.asHTML(), []byte("\n\n"), []byte("\n&nbsp;\n"), -1)
-	return output
-}
-
-// RenderAsANSI parses ANSI cursor codes, but retains color codes.
-func RenderAsANSI(input []byte) []byte {
-	screen := screen{}
-	screen.parse(input)
-	output := screen.asANSI()
-	return output
-}
+const maxBuildLogLines = 10000
 
 // lol who named this thing :P
 // ScreenWriter allows streaming data to a virtual screen
 // that will be rendered after all writes are complete.
 type ScreenWriter struct {
-	s screen
+	s *screen
+	p *parser
 }
 
 func NewScreenWriter() *ScreenWriter {
+	s := newScreen(maxBuildLogLines)
+	s.style = &emptyStyle
+
+	p := &parser{mode: MODE_NORMAL, screen: s}
+
 	return &ScreenWriter{
-		s: screen{},
+		s: s,
+		p: p,
 	}
 }
 
 func (sw *ScreenWriter) Write(data []byte) (int, error) {
-	sw.s.parse(data)
+	sw.p.parseChunk(data)
 	return len(data), nil
 }
 
