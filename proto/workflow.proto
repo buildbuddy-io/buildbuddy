@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package workflow;
+
+message CreateWorkflowRequest{
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // The name of this workflow.
+  // Ex. "Let It Flow"
+  string name = 2;
+
+  message GitRepo {
+    // The HTTPS URL of the Git repository that will be checked
+    // out and built as part of this project.
+    // Ex. "https://github.com/buildbuddy-io/buildbuddy-internal"
+    string repo_url = 1;
+
+    // The access token to use when cloning this repository.
+    // For Github, Gitlab, and BitBucket, this is known as a
+    // Personal Access Token.
+    // Ex. "ABASDBASDBASBD@!#!@#23323!!"
+    string access_token = 2;
+  }
+
+  // The git repository to associate with this project. For now, only a single
+  // git repository is supported.
+  GitRepo git_repo = 3;
+}
+
+message CreateWorkflowResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  // ID of the created workflow.
+  // Ex. "WF4576963743584254779"
+  string id = 2;
+
+  // The unique webhook URL for this project. Sending a POST request to this
+  // URL will trigger a build of this project.
+  // Ex. "https://app.buildbuddy.io/webhooks/workflows/abcd123letitflow"
+  string webhook_url = 3;
+}
+
+message DeleteWorkflowRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // ID of the workflow to delete.
+  // Ex. "WF4576963743584254779"
+  string id = 2;
+}
+
+message DeleteWorkflowResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+}
+
+message GetWorkflowsRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+}
+
+message GetWorkflowsResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  message Workflow {
+    // ID of the workflow to delete.
+    // Ex. "WF4576963743584254779"
+    string id = 1;
+
+    // The name of this workflow.
+    // Ex. "Let It Flow"
+    string name = 2;
+
+    // The HTTPS URL of the Git repository that will be checked
+    // out and built as part of this project.
+    // Ex. "https://github.com/buildbuddy-io/buildbuddy-internal"
+    string repo_url = 3;
+  }
+  repeated Workflow workflow = 2;
+}
