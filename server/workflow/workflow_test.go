@@ -48,7 +48,8 @@ func TestCreate(t *testing.T) {
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 
 	req := &wfpb.CreateWorkflowRequest{
-		Name: "BuildBuddy OS Workflow",
+		RequestContext: auth.RequestContext("USER1", "GROUP1"),
+		Name:           "BuildBuddy OS Workflow",
 		GitRepo: &wfpb.CreateWorkflowRequest_GitRepo{
 			RepoUrl: "git@github.com:buildbuddy-io/buildbuddy.git",
 		},
@@ -120,7 +121,7 @@ func TestList(t *testing.T) {
 		GroupID:    "GROUP1",
 		Perms:      48,
 		RepoURL:    "git@github.com:buildbuddy-io/buildbuddy.git",
-		WebhookID:  "http://webhook/WF1",
+		WebhookID:  "WHID1",
 	}
 	err = te.GetDBHandle().Create(&row).Error
 	assert.Nil(t, err)
@@ -132,7 +133,7 @@ func TestList(t *testing.T) {
 		GroupID:    "GROUP1",
 		Perms:      48,
 		RepoURL:    "git@github.com:buildbuddy-io/buildbuddy-internal.git",
-		WebhookID:  "http://webhook/WF2",
+		WebhookID:  "WHID2",
 	}
 	err = te.GetDBHandle().Create(&row2).Error
 	assert.Nil(t, err)
@@ -144,7 +145,7 @@ func TestList(t *testing.T) {
 		GroupID:    "GROUP2",
 		Perms:      48,
 		RepoURL:    "git@github.com:someOtherRepo",
-		WebhookID:  "http://webhook/WF3",
+		WebhookID:  "WHID3",
 	}
 	err = te.GetDBHandle().Create(&row3).Error
 	assert.Nil(t, err)
@@ -160,9 +161,13 @@ func TestList(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, 1, len(rsp.GetWorkflow()), "One workflow owned by USER2 should be returned")
 
-	assert.Equal(t, wfpb.GetWorkflowsResponse_Workflow{
-		WorkflowId: "WF3",
-		Name:       "Workflow to be deleted",
-		RepoUrl:    "git@github.com:someOtherRepo",
-	}, "Expected fields should be returned")
+	if len(rsp.GetWorkflow()) == 1 {
+		wf := rsp.GetWorkflow()[0]
+		assert.Equal(t, wfpb.GetWorkflowsResponse_Workflow{
+			Id:         "WF3",
+			Name:       "Workflow to be deleted",
+			RepoUrl:    "git@github.com:someOtherRepo",
+			WebhookUrl: "http://localhost:8080/webhooks/workflow/WHID3",
+		}, *wf, "Expected fields should be returned")
+	}
 }
