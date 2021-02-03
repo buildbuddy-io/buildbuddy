@@ -206,6 +206,7 @@ def create_release_and_upload_artifacts(repo, version, artifacts):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--allow_dirty', default=False, action='store_true')
     parser.add_argument('--skip_version_bump', default=False, action='store_true')
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
     args = parser.parse_args()
@@ -213,7 +214,9 @@ def main():
     bump_version = not args.skip_version_bump
     update_latest_tag = not args.skip_latest_tag
 
-    if not workspace_is_clean():
+    if args.allow_dirty or workspace_is_clean():
+        print("workspace is clean!")
+    else:
         die('Your workspace has uncommitted changes. ' +
             'Please run this in a clean workspace!')
     gh_token = os.environ.get('GITHUB_TOKEN')
