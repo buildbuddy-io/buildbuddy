@@ -204,7 +204,6 @@ func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) 
 	repb.RegisterCapabilitiesServer(grpcServer, capabilitiesServer)
 }
 
-
 func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_server.BuildBuddyServer, port *int, credentialOption grpc.ServerOption) *grpc.Server {
 	// Initialize our gRPC server (and fail early if that doesn't happen).
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)

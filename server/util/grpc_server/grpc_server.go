@@ -5,9 +5,9 @@ import (
 	"log"
 	"time"
 
-	"google.golang.org/grpc"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
+	"google.golang.org/grpc"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 )
