@@ -14,6 +14,7 @@ export class Capabilities {
   compareInvocations: boolean;
   deleteInvocation: boolean;
   manageApiKeys: boolean;
+  workflows: boolean;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
@@ -32,6 +33,7 @@ export class Capabilities {
     this.compareInvocations = true;
     this.deleteInvocation = true;
     this.manageApiKeys = true;
+    this.workflows = localStorage["workflows_enabled"] === "true";
     this.paths = new Set(paths);
     if (window.gtag) {
       window.gtag("set", {
