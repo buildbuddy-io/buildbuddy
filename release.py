@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-import json
+import argparse
 import glob
+import json
 import os
 import re
 import subprocess
 import sys
-import time
 import tempfile
+import time
 
 # Don't care about py2/py3 differences too much.
 try:
@@ -101,11 +102,12 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     push_tag_cmd = 'git push origin %s' % new_version
     run_or_die(push_tag_cmd)
 
-def update_docker_image(new_version):
+def update_docker_image(new_version, update_latest_tag):
     version_build_cmd = 'bazel run -c opt --stamp --define version=server-image-%s --define release=true deployment:release_onprem' % new_version
     run_or_die(version_build_cmd)
-    latest_build_cmd = 'bazel run -c opt --stamp --define version=latest --define release=true deployment:release_onprem'
-    run_or_die(latest_build_cmd)
+    if update_latest_tag:
+        latest_build_cmd = 'bazel run -c opt --stamp --define version=latest --define release=true deployment:release_onprem'
+        run_or_die(latest_build_cmd)
 
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
@@ -203,6 +205,14 @@ def create_release_and_upload_artifacts(repo, version, artifacts):
             )
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--skip_version_bump', default=False, action='store_true')
+    parser.add_argument('--skip_latest_tag', default=False, action='store_true')
+    args = parser.parse_args()
+
+    bump_version = not args.skip_version_bump
+    update_latest_tag = not args.skip_latest_tag
+
     if not workspace_is_clean():
         die('Your workspace has uncommitted changes. ' +
             'Please run this in a clean workspace!')
@@ -215,20 +225,22 @@ def main():
     org_name = "buildbuddy-io"
     repo_name = "buildbuddy"
 
-    old_version = read_version(version_file)
-    new_version = bump_patch_version(old_version)
-    release_notes = generate_release_notes(old_version)
-    print("release notes:\n" + release_notes)
-    print('I found existing version: %s' % old_version)
-    new_version = confirm_new_version(new_version)
-    print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))
+    new_version = read_version(version_file)
+    if bump_version:
+        old_version = read_version(version_file)
+        new_version = bump_patch_version(old_version)
+        release_notes = generate_release_notes(old_version)
+        print("release notes:\n" + release_notes)
+        print('I found existing version: %s' % old_version)
+        new_version = confirm_new_version(new_version)
+        print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))
 
-    time.sleep(2)
-    update_version_in_file(old_version, new_version, version_file)
-    commit_version_bump(old_version, new_version, version_file)
-    create_and_push_tag(old_version, new_version, release_notes)
+        time.sleep(2)
+        update_version_in_file(old_version, new_version, version_file)
+        commit_version_bump(old_version, new_version, version_file)
+        create_and_push_tag(old_version, new_version, release_notes)
 
-    update_docker_image(new_version)
+    update_docker_image(new_version, update_latest_tag)
 
     ## Don't need this because github automatically creates a source archive when we
     ## make a new tag. Useful when we have artifacts to upload.
