@@ -40,6 +40,14 @@ class Router {
     this.navigateTo(Path.setupPath);
   }
 
+  navigateToWorkflows() {
+    if (!capabilities.canNavigateToPath(Path.workflowsPath)) {
+      alert(`Workflows are not available in ${capabilities.name}`);
+      return;
+    }
+    this.navigateTo(Path.workflowsPath);
+  }
+
   navigateToSettings() {
     if (!capabilities.canNavigateToPath(Path.settingsPath)) {
       alert(`Settings are not available in ${capabilities.name}`);
@@ -212,6 +220,7 @@ export class Path {
   static editOrgPath = "/org/edit";
   static trendsPath = "/trends/";
   static tapPath = "/tests/";
+  static workflowsPath = "/workflows/";
 }
 
 export default new Router();
