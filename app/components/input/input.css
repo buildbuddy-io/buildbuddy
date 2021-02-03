@@ -9,6 +9,10 @@
   border-radius: 2px;
 }
 
+.text-input::placeholder {
+  color: #aaa;
+}
+
 .text-input[readonly] {
   background: #eee;
 }
