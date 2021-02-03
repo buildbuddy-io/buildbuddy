@@ -159,4 +159,10 @@ func TestList(t *testing.T) {
 	rsp, err = bbClient.GetWorkflows(ctx2, req)
 	assert.Nil(t, err)
 	assert.Equal(t, 1, len(rsp.GetWorkflow()), "One workflow owned by USER2 should be returned")
+
+	assert.Equal(t, wfpb.GetWorkflowsResponse_Workflow{
+		WorkflowId: "WF3",
+		Name:       "Workflow to be deleted",
+		RepoUrl:    "git@github.com:someOtherRepo",
+	}, "Expected fields should be returned")
 }
