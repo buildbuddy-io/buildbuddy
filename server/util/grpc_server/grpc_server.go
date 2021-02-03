@@ -6,6 +6,10 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
+
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 )
 
 func GRPCShutdown(ctx context.Context, grpcServer *grpc.Server) error {
@@ -39,5 +43,15 @@ func GRPCShutdown(ctx context.Context, grpcServer *grpc.Server) error {
 func GRPCShutdownFunc(grpcServer *grpc.Server) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		return GRPCShutdown(ctx, grpcServer)
+	}
+}
+
+func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
+	return []grpc.ServerOption{
+		filters.GetUnaryInterceptor(env),
+		filters.GetStreamInterceptor(env),
+		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
+		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
+		grpc.MaxRecvMsgSize(env.GetConfigurator().GetGRPCMaxRecvMsgSizeBytes()),
 	}
 }

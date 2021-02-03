@@ -51,7 +51,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
-	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
@@ -205,6 +204,7 @@ func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) 
 	repb.RegisterCapabilitiesServer(grpcServer, capabilitiesServer)
 }
 
+
 func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_server.BuildBuddyServer, port *int, credentialOption grpc.ServerOption) *grpc.Server {
 	// Initialize our gRPC server (and fail early if that doesn't happen).
 	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
@@ -213,14 +213,8 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 	if err != nil {
 		log.Fatalf("Failed to listen: %s", err)
 	}
-	grpcOptions := []grpc.ServerOption{
-		rpcfilters.GetUnaryInterceptor(env),
-		rpcfilters.GetStreamInterceptor(env),
-		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
-		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
-		grpc.MaxRecvMsgSize(env.GetConfigurator().GetGRPCMaxRecvMsgSizeBytes()),
-	}
 
+	grpcOptions := grpc_server.CommonGRPCServerOptions(env)
 	if credentialOption != nil {
 		grpcOptions = append(grpcOptions, credentialOption)
 		log.Printf("gRPCS listening on http://%s\n", hostAndPort)
