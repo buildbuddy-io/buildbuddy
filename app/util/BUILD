@@ -21,6 +21,11 @@ ts_library(
 )
 
 ts_library(
+    name = "clipboard",
+    srcs = ["clipboard.ts"],
+)
+
+ts_library(
     name = "dom",
     srcs = ["dom.ts"],
     deps = [
