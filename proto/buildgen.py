@@ -79,14 +79,13 @@ if __name__ == "__main__":
 
     import_paths_by_proto: List[Tuple[str, str]] = []
     for proto in sh("ls *.proto"):
-        proto_name = os.path.basename(proto)
         imported_paths = []
-        for imp in sh(f'cat {proto} | grep -P "^import ".*.proto""'):
-            match = re.search(r'"(.*?\.proto)"', imp)
+        for imported_path in sh(f'cat {proto} | grep -P "^import ".*.proto""'):
+            match = re.search(r'"(.*?\.proto)"', imported_path)
             if not match:
-                fatal(f"could not process import: {imp}")
+                fatal(f"could not process import: {imported_path}")
             imported_paths.append(match.group(1))
-        import_paths_by_proto.append((proto_name, imported_paths))
+        import_paths_by_proto.append((proto, imported_paths))
 
     proto_rules = []
     go_rules = []
