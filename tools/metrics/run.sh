@@ -21,7 +21,7 @@ GRAFANA_DASHBOARD_FILE_PATH="./grafana/dashboards/buildbuddy.json"
 (
   open=$(which open &>/dev/null && echo "open" || echo "xdg-open")
   tries=100
-  while ! curl "$GRAFANA_STARTUP_URL" &>/dev/null ; do
+  while ! ( curl "$GRAFANA_STARTUP_URL" &>/dev/null && curl "http://localhost:9100/metrics" &>/dev/null ); do
     sleep 0.5
     tries=$(( tries - 1 ))
     if [[ $tries == 0 ]] ; then
