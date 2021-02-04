@@ -23,8 +23,7 @@ message ApiKey {
   // to check capabilities.
   enum Capability {
     UNKNOWN_CAPABILITY = 0;
-    // Allows the API key to write to the content-addressable store
-    // and action cache.
+    // Allows writing to the content-addressable store and action cache.
     CACHE_WRITE_CAPABILITY = 1; // 2^0
   }
 
