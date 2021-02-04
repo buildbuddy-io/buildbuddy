@@ -1,7 +1,6 @@
 package healthcheck
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
