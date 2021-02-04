@@ -67,6 +67,7 @@ var (
 	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
 
+	// URL path prefixes that should be handled by serving the app's HTML.
 	appRoutes = []string{
 		"/compare/",
 		"/docs/",
