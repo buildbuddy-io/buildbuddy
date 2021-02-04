@@ -36,3 +36,8 @@ func TestFromIntOneCapability(t *testing.T) {
 
 	assert.Equal(t, []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, caps)
 }
+
+func TestFromIntMultipleCapabilities(t *testing.T) {
+	// TODO: we don't have multiple capabilities yet but should def test it when we do
+	t.Skip()
+}
