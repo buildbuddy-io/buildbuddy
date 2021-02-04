@@ -1,6 +1,3 @@
-# DO NOT EDIT BY HAND -- generate automatically with `python3 proto/buildgen.py`.
-# To add new external deps, edit RESOLUTIONS at the top of buildgen.py.
-
 load("@rules_proto//proto:defs.bzl", "proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@npm//@bazel/labs:index.bzl", ts_proto_library = "protobufjs_ts_library")
