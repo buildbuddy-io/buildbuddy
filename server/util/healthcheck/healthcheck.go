@@ -122,8 +122,9 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	for name, ck := range h.checkers {
+		checkFn := ck
 		eg.Go(func() error {
-			if err := ck.Check(ctx); err != nil {
+			if err := checkFn.Check(ctx); err != nil {
 				return status.UnavailableErrorf("Service %s is unhealthy: %s", name, err)
 			}
 			return nil
