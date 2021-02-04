@@ -6,13 +6,10 @@ import (
 
 func FromInt(m int32) []akpb.ApiKey_Capability {
 	caps := []akpb.ApiKey_Capability{}
-	c := int32(1)
-	for m > 0 {
-		if m&1 > 0 {
+	for _, c := range akpb.ApiKey_Capability_value {
+		if m&c > 0 {
 			caps = append(caps, akpb.ApiKey_Capability(c))
 		}
-		m >>= 1
-		c <<= 1
 	}
 	return caps
 }
