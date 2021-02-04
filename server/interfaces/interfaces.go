@@ -294,3 +294,41 @@ type MetricsCollector interface {
 type RepoDownloader interface {
 	TestRepoAccess(ctx context.Context, repoURL, accessToken string) error
 }
+
+type Checker interface {
+	// Returns nil on success, error on failure. Returning an error will
+	// indicate to the health checker that this service is unhealthy and
+	// that the server is not ready to serve.
+	Check(ctx context.Context) error
+}
+type CheckerFunc func(ctx context.Context) error
+
+func (f CheckerFunc) Check(ctx context.Context) error {
+	return f(ctx)
+}
+
+type HealthChecker interface {
+	// Adds a healthcheck -- the server's readiness is dependend on all
+	// registered heathchecks passing.
+	AddHealthCheck(name string, hc Checker)
+
+	// RegisterShutdownFunction registers a function that will be called
+	// when the server shuts down. This can be used for finalizing any
+	// short work and freeing up resources. A CheckerFunc may block
+	// shutdown for up to ~30 seconds or so, at which point the server
+	// will terminate un-gracefully.
+	RegisterShutdownFunction(hc CheckerFunc)
+
+	// WaitForGracefulShutdown should be called as the last thing in a
+	// main function -- it will block forever until a server recieves a
+	// shutdown signal.
+	WaitForGracefulShutdown()
+
+	// LivenessHandler returns "OK" as soon as the server is alive.
+	LivenessHandler() http.Handler
+
+	// ReadinessHandler returns "OK" when the server is ready to serve.
+	// If a HealthCheck returns failure for some reason, the server will
+	// stop returning OK and will instead return Service Unavailable error.
+	ReadinessHandler() http.Handler
+}

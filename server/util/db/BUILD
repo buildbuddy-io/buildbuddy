@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/config:go_default_library",
+        "//server/interfaces:go_default_library",
         "//server/metrics:go_default_library",
         "//server/tables:go_default_library",
         "@com_github_googlecloudplatform_cloudsql_proxy//proxy/dialers/mysql:go_default_library",

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/jinzhu/gorm"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -252,7 +254,7 @@ func (r *dbStatsRecorder) recordStats() {
 	r.lastRecordedStats = stats
 }
 
-func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
+func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) (*DBHandle, error) {
 	if c.GetDBDataSource() == "" {
 		return nil, fmt.Errorf("No database configured -- please specify one in the config")
 	}
@@ -288,6 +290,9 @@ func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
 		DB:      primaryDB,
 		dialect: dialect,
 	}
+	hc.AddHealthCheck("sql_primary", interfaces.CheckerFunc(func(ctx context.Context) error {
+		return dbh.DB.DB().Ping()
+	}))
 
 	// Setup a read replica if one is configured.
 	if c.GetDBReadReplica() != "" {
@@ -308,6 +313,10 @@ func GetConfiguredDatabase(c *config.Configurator) (*DBHandle, error) {
 			role: "read_replica",
 		}
 		go statsRecorder.poll(statsPollInterval)
+
+		hc.AddHealthCheck("sql_read_replica", interfaces.CheckerFunc(func(ctx context.Context) error {
+			return dbh.readReplicaDB.DB().Ping()
+		}))
 	}
 	return dbh, nil
 }

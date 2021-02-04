@@ -81,7 +81,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}
-	dbHandle, err := db.GetConfiguredDatabase(configurator)
+	dbHandle, err := db.GetConfiguredDatabase(configurator, healthChecker)
 	if err != nil {
 		log.Fatalf("Error configuring database: %s", err)
 	}

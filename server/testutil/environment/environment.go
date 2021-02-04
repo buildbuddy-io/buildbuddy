@@ -10,8 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
@@ -87,7 +87,7 @@ func GetTestEnv() (*TestEnv, error) {
 	if err != nil {
 		return nil, err
 	}
-	healthChecker := healthcheck.NewHealthChecker("test-server-type")
+	healthChecker := healthcheck.NewTestingHealthChecker()
 	te := &TestEnv{
 		RealEnv: real_environment.NewRealEnv(configurator, healthChecker),
 	}
@@ -96,7 +96,7 @@ func GetTestEnv() (*TestEnv, error) {
 		return nil, err
 	}
 	te.SetCache(c)
-	dbHandle, err := db.GetConfiguredDatabase(configurator)
+	dbHandle, err := db.GetConfiguredDatabase(configurator, healthChecker)
 	te.SetDBHandle(dbHandle)
 
 	return te, nil

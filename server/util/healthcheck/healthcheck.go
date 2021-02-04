@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 )
@@ -25,27 +26,16 @@ const (
 	healthCheckTimeout = 2 * time.Second // How long a health check may take, max.
 )
 
-type Checker interface {
-	Check(ctx context.Context) error
-}
-type CheckerFunc func(ctx context.Context) error
-
-func (f CheckerFunc) Check(ctx context.Context) error {
-	return f(ctx)
-}
-
-type ShutDownFunc func(ctx context.Context) error
-
 type HealthChecker struct {
 	serverType    string
 	done          chan bool
 	quit          chan os.Signal
-	shutdownFuncs []ShutDownFunc
+	shutdownFuncs []interfaces.CheckerFunc
 
 	lock         sync.RWMutex // protects: readyToServe, shuttingDown
 	readyToServe bool
 	shuttingDown bool
-	checkers     map[string]Checker
+	checkers     map[string]interfaces.Checker
 }
 
 func NewHealthChecker(serverType string) *HealthChecker {
@@ -53,9 +43,9 @@ func NewHealthChecker(serverType string) *HealthChecker {
 		serverType:    serverType,
 		done:          make(chan bool),
 		quit:          make(chan os.Signal, 1),
-		shutdownFuncs: make([]ShutDownFunc, 0),
+		shutdownFuncs: make([]interfaces.CheckerFunc, 0),
 		readyToServe:  true,
-		checkers:      make(map[string]Checker, 0),
+		checkers:      make(map[string]interfaces.Checker, 0),
 	}
 	signal.Notify(hc.quit, os.Interrupt, syscall.SIGTERM)
 	go hc.handleShutdownFuncs()
@@ -101,11 +91,11 @@ func (h *HealthChecker) handleShutdownFuncs() {
 	close(h.done)
 }
 
-func (h *HealthChecker) RegisterShutdownFunction(f ShutDownFunc) {
+func (h *HealthChecker) RegisterShutdownFunction(f interfaces.CheckerFunc) {
 	h.shutdownFuncs = append(h.shutdownFuncs, f)
 }
 
-func (h *HealthChecker) AddHealthCheck(name string, f Checker) {
+func (h *HealthChecker) AddHealthCheck(name string, f interfaces.Checker) {
 	// Mark the service as unhealthy until the healthcheck runs
 	// and it becomes healthy.
 	h.lock.Lock()
@@ -115,6 +105,7 @@ func (h *HealthChecker) AddHealthCheck(name string, f Checker) {
 }
 
 func (h *HealthChecker) WaitForGracefulShutdown() {
+	h.runHealthChecks(context.Background())
 	<-h.done
 }
 

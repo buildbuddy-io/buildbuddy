@@ -4,7 +4,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -35,7 +34,7 @@ type Env interface {
 	GetDBHandle() *db.DBHandle
 	GetBlobstore() interfaces.Blobstore
 	GetInvocationDB() interfaces.InvocationDB
-	GetHealthChecker() *healthcheck.HealthChecker
+	GetHealthChecker() interfaces.HealthChecker
 	GetAuthenticator() interfaces.Authenticator
 	SetAuthenticator(a interfaces.Authenticator)
 	GetWebhooks() []interfaces.Webhook

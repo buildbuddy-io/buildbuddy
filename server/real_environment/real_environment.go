@@ -6,7 +6,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -32,7 +31,7 @@ func (cc *executionClientConfig) DisableStreaming() bool {
 
 type RealEnv struct {
 	configurator  *config.Configurator
-	healthChecker *healthcheck.HealthChecker
+	healthChecker interfaces.HealthChecker
 
 	dbHandle                        *db.DBHandle
 	blobstore                       interfaces.Blobstore
@@ -63,7 +62,7 @@ type RealEnv struct {
 	repoDownloader                  interfaces.RepoDownloader
 }
 
-func NewRealEnv(c *config.Configurator, h *healthcheck.HealthChecker) *RealEnv {
+func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
 	return &RealEnv{
 		configurator:  c,
 		healthChecker: h,
@@ -77,7 +76,7 @@ func (r *RealEnv) GetConfigurator() *config.Configurator {
 	return r.configurator
 }
 
-func (r *RealEnv) GetHealthChecker() *healthcheck.HealthChecker {
+func (r *RealEnv) GetHealthChecker() interfaces.HealthChecker {
 	return r.healthChecker
 }
 
