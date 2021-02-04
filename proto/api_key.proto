@@ -25,7 +25,7 @@ message ApiKey {
     UNKNOWN_CAPABILITY = 0;
     // Allows the API key to write to the content-addressable store
     // and action cache.
-    CACHE_WRITE = 1; // 2^0
+    CACHE_WRITE_CAPABILITY = 1; // 2^0
   }
 
   // Capabilities associated with this API key.
