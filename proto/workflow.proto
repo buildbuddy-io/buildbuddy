@@ -80,6 +80,11 @@ message GetWorkflowsResponse {
     // out and built as part of this project.
     // Ex. "https://github.com/buildbuddy-io/buildbuddy-internal"
     string repo_url = 3;
+
+    // The unique webhook URL for this project. Sending a POST request to this
+    // URL will trigger a build of this project.
+    // Ex. "https://app.buildbuddy.io/webhooks/workflows/abcd123letitflow"
+    string webhook_url = 4;
   }
 
   repeated Workflow workflow = 2;

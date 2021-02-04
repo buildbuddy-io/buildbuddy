@@ -63,14 +63,21 @@ func CreateWorkflow(ctx context.Context, env environment.Env, req *wfpb.CreateWo
 	}
 	// Ensure the request is authenticated so some user can own this workflow.
 	var permissions *perms.UserGroupPerm
-	if auth := env.GetAuthenticator(); auth != nil {
-		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
-			permissions = perms.GroupAuthPermissions(u.GetGroupID())
-		}
-	}
-	if permissions == nil {
+	auth := env.GetAuthenticator()
+	if auth == nil {
 		return nil, status.PermissionDeniedErrorf("Anonymous workflows are not supported.")
 	}
+	if _, err := auth.AuthenticatedUser(ctx); err != nil {
+		return nil, err
+	}
+	groupID := req.GetRequestContext().GetGroupId()
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("Request context is missing group ID.")
+	}
+	if err := perms.AuthorizeGroupAccess(ctx, env, groupID); err != nil {
+		return nil, err
+	}
+	permissions = perms.GroupAuthPermissions(groupID)
 
 	// Do a quick check to see if this is a valid repo that we can actually access.
 	repoURL := repoReq.GetRepoUrl()
@@ -149,7 +156,7 @@ func GetWorkflows(ctx context.Context, env environment.Env, req *wfpb.GetWorkflo
 		return nil, status.FailedPreconditionError("database not configured")
 	}
 	rsp := &wfpb.GetWorkflowsResponse{}
-	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url FROM Workflows`)
+	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM Workflows`)
 	// Adds user / permissions check.
 	if err := perms.AddPermissionsCheckToQuery(ctx, env, q); err != nil {
 		return nil, err
@@ -165,11 +172,20 @@ func GetWorkflows(ctx context.Context, env environment.Env, req *wfpb.GetWorkflo
 
 		rsp.Workflow = make([]*wfpb.GetWorkflowsResponse_Workflow, 0)
 		for rows.Next() {
-			wf := &wfpb.GetWorkflowsResponse_Workflow{}
-			if err := tx.ScanRows(rows, &wf); err != nil {
+			var tw tables.Workflow
+			if err := tx.ScanRows(rows, &tw); err != nil {
 				return err
 			}
-			rsp.Workflow = append(rsp.Workflow, wf)
+			u, err := getWebhookURL(env, tw.WebhookID)
+			if err != nil {
+				return err
+			}
+			rsp.Workflow = append(rsp.Workflow, &wfpb.GetWorkflowsResponse_Workflow{
+				Id:         tw.WorkflowID,
+				Name:       tw.Name,
+				RepoUrl:    tw.RepoURL,
+				WebhookUrl: u,
+			})
 		}
 		return nil
 	})

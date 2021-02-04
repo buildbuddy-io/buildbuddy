@@ -66,6 +66,20 @@ var (
 
 	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
+
+	// URL path prefixes that should be handled by serving the app's HTML.
+	appRoutes = []string{
+		"/compare/",
+		"/docs/",
+		"/history/",
+		"/invocation/",
+		"/join/",
+		"/org/",
+		"/settings/",
+		"/tests/",
+		"/trends/",
+		"/workflows/",
+	}
 )
 
 func init() {
@@ -251,7 +265,7 @@ func StartAndRunServices(env environment.Env) {
 	if err := rlimit.MaxRLimit(); err != nil {
 		log.Printf("Error raising open files limit: %s", err)
 	}
-	staticFileServer, err := static.NewStaticFileServer(env, *staticDirectory, []string{"/invocation/", "/compare/", "/history/", "/docs/", "/settings/", "/org/", "/trends/", "/join/", "/tests/"})
+	staticFileServer, err := static.NewStaticFileServer(env, *staticDirectory, appRoutes)
 
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)

@@ -10,6 +10,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"google.golang.org/grpc/metadata"
+
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 // Do not use this authenticator in production. It is useful
@@ -123,4 +126,13 @@ func (a *TestAuthenticator) ParseAPIKeyFromString(input string) string {
 
 func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
 	return ctx
+}
+
+func RequestContext(userID string, groupID string) *ctxpb.RequestContext {
+	return &ctxpb.RequestContext{
+		UserId: &uidpb.UserId{
+			Id: userID,
+		},
+		GroupId: groupID,
+	}
 }
