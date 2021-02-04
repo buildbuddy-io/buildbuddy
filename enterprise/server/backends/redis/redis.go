@@ -38,8 +38,8 @@ type Cache struct {
 	rdb    *redis.Client
 }
 
-func NewCache(redisServer string) *Cache {
-	return &Cache{
+func NewCache(redisServer string, hc interfaces.HealthChecker) *Cache {
+	c := &Cache{
 		prefix: "",
 		rdb: redis.NewClient(&redis.Options{
 			Addr:     redisServer,
@@ -47,6 +47,13 @@ func NewCache(redisServer string) *Cache {
 			DB:       0,  // use default DB
 		}),
 	}
+	hc.AddHealthCheck("redis_cache", c)
+	return c
+}
+
+func (c *Cache) Check(ctx context.Context) error {
+	_, err := c.rdb.Ping(ctx).Result()
+	return err
 }
 
 func (c *Cache) key(ctx context.Context, d *repb.Digest) (string, error) {
