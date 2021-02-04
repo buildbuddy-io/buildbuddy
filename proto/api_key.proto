@@ -85,7 +85,7 @@ message UpdateApiKeyRequest {
   //
   // NOTE: If this is empty, all capabilities will be removed as part of
   // this update.
-  repeated Capability capability = 4;
+  repeated ApiKey.Capability capability = 4;
 }
 
 message UpdateApiKeyResponse {
