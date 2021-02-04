@@ -14,6 +14,7 @@ PREFIX_RESOLUTIONS = [
 
 # Resolutions by proto import path (to work around naming quirks).
 FILE_RESOLUTIONS = {
+    "proto/grp.proto": "//proto:group_proto",
     "google/longrunning/operations.proto": "@go_googleapis//google/longrunning:longrunning_proto",
 }
 
@@ -41,18 +42,21 @@ def sh(cmd: str) -> List[str]:
     ]
 
 
-def get_label(suffix: str, package: str, path: str) -> str:
-    """
-    >>> get_label('proto', '//proto', 'local.proto')
-    ':local_proto'
-    >>> get_label('ts_proto', '@foo//', 'bar/baz.proto')
-    '@foo//bar:baz_ts_proto'
-    >>> get_label('go_proto', '@foo//bar', 'baz/qux.proto')
-    '@foo//bar/baz:qux_go_proto'
-    >>> get_label('proto', '@foo', 'baz.proto')
-    '@foo//:baz_proto'
-    """
-    label = package
+def resolve_full_label(suffix: str, path: str) -> str:
+    if path in FILE_RESOLUTIONS:
+        return FILE_RESOLUTIONS[path].replace("_proto", f"_{suffix}")
+
+    resolved_package = None
+    match = None
+    for (prefix, package) in PREFIX_RESOLUTIONS:
+        if match := re.match(prefix + r"/(.*)", path):
+            resolved_package = package
+            break
+    if resolved_package is None:
+        fatal(f'could not resolve build dep for "{path}"')
+
+    path = match.group(1)
+    label = resolved_package
     if "//" not in label:
         label += "//"
     elif not label.endswith("/"):
@@ -66,6 +70,37 @@ def get_label(suffix: str, package: str, path: str) -> str:
     if label.startswith("//proto:"):
         label = label.replace("//proto:", ":")
     return label
+
+
+def simplify_label(label: str) -> str:
+    if label.startswith("//proto:"):
+        return label[len("//proto") :]
+    return label
+
+
+def resolve(suffix: str, path: str) -> str:
+    """
+    >>> resolve('proto', 'proto/local.proto')
+    ':local_proto'
+    >>> resolve('proto', 'proto/grp.proto')
+    ':group_proto'
+    >>> resolve('ts_proto', 'google/rpc/foo.proto')
+    '@go_googleapis//google/rpc:foo_ts_proto'
+    >>> resolve('go_proto', 'google/protobuf/any.proto')
+    """
+    if suffix == "go_proto" and path in PROTO_LIBRARY_IMPORTS:
+        return None
+    label = resolve_full_label(suffix, path)
+    label = simplify_label(label)
+    return label
+
+
+def has_service(file_name: str) -> bool:
+    with open(file_name, "r") as f:
+        for line in f:
+            if line.startswith("service "):
+                return True
+    return False
 
 
 if __name__ == "__main__":
@@ -96,46 +131,31 @@ if __name__ == "__main__":
         resolved_proto_deps = []
         resolved_go_deps = []
         for imported_path in imported_paths:
-            if imported_path in FILE_RESOLUTIONS:
-                label = FILE_RESOLUTIONS[imported_path]
-                resolved_proto_deps.append(label)
-                resolved_go_deps.append(label.replace("_proto", "_go_proto"))
-                continue
+            resolved_proto_deps.append(resolve("proto", imported_path))
+            resolved_go_deps.append(resolve("go_proto", imported_path))
 
-            resolved_package = None
-            match = None
-            for (prefix, package) in PREFIX_RESOLUTIONS:
-                if match := re.match(prefix + r"/(.*)", imported_path):
-                    resolved_package = package
-                    break
-            if resolved_package is None:
-                fatal(f'could not resolve build dep for "{imported_path}"')
-            subpath = match.group(1)
-
-            resolved_proto_deps.append(get_label("proto", resolved_package, subpath))
-            if imported_path not in PROTO_LIBRARY_IMPORTS:
-                resolved_go_deps.append(
-                    get_label("go_proto", resolved_package, subpath)
-                )
+        proto_path = "proto/" + proto_filename
 
         proto_rules.append(
             f"""
 proto_library(
-    name = "{proto_name}_proto",
+    name = "{resolve("proto", proto_path)[1:]}",
     srcs = ["{proto_name}.proto"],
     deps = {repr(resolved_proto_deps)},
 )
 """
         )
 
+        url_suffix = resolve("proto", proto_path)[1:].replace("_proto", "")
+
         go_rules.append(
             f"""
 go_proto_library(
-    name = "{proto_name}_go_proto",
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/{proto_name}",
-    proto = "{proto_name}_proto",
-    {'compilers = ["@io_bazel_rules_go//proto:go_grpc"],' if 'service' in proto_name else ''}
-    deps = {repr(resolved_go_deps)},
+    name = "{resolve("go_proto", proto_path)[1:]}",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/{url_suffix}",
+    proto = "{resolve("proto", proto_path)}",
+    {'compilers = ["@io_bazel_rules_go//proto:go_grpc"],' if has_service(proto_filename) else ''}
+    deps = {repr([dep for dep in resolved_go_deps if dep is not None])},
 )
 """
         )
@@ -143,8 +163,8 @@ go_proto_library(
         ts_rules.append(
             f"""
 ts_proto_library(
-    name = "{proto_name}_ts_proto",
-    deps = [":{proto_name}_proto"],
+    name = "{resolve("ts_proto", proto_path)[1:]}",
+    deps = ["{resolve('proto', proto_path)}"],
 )
 """
         )
