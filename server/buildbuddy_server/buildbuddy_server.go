@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
@@ -415,9 +416,10 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 	}
 	for _, k := range tableKeys {
 		rsp.ApiKey = append(rsp.ApiKey, &akpb.ApiKey{
-			Id:    k.APIKeyID,
-			Value: k.Value,
-			Label: k.Label,
+			Id:         k.APIKeyID,
+			Value:      k.Value,
+			Label:      k.Label,
+			Capability: capabilities.FromInt(k.Capabilities),
 		})
 	}
 	return rsp, nil
@@ -432,15 +434,16 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
 		return nil, err
 	}
-	k, err := userDB.CreateAPIKey(ctx, groupID, req.GetLabel())
+	k, err := userDB.CreateAPIKey(ctx, groupID, req.GetLabel(), req.GetCapability())
 	if err != nil {
 		return nil, err
 	}
 	return &akpb.CreateApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
-			Id:    k.APIKeyID,
-			Value: k.Value,
-			Label: k.Label,
+			Id:         k.APIKeyID,
+			Value:      k.Value,
+			Label:      k.Label,
+			Capability: capabilities.FromInt(k.Capabilities),
 		},
 	}, nil
 }
@@ -475,8 +478,9 @@ func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApi
 		return nil, err
 	}
 	tk := &tables.APIKey{
-		APIKeyID: req.GetId(),
-		Label:    req.GetLabel(),
+		APIKeyID:     req.GetId(),
+		Label:        req.GetLabel(),
+		Capabilities: capabilities.ToInt(req.GetCapability()),
 	}
 	if err := userDB.UpdateAPIKey(ctx, tk); err != nil {
 		return nil, err

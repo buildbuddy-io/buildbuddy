@@ -258,6 +258,11 @@ type APIKey struct {
 	// The user-specified description of the API key that helps them
 	// remember what it's for.
 	Label string
+	// Capabilities that are enabled for this key. Defaults to CACHE_WRITE.
+	//
+	// NOTE: If the default is changed, a DB migration may be required to
+	// migrate old DB rows to reflect the new default.
+	Capabilities int32 `gorm:"default:1"`
 }
 
 func (k *APIKey) TableName() string {

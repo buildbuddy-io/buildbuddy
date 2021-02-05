@@ -43,7 +43,7 @@ message CreateApiKeyRequest {
   string label = 3;
 
   // Optional. Capabilities granted to this API key.
-  repeated ApiKey.Capability capabilities = 4;
+  repeated ApiKey.Capability capability = 4;
 }
 
 message CreateApiKeyResponse {
