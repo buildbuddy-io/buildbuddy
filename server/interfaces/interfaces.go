@@ -17,6 +17,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
+	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 )
 
 // An interface representing the user info gleaned from an authorization header.
@@ -197,6 +198,13 @@ type InvocationSearchService interface {
 type ApiService interface {
 	apipb.ApiServiceServer
 	http.Handler
+}
+
+type WorkflowService interface {
+	CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error)
+	DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error)
+	GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error)
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
 type SplashPrinter interface {
