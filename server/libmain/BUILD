@@ -45,6 +45,7 @@ go_library(
         "//server/util/healthcheck:go_default_library",
         "//server/util/monitoring:go_default_library",
         "//server/util/rlimit:go_default_library",
+        "//server/workflow:go_default_library",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",

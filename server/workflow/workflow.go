@@ -3,7 +3,10 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"log"
+	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -17,6 +20,8 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	guuid "github.com/google/uuid"
 )
+
+var workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
 func generateWebhookID() (string, error) {
@@ -193,4 +198,52 @@ func GetWorkflows(ctx context.Context, env environment.Env, req *wfpb.GetWorkflo
 		return nil, err
 	}
 	return rsp, nil
+}
+
+func readWorkflowForWebhook(ctx context.Context, env environment.Env, webhookID string) (*tables.Workflow, error) {
+	if env.GetDBHandle() == nil {
+		return nil, status.FailedPreconditionError("database not configured")
+	}
+	if webhookID == "" {
+		return nil, status.InvalidArgumentError("An webhook ID is required.")
+	}
+	tw := &tables.Workflow{}
+	if err := env.GetDBHandle().ReadRow(tw, `webhook_id = ?`, webhookID); err != nil {
+		return nil, err
+	}
+	return tw, nil
+}
+
+type webhookHandler struct {
+	env environment.Env
+}
+
+func NewWebhookHandler(env environment.Env) *webhookHandler {
+	return &webhookHandler{
+		env: env,
+	}
+}
+
+func (wh *webhookHandler) startWorkflow(webhookID string, r *http.Request) error {
+	wf, err := readWorkflowForWebhook(r.Context(), wh.env, webhookID)
+	if err != nil {
+		return err
+	}
+	log.Printf("Read matching workflow %v", wf)
+	return nil
+}
+
+func (wh *webhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	workflowMatch := workflowURLMatcher.FindStringSubmatch(r.URL.Path)
+	if len(workflowMatch) != 2 {
+		http.Error(w, "workflow URL not recognized", http.StatusNotFound)
+		return
+	}
+	webhookID := workflowMatch[1]
+	log.Printf("Would handle webhook %q", webhookID)
+	if err := wh.startWorkflow(webhookID, r); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Write([]byte("OK"))
 }

@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/workflow",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:context_go_proto",
         "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",
         "//server/environment:go_default_library",

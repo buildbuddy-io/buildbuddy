@@ -18,6 +18,7 @@ func sanitize(s string) string {
 type workflowScript struct {
 	commands []string
 }
+
 func newWorkflowScript() *workflowScript {
 	return &workflowScript{
 		commands: make([]string, 0),
@@ -61,5 +62,3 @@ func GenerateShellScript(repoURL, commitSHA string) (string, error) {
 
 	return script.Build()
 }
-
-
