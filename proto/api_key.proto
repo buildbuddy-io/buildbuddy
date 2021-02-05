@@ -16,6 +16,19 @@ message ApiKey {
   // Optional. The user-specified label of this API key that helps them
   // remember what it's for.
   string label = 3;
+
+  // A capability associated with an API key.
+  //
+  // Values are powers of 2 so that bitmask operations can be used
+  // to check capabilities.
+  enum Capability {
+    UNKNOWN_CAPABILITY = 0;
+    // Allows writing to the content-addressable store and action cache.
+    CACHE_WRITE_CAPABILITY = 1; // 2^0
+  }
+
+  // Capabilities associated with this API key.
+  repeated Capability capability = 4;
 }
 
 message CreateApiKeyRequest {
@@ -28,6 +41,9 @@ message CreateApiKeyRequest {
   // Optional. The user-specified label of this API key that helps them
   // remember what it's for.
   string label = 3;
+
+  // Optional. Capabilities granted to this API key.
+  repeated ApiKey.Capability capabilities = 4;
 }
 
 message CreateApiKeyResponse {
@@ -61,7 +77,15 @@ message UpdateApiKeyRequest {
 
   // Optional. The user-specified label of this API key that helps them
   // remember what it's for.
+  //
+  // NOTE: If this is empty, the label will be deleted.
   string label = 3;
+
+  // Optional. The capabilities associated with this API key.
+  //
+  // NOTE: If this is empty, all capabilities will be removed as part of
+  // this update.
+  repeated ApiKey.Capability capability = 4;
 }
 
 message UpdateApiKeyResponse {
