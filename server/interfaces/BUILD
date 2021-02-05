@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:acl_go_proto",
+        "//proto:api_key_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:group_go_proto",
         "//proto:invocation_go_proto",
@@ -16,6 +17,5 @@ go_library(
         "//proto:telemetry_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/tables:go_default_library",
-        "@com_github_buildbuddy_io_buildbuddy//proto:api_key_go_proto",
     ],
 )
