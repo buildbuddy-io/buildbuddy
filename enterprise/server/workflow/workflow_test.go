@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/auth"
@@ -40,6 +41,7 @@ func TestCreate(t *testing.T) {
 	ctx := context.Background()
 	te, err := environment.GetTestEnv()
 	assert.Nil(t, err)
+	te.SetWorkflowService(workflow.NewWorkflowService(te))
 
 	authenticator := auth.NewTestAuthenticator(auth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(authenticator)
@@ -74,6 +76,7 @@ func TestDelete(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	te.SetWorkflowService(workflow.NewWorkflowService(te))
 	authenticator := auth.NewTestAuthenticator(auth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(authenticator)
 
@@ -107,6 +110,7 @@ func TestList(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	te.SetWorkflowService(workflow.NewWorkflowService(te))
 	authenticator := auth.NewTestAuthenticator(auth.TestUsers("USER1", "GROUP1", "USER2", "GROUP2"))
 	te.SetAuthenticator(authenticator)
 

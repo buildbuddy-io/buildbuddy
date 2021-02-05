@@ -40,7 +40,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
-	"github.com/buildbuddy-io/buildbuddy/server/workflow"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -315,7 +314,6 @@ func StartAndRunServices(env environment.Env) {
 	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, buildBuddyServer))
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
-	mux.Handle("/webhooks/workflow/", workflow.NewWebhookHandler(env))
 
 	if auth := env.GetAuthenticator(); auth != nil {
 		mux.Handle("/login/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.Login)))

@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/workflow"
 	"github.com/golang/protobuf/proto"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -667,13 +666,22 @@ func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetReq
 }
 
 func (s *BuildBuddyServer) CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
-	return workflow.CreateWorkflow(ctx, s.env, req)
+	if wfs := s.env.GetWorkflowService(); wfs != nil {
+		return wfs.CreateWorkflow(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
 }
 func (s *BuildBuddyServer) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
-	return workflow.DeleteWorkflow(ctx, s.env, req)
+	if wfs := s.env.GetWorkflowService(); wfs != nil {
+		return wfs.DeleteWorkflow(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
 }
 func (s *BuildBuddyServer) GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
-	return workflow.GetWorkflows(ctx, s.env, req)
+	if wfs := s.env.GetWorkflowService(); wfs != nil {
+		return wfs.GetWorkflows(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
 }
 
 type bsLookup struct {

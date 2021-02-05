@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "go_default_library",
     srcs = ["workflow.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/workflow",
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:user_id_go_proto",
