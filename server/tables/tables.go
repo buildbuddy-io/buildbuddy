@@ -260,7 +260,8 @@ type APIKey struct {
 	Label string
 	// Capabilities that are enabled for this key. Defaults to CACHE_WRITE.
 	//
-	// NOTE: The default here should not be changed. Instead, add a DB migration.
+	// NOTE: If the default is changed, a DB migration may be required to
+	// migrate old DB rows to reflect the new default.
 	Capabilities int32 `gorm:"default:1"`
 }
 
