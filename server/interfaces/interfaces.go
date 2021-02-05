@@ -10,6 +10,7 @@ import (
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -173,7 +174,7 @@ type UserDB interface {
 	// API Keys API
 	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
 	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
-	CreateAPIKey(ctx context.Context, groupID string, label string) (*tables.APIKey, error)
+	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []akpb.ApiKey_Capability) (*tables.APIKey, error)
 	UpdateAPIKey(ctx context.Context, key *tables.APIKey) error
 	DeleteAPIKey(ctx context.Context, apiKeyID string) error
 }
