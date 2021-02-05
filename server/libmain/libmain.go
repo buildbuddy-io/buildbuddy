@@ -338,6 +338,10 @@ func StartAndRunServices(env environment.Env) {
 		mux.Handle("/api/v1/GetFile", httpfilters.WrapAuthenticatedExternalHandler(env, api))
 	}
 
+	if wfs := env.GetWorkflowService(); wfs != nil {
+		mux.Handle("/webhooks/workflow/", wfs)
+	}
+
 	handler := http.Handler(mux)
 	if env.GetConfigurator().GetGRPCOverHTTPPortEnabled() {
 		handler = httpfilters.ServeGRPCOverHTTPPort(grpcServer, mux)
