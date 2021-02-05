@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "go_default_library",
@@ -13,6 +13,8 @@ go_library(
         "//server/util/random:go_default_library",
         "//server/util/request_context:go_default_library",
         "//server/util/status:go_default_library",
+        "@com_github_buildbuddy_io_buildbuddy//proto:api_key_go_proto",
+        "@com_github_buildbuddy_io_buildbuddy//server/util/capabilities:go_default_library",
         "@com_github_coreos_go_oidc//:go_default_library",
         "@com_github_dgrijalva_jwt_go//:go_default_library",
         "@com_github_jinzhu_gorm//:go_default_library",
@@ -20,5 +22,13 @@ go_library(
         "@org_golang_google_grpc//metadata:go_default_library",
         "@org_golang_google_grpc//peer:go_default_library",
         "@org_golang_x_oauth2//:go_default_library",
+    ],
+)
+
+go_test(
+    name = "go_default_test",
+    embed = [":go_default_library"],
+    deps = [
+        "@com_github_stretcher_testify//:assert",
     ],
 )
