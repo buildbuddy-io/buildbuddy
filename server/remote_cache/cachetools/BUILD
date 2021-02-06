@@ -7,7 +7,9 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//server/interfaces:go_default_library",
         "//server/remote_cache/digest:go_default_library",
+        "//server/remote_cache/namespace:go_default_library",
         "//server/util/status:go_default_library",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
