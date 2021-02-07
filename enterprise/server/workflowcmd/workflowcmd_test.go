@@ -11,7 +11,8 @@ func TestGenerateShellScript(t *testing.T) {
 	repoURL := "git@github.com:buildbuddy-io/buildbuddy.git"
 	commitSHA := "ABCD123"
 
-	script, err := workflowcmd.GenerateShellScript(repoURL, commitSHA)
+	scriptBytes, err := workflowcmd.GenerateShellScript(repoURL, commitSHA)
+	script := string(scriptBytes)
 	assert.Nil(t, err)
 	assert.Regexp(t, "git clone -q git@github.com:buildbuddy-io/buildbuddy.git", script, "script should clone repo")
 	assert.Regexp(t, "git checkout -q ABCD123", script, "script should checkout SHA")

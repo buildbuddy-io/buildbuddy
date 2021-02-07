@@ -2,6 +2,7 @@ package workflowcmd
 
 import (
 	"log"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -31,19 +32,26 @@ func (w *workflowScript) AddCommand(command string, args []string) {
 	}
 	w.commands = append(w.commands, cmdLine)
 }
-func (w *workflowScript) Build() (string, error) {
-	buf := ""
+func (w *workflowScript) Build() ([]byte, error) {
 	log.Print("Assembled workflow script:")
+	buf := "#!/bin/bash\n"
+	log.Printf("  %s", buf)
 	for _, c := range w.commands {
 		buf += c
 		buf += "\n"
 		log.Printf("  %s", c)
 	}
-	return buf, nil
+	return []byte(buf), nil
 }
 
 func appendCheckoutCmd(repoURL, commitSHA string, w *workflowScript) {
-	w.AddCommand("git", []string{"clone", "-q", repoURL})
+	repoDir := filepath.Base(repoURL)
+	if repoDir == "" {
+		repoDir = "repo"
+	}
+
+	w.AddCommand("git", []string{"clone", "-q", repoURL, repoDir})
+	w.AddCommand("cd", []string{repoDir})
 	w.AddCommand("git", []string{"checkout", "-q", commitSHA})
 }
 
@@ -53,7 +61,7 @@ func appendTestCmd(w *workflowScript) {
 
 // GenerateShellScript generates a build command for a repo at a given
 // commit.
-func GenerateShellScript(repoURL, commitSHA string) (string, error) {
+func GenerateShellScript(repoURL, commitSHA string) ([]byte, error) {
 	script := newWorkflowScript()
 
 	// Keep it simple for now!
