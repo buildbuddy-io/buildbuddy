@@ -234,7 +234,10 @@ func uploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadS
 		return nil, err
 	}
 	_, err = io.Copy(wc, in)
-	return d, err
+	if err != nil {
+		return nil, err
+	}
+	return d, wc.Close()
 }
 
 func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
