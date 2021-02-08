@@ -116,7 +116,7 @@ func (c *Claims) IsAdmin() bool {
 }
 
 func (c *Claims) HasCapability(cap akpb.ApiKey_Capability) bool {
-	return int32(cap)&c.Capabilities > 0 || c.IsAdmin()
+	return int32(cap)&c.Capabilities > 0
 }
 
 type apiKeyGroup struct {
