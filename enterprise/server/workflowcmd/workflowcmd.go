@@ -44,7 +44,7 @@ func (w *workflowScript) Build() ([]byte, error) {
 	return []byte(buf), nil
 }
 
-func appendCheckoutCmd(repoURL, commitSHA string, w *workflowScript) {
+func (w *workflowScript) Checkout(repoURL, commitSHA string) {
 	repoDir := filepath.Base(repoURL)
 	if repoDir == "" {
 		repoDir = "repo"
@@ -55,18 +55,28 @@ func appendCheckoutCmd(repoURL, commitSHA string, w *workflowScript) {
 	w.AddCommand("git", []string{"checkout", "-q", commitSHA})
 }
 
-func appendTestCmd(w *workflowScript) {
-	w.AddCommand("bazelisk", []string{"test", "//..."})
+func (w *workflowScript) Test(bazelFlags []string) {
+	args := []string{"test"}
+	args = append(args, bazelFlags...)
+	args = append(args, "//...")
+
+	w.AddCommand("bazelisk", args)
+}
+
+type CommandInfo struct {
+	RepoURL    string
+	CommitSHA  string
+	BazelFlags []string
 }
 
 // GenerateShellScript generates a build command for a repo at a given
 // commit.
-func GenerateShellScript(repoURL, commitSHA string) ([]byte, error) {
+func GenerateShellScript(ci *CommandInfo) ([]byte, error) {
 	script := newWorkflowScript()
 
 	// Keep it simple for now!
-	appendCheckoutCmd(repoURL, commitSHA, script)
-	appendTestCmd(script)
+	script.Checkout(ci.RepoURL, ci.CommitSHA)
+	script.Test(ci.BazelFlags)
 
 	return script.Build()
 }
