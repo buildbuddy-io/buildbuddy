@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -24,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 const (
@@ -82,6 +84,18 @@ func (dbh *DBHandle) TransactionWithOptions(opts Options, txn txRunner) error {
 
 func (dbh *DBHandle) Transaction(txn txRunner) error {
 	return dbh.DB.Transaction(txn)
+}
+
+func (dbh *DBHandle) ReadRow(out interface{}, where ...interface{}) error {
+	whereArgs := make([]interface{}, 0)
+	if len(where) > 1 {
+		whereArgs = where[1:]
+	}
+	err := dbh.DB.Where(where[0], whereArgs).First(out).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return status.NotFoundError("Record not found")
+	}
+	return err
 }
 
 func maybeRunMigrations(dialect string, gdb *gorm.DB) error {

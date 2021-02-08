@@ -59,4 +59,5 @@ type Env interface {
 	GetPubSub() interfaces.PubSub
 	GetMetricsCollector() interfaces.MetricsCollector
 	GetRepoDownloader() interfaces.RepoDownloader
+	GetWorkflowService() interfaces.WorkflowService
 }

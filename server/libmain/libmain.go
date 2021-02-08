@@ -157,7 +157,6 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		log.Fatalf("Error configuring in-memory metrics collector: %s", err.Error())
 	}
 	realEnv.SetMetricsCollector(collector)
-
 	realEnv.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 	return realEnv
 }
@@ -337,6 +336,10 @@ func StartAndRunServices(env environment.Env) {
 		mux.Handle("/api/v1/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/api/v1/", apiProtoHandlers))
 		// Protolet doesn't currently support streaming RPCs, so we'll register a regular old http handler.
 		mux.Handle("/api/v1/GetFile", httpfilters.WrapAuthenticatedExternalHandler(env, api))
+	}
+
+	if wfs := env.GetWorkflowService(); wfs != nil {
+		mux.Handle("/webhooks/workflow/", wfs)
 	}
 
 	handler := http.Handler(mux)

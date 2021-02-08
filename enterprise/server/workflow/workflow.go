@@ -3,7 +3,10 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"log"
+	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -18,6 +21,8 @@ import (
 	guuid "github.com/google/uuid"
 )
 
+var workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
+
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
 func generateWebhookID() (string, error) {
 	u, err := guuid.NewRandom()
@@ -27,10 +32,20 @@ func generateWebhookID() (string, error) {
 	return strings.ToLower(u.String()), nil
 }
 
+type workflowService struct {
+	env environment.Env
+}
+
+func NewWorkflowService(env environment.Env) *workflowService {
+	return &workflowService{
+		env: env,
+	}
+}
+
 // getWebhookURL takes a webhookID and returns a fully qualified URL, on this
 // server, where the specified webhook can be called.
-func getWebhookURL(env environment.Env, webhookID string) (string, error) {
-	base, err := url.Parse(env.GetConfigurator().GetAppBuildBuddyURL())
+func (ws *workflowService) getWebhookURL(webhookID string) (string, error) {
+	base, err := url.Parse(ws.env.GetConfigurator().GetAppBuildBuddyURL())
 	if err != nil {
 		return "", err
 	}
@@ -44,26 +59,26 @@ func getWebhookURL(env environment.Env, webhookID string) (string, error) {
 
 // testRepo will call "git ls-repo repoURL" to verify that the repo is valid and
 // the accessToken (if non-empty) works.
-func testRepo(ctx context.Context, env environment.Env, repoURL, accessToken string) error {
-	rdl := env.GetRepoDownloader()
+func (ws *workflowService) testRepo(ctx context.Context, repoURL, accessToken string) error {
+	rdl := ws.env.GetRepoDownloader()
 	if rdl != nil {
 		return rdl.TestRepoAccess(ctx, repoURL, accessToken)
 	}
 	return nil
 }
 
-func CreateWorkflow(ctx context.Context, env environment.Env, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
+func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
 	// Validate the request.
 	repoReq := req.GetGitRepo()
 	if repoReq.GetRepoUrl() == "" {
 		return nil, status.InvalidArgumentError("A repo_url is required to create a new workflow.")
 	}
-	if env.GetDBHandle() == nil {
+	if ws.env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}
 	// Ensure the request is authenticated so some user can own this workflow.
 	var permissions *perms.UserGroupPerm
-	auth := env.GetAuthenticator()
+	auth := ws.env.GetAuthenticator()
 	if auth == nil {
 		return nil, status.PermissionDeniedErrorf("Anonymous workflows are not supported.")
 	}
@@ -74,7 +89,7 @@ func CreateWorkflow(ctx context.Context, env environment.Env, req *wfpb.CreateWo
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Request context is missing group ID.")
 	}
-	if err := perms.AuthorizeGroupAccess(ctx, env, groupID); err != nil {
+	if err := perms.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
 		return nil, err
 	}
 	permissions = perms.GroupAuthPermissions(groupID)
@@ -82,7 +97,7 @@ func CreateWorkflow(ctx context.Context, env environment.Env, req *wfpb.CreateWo
 	// Do a quick check to see if this is a valid repo that we can actually access.
 	repoURL := repoReq.GetRepoUrl()
 	accessToken := repoReq.GetAccessToken()
-	if err := testRepo(ctx, env, repoURL, accessToken); err != nil {
+	if err := ws.testRepo(ctx, repoURL, accessToken); err != nil {
 		return nil, status.UnavailableErrorf("Repo %q is unavailable: %s", repoURL, err.Error())
 	}
 
@@ -90,13 +105,13 @@ func CreateWorkflow(ctx context.Context, env environment.Env, req *wfpb.CreateWo
 	if err != nil {
 		return nil, status.InternalError(err.Error())
 	}
-	webhookURL, err := getWebhookURL(env, webhookID)
+	webhookURL, err := ws.getWebhookURL(webhookID)
 	if err != nil {
 		return nil, status.InternalError(err.Error())
 	}
 
 	rsp := &wfpb.CreateWorkflowResponse{}
-	err = env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+	err = ws.env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
 		workflowID, err := tables.PrimaryKeyForTable("Workflows")
 		if err != nil {
 			return status.InternalError(err.Error())
@@ -121,15 +136,15 @@ func CreateWorkflow(ctx context.Context, env environment.Env, req *wfpb.CreateWo
 	return rsp, nil
 }
 
-func DeleteWorkflow(ctx context.Context, env environment.Env, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
-	if env.GetDBHandle() == nil {
+func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
+	if ws.env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}
 	workflowID := req.GetId()
 	if workflowID == "" {
 		return nil, status.InvalidArgumentError("An ID is required to delete a workflow.")
 	}
-	auth := env.GetAuthenticator()
+	auth := ws.env.GetAuthenticator()
 	if auth == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
@@ -137,7 +152,7 @@ func DeleteWorkflow(ctx context.Context, env environment.Env, req *wfpb.DeleteWo
 	if err != nil {
 		return nil, err
 	}
-	err = env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+	err = ws.env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
 		var in tables.Workflow
 		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Workflows WHERE workflow_id = ?`, workflowID).Scan(&in).Error; err != nil {
 			return err
@@ -151,19 +166,19 @@ func DeleteWorkflow(ctx context.Context, env environment.Env, req *wfpb.DeleteWo
 	return &wfpb.DeleteWorkflowResponse{}, err
 }
 
-func GetWorkflows(ctx context.Context, env environment.Env, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
-	if env.GetDBHandle() == nil {
+func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
+	if ws.env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}
 	rsp := &wfpb.GetWorkflowsResponse{}
 	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM Workflows`)
 	// Adds user / permissions check.
-	if err := perms.AddPermissionsCheckToQuery(ctx, env, q); err != nil {
+	if err := perms.AddPermissionsCheckToQuery(ctx, ws.env, q); err != nil {
 		return nil, err
 	}
 	q.SetOrderBy("created_at_usec" /*ascending=*/, true)
 	qStr, qArgs := q.Build()
-	err := env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+	err := ws.env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
 		rows, err := tx.Raw(qStr, qArgs...).Rows()
 		if err != nil {
 			return err
@@ -176,7 +191,7 @@ func GetWorkflows(ctx context.Context, env environment.Env, req *wfpb.GetWorkflo
 			if err := tx.ScanRows(rows, &tw); err != nil {
 				return err
 			}
-			u, err := getWebhookURL(env, tw.WebhookID)
+			u, err := ws.getWebhookURL(tw.WebhookID)
 			if err != nil {
 				return err
 			}
@@ -193,4 +208,42 @@ func GetWorkflows(ctx context.Context, env environment.Env, req *wfpb.GetWorkflo
 		return nil, err
 	}
 	return rsp, nil
+}
+
+func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID string) (*tables.Workflow, error) {
+	if ws.env.GetDBHandle() == nil {
+		return nil, status.FailedPreconditionError("database not configured")
+	}
+	if webhookID == "" {
+		return nil, status.InvalidArgumentError("An webhook ID is required.")
+	}
+	tw := &tables.Workflow{}
+	if err := ws.env.GetDBHandle().ReadRow(tw, `webhook_id = ?`, webhookID); err != nil {
+		return nil, err
+	}
+	return tw, nil
+}
+
+func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) error {
+	wf, err := ws.readWorkflowForWebhook(r.Context(), webhookID)
+	if err != nil {
+		return err
+	}
+	log.Printf("Read matching workflow %v", wf)
+	return nil
+}
+
+func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	workflowMatch := workflowURLMatcher.FindStringSubmatch(r.URL.Path)
+	if len(workflowMatch) != 2 {
+		http.Error(w, "workflow URL not recognized", http.StatusNotFound)
+		return
+	}
+	webhookID := workflowMatch[1]
+	log.Printf("Would handle webhook %q", webhookID)
+	if err := ws.startWorkflow(webhookID, r); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Write([]byte("OK"))
 }
