@@ -43,7 +43,6 @@ func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capabil
 	if a == nil && authIsRequired {
 		return false, status.UnimplementedError("Not Implemented")
 	}
-	// TODO: If err is something other than "unauthenticated", return it.
 	user, err := a.AuthenticatedUser(ctx)
 	if err != nil {
 		if isAnonymousUser := gstatus.Code(err) == codes.PermissionDenied; isAnonymousUser {
