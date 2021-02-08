@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	oidc "github.com/coreos/go-oidc"
 )
@@ -89,6 +90,7 @@ type Claims struct {
 	UserID        string   `json:"user_id"`
 	GroupID       string   `json:"group_id"`
 	AllowedGroups []string `json:"allowed_groups"`
+	Capabilities  int32    `json:"capabilities"`
 	jwt.StandardClaims
 }
 
@@ -113,7 +115,17 @@ func (c *Claims) IsAdmin() bool {
 	return false
 }
 
-func assembleJWT(ctx context.Context, userID, groupID string, allowedGroups []string) (string, error) {
+func (c *Claims) HasCapability(cap akpb.ApiKey_Capability) bool {
+	return int32(cap)&c.Capabilities > 0
+}
+
+type apiKeyGroup struct {
+	Key          string
+	Capabilities int32
+	GroupID      string
+}
+
+func assembleJWT(ctx context.Context, userID, groupID string, allowedGroups []string, capabilities int32) (string, error) {
 	expirationTime := time.Now().Add(defaultBuildBuddyJWTDuration)
 	deadline, ok := ctx.Deadline()
 	if ok {
@@ -123,6 +135,7 @@ func assembleJWT(ctx context.Context, userID, groupID string, allowedGroups []st
 		UserID:        userID,
 		GroupID:       groupID,
 		AllowedGroups: allowedGroups,
+		Capabilities:  capabilities,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: expirationTime.Unix(),
 		},
@@ -349,18 +362,19 @@ func (a *OpenIDAuthenticator) lookupUserFromSubID(subID string) (*tables.User, e
 	return user, err
 }
 
-func (a *OpenIDAuthenticator) lookupGroupFromAPIKey(apiKey string) (*tables.Group, error) {
+func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(apiKey string) (*apiKeyGroup, error) {
 	dbHandle := a.env.GetDBHandle()
 	if dbHandle == nil {
 		return nil, status.FailedPreconditionErrorf("No handle to query database")
 	}
-	tg := &tables.Group{}
+	akg := &apiKeyGroup{}
 	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
 		existingRow := tx.Raw(`
-			SELECT g.* FROM `+"`Groups`"+` AS g, APIKeys AS ak
+			SELECT ak.value AS key, ak.capabilities, g.group_id
+			FROM Groups AS g, APIKeys AS ak
 			WHERE g.group_id = ak.group_id AND ak.value = ?`,
 			apiKey)
-		return existingRow.Scan(tg).Error
+		return existingRow.Scan(akg).Error
 	})
 	if err != nil {
 		if gorm.IsRecordNotFoundError(err) {
@@ -368,19 +382,22 @@ func (a *OpenIDAuthenticator) lookupGroupFromAPIKey(apiKey string) (*tables.Grou
 		}
 		return nil, err
 	}
-	return tg, nil
+	return akg, nil
 }
 
-func (a *OpenIDAuthenticator) lookupGroupFromBasicAuth(login, pass string) (*tables.Group, error) {
+func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromBasicAuth(login, pass string) (*apiKeyGroup, error) {
 	dbHandle := a.env.GetDBHandle()
 	if dbHandle == nil {
 		return nil, status.FailedPreconditionErrorf("No handle to query database")
 	}
-	tg := &tables.Group{}
+	akg := &apiKeyGroup{}
 	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
-		existingRow := tx.Raw(`SELECT * FROM `+"`Groups`"+` as g
-                                       WHERE g.group_id = ? AND g.write_token = ?`, login, pass)
-		return existingRow.Scan(tg).Error
+		existingRow := tx.Raw(`
+			SELECT ak.value AS key, ak.capabilities, g.group_id
+			FROM Groups AS g, APIKeys AS ak
+			WHERE g.group_id = ? AND g.write_token = ? AND g.group_id = ak.group_id`,
+			login, pass)
+		return existingRow.Scan(akg).Error
 	})
 	if err != nil {
 		if gorm.IsRecordNotFoundError(err) {
@@ -388,35 +405,37 @@ func (a *OpenIDAuthenticator) lookupGroupFromBasicAuth(login, pass string) (*tab
 		}
 		return nil, err
 	}
-	return tg, nil
+	return akg, nil
 }
 
-func authenticatedUserTokenString(ctx context.Context, u *tables.User, g *tables.Group) (string, error) {
+func authenticatedUserTokenString(ctx context.Context, u *tables.User, akg *apiKeyGroup) (string, error) {
 	userID := ""
 	groupID := ""
 	allowedGroups := make([]string, 0)
+	capabilities := int32(0)
 
 	if u != nil {
 		userID = u.UserID
 		for _, g := range u.Groups {
 			allowedGroups = append(allowedGroups, g.GroupID)
 		}
-	} else if g != nil {
-		groupID = g.GroupID
-		allowedGroups = append(allowedGroups, g.GroupID)
+	} else if akg != nil {
+		groupID = akg.GroupID
+		allowedGroups = append(allowedGroups, akg.GroupID)
+		capabilities = akg.Capabilities
 	} else {
 		return "", status.FailedPreconditionErrorf("No user/group to generate JWT for")
 	}
 
-	return assembleJWT(ctx, userID, groupID, allowedGroups)
+	return assembleJWT(ctx, userID, groupID, allowedGroups, capabilities)
 }
 
 func authContextWithError(ctx context.Context, err error) context.Context {
 	return context.WithValue(ctx, contextUserErrorKey, err)
 }
 
-func authContextWithInfo(ctx context.Context, u *tables.User, g *tables.Group) context.Context {
-	tokenString, err := authenticatedUserTokenString(ctx, u, g)
+func authContextWithInfo(ctx context.Context, u *tables.User, akg *apiKeyGroup) context.Context {
+	tokenString, err := authenticatedUserTokenString(ctx, u, akg)
 	if err != nil {
 		return authContextWithError(ctx, err)
 	}
@@ -442,19 +461,19 @@ func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey 
 }
 
 func (a *OpenIDAuthenticator) authContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
-	g, err := a.lookupGroupFromAPIKey(apiKey)
+	akg, err := a.lookupAPIKeyGroupFromAPIKey(apiKey)
 	if err != nil {
 		return authContextWithError(ctx, err)
 	}
-	return authContextWithInfo(ctx /*user=*/, nil, g)
+	return authContextWithInfo(ctx /*user=*/, nil, akg)
 }
 
 func (a *OpenIDAuthenticator) authContextFromBasicAuth(ctx context.Context, login, pass string) context.Context {
-	g, err := a.lookupGroupFromBasicAuth(login, pass)
+	akg, err := a.lookupAPIKeyGroupFromBasicAuth(login, pass)
 	if err != nil {
 		return authContextWithError(ctx, err)
 	}
-	return authContextWithInfo(ctx /*user=*/, nil, g)
+	return authContextWithInfo(ctx /*user=*/, nil, akg)
 }
 
 func (a *OpenIDAuthenticator) authContextFromSubID(ctx context.Context, subID string) context.Context {
