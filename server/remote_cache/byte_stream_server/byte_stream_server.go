@@ -10,9 +10,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -233,14 +235,6 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	if err != nil {
 		return err
 	}
-	// If the API key is read-only, pretend the object already exists.
-	if !canWrite {
-		_, d, err := digest.ExtractDigestFromUploadResourceName(req.ResourceName)
-		if err != nil {
-			return err
-		}
-		return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: d.GetSizeBytes()})
-	}
 
 	var streamState *writeState
 	for {
@@ -256,6 +250,16 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			if err := checkInitialPreconditions(req); err != nil {
 				return err
 			}
+
+			// If the API key is read-only, pretend the object already exists.
+			if !canWrite {
+				_, d, err := digest.ExtractDigestFromUploadResourceName(req.ResourceName)
+				if err != nil {
+					return err
+				}
+				return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: d.GetSizeBytes()})
+			}
+
 			streamState, err = s.initStreamState(ctx, req)
 			if err != nil {
 				return err

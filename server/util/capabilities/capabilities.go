@@ -5,8 +5,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/grpc/codes"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -14,7 +16,7 @@ var (
 	// anonymous usage is enabled in the server configuration.
 	AnonymousUserCapabilities = []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}
 	// AnonymousUserCapabilitiesMask is the mask form of AnonymousUserCapabilities.
-	AnonymousUserCapabilitiesMask = ToInt(DefaultCapabilities)
+	AnonymousUserCapabilitiesMask = ToInt(AnonymousUserCapabilities)
 )
 
 func FromInt(m int32) []akpb.ApiKey_Capability {
@@ -43,11 +45,14 @@ func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capabil
 	}
 	// TODO: If err is something other than "unauthenticated", return it.
 	user, err := a.AuthenticatedUser(ctx)
-	if isAnonymousUser := err != nil; isAnonymousUser {
-		if authIsRequired {
-			return false, nil
+	if err != nil {
+		if isAnonymousUser := gstatus.Code(err) == codes.PermissionDenied; isAnonymousUser {
+			if authIsRequired {
+				return false, nil
+			}
+			return int32(cap)&AnonymousUserCapabilitiesMask > 0, nil
 		}
-		return int32(cap)&AnonymousUserCapabilitiesMask > 0, nil
+		return false, err
 	}
 	return user.HasCapability(cap), nil
 }

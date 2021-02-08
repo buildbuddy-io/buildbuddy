@@ -12,11 +12,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/codes"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
@@ -120,7 +122,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 	if !canWrite {
 		// For read-only API keys, pretend the write succeeded.
 		for _, uploadRequest := range req.Requests {
-			rsp.Responses = append(rsp.Responses, &repb.BatchUploadBlobsResponse_Response{
+			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 				Digest: uploadRequest.GetDigest(),
 				Status: &statuspb.Status{Code: int32(codes.OK)},
 			})
