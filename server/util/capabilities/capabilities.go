@@ -12,9 +12,16 @@ import (
 )
 
 var (
+	// DefaultAuthenticatedUserCapabilities are granted to users that are authenticated and
+	// whose capabilities aren't explicitly provided (e.g. when creating a new API key
+	// programmatically).
+	DefaultAuthenticatedUserCapabilities = []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}
+	// DefaultAuthenticatedUserCapabilitiesMask is the mask form of DefaultAuthenticatedUserCapabilities.
+	DefaultAuthenticatedUserCapabilitiesMask = ToInt(DefaultAuthenticatedUserCapabilities)
+
 	// AnonymousUserCapabilities are granted to users that aren't authenticated, as long as
 	// anonymous usage is enabled in the server configuration.
-	AnonymousUserCapabilities = []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}
+	AnonymousUserCapabilities = DefaultAuthenticatedUserCapabilities
 	// AnonymousUserCapabilitiesMask is the mask form of AnonymousUserCapabilities.
 	AnonymousUserCapabilitiesMask = ToInt(AnonymousUserCapabilities)
 )

@@ -127,6 +127,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 				Status: &statuspb.Status{Code: int32(codes.OK)},
 			})
 		}
+		return rsp, nil
 	}
 
 	cache := s.getCache(req.GetInstanceName())

@@ -20,6 +20,8 @@ go_test(
     embed = [":go_default_library"],
     deps = [
         "//proto:api_key_go_proto",
+        "//server/testutil/auth:go_default_library",
+        "//server/testutil/environment:go_default_library",
         "@com_github_stretchr_testify//assert:go_default_library",
     ],
 )
