@@ -228,6 +228,20 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
+
+	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	if err != nil {
+		return err
+	}
+	// If the API key is read-only, pretend the object already exists.
+	if !canWrite {
+		_, d, err := digest.ExtractDigestFromUploadResourceName(req.ResourceName)
+		if err != nil {
+			return err
+		}
+		return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: d.GetSizeBytes()})
+	}
+
 	var streamState *writeState
 	for {
 		req, err := stream.Recv()

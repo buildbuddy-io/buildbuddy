@@ -112,6 +112,21 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
+
+	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	if err != nil {
+		return nil, err
+	}
+	if !canWrite {
+		// For read-only API keys, pretend the write succeeded.
+		for _, uploadRequest := range req.Requests {
+			rsp.Responses = append(rsp.Responses, &repb.BatchUploadBlobsResponse_Response{
+				Digest: uploadRequest.GetDigest(),
+				Status: &statuspb.Status{Code: int32(codes.OK)},
+			})
+		}
+	}
+
 	cache := s.getCache(req.GetInstanceName())
 	rsp.Responses = make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(req.Requests))
 

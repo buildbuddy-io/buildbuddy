@@ -191,6 +191,16 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if err != nil {
 		return nil, err
 	}
+
+	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	if err != nil {
+		return nil, err
+	}
+	// For read-only API keys, pretend the request succeeded so bazel doesn't error out.
+	if !canWrite {
+		return req.ActionResult, nil
+	}
+
 	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
 	d := req.GetActionDigest()
 	uploadTracker := ht.TrackUpload(d)
