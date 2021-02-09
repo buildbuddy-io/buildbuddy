@@ -370,7 +370,7 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(apiKey string) (*apiKe
 	akg := &apiKeyGroup{}
 	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
 		existingRow := tx.Raw(`
-			SELECT ak.value AS key, ak.capabilities, g.group_id
+			SELECT ak.value AS `+"`key`"+`, ak.capabilities, g.group_id
 			FROM Groups AS g, APIKeys AS ak
 			WHERE g.group_id = ak.group_id AND ak.value = ?`,
 			apiKey)
