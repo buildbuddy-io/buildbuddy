@@ -12,7 +12,7 @@ import (
 
 	"google.golang.org/grpc/metadata"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	realauth "github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -41,10 +41,10 @@ func TestUsers(vals ...string) map[string]interfaces.UserInfo {
 		log.Printf("You're calling TestUsers wrong!")
 	}
 	testUsers := make(map[string]interfaces.UserInfo, 0)
-	var u *auth.Claims
+	var u *realauth.Claims
 	for i, val := range vals {
 		if i%2 == 0 {
-			u = &auth.Claims{UserID: val}
+			u = &realauth.Claims{UserID: val}
 		} else {
 			u.GroupID = val
 			u.AllowedGroups = []string{val}

@@ -25,8 +25,9 @@ go_library(
 go_test(
     name = "go_default_test",
     srcs = ["capabilities_test.go"],
+    embed = [],  # keep
     deps = [
-        ":go_default_library",
+        ":go_default_library",  # keep
         "//enterprise/server/auth:go_default_library",
         "//proto:api_key_go_proto",
         "//server/interfaces:go_default_library",
@@ -34,7 +35,5 @@ go_test(
         "//server/testutil/environment:go_default_library",
         "//server/util/testing/flags:go_default_library",
         "@com_github_stretchr_testify//assert:go_default_library",
-        "@org_golang_google_grpc//codes:go_default_library",
-        "@org_golang_google_grpc//status:go_default_library",
     ],
 )
