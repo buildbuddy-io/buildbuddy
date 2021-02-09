@@ -673,6 +673,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "http",
 		Name:      "response_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Response size of each HTTP response in **bytes**.",
 	}, []string{
 		HTTPRouteLabel,
@@ -941,6 +942,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "cache",
 		Name:      "contains_retry_count",
+		Buckets:   prometheus.LinearBuckets(0, 1, 10),
 		Help:      "Number of retries required to fulfill each `contains(key)` request to the cache (an observed value of 0 means the request succeeded on the first try).",
 	}, []string{
 		CacheTierLabel,
