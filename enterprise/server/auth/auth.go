@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -87,10 +88,10 @@ func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
 }
 
 type Claims struct {
-	UserID        string   `json:"user_id"`
-	GroupID       string   `json:"group_id"`
-	AllowedGroups []string `json:"allowed_groups"`
-	Capabilities  int32    `json:"capabilities"`
+	UserID        string                   `json:"user_id"`
+	GroupID       string                   `json:"group_id"`
+	AllowedGroups []string                 `json:"allowed_groups"`
+	Capabilities  []akpb.ApiKey_Capability `json:"capabilities"`
 	jwt.StandardClaims
 }
 
@@ -116,16 +117,20 @@ func (c *Claims) IsAdmin() bool {
 }
 
 func (c *Claims) HasCapability(cap akpb.ApiKey_Capability) bool {
-	return int32(cap)&c.Capabilities > 0
+	for _, cc := range c.Capabilities {
+		if cap == cc {
+			return true
+		}
+	}
+	return false
 }
 
 type apiKeyGroup struct {
-	Key          string
 	Capabilities int32
 	GroupID      string
 }
 
-func assembleJWT(ctx context.Context, userID, groupID string, allowedGroups []string, capabilities int32) (string, error) {
+func assembleJWT(ctx context.Context, userID, groupID string, allowedGroups []string, caps int32) (string, error) {
 	expirationTime := time.Now().Add(defaultBuildBuddyJWTDuration)
 	deadline, ok := ctx.Deadline()
 	if ok {
@@ -135,7 +140,7 @@ func assembleJWT(ctx context.Context, userID, groupID string, allowedGroups []st
 		UserID:        userID,
 		GroupID:       groupID,
 		AllowedGroups: allowedGroups,
-		Capabilities:  capabilities,
+		Capabilities:  capabilities.FromInt(caps),
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: expirationTime.Unix(),
 		},
@@ -370,8 +375,8 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(apiKey string) (*apiKe
 	akg := &apiKeyGroup{}
 	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
 		existingRow := tx.Raw(`
-			SELECT ak.value AS key, ak.capabilities, g.group_id
-			FROM Groups AS g, APIKeys AS ak
+			SELECT ak.capabilities, g.group_id
+			FROM `+"`Groups`"+` AS g, APIKeys AS ak
 			WHERE g.group_id = ak.group_id AND ak.value = ?`,
 			apiKey)
 		return existingRow.Scan(akg).Error
@@ -393,8 +398,8 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromBasicAuth(login, pass string)
 	akg := &apiKeyGroup{}
 	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
 		existingRow := tx.Raw(`
-			SELECT ak.value AS key, ak.capabilities, g.group_id
-			FROM Groups AS g, APIKeys AS ak
+			SELECT ak.capabilities, g.group_id
+			FROM `+"`Groups`"+` AS g, APIKeys AS ak
 			WHERE g.group_id = ? AND g.write_token = ? AND g.group_id = ak.group_id`,
 			login, pass)
 		return existingRow.Scan(akg).Error
