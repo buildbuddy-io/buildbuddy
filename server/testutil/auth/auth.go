@@ -48,7 +48,7 @@ func TestUsers(vals ...string) map[string]interfaces.UserInfo {
 		} else {
 			u.GroupID = val
 			u.AllowedGroups = []string{val}
-			u.Capabilities = capabilities.DefaultAuthenticatedUserCapabilitiesMask
+			u.Capabilities = capabilities.DefaultAuthenticatedUserCapabilities
 			testUsers[u.UserID] = u
 		}
 	}

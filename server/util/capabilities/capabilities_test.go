@@ -88,7 +88,7 @@ func TestIsGranted_TestUserWithCapability_True(t *testing.T) {
 	user := &auth.Claims{
 		UserID:       "US1",
 		GroupID:      "GR1",
-		Capabilities: int32(akpb.ApiKey_CACHE_WRITE_CAPABILITY),
+		Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
 	}
 	te := getTestEnv(t, map[string]interfaces.UserInfo{user.UserID: user})
 	flags.Set(t, "auth.enable_anonymous_usage", "false")
@@ -104,7 +104,7 @@ func TestIsGranted_TestUserWithoutCapability_False(t *testing.T) {
 	user := &auth.Claims{
 		UserID:       "US1",
 		GroupID:      "GR1",
-		Capabilities: int32(0),
+		Capabilities: []akpb.ApiKey_Capability{},
 	}
 	te := getTestEnv(t, map[string]interfaces.UserInfo{user.UserID: user})
 	flags.Set(t, "auth.enable_anonymous_usage", "false")
