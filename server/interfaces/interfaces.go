@@ -42,6 +42,7 @@ type UserInfo interface {
 	GetGroupID() string
 	GetAllowedGroups() []string
 	IsAdmin() bool
+	HasCapability(akpb.ApiKey_Capability) bool
 }
 
 // Authenticator constants

@@ -6,9 +6,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/auth",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:api_key_go_proto",
         "//server/environment:go_default_library",
         "//server/interfaces:go_default_library",
         "//server/tables:go_default_library",
+        "//server/util/capabilities:go_default_library",
         "//server/util/db:go_default_library",
         "//server/util/random:go_default_library",
         "//server/util/request_context:go_default_library",

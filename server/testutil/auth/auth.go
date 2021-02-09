@@ -11,6 +11,7 @@ import (
 
 	"google.golang.org/grpc/metadata"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -42,6 +43,8 @@ func (c *TestUser) GetUserID() string          { return c.UserID }
 func (c *TestUser) GetGroupID() string         { return c.GroupID }
 func (c *TestUser) GetAllowedGroups() []string { return c.AllowedGroups }
 func (c *TestUser) IsAdmin() bool              { return false }
+
+func (c *TestUser) HasCapability(_ akpb.ApiKey_Capability) bool { return true }
 
 // TestUsers creates a map of test users from arguments of the form:
 // user_id1, group_id1, user_id2, group_id2, ..., user_idN, group_idN
