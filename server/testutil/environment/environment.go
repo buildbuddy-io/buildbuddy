@@ -37,6 +37,12 @@ executor:
   app_target: "grpc://localhost:1985"
   local_cache_directory: "/tmp/filecache"
   local_cache_size_bytes: 1000000000  # 1GB
+auth:
+  oauth_providers:
+    - issuer_url: 'https://auth.test.buildbuddy.io'
+      client_id: 'test.buildbuddy.io'
+      client_secret: 'buildbuddy'
+  enable_anonymous_usage: true
 `
 
 type TestEnv struct {
