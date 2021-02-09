@@ -649,6 +649,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "http",
 		Name:      "request_handler_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Time taken to handle each HTTP request in **microseconds**.",
 	}, []string{
 		HTTPRouteLabel,
@@ -907,6 +908,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "cache",
 		Name:      "delete_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Duration of each cache deletion, in **microseconds**.",
 	}, []string{
 		CacheTierLabel,
@@ -928,6 +930,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "cache",
 		Name:      "contains_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Duration of each each `contains(key)` request, in **microseconds**.",
 	}, []string{
 		CacheTierLabel,
