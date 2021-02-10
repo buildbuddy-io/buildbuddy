@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 
@@ -195,4 +197,70 @@ func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, d *dige
 		return err
 	}
 	return proto.Unmarshal(buf.Bytes(), out)
+}
+
+func readProtoFromCache(ctx context.Context, cache interfaces.Cache, d *digest.InstanceNameDigest, out proto.Message) error {
+	data, err := cache.Get(ctx, d.Digest)
+	if err != nil {
+		if gstatus.Code(err) == gcodes.NotFound {
+			return digest.MissingDigestError(d.Digest)
+		}
+		return err
+	}
+	return proto.Unmarshal([]byte(data), out)
+}
+
+func ReadProtoFromCAS(ctx context.Context, cache interfaces.Cache, d *digest.InstanceNameDigest, out proto.Message) error {
+	cas := namespace.CASCache(cache, d.GetInstanceName())
+	return readProtoFromCache(ctx, cas, d, out)
+}
+
+func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.InstanceNameDigest, out proto.Message) error {
+	ac := namespace.ActionCache(cache, d.GetInstanceName())
+	return readProtoFromCache(ctx, ac, d, out)
+}
+
+func uploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadSeeker) (*repb.Digest, error) {
+	d, err := digest.Compute(in)
+	if err != nil {
+		return nil, err
+	}
+	// Go back to the beginning so we can re-read the file contents as we upload.
+	if _, err := in.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	wc, err := cache.Writer(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	_, err = io.Copy(wc, in)
+	if err != nil {
+		return nil, err
+	}
+	return d, wc.Close()
+}
+
+func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
+	data, err := proto.Marshal(in)
+	if err != nil {
+		return nil, err
+	}
+	reader := bytes.NewReader(data)
+	return uploadBytesToCache(ctx, cache, reader)
+}
+
+func UploadBlobToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, blob []byte) (*repb.Digest, error) {
+	reader := bytes.NewReader(blob)
+	cas := namespace.CASCache(cache, instanceName)
+	return uploadBytesToCache(ctx, cas, reader)
+}
+
+func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
+	cas := namespace.CASCache(cache, instanceName)
+	return uploadProtoToCache(ctx, cas, instanceName, in)
+}
+
+func UploadProtoToAC(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
+	ac := namespace.ActionCache(cache, instanceName)
+	return uploadProtoToCache(ctx, ac, instanceName, in)
 }

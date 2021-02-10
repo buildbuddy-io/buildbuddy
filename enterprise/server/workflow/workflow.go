@@ -9,19 +9,30 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowcmd"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jinzhu/gorm"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	guuid "github.com/google/uuid"
 )
 
-var workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
+var (
+	workflowURLMatcher  = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
+	defaultInstanceName = "ci"
+)
+
+type webhookData struct {
+	SHA string
+}
 
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
 func generateWebhookID() (string, error) {
@@ -30,6 +41,18 @@ func generateWebhookID() (string, error) {
 		return "", err
 	}
 	return strings.ToLower(u.String()), nil
+}
+
+func assembleRepoURL(wf *tables.Workflow) string {
+	authURL := wf.RepoURL
+	u, err := url.Parse(wf.RepoURL)
+	if err == nil {
+		if wf.AccessToken != "" {
+			u.User = url.UserPassword(wf.AccessToken, "")
+			authURL = u.String()
+		}
+	}
+	return authURL
 }
 
 type workflowService struct {
@@ -67,24 +90,31 @@ func (ws *workflowService) testRepo(ctx context.Context, repoURL, accessToken st
 	return nil
 }
 
+func (ws *workflowService) checkPreconditions(ctx context.Context) error {
+	if ws.env.GetDBHandle() == nil {
+		return status.FailedPreconditionError("database not configured")
+	}
+	if ws.env.GetAuthenticator() == nil {
+		return status.FailedPreconditionError("anonymous workflow access is not supported")
+	}
+	if _, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
 func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
 	// Validate the request.
+	if err := ws.checkPreconditions(ctx); err != nil {
+		return nil, err
+	}
 	repoReq := req.GetGitRepo()
 	if repoReq.GetRepoUrl() == "" {
 		return nil, status.InvalidArgumentError("A repo_url is required to create a new workflow.")
 	}
-	if ws.env.GetDBHandle() == nil {
-		return nil, status.FailedPreconditionError("database not configured")
-	}
+
 	// Ensure the request is authenticated so some user can own this workflow.
 	var permissions *perms.UserGroupPerm
-	auth := ws.env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.PermissionDeniedErrorf("Anonymous workflows are not supported.")
-	}
-	if _, err := auth.AuthenticatedUser(ctx); err != nil {
-		return nil, err
-	}
 	groupID := req.GetRequestContext().GetGroupId()
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Request context is missing group ID.")
@@ -137,18 +167,14 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 }
 
 func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
-	if ws.env.GetDBHandle() == nil {
-		return nil, status.FailedPreconditionError("database not configured")
+	if err := ws.checkPreconditions(ctx); err != nil {
+		return nil, err
 	}
 	workflowID := req.GetId()
 	if workflowID == "" {
 		return nil, status.InvalidArgumentError("An ID is required to delete a workflow.")
 	}
-	auth := ws.env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.UnimplementedError("Not Implemented")
-	}
-	authenticatedUser, err := auth.AuthenticatedUser(ctx)
+	authenticatedUser, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -167,9 +193,10 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 }
 
 func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
-	if ws.env.GetDBHandle() == nil {
-		return nil, status.FailedPreconditionError("database not configured")
+	if err := ws.checkPreconditions(ctx); err != nil {
+		return nil, err
 	}
+
 	rsp := &wfpb.GetWorkflowsResponse{}
 	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM Workflows`)
 	// Adds user / permissions check.
@@ -215,7 +242,7 @@ func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID
 		return nil, status.FailedPreconditionError("database not configured")
 	}
 	if webhookID == "" {
-		return nil, status.InvalidArgumentError("An webhook ID is required.")
+		return nil, status.InvalidArgumentError("A webhook ID is required.")
 	}
 	tw := &tables.Workflow{}
 	if err := ws.env.GetDBHandle().ReadRow(tw, `webhook_id = ?`, webhookID); err != nil {
@@ -224,12 +251,146 @@ func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID
 	return tw, nil
 }
 
+func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, ci *workflowcmd.CommandInfo) (*repb.Digest, error) {
+	script, err := workflowcmd.GenerateShellScript(ci)
+	if err != nil {
+		return nil, err
+	}
+
+	cache := ws.env.GetCache()
+	if cache == nil {
+		return nil, status.UnavailableError("No cache configured.")
+	}
+
+	scriptName := "run.sh"
+	scriptDigest, err := cachetools.UploadBlobToCAS(ctx, cache, defaultInstanceName, script)
+	if err != nil {
+		return nil, err
+	}
+	dir := &repb.Directory{
+		Files: []*repb.FileNode{
+			&repb.FileNode{
+				Name:         scriptName,
+				Digest:       scriptDigest,
+				IsExecutable: true,
+			},
+		},
+	}
+	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, defaultInstanceName, dir)
+	cmd := &repb.Command{
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			&repb.Command_EnvironmentVariable{
+				Name:  "CI",
+				Value: "1",
+			},
+			&repb.Command_EnvironmentVariable{
+				Name:  "CI_REPOSITORY_URL",
+				Value: wf.RepoURL,
+			},
+			&repb.Command_EnvironmentVariable{
+				Name:  "CI_COMMIT_SHA",
+				Value: ci.CommitSHA,
+			},
+		},
+		Arguments: []string{"/bin/bash", scriptName},
+	}
+	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, defaultInstanceName, cmd)
+	if err != nil {
+		return nil, err
+	}
+	action := &repb.Action{
+		CommandDigest:   cmdDigest,
+		InputRootDigest: inputRootDigest,
+		DoNotCache:      true,
+	}
+	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, defaultInstanceName, action)
+	return actionDigest, err
+}
+
+func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Workflow) (*tables.APIKey, error) {
+	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
+	q.AddWhereClause("group_id = ?", wf.GroupID)
+	q.SetLimit(1)
+	qStr, qArgs := q.Build()
+	k := &tables.APIKey{}
+	if err := ws.env.GetDBHandle().Raw(qStr, qArgs...).Scan(&k).Error; err != nil {
+		return nil, err
+	}
+	return k, nil
+}
+
+func (ws *workflowService) parseRequest(r *http.Request) (*webhookData, error) {
+	log.Printf("Webhook body: %+v", r)
+	return &webhookData{SHA: "HEAD"}, nil
+}
+
+func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) error {
+	if ws.env.GetDBHandle() == nil {
+		return status.FailedPreconditionError("database not configured")
+	}
+	if ws.env.GetAuthenticator() == nil {
+		return status.FailedPreconditionError("anonymous workflow access is not supported")
+	}
+	if ws.env.GetRemoteExecutionService() == nil {
+		return status.UnavailableError("Remote execution not configured.")
+	}
+	return nil
+}
+
+func (ws *workflowService) getBazelFlags(ak *tables.APIKey) []string {
+	flags := make([]string, 0)
+	flags = append(flags, "--remote_header=x-buildbuddy-api-key="+ak.Value)
+	if eventsAPIURL := ws.env.GetConfigurator().GetAppEventsAPIURL(); eventsAPIURL != "" {
+		flags = append(flags, "--bes_backend="+eventsAPIURL)
+	}
+	return flags
+}
+
 func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) error {
-	wf, err := ws.readWorkflowForWebhook(r.Context(), webhookID)
+	ctx := r.Context()
+	if err := ws.checkStartWorkflowPreconditions(ctx); err != nil {
+		return err
+	}
+	webhookData, err := ws.parseRequest(r)
 	if err != nil {
 		return err
 	}
-	log.Printf("Read matching workflow %v", wf)
+	log.Printf("Parsed webhook payload: %+v", webhookData)
+
+	wf, err := ws.readWorkflowForWebhook(ctx, webhookID)
+	if err != nil {
+		return err
+	}
+	log.Printf("Found workflow %v matching webhook %q", wf, webhookID)
+
+	key, err := ws.apiKeyForWorkflow(ctx, wf)
+	if err != nil {
+		return err
+	}
+	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
+	if ctx, err = prefix.AttachUserPrefixToContext(ctx, ws.env); err != nil {
+		return err
+	}
+
+	ci := &workflowcmd.CommandInfo{
+		RepoURL:    assembleRepoURL(wf),
+		CommitSHA:  webhookData.SHA,
+		BazelFlags: ws.getBazelFlags(key),
+	}
+	ad, err := ws.createActionForWorkflow(ctx, wf, ci)
+	if err != nil {
+		return err
+	}
+
+	executionID, err := ws.env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{
+		InstanceName:    defaultInstanceName,
+		SkipCacheLookup: true,
+		ActionDigest:    ad,
+	})
+	if err != nil {
+		return err
+	}
+	log.Printf("Started workflow execution (ID: %q)", executionID)
 	return nil
 }
 
@@ -240,7 +401,6 @@ func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	webhookID := workflowMatch[1]
-	log.Printf("Would handle webhook %q", webhookID)
 	if err := ws.startWorkflow(webhookID, r); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
