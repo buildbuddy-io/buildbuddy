@@ -97,7 +97,7 @@ func TestRPCRead(t *testing.T) {
 		},
 	}
 
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}

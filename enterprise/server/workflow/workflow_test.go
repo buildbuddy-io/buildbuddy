@@ -88,7 +88,7 @@ func TestDelete(t *testing.T) {
 		Perms:      48,
 		RepoURL:    "git@github.com:buildbuddy-io/buildbuddy.git",
 	}
-	err = te.GetDBHandle().Create(&row).Error
+	err := te.GetDBHandle().Create(&row).Error
 	assert.Nil(t, err)
 
 	req := &wfpb.DeleteWorkflowRequest{Id: "WF1"}
@@ -120,7 +120,7 @@ func TestList(t *testing.T) {
 		RepoURL:    "git@github.com:buildbuddy-io/buildbuddy.git",
 		WebhookID:  "WHID1",
 	}
-	err = te.GetDBHandle().Create(&row).Error
+	err := te.GetDBHandle().Create(&row).Error
 	assert.Nil(t, err)
 
 	row2 := &tables.Workflow{

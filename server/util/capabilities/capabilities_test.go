@@ -20,10 +20,7 @@ var (
 )
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
-	te, err := testenv.GetTestEnv()
-	if err != nil {
-		t.Fatal(err)
-	}
+	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
 	return te
 }
