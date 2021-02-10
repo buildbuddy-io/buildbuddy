@@ -1,6 +1,7 @@
 package bazel
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -19,40 +20,43 @@ var (
 )
 
 type InvocationResult struct {
-	Output       string
+	Stderr       string
+	Stdout       string
 	InvocationID string
 	Error        error
 }
 
 // Invoke the bazel CLI from within the given workspace dir, pointing it at a local BuildBuddy server.
 func Invoke(ctx context.Context, t *testing.T, workspaceDir string, subCommand string, args ...string) *InvocationResult {
-	bazelArgs := []string{
-		subCommand,
-		"--bes_results_url=http://localhost:8080/invocation/",
-		"--bes_backend=grpc://localhost:1985",
-		"--remote_cache=grpc://localhost:1985",
-		"--remote_upload_local_results",
-	}
-	bazelArgs = append(bazelArgs, args...)
 	bazelBinaryPath, err := bazelgo.Runfile("server/testutil/bazel/bazel-3.7.0-linux-x86_64")
 	if err != nil {
 		return &InvocationResult{Error: err}
 	}
+	bazelArgs := []string{subCommand}
+	bazelArgs = append(bazelArgs, args...)
+	var stderr, stdout bytes.Buffer
 	cmd := exec.CommandContext(ctx, bazelBinaryPath, bazelArgs...)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	cmd.Dir = workspaceDir
-	// Bazel needs a HOME dir to store its local cache.
+	// Bazel needs a HOME dir to store its local cache; store it under ".home" in the workspace.
 	cmd.Env = []string{
 		fmt.Sprintf("HOME=%s", filepath.Join(workspaceDir, ".home")),
 	}
 
-	b, err := cmd.CombinedOutput()
-	output := string(b)
+	err = cmd.Run()
 	invocationID := ""
-	if m := invocationIDRegexp.FindAllStringSubmatch(output, -1); len(m) > 0 {
+	if m := invocationIDRegexp.FindAllStringSubmatch(string(stderr.Bytes()), -1); len(m) > 0 {
 		invocationID = m[0][1]
 	}
+	if err != nil {
+		if err, ok := err.(*exec.ExitError); ok {
+			fmt.Printf("WARNING: Process exited with non-zero exit code %d. Stderr: %s\n", err.ExitCode(), string(stderr.Bytes()))
+		}
+	}
 	return &InvocationResult{
-		Output:       string(b),
+		Stdout:       string(stdout.Bytes()),
+		Stderr:       string(stderr.Bytes()),
 		InvocationID: invocationID,
 		Error:        err,
 	}

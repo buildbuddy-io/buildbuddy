@@ -5,62 +5,36 @@ import (
 	"github.com/stretchr/testify/assert"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/bazel"
-	"google.golang.org/grpc"
-
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	testauth "github.com/buildbuddy-io/buildbuddy/server/testutil/auth"
-	testenv "github.com/buildbuddy-io/buildbuddy/server/testutil/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
 )
 
 var (
 	workspaceContents = map[string]string{
 		"WORKSPACE": `workspace(name = "integration_test")`,
-		"BUILD": `genrule(
-			name = "hello_txt",
-			outs = ["hello.txt"],
-			cmd_bash = "echo 'Hello world!' > $@",
-		)`,
+		"BUILD":     `genrule(name = "hello_txt", outs = ["hello.txt"], cmd_bash = "echo 'Hello world' > $@")`,
 	}
 )
 
-func runBBServer(ctx context.Context, t *testing.T) *grpc.ClientConn {
-	env := testenv.GetTestEnv(t)
-	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
-	env.SetAuthenticator(authenticator)
-
-	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env /*sslService=*/, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	grpcServer, runFunc := env.LocalGRPCServer()
-	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
-
-	go runFunc()
-
-	clientConn, err := env.LocalGRPCConn(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return clientConn
-}
-
 func TestBazelBuild_RemoteCacheHit(t *testing.T) {
+	app := buildbuddy.Run(t)
 	ctx := context.Background()
-	_ = runBBServer(ctx, t)
 	ws := bazel.MakeTempWorkspace(t, workspaceContents)
+	buildFlags := []string{"//:hello.txt", "--remote_upload_local_results"}
+	buildFlags = append(buildFlags, app.BESBazelFlags()...)
+	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
 
-	result := bazel.Invoke(ctx, t, ws, "build", "//:hello_txt")
+	result := bazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
-	assert.Nil(t, result.Error)
-	assert.Regexp(t, "Build completed successfully", result.Output)
+	assert.NoError(t, result.Error)
+	assert.Contains(t, result.Stderr, "Build completed successfully")
+	assert.NotContains(t, result.Stderr, "1 remote cache hit")
 
 	bazel.Clean(ctx, t, ws)
 
 	result = bazel.Invoke(ctx, t, ws, "build", "//:hello.txt")
 
-	assert.Nil(t, result.Error)
-	assert.Regexp(t, "1 remote cache hit", result.Output)
+	assert.NoError(t, result.Error)
+	assert.Contains(t, result.Stderr, "Build completed successfully")
+	assert.Contains(t, result.Stderr, "1 remote cache hit")
 }
