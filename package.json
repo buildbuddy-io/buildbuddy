@@ -27,6 +27,9 @@
     ]
   },
   "devDependencies": {
+    "jasmine": "^3.6.4",
+    "@types/jasmine": "^3.6.3",
+    "@bazel/jasmine": "^2.3.0",
     "@bazel/bazelisk": "^1.6.1",
     "@bazel/buildifier": "^3.4.0",
     "@bazel/ibazel": "^0.13.2",
@@ -48,7 +51,8 @@
     "rollup-plugin-commonjs": "^10.1.0",
     "rollup-plugin-node-resolve": "^5.2.0",
     "rollup-plugin-replace": "^2.2.0",
-    "terser": "^4.6.4"
+    "terser": "^4.6.4",
+    "tslib": "^2.1.0"
   },
   "dependencies": {
     "@types/moment": "^2.13.0",
