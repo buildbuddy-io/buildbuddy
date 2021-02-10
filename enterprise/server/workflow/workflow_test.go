@@ -39,8 +39,7 @@ func runBBServer(ctx context.Context, env *environment.TestEnv, t *testing.T) *g
 
 func TestCreate(t *testing.T) {
 	ctx := context.Background()
-	te, err := environment.GetTestEnv()
-	assert.Nil(t, err)
+	te := environment.GetTestEnv(t)
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
 
 	authenticator := auth.NewTestAuthenticator(auth.TestUsers("USER1", "GROUP1"))
@@ -72,10 +71,7 @@ func TestCreate(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	ctx := context.Background()
-	te, err := environment.GetTestEnv()
-	if err != nil {
-		t.Error(err)
-	}
+	te := environment.GetTestEnv(t)
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
 	authenticator := auth.NewTestAuthenticator(auth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(authenticator)
@@ -106,10 +102,7 @@ func TestDelete(t *testing.T) {
 
 func TestList(t *testing.T) {
 	ctx := context.Background()
-	te, err := environment.GetTestEnv()
-	if err != nil {
-		t.Error(err)
-	}
+	te := environment.GetTestEnv(t)
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
 	authenticator := auth.NewTestAuthenticator(auth.TestUsers("USER1", "GROUP1", "USER2", "GROUP2"))
 	te.SetAuthenticator(authenticator)

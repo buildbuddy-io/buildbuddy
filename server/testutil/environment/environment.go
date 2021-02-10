@@ -1,11 +1,15 @@
 package environment
 
 import (
+	"bytes"
 	"context"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
+	"path/filepath"
+	"testing"
+	"text/template"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -19,23 +23,26 @@ import (
 	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
 )
 
-const testConfigFileContents string = `
+type ConfigTemplateParams struct {
+	TestRootDir string
+}
+
+const testConfigFileTemplate string = `
 app:
   build_buddy_url: "http://localhost:8080"
 database:
   data_source: "sqlite3://:memory:"
 storage:
   disk:
-    root_directory: /tmp/buildbuddy
+    root_directory: "{{.TestRootDir}}/storage"
 cache:
   max_size_bytes: 1000000000  # 1 GB
-  #in_memory: true
   disk:
-    root_directory: /tmp/buildbuddy_cache
+    root_directory: "{{.TestRootDir}}/cache"
 executor:
-  root_directory: "/tmp/remote_build"
+  root_directory: "{{.TestRootDir}}/remote_execution/builds"
   app_target: "grpc://localhost:1985"
-  local_cache_directory: "/tmp/filecache"
+  local_cache_directory: "{{.TestRootDir}}/remote_execution/cache"
   local_cache_size_bytes: 1000000000  # 1GB
 auth:
   oauth_providers:
@@ -73,25 +80,40 @@ func (te *TestEnv) LocalGRPCConn(ctx context.Context) (*grpc.ClientConn, error) 
 	return grpc.DialContext(ctx, "bufnet", grpc.WithContextDialer(te.bufDialer), grpc.WithInsecure())
 }
 
-func writeTmpConfigFile() (string, error) {
-	tmpFile, err := ioutil.TempFile(os.TempDir(), "config-*.yaml")
+func writeTmpConfigFile(testRootDir string) (string, error) {
+	tmpl, err := template.New("config").Parse(testConfigFileTemplate)
 	if err != nil {
 		return "", err
 	}
-	if _, err := tmpFile.Write([]byte(testConfigFileContents)); err != nil {
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, &ConfigTemplateParams{TestRootDir: testRootDir}); err != nil {
 		return "", err
 	}
-	return tmpFile.Name(), nil
+	configPath := filepath.Join(testRootDir, "config.yaml")
+	if err := ioutil.WriteFile(configPath, buf.Bytes(), 0644); err != nil {
+		return "", err
+	}
+	return configPath, nil
 }
 
-func GetTestEnv() (*TestEnv, error) {
-	tmpConfigFile, err := writeTmpConfigFile()
+func GetTestEnv(t *testing.T) *TestEnv {
+	testRootDir, err := ioutil.TempDir("/tmp", "buildbuddy_test_*")
+	if err == nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		err := os.RemoveAll(testRootDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	tmpConfigFile, err := writeTmpConfigFile(testRootDir)
 	if err != nil {
-		return nil, err
+		t.Fatal(err)
 	}
 	configurator, err := config.NewConfigurator(tmpConfigFile)
 	if err != nil {
-		return nil, err
+		t.Fatal(err)
 	}
 	healthChecker := healthcheck.NewTestingHealthChecker()
 	te := &TestEnv{
@@ -99,11 +121,11 @@ func GetTestEnv() (*TestEnv, error) {
 	}
 	c, err := memory_cache.NewMemoryCache(1000 * 1000 * 1000 /* 1GB */)
 	if err != nil {
-		return nil, err
+		t.Fatal(err)
 	}
 	te.SetCache(c)
 	dbHandle, err := db.GetConfiguredDatabase(configurator, healthChecker)
 	te.SetDBHandle(dbHandle)
 
-	return te, nil
+	return te
 }
