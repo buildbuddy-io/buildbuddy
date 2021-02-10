@@ -85,10 +85,10 @@ func Run(t *testing.T) *App {
 	}()
 	readyC := make(chan error, 1)
 	go func() {
-		healthy, err := app.waitForReady()
+		ready, err := app.waitForReady()
 		if err != nil {
 			readyC <- err
-		} else if healthy {
+		} else if ready {
 			readyC <- nil
 		}
 	}()
@@ -98,12 +98,10 @@ func Run(t *testing.T) *App {
 	select {
 	case err := <-readyC:
 		if err != nil {
-			t.Fatal(app.fmtErrorWithLogs(fmt.Errorf("error occurred during health check: %s", err)))
+			t.Fatal(app.fmtErrorWithLogs(fmt.Errorf("error occurred during ready check: %s", err)))
 		}
 		return app
 	case err := <-waitC:
-		// In case the server exits before it becomes healthy, show the logs
-		// (usually this is due to misconfiguration)
 		t.Fatal(app.fmtErrorWithLogs(fmt.Errorf("buildbuddy exited unexpectedly: %s", err)))
 	}
 	return nil // should never be reached
@@ -154,11 +152,11 @@ func (a *App) waitForReady() (bool, error) {
 		if time.Since(start) > readyCheckTimeout {
 			errMsg := ""
 			if err == nil {
-				errMsg = fmt.Sprintf("/healthz status: %d", resp.StatusCode)
+				errMsg = fmt.Sprintf("/readyz status: %d", resp.StatusCode)
 			} else {
 				errMsg = fmt.Sprintf("err: %s", err)
 			}
-			return false, fmt.Errorf("health check timed out after %s (%s)", readyCheckTimeout, errMsg)
+			return false, fmt.Errorf("ready check timed out after %s (%s)", readyCheckTimeout, errMsg)
 		}
 		time.Sleep(readyCheckPollInterval)
 		continue
