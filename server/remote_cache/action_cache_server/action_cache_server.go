@@ -11,12 +11,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -193,6 +195,16 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if err != nil {
 		return nil, err
 	}
+
+	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	if err != nil {
+		return nil, err
+	}
+	// For read-only API keys, pretend the request succeeded so bazel doesn't error out.
+	if !canWrite {
+		return req.ActionResult, nil
+	}
+
 	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
 	d := req.GetActionDigest()
 	uploadTracker := ht.TrackUpload(d)
