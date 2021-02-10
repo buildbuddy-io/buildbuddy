@@ -26,7 +26,7 @@ type InvocationResult struct {
 	Error        error
 }
 
-// Invoke the bazel CLI from within the given workspace dir, pointing it at a local BuildBuddy server.
+// Invoke the bazel CLI from within the given workspace dir.
 func Invoke(ctx context.Context, t *testing.T, workspaceDir string, subCommand string, args ...string) *InvocationResult {
 	bazelBinaryPath, err := bazelgo.Runfile("server/testutil/bazel/bazel-3.7.0-linux-x86_64")
 	if err != nil {
