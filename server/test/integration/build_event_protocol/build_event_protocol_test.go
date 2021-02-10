@@ -20,10 +20,10 @@ func TestBuildWithBESFlags_Success(t *testing.T) {
 	app := buildbuddy.Run(t)
 	ctx := context.Background()
 	ws := bazel.MakeTempWorkspace(t, workspaceContents)
-	buildFlags := []string{"//:hello.txt", "--remote_upload_local_results"}
+	buildFlags := []string{"//:hello.txt"}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
 
-	result := bazel.Invoke(ctx, t, ws, "build", buildFlags...)
+	result := bazel.Invoke(ctx, t, ws, "build", buildFlags)
 
 	assert.NoError(t, result.Error)
 	assert.Contains(t, result.Stderr, "Build completed successfully")
