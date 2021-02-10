@@ -23,7 +23,7 @@ func TestBuildWithBESFlags_Success(t *testing.T) {
 	buildFlags := []string{"//:hello.txt"}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
 
-	result := bazel.Invoke(ctx, t, ws, "build", buildFlags)
+	result := bazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)
 	assert.Contains(t, result.Stderr, "Build completed successfully")
