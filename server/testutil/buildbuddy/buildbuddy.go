@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	readyCheckPollInterval = 1 * time.Second
-	startupTimeout         = 30 * time.Second
+	readyCheckPollInterval = 500 * time.Millisecond
+	readyCheckTimeout      = 30 * time.Second
 	killedExitCode         = -1
 )
 
@@ -33,6 +33,10 @@ type App struct {
 	stderr         bytes.Buffer
 }
 
+// Run a local BuildBuddy server for the scope of the given test case.
+//
+// The `buildbuddy.local.yaml` config is used, except directories and ports
+// are overwritten so that the test is hermetic.
 func Run(t *testing.T) *App {
 	cmdPath, err := bazelgo.Runfile("server/cmd/buildbuddy/buildbuddy_/buildbuddy")
 	if err != nil {
@@ -105,6 +109,7 @@ func Run(t *testing.T) *App {
 	return nil // should never be reached
 }
 
+// BESBazelFlags returns the Bazel flags required to upload build logs to the BuildBuddy app.
 func (a *App) BESBazelFlags() []string {
 	return []string{
 		fmt.Sprintf("--bes_results_url=http://localhost:%d/invocation/", a.httpPort),
@@ -146,14 +151,14 @@ func (a *App) waitForReady() (bool, error) {
 		if ok {
 			return true, nil
 		}
-		if time.Since(start) > startupTimeout {
+		if time.Since(start) > readyCheckTimeout {
 			errMsg := ""
 			if err == nil {
 				errMsg = fmt.Sprintf("/healthz status: %d", resp.StatusCode)
 			} else {
 				errMsg = fmt.Sprintf("err: %s", err)
 			}
-			return false, fmt.Errorf("health check timed out after %s (%s)", startupTimeout, errMsg)
+			return false, fmt.Errorf("health check timed out after %s (%s)", readyCheckTimeout, errMsg)
 		}
 		time.Sleep(readyCheckPollInterval)
 		continue
