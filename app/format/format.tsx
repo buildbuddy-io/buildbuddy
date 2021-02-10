@@ -118,12 +118,6 @@ export function formatCommitHash(commit: string) {
 
 export function formatWithCommas(num: Long) {
   return  (+num * 1).toLocaleString("en-US")
-  // var l = String(num);
-  // var objRegex  = new RegExp('(-?[0-9]+)([0-9]{3})');
-  // while(objRegex.test(l)) {
-  //   l = l.replace(objRegex, '$1,$2');
-  // }
-  // return l;
 }
 
 export default {
