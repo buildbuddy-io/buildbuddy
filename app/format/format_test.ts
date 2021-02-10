@@ -36,3 +36,18 @@ describe("sentenceCase", () => {
     expect(format.sentenceCase("Foo bar")).toEqual("Foo bar");
   });
 });
+
+describe("formatWithCommas", () => {
+  it("should handle 0", () => {
+    expect(format.formatWithCommas(new Long(0, 0))).toEqual("0");
+  });
+  it("should handle fewer than 4 digits", () => {
+    expect(format.formatWithCommas(new Long(123, 0))).toEqual("123");
+  });
+  it("should handle 4 digits", () => {
+    expect(format.formatWithCommas(new Long(1234, 0))).toEqual("1,234");
+  });
+  it("should handle 7 digits", () => {
+    expect(format.formatWithCommas(new Long(1234567, 0))).toEqual("1,234,567");
+  });
+});

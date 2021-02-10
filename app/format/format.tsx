@@ -117,7 +117,7 @@ export function formatCommitHash(commit: string) {
 }
 
 export function formatWithCommas(num: Long) {
-  return  (+num * 1).toLocaleString("en-US")
+  return  (+num * 1).toLocaleString("en-US");
 }
 
 export default {
