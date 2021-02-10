@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -59,48 +61,48 @@ func (s *ActionCacheServer) checkFilesExist(ctx context.Context, cache interface
 	return nil
 }
 
-func (s *ActionCacheServer) checkDirExists(ctx context.Context, cache interfaces.Cache, dir *repb.Directory) error {
-	digests := make([]*repb.Digest, 0, len(dir.GetFiles()))
-	for _, f := range dir.GetFiles() {
-		if f.Digest == nil {
-			continue
-		}
-		digests = append(digests, f.GetDigest())
-	}
-	return s.checkFilesExist(ctx, cache, digests)
-}
-
 func (s *ActionCacheServer) validateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.ActionResult) error {
 	outputFileDigests := make([]*repb.Digest, 0, len(r.OutputFiles))
-	for _, f := range r.OutputFiles {
-		if f.GetDigest().GetSizeBytes() > 0 {
-			outputFileDigests = append(outputFileDigests, f.GetDigest())
+	mu := &sync.Mutex{}
+	appendDigest := func(d *repb.Digest) {
+		if d != nil && d.GetSizeBytes() > 0 {
+			mu.Lock()
+			outputFileDigests = append(outputFileDigests, d)
+			mu.Unlock()
 		}
 	}
-	if err := s.checkFilesExist(ctx, cache, outputFileDigests); err != nil {
+	for _, f := range r.OutputFiles {
+		appendDigest(f.GetDigest())
+	}
+
+	g, gCtx := errgroup.WithContext(ctx)
+	for _, d := range r.OutputDirectories {
+		dc := d
+		g.Go(func() error {
+			blob, err := cache.Get(gCtx, dc.GetTreeDigest())
+			if err != nil {
+				return err
+			}
+			tree := &repb.Tree{}
+			if err := proto.Unmarshal(blob, tree); err != nil {
+				return err
+			}
+			for _, f := range tree.GetRoot().GetFiles() {
+				appendDigest(f.GetDigest())
+			}
+			for _, dir := range tree.GetChildren() {
+				for _, f := range dir.GetFiles() {
+					appendDigest(f.GetDigest())
+				}
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
 		return err
 	}
 
-	for _, d := range r.OutputDirectories {
-		blob, err := cache.Get(ctx, d.GetTreeDigest())
-		if err != nil {
-			return err
-		}
-		tree := &repb.Tree{}
-		if err := proto.Unmarshal(blob, tree); err != nil {
-			return err
-		}
-		if err := s.checkDirExists(ctx, cache, tree.Root); err != nil {
-			return err
-		}
-
-		for _, childDir := range tree.GetChildren() {
-			if err := s.checkDirExists(ctx, cache, childDir); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return s.checkFilesExist(ctx, cache, outputFileDigests)
 }
 
 func setWorkerMetadata(ar *repb.ActionResult) {
