@@ -1562,9 +1562,3 @@ def install_buildbuddy_dependencies():
         sum = "h1:wFXVbFY8DY5/xOe1ECiWdKCzZlxgshcYVNkBHstARME=",
         version = "v0.1.2",
     )
-    go_repository(
-        name = "com_github_phayes_freeport",
-        importpath = "github.com/phayes/freeport",
-        sum = "h1:JhzVVoYvbOACxoUmOs6V/G4D5nPVUW73rKvXxP4XUJc=",
-        version = "v0.0.0-20180830031419-95f893ade6f2",
-    )

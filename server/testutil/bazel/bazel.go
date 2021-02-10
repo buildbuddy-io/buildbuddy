@@ -15,6 +15,11 @@ import (
 	context "context"
 )
 
+const (
+	// Path to the bazel binary. Must match the path in the build rule.
+	bazelPath = "server/testutil/bazel/bazel-3.7.0"
+)
+
 var (
 	invocationIDRegexp = regexp.MustCompile("http://localhost:8080/invocation/([[:graph:]]+)")
 )
@@ -28,7 +33,7 @@ type InvocationResult struct {
 
 // Invoke the bazel CLI from within the given workspace dir.
 func Invoke(ctx context.Context, t *testing.T, workspaceDir string, subCommand string, args ...string) *InvocationResult {
-	bazelBinaryPath, err := bazelgo.Runfile("server/testutil/bazel/bazel-3.7.0")
+	bazelBinaryPath, err := bazelgo.Runfile(bazelPath)
 	if err != nil {
 		return &InvocationResult{Error: err}
 	}

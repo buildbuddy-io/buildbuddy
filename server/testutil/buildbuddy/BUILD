@@ -11,7 +11,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy",
     visibility = ["//visibility:public"],
     deps = [
-        "@com_github_phayes_freeport//:go_default_library",
-        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "//server/testutil/app:go_default_library",
     ],
 )
