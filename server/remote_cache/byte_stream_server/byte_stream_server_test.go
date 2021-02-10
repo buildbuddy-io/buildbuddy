@@ -63,10 +63,7 @@ func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.Ins
 
 func TestRPCRead(t *testing.T) {
 	ctx := context.Background()
-	te, err := environment.GetTestEnv()
-	if err != nil {
-		t.Error(err)
-	}
+	te := environment.GetTestEnv(t)
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
@@ -100,7 +97,7 @@ func TestRPCRead(t *testing.T) {
 		},
 	}
 
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}

@@ -39,8 +39,7 @@ func runBBServer(ctx context.Context, env *environment.TestEnv, t *testing.T) *g
 
 func TestCreate(t *testing.T) {
 	ctx := context.Background()
-	te, err := environment.GetTestEnv()
-	assert.Nil(t, err)
+	te := environment.GetTestEnv(t)
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
 
 	authenticator := auth.NewTestAuthenticator(auth.TestUsers("USER1", "GROUP1"))
@@ -72,10 +71,7 @@ func TestCreate(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	ctx := context.Background()
-	te, err := environment.GetTestEnv()
-	if err != nil {
-		t.Error(err)
-	}
+	te := environment.GetTestEnv(t)
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
 	authenticator := auth.NewTestAuthenticator(auth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(authenticator)
@@ -92,7 +88,7 @@ func TestDelete(t *testing.T) {
 		Perms:      48,
 		RepoURL:    "git@github.com:buildbuddy-io/buildbuddy.git",
 	}
-	err = te.GetDBHandle().Create(&row).Error
+	err := te.GetDBHandle().Create(&row).Error
 	assert.Nil(t, err)
 
 	req := &wfpb.DeleteWorkflowRequest{Id: "WF1"}
@@ -106,10 +102,7 @@ func TestDelete(t *testing.T) {
 
 func TestList(t *testing.T) {
 	ctx := context.Background()
-	te, err := environment.GetTestEnv()
-	if err != nil {
-		t.Error(err)
-	}
+	te := environment.GetTestEnv(t)
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
 	authenticator := auth.NewTestAuthenticator(auth.TestUsers("USER1", "GROUP1", "USER2", "GROUP2"))
 	te.SetAuthenticator(authenticator)
@@ -127,7 +120,7 @@ func TestList(t *testing.T) {
 		RepoURL:    "git@github.com:buildbuddy-io/buildbuddy.git",
 		WebhookID:  "WHID1",
 	}
-	err = te.GetDBHandle().Create(&row).Error
+	err := te.GetDBHandle().Create(&row).Error
 	assert.Nil(t, err)
 
 	row2 := &tables.Workflow{
