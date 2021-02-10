@@ -18,31 +18,27 @@ import (
 )
 
 const (
-	healthCheckPollInterval = 1 * time.Second
-	startupTimeout          = 30 * time.Second
+	readyCheckPollInterval = 1 * time.Second
+	startupTimeout         = 30 * time.Second
+	killedExitCode         = -1
 )
 
 type App struct {
 	httpPort       int
 	gRPCPort       int
-	telemetryPort  int
 	monitoringPort int
-	exited         bool
 	mu             sync.Mutex
+	exited         bool
 	stdout         bytes.Buffer
 	stderr         bytes.Buffer
 }
 
-func freePort(t *testing.T) int {
-	port, err := freeport.GetFreePort()
+func Run(t *testing.T) *App {
+	cmdPath, err := bazelgo.Runfile("server/cmd/buildbuddy/buildbuddy_/buildbuddy")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return port
-}
-
-func Run(t *testing.T) *App {
-	cmdPath, err := bazelgo.Runfile("server/cmd/buildbuddy/buildbuddy_/buildbuddy")
+	configPath, err := bazelgo.Runfile("config/buildbuddy.local.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,14 +53,13 @@ func Run(t *testing.T) *App {
 	app := &App{
 		httpPort:       freePort(t),
 		gRPCPort:       freePort(t),
-		telemetryPort:  freePort(t),
 		monitoringPort: freePort(t),
 	}
 	cmd := exec.Command(
 		cmdPath,
+		fmt.Sprintf("--config_file=%s", configPath),
 		fmt.Sprintf("--port=%d", app.httpPort),
 		fmt.Sprintf("--grpc_port=%d", app.gRPCPort),
-		fmt.Sprintf("--telemetry_port=%d", app.telemetryPort),
 		fmt.Sprintf("--monitoring_port=%d", app.monitoringPort),
 		fmt.Sprintf("--app.build_buddy_url=http://localhost:%d", app.httpPort),
 		"--database.data_source=sqlite3://:memory:",
@@ -76,68 +71,38 @@ func Run(t *testing.T) *App {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	waitC := make(chan error, 1)
 	go func() {
-		defer func() {
-			app.mu.Lock()
-			defer app.mu.Unlock()
-			app.exited = true
-		}()
-		if err := cmd.Wait(); err != nil {
-			if err, ok := err.(*exec.ExitError); ok {
-				// If the server wasn't killed due to the registered `Cleanup` function,
-				// It must have exited some other way, which is probably an error.
-				if killedExitCode := -1; err.ExitCode() != killedExitCode {
-					t.Fatal(err)
-				}
-				return
-			}
+		err := cmd.Wait()
+		app.mu.Lock()
+		defer app.mu.Unlock()
+		app.exited = true
+		waitC <- err
+	}()
+	readyC := make(chan error, 1)
+	go func() {
+		healthy, err := app.waitForReady()
+		if err != nil {
+			readyC <- err
+		} else if healthy {
+			readyC <- nil
 		}
-		t.Fatal(fmt.Sprintf("Server exited unexpectedly. Server logs: %s", string(app.stdout.Bytes())))
 	}()
 	t.Cleanup(func() {
 		cmd.Process.Kill()
 	})
-	app.waitForHealthy(t)
-	return app
-}
-
-func (a *App) waitForHealthy(t *testing.T) {
-	start := time.Now()
-	for {
-		a.mu.Lock()
-		exited := a.exited
-		a.mu.Unlock()
-		if exited {
-			return
+	select {
+	case err := <-readyC:
+		if err != nil {
+			t.Fatal(app.fmtErrorWithLogs(fmt.Errorf("error occurred during health check: %s", err)))
 		}
-		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/healthz?server-type=buildbuddy-server", a.httpPort))
-		if err != nil || !isOK(t, resp) {
-			if time.Since(start) > startupTimeout {
-				errMsg := ""
-				if err == nil {
-					errMsg = fmt.Sprintf("/healthz status: %d", resp.StatusCode)
-				} else {
-					errMsg = fmt.Sprintf("err: %s", err)
-				}
-				t.Fatal(fmt.Sprintf(
-					"Server failed to start after %s (%s). Server logs:\n%s%s",
-					startupTimeout, errMsg, string(a.stdout.Bytes()), string(a.stderr.Bytes()),
-				))
-			}
-			time.Sleep(healthCheckPollInterval)
-			continue
-		}
-		break
+		return app
+	case err := <-waitC:
+		// In case the server exits before it becomes healthy, show the logs
+		// (usually this is due to misconfiguration)
+		t.Fatal(app.fmtErrorWithLogs(fmt.Errorf("buildbuddy exited unexpectedly: %s", err)))
 	}
-}
-
-func isOK(t *testing.T, resp *http.Response) bool {
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(body) == "ok"
+	return nil // should never be reached
 }
 
 func (a *App) BESBazelFlags() []string {
@@ -147,8 +112,59 @@ func (a *App) BESBazelFlags() []string {
 	}
 }
 
-func (a *App) RemoteCacheBazelFlags() []string {
-	return []string{
-		fmt.Sprintf("--remote_cache=grpc://localhost:%d", a.gRPCPort),
+func freePort(t *testing.T) int {
+	port, err := freeport.GetFreePort()
+	if err != nil {
+		t.Fatal(err)
 	}
+	return port
+}
+
+func (a *App) fmtErrorWithLogs(err error) error {
+	return fmt.Errorf(`%s
+=== STDOUT ===
+%s
+=== STDERR ===
+%s`, err, string(a.stdout.Bytes()), string(a.stderr.Bytes()))
+}
+
+func (a *App) waitForReady() (bool, error) {
+	start := time.Now()
+	for {
+		a.mu.Lock()
+		exited := a.exited
+		a.mu.Unlock()
+		// If the app process exited, don't keep polling in the background.
+		if exited {
+			return false, nil
+		}
+		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/readyz?server-type=buildbuddy-server", a.httpPort))
+		ok := false
+		if err == nil {
+			ok, err = isOK(resp)
+		}
+		if ok {
+			return true, nil
+		}
+		if time.Since(start) > startupTimeout {
+			errMsg := ""
+			if err == nil {
+				errMsg = fmt.Sprintf("/healthz status: %d", resp.StatusCode)
+			} else {
+				errMsg = fmt.Sprintf("err: %s", err)
+			}
+			return false, fmt.Errorf("health check timed out after %s (%s)", startupTimeout, errMsg)
+		}
+		time.Sleep(readyCheckPollInterval)
+		continue
+	}
+}
+
+func isOK(resp *http.Response) (bool, error) {
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return false, err
+	}
+	return string(body) == "OK", nil
 }
