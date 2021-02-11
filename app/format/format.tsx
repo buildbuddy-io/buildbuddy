@@ -116,6 +116,10 @@ export function formatCommitHash(commit: string) {
   return commit?.substring(0, 6);
 }
 
+export function formatWithCommas(num: Long) {
+  return  (+num * 1).toLocaleString("en-US");
+}
+
 export default {
   compactDurationSec,
   durationSec,
@@ -129,4 +133,5 @@ export default {
   formatTimestampMillis,
   formatGitUrl,
   formatCommitHash,
+  formatWithCommas,
 };
