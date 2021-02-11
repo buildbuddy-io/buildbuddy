@@ -4,8 +4,8 @@ genrule(
     name = "bazel-3.7.0_crossplatform",
     testonly = 1,
     srcs = select({
-        "@bazel_tools//src/conditions:darwin": [":bin/bazel-3.7.0-darwin-x86_64"],
-        "//conditions:default": [":bin/bazel-3.7.0-linux-x86_64"],
+        "@bazel_tools//src/conditions:darwin": ["@io_bazel_bazel-3.7.0-darwin-x86_64//file:downloaded"],
+        "//conditions:default": ["@io_bazel_bazel-3.7.0-linux-x86_64//file:downloaded"],
     }),
     outs = ["bazel-3.7.0"],
     cmd_bash = "cp $(SRCS) $@",
