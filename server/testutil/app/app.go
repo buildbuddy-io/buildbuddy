@@ -38,13 +38,6 @@ type App struct {
 	err error
 }
 
-// appParams are configurable via `RunOpt`s.
-type appParams struct {
-	cmdPath    string
-	configPath string
-	cmdArgs    []string
-}
-
 // Run a local BuildBuddy server for the scope of the given test case.
 //
 // The given command path and config file path refer to the workspace-relative runfile

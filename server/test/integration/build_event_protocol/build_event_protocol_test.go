@@ -2,11 +2,11 @@ package build_event_protocol_test
 
 import (
 	"context"
-	"github.com/stretchr/testify/assert"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
+	"github.com/stretchr/testify/assert"
 )
 
 var (
