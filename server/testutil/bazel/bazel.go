@@ -24,6 +24,8 @@ var (
 	invocationIDRegexp = regexp.MustCompile("http://localhost:8080/invocation/([[:graph:]]+)")
 )
 
+type cleanupFunc func()
+
 type InvocationResult struct {
 	Stderr       string
 	Stdout       string
@@ -37,7 +39,10 @@ func Invoke(ctx context.Context, t *testing.T, workspaceDir string, subCommand s
 	if err != nil {
 		return &InvocationResult{Error: err}
 	}
-	bazelArgs := []string{subCommand}
+	// --max_idle_secs prevents the Bazel server (that is potentially spun up by this command)
+	// from sticking around for a long time.
+	// See https://docs.bazel.build/versions/master/guide.html#clientserver-implementation
+	bazelArgs := []string{"--max_idle_secs=5", subCommand}
 	bazelArgs = append(bazelArgs, args...)
 	var stderr, stdout bytes.Buffer
 	cmd := exec.CommandContext(ctx, bazelBinaryPath, bazelArgs...)
@@ -68,19 +73,8 @@ func Invoke(ctx context.Context, t *testing.T, workspaceDir string, subCommand s
 }
 
 // Clean runs `bazel clean` within the given workspace.
-func Clean(ctx context.Context, t *testing.T, workspaceDir string) {
-	bazelBinaryPath, err := bazelgo.Runfile("server/testutil/bazel/bazel-3.7.0-linux-x86_64")
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.CommandContext(ctx, bazelBinaryPath, "clean")
-	cmd.Dir = workspaceDir
-	cmd.Env = []string{
-		fmt.Sprintf("HOME=%s", filepath.Join(workspaceDir, ".home")),
-	}
-	if err := cmd.Run(); err != nil {
-		t.Fatal(err)
-	}
+func Clean(ctx context.Context, t *testing.T, workspaceDir string) *InvocationResult {
+	return Invoke(ctx, t, workspaceDir, "clean")
 }
 
 func MakeTempWorkspace(t *testing.T, contents map[string]string) string {
@@ -89,6 +83,13 @@ func MakeTempWorkspace(t *testing.T, contents map[string]string) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		// Run Bazel shutdown so that the server process associated with the temp
+		// workspace doesn't stick around. We specify --max_idle_secs=5 above but
+		// we want to shut the server down ASAP so that high test volume doesn't
+		// cause tons of idle server processes to be running.
+		if shutdownResult := Invoke(context.Background(), t, workspaceDir, "shutdown"); shutdownResult.Error != nil {
+			t.Fatal(shutdownResult.Error)
+		}
 		err := os.RemoveAll(workspaceDir)
 		if err != nil {
 			t.Fatal(err)

@@ -47,20 +47,9 @@ type appParams struct {
 
 // Run a local BuildBuddy server for the scope of the given test case.
 //
-// Options may be given to override the default server options.
-func Run(t *testing.T, opts ...RunOpt) *App {
-	p := &appParams{cmdArgs: []string{}}
-	for _, opt := range opts {
-		if err := opt(p); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if p.cmdPath == "" {
-		t.Fatalf("missing `WithBuildBuddyCmdPath` opt")
-	}
-	if p.configPath == "" {
-		t.Fatalf("missing `WithConfigPath` opt")
-	}
+// The given command path and config file path refer to the workspace-relative runfile
+// paths of the BuildBuddy server binary and config file, respectively.
+func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath string) *App {
 	dataDir, err := ioutil.TempDir("/tmp", "buildbuddy-test-*")
 	if err != nil {
 		t.Fatal(err)
@@ -74,8 +63,8 @@ func Run(t *testing.T, opts ...RunOpt) *App {
 		gRPCPort:       freePort(t),
 		monitoringPort: freePort(t),
 	}
-	cmdArgs := []string{
-		fmt.Sprintf("--config_file=%s", p.configPath),
+	args := []string{
+		fmt.Sprintf("--config_file=%s", runfile(t, configFilePath)),
 		fmt.Sprintf("--port=%d", app.httpPort),
 		fmt.Sprintf("--grpc_port=%d", app.gRPCPort),
 		fmt.Sprintf("--monitoring_port=%d", app.monitoringPort),
@@ -84,8 +73,8 @@ func Run(t *testing.T, opts ...RunOpt) *App {
 		fmt.Sprintf("--storage.disk.root_directory=%s", filepath.Join(dataDir, "storage")),
 		fmt.Sprintf("--cache.disk.root_directory=%s", filepath.Join(dataDir, "cache")),
 	}
-	cmdArgs = append(cmdArgs, p.cmdArgs...)
-	cmd := exec.Command(p.cmdPath, cmdArgs...)
+	args = append(args, commandArgs...)
+	cmd := exec.Command(runfile(t, commandPath), args...)
 	cmd.Stdout = &app.stdout
 	cmd.Stderr = &app.stderr
 	if err := cmd.Start(); err != nil {
@@ -123,39 +112,12 @@ func (a *App) RemoteCacheBazelFlags() []string {
 	}
 }
 
-// Opt customizes the BuildBuddy app instance.
-type RunOpt func(*appParams) error
-
-// WithBuildBuddyCmdPath sets the path to the BuildBuddy binary.
-func WithBuildBuddyCmdPath(path string) RunOpt {
-	return func(p *appParams) error {
-		cmdPath, err := bazelgo.Runfile(path)
-		if err != nil {
-			return err
-		}
-		p.cmdPath = cmdPath
-		return nil
+func runfile(t *testing.T, path string) string {
+	resolvedPath, err := bazelgo.Runfile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-// WithConfigPath sets the path to the BuildBuddy server config.
-func WithConfigPath(path string) RunOpt {
-	return func(p *appParams) error {
-		configPath, err := bazelgo.Runfile(path)
-		if err != nil {
-			return err
-		}
-		p.configPath = configPath
-		return nil
-	}
-}
-
-// WithArgs adds extra flags to the BuildBuddy server.
-func WithFlags(args ...string) RunOpt {
-	return func(p *appParams) error {
-		p.cmdArgs = append(p.cmdArgs, args...)
-		return nil
-	}
+	return resolvedPath
 }
 
 func freePort(t *testing.T) int {
