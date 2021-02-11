@@ -7,22 +7,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func Wrap(err error, msg string) error {
-	if err == nil {
-		return nil
-	}
-	code := status.Code(err)
-	cause := err.Error()
-	if cause != "" {
-		cause = ": " + cause
-	}
-	return status.Errorf(code, "%s%s", msg, cause)
-}
-
-func Wrapf(err error, format string, a ...interface{}) error {
-	return Wrap(err, fmt.Sprintf(format, a...))
-}
-
 func OK() error {
 	return status.Error(codes.OK, "")
 }
