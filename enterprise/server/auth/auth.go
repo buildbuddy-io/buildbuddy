@@ -54,7 +54,7 @@ const (
 	basicAuthHeader          = "authorization"
 
 	contextAPIKeyKey = "api.key"
-	apiKeyHeader     = "x-buildbuddy-api-key"
+	APIKeyHeader     = "x-buildbuddy-api-key"
 
 	// The name of params read on /login to understand which
 	// issuer to use and where to redirect the client after
@@ -79,7 +79,7 @@ const (
 
 var (
 	authCodeOption []oauth2.AuthCodeOption = []oauth2.AuthCodeOption{oauth2.AccessTypeOffline, oauth2.ApprovalForce}
-	apiKeyRegex                            = regexp.MustCompile(apiKeyHeader + "=([a-zA-Z0-9]+)")
+	apiKeyRegex                            = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]+)")
 	jwtKey                                 = []byte("set_the_jwt_in_config") // set via config.
 )
 
@@ -513,7 +513,7 @@ func (a *OpenIDAuthenticator) AuthenticateGRPCRequest(ctx context.Context) conte
 	}
 
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if keys := md.Get(apiKeyHeader); len(keys) > 0 {
+		if keys := md.Get(APIKeyHeader); len(keys) > 0 {
 			return a.authContextFromAPIKey(ctx, keys[0])
 		}
 
@@ -569,7 +569,7 @@ func (a *OpenIDAuthenticator) authenticateGroup(ctx context.Context, unauthentic
 
 func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Request) context.Context {
 	ctx := r.Context()
-	if apiKey := r.Header.Get(apiKeyHeader); apiKey != "" {
+	if apiKey := r.Header.Get(APIKeyHeader); apiKey != "" {
 		return a.authContextFromAPIKey(ctx, apiKey)
 	}
 

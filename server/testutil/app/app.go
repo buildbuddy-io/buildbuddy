@@ -13,7 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
+
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 )
 
 const (
@@ -26,6 +29,8 @@ const (
 	readyCheckTimeout = 30 * time.Second
 )
 
+// App is a handle on a BuildBuddy server scoped to a test case, which provides
+// basic facilities for connecting to the server and running builds against it.
 type App struct {
 	httpPort       int
 	gRPCPort       int
@@ -52,9 +57,9 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 	})
 	// NOTE: No SSL ports are required since the server doesn't have an SSL config by default.
 	app := &App{
-		httpPort:       freePort(t),
-		gRPCPort:       freePort(t),
-		monitoringPort: freePort(t),
+		httpPort:       FreePort(t),
+		gRPCPort:       FreePort(t),
+		monitoringPort: FreePort(t),
 	}
 	args := []string{
 		fmt.Sprintf("--config_file=%s", runfile(t, configFilePath)),
@@ -68,6 +73,7 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 	}
 	args = append(args, commandArgs...)
 	cmd := exec.Command(runfile(t, commandPath), args...)
+	// TODO: Write server logs to files so they can be used to debug failed tests
 	cmd.Stdout = &app.stdout
 	cmd.Stderr = &app.stderr
 	if err := cmd.Start(); err != nil {
@@ -105,6 +111,17 @@ func (a *App) RemoteCacheBazelFlags() []string {
 	}
 }
 
+func (a *App) BuildBuddyServiceClient(t *testing.T) bbspb.BuildBuddyServiceClient {
+	conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", a.gRPCPort), grpc.WithInsecure())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		conn.Close()
+	})
+	return bbspb.NewBuildBuddyServiceClient(conn)
+}
+
 func runfile(t *testing.T, path string) string {
 	resolvedPath, err := bazelgo.Runfile(path)
 	if err != nil {
@@ -113,7 +130,7 @@ func runfile(t *testing.T, path string) string {
 	return resolvedPath
 }
 
-func freePort(t *testing.T) int {
+func FreePort(t *testing.T) int {
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
 		t.Fatal(err)
