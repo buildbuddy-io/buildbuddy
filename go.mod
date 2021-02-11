@@ -29,6 +29,7 @@ require (
 	github.com/elastic/gosigar v0.11.0 // indirect
 	github.com/elazarl/goproxy v0.0.0-20180725130230-947c36da3153 // indirect
 	github.com/envoyproxy/protoc-gen-validate v0.3.0 // indirect
+	github.com/go-errors/errors v1.1.1 // indirect
 	github.com/go-git/go-git v4.7.0+incompatible // indirect
 	github.com/go-git/go-git/v5 v5.2.0 // indirect
 	github.com/go-gl/glfw v0.0.0-20200420212212-258d9bec320e // indirect

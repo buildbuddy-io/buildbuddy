@@ -2,17 +2,82 @@ package status
 
 import (
 	"fmt"
+	"runtime"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	stackframe "github.com/go-errors/errors"
 )
 
+const maxStackDepth = 50
+
+type stackedError struct {
+	error
+	stack  []uintptr
+	frames []stackframe.StackFrame
+}
+
+func wrap(e interface{}) *stackedError {
+	if e == nil {
+		return nil
+	}
+
+	var err error
+
+	switch e := e.(type) {
+	case *stackedError:
+		return e
+	case error:
+		err = e
+	default:
+		err = fmt.Errorf("%v", e)
+	}
+
+	stack := make([]uintptr, maxStackDepth)
+	length := runtime.Callers(2, stack[:])
+	return &stackedError{
+		error: err,
+		stack: stack[:length],
+	}
+}
+
+func (err *stackedError) stackFrames() []stackframe.StackFrame {
+	if err.frames == nil {
+		err.frames = make([]stackframe.StackFrame, len(err.stack))
+		for i, pc := range err.stack {
+			err.frames[i] = stackframe.NewStackFrame(pc)
+		}
+	}
+	return err.frames
+}
+
+// Error prints the normal error message + code.
+func (err *stackedError) Error() string {
+	return err.error.Error()
+}
+
+// ErrorWithStack prints the error message + code followed
+// by a stack trace.
+func (err *stackedError) ErrorWithStack() string {
+	msg := err.error.Error()
+	msg += "\n"
+	for _, frame := range err.stackFrames() {
+		msg += frame.String()
+	}
+	return msg
+}
+
+func assemble(c codes.Code, msg string) *stackedError {
+	return wrap(status.Error(c, msg))
+}
+
 func OK() error {
-	return status.Error(codes.OK, "")
+	return assemble(codes.OK, "")
 }
 
 func CanceledError(msg string) error {
-	return status.Error(codes.Canceled, msg)
+	return assemble(codes.Canceled, msg)
 }
 
 func CanceledErrorf(format string, a ...interface{}) error {
@@ -20,7 +85,7 @@ func CanceledErrorf(format string, a ...interface{}) error {
 }
 
 func UnknownError(msg string) error {
-	return status.Error(codes.Unknown, msg)
+	return assemble(codes.Unknown, msg)
 }
 
 func UnknownErrorf(format string, a ...interface{}) error {
@@ -28,7 +93,7 @@ func UnknownErrorf(format string, a ...interface{}) error {
 }
 
 func InvalidArgumentError(msg string) error {
-	return status.Error(codes.InvalidArgument, msg)
+	return assemble(codes.InvalidArgument, msg)
 }
 
 func InvalidArgumentErrorf(format string, a ...interface{}) error {
@@ -36,7 +101,7 @@ func InvalidArgumentErrorf(format string, a ...interface{}) error {
 }
 
 func DeadlineExceededError(msg string) error {
-	return status.Error(codes.DeadlineExceeded, msg)
+	return assemble(codes.DeadlineExceeded, msg)
 }
 
 func DeadlineExceededErrorf(format string, a ...interface{}) error {
@@ -44,7 +109,7 @@ func DeadlineExceededErrorf(format string, a ...interface{}) error {
 }
 
 func NotFoundError(msg string) error {
-	return status.Error(codes.NotFound, msg)
+	return assemble(codes.NotFound, msg)
 }
 
 func NotFoundErrorf(format string, a ...interface{}) error {
@@ -52,7 +117,7 @@ func NotFoundErrorf(format string, a ...interface{}) error {
 }
 
 func AlreadyExistsError(msg string) error {
-	return status.Error(codes.AlreadyExists, msg)
+	return assemble(codes.AlreadyExists, msg)
 }
 
 func AlreadyExistsErrorf(format string, a ...interface{}) error {
@@ -60,7 +125,7 @@ func AlreadyExistsErrorf(format string, a ...interface{}) error {
 }
 
 func PermissionDeniedError(msg string) error {
-	return status.Error(codes.PermissionDenied, msg)
+	return assemble(codes.PermissionDenied, msg)
 }
 
 func PermissionDeniedErrorf(format string, a ...interface{}) error {
@@ -68,7 +133,7 @@ func PermissionDeniedErrorf(format string, a ...interface{}) error {
 }
 
 func ResourceExhaustedError(msg string) error {
-	return status.Error(codes.ResourceExhausted, msg)
+	return assemble(codes.ResourceExhausted, msg)
 }
 
 func ResourceExhaustedErrorf(format string, a ...interface{}) error {
@@ -76,7 +141,7 @@ func ResourceExhaustedErrorf(format string, a ...interface{}) error {
 }
 
 func FailedPreconditionError(msg string) error {
-	return status.Error(codes.FailedPrecondition, msg)
+	return assemble(codes.FailedPrecondition, msg)
 }
 
 func FailedPreconditionErrorf(format string, a ...interface{}) error {
@@ -84,7 +149,7 @@ func FailedPreconditionErrorf(format string, a ...interface{}) error {
 }
 
 func AbortedError(msg string) error {
-	return status.Error(codes.Aborted, msg)
+	return assemble(codes.Aborted, msg)
 }
 
 func AbortedErrorf(format string, a ...interface{}) error {
@@ -92,7 +157,7 @@ func AbortedErrorf(format string, a ...interface{}) error {
 }
 
 func OutOfRangeError(msg string) error {
-	return status.Error(codes.OutOfRange, msg)
+	return assemble(codes.OutOfRange, msg)
 }
 
 func OutOfRangeErrorf(format string, a ...interface{}) error {
@@ -100,7 +165,7 @@ func OutOfRangeErrorf(format string, a ...interface{}) error {
 }
 
 func UnimplementedError(msg string) error {
-	return status.Error(codes.Unimplemented, msg)
+	return assemble(codes.Unimplemented, msg)
 }
 
 func UnimplementedErrorf(format string, a ...interface{}) error {
@@ -108,7 +173,7 @@ func UnimplementedErrorf(format string, a ...interface{}) error {
 }
 
 func InternalError(msg string) error {
-	return status.Error(codes.Internal, msg)
+	return assemble(codes.Internal, msg)
 }
 
 func InternalErrorf(format string, a ...interface{}) error {
@@ -116,7 +181,7 @@ func InternalErrorf(format string, a ...interface{}) error {
 }
 
 func UnavailableError(msg string) error {
-	return status.Error(codes.Unavailable, msg)
+	return assemble(codes.Unavailable, msg)
 }
 
 func UnavailableErrorf(format string, a ...interface{}) error {
@@ -124,7 +189,7 @@ func UnavailableErrorf(format string, a ...interface{}) error {
 }
 
 func DataLossError(msg string) error {
-	return status.Error(codes.DataLoss, msg)
+	return assemble(codes.DataLoss, msg)
 }
 
 func DataLossErrorf(format string, a ...interface{}) error {
@@ -132,7 +197,7 @@ func DataLossErrorf(format string, a ...interface{}) error {
 }
 
 func UnauthenticatedError(msg string) error {
-	return status.Error(codes.Unauthenticated, msg)
+	return assemble(codes.Unauthenticated, msg)
 }
 
 func UnauthenticatedErrorf(format string, a ...interface{}) error {
