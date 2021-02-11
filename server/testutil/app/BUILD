@@ -7,6 +7,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/app",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:buildbuddy_service_go_proto",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@org_golang_google_grpc//:go_default_library",
     ],
 )

@@ -127,7 +127,7 @@ func (c *DiskCache) initializeCache() error {
 	for _, record := range records {
 		c.addEntry(record)
 	}
-	log.Printf("Initialized disk cache. Current size: %d (max: %d) bytes", *c.sizeBytes, c.maxSizeBytes)
+	log.Printf("Initialized disk cache at %q. Current size: %d (max: %d) bytes", c.rootDir, *c.sizeBytes, c.maxSizeBytes)
 	return nil
 }
 

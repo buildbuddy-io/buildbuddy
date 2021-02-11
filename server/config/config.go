@@ -184,6 +184,9 @@ func (i *stringSliceFlag) String() string {
 	return strings.Join(*i, ",")
 }
 
+// NOTE: string slice flags are *appended* to the values in the YAML,
+// instead of overriding them completely.
+
 func (i *stringSliceFlag) Set(values string) error {
 	for _, val := range strings.Split(values, ",") {
 		*i = append(*i, val)
@@ -262,6 +265,10 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 	if err := yaml.Unmarshal([]byte(expandedFileBytes), &sharedGeneralConfig); err != nil {
 		return nil, fmt.Errorf("Error parsing config file: %s", err)
 	}
+
+	// Re-parse flags so that they override the YAML config values.
+	flag.Parse()
+
 	return &sharedGeneralConfig, nil
 }
 
