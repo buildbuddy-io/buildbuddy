@@ -623,7 +623,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 
 func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
 	// If context already contains a JWT, just verify it and return the claims.
-	if tokenString, ok := ctx.Value(contextTokenStringKey).(string); ok {
+	if tokenString, ok := ctx.Value(contextTokenStringKey).(string); ok && tokenString != "" {
 		claims := &Claims{}
 		_, err := jwt.ParseWithClaims(tokenString, claims, jwtKeyFunc)
 		if err != nil {

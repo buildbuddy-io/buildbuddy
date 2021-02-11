@@ -13,5 +13,6 @@ ts_library(
         "//proto:user_id_ts_proto",
         "//proto:user_ts_proto",
         "@npm//rxjs",
+        "@npm//tslib",
     ],
 )
