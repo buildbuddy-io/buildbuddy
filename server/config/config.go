@@ -184,6 +184,9 @@ func (i *stringSliceFlag) String() string {
 	return strings.Join(*i, ",")
 }
 
+// NOTE: string slice flags are *appended* to the values in the YAML,
+// instead of overriding them completely.
+
 func (i *stringSliceFlag) Set(values string) error {
 	for _, val := range strings.Split(values, ",") {
 		*i = append(*i, val)
