@@ -1,7 +1,0 @@
-# NOTE: most integration test config is set via flags.
-storage:
-  ttl_seconds: 86400 # One day in seconds.
-  chunk_file_size_bytes: 3000000 # 3 MB
-cache:
-  max_size_bytes: 1000000000 # 1 GB
-

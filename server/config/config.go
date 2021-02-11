@@ -262,6 +262,10 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 	if err := yaml.Unmarshal([]byte(expandedFileBytes), &sharedGeneralConfig); err != nil {
 		return nil, fmt.Errorf("Error parsing config file: %s", err)
 	}
+
+	// Re-parse flags so that they override the YAML config values.
+	flag.Parse()
+
 	return &sharedGeneralConfig, nil
 }
 

@@ -23,7 +23,6 @@ var (
 // which import from libmain.go.
 
 func main() {
-	// Parse all flags, once and for all.
 	flag.Parse()
 	version.Print()
 	configurator, err := config.NewConfigurator(*configFile)
