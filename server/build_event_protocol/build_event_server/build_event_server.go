@@ -87,7 +87,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			break
 		}
 		if err != nil {
-			log.Printf("Error receiving build event stream for invocation %q: %s", streamID.InvocationId, err)
+			log.Printf("Error receiving build event stream %+v: %s", streamID, err)
 			return disconnectWithErr(err)
 		}
 		if streamID == nil {
