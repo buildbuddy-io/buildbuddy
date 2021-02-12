@@ -88,7 +88,7 @@ func fieldValues(obj interface{}, fieldPaths ...string) (map[string]string, erro
 	values := map[string]string{}
 	objVal := reflect.Indirect(reflect.ValueOf(obj))
 	if !objVal.IsValid() {
-		return nil, status.InvalidArgumentError("cannot spelunk a nil value")
+		return nil, status.InvalidArgumentError("cannot get fieldValues on a nil value")
 	}
 	for _, path := range fieldPaths {
 		fields := strings.Split(path, ".")
