@@ -29,39 +29,28 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("failed to parse webhook payload: %s", err)
 	}
-	log.Printf("Handling GitHub webhook event: %T\n", event)
+	log.Printf("Received GitHub webhook event: %T\n", event)
 	switch event := event.(type) {
-	case *gh.PullRequestEvent:
-		v, err := fieldValues(event, "Action", "PullRequest.Head.SHA", "PullRequest.Head.Repo.CloneURL")
-		if err != nil {
-			return nil, err
-		}
-		// Only build when the PR is opened or pushed to.
-		if !(v["Action"] == "opened" || v["Action"] == "synchronized") {
-			return nil, nil
-		}
-		return &webhook_data.WebhookData{
-			Repo: v["PullRequest.Head.Repo.CloneURL"],
-			SHA:  v["PullRequest.Head.SHA"],
-		}, nil
 	case *gh.PushEvent:
-		v, err := fieldValues(event, "Ref", "HeadCommit.ID", "Repo.CloneURL", "Repo.DefaultBranch")
+		v, err := fieldValues(event, "Ref", "HeadCommit.ID", "Repo.DefaultBranch")
 		if err != nil {
 			return nil, err
 		}
 		defaultBranchRef := fmt.Sprintf("refs/heads/%s", v["Repo.DefaultBranch"])
 		// Only run workflows on the default branch.
 		if v["Ref"] != defaultBranchRef {
+			log.Printf("Ignoring push event for non-default branch %q", v["Ref"])
 			return nil, nil
 		}
 		return &webhook_data.WebhookData{
-			Repo: v["Repo.CloneURL"],
 			// For some reason, "HeadCommit.SHA" is nil, but ID has the commit SHA,
 			// so we use that instead.
 			SHA: v["HeadCommit.ID"],
 		}, nil
+	default:
+		log.Printf("Ignoring webhook event: %T", event)
+		return nil, nil
 	}
-	return nil, nil
 }
 
 func webhookJSONPayload(r *http.Request) ([]byte, error) {
