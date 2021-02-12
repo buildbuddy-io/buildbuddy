@@ -352,7 +352,7 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if webhookData == nil {
 		return nil
 	}
-	log.Printf("Extracted webhook data: %+v", webhookData)
+	log.Printf("Parsed webhook payload: %+v", webhookData)
 	wf, err := ws.readWorkflowForWebhook(ctx, webhookID)
 	if err != nil {
 		return err
