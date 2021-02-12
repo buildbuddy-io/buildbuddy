@@ -20,7 +20,7 @@ func (a *NullAuthenticator) AuthenticateGRPCRequest(ctx context.Context) context
 }
 
 func (a *NullAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
-	return nil, status.PermissionDeniedError("Auth not implemented context")
+	return nil, status.PermissionDeniedError("Auth not implemented")
 }
 
 func (a *NullAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
