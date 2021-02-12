@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowcmd"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -29,10 +30,6 @@ var (
 	workflowURLMatcher  = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 	defaultInstanceName = "ci"
 )
-
-type webhookData struct {
-	SHA string
-}
 
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
 func generateWebhookID() (string, error) {
@@ -319,11 +316,6 @@ func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Wor
 	return k, nil
 }
 
-func (ws *workflowService) parseRequest(r *http.Request) (*webhookData, error) {
-	log.Printf("Webhook body: %+v", r)
-	return &webhookData{SHA: "HEAD"}, nil
-}
-
 func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) error {
 	if ws.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
@@ -351,12 +343,16 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err := ws.checkStartWorkflowPreconditions(ctx); err != nil {
 		return err
 	}
-	webhookData, err := ws.parseRequest(r)
+	// TODO: Support non-GitHub providers.
+	webhookData, err := github.ParseRequest(r)
 	if err != nil {
+		log.Printf("error processing webhook request: %s", err)
 		return err
 	}
-	log.Printf("Parsed webhook payload: %+v", webhookData)
-
+	if webhookData == nil {
+		return nil
+	}
+	log.Printf("Extracted webhook data: %+v", webhookData)
 	wf, err := ws.readWorkflowForWebhook(ctx, webhookID)
 	if err != nil {
 		return err
