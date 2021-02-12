@@ -31,6 +31,7 @@ go_test(
         "//enterprise/server/auth:go_default_library",
         "//proto:api_key_go_proto",
         "//server/interfaces:go_default_library",
+        "//server/nullauth:go_default_library",
         "//server/testutil/auth:go_default_library",
         "//server/testutil/environment:go_default_library",
         "//server/util/testing/flags:go_default_library",
