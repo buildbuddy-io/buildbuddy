@@ -2,10 +2,11 @@ package capabilities_test
 
 import (
 	"context"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -73,6 +74,17 @@ func TestIsGranted_AnonymousUsageDisabled_AnonymousUser_False(t *testing.T) {
 func TestIsGranted_AnonymousUsageEnabled_AnonymousUser_True(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
+	anonCtx := context.Background()
+
+	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+
+	assert.True(t, canWrite)
+	assert.Nil(t, err)
+}
+
+func TestIsGranted_NullAuthenticator(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	te.SetAuthenticator(&nullauth.NullAuthenticator{})
 	anonCtx := context.Background()
 
 	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
