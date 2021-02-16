@@ -319,7 +319,7 @@ func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Wor
 }
 
 func parseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
-	if r.Header.Get("x-github-event") != "" {
+	if r.Header.Get("X-Github-Event") != "" {
 		return github.ParseRequest(r)
 	}
 	log.Printf("failed to classify Git provider from webhook request: %+v", r)
