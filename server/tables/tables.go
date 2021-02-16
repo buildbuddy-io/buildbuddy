@@ -415,7 +415,8 @@ func (ts *TargetStatus) TableName() string {
 	return "TargetStatuses"
 }
 
-// The Status of a target.
+// Workflow represents a set of BuildBuddy actions to be run in response to
+// events published to a Git webhook.
 type Workflow struct {
 	Model
 	WorkflowID  string `gorm:"primary_key"`
