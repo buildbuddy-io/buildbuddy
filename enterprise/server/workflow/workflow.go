@@ -26,8 +26,10 @@ import (
 )
 
 var (
-	workflowURLMatcher  = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
-	defaultInstanceName = "ci"
+	workflowURLMatcher   = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
+	defaultInstanceName  = "ci"
+	buildbuddyCIUserName = "buildbuddy"
+	buildbuddyCIHostName = "buildbuddy-ci-runner"
 )
 
 type webhookData struct {
@@ -339,7 +341,11 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 
 func (ws *workflowService) getBazelFlags(ak *tables.APIKey) []string {
 	flags := make([]string, 0)
-	flags = append(flags, "--remote_header=x-buildbuddy-api-key="+ak.Value)
+	flags = append(flags,
+		"--remote_header=x-buildbuddy-api-key="+ak.Value,
+		"--build_metadata=USER="+buildbuddyCIUserName,
+		"--build_metadata=HOST="+buildbuddyCIHostName,
+	)
 	if eventsAPIURL := ws.env.GetConfigurator().GetAppEventsAPIURL(); eventsAPIURL != "" {
 		flags = append(flags, "--bes_backend="+eventsAPIURL)
 	}
