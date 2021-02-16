@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"log"
 	"net/http"
 	"net/url"
@@ -317,6 +318,14 @@ func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Wor
 	return k, nil
 }
 
+func parseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
+	if r.Header.Get("x-github-event") != "" {
+		return github.ParseRequest(r)
+	}
+	log.Printf("failed to classify Git provider from webhook request: %+v", r)
+	return nil, nil
+}
+
 func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) error {
 	if ws.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
@@ -353,7 +362,7 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 		return err
 	}
 	// TODO: Support non-GitHub providers.
-	webhookData, err := github.ParseRequest(r)
+	webhookData, err := parseRequest(r)
 	if err != nil {
 		log.Printf("error processing webhook request: %s", err)
 		return err

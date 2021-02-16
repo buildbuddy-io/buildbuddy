@@ -77,7 +77,7 @@ func webhookJSONPayload(r *http.Request) ([]byte, error) {
 		const payloadFormParam = "payload"
 		return []byte(form.Get(payloadFormParam)), nil
 	default:
-		return nil, status.InvalidArgumentErrorf("unhandled MIME type: %s", contentType)
+		return nil, status.InvalidArgumentErrorf("unhandled MIME type: %q", contentType)
 	}
 }
 
@@ -98,17 +98,17 @@ func fieldValues(obj interface{}, fieldPaths ...string) (map[string]string, erro
 			curPath = append(curPath, name)
 			cur = cur.FieldByName(name)
 			if !cur.IsValid() {
-				return nil, status.InternalErrorf("encountered invalid field name at %s", strings.Join(curPath, "."))
+				return nil, status.InternalErrorf("encountered invalid field name at %q", strings.Join(curPath, "."))
 			}
 			cur = reflect.Indirect(cur)
 			if !cur.IsValid() {
-				return nil, status.InvalidArgumentErrorf("encountered nil value at %s", strings.Join(curPath, "."))
+				return nil, status.InvalidArgumentErrorf("encountered nil value at %q", strings.Join(curPath, "."))
 			}
 		}
 		el := cur.Interface()
 		str, ok := el.(string)
 		if !ok {
-			return nil, status.InternalErrorf("encountered non-string value at %s", path)
+			return nil, status.InternalErrorf("encountered non-string value at %q", path)
 		}
 		values[path] = str
 	}
