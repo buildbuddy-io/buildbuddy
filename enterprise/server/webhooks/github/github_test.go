@@ -36,7 +36,7 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 }
 
 func TestParseRequest_InvalidEvent_Error(t *testing.T) {
-	req := makeRequest(t, "push", []byte{})
+	req := webhookRequest(t, "push", []byte{})
 
 	data, err := ParseRequest(req)
 
