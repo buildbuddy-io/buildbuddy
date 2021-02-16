@@ -29,8 +29,10 @@ import (
 )
 
 var (
-	workflowURLMatcher  = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
-	defaultInstanceName = "ci"
+	workflowURLMatcher   = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
+	defaultInstanceName  = "ci"
+	buildbuddyCIUserName = "buildbuddy"
+	buildbuddyCIHostName = "buildbuddy-ci-runner"
 )
 
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
@@ -339,8 +341,11 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 }
 
 func (ws *workflowService) getBazelFlags(ak *tables.APIKey) ([]string, error) {
-	flags := make([]string, 0)
-	flags = append(flags, "--remote_header=x-buildbuddy-api-key="+ak.Value)
+	flags := []string{
+		"--remote_header=x-buildbuddy-api-key=" + ak.Value,
+		"--build_metadata=USER=" + buildbuddyCIUserName,
+		"--build_metadata=HOST=" + buildbuddyCIHostName,
+	}
 	if bbURL := ws.env.GetConfigurator().GetAppBuildBuddyURL(); bbURL != "" {
 		u, err := url.Parse(bbURL)
 		if err != nil {
