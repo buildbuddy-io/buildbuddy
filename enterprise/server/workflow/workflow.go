@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strings"
 
@@ -329,13 +330,21 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 	return nil
 }
 
-func (ws *workflowService) getBazelFlags(ak *tables.APIKey) []string {
+func (ws *workflowService) getBazelFlags(ak *tables.APIKey) ([]string, error) {
 	flags := make([]string, 0)
 	flags = append(flags, "--remote_header=x-buildbuddy-api-key="+ak.Value)
+	if bbURL := ws.env.GetConfigurator().GetAppBuildBuddyURL(); bbURL != "" {
+		u, err := url.Parse(bbURL)
+		if err != nil {
+			return nil, err
+		}
+		u.Path = path.Join(u.Path, "invocation")
+		flags = append(flags, fmt.Sprintf("--bes_results_url=%s/", u))
+	}
 	if eventsAPIURL := ws.env.GetConfigurator().GetAppEventsAPIURL(); eventsAPIURL != "" {
 		flags = append(flags, "--bes_backend="+eventsAPIURL)
 	}
-	return flags
+	return flags, nil
 }
 
 func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) error {
@@ -367,11 +376,14 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, ws.env); err != nil {
 		return err
 	}
-
+	bazelFlags, err := ws.getBazelFlags(key)
+	if err != nil {
+		return err
+	}
 	ci := &workflowcmd.CommandInfo{
 		RepoURL:    assembleRepoURL(wf),
 		CommitSHA:  webhookData.SHA,
-		BazelFlags: ws.getBazelFlags(key),
+		BazelFlags: bazelFlags,
 	}
 	ad, err := ws.createActionForWorkflow(ctx, wf, ci)
 	if err != nil {
