@@ -3,12 +3,15 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"log"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowcmd"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -31,10 +34,6 @@ var (
 	buildbuddyCIUserName = "buildbuddy"
 	buildbuddyCIHostName = "buildbuddy-ci-runner"
 )
-
-type webhookData struct {
-	SHA string
-}
 
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
 func generateWebhookID() (string, error) {
@@ -321,9 +320,11 @@ func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Wor
 	return k, nil
 }
 
-func (ws *workflowService) parseRequest(r *http.Request) (*webhookData, error) {
-	log.Printf("Webhook body: %+v", r)
-	return &webhookData{SHA: "HEAD"}, nil
+func parseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
+	if r.Header.Get("X-Github-Event") != "" {
+		return github.ParseRequest(r)
+	}
+	return nil, status.UnimplementedErrorf("failed to classify Git provider from webhook request: %+v", r)
 }
 
 func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) error {
@@ -339,17 +340,24 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 	return nil
 }
 
-func (ws *workflowService) getBazelFlags(ak *tables.APIKey) []string {
-	flags := make([]string, 0)
-	flags = append(flags,
-		"--remote_header=x-buildbuddy-api-key="+ak.Value,
-		"--build_metadata=USER="+buildbuddyCIUserName,
-		"--build_metadata=HOST="+buildbuddyCIHostName,
-	)
+func (ws *workflowService) getBazelFlags(ak *tables.APIKey) ([]string, error) {
+	flags := []string{
+		"--remote_header=x-buildbuddy-api-key=" + ak.Value,
+		"--build_metadata=USER=" + buildbuddyCIUserName,
+		"--build_metadata=HOST=" + buildbuddyCIHostName,
+	}
+	if bbURL := ws.env.GetConfigurator().GetAppBuildBuddyURL(); bbURL != "" {
+		u, err := url.Parse(bbURL)
+		if err != nil {
+			return nil, err
+		}
+		u.Path = path.Join(u.Path, "invocation")
+		flags = append(flags, fmt.Sprintf("--bes_results_url=%s/", u))
+	}
 	if eventsAPIURL := ws.env.GetConfigurator().GetAppEventsAPIURL(); eventsAPIURL != "" {
 		flags = append(flags, "--bes_backend="+eventsAPIURL)
 	}
-	return flags
+	return flags, nil
 }
 
 func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) error {
@@ -357,12 +365,16 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err := ws.checkStartWorkflowPreconditions(ctx); err != nil {
 		return err
 	}
-	webhookData, err := ws.parseRequest(r)
+	// TODO: Support non-GitHub providers.
+	webhookData, err := parseRequest(r)
 	if err != nil {
+		log.Printf("error processing webhook request: %s", err)
 		return err
 	}
+	if webhookData == nil {
+		return nil
+	}
 	log.Printf("Parsed webhook payload: %+v", webhookData)
-
 	wf, err := ws.readWorkflowForWebhook(ctx, webhookID)
 	if err != nil {
 		return err
@@ -377,11 +389,14 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, ws.env); err != nil {
 		return err
 	}
-
+	bazelFlags, err := ws.getBazelFlags(key)
+	if err != nil {
+		return err
+	}
 	ci := &workflowcmd.CommandInfo{
 		RepoURL:    assembleRepoURL(wf),
 		CommitSHA:  webhookData.SHA,
-		BazelFlags: ws.getBazelFlags(key),
+		BazelFlags: bazelFlags,
 	}
 	ad, err := ws.createActionForWorkflow(ctx, wf, ci)
 	if err != nil {

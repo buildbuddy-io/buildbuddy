@@ -1,5 +1,6 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 load("@bazel_gazelle//:deps.bzl", "go_repository")
+load("@io_bazel_rules_go//extras:embed_data_deps.bzl", "go_embed_data_dependencies")
 
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_buildbuddy_dependencies
 def install_buildbuddy_dependencies():
@@ -16,6 +17,8 @@ def install_buildbuddy_dependencies():
         sha256 = "54657467a38db95c6063692315fcdb59817688254eff39333935d5e356675ebd",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/3.7.0/bazel-3.7.0-darwin-x86_64"],
     )
+
+    go_embed_data_dependencies()
 
     # gRPC
     go_repository(
