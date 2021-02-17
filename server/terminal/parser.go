@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"log"
 	"unicode"
 	"unicode/utf8"
 )
@@ -66,6 +67,11 @@ type parser struct {
  * normally designate the character set.
  */
 
+func withinBounds(data []byte, start, end int) bool {
+	t := start >= 0 && start <= end && end <= len(data)
+	return t
+}
+
 func parseANSIToScreen(s *screen, ansi []byte) {
 	p := parser{mode: MODE_NORMAL, screen: s}
 	p.mode = MODE_NORMAL
@@ -113,6 +119,11 @@ func (p *parser) handleOperatingSystemCommand(char rune) {
 	}
 	p.mode = MODE_NORMAL
 
+	if !withinBounds(p.ansi, p.instructionStartedAt, p.cursor) {
+		log.Printf("handleOperatingSystemCommand out of bounds: len(ansi): %d, start: %d, end: %d", len(p.ansi), p.instructionStartedAt, p.cursor)
+		return
+	}
+
 	// Bell received, stop parsing our potential image
 	image, err := parseElementSequence(string(p.ansi[p.instructionStartedAt:p.cursor]))
 
@@ -148,6 +159,11 @@ func (p *parser) handleApplicationProgramCommand(char rune) {
 		return
 	}
 	p.mode = MODE_NORMAL
+
+	if !withinBounds(p.ansi, p.instructionStartedAt, p.cursor) {
+		log.Printf("handleApplicationProgramCommand out of bounds: len(ansi): %d, start: %d, end: %d", len(p.ansi), p.instructionStartedAt, p.cursor)
+		return
+	}
 
 	// Bell received, stop parsing our potential image
 	el, err := parseBuildkiteElementSequence(string(p.ansi[p.instructionStartedAt:p.cursor]))
@@ -226,6 +242,10 @@ func (p *parser) handleEscape(char rune) {
 }
 
 func (p *parser) addInstruction() {
+	if !withinBounds(p.ansi, p.instructionStartedAt, p.cursor) {
+		log.Printf("addInstruction out of bounds: len(ansi): %d, start: %d, end: %d", len(p.ansi), p.instructionStartedAt, p.cursor)
+		return
+	}
 	instruction := string(p.ansi[p.instructionStartedAt:p.cursor])
 	if instruction != "" {
 		p.instructions = append(p.instructions, instruction)
