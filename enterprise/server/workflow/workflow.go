@@ -49,7 +49,7 @@ func assembleRepoURL(wd *webhook_data.WebhookData, wf *tables.Workflow) string {
 	if authURL == "" {
 		authURL = wf.RepoURL
 	}
-	u, err := url.Parse(wf.RepoURL)
+	u, err := url.Parse(authURL)
 	if err == nil {
 		if wf.AccessToken != "" {
 			u.User = url.UserPassword(wf.AccessToken, "")
