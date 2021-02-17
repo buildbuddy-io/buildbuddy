@@ -44,8 +44,11 @@ func generateWebhookID() (string, error) {
 	return strings.ToLower(u.String()), nil
 }
 
-func assembleRepoURL(wf *tables.Workflow) string {
-	authURL := wf.RepoURL
+func assembleRepoURL(wd *webhook_data.WebhookData, wf *tables.Workflow) string {
+	authURL := wd.RepoURL
+	if authURL == "" {
+		authURL = wf.RepoURL
+	}
 	u, err := url.Parse(wf.RepoURL)
 	if err == nil {
 		if wf.AccessToken != "" {
@@ -365,7 +368,6 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err := ws.checkStartWorkflowPreconditions(ctx); err != nil {
 		return err
 	}
-	// TODO: Support non-GitHub providers.
 	webhookData, err := parseRequest(r)
 	if err != nil {
 		log.Printf("error processing webhook request: %s", err)
@@ -394,7 +396,7 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 		return err
 	}
 	ci := &workflowcmd.CommandInfo{
-		RepoURL:    assembleRepoURL(wf),
+		RepoURL:    assembleRepoURL(webhookData, wf),
 		CommitSHA:  webhookData.SHA,
 		BazelFlags: bazelFlags,
 	}

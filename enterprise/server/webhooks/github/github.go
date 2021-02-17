@@ -47,6 +47,22 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 			// so we use that instead.
 			SHA: v["HeadCommit.ID"],
 		}, nil
+
+	case *gh.PullRequestEvent:
+		v, err := fieldValues(event, "Action", "PullRequest.Head.SHA", "PullRequest.Head.Repo.CloneURL")
+		if err != nil {
+			return nil, err
+		}
+		fmt.Printf("PR Event values: %+v\n", v)
+		// Only build when the PR is opened or pushed to.
+		if !(v["Action"] == "opened" || v["Action"] == "synchronize") {
+			return nil, nil
+		}
+		return &webhook_data.WebhookData{
+			RepoURL: v["PullRequest.Head.Repo.CloneURL"],
+			SHA:     v["PullRequest.Head.SHA"],
+		}, nil
+
 	default:
 		log.Printf("Ignoring webhook event: %T", event)
 		return nil, nil
