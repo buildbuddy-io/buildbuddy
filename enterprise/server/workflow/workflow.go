@@ -327,6 +327,9 @@ func parseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 	if r.Header.Get("X-Github-Event") != "" {
 		return github.ParseRequest(r)
 	}
+
+	// TODO: Support non-GitHub providers
+
 	return nil, status.UnimplementedErrorf("failed to classify Git provider from webhook request: %+v", r)
 }
 
