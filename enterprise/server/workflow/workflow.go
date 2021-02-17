@@ -370,10 +370,6 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err := ws.checkStartWorkflowPreconditions(ctx); err != nil {
 		return err
 	}
-<<<<<<< HEAD
-=======
-	// TODO: Support non-GitHub providers.
->>>>>>> master
 	webhookData, err := parseRequest(r)
 	if err != nil {
 		log.Printf("error processing webhook request: %s", err)
