@@ -106,6 +106,29 @@ message Execution {
   string command_snippet = 7;
 }
 
+message ExecutionNode {
+
+  // Remote execution node host
+  string host = 1;
+
+  // Remote execution node port
+  string port = 2;
+
+  // Assignable memory bytes in remote execution node
+  int64 assignable_memory_bytes = 3;
+
+  // Assignable cpu  in remote execution node
+  int64 assignable_milli_cpu = 4;
+
+  // Remote execution node operating system
+  string os = 5;
+
+  string arch = 6;
+
+  string pool = 7;
+
+}
+
 message ExecutionLookup {
   // The invocation_id: a fully qualified execution ID
   string invocation_id = 1;
@@ -121,4 +144,14 @@ message GetExecutionResponse {
   context.ResponseContext response_context = 1;
 
   repeated Execution execution = 2;
+}
+
+message GetExecutionNodesRequest {
+  context.ResponseContext response_context = 1;
+}
+
+message GetExecutionNodesResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated ExecutionNode execution_node = 2;
 }
