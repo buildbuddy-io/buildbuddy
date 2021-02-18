@@ -56,6 +56,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		}
 		// Only build when the PR is opened or pushed to.
 		if !(v["Action"] == "opened" || v["Action"] == "synchronize") {
+			log.Printf("Ignoring pull_request webhook event (action=%q)", v["Action"])
 			return nil, nil
 		}
 		return &webhook_data.WebhookData{
