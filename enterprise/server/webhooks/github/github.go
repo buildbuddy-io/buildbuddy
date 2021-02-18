@@ -32,7 +32,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 	log.Printf("Received GitHub webhook event: %T\n", event)
 	switch event := event.(type) {
 	case *gh.PushEvent:
-		v, err := fieldValues(event, "Ref", "HeadCommit.ID", "Repo.DefaultBranch")
+		v, err := fieldValues(event, "Ref", "HeadCommit.ID", "Repo.DefaultBranch", "Repo.CloneURL")
 		if err != nil {
 			return nil, err
 		}
@@ -43,10 +43,27 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 			return nil, nil
 		}
 		return &webhook_data.WebhookData{
+			RepoURL: v["Repo.CloneURL"],
 			// For some reason, "HeadCommit.SHA" is nil, but ID has the commit SHA,
 			// so we use that instead.
 			SHA: v["HeadCommit.ID"],
 		}, nil
+
+	case *gh.PullRequestEvent:
+		v, err := fieldValues(event, "Action", "PullRequest.Head.SHA", "PullRequest.Head.Repo.CloneURL")
+		if err != nil {
+			return nil, err
+		}
+		// Only build when the PR is opened or pushed to.
+		if !(v["Action"] == "opened" || v["Action"] == "synchronize") {
+			log.Printf("Ignoring pull_request webhook event (action=%q)", v["Action"])
+			return nil, nil
+		}
+		return &webhook_data.WebhookData{
+			RepoURL: v["PullRequest.Head.Repo.CloneURL"],
+			SHA:     v["PullRequest.Head.SHA"],
+		}, nil
+
 	default:
 		log.Printf("Ignoring webhook event: %T", event)
 		return nil, nil
