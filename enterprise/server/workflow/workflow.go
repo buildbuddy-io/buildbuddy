@@ -2,8 +2,8 @@ package workflow
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"log"
 	"net/http"
 	"net/url"
@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowcmd"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -30,7 +31,6 @@ import (
 
 var (
 	workflowURLMatcher   = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
-	defaultInstanceName  = "ci"
 	buildbuddyCIUserName = "buildbuddy"
 	buildbuddyCIHostName = "buildbuddy-ci-runner"
 )
@@ -44,9 +44,12 @@ func generateWebhookID() (string, error) {
 	return strings.ToLower(u.String()), nil
 }
 
-func assembleRepoURL(wf *tables.Workflow) string {
-	authURL := wf.RepoURL
-	u, err := url.Parse(wf.RepoURL)
+func assembleRepoURL(wd *webhook_data.WebhookData, wf *tables.Workflow) string {
+	// Use the webhook data for the Repo URL, since it contains the "canonical"
+	// URL from the Git provider's API. The table URL may contain wonky stuff
+	// like `git+ssh://`, `git@github.com:foo/bar`, etc.
+	authURL := wd.RepoURL
+	u, err := url.Parse(authURL)
 	if err == nil {
 		if wf.AccessToken != "" {
 			u.User = url.UserPassword(wf.AccessToken, "")
@@ -54,6 +57,12 @@ func assembleRepoURL(wf *tables.Workflow) string {
 		}
 	}
 	return authURL
+}
+
+func instanceName(wd *webhook_data.WebhookData) string {
+	// Note, we use a unique remote instance per repo URL, so that forked repos
+	// don't share the same cache as the base repo.
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(wd.RepoURL)))
 }
 
 type workflowService struct {
@@ -252,7 +261,7 @@ func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID
 	return tw, nil
 }
 
-func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, ci *workflowcmd.CommandInfo) (*repb.Digest, error) {
+func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, ci *workflowcmd.CommandInfo, instanceName string) (*repb.Digest, error) {
 	script, err := workflowcmd.GenerateShellScript(ci)
 	if err != nil {
 		return nil, err
@@ -264,7 +273,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 
 	scriptName := "run.sh"
-	scriptDigest, err := cachetools.UploadBlobToCAS(ctx, cache, defaultInstanceName, script)
+	scriptDigest, err := cachetools.UploadBlobToCAS(ctx, cache, instanceName, script)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +286,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			},
 		},
 	}
-	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, defaultInstanceName, dir)
+	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, dir)
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			&repb.Command_EnvironmentVariable{
@@ -295,7 +304,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		},
 		Arguments: []string{"/bin/bash", scriptName},
 	}
-	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, defaultInstanceName, cmd)
+	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +313,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		InputRootDigest: inputRootDigest,
 		DoNotCache:      true,
 	}
-	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, defaultInstanceName, action)
+	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, action)
 	return actionDigest, err
 }
 
@@ -324,6 +333,8 @@ func parseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 	if r.Header.Get("X-Github-Event") != "" {
 		return github.ParseRequest(r)
 	}
+
+	// TODO: Support non-GitHub providers
 	return nil, status.UnimplementedErrorf("failed to classify Git provider from webhook request: %+v", r)
 }
 
@@ -340,11 +351,12 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 	return nil
 }
 
-func (ws *workflowService) getBazelFlags(ak *tables.APIKey) ([]string, error) {
+func (ws *workflowService) getBazelFlags(ak *tables.APIKey, instanceName string) ([]string, error) {
 	flags := []string{
-		"--remote_header=x-buildbuddy-api-key=" + ak.Value,
 		"--build_metadata=USER=" + buildbuddyCIUserName,
 		"--build_metadata=HOST=" + buildbuddyCIHostName,
+		"--remote_header=x-buildbuddy-api-key=" + ak.Value,
+		"--remote_instance_name=" + instanceName,
 	}
 	if bbURL := ws.env.GetConfigurator().GetAppBuildBuddyURL(); bbURL != "" {
 		u, err := url.Parse(bbURL)
@@ -365,7 +377,6 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err := ws.checkStartWorkflowPreconditions(ctx); err != nil {
 		return err
 	}
-	// TODO: Support non-GitHub providers.
 	webhookData, err := parseRequest(r)
 	if err != nil {
 		log.Printf("error processing webhook request: %s", err)
@@ -389,22 +400,23 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, ws.env); err != nil {
 		return err
 	}
-	bazelFlags, err := ws.getBazelFlags(key)
+	in := instanceName(webhookData)
+	bazelFlags, err := ws.getBazelFlags(key, in)
 	if err != nil {
 		return err
 	}
 	ci := &workflowcmd.CommandInfo{
-		RepoURL:    assembleRepoURL(wf),
+		RepoURL:    assembleRepoURL(webhookData, wf),
 		CommitSHA:  webhookData.SHA,
 		BazelFlags: bazelFlags,
 	}
-	ad, err := ws.createActionForWorkflow(ctx, wf, ci)
+	ad, err := ws.createActionForWorkflow(ctx, wf, ci, in)
 	if err != nil {
 		return err
 	}
 
 	executionID, err := ws.env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{
-		InstanceName:    defaultInstanceName,
+		InstanceName:    in,
 		SkipCacheLookup: true,
 		ActionDigest:    ad,
 	})
