@@ -103,6 +103,7 @@ func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
 	}
 
 	return &DiskCache{
+		l:       c.l,
 		rootDir: c.rootDir,
 		lock:    c.lock,
 		prefix:  newPrefix,
