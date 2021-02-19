@@ -16,7 +16,7 @@ func testDataReader(t *testing.T, relPath string) io.Reader {
 	return bytes.NewReader(data)
 }
 
-func TestWorkflowConf_Parse_FullFeaturedConfig_Valid(t *testing.T) {
+func TestWorkflowConf_Parse_BasicConfig_Valid(t *testing.T) {
 	conf, err := NewConfig(testDataReader(t, "test_data/basic.yaml"))
 
 	assert.NoError(t, err)
