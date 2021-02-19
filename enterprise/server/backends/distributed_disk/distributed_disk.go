@@ -15,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/diskproxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/heartbeat"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
@@ -27,85 +28,7 @@ import (
 
 const (
 	cacheEvictionCutoffPercentage = .8
-
-	// This node will send heartbeats every this often.
-	heartbeatPeriod = 1 * time.Second
-
-	// After this timeout, a node will be removed from the set of active
-	// nodes.
-	heartbeatTimeout = 3 * heartbeatPeriod
-
-	// How often this node will check if heartbeats are still valid.
-	heartbeatCheckPeriod = 100 * time.Millisecond
 )
-
-type PeersUpdateFn func(peerSet ...string)
-type HostAnnounceChannel struct {
-	groupName string
-	inetAddr  string
-	peers     map[string]time.Time
-	ps        interfaces.PubSub
-	updateFn  PeersUpdateFn
-}
-
-func NewHostAnnounceChannel(redisServer, inetAddr, groupName string, updateFn PeersUpdateFn) *HostAnnounceChannel {
-	hac := &HostAnnounceChannel{
-		groupName: groupName,
-		inetAddr:  inetAddr,
-		peers:     make(map[string]time.Time, 0),
-		ps:        pubsub.NewPubSub(redisServer),
-		updateFn:  updateFn,
-	}
-	ctx := context.Background()
-	go hac.sendHeartbeat(ctx)
-	go hac.watchPeers(ctx)
-	return hac
-}
-func (c *HostAnnounceChannel) sendHeartbeat(ctx context.Context) {
-	for {
-		err := c.ps.Publish(ctx, c.groupName, c.inetAddr)
-		if err != nil {
-			log.Printf("Error publishing: %s", err.Error())
-		}
-		time.Sleep(heartbeatPeriod)
-	}
-}
-func (c *HostAnnounceChannel) notifySetChanged() {
-	nodes := make([]string, 0, len(c.peers))
-	for peer, _ := range c.peers {
-		nodes = append(nodes, peer)
-	}
-	sort.Strings(nodes)
-	log.Printf("Set of active ddisk nodes changed: %s", nodes)
-	c.updateFn(nodes...)
-}
-
-func (c *HostAnnounceChannel) watchPeers(ctx context.Context) {
-	subscriber := c.ps.Subscribe(ctx, c.groupName)
-	defer subscriber.Close()
-	pubsubChan := subscriber.Chan()
-	for {
-		select {
-		case peer := <-pubsubChan:
-			_, ok := c.peers[peer]
-			c.peers[peer] = time.Now()
-			if !ok {
-				c.notifySetChanged()
-			}
-		case <-time.After(heartbeatCheckPeriod):
-			updated := false
-			for peer, lastBeat := range c.peers {
-				if time.Since(lastBeat) > heartbeatTimeout {
-					delete(c.peers, peer)
-					updated = true
-				}
-			}
-			if updated {
-				c.notifySetChanged()
-			}
-		}
-	}
-}
 
 // Blobstore is *almost* sufficient here, but blobstore doesn't handle record
 // expirations in a way that make sense for a cache. So we keep a record (in
@@ -125,8 +48,8 @@ type DistributedDiskCache struct {
 
 	diskProxy           *diskproxy.DiskProxy
 	consistentHash      *consistent_hash.ConsistentHash
-	listenAddr          string
-	hostAnnounceChannel *HostAnnounceChannel
+	myAddr          string
+	heartbeatChannel *HeartbeatChannel
 }
 
 type fileRecord struct {
@@ -158,7 +81,10 @@ func makeRecord(fullPath string, info os.FileInfo) *fileRecord {
 	}
 }
 
-func NewDistributedDiskCache(listenAddr, rootDir, redisTarget, groupName string, maxSizeBytes int64) (*DistributedDiskCache, error) {
+func NewDistributedDiskCache(env environment.Env, myAddr, rootDir, groupName string, maxSizeBytes int64) (*DistributedDiskCache, error) {
+	if env.GetPubsub() == nil {
+		return nil, status.FailedPreconditionError("Pubsub is required for distributed disk heartbeats")
+	}
 	zeroSize := int64(0)
 	if groupName == "" {
 		groupName = "default"
@@ -169,20 +95,23 @@ func NewDistributedDiskCache(listenAddr, rootDir, redisTarget, groupName string,
 		sizeBytes:      &zeroSize,
 		lock:           &sync.RWMutex{},
 		consistentHash: consistent_hash.NewConsistentHash(),
-		listenAddr:     listenAddr,
+		myAddr:     myAddr,
 	}
-	c.hostAnnounceChannel = NewHostAnnounceChannel(redisTarget, listenAddr, groupName, c.consistentHash.Set)
+	
+	c.heartbeatChannel = heartbeat.NewHeartbeatChannel(env.GetPubsub(), myAddr, groupName, c.consistentHash.Set)
 	if err := c.initializeCache(); err != nil {
 		return nil, err
 	}
 
 	// Handles reads / writes to the local filesystem from peer cache nodes.
-	c.diskProxy = diskproxy.NewDiskProxy(listenAddr, rootDir, c.remoteWriteFn, c.readNotify)
+	c.diskProxy = diskproxy.NewDiskProxy(myAddr, rootDir, c.remoteWriteFn, c.readNotify)
 	return c, nil
 }
 
 func (c *DistributedDiskCache) readNotify(k string) {
-	c.useEntry(k)
+	if !c.useEntry(k) {
+		log.Printf("ReadNotify on non-existent file: %q", k)
+	}
 }
 
 func (c *DistributedDiskCache) WithPrefix(prefix string) interfaces.Cache {
@@ -202,8 +131,8 @@ func (c *DistributedDiskCache) WithPrefix(prefix string) interfaces.Cache {
 
 		diskProxy:           c.diskProxy,
 		consistentHash:      c.consistentHash,
-		listenAddr:          c.listenAddr,
-		hostAnnounceChannel: c.hostAnnounceChannel,
+		myAddr:          c.myAddr,
+		heartbeatChannel: c.heartbeatChannel,
 	}
 }
 
@@ -307,7 +236,7 @@ func (c *DistributedDiskCache) key(ctx context.Context, d *repb.Digest) (string,
 	peer := c.consistentHash.Get(k)
 	if peer == "" {
 		// if no peer is found, default to local writes.
-		peer = c.listenAddr
+		peer = c.myAddr
 	}
 	return k, peer, nil
 }
@@ -317,7 +246,7 @@ func (c *DistributedDiskCache) Contains(ctx context.Context, d *repb.Digest) (bo
 	if err != nil {
 		return false, err
 	}
-	if peer != c.listenAddr {
+	if peer != c.myAddr {
 		return c.diskProxy.RemoteContains(ctx, peer, k)
 	}
 	return c.useEntry(k), nil
@@ -343,7 +272,7 @@ func (c *DistributedDiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	if peer != c.listenAddr {
+	if peer != c.myAddr {
 		return c.diskProxy.RemoteGet(ctx, peer, k)
 	}
 	c.useEntry(k)
@@ -373,7 +302,7 @@ func (c *DistributedDiskCache) Set(ctx context.Context, d *repb.Digest, data []b
 	if err != nil {
 		return err
 	}
-	if peer != c.listenAddr {
+	if peer != c.myAddr {
 		return c.diskProxy.RemoteSet(ctx, peer, k, data)
 	}
 
@@ -416,7 +345,7 @@ func (c *DistributedDiskCache) Reader(ctx context.Context, d *repb.Digest, offse
 	if err != nil {
 		return nil, err
 	}
-	if peer != c.listenAddr {
+	if peer != c.myAddr {
 		return c.diskProxy.RemoteReader(ctx, peer, k)
 	}
 	c.useEntry(k)
@@ -481,7 +410,7 @@ func (c *DistributedDiskCache) Writer(ctx context.Context, d *repb.Digest) (io.W
 	if err != nil {
 		return nil, err
 	}
-	if peer != c.listenAddr {
+	if peer != c.myAddr {
 		return c.diskProxy.RemoteWriter(ctx, peer, k, d.GetSizeBytes())
 	}
 
