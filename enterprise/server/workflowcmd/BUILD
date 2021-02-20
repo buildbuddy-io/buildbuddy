@@ -5,6 +5,7 @@ go_library(
     srcs = ["workflowcmd.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowcmd",
     visibility = ["//visibility:public"],
+    deps = ["@com_github_google_shlex//:go_default_library"],
 )
 
 go_test(

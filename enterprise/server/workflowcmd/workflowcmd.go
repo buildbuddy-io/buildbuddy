@@ -5,12 +5,18 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/google/shlex"
 )
 
-var unsafeSet = regexp.MustCompile(`[^\w@%+=:,./-]`)
+var (
+	unsafeSet = regexp.MustCompile(`[^\w@%+=:,./-]`)
+)
 
 func sanitize(s string) string {
 	if unsafeSet.MatchString(s) {
+		// Single-quote the arg so that it can't be interpreted specially
+		// by the shell.
 		s = "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 	}
 	return s
@@ -55,18 +61,25 @@ func (w *workflowScript) Checkout(repoURL, commitSHA string) {
 	w.AddCommand("git", []string{"checkout", "-q", commitSHA})
 }
 
-func (w *workflowScript) Test(bazelFlags []string) {
-	args := []string{"test"}
-	args = append(args, bazelFlags...)
-	args = append(args, "//...")
-
-	w.AddCommand("bazelisk", args)
+func (w *workflowScript) Bazel(cmd string) error {
+	tokens, err := shlex.Split(cmd)
+	if err != nil {
+		return err
+	}
+	if len(tokens) == 0 {
+		return nil
+	}
+	w.AddCommand(cmd, tokens)
+	return nil
 }
 
 type CommandInfo struct {
-	RepoURL    string
-	CommitSHA  string
+	RepoURL   string
+	CommitSHA string
+	// BazelFlags are passed to the bazel subcommand (i.e. run {{UserFlags...}} {{BazelFlags...}} )
 	BazelFlags []string
+	// BazelCommands is a list of commands where each one
+	BazelCommands []string
 }
 
 // GenerateShellScript generates a build command for a repo at a given
@@ -74,9 +87,33 @@ type CommandInfo struct {
 func GenerateShellScript(ci *CommandInfo) ([]byte, error) {
 	script := newWorkflowScript()
 
-	// Keep it simple for now!
 	script.Checkout(ci.RepoURL, ci.CommitSHA)
-	script.Test(ci.BazelFlags)
+	for _, bazelCmd := range ci.BazelCommands {
+		if err := script.Bazel(bazelCmd, ci.BazelFlags); err != nil {
+			return nil, err
+		}
+	}
 
 	return script.Build()
+}
+
+func flat(slices ...[]string) []string {
+	cap := 0
+	for _, slice := range slices {
+		cap += len(slice)
+	}
+	out := make([]string, 0, cap)
+	for _, slice := range slices {
+		out = append(out, slice...)
+	}
+	return out
+}
+
+func indexOf(slice []string, val string) int {
+	for i, v := range slice {
+		if v == val {
+			return i
+		}
+	}
+	return -1
 }
