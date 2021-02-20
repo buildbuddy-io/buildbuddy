@@ -23,7 +23,7 @@ func TestWorkflowConf_Parse_BasicConfig_Valid(t *testing.T) {
 	assert.Equal(t, &BuildBuddyConfig{
 		Actions: []*Action{
 			{
-				Name: "CI",
+				Name: "Build and test",
 				Triggers: &Triggers{
 					Push: &PushTrigger{
 						Branches: []string{"main"},

@@ -1,5 +1,5 @@
 actions:
-  - name: "CI"
+  - name: "Build and test"
     triggers:
       push:
         branches: [main]
