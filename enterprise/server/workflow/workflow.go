@@ -428,14 +428,19 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 }
 
 func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Serve the HTTP response as early as possible to avoid the request timing out
+	// on the client side and the client retrying the request.
+	// See https://docs.gitlab.com/ee/user/project/integrations/webhooks.html#webhook-endpoint-tips
+	w.WriteHeader(http.StatusAccepted)
+
 	workflowMatch := workflowURLMatcher.FindStringSubmatch(r.URL.Path)
 	if len(workflowMatch) != 2 {
-		http.Error(w, "workflow URL not recognized", http.StatusNotFound)
+		log.Printf("workflow URL not recognized: %q", r.URL.Path)
 		return
 	}
 	webhookID := workflowMatch[1]
 	if err := ws.startWorkflow(webhookID, r); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Printf("failed to start workflow: %s", err)
 		return
 	}
 	w.Write([]byte("OK"))
