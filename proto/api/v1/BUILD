@@ -25,6 +25,7 @@ proto_library(
     srcs = [
         "action.proto",
         "file.proto",
+        "invocation.proto",
         "service.proto",
         "target.proto",
     ],
