@@ -9,11 +9,8 @@
 ## Get your API key by:
 ## 1) Logging in or creating an account here: https://app.buildbuddy.io/
 ## 2) Following the setup instructions here: https://app.buildbuddy.io/docs/setup/
-## 3) Update and uncomment the lines below accordingly
-#build --bes_backend=grpcs://YOUR_API_KEY_GOES_HERE@cloud.buildbuddy.io
-#build --remote_cache=grpcs://YOUR_API_KEY_GOES_HERE@cloud.buildbuddy.io
-#build --remote_executor=grpcs://YOUR_API_KEY_GOES_HERE@cloud.buildbuddy.io
-
+## 3) Update and uncomment the line below accordingly
+#--remote_header=x-buildbuddy-api-key=YOUR_API_KEY
 
 ############################
 ## Certificate based auth ##
