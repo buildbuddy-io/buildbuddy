@@ -44,15 +44,26 @@ func (w *workflowScript) Build() ([]byte, error) {
 	return []byte(buf), nil
 }
 
+func (w *workflowScript) SetShellOptions() {
+	// See https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html
+
+	// Exit the script if any command fails.
+	w.AddCommand("set", []string{"-o", "errexit"})
+	w.AddCommand("set", []string{"-o", "pipefail"})
+}
+
 func (w *workflowScript) Checkout(repoURL, commitSHA string) {
 	repoDir := filepath.Base(repoURL)
 	if repoDir == "" {
 		repoDir = "repo"
 	}
 
-	w.AddCommand("git", []string{"clone", "-q", repoURL, repoDir})
+	w.AddCommand("mkdir", []string{repoDir})
 	w.AddCommand("cd", []string{repoDir})
-	w.AddCommand("git", []string{"checkout", "-q", commitSHA})
+	w.AddCommand("git", []string{"init"})
+	w.AddCommand("git", []string{"remote", "add", "origin", repoURL})
+	w.AddCommand("git", []string{"fetch", "origin", commitSHA})
+	w.AddCommand("git", []string{"checkout", commitSHA})
 }
 
 func (w *workflowScript) Test(bazelFlags []string) {
@@ -75,6 +86,7 @@ func GenerateShellScript(ci *CommandInfo) ([]byte, error) {
 	script := newWorkflowScript()
 
 	// Keep it simple for now!
+	script.SetShellOptions()
 	script.Checkout(ci.RepoURL, ci.CommitSHA)
 	script.Test(ci.BazelFlags)
 
