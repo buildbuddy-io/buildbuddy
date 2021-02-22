@@ -443,5 +443,4 @@ func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("failed to start workflow: %s", err)
 		return
 	}
-	w.Write([]byte("OK"))
 }
