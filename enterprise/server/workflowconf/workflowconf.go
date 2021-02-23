@@ -7,12 +7,6 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-const (
-	// PathRelativeToRepoRoot is the path to the buildbuddy config
-	// relative to the repository root.
-	PathRelativeToRepoRoot = "buildbuddy.yaml"
-)
-
 type BuildBuddyConfig struct {
 	Actions []*Action `yaml:"actions"`
 }

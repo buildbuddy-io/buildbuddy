@@ -12,15 +12,16 @@ go_library(
 go_embed_data(
     name = "test_data",
     srcs = glob(["test_data/**/*"]),
-    package = "workflowconf",
+    package = "workflowconf_test",
 )
 
 go_test(
     name = "go_default_test",
     srcs = ["workflowconf_test.go"],
-    embed = [
+    # keep
+    embed = [":test_data"],
+    deps = [
         ":go_default_library",
-        ":test_data",  # keep
+        "@com_github_stretchr_testify//assert:go_default_library",
     ],
-    deps = ["@com_github_stretchr_testify//assert:go_default_library"],
 )

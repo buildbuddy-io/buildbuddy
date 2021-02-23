@@ -1,9 +1,11 @@
-package workflowconf
+package workflowconf_test
 
 import (
 	"bytes"
 	"io"
 	"testing"
+
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowconf"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -17,18 +19,18 @@ func testDataReader(t *testing.T, relPath string) io.Reader {
 }
 
 func TestWorkflowConf_Parse_BasicConfig_Valid(t *testing.T) {
-	conf, err := NewConfig(testDataReader(t, "test_data/basic.yaml"))
+	conf, err := workflowconf.NewConfig(testDataReader(t, "test_data/basic.yaml"))
 
 	assert.NoError(t, err)
-	assert.Equal(t, &BuildBuddyConfig{
-		Actions: []*Action{
+	assert.Equal(t, &workflowconf.BuildBuddyConfig{
+		Actions: []*workflowconf.Action{
 			{
 				Name: "Build and test",
-				Triggers: &Triggers{
-					Push: &PushTrigger{
+				Triggers: &workflowconf.Triggers{
+					Push: &workflowconf.PushTrigger{
 						Branches: []string{"main"},
 					},
-					PullRequest: &PullRequestTrigger{
+					PullRequest: &workflowconf.PullRequestTrigger{
 						Branches: []string{"main"},
 					},
 				},
