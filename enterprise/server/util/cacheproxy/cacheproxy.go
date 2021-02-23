@@ -31,7 +31,7 @@ const (
 	offsetParam    = "offset"
 
 	jwtHeader = "x-buildbuddy-jwt"
- )
+)
 
 type CacheProxy struct {
 	env        environment.Env

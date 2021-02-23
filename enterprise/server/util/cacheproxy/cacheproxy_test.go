@@ -77,10 +77,10 @@ func TestReader(t *testing.T) {
 	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
 	waitUntilServerIsAlive(peer)
-	
+
 	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
 	testSizes := []int64{
-		 1, 10, 100, 1000, 10000, 1000000, 10000000,
+		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
 
 	for _, testSize := range testSizes {
@@ -105,7 +105,7 @@ func TestReader(t *testing.T) {
 		}
 
 		// Use the cacheproxy to read the bytes back remotely.
-		r, err := c.RemoteReader(ctx, peer, prefix, d, 0/*=offset*/)
+		r, err := c.RemoteReader(ctx, peer, prefix, d, 0 /*=offset*/)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -171,7 +171,7 @@ func TestWriter(t *testing.T) {
 
 		// Read the bytes back directly from the cache and check that
 		// they match..
-		r, err := te.GetCache().WithPrefix(prefix).Reader(ctx, d, 0/*=offset*/)
+		r, err := te.GetCache().WithPrefix(prefix).Reader(ctx, d, 0 /*=offset*/)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -286,7 +286,7 @@ func TestOversizeBlobs(t *testing.T) {
 		// Now tack on a little bit of "extra" data.
 		buf.Write([]byte("overload"))
 		readSeeker = bytes.NewReader(buf.Bytes())
-		
+
 		// Remote-write the random bytes to the cache (with a prefix).
 		wc, err := c.RemoteWriter(ctx, peer, prefix, d)
 		if err != nil {
@@ -299,7 +299,7 @@ func TestOversizeBlobs(t *testing.T) {
 		if err := wc.Close(); err != nil {
 			t.Fatal(err)
 		}
-		
+
 		// Remote-read the random bytes back.
 		r, err := c.RemoteReader(ctx, peer, prefix, d, 0)
 		if err != nil {
@@ -314,7 +314,7 @@ func TestOversizeBlobs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		
+
 		d2, err := digest.Compute(r)
 		if err != nil {
 			t.Fatal(err)
