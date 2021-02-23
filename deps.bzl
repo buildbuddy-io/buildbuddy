@@ -257,8 +257,8 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "com_github_google_go_cmp",
         importpath = "github.com/google/go-cmp",
-        sum = "h1:X2ev0eStA3AbceY54o37/0PQ/UWqKEiiO2dKL5OPaFM=",
-        version = "v0.5.2",
+        sum = "h1:L8R9j+yAqZuZjsqh/z+F1NCffTKKLShY6zXTItVIZ8M=",
+        version = "v0.5.4",
     )
 
     go_repository(
@@ -502,8 +502,8 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "org_golang_x_sync",
         importpath = "golang.org/x/sync",
-        sum = "h1:qwRHBd0NqMbJxfbotnDhm2ByMI1Shq4Y6oRJo21SGJA=",
-        version = "v0.0.0-20200625203802-6e8e738ad208",
+        sum = "h1:SQFwaSi55rU7vdNs9Yr0Z324VNlrF+0wMqRXT4St8ck=",
+        version = "v0.0.0-20201020160332-67f06af15bc9",
     )
 
     go_repository(
@@ -516,8 +516,8 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "org_golang_x_tools",
         importpath = "golang.org/x/tools",
-        sum = "h1:k7tVuG0g1JwmD3Jh8oAl1vQ1C3jb4Hi/dUl1wWDBJpQ=",
-        version = "v0.0.0-20200918232735-d647fc253266",
+        sum = "h1:4nW4NLDYnU28ojHaHO8OVxFHk/aQ33U01a9cjED+pzE=",
+        version = "v0.0.0-20201224043029-2b0845dc783e",
     )
 
     go_repository(
@@ -1031,14 +1031,14 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "com_github_onsi_ginkgo",
         importpath = "github.com/onsi/ginkgo",
-        sum = "h1:jMU0WaQrP0a/YAEq8eJmJKjBoMs+pClEr1vDMlM/Do4=",
-        version = "v1.14.1",
+        sum = "h1:1V1NfVQR87RtWAgp1lv9JZJ5Jap+XFGKPi00andXGi4=",
+        version = "v1.15.0",
     )
     go_repository(
         name = "com_github_onsi_gomega",
         importpath = "github.com/onsi/gomega",
-        sum = "h1:aY/nuoWlKJud2J6U0E3NWsjlg+0GtwXxgEqthRdzlcs=",
-        version = "v1.10.2",
+        sum = "h1:7n6FEkpFmfCoo2t+YYqXH0evK+a9ICQz0xcAy9dYcaQ=",
+        version = "v1.10.5",
     )
     go_repository(
         name = "com_github_peterbourgon_diskv",
@@ -1173,13 +1173,13 @@ def install_buildbuddy_dependencies():
         name = "com_github_go_redis_redis_v8",
         build_directives = [
             "gazelle:resolve go go.opentelemetry.io/otel/api/global @io_opentelemetry_go_otel//api/global:go_default_library",
-            "gazelle:resolve go go.opentelemetry.io/otel/api/metric @io_opentelemetry_go_otel//api/metric:go_default_library",
-            "gazelle:resolve go go.opentelemetry.io/otel/api/trace @io_opentelemetry_go_otel//api/trace:go_default_library",
+            "gazelle:resolve go go.opentelemetry.io/otel/metric @io_opentelemetry_go_otel//metric:go_default_library",
+            "gazelle:resolve go go.opentelemetry.io/otel/trace @io_opentelemetry_go_otel//trace:go_default_library",
             "gazelle:resolve go go.opentelemetry.io/otel/label @io_opentelemetry_go_otel//label:go_default_library",
         ],
         importpath = "github.com/go-redis/redis/v8",
-        sum = "h1:Wcla0pl4iobatJy3CmQonbmZOPF6w94xOaGkVFWH/rQ=",
-        version = "v8.1.3",
+        sum = "h1:L3r1Q3I5WOUdXZGCP6g44EruKh0u3n6co5Hl5xWkdGA=",
+        version = "v8.5.0",
     )
     go_repository(
         name = "com_github_nxadm_tail",
@@ -1197,8 +1197,8 @@ def install_buildbuddy_dependencies():
         name = "io_opentelemetry_go_otel",
         build_file_proto_mode = "disable",
         importpath = "go.opentelemetry.io/otel",
-        sum = "h1:IN2tzQa9Gc4ZVKnTaMbPVcHjvzOdg5n9QfnmlqiET7E=",
-        version = "v0.11.0",
+        sum = "h1:uIWEbdeb4vpKPGITLsRVUS44L5oDbDUCZxn8lkxhmgw=",
+        version = "v0.16.0",
     )
     go_repository(
         name = "com_github_hanwen_go_fuse",
