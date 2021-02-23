@@ -4,6 +4,7 @@ package api.v1;
 
 import "proto/api/v1/action.proto";
 import "proto/api/v1/file.proto";
+import "proto/api/v1/invocation.proto";
 import "proto/api/v1/target.proto";
 
 // This is the public interface used to programatically retrieve information
@@ -26,6 +27,10 @@ import "proto/api/v1/target.proto";
 // If there's information you'd like to access programatically that's not
 // included in this API, email developers@buildbuddy.io
 service ApiService {
+  // Retrieves a list of invocations or a specific invocation matching the given
+  // request selector.
+  rpc GetInvocation(GetInvocationRequest) returns (GetInvocationResponse);
+
   // Retrieves a list of targets or a specific target matching the given
   // request selector.
   rpc GetTarget(GetTargetRequest) returns (GetTargetResponse);
