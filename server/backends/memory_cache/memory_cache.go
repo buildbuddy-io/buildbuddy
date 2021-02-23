@@ -164,7 +164,7 @@ func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset int64) 
 	}
 	r := bytes.NewReader(buf)
 	r.Seek(offset, 0)
-	length := d.GetSizeBytes()
+	length := int64(len(buf))
 	if length > 0 {
 		return io.LimitReader(r, length), nil
 	}
