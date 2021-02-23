@@ -1,4 +1,4 @@
-package hearbeat
+package heartbeat
 
 import (
 	"context"
