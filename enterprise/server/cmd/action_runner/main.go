@@ -33,12 +33,12 @@ const (
 	// Path where we expect to find actions config, relative to the repo root.
 	actionsConfigPath = "buildbuddy.yaml"
 
-	// env vars
+	// Env vars
+	// NOTE: These env vars are not populated for non-private repos.
 	// TODO: Allow populating BUILDBUDDY_API_KEY for private repos,
 	// in case folks would rather have it passed via BB than have
 	// to check it in to their repo.
 
-	// NOTE: These env vars are not populated for non-private repos.
 	repoUserEnvVarName  = "REPO_USER"
 	repoTokenEnvVarName = "REPO_TOKEN"
 
