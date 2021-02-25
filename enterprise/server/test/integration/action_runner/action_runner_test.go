@@ -1,15 +1,17 @@
 package action_runner_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
@@ -20,21 +22,16 @@ import (
 )
 
 var (
-	// Workspace with 2 tests: one passing, one failing.
-	// One action which runs all tests when pushing to main.
+	// Workspace that just has a .bazelversion.
+	// The workflow config only runs `bazel version`.
 	testWorkspaceContents = map[string]string{
-		"WORKSPACE": `workspace(name = "test")`,
-		"BUILD": `
-sh_test(name = "passing_test", srcs = ["echo_and_exit.sh"], args = ["SWAG", "0"])
-sh_test(name = "failing_test", srcs = ["echo_and_exit.sh"], args = ["HECK", "1"])
-`,
-		"echo_and_exit.sh": `echo "$1" && exit "$2"`,
+		"WORKSPACE":     `workspace(name = "test")`,
+		".bazelversion": "3.7.0",
 		"buildbuddy.yaml": `
 actions:
-  - name: "Run tests"
+  - name: "Show bazel version"
     triggers: { push: { branches: [ main ] } }
-    # Run these bazel commands locally (in prod, we would want --remote_executor=... flags)
-    bazel_commands: ["test //:failing_test //:passing_test --nocache_test_results --test_output=streamed"]
+    bazel_commands: [ version ]
 `,
 	}
 
@@ -102,11 +99,14 @@ func invokeRunner(t *testing.T, args []string, env []string) *result {
 func sh(t *testing.T, dir, command string) string {
 	cmd := exec.Command("sh", []string{"-c", command}...)
 	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
 	if err != nil {
-		t.Fatal(fmt.Errorf("command %q failed: %s. Output:\n%s", command, err, string(out)))
+		t.Fatal(fmt.Errorf("command %q failed: %s. stderr:\n%s", command, err, string(stderr.Bytes())))
 	}
-	return string(out)
+	return string(stdout.Bytes())
 }
 
 func gitInitAndCommit(t *testing.T, path string) string {
@@ -133,8 +133,6 @@ func TestActionRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *t
 
 	result := invokeRunner(t, runnerFlags, []string{})
 
-	// Uncomment this next line to see the logs from the action runner itself.
-	// fmt.Println(result.Output)
 	assert.Equal(t, 0, result.ExitCode)
 	require.Equal(t, 1, len(result.InvocationIDs))
 	bbService := app.BuildBuddyServiceClient(t)
@@ -146,10 +144,7 @@ func TestActionRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *t
 	require.NoError(t, err)
 	require.Equal(t, 1, len(res.Invocation), "couldn't find runner invocation in DB")
 	runnerInvocation := res.Invocation[0]
-	// Since our workflow is configured with --test_output=streamed, we should see test
-	// results directly in the action UI.
-	assert.Contains(t, runnerInvocation.ConsoleBuffer, "SWAG")
-	assert.Regexp(t, "//:passing_test.*PASSED", runnerInvocation.ConsoleBuffer)
-	assert.Contains(t, runnerInvocation.ConsoleBuffer, "HECK")
-	assert.Regexp(t, "//:failing_test.*FAILED", runnerInvocation.ConsoleBuffer)
+	// Since our workflow just runs `bazel version`, we should be able to see its
+	// output in the action logs.
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7.0")
 }
