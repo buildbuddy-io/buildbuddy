@@ -20,8 +20,5 @@ go_test(
     srcs = ["workflowconf_test.go"],
     # keep
     embed = [":test_data"],
-    deps = [
-        ":go_default_library",
-        "@com_github_stretchr_testify//assert:go_default_library",
-    ],
+    deps = ["@com_github_stretchr_testify//assert:go_default_library"],
 )

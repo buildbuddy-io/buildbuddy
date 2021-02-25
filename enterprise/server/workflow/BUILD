@@ -3,26 +3,27 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "go_default_library",
     srcs = ["workflow.go"],
+    data = [
+        "//enterprise/server/cmd/action_runner",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/webhooks/github:go_default_library",
         "//enterprise/server/webhooks/webhook_data:go_default_library",
-        "//enterprise/server/workflowcmd:go_default_library",
         "//proto:remote_execution_go_proto",
         "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",
-        "//server/backends/github:go_default_library",
         "//server/environment:go_default_library",
         "//server/remote_cache/cachetools:go_default_library",
         "//server/tables:go_default_library",
         "//server/util/perms:go_default_library",
         "//server/util/prefix:go_default_library",
         "//server/util/query_builder:go_default_library",
-        "//server/util/random:go_default_library",
         "//server/util/status:go_default_library",
         "@com_github_google_uuid//:go_default_library",
         "@com_github_jinzhu_gorm//:go_default_library",
+        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )
 

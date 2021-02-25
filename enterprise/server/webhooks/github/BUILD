@@ -23,11 +23,9 @@ go_embed_data(
 go_test(
     name = "go_default_test",
     srcs = ["github_test.go"],
-    embed = [
-        ":go_default_library",
-        ":data",
-    ],
+    embed = [":go_default_library"],
     deps = [
+        "//enterprise/server/webhooks/webhook_data:go_default_library",
         "@com_github_stretchr_testify//assert:go_default_library",
     ],
 )
