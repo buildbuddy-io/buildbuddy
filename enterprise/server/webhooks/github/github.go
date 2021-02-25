@@ -57,8 +57,8 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 			event,
 			"Action",
 			"PullRequest.Base.Ref",
-			"PullRequest.Base.Private",
 			"PullRequest.Head.Repo.CloneURL",
+			"PullRequest.Base.Repo.Private",
 			"PullRequest.Head.SHA",
 		)
 		if err != nil {
@@ -73,7 +73,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 			EventName:     webhook_data.EventName.PullRequest,
 			TargetBranch:  v["PullRequest.Base.Ref"],
 			RepoURL:       v["PullRequest.Head.Repo.CloneURL"],
-			IsRepoPrivate: v["PullRequest.Base.Private"] == "true",
+			IsRepoPrivate: v["PullRequest.Base.Repo.Private"] == "true",
 			SHA:           v["PullRequest.Head.SHA"],
 		}, nil
 
