@@ -48,6 +48,10 @@ const (
 	// due to an error that may be temporary.
 	retryableExitCode = 21
 
+	// progressFlushInterval specifies how often we should flush
+	// each Bazel command's output while it is running.
+	progressFlushInterval = 250 * time.Millisecond
+
 	// Webhook event names
 
 	pushEventName        = "push"
@@ -182,20 +186,38 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 }
 
 type invocationLog struct {
+	mu     sync.Mutex
 	Buffer bytes.Buffer
-	writer io.Writer
 }
 
 func newInvocationLog() *invocationLog {
 	invLog := &invocationLog{}
-	invLog.writer = io.MultiWriter(os.Stderr, &invLog.Buffer)
 	return invLog
 }
+
+// Write writes the given bytes to the invocation log and also streams
+// those bytes to os.Stderr on a best-effort basis.
+func (invLog *invocationLog) Write(b []byte) (int, error) {
+	invLog.mu.Lock()
+	n, err := invLog.Buffer.Write(b)
+	invLog.mu.Unlock()
+	_, _ = os.Stdout.Write(b)
+	return n, err
+}
+
+// Consume returns all bytes written to the log since the last call to consume.
+func (invLog *invocationLog) Consume() []byte {
+	invLog.mu.Lock()
+	defer invLog.mu.Unlock()
+	b := []byte(invLog.Buffer.Bytes())
+	invLog.Buffer.Reset()
+	return b
+}
 func (invLog *invocationLog) Println(vals ...interface{}) {
-	invLog.writer.Write([]byte(fmt.Sprintln(vals...)))
+	invLog.Write([]byte(fmt.Sprintln(vals...)))
 }
 func (invLog *invocationLog) Printf(format string, vals ...interface{}) {
-	invLog.writer.Write([]byte(fmt.Sprintf(format+"\n", vals...)))
+	invLog.Write([]byte(fmt.Sprintf(format+"\n", vals...)))
 }
 
 // buildEventPublisher publishes Bazel build events for a single build event stream.
@@ -212,9 +234,10 @@ func newBuildEventPublisher(streamID *bepb.StreamId) *buildEventPublisher {
 	return &buildEventPublisher{
 		streamID: streamID,
 		// We probably won't ever saturate this buffer since we only need to
-		// publish a few events and they should get flushed quickly. The large
-		// size is just to be safe.
-		events: make(chan *bespb.BuildEvent, 128),
+		// publish a few events for the actions themselves and progress events
+		// are rate-limited. Also, events are sent to the server with low
+		// latency compared to the rate limiting interval.
+		events: make(chan *bespb.BuildEvent, 256),
 		done:   make(chan struct{}, 1),
 	}
 }
@@ -265,7 +288,7 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 		if event == nil {
 			// Wait() was called, meaning no more events to publish.
 			// Send ComponentStreamFinished event before closing the stream.
-			log.Printf("BEP: publishing FINISHED event (sequence number = %d)", seqNo)
+			start := time.Now()
 			err = stream.Send(&pepb.PublishBuildToolEventStreamRequest{
 				OrderedBuildEvent: &pepb.OrderedBuildEvent{
 					StreamId:       bep.streamID,
@@ -278,10 +301,13 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 					},
 				},
 			})
+			log.Printf("BEP: published FINISHED event (#%d) in %s", seqNo, time.Since(start))
+
 			if err != nil {
 				bep.setError(err)
+				return
 			}
-			return
+			break
 		}
 
 		bazelEvent, err := ptypes.MarshalAny(event)
@@ -289,7 +315,7 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 			bep.setError(err)
 			return
 		}
-		log.Printf("BEP: publishing event (sequence number = %d)", seqNo)
+		start := time.Now()
 		err = stream.Send(&pepb.PublishBuildToolEventStreamRequest{
 			OrderedBuildEvent: &pepb.OrderedBuildEvent{
 				StreamId:       bep.streamID,
@@ -299,13 +325,14 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 				},
 			},
 		})
+		log.Printf("BEP: published event (#%d) in %s", seqNo, time.Since(start))
 		if err != nil {
 			bep.setError(err)
 			return
 		}
 	}
-	// After successfully transmitting all events, close the stream and wait for
-	// ACKs from the server before marking the stream done.
+	// After successfully transmitting all events, close our side of the stream
+	// and wait for server ACKs before closing the connection.
 	if err := stream.CloseSend(); err != nil {
 		bep.setError(fmt.Errorf("failed to close build event stream: %s", err))
 		return
@@ -400,6 +427,10 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 	if ar.username == "root" {
 		ps1End = "#"
 	}
+
+	cancel := ar.startBackgroundProgressFlush()
+	defer cancel()
+
 	for _, bazelCmd := range ar.action.BazelCommands {
 		args, err := bazelArgs(bazelCmd)
 		// Provide some info to help make it clear which output is coming
@@ -408,7 +439,7 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to parse bazel command: %s", err)
 		}
-		err = runCommand(ctx, "bazelisk", args, emptyEnv, ar.log.writer)
+		err = runCommand(ctx, "bazelisk", args, emptyEnv, ar.log)
 		if exitCode := getExitCode(err); exitCode != noExitCode {
 			ar.log.Printf("%s(command exited with code %d)%s", textGray, exitCode, textReset)
 		}
@@ -423,15 +454,31 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 	return nil
 }
 
+func (ar *actionRunner) startBackgroundProgressFlush() func() {
+	cancel := make(chan struct{}, 1)
+	go func() {
+		for {
+			select {
+			case <-cancel:
+				break
+			case <-time.After(progressFlushInterval):
+				ar.flushProgress()
+			}
+		}
+	}()
+	return func() {
+		cancel <- struct{}{}
+	}
+}
+
 func (ar *actionRunner) flushProgress() error {
-	if ar.log.Buffer.Len() == 0 {
+	buf := ar.log.Consume()
+	if len(buf) == 0 {
 		return nil
 	}
-
 	count := ar.progressCount
 	ar.progressCount++
-	output := string(ar.log.Buffer.Bytes())
-	ar.log.Buffer.Reset()
+	output := string(buf)
 
 	return ar.bep.Publish(&bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: count}}},
