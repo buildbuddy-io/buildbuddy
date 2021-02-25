@@ -355,7 +355,7 @@ func extractOptionsFromStartedBuildEvent(event build_event_stream.BuildEvent) (s
 	case *build_event_stream.BuildEvent_Started:
 		return p.Started.OptionsDescription, nil
 	}
-	return "", fmt.Errorf("First build event was not a Started event, it was %+v", event.Payload)
+	return "", nil
 }
 
 func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {
