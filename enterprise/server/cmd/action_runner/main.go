@@ -42,6 +42,8 @@ const (
 	repoUserEnvVarName  = "REPO_USER"
 	repoTokenEnvVarName = "REPO_TOKEN"
 
+	// Exit code placeholder used when a command doesn't return an exit code on its own.
+	noExitCode = -1
 	// "Unique"-ish exit code that indicates the runner should be retried
 	// due to an error that may be temporary.
 	retryableExitCode = 21
@@ -91,12 +93,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	// For now, we run all actions in serial, creating a synthetic invocation for each one.
-	// Git provider statuses will be published by the build event handler, as we stream
-	// synthetic build events to the build event stream associated with the invocation.
 	RunAllActions(ctx, cfg)
 }
 
+// RunAllActions runs all triggered actions in the BuildBuddy config in serial, creating
+// a synthetic invocation for each one.
 func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -115,23 +116,13 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 		startTime := time.Now()
 
 		if !matchesAnyTrigger(action, *triggerEvent, *triggerBranch) {
-			log.Printf("No triggers matched for %q event with target branch %q. Action config:\n<<<\n%s>>>", *triggerEvent, *triggerBranch, actionDebugString(action))
+			log.Printf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *triggerBranch, actionDebugString(action))
 			continue
 		}
 
-		invocationID, err := uuid.NewRandom()
-		if err != nil {
-			log.Printf("failed to generate invocation ID: %s", err)
-			os.Exit(retryableExitCode)
-		}
-		buildID, err := uuid.NewRandom()
-		if err != nil {
-			log.Printf("failed to generate build ID: %s", err)
-			os.Exit(retryableExitCode)
-		}
 		bep := newBuildEventPublisher(&bepb.StreamId{
-			InvocationId: invocationID.String(),
-			BuildId:      buildID.String(),
+			InvocationId: newUUID(),
+			BuildId:      newUUID(),
 		})
 		bep.Start(ctx)
 
@@ -141,7 +132,7 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 		// the global `log.Print`.
 		ar := &actionRunner{
 			action:   action,
-			log:      newActionLog(),
+			log:      newInvocationLog(),
 			bep:      bep,
 			hostname: hostname,
 			username: username,
@@ -150,9 +141,8 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 		if err := ar.Run(ctx); err != nil {
 			ar.log.Printf("action runner failed: %s", err)
 			exitCode = getExitCode(err)
-			// Treat "command not found", "process killed" etc. as exit code 1 so the build event
-			// handler will treat it as a failure.
-			if exitCode == -1 {
+			// Treat "killed", "OOM" etc. as regular failures.
+			if exitCode == noExitCode {
 				exitCode = 1
 			}
 		}
@@ -191,21 +181,21 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 	}
 }
 
-type actionLog struct {
+type invocationLog struct {
 	Buffer bytes.Buffer
 	writer io.Writer
 }
 
-func newActionLog() *actionLog {
-	al := &actionLog{}
-	al.writer = io.MultiWriter(os.Stdout, &al.Buffer)
-	return al
+func newInvocationLog() *invocationLog {
+	invLog := &invocationLog{}
+	invLog.writer = io.MultiWriter(os.Stderr, &invLog.Buffer)
+	return invLog
 }
-func (al *actionLog) Println(vals ...interface{}) {
-	al.writer.Write([]byte(fmt.Sprintln(vals...)))
+func (invLog *invocationLog) Println(vals ...interface{}) {
+	invLog.writer.Write([]byte(fmt.Sprintln(vals...)))
 }
-func (al *actionLog) Printf(format string, vals ...interface{}) {
-	al.writer.Write([]byte(fmt.Sprintf(format+"\n", vals...)))
+func (invLog *invocationLog) Printf(format string, vals ...interface{}) {
+	invLog.writer.Write([]byte(fmt.Sprintf(format+"\n", vals...)))
 }
 
 // buildEventPublisher publishes Bazel build events for a single build event stream.
@@ -229,144 +219,128 @@ func newBuildEventPublisher(streamID *bepb.StreamId) *buildEventPublisher {
 	}
 }
 
-// Start the event publishing loop. Stops handling new events as soon as the first
-// call to `Wait()` occurs.
-func (ep *buildEventPublisher) Start(ctx context.Context) {
+// Start the event publishing loop in the background. Stops handling new events
+// as soon as the first call to `Wait()` occurs.
+func (bep *buildEventPublisher) Start(ctx context.Context) {
+	go bep.run(ctx)
+}
+func (bep *buildEventPublisher) run(ctx context.Context) {
+	defer func() {
+		bep.done <- struct{}{}
+	}()
+
+	conn, err := dial(*besBackend)
+	if err != nil {
+		bep.setError(fmt.Errorf("error dialing bes_backend: %s", err))
+		return
+	}
+	defer conn.Close()
+	besClient := pepb.NewPublishBuildEventClient(conn)
+	stream, err := besClient.PublishBuildToolEventStream(ctx)
+	if err != nil {
+		bep.setError(fmt.Errorf("error opening build event stream: %s", err))
+		return
+	}
+
+	doneReceiving := make(chan struct{}, 1)
 	go func() {
-		defer func() {
-			ep.done <- struct{}{}
-		}()
-
-		opts := []grpc.DialOption{}
-		backendURL, err := url.Parse(*besBackend)
-		if err != nil {
-			ep.setError(fmt.Errorf("invalid bes_backend %q: %s", *besBackend, err))
+		for {
+			_, err := stream.Recv()
+			if err == nil {
+				continue
+			}
+			if err == io.EOF {
+				log.Println("Received all acks from server.")
+			} else {
+				log.Printf("Error receiving acks from the server: %s", err)
+				bep.setError(err)
+			}
+			doneReceiving <- struct{}{}
 			return
 		}
-		if backendURL.Scheme == "grpc" {
-			opts = append(opts, grpc.WithInsecure())
-		}
-		backendURL.Scheme = ""
-		target := strings.TrimPrefix(backendURL.String(), "//")
-		conn, err := grpc.Dial(target, opts...)
-		if err != nil {
-			ep.setError(fmt.Errorf("dialing bes_backend failed: %s", err))
-			return
-		}
-		defer conn.Close()
+	}()
 
-		besClient := pepb.NewPublishBuildEventClient(conn)
-		stream, err := besClient.PublishBuildToolEventStream(ctx)
-		if err != nil {
-			ep.setError(fmt.Errorf("error opening build event stream: %s", err))
-		}
-
-		doneReceiving := make(chan struct{}, 1)
-		go func() {
-			for {
-				_, err := stream.Recv()
-				if err == nil {
-					continue
-				}
-				if err == io.EOF {
-					log.Println("BEP: Received all acks from server.")
-				} else {
-					log.Printf("BEP: error receiving acks from the server: %s", err)
-					ep.setError(err)
-				}
-				doneReceiving <- struct{}{}
-				return
-			}
-		}()
-
-		// After transmitting all events, close the stream and then wait for
-		// acks from the server.
-		defer func() {
-			ep.mu.Lock()
-			err := ep.err
-			ep.mu.Unlock()
-			if err != nil {
-				log.Printf("BEP: cannot close stream due to previous error: %s", err)
-				return
-			}
-
-			if err := stream.CloseSend(); err != nil {
-				ep.setError(fmt.Errorf("failed to close build event stream: %s", err))
-				return
-			}
-			<-doneReceiving
-		}()
-
-		for seqNo := int64(1); ; seqNo++ {
-			event := <-ep.events
-			if event == nil {
-				// Wait() was called, meaning no more events to publish.
-				// Send final event before closing the stream.
-				log.Printf("BEP: publishing FINISHED event (sequence number = %d)", seqNo)
-				err = stream.Send(&pepb.PublishBuildToolEventStreamRequest{
-					OrderedBuildEvent: &pepb.OrderedBuildEvent{
-						StreamId:       ep.streamID,
-						SequenceNumber: seqNo,
-						Event: &bepb.BuildEvent{
-							EventTime: ptypes.TimestampNow(),
-							Event: &bepb.BuildEvent_ComponentStreamFinished{ComponentStreamFinished: &bepb.BuildEvent_BuildComponentStreamFinished{
-								Type: bepb.BuildEvent_BuildComponentStreamFinished_FINISHED,
-							}},
-						},
-					},
-				})
-				if err != nil {
-					ep.setError(err)
-				}
-				return
-			}
-
-			bazelEvent, err := ptypes.MarshalAny(event)
-			if err != nil {
-				ep.setError(err)
-				return
-			}
-			log.Printf("BEP: publishing event (sequence number = %d)", seqNo)
+	for seqNo := int64(1); ; seqNo++ {
+		event := <-bep.events
+		if event == nil {
+			// Wait() was called, meaning no more events to publish.
+			// Send ComponentStreamFinished event before closing the stream.
+			log.Printf("BEP: publishing FINISHED event (sequence number = %d)", seqNo)
 			err = stream.Send(&pepb.PublishBuildToolEventStreamRequest{
 				OrderedBuildEvent: &pepb.OrderedBuildEvent{
-					StreamId:       ep.streamID,
+					StreamId:       bep.streamID,
 					SequenceNumber: seqNo,
 					Event: &bepb.BuildEvent{
-						Event: &bepb.BuildEvent_BazelEvent{BazelEvent: bazelEvent},
+						EventTime: ptypes.TimestampNow(),
+						Event: &bepb.BuildEvent_ComponentStreamFinished{ComponentStreamFinished: &bepb.BuildEvent_BuildComponentStreamFinished{
+							Type: bepb.BuildEvent_BuildComponentStreamFinished_FINISHED,
+						}},
 					},
 				},
 			})
 			if err != nil {
-				ep.setError(err)
-				return
+				bep.setError(err)
 			}
+			return
 		}
-	}()
-}
-func (ep *buildEventPublisher) Publish(e *bespb.BuildEvent) error {
-	ep.mu.Lock()
-	defer ep.mu.Unlock()
-	if ep.err != nil {
-		return fmt.Errorf("cannot publish event due to previous error: %s", ep.err)
+
+		bazelEvent, err := ptypes.MarshalAny(event)
+		if err != nil {
+			bep.setError(err)
+			return
+		}
+		log.Printf("BEP: publishing event (sequence number = %d)", seqNo)
+		err = stream.Send(&pepb.PublishBuildToolEventStreamRequest{
+			OrderedBuildEvent: &pepb.OrderedBuildEvent{
+				StreamId:       bep.streamID,
+				SequenceNumber: seqNo,
+				Event: &bepb.BuildEvent{
+					Event: &bepb.BuildEvent_BazelEvent{BazelEvent: bazelEvent},
+				},
+			},
+		})
+		if err != nil {
+			bep.setError(err)
+			return
+		}
 	}
-	ep.events <- e
+	// After successfully transmitting all events, close the stream and wait for
+	// ACKs from the server before marking the stream done.
+	if err := stream.CloseSend(); err != nil {
+		bep.setError(fmt.Errorf("failed to close build event stream: %s", err))
+		return
+	}
+	<-doneReceiving
+}
+func (bep *buildEventPublisher) Publish(e *bespb.BuildEvent) error {
+	bep.mu.Lock()
+	defer bep.mu.Unlock()
+	if bep.err != nil {
+		return fmt.Errorf("cannot publish event due to previous error: %s", bep.err)
+	}
+	bep.events <- e
 	return nil
 }
-func (ep *buildEventPublisher) Wait() error {
-	ep.events <- nil
-	<-ep.done
-	return ep.err
+func (bep *buildEventPublisher) Wait() error {
+	bep.events <- nil
+	<-bep.done
+	return bep.err
 }
-func (ep *buildEventPublisher) setError(err error) {
-	ep.mu.Lock()
-	defer ep.mu.Unlock()
-	ep.err = err
+func (bep *buildEventPublisher) getError() error {
+	bep.mu.Lock()
+	defer bep.mu.Unlock()
+	return bep.err
+}
+func (bep *buildEventPublisher) setError(err error) {
+	bep.mu.Lock()
+	bep.err = err
+	bep.mu.Unlock()
 }
 
 // actionRunner runs a single action in the BuildBuddy config.
 type actionRunner struct {
 	action        *workflowconf.Action
-	log           *actionLog
+	log           *invocationLog
 	bep           *buildEventPublisher
 	progressCount int32
 	username      string
@@ -434,11 +408,11 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to parse bazel command: %s", err)
 		}
-		// TODO: Use sh -c 'bazelisk ...' to support env var expansion for private repos.
 		err = runCommand(ctx, "bazelisk", args, emptyEnv, ar.log.writer)
-		if exitCode := getExitCode(err); exitCode >= 0 {
+		if exitCode := getExitCode(err); exitCode != noExitCode {
 			ar.log.Printf("%s(command exited with code %d)%s", textGray, exitCode, textReset)
 		}
+		// If the command failed, report its progress before returning.
 		if err := ar.flushProgress(); err != nil {
 			return nil
 		}
@@ -465,8 +439,8 @@ func (ar *actionRunner) flushProgress() error {
 			{Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: count + 1}}},
 		},
 		Payload: &bespb.BuildEvent_Progress{Progress: &bespb.Progress{
-			// Only outputting to stdout for now.
-			Stdout: output,
+			// Only outputting to stderr for now, like Bazel does.
+			Stderr: output,
 		}},
 	})
 }
@@ -490,20 +464,20 @@ func cloneRepo(ctx context.Context) error {
 	if err := os.Chdir(repoDirName); err != nil {
 		return fmt.Errorf("cd %q: %s", repoDirName, err)
 	}
-	if err := runCommand(ctx, "git", []string{"init"}, emptyEnv, os.Stdout); err != nil {
+	if err := runCommand(ctx, "git", []string{"init"}, emptyEnv, os.Stderr); err != nil {
 		return err
 	}
 	authURL, err := authRepoURL()
 	if err != nil {
 		return err
 	}
-	if err := runCommand(ctx, "git", []string{"remote", "add", "origin", authURL}, emptyEnv, os.Stdout); err != nil {
+	if err := runCommand(ctx, "git", []string{"remote", "add", "origin", authURL}, emptyEnv, os.Stderr); err != nil {
 		return err
 	}
-	if err := runCommand(ctx, "git", []string{"fetch", "origin", *commitSHA}, emptyEnv, os.Stdout); err != nil {
+	if err := runCommand(ctx, "git", []string{"fetch", "origin", *commitSHA}, emptyEnv, os.Stderr); err != nil {
 		return err
 	}
-	if err := runCommand(ctx, "git", []string{"checkout", *commitSHA}, emptyEnv, os.Stdout); err != nil {
+	if err := runCommand(ctx, "git", []string{"checkout", *commitSHA}, emptyEnv, os.Stderr); err != nil {
 		return err
 	}
 	return nil
@@ -569,12 +543,10 @@ func matchesAnyBranch(branches []string, branch string) bool {
 	return false
 }
 
-func runCommand(ctx context.Context, executable string, args []string, env map[string]string, log io.Writer) error {
+func runCommand(ctx context.Context, executable string, args []string, env map[string]string, outputSink io.Writer) error {
 	cmd := exec.CommandContext(ctx, executable, args...)
-	// Stream command output to the log.
-	// No need to differentiate between stdout and stderr for now.
-	cmd.Stdout = log
-	cmd.Stderr = log
+	cmd.Stdout = outputSink
+	cmd.Stderr = outputSink
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
@@ -588,21 +560,21 @@ func getExitCode(err error) int {
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		return exitErr.ExitCode()
 	}
-	return -1
+	return noExitCode
 }
 
 func validateFlags() error {
 	errs := []string{}
-	for requiredFlag, value := range map[string]string{
-		"repo_url":        *repoURL,
-		"commit_sha":      *commitSHA,
-		"trigger_branch":  *triggerBranch,
-		"trigger_event":   *triggerEvent,
-		"bes_backend":     *besBackend,
-		"bes_results_url": *besResultsURL,
+	for name, flag := range map[string]*string{
+		"repo_url":        repoURL,
+		"commit_sha":      commitSHA,
+		"trigger_branch":  triggerBranch,
+		"trigger_event":   triggerEvent,
+		"bes_backend":     besBackend,
+		"bes_results_url": besResultsURL,
 	} {
-		if value == "" {
-			errs = append(errs, fmt.Sprintf("--%s unset", requiredFlag))
+		if *flag == "" {
+			errs = append(errs, fmt.Sprintf("--%s unset", name))
 		}
 	}
 	if len(errs) == 0 {
@@ -617,4 +589,27 @@ func actionDebugString(action *workflowconf.Action) string {
 		return fmt.Sprintf("<failed to marshal action: %s>", err)
 	}
 	return string(yamlBytes)
+}
+
+func newUUID() string {
+	id, err := uuid.NewRandom()
+	if err != nil {
+		log.Printf("failed to generate UUID")
+		os.Exit(retryableExitCode)
+	}
+	return id.String()
+}
+
+func dial(backend string) (*grpc.ClientConn, error) {
+	backendURL, err := url.Parse(backend)
+	if err != nil {
+		return nil, fmt.Errorf("invalid backend %q: %s", backend, err)
+	}
+	opts := []grpc.DialOption{}
+	if backendURL.Scheme == "grpc" {
+		opts = append(opts, grpc.WithInsecure())
+	}
+	backendURL.Scheme = ""
+	target := strings.TrimPrefix(backendURL.String(), "//")
+	return grpc.Dial(target, opts...)
 }
