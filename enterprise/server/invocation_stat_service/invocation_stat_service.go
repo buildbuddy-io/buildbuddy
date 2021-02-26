@@ -91,6 +91,12 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		values = append(values, role)
 	}
 
+	if req.AggregationType != inpb.AggType_DATE_AGGREGATION_TYPE {
+		filters = filters + ` AND ` + aggColumn + ` != ""`
+	}
+
+	filters = filters + ` AND ` + aggColumn + ` IS NOT NULL`
+
 	values = append(values, limit)
 
 	q := "SELECT " + aggColumn + " as name," + `
@@ -128,8 +134,6 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
                      COUNT(DISTINCT repo_url) as repo_count
               FROM Invocations
               WHERE group_id = ?
-              AND ` + aggColumn + ` != ""
-              AND ` + aggColumn + ` IS NOT NULL
               ` + filters + `
               GROUP by name
 							ORDER BY latest_build_time_usec DESC
