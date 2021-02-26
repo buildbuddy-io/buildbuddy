@@ -58,18 +58,28 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 	}
 	buildEventAccumulator := accumulator.NewBEValues(iid)
 	return &EventChannel{
-		env:            b.env,
-		ctx:            ctx,
-		pw:             protofile.NewBufferedProtoWriter(b.env.GetBlobstore(), iid, chunkFileSizeBytes),
-		beValues:       buildEventAccumulator,
-		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
-		targetTracker:  target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
+		env:                     b.env,
+		ctx:                     ctx,
+		pw:                      protofile.NewBufferedProtoWriter(b.env.GetBlobstore(), iid, chunkFileSizeBytes),
+		beValues:                buildEventAccumulator,
+		statusReporter:          build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
+		targetTracker:           target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
+		hasReceivedStartedEvent: false,
+		eventsBeforeStarted:     make([]*pepb.PublishBuildToolEventStreamRequest, 0),
 	}
 }
 
 func isFinalEvent(obe *pepb.OrderedBuildEvent) bool {
 	switch obe.Event.Event.(type) {
 	case *bepb.BuildEvent_ComponentStreamFinished:
+		return true
+	}
+	return false
+}
+
+func isStartedEvent(bazelBuildEvent build_event_stream.BuildEvent) bool {
+	switch bazelBuildEvent.Payload.(type) {
+	case *build_event_stream.BuildEvent_Started:
 		return true
 	}
 	return false
@@ -92,12 +102,14 @@ func readBazelEvent(obe *pepb.OrderedBuildEvent, out *build_event_stream.BuildEv
 }
 
 type EventChannel struct {
-	ctx            context.Context
-	env            environment.Env
-	pw             *protofile.BufferedProtoWriter
-	beValues       *accumulator.BEValues
-	statusReporter *build_status_reporter.BuildStatusReporter
-	targetTracker  *target_tracker.TargetTracker
+	ctx                     context.Context
+	env                     environment.Env
+	pw                      *protofile.BufferedProtoWriter
+	beValues                *accumulator.BEValues
+	statusReporter          *build_status_reporter.BuildStatusReporter
+	targetTracker           *target_tracker.TargetTracker
+	hasReceivedStartedEvent bool
+	eventsBeforeStarted     []*pepb.PublishBuildToolEventStreamRequest
 }
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string, invocation *inpb.Invocation) error {
@@ -264,11 +276,10 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		return err
 	}
 
-	e.beValues.AddEvent(&bazelBuildEvent) // in-memory structure to hold common values we want from the event.
-
 	// If this is the first event, keep track of the project ID and save any notification keywords.
-	if seqNo == 1 {
-		log.Printf("First event! invocation_id: %s, project_id: %s, notification_keywords: %s", iid, event.ProjectId, event.NotificationKeywords)
+	if isStartedEvent(bazelBuildEvent) {
+		e.hasReceivedStartedEvent = true
+		log.Printf("Started event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
 		ti := &tables.Invocation{
 			InvocationID:     iid,
 			InvocationPK:     md5Int64(iid),
@@ -295,7 +306,16 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
 			return err
 		}
+	} else if !e.hasReceivedStartedEvent {
+		e.eventsBeforeStarted = append(e.eventsBeforeStarted, event)
+		if len(e.eventsBeforeStarted) > 100 {
+			log.Printf("We got over 100 build events before the started event for invocation %s, dropping %+v", iid, e.eventsBeforeStarted[0])
+			e.eventsBeforeStarted = e.eventsBeforeStarted[1:]
+		}
+		return nil
 	}
+
+	e.beValues.AddEvent(&bazelBuildEvent) // in-memory structure to hold common values we want from the event.
 
 	if e.env.GetConfigurator().EnableTargetTracking() {
 		e.targetTracker.TrackTargetsForEvent(e.ctx, &bazelBuildEvent)
@@ -326,6 +346,14 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	// while the invocation is still in progress.
 	if isWorkspaceStatusEvent(bazelBuildEvent) {
 		if err := e.writeBuildMetadata(e.ctx, iid); err != nil {
+			return err
+		}
+	}
+
+	if len(e.eventsBeforeStarted) > 0 {
+		previousEvent := e.eventsBeforeStarted[0]
+		e.eventsBeforeStarted = e.eventsBeforeStarted[1:]
+		if err := e.handleEvent(previousEvent); err != nil {
 			return err
 		}
 	}
