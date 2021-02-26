@@ -11,6 +11,7 @@ require (
 	github.com/Microsoft/go-winio v0.4.16 // indirect
 	github.com/Microsoft/hcsshim v0.8.14 // indirect
 	github.com/PuerkitoBio/goquery v1.5.1 // indirect
+	github.com/ReneKroon/ttlcache/v2 v2.3.0
 	github.com/antihax/optional v1.0.0 // indirect
 	github.com/aws/aws-sdk-go v1.35.37
 	github.com/bazelbuild/bazelisk v1.7.4 // indirect

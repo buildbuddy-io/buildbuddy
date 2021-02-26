@@ -1539,6 +1539,12 @@ def install_buildbuddy_dependencies():
         version = "v0.2.0",
     )
     go_repository(
+        name = "com_github_renekroon_ttlcache_v2",
+        importpath = "github.com/ReneKroon/ttlcache/v2",
+        sum = "h1:qZnUjRKIrbKHH6vF5T7Y9Izn5ObfTZfyYpGhvz2BKPo=",
+        version = "v2.3.0",
+    )
+    go_repository(
         name = "com_github_sergi_go_diff",
         importpath = "github.com/sergi/go-diff",
         sum = "h1:we8PVUC3FE2uYfodKH/nBHMSetSfHDR6scGdBi+erh0=",
