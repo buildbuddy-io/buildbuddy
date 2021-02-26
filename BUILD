@@ -1,7 +1,8 @@
-package(default_visibility = ["//visibility:public"])
-
 load("@bazel_gazelle//:def.bzl", "gazelle")
 load("@io_bazel_rules_go//go:def.bzl", "nogo")
+load("//tools:prettier.bzl", "prettier")
+
+package(default_visibility = ["//visibility:public"])
 
 nogo(
     name = "vet",
@@ -23,6 +24,15 @@ exports_files([
     "yarn.lock",
     "VERSION",
 ])
+
+prettier(
+    name = "check_prettier",
+    mode = "check",
+    patterns = [
+        "app/**/*.*",
+        "config/**/*.yaml",
+    ],
+)
 
 filegroup(
     name = "config_files",
