@@ -9,10 +9,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/environment"
-	"github.com/jinzhu/gorm"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"gorm.io/gorm"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
