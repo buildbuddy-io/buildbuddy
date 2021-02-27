@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -445,10 +445,10 @@ type PostAutoMigrateLogic func() error
 func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	postMigrate := make([]PostAutoMigrateLogic, 0)
 
-	d := db.Dialect()
+	m := db.Migrator()
 
 	// Initialize UserGroups.membership_status to 1 if the column doesn't exist.
-	if d.HasTable("UserGroups") && !d.HasColumn("UserGroups", "membership_status") {
+	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "membership_status") {
 		if err := db.Exec("ALTER TABLE UserGroups ADD membership_status int").Error; err != nil {
 			return nil, err
 		}
@@ -458,15 +458,15 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	}
 
 	// Prepare Groups.url_identifier for index update (non-unique index to unique index).
-	if d.HasTable("Groups") {
+	if m.HasTable("Groups") {
 		// Remove the old url_identifier_index.
-		if d.HasIndex("Groups", "url_identifier_index") {
-			if err := d.RemoveIndex("Groups", "url_identifier_index"); err != nil {
+		if m.HasIndex("Groups", "url_identifier_index") {
+			if err := m.DropIndex("Groups", "url_identifier_index"); err != nil {
 				return nil, err
 			}
 		}
 		// Before creating a unique index, need to replace empty strings with NULL.
-		if !d.HasIndex("Groups", "url_identifier_unique_index") {
+		if !m.HasIndex("Groups", "url_identifier_unique_index") {
 			if err := db.Exec(`UPDATE Groups SET url_identifier = NULL WHERE url_identifier = ""`).Error; err != nil {
 				return nil, err
 			}
@@ -474,7 +474,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	}
 
 	// Migrate Groups.APIKey to APIKey rows.
-	if d.HasTable("Groups") && !d.HasTable("APIKeys") {
+	if m.HasTable("Groups") && !m.HasTable("APIKeys") {
 		postMigrate = append(postMigrate, func() error {
 			rows, err := db.Raw(`SELECT group_id, api_key FROM ` + "`Groups`" + ``).Rows()
 			if err != nil {
@@ -516,11 +516,6 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 
 // Manual migration called after auto-migration.
 func PostAutoMigrate(db *gorm.DB) error {
-	// These types don't apply for sqlite -- just mysql.
-	if db.Dialect().GetName() == mySQLDialect {
-		db.Model(&Invocation{}).ModifyColumn("pattern", "text")
-		db.Model(&Execution{}).ModifyColumn("serialized_operation", "text")
-	}
 	return nil
 }
 
