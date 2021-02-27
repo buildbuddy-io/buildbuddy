@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowcmd"
@@ -51,11 +52,15 @@ func assembleRepoURL(wd *webhook_data.WebhookData, wf *tables.Workflow) string {
 	authURL := wd.RepoURL
 	u, err := url.Parse(authURL)
 	if err == nil {
-		if wf.AccessToken != "" {
+		if wf.Username != "" {
+			u.User = url.UserPassword(wf.Username, wf.AccessToken)
+			authURL = u.String()
+		} else if wf.AccessToken != "" {
 			u.User = url.UserPassword(wf.AccessToken, "")
 			authURL = u.String()
 		}
 	}
+
 	return authURL
 }
 
@@ -92,10 +97,10 @@ func (ws *workflowService) getWebhookURL(webhookID string) (string, error) {
 
 // testRepo will call "git ls-repo repoURL" to verify that the repo is valid and
 // the accessToken (if non-empty) works.
-func (ws *workflowService) testRepo(ctx context.Context, repoURL, accessToken string) error {
+func (ws *workflowService) testRepo(ctx context.Context, repoURL, username, accessToken string) error {
 	rdl := ws.env.GetRepoDownloader()
 	if rdl != nil {
-		return rdl.TestRepoAccess(ctx, repoURL, accessToken)
+		return rdl.TestRepoAccess(ctx, repoURL, username, accessToken)
 	}
 	return nil
 }
@@ -120,7 +125,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	}
 	repoReq := req.GetGitRepo()
 	if repoReq.GetRepoUrl() == "" {
-		return nil, status.InvalidArgumentError("A repo_url is required to create a new workflow.")
+		return nil, status.InvalidArgumentError("A repo URL is required to create a new workflow.")
 	}
 
 	// Ensure the request is authenticated so some user can own this workflow.
@@ -136,8 +141,9 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 
 	// Do a quick check to see if this is a valid repo that we can actually access.
 	repoURL := repoReq.GetRepoUrl()
+	username := repoReq.GetUsername()
 	accessToken := repoReq.GetAccessToken()
-	if err := ws.testRepo(ctx, repoURL, accessToken); err != nil {
+	if err := ws.testRepo(ctx, repoURL, username, accessToken); err != nil {
 		return nil, status.UnavailableErrorf("Repo %q is unavailable: %s", repoURL, err.Error())
 	}
 
@@ -165,6 +171,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 			Perms:       permissions.Perms,
 			Name:        req.GetName(),
 			RepoURL:     repoURL,
+			Username:    username,
 			AccessToken: accessToken,
 			WebhookID:   webhookID,
 		}
@@ -332,6 +339,9 @@ func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Wor
 func parseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 	if r.Header.Get("X-Github-Event") != "" {
 		return github.ParseRequest(r)
+	}
+	if r.Header.Get("X-Event-Key") != "" {
+		return bitbucket.ParseRequest(r)
 	}
 
 	// TODO: Support non-GitHub providers

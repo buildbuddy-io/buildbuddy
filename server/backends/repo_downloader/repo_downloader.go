@@ -1,6 +1,7 @@
 package repo_downloader
 
 import (
+	"fmt"
 	"context"
 	"net/url"
 
@@ -15,16 +16,22 @@ func NewRepoDownloader() *gitRepoDownloader {
 	return &gitRepoDownloader{}
 }
 
-func (d *gitRepoDownloader) TestRepoAccess(ctx context.Context, repoURL, accessToken string) error {
+func (d *gitRepoDownloader) TestRepoAccess(ctx context.Context, repoURL, username, accessToken string) error {
 	authURL := repoURL
 
 	u, err := url.Parse(repoURL)
 	if err == nil {
 		if accessToken != "" {
-			u.User = url.UserPassword(accessToken, "")
+			if username != "" {
+				u.User = url.UserPassword(username, accessToken)
+			} else {
+				u.User = url.UserPassword(accessToken, "")
+			}
 			authURL = u.String()
 		}
 	}
+
+	fmt.Println("\n\n\n!!! authUrl=", authURL)
 
 	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: repoURL,

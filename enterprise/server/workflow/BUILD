@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/webhooks/bitbucket:go_default_library",
         "//enterprise/server/webhooks/github:go_default_library",
         "//enterprise/server/webhooks/webhook_data:go_default_library",
         "//enterprise/server/workflowcmd:go_default_library",
