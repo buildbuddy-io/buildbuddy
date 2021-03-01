@@ -200,7 +200,7 @@ func (invLog *invocationLog) Write(b []byte) (int, error) {
 	invLog.mu.Lock()
 	n, err := invLog.Buffer.Write(b)
 	invLog.mu.Unlock()
-	_, _ = os.Stdout.Write(b)
+	_, _ = os.Stderr.Write(b)
 	return n, err
 }
 
@@ -311,7 +311,7 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 
 		bazelEvent, err := ptypes.MarshalAny(event)
 		if err != nil {
-			bep.setError(err)
+			bep.setError(fmt.Errorf("failed to marshal bazel event: %s", err))
 			return
 		}
 		start := time.Now()
@@ -320,7 +320,8 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 				StreamId:       bep.streamID,
 				SequenceNumber: seqNo,
 				Event: &bepb.BuildEvent{
-					Event: &bepb.BuildEvent_BazelEvent{BazelEvent: bazelEvent},
+					EventTime: ptypes.TimestampNow(),
+					Event:     &bepb.BuildEvent_BazelEvent{BazelEvent: bazelEvent},
 				},
 			},
 		})
@@ -427,8 +428,8 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 		ps1End = "#"
 	}
 
-	cancel := ar.startBackgroundProgressFlush()
-	defer cancel()
+	stopFlushingProgress := ar.startBackgroundProgressFlush()
+	defer stopFlushingProgress()
 
 	for _, bazelCmd := range ar.action.BazelCommands {
 		args, err := bazelArgs(bazelCmd)
@@ -454,11 +455,11 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 }
 
 func (ar *actionRunner) startBackgroundProgressFlush() func() {
-	cancel := make(chan struct{}, 1)
+	stop := make(chan struct{}, 1)
 	go func() {
 		for {
 			select {
-			case <-cancel:
+			case <-stop:
 				break
 			case <-time.After(progressFlushInterval):
 				ar.flushProgress()
@@ -466,7 +467,7 @@ func (ar *actionRunner) startBackgroundProgressFlush() func() {
 		}
 	}()
 	return func() {
-		cancel <- struct{}{}
+		stop <- struct{}{}
 	}
 }
 
