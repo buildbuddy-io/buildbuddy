@@ -1,8 +1,8 @@
 package repo_downloader
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 	"net/url"
 
 	git "github.com/go-git/go-git/v5"
@@ -30,8 +30,6 @@ func (d *gitRepoDownloader) TestRepoAccess(ctx context.Context, repoURL, usernam
 			authURL = u.String()
 		}
 	}
-
-	fmt.Println("\n\n\n!!! authUrl=", authURL)
 
 	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: repoURL,
