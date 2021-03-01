@@ -36,8 +36,7 @@ const (
 	// Env vars
 	// NOTE: These env vars are not populated for non-private repos.
 	// TODO: Allow populating BUILDBUDDY_API_KEY for private repos,
-	// in case folks would rather have it passed via BB than have
-	// to check it in to their repo.
+	// so that workflow invocations can be private.
 
 	repoUserEnvVarName  = "REPO_USER"
 	repoTokenEnvVarName = "REPO_TOKEN"
