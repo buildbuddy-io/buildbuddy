@@ -6,6 +6,9 @@ go_test(
     data = ["//enterprise/server/cmd/action_runner"],
     # TODO: Make this automatic when we figure out a good way to include
     # a `git` binary in this test (since the action runner needs it).
+    # Also would need to support a BAZEL_BINARY env variable or flag
+    # to tell it to use a fixed version of Bazel that we include via
+    # data dep.
     tags = ["manual"],
     deps = [
         "//proto:invocation_go_proto",
