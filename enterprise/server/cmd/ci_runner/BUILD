@@ -15,6 +15,7 @@ go_library(
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_google_shlex//:go_default_library",
         "@com_github_google_uuid//:go_default_library",
+        "@com_github_logrusorgru_aurora//:go_default_library",
         "@in_gopkg_yaml_v2//:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//codes:go_default_library",

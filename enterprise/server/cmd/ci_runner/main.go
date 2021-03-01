@@ -22,6 +22,7 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
+	"github.com/logrusorgru/aurora"
 	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -59,12 +60,6 @@ const (
 
 	pushEventName        = "push"
 	pullRequestEventName = "pull_request"
-
-	// ANSI codes for nicer output
-
-	textCyan  = "\033[36m"
-	textGray  = "\033[90m"
-	textReset = "\033[0m"
 )
 
 var (
@@ -436,7 +431,7 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 		ar.printCommandLine(args)
 		err = runCommand(ctx, "bazelisk", args /*env=*/, nil, ar.log)
 		if exitCode := getExitCode(err); exitCode != noExitCode {
-			ar.log.Printf("%s(command exited with code %d)%s", textGray, exitCode, textReset)
+			ar.log.Printf(aurora.Sprintf(aurora.Gray(12-1, "(command exited with code %d)"), exitCode))
 		}
 		// If the command failed, report its progress before returning.
 		if err := ar.flushProgress(); err != nil {
@@ -475,7 +470,8 @@ func (ar *actionRunner) printCommandLine(bazelArgs []string) {
 	for _, arg := range bazelArgs {
 		command += " " + toShellToken(arg)
 	}
-	ar.log.Printf("\n%s%s@%s%s%s %s", textCyan, ar.username, ar.hostname, textReset, ps1End, command)
+	userAtHost := fmt.Sprintf("%s@%s", ar.username, ar.hostname)
+	ar.log.Printf(aurora.Sprintf("\n%s%s %s", aurora.Cyan(userAtHost), ps1End, command))
 }
 
 func (ar *actionRunner) flushProgress() error {
