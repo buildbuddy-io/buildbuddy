@@ -10,9 +10,8 @@ go_binary(
         "--config_file=config/buildbuddy.local.yaml",
         "--max_shutdown_duration=3s",
     ] + select({
-        "//app:use_devserver": [
-            "--js_entry_point_path=http://localhost:8082/app/app_bundle.js",
-        ],
+        "//app:fastbuild": ["--js_entry_point_path=/app/app_bundle.js"],
+        "//app:use_devserver": ["--js_entry_point_path=http://localhost:8082/app/app_bundle.js"],
         "//conditions:default": ["--js_entry_point_path=/app/app_bundle.min.js"],
     }),
     data = [
@@ -20,6 +19,7 @@ go_binary(
         "//app:style.css",
         "//static",
     ] + select({
+        "//app:fastbuild": ["//app:app_bundle"],
         "//app:use_devserver": [],
         "//conditions:default": ["//app:app_bundle.min"],
     }),

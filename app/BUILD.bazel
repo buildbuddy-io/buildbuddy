@@ -1,11 +1,11 @@
-load("@npm//@bazel/typescript:index.bzl", "ts_devserver", "ts_library")
-load("@npm//@bazel/rollup:index.bzl", "rollup_bundle")
-load("@npm//@bazel/terser:index.bzl", "terser_minified")
+load("@npm//@bazel/typescript:index.bzl", "ts_library")
+load("@npm//@bazel/concatjs/devserver:concatjs_devserver.bzl", concatjs_devserver = "concatjs_devserver_macro")
 load("@build_bazel_rules_nodejs//internal/npm_install:npm_umd_bundle.bzl", "npm_umd_bundle")
+load("@npm//@bazel/esbuild:index.bzl", "esbuild")
 
 package(default_visibility = ["//visibility:public"])
 
-ts_devserver(
+concatjs_devserver(
     name = "devserver",
     entry_module = "buildbuddy/app/app",
     port = 8082,
@@ -17,27 +17,35 @@ ts_devserver(
 )
 
 config_setting(
+    name = "fastbuild",
+    values = {
+        "compilation_mode": "fastbuild",
+        "define": "use_devserver=",
+    },
+)
+
+config_setting(
     name = "use_devserver",
     values = {"define": "use_devserver=true"},
 )
 
-rollup_bundle(
-    name = "app_bundle",
-    config_file = "rollup.config.js",
-    entry_point = "app.tsx",
-    deps = [
-        ":app",
-        "@npm//events",
-        "@npm//rollup-plugin-commonjs",
-        "@npm//rollup-plugin-node-resolve",
-        "@npm//rollup-plugin-replace",
-    ],
-)
-
-terser_minified(
-    name = "app_bundle.min",
-    src = ":app_bundle",
-)
+[
+    esbuild(
+        name = "app_bundle" + (".min" if minify else ""),
+        define = ["process.env.NODE_ENV=\"production\""],
+        entry_point = "app.tsx",
+        format = "iife",
+        minify = minify,
+        tool = select({
+            "@bazel_tools//src/conditions:darwin": "@esbuild_darwin//:bin/esbuild",
+            "@bazel_tools//src/conditions:linux_x86_64": "@esbuild_linux//:bin/esbuild",
+        }),
+        deps = [
+            ":app",
+        ],
+    )
+    for minify in (True, False)
+]
 
 ts_library(
     name = "app",
@@ -89,6 +97,7 @@ filegroup(
     name = "generated_umd_deps",
     srcs = [
         ":protobufjs_minimal_umd",
+        "//proto:all_umd",
         "@npm//diff-match-patch:diff-match-patch__umd",
         "@npm//moment:moment__umd",
         "@npm//pako:pako__umd",
@@ -103,6 +112,8 @@ filegroup(
     ],
 )
 
+# This is needed because rules_nodejs doesn't auto-generate a UMD module for the sub-package
+# "protobufjs/minimal".
 npm_umd_bundle(
     name = "protobufjs_minimal_umd",
     package_name = "protobufjs/minimal",

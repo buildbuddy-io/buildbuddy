@@ -1,6 +1,6 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@npm//@bazel/labs:index.bzl", ts_proto_library = "protobufjs_ts_library")
+load(":defs.bzl", "ts_proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -494,77 +494,36 @@ go_proto_library(
 
 # TypeScript proto rules below here
 
-ts_proto_library(
-    name = "acl_ts_proto",
-    deps = [":acl_proto"],
-)
+TS_PROTO_NAMES = [
+    "workflow",
+    "user",
+    "user_id",
+    "target",
+    "invocation",
+    "group",
+    "execution_stats",
+    "context",
+    "command_line",
+    "cache",
+    "buildbuddy_service",
+    "build_event_stream",
+    "bazel_config",
+    "api_key",
+    "acl",
+]
 
-ts_proto_library(
-    name = "api_key_ts_proto",
-    deps = [":api_key_proto"],
-)
+[
+    ts_proto_library(
+        name = "%s_ts_proto" % name,
+        proto = ":%s_proto" % name,
+    )
+    for name in TS_PROTO_NAMES
+]
 
-ts_proto_library(
-    name = "bazel_config_ts_proto",
-    deps = [":bazel_config_proto"],
-)
-
-ts_proto_library(
-    name = "execution_stats_ts_proto",
-    deps = [":execution_stats_proto"],
-)
-
-ts_proto_library(
-    name = "build_event_stream_ts_proto",
-    deps = [":build_event_stream_proto"],
-)
-
-ts_proto_library(
-    name = "target_ts_proto",
-    deps = [":target_proto"],
-)
-
-ts_proto_library(
-    name = "workflow_ts_proto",
-    deps = [":workflow_proto"],
-)
-
-ts_proto_library(
-    name = "command_line_ts_proto",
-    deps = [":command_line_proto"],
-)
-
-ts_proto_library(
-    name = "context_ts_proto",
-    deps = [":context_proto"],
-)
-
-ts_proto_library(
-    name = "invocation_ts_proto",
-    deps = [":invocation_proto"],
-)
-
-ts_proto_library(
-    name = "group_ts_proto",
-    deps = [":group_proto"],
-)
-
-ts_proto_library(
-    name = "cache_ts_proto",
-    deps = [":cache_proto"],
-)
-
-ts_proto_library(
-    name = "user_id_ts_proto",
-    deps = [":user_id_proto"],
-)
-
-ts_proto_library(
-    name = "user_ts_proto",
-    deps = [":user_proto"],
-)
-
-ts_proto_library(
-    name = "buildbuddy_service_ts_proto",
-    deps = [":buildbuddy_service_proto"],
-)
+# filegroup(
+#     name = "all_umd",
+#     srcs = [
+#         (":%s_ts_proto__umd" % name)
+#         for name in TS_PROTO_NAMES
+#     ],
+# )

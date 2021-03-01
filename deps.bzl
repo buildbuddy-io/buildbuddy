@@ -1,4 +1,4 @@
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 load("@bazel_gazelle//:deps.bzl", "go_repository")
 load("@io_bazel_rules_go//extras:embed_data_deps.bzl", "go_embed_data_dependencies")
 
@@ -19,6 +19,28 @@ def install_buildbuddy_dependencies():
     )
 
     go_embed_data_dependencies()
+
+    # esbuild
+
+    http_archive(
+        name = "esbuild_darwin",
+        urls = [
+            "https://registry.npmjs.org/esbuild-darwin-64/-/esbuild-darwin-64-0.8.53.tgz",
+        ],
+        strip_prefix = "package",
+        build_file_content = """exports_files(["bin/esbuild"])""",
+        sha256 = "3b5691b3d5eb7706479e1727ec333640c5a5769a2b3477c13c93f96a473d5c77",
+    )
+
+    http_archive(
+        name = "esbuild_linux",
+        urls = [
+            "https://registry.npmjs.org/esbuild-linux-64/-/esbuild-linux-64-0.8.53.tgz",
+        ],
+        strip_prefix = "package",
+        build_file_content = """exports_files(["bin/esbuild"])""",
+        sha256 = "d49f41fc310d4c12494c68e7fd3b03e0e0301440f2ad50ca9b2c14b65c8124c6",
+    )
 
     # gRPC
     go_repository(
