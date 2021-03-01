@@ -2,7 +2,6 @@ package repo_downloader
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 
 	git "github.com/go-git/go-git/v5"
