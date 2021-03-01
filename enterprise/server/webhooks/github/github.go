@@ -2,13 +2,13 @@ package github
 
 import (
 	"fmt"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dynamic"
 	"io/ioutil"
 	"log"
 	"mime"
 	"net/http"
 	"net/url"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dynamic"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
