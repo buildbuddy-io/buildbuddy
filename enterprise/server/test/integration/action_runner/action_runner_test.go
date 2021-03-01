@@ -22,8 +22,6 @@ import (
 )
 
 var (
-	// Workspace that just has a .bazelversion.
-	// The workflow config only runs `bazel version`.
 	testWorkspaceContents = map[string]string{
 		"WORKSPACE":     `workspace(name = "test")`,
 		".bazelversion": "3.7.0",

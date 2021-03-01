@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -36,8 +37,7 @@ const (
 	// Env vars
 	// NOTE: These env vars are not populated for non-private repos.
 	// TODO: Allow populating BUILDBUDDY_API_KEY for private repos,
-	// in case folks would rather have it passed via BB than have
-	// to check it in to their repo.
+	// so that workflow invocations can be private.
 
 	repoUserEnvVarName  = "REPO_USER"
 	repoTokenEnvVarName = "REPO_TOKEN"
@@ -59,13 +59,9 @@ const (
 
 	// ANSI codes for nicer output
 
-	textGreen  = "\033[32m"
-	textYellow = "\033[33m"
-	textBlue   = "\033[34m"
-	textPurple = "\033[35m"
-	textCyan   = "\033[36m"
-	textGray   = "\033[90m"
-	textReset  = "\033[0m"
+	textCyan  = "\033[36m"
+	textGray  = "\033[90m"
+	textReset = "\033[0m"
 )
 
 var (
@@ -77,6 +73,8 @@ var (
 	triggerBranch = flag.String("trigger_branch", "", "Branch to check action triggers against.")
 
 	emptyEnv = map[string]string{}
+
+	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 )
 
 func main() {
@@ -201,7 +199,7 @@ func (invLog *invocationLog) Write(b []byte) (int, error) {
 	invLog.mu.Lock()
 	n, err := invLog.Buffer.Write(b)
 	invLog.mu.Unlock()
-	_, _ = os.Stdout.Write(b)
+	_, _ = os.Stderr.Write(b)
 	return n, err
 }
 
@@ -312,7 +310,7 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 
 		bazelEvent, err := ptypes.MarshalAny(event)
 		if err != nil {
-			bep.setError(err)
+			bep.setError(fmt.Errorf("failed to marshal bazel event: %s", err))
 			return
 		}
 		start := time.Now()
@@ -321,7 +319,8 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 				StreamId:       bep.streamID,
 				SequenceNumber: seqNo,
 				Event: &bepb.BuildEvent{
-					Event: &bepb.BuildEvent_BazelEvent{BazelEvent: bazelEvent},
+					EventTime: ptypes.TimestampNow(),
+					Event:     &bepb.BuildEvent_BazelEvent{BazelEvent: bazelEvent},
 				},
 			},
 		})
@@ -423,22 +422,15 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 		return nil
 	}
 
-	ps1End := "$"
-	if ar.username == "root" {
-		ps1End = "#"
-	}
-
-	cancel := ar.startBackgroundProgressFlush()
-	defer cancel()
+	stopFlushingProgress := ar.startBackgroundProgressFlush()
+	defer stopFlushingProgress()
 
 	for _, bazelCmd := range ar.action.BazelCommands {
 		args, err := bazelArgs(bazelCmd)
-		// Provide some info to help make it clear which output is coming
-		// from which bazel commands.
-		ar.log.Printf("\n%s%s@%s%s%s bazelisk %s", textCyan, ar.username, ar.hostname, textReset, ps1End, strings.Join(args, " "))
 		if err != nil {
 			return fmt.Errorf("failed to parse bazel command: %s", err)
 		}
+		ar.printCommandLine(args)
 		err = runCommand(ctx, "bazelisk", args, emptyEnv, ar.log)
 		if exitCode := getExitCode(err); exitCode != noExitCode {
 			ar.log.Printf("%s(command exited with code %d)%s", textGray, exitCode, textReset)
@@ -455,11 +447,11 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 }
 
 func (ar *actionRunner) startBackgroundProgressFlush() func() {
-	cancel := make(chan struct{}, 1)
+	stop := make(chan struct{}, 1)
 	go func() {
 		for {
 			select {
-			case <-cancel:
+			case <-stop:
 				break
 			case <-time.After(progressFlushInterval):
 				ar.flushProgress()
@@ -467,8 +459,20 @@ func (ar *actionRunner) startBackgroundProgressFlush() func() {
 		}
 	}()
 	return func() {
-		cancel <- struct{}{}
+		stop <- struct{}{}
 	}
+}
+
+func (ar *actionRunner) printCommandLine(bazelArgs []string) {
+	ps1End := "$"
+	if ar.username == "root" {
+		ps1End = "#"
+	}
+	command := "bazelisk"
+	for _, arg := range bazelArgs {
+		command += " " + toShellToken(arg)
+	}
+	ar.log.Printf("\n%s%s@%s%s%s %s", textCyan, ar.username, ar.hostname, textReset, ps1End, command)
 }
 
 func (ar *actionRunner) flushProgress() error {
@@ -659,4 +663,11 @@ func dial(backend string) (*grpc.ClientConn, error) {
 	backendURL.Scheme = ""
 	target := strings.TrimPrefix(backendURL.String(), "//")
 	return grpc.Dial(target, opts...)
+}
+
+func toShellToken(s string) string {
+	if shellCharsRequiringQuote.MatchString(s) {
+		s = "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+	}
+	return s
 }
