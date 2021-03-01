@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -58,13 +59,9 @@ const (
 
 	// ANSI codes for nicer output
 
-	textGreen  = "\033[32m"
-	textYellow = "\033[33m"
-	textBlue   = "\033[34m"
-	textPurple = "\033[35m"
-	textCyan   = "\033[36m"
-	textGray   = "\033[90m"
-	textReset  = "\033[0m"
+	textCyan  = "\033[36m"
+	textGray  = "\033[90m"
+	textReset = "\033[0m"
 )
 
 var (
@@ -76,6 +73,8 @@ var (
 	triggerBranch = flag.String("trigger_branch", "", "Branch to check action triggers against.")
 
 	emptyEnv = map[string]string{}
+
+	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 )
 
 func main() {
@@ -423,22 +422,15 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 		return nil
 	}
 
-	ps1End := "$"
-	if ar.username == "root" {
-		ps1End = "#"
-	}
-
 	stopFlushingProgress := ar.startBackgroundProgressFlush()
 	defer stopFlushingProgress()
 
 	for _, bazelCmd := range ar.action.BazelCommands {
 		args, err := bazelArgs(bazelCmd)
-		// Provide some info to help make it clear which output is coming
-		// from which bazel commands.
-		ar.log.Printf("\n%s%s@%s%s%s bazelisk %s", textCyan, ar.username, ar.hostname, textReset, ps1End, strings.Join(args, " "))
 		if err != nil {
 			return fmt.Errorf("failed to parse bazel command: %s", err)
 		}
+		ar.printCommandLine(args)
 		err = runCommand(ctx, "bazelisk", args, emptyEnv, ar.log)
 		if exitCode := getExitCode(err); exitCode != noExitCode {
 			ar.log.Printf("%s(command exited with code %d)%s", textGray, exitCode, textReset)
@@ -469,6 +461,18 @@ func (ar *actionRunner) startBackgroundProgressFlush() func() {
 	return func() {
 		stop <- struct{}{}
 	}
+}
+
+func (ar *actionRunner) printCommandLine(bazelArgs []string) {
+	ps1End := "$"
+	if ar.username == "root" {
+		ps1End = "#"
+	}
+	command := "bazelisk"
+	for _, arg := range bazelArgs {
+		command += " " + toShellToken(arg)
+	}
+	ar.log.Printf("\n%s%s@%s%s%s %s", textCyan, ar.username, ar.hostname, textReset, ps1End, command)
 }
 
 func (ar *actionRunner) flushProgress() error {
@@ -659,4 +663,11 @@ func dial(backend string) (*grpc.ClientConn, error) {
 	backendURL.Scheme = ""
 	target := strings.TrimPrefix(backendURL.String(), "//")
 	return grpc.Dial(target, opts...)
+}
+
+func toShellToken(s string) string {
+	if shellCharsRequiringQuote.MatchString(s) {
+		s = "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+	}
+	return s
 }
