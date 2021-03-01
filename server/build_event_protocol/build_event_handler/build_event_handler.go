@@ -308,8 +308,8 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 	} else if !e.hasReceivedStartedEvent {
 		e.eventsBeforeStarted = append(e.eventsBeforeStarted, event)
-		if len(e.eventsBeforeStarted) > 100 {
-			log.Printf("We got over 100 build events before the started event for invocation %s, dropping %+v", iid, e.eventsBeforeStarted[0])
+		if len(e.eventsBeforeStarted) > 10 {
+			log.Printf("We got over 10 build events before the started event for invocation %s, dropping %+v", iid, e.eventsBeforeStarted[0])
 			e.eventsBeforeStarted = e.eventsBeforeStarted[1:]
 		}
 		return nil
