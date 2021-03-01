@@ -138,3 +138,13 @@ func UnauthenticatedError(msg string) error {
 func UnauthenticatedErrorf(format string, a ...interface{}) error {
 	return UnauthenticatedError(fmt.Sprintf(format, a...))
 }
+
+// Wrap adds additional context to an error, preserving the underlying status code.
+func WrapError(err error, msg string) error {
+	return status.Error(status.Code(err), fmt.Sprintf("%s: %s", msg, err))
+}
+
+// Wrapf is the "Printf" version of `Wrap`.
+func WrapErrorf(err error, format string, a ...interface{}) error {
+	return WrapError(err, fmt.Sprintf(format, a...))
+}

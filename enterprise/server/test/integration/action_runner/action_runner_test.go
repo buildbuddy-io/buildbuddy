@@ -1,4 +1,4 @@
-package action_runner_test
+package ci_runner_test
 
 import (
 	"bytes"
@@ -47,7 +47,7 @@ type result struct {
 }
 
 func invokeRunner(t *testing.T, args []string, env []string) *result {
-	binPath, err := bazelgo.Runfile("enterprise/server/cmd/action_runner/action_runner_/action_runner")
+	binPath, err := bazelgo.Runfile("enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
 	if err != nil {
 		t.Fatal(err)
 	}

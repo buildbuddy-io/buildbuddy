@@ -27,8 +27,8 @@ while ! [ -e ".git" ]; do cd ..; done
 
 : "${REPO:=$PWD}"
 
-bazel build //enterprise/server/cmd/action_runner
-runner=$(realpath ./bazel-bin/enterprise/server/cmd/action_runner/action_runner_/action_runner)
+bazel build //enterprise/server/cmd/ci_runner
+runner=$(realpath ./bazel-bin/enterprise/server/cmd/ci_runner/ci_runner_/ci_runner)
 cd "$(mktemp -d)"
 "$runner" \
   --repo_url="file://$(realpath "$REPO")" \
