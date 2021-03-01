@@ -132,7 +132,7 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 		}
 		exitCode := 0
 		if err := ar.Run(ctx); err != nil {
-			ar.log.Printf("action runner failed: %s", err)
+			ar.log.Printf(aurora.Sprintf(aurora.Red("\nAction failed: %s"), err))
 			exitCode = getExitCode(err)
 			if exitCode == noExitCode {
 				exitCode = 1
@@ -431,7 +431,10 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 		ar.printCommandLine(args)
 		err = runCommand(ctx, "bazelisk", args /*env=*/, nil, ar.log)
 		if exitCode := getExitCode(err); exitCode != noExitCode {
-			ar.log.Printf(aurora.Sprintf(aurora.Gray(12-1, "(command exited with code %d)"), exitCode))
+			// not using aurora here because our client-side library doesn't
+			// support the types of escape sequences required for aurora's
+			// fancy "grayscale" colors.
+			ar.log.Printf("\033[90m(command exited with code %d)\033[0m", exitCode)
 		}
 		// If the command failed, report its progress before returning.
 		if err := ar.flushProgress(); err != nil {
