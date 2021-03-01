@@ -75,7 +75,7 @@ func GenerateShellScript(ci *CommandInfo) ([]byte, error) {
 	script := newWorkflowScript()
 
 	// Keep it simple for now!
-	script.AddCommand("set -ex", []string{})
+	script.AddCommand("set", []string{"-exo", "pipefail"})
 	script.Checkout(ci.RepoURL, ci.CommitSHA)
 	script.Test(ci.BazelFlags)
 
