@@ -33,3 +33,8 @@ type WebhookData struct {
 	// SHA of the commit to be checked out.
 	SHA string
 }
+
+// IsTrusted returns whether the event came from a trusted actor.
+func (wd *WebhookData) IsTrusted() bool {
+	return wd.IsRepoPrivate
+}

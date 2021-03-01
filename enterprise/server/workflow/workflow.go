@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"regexp"
 	"strings"
@@ -253,12 +253,12 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		return nil, status.UnavailableError("No cache configured.")
 	}
 
-	runnerBinName := "buildbuddy_action_runner"
-	runnerBinBytes, err := runnerBinary()
+	runnerBinName := "buildbuddy_ci_runner"
+	runnerBinFile, err := runnerBinaryFile()
 	if err != nil {
 		return nil, err
 	}
-	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, cache, instanceName, runnerBinBytes)
+	runnerBinDigest, err := cachetools.UploadBytesToCAS(ctx, cache, instanceName, runnerBinFile)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +280,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		{Name: "CI_REPOSITORY_URL", Value: wf.RepoURL},
 		{Name: "CI_COMMIT_SHA", Value: wd.SHA},
 	}
-	if wd.IsRepoPrivate {
+	if wd.IsTrusted() {
 		envVars = append(envVars, []*repb.Command_EnvironmentVariable{
 			{Name: "BUILDBUDDY_API_KEY", Value: ak.Value},
 			// TODO: For BitBucket, this will be user => username, token => app password
@@ -314,16 +314,12 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	return actionDigest, err
 }
 
-func runnerBinary() ([]byte, error) {
+func runnerBinaryFile() (*os.File, error) {
 	path, err := bazelgo.Runfile("enterprise/server/cmd/action_runner/action_runner_/action_runner")
 	if err != nil {
-		return nil, fmt.Errorf("could not find runner binary runfile: %s", err)
+		return nil, status.FailedPreconditionErrorf("could not find runner binary runfile: %s", err)
 	}
-	b, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read runner binary contents: %s", err)
-	}
-	return b, nil
+	return os.Open(path)
 }
 
 func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Workflow) (*tables.APIKey, error) {
