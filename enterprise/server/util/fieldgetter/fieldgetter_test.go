@@ -19,7 +19,7 @@ type Child struct {
 	ChildString string
 }
 
-func TestDynamic(t *testing.T) {
+func TestExtractValues(t *testing.T) {
 	for _, test := range []struct {
 		val      *Parent
 		path     string
