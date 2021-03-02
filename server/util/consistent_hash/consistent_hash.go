@@ -13,6 +13,7 @@ type ConsistentHash struct {
 	numReplicas int
 	keys        []int
 	ring        map[int]string
+	items       []string
 	mu          sync.RWMutex
 }
 
@@ -21,6 +22,7 @@ func NewConsistentHash() *ConsistentHash {
 		numReplicas: defaultNumReplicas,
 		keys:        make([]int, 0),
 		ring:        make(map[int]string, 0),
+		items:       make([]string, 0),
 	}
 }
 
@@ -33,6 +35,7 @@ func (c *ConsistentHash) Set(items ...string) {
 	defer c.mu.Unlock()
 	c.keys = make([]int, 0)
 	c.ring = make(map[int]string, 0)
+	c.items = items
 	for _, key := range items {
 		for i := 0; i < c.numReplicas; i++ {
 			h := c.hashKey(strconv.Itoa(i) + key)
@@ -40,6 +43,7 @@ func (c *ConsistentHash) Set(items ...string) {
 			c.ring[h] = key
 		}
 	}
+	sort.Strings(c.items)
 	sort.Ints(c.keys)
 }
 
@@ -57,4 +61,31 @@ func (c *ConsistentHash) Get(key string) string {
 		idx = 0
 	}
 	return c.ring[c.keys[idx]]
+}
+
+func (c *ConsistentHash) GetNext(key string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if len(c.keys) == 0 {
+		return ""
+	}
+	h := c.hashKey(key)
+	idx := sort.Search(len(c.keys), func(i int) bool {
+		return c.keys[i] >= h
+	})
+	if idx == len(c.keys) {
+		idx = 0
+	}
+	if len(c.items) == 1 {
+		return c.ring[c.keys[idx]]
+	}
+	original := c.ring[c.keys[idx]]
+	for {
+		idx = (idx + 1) % len(c.keys)
+		v := c.ring[c.keys[idx]]
+		if v != original {
+			return v
+		}
+	}
+	return ""
 }
