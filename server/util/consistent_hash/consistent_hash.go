@@ -2,6 +2,7 @@ package consistent_hash
 
 import (
 	"hash/crc32"
+	"log"
 	"sort"
 	"strconv"
 	"sync"
@@ -63,11 +64,11 @@ func (c *ConsistentHash) Get(key string) string {
 	return c.ring[c.keys[idx]]
 }
 
-func (c *ConsistentHash) GetNext(key string) string {
+func (c *ConsistentHash) GetNReplicas(key string, n int) []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if len(c.keys) == 0 {
-		return ""
+		return nil
 	}
 	h := c.hashKey(key)
 	idx := sort.Search(len(c.keys), func(i int) bool {
@@ -76,16 +77,34 @@ func (c *ConsistentHash) GetNext(key string) string {
 	if idx == len(c.keys) {
 		idx = 0
 	}
-	if len(c.items) == 1 {
-		return c.ring[c.keys[idx]]
-	}
+	replicas := make([]string, 0, n)
+	seen := make(map[string]struct{}, 0)
+
 	original := c.ring[c.keys[idx]]
-	for {
-		idx = (idx + 1) % len(c.keys)
-		v := c.ring[c.keys[idx]]
-		if v != original {
-			return v
+	replicas = append(replicas, original)
+	seen[original] = struct{}{}
+
+	for offset := 1; offset < len(c.keys); offset += 1 {
+		newIdx := (idx + offset) % len(c.keys)
+		v := c.ring[c.keys[newIdx]]
+		if _, ok := seen[v]; !ok {
+			replicas = append(replicas, v)
+			seen[v] = struct{}{}
+		}
+		if len(replicas) == n {
+			break
 		}
 	}
-	return ""
+	if len(replicas) < n {
+		log.Printf("Warning: client requested %d replicas but only %d were available.", n, len(replicas))
+	}
+	return replicas
+}
+
+func (c *ConsistentHash) GetNext(key string) string {
+	r := c.GetNReplicas(key, 2)
+	if len(r) != 2 {
+		return ""
+	}
+	return r[1]
 }

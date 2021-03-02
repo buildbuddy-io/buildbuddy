@@ -11,19 +11,23 @@ import (
 
 const (
 	// This node will send heartbeats every this often.
-	heartbeatPeriod = 1 * time.Second
+	defaultHeartbeatPeriod = 1 * time.Second
 
 	// After this timeout, a node will be removed from the set of active
 	// nodes.
-	heartbeatTimeout = 3 * heartbeatPeriod
+	defaultHeartbeatTimeout = 3 * defaultHeartbeatPeriod
 
 	// How often this node will check if heartbeats are still valid.
-	heartbeatCheckPeriod = 100 * time.Millisecond
+	defaultHeartbeatCheckPeriod = 100 * time.Millisecond
 )
 
 type PeersUpdateFn func(peerSet ...string)
 
 type HeartbeatChannel struct {
+	Period time.Duration
+	Timeout time.Duration
+	CheckPeriod time.Duration
+
 	groupName string
 	myAddr    string
 	peers     map[string]time.Time
@@ -40,6 +44,9 @@ func NewHeartbeatChannel(ps interfaces.PubSub, myAddr, groupName string, updateF
 		ps:        ps,
 		updateFn:  updateFn,
 		quit:      make(chan struct{}),
+		Period: defaultHeartbeatPeriod,
+		Timeout: defaultHeartbeatTimeout,
+		CheckPeriod: defaultHeartbeatCheckPeriod,
 	}
 	ctx := context.Background()
 	go hac.watchPeers(ctx)
@@ -54,7 +61,7 @@ func (c *HeartbeatChannel) StartAdvertising() {
 			select {
 			case <-c.quit:
 				return
-			case <-time.After(heartbeatPeriod):
+			case <-time.After(c.Period):
 				c.sendHeartbeat(context.Background())
 			}
 		}
@@ -94,10 +101,10 @@ func (c *HeartbeatChannel) watchPeers(ctx context.Context) {
 			if !ok {
 				c.notifySetChanged()
 			}
-		case <-time.After(heartbeatCheckPeriod):
+		case <-time.After(c.CheckPeriod):
 			updated := false
 			for peer, lastBeat := range c.peers {
-				if time.Since(lastBeat) > heartbeatTimeout {
+				if time.Since(lastBeat) > c.Timeout {
 					delete(c.peers, peer)
 					updated = true
 				}

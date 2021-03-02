@@ -62,18 +62,17 @@ func waitUntilServerIsDead(addr string) {
 	for {
 		_, err := net.DialTimeout("tcp", addr, 10*time.Millisecond)
 		if err != nil {
-			log.Printf("Got err %+v, server %q is dead", err, addr)
 			return
 		}
 	}
 }
 
-func newDistributedCache(t *testing.T, te environment.Env, peer string, maxSizeBytes int64) *distributed.Cache {
+func newDistributedCache(t *testing.T, te environment.Env, peer string, replicationFactor int, maxSizeBytes int64) *distributed.Cache {
 	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := distributed.NewDistributedCache(te, mc, peer, heartbeatGroupName)
+	c, err := distributed.NewDistributedCache(te, mc, peer, heartbeatGroupName, replicationFactor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,86 +83,115 @@ func TestDroppedNode(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ps := pubsub.NewTestPubSub()
 	te.SetPubSub(ps)
-	maxSizeBytes := int64(10000000) // 10MB
+	ctx := getAnonContext(t)
 
-	caches := make([]*distributed.Cache, 0)
-	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	caches = append(caches, newDistributedCache(t, te, peer1, maxSizeBytes))
-	waitUntilServerIsAlive(peer1)
-
-	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	caches = append(caches, newDistributedCache(t, te, peer2, maxSizeBytes))
-	waitUntilServerIsAlive(peer2)
-
-	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	caches = append(caches, newDistributedCache(t, te, peer3, maxSizeBytes))
-	waitUntilServerIsAlive(peer3)
-
-	liveNodes := make(map[string]struct{}, 0)
+	var liveNodes map[string]struct{}
 	hbc := heartbeat.NewHeartbeatChannel(te.GetPubSub(), "", heartbeatGroupName, func(nodes ...string) {
+		liveNodes = make(map[string]struct{}, 0)
 		for _, n := range nodes {
 			liveNodes[n] = struct{}{}
 		}
 	})
-	// wait until all nodes are up.
-	for {
-		if len(liveNodes) == 3 {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	_ = hbc
+	_ = hbc // keep hbc around to update liveNodes
 
-	ctx := getAnonContext(t)
-	digests := make([]*repb.Digest, 0, 100)
-	for i := 0; i < 100; i += 1 {
-		d, buf := testdigest.NewRandomDigestBuf(t, 150)
-		digests = append(digests, d)
-
-		c := caches[rand.Intn(len(caches))]
-		err := c.Set(ctx, d, buf)
-		if err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
-		}
-
-		c = caches[rand.Intn(len(caches))]
-		rbuf, err := c.Get(ctx, d)
-		if err != nil {
-			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
-		}
-
-		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf))
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
-		}
+	tests := []struct {
+		replicas          int
+		replicationFactor int
+		replicasToFail    int
+	}{
+		{1, 1, 0},
+		{2, 2, 1},
+		{3, 2, 1},
+		{5, 3, 2},
 	}
 
-	// Now drop a node.
-	caches[0].Shutdown()
-	caches = caches[1:]
-	waitUntilServerIsDead(peer1)
+	for _, testStruct := range tests {
+		maxSizeBytes := int64(10000000) // 10MB
+		peers := make([]string, 0, testStruct.replicas)
+		caches := make(map[string]*distributed.Cache, testStruct.replicas)
 
-	// Wait until this node has failed the healthcheck.
-	liveNodes = make(map[string]struct{}, 0)
-	for {
-		if len(liveNodes) == 2 {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	for _, d := range digests {
-		c := caches[rand.Intn(len(caches))]
-		rbuf, err := c.Get(ctx, d)
-		if err != nil {
-			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
+		log.Printf("TestStruct; %+v", testStruct)
+		for i := 0; i < testStruct.replicas; i++ {
+			peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
+			peers = append(peers, peer)
+			caches[peer] = newDistributedCache(t, te, peer, testStruct.replicationFactor, maxSizeBytes)
 		}
 
-		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf))
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+		// wait for the come up
+		for peer, _ := range caches {
+			waitUntilServerIsAlive(peer)
+		}
+
+		// wait until all nodes have advertised.
+		for {
+			if len(liveNodes) == testStruct.replicas {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		digests := make([]*repb.Digest, 0, 100)
+		for i := 0; i < 10; i += 1 {
+			d, buf := testdigest.NewRandomDigestBuf(t, 1500)
+			digests = append(digests, d)
+
+			randomPeer := peers[rand.Intn(len(peers))]
+			c := caches[randomPeer]
+			err := c.Set(ctx, d, buf)
+			if err != nil {
+				t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+			}
+
+			randomPeer = peers[rand.Intn(len(peers))]
+			c = caches[randomPeer]
+			rbuf, err := c.Get(ctx, d)
+			if err != nil {
+				t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
+			}
+
+			// Compute a digest for the bytes returned.
+			d2, err := digest.Compute(bytes.NewReader(rbuf))
+			if d.GetHash() != d2.GetHash() {
+				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+			}
+		}
+
+		// Now shutdown the requested number of nodes.
+		for i := 0; i < testStruct.replicasToFail; i++ {
+			randPeerIdx := rand.Intn(len(peers))
+			randomPeer := peers[randPeerIdx]
+			caches[randomPeer].Shutdown()
+			delete(caches, randomPeer)
+			peers = append(peers[:randPeerIdx], peers[randPeerIdx+1:]...)
+			waitUntilServerIsDead(randomPeer)
+		}
+
+		// Wait until we've reached the desired number of failed nodes.
+		desiredNumberRunning := testStruct.replicas - testStruct.replicasToFail
+		for {
+			if len(liveNodes) == desiredNumberRunning {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		for _, d := range digests {
+			randomPeer := peers[rand.Intn(len(peers))]
+			c := caches[randomPeer]
+			rbuf, err := c.Get(ctx, d)
+			if err != nil {
+				t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
+			}
+
+			// Compute a digest for the bytes returned.
+			d2, err := digest.Compute(bytes.NewReader(rbuf))
+			if d.GetHash() != d2.GetHash() {
+				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+			}
+		}
+
+		for _, cache := range caches {
+			cache.Shutdown()
 		}
 	}
 }
