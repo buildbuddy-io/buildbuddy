@@ -179,7 +179,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 	}
 	err = ws.env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
 		var in tables.Workflow
-		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Workflows WHERE workflow_id = ?`, workflowID).Scan(&in).Error; err != nil {
+		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Workflows WHERE workflow_id = ?`, workflowID).Take(&in).Error; err != nil {
 			return err
 		}
 		acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
@@ -333,10 +333,9 @@ func runnerBinaryFile() (*os.File, error) {
 func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Workflow) (*tables.APIKey, error) {
 	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
 	q.AddWhereClause("group_id = ?", wf.GroupID)
-	q.SetLimit(1)
 	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}
-	if err := ws.env.GetDBHandle().Raw(qStr, qArgs...).Scan(&k).Error; err != nil {
+	if err := ws.env.GetDBHandle().Raw(qStr, qArgs...).Take(&k).Error; err != nil {
 		return nil, err
 	}
 	return k, nil
