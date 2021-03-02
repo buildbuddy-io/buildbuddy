@@ -344,8 +344,8 @@ func (a *OpenIDAuthenticator) lookupUserFromSubID(subID string) (*tables.User, e
 	}
 	user := &tables.User{}
 	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
-		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC LIMIT 1`, subID)
-		if err := userRow.Scan(user).Error; err != nil {
+		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC`, subID)
+		if err := userRow.Take(user).Error; err != nil {
 			return err
 		}
 		groupRows, err := tx.Raw(`SELECT g.* FROM `+"`Groups`"+` as g JOIN UserGroups as ug
@@ -379,7 +379,7 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(apiKey string) (*apiKe
 			FROM `+"`Groups`"+` AS g, APIKeys AS ak
 			WHERE g.group_id = ak.group_id AND ak.value = ?`,
 			apiKey)
-		return existingRow.Scan(akg).Error
+		return existingRow.Take(akg).Error
 	})
 	if err != nil {
 		if gorm.IsRecordNotFoundError(err) {
@@ -402,7 +402,7 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromBasicAuth(login, pass string)
 			FROM `+"`Groups`"+` AS g, APIKeys AS ak
 			WHERE g.group_id = ? AND g.write_token = ? AND g.group_id = ak.group_id`,
 			login, pass)
-		return existingRow.Scan(akg).Error
+		return existingRow.Take(akg).Error
 	})
 	if err != nil {
 		if gorm.IsRecordNotFoundError(err) {
