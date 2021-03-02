@@ -2,8 +2,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 go_test(
     name = "go_default_test",
-    srcs = ["action_runner_test.go"],
-    data = ["//enterprise/server/cmd/action_runner"],
+    srcs = ["ci_runner_test.go"],
+    data = ["//enterprise/server/cmd/ci_runner"],
     # TODO: Make this automatic when we figure out a good way to include
     # a `git` binary in this test (since the action runner needs it).
     # Also would need to support a BAZEL_BINARY env variable or flag

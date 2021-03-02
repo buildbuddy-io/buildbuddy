@@ -1,11 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
@@ -17,15 +17,19 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowconf"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
-	"google.golang.org/grpc"
+	"github.com/logrusorgru/aurora"
 	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -44,24 +48,30 @@ const (
 
 	// Exit code placeholder used when a command doesn't return an exit code on its own.
 	noExitCode = -1
-	// "Unique"-ish exit code that indicates the runner should be retried
-	// due to an error that may be temporary.
-	retryableExitCode = 21
 
 	// progressFlushInterval specifies how often we should flush
 	// each Bazel command's output while it is running.
-	progressFlushInterval = 250 * time.Millisecond
+	progressFlushInterval = 1 * time.Second
+	// progressFlushThresholdBytes specifies how full the log buffer
+	// should be before we force a flush, regardless of the flush interval.
+	progressFlushThresholdBytes = 1_000
 
 	// Webhook event names
 
 	pushEventName        = "push"
 	pullRequestEventName = "pull_request"
 
-	// ANSI codes for nicer output
+	// Binary constants
 
-	textCyan  = "\033[36m"
-	textGray  = "\033[90m"
-	textReset = "\033[0m"
+	bazelBinaryName    = "bazel"
+	bazeliskBinaryName = "bazelisk"
+
+	// ANSI codes for cases where the aurora equivalent is not supported by our UI
+	// (ex: aurora's "grayscale" mode results in some ANSI codes that we don't currently
+	// parse correctly).
+
+	ansiGray  = "\033[90m"
+	ansiReset = "\033[0m"
 )
 
 var (
@@ -72,22 +82,15 @@ var (
 	triggerEvent  = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	triggerBranch = flag.String("trigger_branch", "", "Branch to check action triggers against.")
 
-	emptyEnv = map[string]string{}
-
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 )
 
 func main() {
 	flag.Parse()
-	if err := validateFlags(); err != nil {
-		log.Printf("invalid flags: %s", err)
-		os.Exit(1)
-	}
 
 	ctx := context.Background()
 	if err := cloneRepo(ctx); err != nil {
-		log.Printf("failed to clone repo: %s", err)
-		os.Exit(retryableExitCode)
+		fatal(err)
 	}
 	cfg, err := readConfig()
 	if err != nil {
@@ -141,12 +144,8 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 		}
 		exitCode := 0
 		if err := ar.Run(ctx); err != nil {
-			ar.log.Printf("action runner failed: %s", err)
+			ar.log.Printf(aurora.Sprintf(aurora.Red("\nAction failed: %s"), err))
 			exitCode = getExitCode(err)
-			// Treat "killed", "OOM" etc. as regular failures.
-			if exitCode == noExitCode {
-				exitCode = 1
-			}
 		}
 
 		// Ignore errors from the events published here; they'll be surfaced in `bep.Wait()`
@@ -162,7 +161,8 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 			}},
 		})
 		elapsedTimeSeconds := float64(time.Since(startTime)) / float64(time.Second)
-		// NB: This is the last message
+		// NB: This is the last message -- if more are added afterwards, be sure to
+		// update the `LastMessage` flag
 		bep.Publish(&bespb.BuildEvent{
 			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildToolLogs{BuildToolLogs: &bespb.BuildEventId_BuildToolLogsId{}}},
 			Payload: &bespb.BuildEvent_BuildToolLogs{BuildToolLogs: &bespb.BuildToolLogs{
@@ -174,43 +174,33 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 		})
 
 		if err := bep.Wait(); err != nil {
-			log.Printf("failed to publish build event for action %q: %s", action.Name, err)
 			// If we don't publish a build event successfully, then the status may not be
 			// reported to the Git provider successfully. Terminate with a code indicating
 			// that the executor can retry the action, so that we have another chance.
-			os.Exit(retryableExitCode)
+			fatal(status.UnavailableErrorf("failed to publish build event for action %q: %s", action.Name, err))
 		}
 	}
 }
 
 type invocationLog struct {
-	mu     sync.Mutex
-	Buffer bytes.Buffer
+	lockingbuffer.LockingBuffer
+
+	writer        io.Writer
+	writeListener func()
 }
 
 func newInvocationLog() *invocationLog {
-	invLog := &invocationLog{}
+	invLog := &invocationLog{writeListener: func() {}}
+	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stdout)
 	return invLog
 }
 
-// Write writes the given bytes to the invocation log and also streams
-// those bytes to os.Stderr on a best-effort basis.
 func (invLog *invocationLog) Write(b []byte) (int, error) {
-	invLog.mu.Lock()
-	n, err := invLog.Buffer.Write(b)
-	invLog.mu.Unlock()
-	_, _ = os.Stderr.Write(b)
+	n, err := invLog.writer.Write(b)
+	invLog.writeListener()
 	return n, err
 }
 
-// Consume returns all bytes written to the log since the last call to consume.
-func (invLog *invocationLog) Consume() []byte {
-	invLog.mu.Lock()
-	defer invLog.mu.Unlock()
-	b := []byte(invLog.Buffer.Bytes())
-	invLog.Buffer.Reset()
-	return b
-}
 func (invLog *invocationLog) Println(vals ...interface{}) {
 	invLog.Write([]byte(fmt.Sprintln(vals...)))
 }
@@ -250,16 +240,16 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 		bep.done <- struct{}{}
 	}()
 
-	conn, err := dial(*besBackend)
+	conn, err := grpc_client.DialTarget(*besBackend)
 	if err != nil {
-		bep.setError(fmt.Errorf("error dialing bes_backend: %s", err))
+		bep.setError(status.WrapError(err, "error dialing bes_backend"))
 		return
 	}
 	defer conn.Close()
 	besClient := pepb.NewPublishBuildEventClient(conn)
 	stream, err := besClient.PublishBuildToolEventStream(ctx)
 	if err != nil {
-		bep.setError(fmt.Errorf("error opening build event stream: %s", err))
+		bep.setError(status.WrapError(err, "error opening build event stream"))
 		return
 	}
 
@@ -310,7 +300,7 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 
 		bazelEvent, err := ptypes.MarshalAny(event)
 		if err != nil {
-			bep.setError(fmt.Errorf("failed to marshal bazel event: %s", err))
+			bep.setError(status.WrapError(err, "failed to marshal bazel event"))
 			return
 		}
 		start := time.Now()
@@ -333,7 +323,7 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 	// After successfully transmitting all events, close our side of the stream
 	// and wait for server ACKs before closing the connection.
 	if err := stream.CloseSend(); err != nil {
-		bep.setError(fmt.Errorf("failed to close build event stream: %s", err))
+		bep.setError(status.WrapError(err, "failed to close build event stream"))
 		return
 	}
 	<-doneReceiving
@@ -342,7 +332,7 @@ func (bep *buildEventPublisher) Publish(e *bespb.BuildEvent) error {
 	bep.mu.Lock()
 	defer bep.mu.Unlock()
 	if bep.err != nil {
-		return fmt.Errorf("cannot publish event due to previous error: %s", bep.err)
+		return status.WrapError(bep.err, "cannot publish event due to previous error")
 	}
 	bep.events <- e
 	return nil
@@ -359,8 +349,8 @@ func (bep *buildEventPublisher) getError() error {
 }
 func (bep *buildEventPublisher) setError(err error) {
 	bep.mu.Lock()
+	defer bep.mu.Unlock()
 	bep.err = err
-	bep.mu.Unlock()
 }
 
 // actionRunner runs a single action in the BuildBuddy config.
@@ -415,6 +405,8 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 				// TODO: Populate GIT_BRANCH. Can't source this from the `trigger_branch` flag
 				// in the PR case, because that refers to the branch into which the PR would be
 				// merged, which doesn't reflect the currently checked out branch.
+				// TODO: Consider parsing the `.bazelrc` and running the user's actual workspace
+				// status command that they've configured for bazel.
 			},
 		}},
 	}
@@ -422,25 +414,34 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 		return nil
 	}
 
+	// Flush whenever the log buffer fills past a certain threshold.
+	ar.log.writeListener = func() {
+		if size := ar.log.Len(); size >= progressFlushThresholdBytes {
+			ar.flushProgress() // ignore error; it will surface in `bep.Wait()`
+		}
+	}
 	stopFlushingProgress := ar.startBackgroundProgressFlush()
 	defer stopFlushingProgress()
 
 	for _, bazelCmd := range ar.action.BazelCommands {
 		args, err := bazelArgs(bazelCmd)
 		if err != nil {
-			return fmt.Errorf("failed to parse bazel command: %s", err)
+			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
 		ar.printCommandLine(args)
-		err = runCommand(ctx, "bazelisk", args, emptyEnv, ar.log)
+		err = runCommand(ctx, bazeliskBinaryName, args /*env=*/, nil, ar.log)
 		if exitCode := getExitCode(err); exitCode != noExitCode {
-			ar.log.Printf("%s(command exited with code %d)%s", textGray, exitCode, textReset)
-		}
-		// If the command failed, report its progress before returning.
-		if err := ar.flushProgress(); err != nil {
-			return nil
+			ar.log.Printf("%s(command exited with code %d)%s", ansiGray, exitCode, ansiReset)
 		}
 		if err != nil {
+			// Note, even though we don't hit the `flushProgress` call below in this case,
+			// we'll still flush progress before closing the BEP stream.
 			return err
+		}
+		// Flush progress after every command.
+		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Wait()`.
+		if err := ar.flushProgress(); err != nil {
+			break
 		}
 	}
 	return nil
@@ -468,15 +469,19 @@ func (ar *actionRunner) printCommandLine(bazelArgs []string) {
 	if ar.username == "root" {
 		ps1End = "#"
 	}
-	command := "bazelisk"
+	command := bazeliskBinaryName
 	for _, arg := range bazelArgs {
 		command += " " + toShellToken(arg)
 	}
-	ar.log.Printf("\n%s%s@%s%s%s %s", textCyan, ar.username, ar.hostname, textReset, ps1End, command)
+	userAtHost := fmt.Sprintf("%s@%s", ar.username, ar.hostname)
+	ar.log.Printf(aurora.Sprintf("\n%s%s %s", aurora.Cyan(userAtHost), ps1End, command))
 }
 
 func (ar *actionRunner) flushProgress() error {
-	buf := ar.log.Consume()
+	buf, err := ioutil.ReadAll(ar.log)
+	if err != nil {
+		return status.WrapError(err, "failed to read action logs")
+	}
 	if len(buf) == 0 {
 		return nil
 	}
@@ -502,7 +507,7 @@ func bazelArgs(cmd string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if tokens[0] == "bazel" || tokens[0] == "bazelisk" {
+	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName {
 		tokens = tokens[1:]
 	}
 	return tokens, nil
@@ -510,25 +515,26 @@ func bazelArgs(cmd string) ([]string, error) {
 
 func cloneRepo(ctx context.Context) error {
 	if err := os.Mkdir(repoDirName, 0o775); err != nil {
-		return fmt.Errorf("mkdir %q: %s", repoDirName, err)
+		return status.WrapErrorf(err, "mkdir %q", repoDirName)
 	}
 	if err := os.Chdir(repoDirName); err != nil {
-		return fmt.Errorf("cd %q: %s", repoDirName, err)
+		return status.WrapErrorf(err, "cd %q", repoDirName)
 	}
-	if err := runCommand(ctx, "git", []string{"init"}, emptyEnv, os.Stderr); err != nil {
+	if err := runCommand(ctx, "git", []string{"init"} /*env=*/, nil, os.Stderr); err != nil {
 		return err
 	}
 	authURL, err := authRepoURL()
 	if err != nil {
 		return err
 	}
-	if err := runCommand(ctx, "git", []string{"remote", "add", "origin", authURL}, emptyEnv, os.Stderr); err != nil {
+	if err := runCommand(ctx, "git", []string{"remote", "add", "origin", authURL} /*env=*/, nil, os.Stderr); err != nil {
 		return err
 	}
-	if err := runCommand(ctx, "git", []string{"fetch", "origin", *commitSHA}, emptyEnv, os.Stderr); err != nil {
-		return err
+	if err := runCommand(ctx, "git", []string{"fetch", "origin", *commitSHA} /*env=*/, nil, os.Stderr); err != nil {
+		// If `git fetch` fails, might be due to a transient network error -- return UNAVAILABLE.
+		return status.UnavailableErrorf("git fetch failed: %s", err)
 	}
-	if err := runCommand(ctx, "git", []string{"checkout", *commitSHA}, emptyEnv, os.Stderr); err != nil {
+	if err := runCommand(ctx, "git", []string{"checkout", *commitSHA} /*env=*/, nil, os.Stderr); err != nil {
 		return err
 	}
 	return nil
@@ -542,7 +548,7 @@ func authRepoURL() (string, error) {
 	}
 	u, err := url.Parse(*repoURL)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse repo URL %q: %s", *repoURL, err)
+		return "", status.InvalidArgumentErrorf("failed to parse repo URL %q: %s", *repoURL, err)
 	}
 	u.User = url.UserPassword(user, token)
 	return u.String(), nil
@@ -559,11 +565,11 @@ func invocationURL(invocationID string) string {
 func readConfig() (*workflowconf.BuildBuddyConfig, error) {
 	f, err := os.Open(actionsConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("open %q: %s", actionsConfigPath, err)
+		return nil, status.FailedPreconditionErrorf("open %q: %s", actionsConfigPath, err)
 	}
 	c, err := workflowconf.NewConfig(f)
 	if err != nil {
-		return nil, fmt.Errorf("read %q: %s", actionsConfigPath, err)
+		return nil, status.FailedPreconditionErrorf("read %q: %s", actionsConfigPath, err)
 	}
 	return c, nil
 }
@@ -583,9 +589,6 @@ func matchesAnyTrigger(action *workflowconf.Action, event, branch string) bool {
 }
 
 func matchesAnyBranch(branches []string, branch string) bool {
-	if branches == nil {
-		return false
-	}
 	for _, b := range branches {
 		if b == branch {
 			return true
@@ -614,26 +617,6 @@ func getExitCode(err error) int {
 	return noExitCode
 }
 
-func validateFlags() error {
-	errs := []string{}
-	for name, flag := range map[string]*string{
-		"repo_url":        repoURL,
-		"commit_sha":      commitSHA,
-		"trigger_branch":  triggerBranch,
-		"trigger_event":   triggerEvent,
-		"bes_backend":     besBackend,
-		"bes_results_url": besResultsURL,
-	} {
-		if *flag == "" {
-			errs = append(errs, fmt.Sprintf("--%s unset", name))
-		}
-	}
-	if len(errs) == 0 {
-		return nil
-	}
-	return fmt.Errorf(strings.Join(errs, "; "))
-}
-
 func actionDebugString(action *workflowconf.Action) string {
 	yamlBytes, err := yaml.Marshal(action)
 	if err != nil {
@@ -645,24 +628,9 @@ func actionDebugString(action *workflowconf.Action) string {
 func newUUID() string {
 	id, err := uuid.NewRandom()
 	if err != nil {
-		log.Printf("failed to generate UUID")
-		os.Exit(retryableExitCode)
+		fatal(status.UnavailableError("failed to generate UUID"))
 	}
 	return id.String()
-}
-
-func dial(backend string) (*grpc.ClientConn, error) {
-	backendURL, err := url.Parse(backend)
-	if err != nil {
-		return nil, fmt.Errorf("invalid backend %q: %s", backend, err)
-	}
-	opts := []grpc.DialOption{}
-	if backendURL.Scheme == "grpc" {
-		opts = append(opts, grpc.WithInsecure())
-	}
-	backendURL.Scheme = ""
-	target := strings.TrimPrefix(backendURL.String(), "//")
-	return grpc.Dial(target, opts...)
 }
 
 func toShellToken(s string) string {
@@ -670,4 +638,9 @@ func toShellToken(s string) string {
 		s = "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 	}
 	return s
+}
+
+func fatal(err error) {
+	log.Printf("%s", err)
+	os.Exit(int(gstatus.Code(err)))
 }
