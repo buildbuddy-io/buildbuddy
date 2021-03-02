@@ -1,15 +1,14 @@
 package github
 
 import (
-	"fmt"
 	"io/ioutil"
 	"log"
 	"mime"
 	"net/http"
 	"net/url"
-	"reflect"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -32,7 +31,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 	log.Printf("Received GitHub webhook event: %T\n", event)
 	switch event := event.(type) {
 	case *gh.PushEvent:
-		v, err := fieldValues(
+		v, err := fieldgetter.ExtractValues(
 			event,
 			"HeadCommit.ID",
 			"Ref",
@@ -53,7 +52,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		}, nil
 
 	case *gh.PullRequestEvent:
-		v, err := fieldValues(
+		v, err := fieldgetter.ExtractValues(
 			event,
 			"Action",
 			"PullRequest.Base.Ref",
@@ -109,38 +108,4 @@ func webhookJSONPayload(r *http.Request) ([]byte, error) {
 	default:
 		return nil, status.InvalidArgumentErrorf("unhandled MIME type: %q", contentType)
 	}
-}
-
-// fieldValues extracts values from an object given field paths which may include dot
-// separators. As the paths are traversed, pointers will be de-referenced. If a nil
-// value is encountered in any path, an error is returned.
-func fieldValues(obj interface{}, fieldPaths ...string) (map[string]string, error) {
-	values := map[string]string{}
-	objVal := reflect.Indirect(reflect.ValueOf(obj))
-	if !objVal.IsValid() {
-		return nil, status.InvalidArgumentError("cannot get fieldValues on a nil value")
-	}
-	for _, path := range fieldPaths {
-		fields := strings.Split(path, ".")
-		cur := objVal
-		curPath := []string{}
-		for _, name := range fields {
-			curPath = append(curPath, name)
-			cur = cur.FieldByName(name)
-			if !cur.IsValid() {
-				return nil, status.InternalErrorf("encountered invalid field name at %q", strings.Join(curPath, "."))
-			}
-			cur = reflect.Indirect(cur)
-			if !cur.IsValid() {
-				return nil, status.InvalidArgumentErrorf("encountered nil value at %q", strings.Join(curPath, "."))
-			}
-		}
-		el := cur.Interface()
-		str, ok := el.(string)
-		if !ok {
-			str = fmt.Sprintf("%v", el)
-		}
-		values[path] = str
-	}
-	return values, nil
 }
