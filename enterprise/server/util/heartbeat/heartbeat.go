@@ -29,6 +29,7 @@ type HeartbeatChannel struct {
 	peers     map[string]time.Time
 	ps        interfaces.PubSub
 	updateFn  PeersUpdateFn
+	quit      chan struct{}
 }
 
 func NewHeartbeatChannel(ps interfaces.PubSub, myAddr, groupName string, updateFn PeersUpdateFn) *HeartbeatChannel {
@@ -38,20 +39,36 @@ func NewHeartbeatChannel(ps interfaces.PubSub, myAddr, groupName string, updateF
 		peers:     make(map[string]time.Time, 0),
 		ps:        ps,
 		updateFn:  updateFn,
+		quit:      make(chan struct{}),
 	}
 	ctx := context.Background()
-	go hac.sendHeartbeat(ctx)
 	go hac.watchPeers(ctx)
 	return hac
 }
 
-func (c *HeartbeatChannel) sendHeartbeat(ctx context.Context) {
-	for {
-		err := c.ps.Publish(ctx, c.groupName, c.myAddr)
-		if err != nil {
-			log.Printf("HeartbeatChannel(%s): error publishing: %s", c.groupName, err.Error())
+func (c *HeartbeatChannel) StartAdvertising() {
+	close(c.quit)
+	c.quit = make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-c.quit:
+				return
+			case <-time.After(heartbeatPeriod):
+				c.sendHeartbeat(context.Background())
+			}
 		}
-		time.Sleep(heartbeatPeriod)
+	}()
+}
+
+func (c *HeartbeatChannel) StopAdvertising() {
+	close(c.quit)
+}
+
+func (c *HeartbeatChannel) sendHeartbeat(ctx context.Context) {
+	err := c.ps.Publish(ctx, c.groupName, c.myAddr)
+	if err != nil {
+		log.Printf("HeartbeatChannel(%s): error publishing: %s", c.groupName, err.Error())
 	}
 }
 
