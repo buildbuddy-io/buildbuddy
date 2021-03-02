@@ -24,8 +24,8 @@ const (
 type PeersUpdateFn func(peerSet ...string)
 
 type HeartbeatChannel struct {
-	Period time.Duration
-	Timeout time.Duration
+	Period      time.Duration
+	Timeout     time.Duration
 	CheckPeriod time.Duration
 
 	groupName string
@@ -38,14 +38,14 @@ type HeartbeatChannel struct {
 
 func NewHeartbeatChannel(ps interfaces.PubSub, myAddr, groupName string, updateFn PeersUpdateFn) *HeartbeatChannel {
 	hac := &HeartbeatChannel{
-		groupName: groupName,
-		myAddr:    myAddr,
-		peers:     make(map[string]time.Time, 0),
-		ps:        ps,
-		updateFn:  updateFn,
-		quit:      make(chan struct{}),
-		Period: defaultHeartbeatPeriod,
-		Timeout: defaultHeartbeatTimeout,
+		groupName:   groupName,
+		myAddr:      myAddr,
+		peers:       make(map[string]time.Time, 0),
+		ps:          ps,
+		updateFn:    updateFn,
+		quit:        make(chan struct{}),
+		Period:      defaultHeartbeatPeriod,
+		Timeout:     defaultHeartbeatTimeout,
 		CheckPeriod: defaultHeartbeatCheckPeriod,
 	}
 	ctx := context.Background()

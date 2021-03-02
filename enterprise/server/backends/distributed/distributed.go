@@ -20,10 +20,10 @@ import (
 )
 
 type Cache struct {
-	local     interfaces.Cache
-	myAddr    string
-	groupName string
-	prefix    string
+	local             interfaces.Cache
+	myAddr            string
+	groupName         string
+	prefix            string
 	replicationFactor int
 
 	cacheProxy       *cacheproxy.CacheProxy
@@ -34,13 +34,13 @@ type Cache struct {
 func NewDistributedCache(env environment.Env, c interfaces.Cache, myAddr, groupName string, replicationFactor int) (*Cache, error) {
 	chash := consistent_hash.NewConsistentHash()
 	dc := &Cache{
-		local:            c,
-		cacheProxy:       cacheproxy.NewCacheProxy(env, c, myAddr),
-		myAddr:           myAddr,
-		groupName:        groupName,
-		consistentHash:   chash,
-		heartbeatChannel: heartbeat.NewHeartbeatChannel(env.GetPubSub(), myAddr, groupName, chash.Set),
-		replicationFactor:         replicationFactor,
+		local:             c,
+		cacheProxy:        cacheproxy.NewCacheProxy(env, c, myAddr),
+		myAddr:            myAddr,
+		groupName:         groupName,
+		consistentHash:    chash,
+		heartbeatChannel:  heartbeat.NewHeartbeatChannel(env.GetPubSub(), myAddr, groupName, chash.Set),
+		replicationFactor: replicationFactor,
 	}
 	go func() {
 		dc.StartListening()
@@ -68,14 +68,14 @@ func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
 		newPrefix += "/"
 	}
 	return &Cache{
-		local:            c.local.WithPrefix(prefix),
-		cacheProxy:       c.cacheProxy,
-		myAddr:           c.myAddr,
-		groupName:        c.groupName,
-		consistentHash:   c.consistentHash,
-		heartbeatChannel: c.heartbeatChannel,
-		prefix:           newPrefix,
-		replicationFactor:         c.replicationFactor,
+		local:             c.local.WithPrefix(prefix),
+		cacheProxy:        c.cacheProxy,
+		myAddr:            c.myAddr,
+		groupName:         c.groupName,
+		consistentHash:    c.consistentHash,
+		heartbeatChannel:  c.heartbeatChannel,
+		prefix:            newPrefix,
+		replicationFactor: c.replicationFactor,
 	}
 }
 
