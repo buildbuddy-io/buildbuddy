@@ -16,10 +16,6 @@ const (
 	repoBaseURL       = "https://bitbucket.org/"
 )
 
-func missingFieldError(path string) error {
-	return status.InvalidArgumentErrorf("missing field %q", path)
-}
-
 func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 	if userAgent := r.Header.Get("User-Agent"); userAgent != expectedUserAgent {
 		return nil, status.UnimplementedErrorf("unexpected user agent: %q; only %q is supported", userAgent, expectedUserAgent)
