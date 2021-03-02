@@ -31,8 +31,11 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, &webhook_data.WebhookData{
-		RepoURL: "https://github.com/test/hello_bb_ci.git",
-		SHA:     "258044d28288d5f6f1c5928b0e22580296fec666",
+		EventName:     "push",
+		TargetBranch:  "main",
+		RepoURL:       "https://github.com/test/hello_bb_ci.git",
+		IsRepoPrivate: true,
+		SHA:           "258044d28288d5f6f1c5928b0e22580296fec666",
 	}, data)
 }
 
@@ -43,8 +46,11 @@ func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, &webhook_data.WebhookData{
-		RepoURL: "https://github.com/test/hello_bb_ci.git",
-		SHA:     "21006e203e433034cd4d82859d28d3bc1dbdf9f7",
+		EventName:     "pull_request",
+		TargetBranch:  "main",
+		RepoURL:       "https://github.com/test/hello_bb_ci.git",
+		IsRepoPrivate: true,
+		SHA:           "21006e203e433034cd4d82859d28d3bc1dbdf9f7",
 	}, data)
 }
 
