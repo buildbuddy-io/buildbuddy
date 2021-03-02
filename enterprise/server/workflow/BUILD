@@ -4,7 +4,7 @@ go_library(
     name = "go_default_library",
     srcs = ["workflow.go"],
     data = [
-        "//enterprise/server/cmd/action_runner",
+        "//enterprise/server/cmd/ci_runner",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow",
     visibility = ["//visibility:public"],

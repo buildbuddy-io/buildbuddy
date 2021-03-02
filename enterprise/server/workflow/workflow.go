@@ -315,7 +315,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 }
 
 func runnerBinaryFile() (*os.File, error) {
-	path, err := bazelgo.Runfile("enterprise/server/cmd/action_runner/action_runner_/action_runner")
+	path, err := bazelgo.Runfile("enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not find runner binary runfile: %s", err)
 	}
