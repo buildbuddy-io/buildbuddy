@@ -11,6 +11,8 @@ import (
 	"testing"
 	"text/template"
 
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -125,7 +127,16 @@ func GetTestEnv(t *testing.T) *TestEnv {
 	}
 	te.SetCache(c)
 	dbHandle, err := db.GetConfiguredDatabase(configurator, healthChecker)
+	if err != nil {
+		t.Fatal(err)
+	}
 	te.SetDBHandle(dbHandle)
+	te.RealEnv.SetInvocationDB(invocationdb.NewInvocationDB(te, dbHandle))
+	bs, err := blobstore.GetConfiguredBlobstore(configurator)
+	if err != nil {
+		log.Fatalf("Error configuring blobstore: %s", err)
+	}
+	te.RealEnv.SetBlobstore(bs)
 
 	return te
 }

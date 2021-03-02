@@ -41,9 +41,6 @@ type fileRecord struct {
 
 func sizeFn(key interface{}, value interface{}) int64 {
 	size := int64(0)
-	if k, ok := key.(string); ok {
-		size += int64(len(k))
-	}
 	if v, ok := value.(*fileRecord); ok {
 		size += v.sizeBytes
 	}

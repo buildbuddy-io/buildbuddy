@@ -220,7 +220,7 @@ func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.Inst
 	return readProtoFromCache(ctx, ac, d, out)
 }
 
-func uploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadSeeker) (*repb.Digest, error) {
+func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadSeeker) (*repb.Digest, error) {
 	d, err := digest.Compute(in)
 	if err != nil {
 		return nil, err
@@ -240,19 +240,24 @@ func uploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadS
 	return d, wc.Close()
 }
 
+func UploadBytesToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in io.ReadSeeker) (*repb.Digest, error) {
+	cas := namespace.CASCache(cache, instanceName)
+	return UploadBytesToCache(ctx, cas, in)
+}
+
 func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
 	data, err := proto.Marshal(in)
 	if err != nil {
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	return uploadBytesToCache(ctx, cache, reader)
+	return UploadBytesToCache(ctx, cache, reader)
 }
 
 func UploadBlobToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, blob []byte) (*repb.Digest, error) {
 	reader := bytes.NewReader(blob)
 	cas := namespace.CASCache(cache, instanceName)
-	return uploadBytesToCache(ctx, cas, reader)
+	return UploadBytesToCache(ctx, cas, reader)
 }
 
 func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {

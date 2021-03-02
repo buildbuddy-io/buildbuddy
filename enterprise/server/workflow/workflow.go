@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"regexp"
 	"strings"
@@ -14,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowcmd"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jinzhu/gorm"
 
+	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
@@ -43,25 +44,6 @@ func generateWebhookID() (string, error) {
 		return "", err
 	}
 	return strings.ToLower(u.String()), nil
-}
-
-func assembleRepoURL(wd *webhook_data.WebhookData, wf *tables.Workflow) string {
-	// Use the webhook data for the Repo URL, since it contains the "canonical"
-	// URL from the Git provider's API. The table URL may contain wonky stuff
-	// like `git+ssh://`, `git@github.com:foo/bar`, etc.
-	authURL := wd.RepoURL
-	u, err := url.Parse(authURL)
-	if err == nil {
-		if wf.Username != "" {
-			u.User = url.UserPassword(wf.Username, wf.AccessToken)
-			authURL = u.String()
-		} else if wf.AccessToken != "" {
-			u.User = url.UserPassword(wf.AccessToken, "")
-			authURL = u.String()
-		}
-	}
-
-	return authURL
 }
 
 func instanceName(wd *webhook_data.WebhookData) string {
@@ -268,48 +250,64 @@ func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID
 	return tw, nil
 }
 
-func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, ci *workflowcmd.CommandInfo, instanceName string) (*repb.Digest, error) {
-	script, err := workflowcmd.GenerateShellScript(ci)
-	if err != nil {
-		return nil, err
-	}
-
+func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *webhook_data.WebhookData, ak *tables.APIKey, instanceName string) (*repb.Digest, error) {
 	cache := ws.env.GetCache()
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
 
-	scriptName := "run.sh"
-	scriptDigest, err := cachetools.UploadBlobToCAS(ctx, cache, instanceName, script)
+	runnerBinName := "buildbuddy_ci_runner"
+	runnerBinFile, err := runnerBinaryFile()
+	if err != nil {
+		return nil, err
+	}
+	runnerBinDigest, err := cachetools.UploadBytesToCAS(ctx, cache, instanceName, runnerBinFile)
 	if err != nil {
 		return nil, err
 	}
 	dir := &repb.Directory{
 		Files: []*repb.FileNode{
 			&repb.FileNode{
-				Name:         scriptName,
-				Digest:       scriptDigest,
+				Name:         runnerBinName,
+				Digest:       runnerBinDigest,
 				IsExecutable: true,
 			},
 		},
 	}
 	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, dir)
+	if err != nil {
+		return nil, err
+	}
+	envVars := []*repb.Command_EnvironmentVariable{
+		{Name: "CI", Value: "1"},
+		{Name: "CI_REPOSITORY_URL", Value: wf.RepoURL},
+		{Name: "CI_COMMIT_SHA", Value: wd.SHA},
+	}
+	if wd.IsTrusted() {
+		repoUser := wf.AccessToken
+		repoToken := ""
+		if wf.Username != "" {
+			repoUser = wf.Username
+			repoToken = wf.AccessToken
+		}
+		envVars = append(envVars, []*repb.Command_EnvironmentVariable{
+			{Name: "BUILDBUDDY_API_KEY", Value: ak.Value},
+			{Name: "REPO_USER", Value: repoUser},
+			{Name: "REPO_TOKEN", Value: repoToken},
+		}...)
+	}
+	conf := ws.env.GetConfigurator()
 	cmd := &repb.Command{
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			&repb.Command_EnvironmentVariable{
-				Name:  "CI",
-				Value: "1",
-			},
-			&repb.Command_EnvironmentVariable{
-				Name:  "CI_REPOSITORY_URL",
-				Value: wf.RepoURL,
-			},
-			&repb.Command_EnvironmentVariable{
-				Name:  "CI_COMMIT_SHA",
-				Value: ci.CommitSHA,
-			},
+		EnvironmentVariables: envVars,
+		Arguments: []string{
+			"./" + runnerBinName,
+			"--bes_backend=" + conf.GetAppEventsAPIURL(),
+			"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
+			"--repo_url=" + wf.RepoURL,
+			"--commit_sha=" + wd.SHA,
+			"--trigger_event=" + wd.EventName,
+			"--trigger_branch=" + wd.TargetBranch,
 		},
-		Arguments: []string{"/bin/bash", scriptName},
 	}
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, cmd)
 	if err != nil {
@@ -322,6 +320,14 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, action)
 	return actionDigest, err
+}
+
+func runnerBinaryFile() (*os.File, error) {
+	path, err := bazelgo.Runfile("enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
+	if err != nil {
+		return nil, status.FailedPreconditionErrorf("could not find runner binary runfile: %s", err)
+	}
+	return os.Open(path)
 }
 
 func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Workflow) (*tables.APIKey, error) {
@@ -409,16 +415,7 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 		return err
 	}
 	in := instanceName(webhookData)
-	bazelFlags, err := ws.getBazelFlags(key, in)
-	if err != nil {
-		return err
-	}
-	ci := &workflowcmd.CommandInfo{
-		RepoURL:    assembleRepoURL(webhookData, wf),
-		CommitSHA:  webhookData.SHA,
-		BazelFlags: bazelFlags,
-	}
-	ad, err := ws.createActionForWorkflow(ctx, wf, ci, in)
+	ad, err := ws.createActionForWorkflow(ctx, wf, webhookData, key, in)
 	if err != nil {
 		return err
 	}
