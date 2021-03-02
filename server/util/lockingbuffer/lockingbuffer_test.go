@@ -1,4 +1,4 @@
-package locking_buffer_test
+package lockingbuffer_test
 
 import (
 	"github.com/stretchr/testify/assert"
@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/locking_buffer"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 )
 
 func TestLockingBuffer_ReadWrite(t *testing.T) {
 	rand.Seed(int64(time.Now().UnixNano()))
 
-	buf := &locking_buffer.LockingBuffer{}
+	buf := lockingbuffer.New()
 
 	writer := func(val string, writeCount int, done *bool) {
 		defer func() {

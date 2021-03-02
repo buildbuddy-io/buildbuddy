@@ -18,7 +18,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowconf"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/locking_buffer"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/shlex"
@@ -183,7 +183,7 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 }
 
 type invocationLog struct {
-	locking_buffer.LockingBuffer
+	lockingbuffer.LockingBuffer
 
 	writer        io.Writer
 	writeListener func()

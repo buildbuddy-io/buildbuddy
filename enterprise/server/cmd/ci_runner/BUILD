@@ -11,7 +11,7 @@ go_library(
         "//proto:build_events_go_proto",
         "//proto:publish_build_event_go_proto",
         "//server/util/grpc_client:go_default_library",
-        "//server/util/locking_buffer:go_default_library",
+        "//server/util/lockingbuffer:go_default_library",
         "//server/util/status:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_google_shlex//:go_default_library",
