@@ -546,7 +546,7 @@ func authRepoURL() (string, error) {
 	}
 	u, err := url.Parse(*repoURL)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse repo URL %q: %s", *repoURL, err)
+		return "", status.InvalidArgumentErrorf("failed to parse repo URL %q: %s", *repoURL, err)
 	}
 	u.User = url.UserPassword(user, token)
 	return u.String(), nil
