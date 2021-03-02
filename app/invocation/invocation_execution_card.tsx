@@ -2,6 +2,7 @@ import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
+import Select, { Option } from "../components/select/select";
 
 import rpcService from "../service/rpc_service";
 
@@ -13,6 +14,8 @@ interface Props {
 interface State {
   loading: boolean;
   executions: execution_stats.Execution[];
+  sort: string;
+  direction: "asc" | "desc";
 }
 
 const stages = {
@@ -29,6 +32,8 @@ export default class ExecutionCardComponent extends React.Component {
   state: State = {
     executions: [],
     loading: true,
+    sort: "status",
+    direction: "desc",
   };
 
   timeoutRef: number;
@@ -81,8 +86,102 @@ export default class ExecutionCardComponent extends React.Component {
     return microsA - microsB;
   }
 
+  totalDuration(execution: execution_stats.Execution) {
+    return this.subtractTimestamp(
+      execution?.executedActionMetadata?.workerCompletedTimestamp,
+      execution?.executedActionMetadata?.queuedTimestamp
+    );
+  }
+
+  queuedDuration(execution: execution_stats.Execution) {
+    return this.subtractTimestamp(
+      execution?.executedActionMetadata?.workerStartTimestamp,
+      execution?.executedActionMetadata?.queuedTimestamp
+    );
+  }
+
+  downloadDuration(execution: execution_stats.Execution) {
+    return this.subtractTimestamp(
+      execution?.executedActionMetadata?.inputFetchCompletedTimestamp,
+      execution?.executedActionMetadata?.inputFetchStartTimestamp
+    );
+  }
+
+  executionDuration(execution: execution_stats.Execution) {
+    return this.subtractTimestamp(
+      execution?.executedActionMetadata?.executionCompletedTimestamp,
+      execution?.executedActionMetadata?.executionStartTimestamp
+    );
+  }
+
+  uploadDuration(execution: execution_stats.Execution) {
+    return this.subtractTimestamp(
+      execution?.executedActionMetadata?.outputUploadCompletedTimestamp,
+      execution?.executedActionMetadata?.outputUploadStartTimestamp
+    );
+  }
+
   sort(a: execution_stats.Execution, b: execution_stats.Execution) {
-    return a.stage - b.stage;
+    let first = this.state.direction == "asc" ? a : b;
+    let second = this.state.direction == "asc" ? b : a;
+
+    switch (this.state.sort) {
+      case "total-duration":
+        return this.totalDuration(first) - this.totalDuration(second);
+      case "queued-duration":
+        return this.queuedDuration(first) - this.queuedDuration(second);
+      case "download-duration":
+        return this.downloadDuration(first) - this.downloadDuration(second);
+      case "execution-duration":
+        return this.executionDuration(first) - this.executionDuration(second);
+      case "upload-duration":
+        return this.uploadDuration(first) - this.uploadDuration(second);
+      case "files-downloaded":
+        return +first?.ioStats?.fileDownloadCount - +second?.ioStats?.fileDownloadCount;
+      case "files-uploaded":
+        return +first?.ioStats?.fileUploadCount - +second?.ioStats?.fileUploadCount;
+      case "file-size-downloaded":
+        return +first?.ioStats?.fileDownloadSizeBytes - +second?.ioStats?.fileDownloadSizeBytes;
+      case "file-size-uploaded":
+        return +first?.ioStats?.fileUploadSizeBytes - +second?.ioStats?.fileUploadSizeBytes;
+      case "queue-start":
+        return this.subtractTimestamp(
+          first?.executedActionMetadata?.queuedTimestamp,
+          second?.executedActionMetadata?.queuedTimestamp
+        );
+      case "execution-start":
+        return this.subtractTimestamp(
+          first?.executedActionMetadata?.workerStartTimestamp,
+          second?.executedActionMetadata?.workerStartTimestamp
+        );
+      case "execution-end":
+        return this.subtractTimestamp(
+          first?.executedActionMetadata?.workerCompletedTimestamp,
+          second?.executedActionMetadata?.workerCompletedTimestamp
+        );
+      case "worker":
+        return second?.executedActionMetadata?.worker.localeCompare(first?.executedActionMetadata?.worker);
+      case "command":
+        return second?.commandSnippet.localeCompare(first?.commandSnippet);
+      case "action":
+        return second?.actionDigest?.hash.localeCompare(first?.actionDigest?.hash);
+      default:
+        return first.stage - second.stage;
+    }
+  }
+
+  handleInputChange(event: any) {
+    const target = event.target;
+    const name = target.name;
+    this.setState({
+      [name]: target.value,
+    });
+  }
+
+  handleSortChange(event: any) {
+    this.setState({
+      sort: event.target.value,
+    });
   }
 
   render() {
@@ -100,9 +199,9 @@ export default class ExecutionCardComponent extends React.Component {
 
     let completedCount = 0;
     let incompleteCount = 0;
-    for (let exection of this.state.executions) {
+    for (let execution of this.state.executions) {
       // Completed
-      if (exection.stage == 4) {
+      if (execution.stage == 4) {
         completedCount++;
       } else {
         incompleteCount++;
@@ -112,12 +211,60 @@ export default class ExecutionCardComponent extends React.Component {
     return (
       <div className={`card expanded`}>
         <div className="content">
-          <div className="title">
-            Remotely executed actions ({!!incompleteCount && <span>{incompleteCount} in progress, </span>}
-            {completedCount} completed)
+          <div className="invocation-content-header">
+            <div className="title">
+              Remotely executed actions ({!!incompleteCount && <span>{incompleteCount} in progress, </span>}
+              {completedCount} completed)
+            </div>
+
+            <div className="invocation-sort-controls">
+              <span className="invocation-sort-title">Sort by</span>
+              <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
+                <Option value="total-duration">Total Duration</Option>
+                <Option value="queued-duration">Queued Duration</Option>
+                <Option value="download-duration">Download Duration</Option>
+                <Option value="execution-duration">Execution Duration</Option>
+                <Option value="upload-duration">Upload Duration</Option>
+                <Option value="files-downloaded">Files Downloaded</Option>
+                <Option value="files-uploaded">Files Uploaded</Option>
+                <Option value="file-size-downloaded">File Size Downloaded</Option>
+                <Option value="file-size-uploaded">File Size Uploaded</Option>
+                <Option value="queue-start">Queue Start Time</Option>
+                <Option value="execution-start">Execution Start Time</Option>
+                <Option value="execution-end">Execution End Time</Option>
+                <Option value="worker">Worker</Option>
+                <Option value="command">Command Snippet</Option>
+                <Option value="action">Action Digest</Option>
+                <Option value="status">Status</Option>
+              </Select>
+              <span className="group-container">
+                <div>
+                  <input
+                    id="direction-asc"
+                    checked={this.state.direction == "asc"}
+                    onChange={this.handleInputChange.bind(this)}
+                    value="asc"
+                    name="direction"
+                    type="radio"
+                  />
+                  <label htmlFor="direction-asc">Asc</label>
+                </div>
+                <div>
+                  <input
+                    id="direction-desc"
+                    checked={this.state.direction == "desc"}
+                    onChange={this.handleInputChange.bind(this)}
+                    value="desc"
+                    name="direction"
+                    type="radio"
+                  />
+                  <label htmlFor="direction-desc">Desc</label>
+                </div>
+              </span>
+            </div>
           </div>
           <div className="invocation-execution-table">
-            {this.state.executions.sort(this.sort).map((execution) => (
+            {this.state.executions.sort(this.sort.bind(this)).map((execution) => (
               <div key={execution?.actionDigest?.hash} className="invocation-execution-row">
                 <div className="invocation-execution-row-image">
                   <img
@@ -133,53 +280,17 @@ export default class ExecutionCardComponent extends React.Component {
                   <div>{execution.commandSnippet}</div>
                   <div className="invocation-execution-row-stats">
                     <div>Worker: {execution?.executedActionMetadata?.worker}</div>
+                    <div>Total duration: {format.durationUsec(this.totalDuration(execution))}</div>
+                    <div>Queued duration: {format.durationUsec(this.queuedDuration(execution))}</div>
                     <div>
-                      Total duration:{" "}
-                      {format.durationUsec(
-                        this.subtractTimestamp(
-                          execution?.executedActionMetadata?.workerCompletedTimestamp,
-                          execution?.executedActionMetadata?.queuedTimestamp
-                        )
-                      )}
-                    </div>
-                    <div>
-                      Queued duration:{" "}
-                      {format.durationUsec(
-                        this.subtractTimestamp(
-                          execution?.executedActionMetadata?.workerStartTimestamp,
-                          execution?.executedActionMetadata?.queuedTimestamp
-                        )
-                      )}
-                    </div>
-                    <div>
-                      File download duration:{" "}
-                      {format.durationUsec(
-                        this.subtractTimestamp(
-                          execution?.executedActionMetadata?.inputFetchCompletedTimestamp,
-                          execution?.executedActionMetadata?.inputFetchStartTimestamp
-                        )
-                      )}{" "}
-                      ({format.bytes(execution?.ioStats?.fileDownloadSizeBytes)} across{" "}
+                      File download duration: {format.durationUsec(this.downloadDuration(execution))} (
+                      {format.bytes(execution?.ioStats?.fileDownloadSizeBytes)} across{" "}
                       {execution?.ioStats?.fileDownloadCount} files)
                     </div>
+                    <div>Execution duration: {format.durationUsec(this.executionDuration(execution))}</div>
                     <div>
-                      Execution duration:{" "}
-                      {format.durationUsec(
-                        this.subtractTimestamp(
-                          execution?.executedActionMetadata?.executionCompletedTimestamp,
-                          execution?.executedActionMetadata?.executionStartTimestamp
-                        )
-                      )}
-                    </div>
-                    <div>
-                      File upload duration:{" "}
-                      {format.durationUsec(
-                        this.subtractTimestamp(
-                          execution?.executedActionMetadata?.outputUploadCompletedTimestamp,
-                          execution?.executedActionMetadata?.outputUploadStartTimestamp
-                        )
-                      )}{" "}
-                      ({format.bytes(execution?.ioStats?.fileUploadSizeBytes)} across{" "}
+                      File upload duration: {format.durationUsec(this.uploadDuration(execution))} (
+                      {format.bytes(execution?.ioStats?.fileUploadSizeBytes)} across{" "}
                       {execution?.ioStats?.fileUploadCount} files)
                     </div>
                   </div>
