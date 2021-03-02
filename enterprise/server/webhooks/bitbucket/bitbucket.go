@@ -6,7 +6,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dynamic"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
@@ -30,7 +30,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		if err := unmarshalBody(r, payload); err != nil {
 			return nil, status.InvalidArgumentErrorf("failed to unmarshal push event payload: %s", err)
 		}
-		v, err := dynamic.FieldValues(
+		v, err := fieldgetter.FieldValues(
 			payload,
 			"Push.Changes.0.New.Target.Hash",
 			"Push.Changes.0.New.Type",
@@ -52,7 +52,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		if err := unmarshalBody(r, payload); err != nil {
 			return nil, status.InvalidArgumentErrorf("failed to unmarshal %q event payload: %s", eventName, err)
 		}
-		v, err := dynamic.FieldValues(
+		v, err := fieldgetter.FieldValues(
 			payload,
 			"PullRequest.Source.Commit.Hash",
 			"PullRequest.Source.Repository.Links.HTML.Href",

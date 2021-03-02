@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dynamic"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -31,7 +31,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 	log.Printf("Received GitHub webhook event: %T\n", event)
 	switch event := event.(type) {
 	case *gh.PushEvent:
-		v, err := dynamic.FieldValues(event, "Ref", "HeadCommit.ID", "Repo.DefaultBranch", "Repo.CloneURL")
+		v, err := fieldgetter.FieldValues(event, "Ref", "HeadCommit.ID", "Repo.DefaultBranch", "Repo.CloneURL")
 		if err != nil {
 			return nil, err
 		}
@@ -49,7 +49,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		}, nil
 
 	case *gh.PullRequestEvent:
-		v, err := dynamic.FieldValues(event, "Action", "PullRequest.Head.SHA", "PullRequest.Head.Repo.CloneURL")
+		v, err := fieldgetter.FieldValues(event, "Action", "PullRequest.Head.SHA", "PullRequest.Head.Repo.CloneURL")
 		if err != nil {
 			return nil, err
 		}

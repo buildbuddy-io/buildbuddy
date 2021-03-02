@@ -1,4 +1,4 @@
-package dynamic
+package fieldgetter
 
 import (
 	"fmt"

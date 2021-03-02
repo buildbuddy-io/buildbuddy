@@ -7,7 +7,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/util/dynamic:go_default_library",
+        "//enterprise/server/util/fieldgetter:go_default_library",
         "//enterprise/server/webhooks/webhook_data:go_default_library",
         "//server/util/status:go_default_library",
         "@com_github_google_go_github//github:go_default_library",
