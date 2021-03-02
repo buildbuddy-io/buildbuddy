@@ -1,12 +1,12 @@
 package github
 
 import (
-	"fmt"
 	"io/ioutil"
 	"log"
 	"mime"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
