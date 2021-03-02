@@ -22,7 +22,9 @@ func (lb *LockingBuffer) Write(p []byte) (int, error) {
 	return lb.buffer.Write(p)
 }
 func (lb *LockingBuffer) Read(p []byte) (int, error) {
-	lb.mu.RLock()
-	defer lb.mu.RUnlock()
+	// NOTE: Can't use RLock here since the impl of buffer.Read
+	// mutates the buffer's read cursor.
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
 	return lb.buffer.Read(p)
 }

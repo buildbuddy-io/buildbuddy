@@ -16,15 +16,11 @@ func TestLockingBuffer_ReadWrite(t *testing.T) {
 
 	buf := &locking_buffer.LockingBuffer{}
 
-	strA := "AAA"
-	strB := "BBBBBBB"
-	n := 1000
-
-	writer := func(val string, done *bool) {
+	writer := func(val string, writeCount int, done *bool) {
 		defer func() {
 			*done = true
 		}()
-		for i := 0; i < n; i++ {
+		for i := 0; i < writeCount; i++ {
 			if _, err := buf.Write([]byte(val)); err != nil {
 				t.Fail()
 				return
@@ -33,46 +29,55 @@ func TestLockingBuffer_ReadWrite(t *testing.T) {
 		}
 	}
 
-	// Thread 1: Write `n` copies of `strA` to the buffer
+	// Writer A: Write `n` copies of `strA` to the buffer
+	strA := "AAA"
+	strACount := 1187
 	writerADone := false
-	go writer(strA, &writerADone)
+	go writer(strA, strACount, &writerADone)
 
-	// Thread 2: Write `n` copies of `strB` to the buffer
+	// Writer B: Write `n` copies of `strB` to the buffer
+	strB := "BBBBBBB"
+	strBCount := 919
 	writerBDone := false
-	go writer(strB, &writerBDone)
+	go writer(strB, strBCount, &writerBDone)
 
-	// Thread 3: Continually read all bytes from the buffer
-	acc := ""
-	rDone := make(chan struct{}, 1)
-	go func() {
+	reader := func(acc *string, done chan struct{}) {
 		defer func() {
-			rDone <- struct{}{}
+			done <- struct{}{}
 		}()
 		for {
 			writersDone := writerADone && writerBDone
-
 			b, err := ioutil.ReadAll(buf)
 			if err != nil {
 				t.Fail()
 				return
 			}
-			acc += string(b)
-
+			*acc += string(b)
 			if writersDone {
 				break
 			}
 			randDelay()
 		}
-	}()
+	}
 
-	<-rDone
+	// Readers 1 & 2: continually attempt to read all bytes from the buffer.
+	reader1Acc := ""
+	reader1Done := make(chan struct{}, 1)
+	go reader(&reader1Acc, reader1Done)
 
-	// `acc` should consist of exactly n copies of strA and strB.
-	strACount := len(regexp.MustCompile(strA).FindAllStringSubmatch(acc, -1))
-	strBCount := len(regexp.MustCompile(strB).FindAllStringSubmatch(acc, -1))
-	assert.Equal(t, n, strACount)
-	assert.Equal(t, n, strBCount)
-	assert.Equal(t, n*(len(strA)+len(strB)), len(acc))
+	reader2Acc := ""
+	reader2Done := make(chan struct{}, 1)
+	go reader(&reader2Acc, reader2Done)
+
+	<-reader1Done
+	<-reader2Done
+
+	// Combined reader output should consist of exactly strACount copies of strA and
+	// strBCount copies of strB (in any order).
+	acc := reader1Acc + reader2Acc
+	assert.Equal(t, strACount, len(regexp.MustCompile(strA).FindAllStringSubmatch(acc, -1)))
+	assert.Equal(t, strBCount, len(regexp.MustCompile(strB).FindAllStringSubmatch(acc, -1)))
+	assert.Equal(t, strACount*len(strA)+strBCount*len(strB), len(acc))
 }
 
 func randDelay() {
