@@ -21,7 +21,7 @@ go_test(
     # keep
     embed = [":test_data"],
     deps = [
-        ":go_default_library",
+        ":go_default_library",  # keep
         "@com_github_stretchr_testify//assert:go_default_library",
     ],
 )
