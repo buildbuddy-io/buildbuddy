@@ -1,7 +1,6 @@
 package lockingbuffer_test
 
 import (
-	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"math/rand"
 	"regexp"
@@ -9,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLockingBuffer_ReadWrite(t *testing.T) {

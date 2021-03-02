@@ -405,6 +405,8 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 				// TODO: Populate GIT_BRANCH. Can't source this from the `trigger_branch` flag
 				// in the PR case, because that refers to the branch into which the PR would be
 				// merged, which doesn't reflect the currently checked out branch.
+				// TODO: Consider parsing the `.bazelrc` and running the user's actual workspace
+				// status command that they've configured for bazel.
 			},
 		}},
 	}
