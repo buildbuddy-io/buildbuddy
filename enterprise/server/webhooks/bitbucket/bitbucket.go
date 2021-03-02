@@ -30,7 +30,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		if err := unmarshalBody(r, payload); err != nil {
 			return nil, status.InvalidArgumentErrorf("failed to unmarshal push event payload: %s", err)
 		}
-		v, err := fieldgetter.FieldValues(
+		v, err := fieldgetter.ExtractValues(
 			payload,
 			"Push.Changes.0.New.Target.Hash",
 			"Push.Changes.0.New.Type",
@@ -52,7 +52,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		if err := unmarshalBody(r, payload); err != nil {
 			return nil, status.InvalidArgumentErrorf("failed to unmarshal %q event payload: %s", eventName, err)
 		}
-		v, err := fieldgetter.FieldValues(
+		v, err := fieldgetter.ExtractValues(
 			payload,
 			"PullRequest.Source.Commit.Hash",
 			"PullRequest.Source.Repository.Links.HTML.Href",

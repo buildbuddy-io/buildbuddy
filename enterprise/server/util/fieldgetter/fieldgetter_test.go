@@ -30,7 +30,7 @@ func TestDynamic(t *testing.T) {
 		{&Parent{StrList: []string{"hello"}}, "StrList.0", "hello"},
 		{&Parent{ChildList: []*Child{{ChildString: "hello"}}}, "ChildList.0.ChildString", "hello"},
 	} {
-		vals, err := fieldgetter.FieldValues(test.val, test.path)
+		vals, err := fieldgetter.ExtractValues(test.val, test.path)
 
 		assert.NoError(t, err, test.path)
 		assert.Equal(t, test.expected, vals[test.path])
@@ -44,7 +44,7 @@ func TestDynamic(t *testing.T) {
 		{&Parent{StrList: []string{"hello"}}, "Str.0", `cannot access field "0" of string "Str"`},
 		{&Parent{StrList: []string{"hello"}}, "Str.Foo", `cannot access field "Foo" of string "Str"`},
 	} {
-		vals, err := fieldgetter.FieldValues(test.val, test.path)
+		vals, err := fieldgetter.ExtractValues(test.val, test.path)
 
 		assert.Nil(t, vals)
 		assert.Equal(t, test.errMsg, fmt.Sprintf("%s", err))

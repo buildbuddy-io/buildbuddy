@@ -31,7 +31,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 	log.Printf("Received GitHub webhook event: %T\n", event)
 	switch event := event.(type) {
 	case *gh.PushEvent:
-		v, err := fieldgetter.FieldValues(event, "Ref", "HeadCommit.ID", "Repo.DefaultBranch", "Repo.CloneURL")
+		v, err := fieldgetter.ExtractValues(event, "Ref", "HeadCommit.ID", "Repo.DefaultBranch", "Repo.CloneURL")
 		if err != nil {
 			return nil, err
 		}
@@ -49,7 +49,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		}, nil
 
 	case *gh.PullRequestEvent:
-		v, err := fieldgetter.FieldValues(event, "Action", "PullRequest.Head.SHA", "PullRequest.Head.Repo.CloneURL")
+		v, err := fieldgetter.ExtractValues(event, "Action", "PullRequest.Head.SHA", "PullRequest.Head.Repo.CloneURL")
 		if err != nil {
 			return nil, err
 		}

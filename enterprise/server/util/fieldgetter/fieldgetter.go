@@ -12,7 +12,7 @@ var (
 	digitsRegexp = regexp.MustCompile(`^\d+$`)
 )
 
-// FieldValues extracts values from an object given dot-separated field paths, returning
+// ExtractValues extracts values from an object given dot-separated field paths, returning
 // a mapping from each field path to the string representation of the value at that path.
 //
 // It is mostly useful when dealing with deeply nested structs parsed from a third-party
@@ -22,7 +22,7 @@ var (
 // If a nil pointer is encountered the access path, an error is returned.
 //
 // Number-valued field names refer to slice indexes.
-func FieldValues(obj interface{}, fieldPaths ...string) (map[string]string, error) {
+func ExtractValues(obj interface{}, fieldPaths ...string) (map[string]string, error) {
 	values := map[string]string{}
 	objVal := reflect.Indirect(reflect.ValueOf(obj))
 	if !objVal.IsValid() {
