@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"io/ioutil"
+	"log"
 	"path/filepath"
 	"sync"
 
@@ -31,14 +32,33 @@ type Cache struct {
 
 func NewDistributedCache(env environment.Env, c interfaces.Cache, myAddr, groupName string) (*Cache, error) {
 	chash := consistent_hash.NewConsistentHash()
-	return &Cache{
+	dc := &Cache{
 		local:            c,
 		cacheProxy:       cacheproxy.NewCacheProxy(env, c, myAddr),
 		myAddr:           myAddr,
 		groupName:        groupName,
 		consistentHash:   chash,
 		heartbeatChannel: heartbeat.NewHeartbeatChannel(env.GetPubSub(), myAddr, groupName, chash.Set),
-	}, nil
+	}
+	go func() {
+		dc.StartListening()
+	}()
+	return dc, nil
+}
+
+func (c *Cache) StartListening() {
+	go func() {
+		c.heartbeatChannel.StartAdvertising()
+		log.Printf("Distributed disk listening on %q", c.myAddr)
+		c.cacheProxy.Server().ListenAndServe()
+		log.Printf("Distributed disk finished listening %q", c.myAddr)
+	}()
+}
+
+func (c *Cache) Shutdown() {
+	log.Printf("Distributed disk shutting down %q", c.myAddr)
+	c.heartbeatChannel.StopAdvertising()
+	c.cacheProxy.Server().Close()
 }
 
 func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
@@ -57,21 +77,37 @@ func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
 	}
 }
 
-func (c *Cache) peer(d *repb.Digest) string {
+func (c *Cache) peers(d *repb.Digest) (string, string) {
 	peer := c.consistentHash.Get(d.GetHash())
 	if peer == "" {
 		// if no peer is found, write the file locally.
 		peer = c.myAddr
 	}
-	return peer
+	next := c.consistentHash.GetNext(d.GetHash())
+	if next == "" {
+		next = c.myAddr
+	}
+	if peer == next {
+		log.Printf("WARNING: peers are the same: %q", peer)
+	}
+	return peer, next
+}
+
+func (c *Cache) remoteContains(ctx context.Context, peer, nextPeer string, d *repb.Digest) (bool, error) {
+	b, err := c.cacheProxy.RemoteContains(ctx, peer, c.prefix, d)
+	if status.IsUnavailableError(err) {
+		log.Printf("Hit unavailable error: %s", err.Error())
+		return c.cacheProxy.RemoteContains(ctx, nextPeer, c.prefix, d)
+	}
+	return b, err
 }
 
 func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	peer := c.peer(d)
+	peer, nextPeer := c.peers(d)
 	if peer == c.myAddr {
 		return c.local.Contains(ctx, d)
 	}
-	return c.cacheProxy.RemoteContains(ctx, peer, c.prefix, d)
+	return c.remoteContains(ctx, peer, nextPeer, d)
 }
 
 func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
@@ -102,12 +138,24 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 	return foundMap, nil
 }
 
+func (c *Cache) remoteReader(ctx context.Context, peer, nextPeer string, d *repb.Digest, offset int64) (io.Reader, error) {
+	r, err := c.cacheProxy.RemoteReader(ctx, peer, c.prefix, d, 0)
+	if err != nil {
+		log.Printf("peer %q returned %s", peer, err.Error())
+	}
+	if status.IsUnavailableError(err) {
+		log.Printf("Hit unavailable error: %s", err.Error())
+		return c.cacheProxy.RemoteReader(ctx, nextPeer, c.prefix, d, 0)
+	}
+	return r, err
+}
+
 func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	peer := c.peer(d)
+	peer, nextPeer := c.peers(d)
 	if peer == c.myAddr {
 		return c.local.Get(ctx, d)
 	}
-	r, err := c.cacheProxy.RemoteReader(ctx, peer, c.prefix, d, 0)
+	r, err := c.remoteReader(ctx, peer, nextPeer, d, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -142,12 +190,67 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 	return foundMap, nil
 }
 
-func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	peer := c.peer(d)
-	if peer == c.myAddr {
-		return c.local.Set(ctx, d, data)
+type multiCloser struct {
+	closers []io.WriteCloser
+}
+
+func (mc *multiCloser) Write(data []byte) (int, error) {
+	for _, w := range mc.closers {
+		n, err := w.Write(data)
+		if err != nil {
+			return 0, err
+		}
+		if n != len(data) {
+			return n, io.ErrShortWrite
+		}
 	}
-	wc, err := c.cacheProxy.RemoteWriter(ctx, peer, c.prefix, d)
+	return len(data), nil
+}
+func (mc *multiCloser) Close() error {
+	for _, w := range mc.closers {
+		if err := w.Close(); err != nil {
+			log.Printf("Error closign writer: %s", err.Error())
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Cache) multiWriter(ctx context.Context, peer, nextPeer string, d *repb.Digest) (io.WriteCloser, error) {
+	var c1, c2 io.WriteCloser
+	if peer == c.myAddr {
+		wc, err := c.local.Writer(ctx, d)
+		if err != nil {
+			return nil, err
+		}
+		c1 = wc
+	} else {
+		wc, err := c.cacheProxy.RemoteWriter(ctx, peer, c.prefix, d)
+		if err != nil {
+			return nil, err
+		}
+		c1 = wc
+	}
+	// do the same thing for
+	if nextPeer == c.myAddr {
+		wc, err := c.local.Writer(ctx, d)
+		if err != nil {
+			return nil, err
+		}
+		c2 = wc
+	} else {
+		wc, err := c.cacheProxy.RemoteWriter(ctx, nextPeer, c.prefix, d)
+		if err != nil {
+			return nil, err
+		}
+		c2 = wc
+	}
+	return &multiCloser{[]io.WriteCloser{c1, c2}}, nil
+}
+
+func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+	peer, nextPeer := c.peers(d)
+	wc, err := c.multiWriter(ctx, peer, nextPeer, d)
 	if err != nil {
 		return err
 	}
@@ -181,17 +284,11 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 }
 
 func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error) {
-	peer := c.peer(d)
-	if peer == c.myAddr {
-		return c.local.Reader(ctx, d, offset)
-	}
-	return c.cacheProxy.RemoteReader(ctx, peer, c.prefix, d, offset)
+	peer, nextPeer := c.peers(d)
+	return c.remoteReader(ctx, peer, nextPeer, d, offset)
 }
 
 func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
-	peer := c.peer(d)
-	if peer == c.myAddr {
-		return c.local.Writer(ctx, d)
-	}
-	return c.cacheProxy.RemoteWriter(ctx, peer, c.prefix, d)
+	peer, nextPeer := c.peers(d)
+	return c.multiWriter(ctx, peer, nextPeer, d)
 }
