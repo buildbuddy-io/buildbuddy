@@ -29,13 +29,13 @@ func TestLockingBuffer_ReadWrite(t *testing.T) {
 		}
 	}
 
-	// Writer A: Write `n` copies of `strA` to the buffer
+	// Writer A: Write `strACount` copies of `strA` to the buffer
 	strA := "AAA"
 	strACount := 1187
 	writerADone := false
 	go writer(strA, strACount, &writerADone)
 
-	// Writer B: Write `n` copies of `strB` to the buffer
+	// Writer B: Write `strBCount` copies of `strB` to the buffer
 	strB := "BBBBBBB"
 	strBCount := 919
 	writerBDone := false
