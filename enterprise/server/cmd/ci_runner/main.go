@@ -1,11 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
@@ -18,6 +18,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowconf"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/locking_buffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/shlex"
@@ -28,7 +29,6 @@ import (
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -60,6 +60,18 @@ const (
 
 	pushEventName        = "push"
 	pullRequestEventName = "pull_request"
+
+	// Binary constants
+
+	bazelBinaryName    = "bazel"
+	bazeliskBinaryName = "bazelisk"
+
+	// ANSI codes for cases where the aurora equivalent is not supported by our UI
+	// (ex: aurora's "grayscale" mode results in some ANSI codes that we don't currently
+	// parse correctly).
+
+	ansiGray  = "\033[90m"
+	ansiReset = "\033[0m"
 )
 
 var (
@@ -134,9 +146,6 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 		if err := ar.Run(ctx); err != nil {
 			ar.log.Printf(aurora.Sprintf(aurora.Red("\nAction failed: %s"), err))
 			exitCode = getExitCode(err)
-			if exitCode == noExitCode {
-				exitCode = 1
-			}
 		}
 
 		// Ignore errors from the events published here; they'll be surfaced in `bep.Wait()`
@@ -152,7 +161,8 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 			}},
 		})
 		elapsedTimeSeconds := float64(time.Since(startTime)) / float64(time.Second)
-		// NB: This is the last message
+		// NB: This is the last message -- if more are added afterwards, be sure to
+		// update the `LastMessage` flag
 		bep.Publish(&bespb.BuildEvent{
 			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildToolLogs{BuildToolLogs: &bespb.BuildEventId_BuildToolLogsId{}}},
 			Payload: &bespb.BuildEvent_BuildToolLogs{BuildToolLogs: &bespb.BuildToolLogs{
@@ -173,36 +183,24 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 }
 
 type invocationLog struct {
-	writeListener func()
+	locking_buffer.LockingBuffer
 
-	mu     sync.Mutex
-	Buffer bytes.Buffer
+	writer        io.Writer
+	writeListener func()
 }
 
 func newInvocationLog() *invocationLog {
 	invLog := &invocationLog{writeListener: func() {}}
+	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stdout)
 	return invLog
 }
 
-// Write writes the given bytes to the invocation log and also streams
-// those bytes to os.Stderr on a best-effort basis.
 func (invLog *invocationLog) Write(b []byte) (int, error) {
-	invLog.mu.Lock()
-	n, err := invLog.Buffer.Write(b)
-	invLog.mu.Unlock()
-	_, _ = os.Stderr.Write(b)
+	n, err := invLog.writer.Write(b)
 	invLog.writeListener()
 	return n, err
 }
 
-// Consume returns all bytes written to the log since the last call to consume.
-func (invLog *invocationLog) Consume() []byte {
-	invLog.mu.Lock()
-	defer invLog.mu.Unlock()
-	b := []byte(invLog.Buffer.Bytes())
-	invLog.Buffer.Reset()
-	return b
-}
 func (invLog *invocationLog) Println(vals ...interface{}) {
 	invLog.Write([]byte(fmt.Sprintln(vals...)))
 }
@@ -302,7 +300,7 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 
 		bazelEvent, err := ptypes.MarshalAny(event)
 		if err != nil {
-			bep.setError(fmt.Errorf("failed to marshal bazel event: %s", err))
+			bep.setError(status.WrapError(err, "failed to marshal bazel event"))
 			return
 		}
 		start := time.Now()
@@ -325,7 +323,7 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 	// After successfully transmitting all events, close our side of the stream
 	// and wait for server ACKs before closing the connection.
 	if err := stream.CloseSend(); err != nil {
-		bep.setError(fmt.Errorf("failed to close build event stream: %s", err))
+		bep.setError(status.WrapError(err, "failed to close build event stream"))
 		return
 	}
 	<-doneReceiving
@@ -334,7 +332,7 @@ func (bep *buildEventPublisher) Publish(e *bespb.BuildEvent) error {
 	bep.mu.Lock()
 	defer bep.mu.Unlock()
 	if bep.err != nil {
-		return fmt.Errorf("cannot publish event due to previous error: %s", bep.err)
+		return status.WrapError(bep.err, "cannot publish event due to previous error")
 	}
 	bep.events <- e
 	return nil
@@ -351,8 +349,8 @@ func (bep *buildEventPublisher) getError() error {
 }
 func (bep *buildEventPublisher) setError(err error) {
 	bep.mu.Lock()
+	defer bep.mu.Unlock()
 	bep.err = err
-	bep.mu.Unlock()
 }
 
 // actionRunner runs a single action in the BuildBuddy config.
@@ -414,10 +412,10 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 		return nil
 	}
 
+	// Flush whenever the log buffer fills past a certain threshold.
 	ar.log.writeListener = func() {
-		// No need to lock the buffer here (read-only operation)
-		if size := ar.log.Buffer.Len(); size >= progressFlushThresholdBytes {
-			ar.flushProgress() // ignore error
+		if size := ar.log.Len(); size >= progressFlushThresholdBytes {
+			ar.flushProgress() // ignore error; it will surface in `bep.Wait()`
 		}
 	}
 	stopFlushingProgress := ar.startBackgroundProgressFlush()
@@ -426,22 +424,22 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 	for _, bazelCmd := range ar.action.BazelCommands {
 		args, err := bazelArgs(bazelCmd)
 		if err != nil {
-			return fmt.Errorf("failed to parse bazel command: %s", err)
+			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
 		ar.printCommandLine(args)
-		err = runCommand(ctx, "bazelisk", args /*env=*/, nil, ar.log)
+		err = runCommand(ctx, bazeliskBinaryName, args /*env=*/, nil, ar.log)
 		if exitCode := getExitCode(err); exitCode != noExitCode {
-			// not using aurora here because our client-side library doesn't
-			// support the types of escape sequences required for aurora's
-			// fancy "grayscale" colors.
-			ar.log.Printf("\033[90m(command exited with code %d)\033[0m", exitCode)
-		}
-		// If the command failed, report its progress before returning.
-		if err := ar.flushProgress(); err != nil {
-			return nil
+			ar.log.Printf("%s(command exited with code %d)%s", ansiGray, exitCode, ansiReset)
 		}
 		if err != nil {
+			// Note, even though we don't hit the `flushProgress` call below in this case,
+			// we'll still flush progress before closing the BEP stream.
 			return err
+		}
+		// Flush progress after every command.
+		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Wait()`.
+		if err := ar.flushProgress(); err != nil {
+			break
 		}
 	}
 	return nil
@@ -469,7 +467,7 @@ func (ar *actionRunner) printCommandLine(bazelArgs []string) {
 	if ar.username == "root" {
 		ps1End = "#"
 	}
-	command := "bazelisk"
+	command := bazeliskBinaryName
 	for _, arg := range bazelArgs {
 		command += " " + toShellToken(arg)
 	}
@@ -478,7 +476,10 @@ func (ar *actionRunner) printCommandLine(bazelArgs []string) {
 }
 
 func (ar *actionRunner) flushProgress() error {
-	buf := ar.log.Consume()
+	buf, err := ioutil.ReadAll(ar.log)
+	if err != nil {
+		return status.WrapError(err, "failed to read action logs")
+	}
 	if len(buf) == 0 {
 		return nil
 	}
@@ -504,7 +505,7 @@ func bazelArgs(cmd string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if tokens[0] == "bazel" || tokens[0] == "bazelisk" {
+	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName {
 		tokens = tokens[1:]
 	}
 	return tokens, nil
