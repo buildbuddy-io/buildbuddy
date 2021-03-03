@@ -10,24 +10,36 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 const (
+	// GitHub status constants
+
+	ErrorState   State = "error"
+	PendingState State = "pending"
+	FailureState State = "failure"
+	SuccessState State = "success"
+
 	stateCookieName    = "Github-State-Token"
 	redirectCookieName = "Github-Redirect-Url"
 )
 
+// State represents a status value that GitHub's statuses API understands.
+type State string
+
 type GithubStatusPayload struct {
-	State       string `json:"state"`
+	State       State  `json:"state"`
 	TargetURL   string `json:"target_url"`
 	Description string `json:"description"`
 	Context     string `json:"context"`
 }
 
-func NewGithubStatusPayload(context, URL, description, state string) *GithubStatusPayload {
+func NewGithubStatusPayload(context, URL, description string, state State) *GithubStatusPayload {
 	return &GithubStatusPayload{
 		Context:     context,
 		TargetURL:   URL,
@@ -47,6 +59,7 @@ type GithubClient struct {
 	client             *http.Client
 	githubToken        string
 	githubTokenFetched bool
+	workflowID         string
 }
 
 func NewGithubClient(env environment.Env) *GithubClient {
@@ -163,6 +176,18 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectUrl, http.StatusTemporaryRedirect)
 }
 
+// SetWorkflowID sets the workflow ID and clears any cached credentials.
+func (c *GithubClient) SetWorkflowID(workflowID string) {
+	c.workflowID = workflowID
+	c.githubToken = ""
+	c.githubTokenFetched = false
+}
+
+// WorkflowID returns the workflow ID associated with this client.
+func (c *GithubClient) WorkflowID() string {
+	return c.workflowID
+}
+
 func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commitSHA string, payload *GithubStatusPayload) error {
 	if ownerRepo == "" || commitSHA == "" {
 		return nil // We can't create a status without an owner/repo and a commit SHA.
@@ -193,13 +218,24 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 }
 
 func (c *GithubClient) populateTokenIfNecessary(ctx context.Context) error {
-	if c.githubTokenFetched || c.env.GetConfigurator().GetGithubConfig() == nil {
+	if c.githubTokenFetched {
 		return nil
 	}
 
+	if c.workflowID != "" {
+		w, err := workflow.LookupWorkflowByID(ctx, c.env, c.workflowID)
+		if err != nil {
+			return status.WrapError(err, "workflow lookup failed")
+		}
+		c.setAccessToken(w.AccessToken)
+		return nil
+	}
+
+	if c.env.GetConfigurator().GetGithubConfig() == nil {
+		return nil
+	}
 	if accessToken := c.env.GetConfigurator().GetGithubConfig().AccessToken; accessToken != "" {
-		c.githubToken = accessToken
-		c.githubTokenFetched = true
+		c.setAccessToken(accessToken)
 		return nil
 	}
 
@@ -221,9 +257,13 @@ func (c *GithubClient) populateTokenIfNecessary(ctx context.Context) error {
 		return err
 	}
 
-	c.githubToken = group.GithubToken
-	c.githubTokenFetched = true
+	c.setAccessToken(group.GithubToken)
 	return nil
+}
+
+func (c *GithubClient) setAccessToken(token string) {
+	c.githubToken = token
+	c.githubTokenFetched = true
 }
 
 func setCookie(w http.ResponseWriter, name, value string) {

@@ -28,8 +28,10 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		}
 		v, err := fieldgetter.ExtractValues(
 			payload,
+			"Push.Changes.0.New.Name",
 			"Push.Changes.0.New.Target.Hash",
 			"Push.Changes.0.New.Type",
+			"Repository.IsPrivate",
 			"Repository.Links.HTML.Href",
 		)
 		if err != nil {
@@ -39,9 +41,14 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 			log.Printf("Ignoring non-branch push event (type %q)", t)
 			return nil, nil
 		}
+		branch := v["Push.Changes.0.New.Name"]
 		return &webhook_data.WebhookData{
-			RepoURL: v["Repository.Links.HTML.Href"],
-			SHA:     v["Push.Changes.0.New.Target.Hash"],
+			EventName:     webhook_data.EventName.Push,
+			PushedBranch:  branch,
+			TargetBranch:  branch,
+			RepoURL:       v["Repository.Links.HTML.Href"],
+			IsRepoPrivate: v["Repository.IsPrivate"] == "true",
+			SHA:           v["Push.Changes.0.New.Target.Hash"],
 		}, nil
 	case "pullrequest:created", "pullrequest:updated":
 		payload := &PullRequestEventPayload{}
@@ -50,15 +57,22 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		}
 		v, err := fieldgetter.ExtractValues(
 			payload,
+			"PullRequest.Destination.Branch.Name",
+			"PullRequest.Source.Branch.Name",
 			"PullRequest.Source.Commit.Hash",
 			"PullRequest.Source.Repository.Links.HTML.Href",
+			"Repository.IsPrivate",
 		)
 		if err != nil {
 			return nil, err
 		}
 		return &webhook_data.WebhookData{
-			RepoURL: v["PullRequest.Source.Repository.Links.HTML.Href"],
-			SHA:     v["PullRequest.Source.Commit.Hash"],
+			EventName:     webhook_data.EventName.PullRequest,
+			PushedBranch:  v["PullRequest.Source.Branch.Name"],
+			TargetBranch:  v["PullRequest.Destination.Branch.Name"],
+			RepoURL:       v["PullRequest.Source.Repository.Links.HTML.Href"],
+			IsRepoPrivate: v["Repository.IsPrivate"] == "true",
+			SHA:           v["PullRequest.Source.Commit.Hash"],
 		}, nil
 	default:
 		log.Printf("Ignoring webhook event: %s", eventName)
@@ -77,8 +91,8 @@ func unmarshalBody(r *http.Request, payload interface{}) error {
 // PushEventPayload represents a subset of Bitbucket's Push event schema.
 // See https://support.atlassian.com/bitbucket-cloud/docs/event-payloads/#Push
 type PushEventPayload struct {
-	Repository *Repository  `json:"repository"`
 	Push       *PushDetails `json:"push"`
+	Repository *Repository  `json:"repository"`
 }
 type PushDetails struct {
 	Changes []*PushedChange `json:"changes"`
@@ -99,20 +113,27 @@ type RefState struct {
 // See https://support.atlassian.com/bitbucket-cloud/docs/event-payloads/#Pull-request
 type PullRequestEventPayload struct {
 	PullRequest *PullRequestDetails `json:"pullrequest"`
+	Repository  *Repository         `json:"repository"`
 }
 type PullRequestDetails struct {
-	Source *PullRequestBranch `json:"source"`
+	Source      *PullRequestSide `json:"source"`
+	Destination *PullRequestSide `json:"destination"`
 }
-type PullRequestBranch struct {
+type PullRequestSide struct {
+	Branch     *Branch        `json:"branch"`
 	Commit     *CommitDetails `json:"commit"`
 	Repository *Repository    `json:"repository"`
+}
+type Branch struct {
+	Name string `json:"name"`
 }
 
 // Repository represents a subset of Bitbucket's Repository schema, which is
 // a common entity used in multiple webhook events.
 // See https://support.atlassian.com/bitbucket-cloud/docs/event-payloads/#Repository
 type Repository struct {
-	Links *RepositoryLinks `json:"links"`
+	Links     *RepositoryLinks `json:"links"`
+	IsPrivate bool             `json:"is_private"`
 }
 type RepositoryLinks struct {
 	HTML *RepositoryLink `json:"html"`

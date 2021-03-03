@@ -17,6 +17,10 @@ func init() {
 type WebhookData struct {
 	// EventName is the canonical event name that this data was created from.
 	EventName string
+	// PushedBranch is the name of the branch in the source repo that triggered the
+	// event when pushed. Note that for forks, the branch here references the branch
+	// name in the forked repository.
+	PushedBranch string
 	// TargetBranch is the branch associated with the event that determines whether
 	// actions should be triggered. For push events this is the branch that was
 	// pushed to. For pull_request events this is the base branch into which the PR

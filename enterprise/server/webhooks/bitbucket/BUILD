@@ -26,7 +26,7 @@ go_test(
     # keep
     embed = [":data"],
     deps = [
-        ":go_default_library",
+        ":go_default_library",  # keep
         "//enterprise/server/webhooks/webhook_data:go_default_library",
         "@com_github_stretchr_testify//assert:go_default_library",
     ],

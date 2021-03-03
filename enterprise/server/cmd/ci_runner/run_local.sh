@@ -27,6 +27,8 @@ while ! [ -e ".git" ]; do cd ..; done
 
 : "${REPO:=$PWD}"
 
+BRANCH=$(cd "$REPO" && git branch --show-current)
+
 bazel build //enterprise/server/cmd/ci_runner
 runner=$(realpath ./bazel-bin/enterprise/server/cmd/ci_runner/ci_runner_/ci_runner)
 cd "$(mktemp -d)"
@@ -34,7 +36,8 @@ cd "$(mktemp -d)"
   --repo_url="file://$(realpath "$REPO")" \
   --commit_sha="$(cd "$REPO" && git rev-parse HEAD)" \
   --trigger_event=push \
-  --trigger_branch="$(cd "$REPO" && git branch --show-current)" \
+  --branch="$BRANCH" \
+  --trigger_branch="$BRANCH" \
   --bes_backend=grpc://localhost:1985 \
   --bes_results_url=http://localhost:8080/invocation/ \
   "$@"
