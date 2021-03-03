@@ -229,7 +229,7 @@ func (l sqlLogger) Trace(ctx context.Context, begin time.Time, fc func() (string
 	// Avoid logging errors when no records are matched for a lookup as it
 	// generally does not indicate a problem with the server.
 	// Except when log level is "info" where we log all queries.
-	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) && l.logLevel > logger.Info {
+	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) && l.logLevel != logger.Info {
 		return
 	}
 	l.delegate.Trace(ctx, begin, fc, err)
