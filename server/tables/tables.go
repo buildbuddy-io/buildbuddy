@@ -425,6 +425,7 @@ type Workflow struct {
 	Perms       int    `gorm:"index:workflow_perms"`
 	Name        string
 	RepoURL     string
+	Username    string
 	AccessToken string
 	WebhookID   string `gorm:"unique_index:workflow_webhook_id_index"`
 }

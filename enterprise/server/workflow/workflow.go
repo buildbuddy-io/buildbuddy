@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -78,10 +79,10 @@ func (ws *workflowService) getWebhookURL(webhookID string) (string, error) {
 
 // testRepo will call "git ls-repo repoURL" to verify that the repo is valid and
 // the accessToken (if non-empty) works.
-func (ws *workflowService) testRepo(ctx context.Context, repoURL, accessToken string) error {
+func (ws *workflowService) testRepo(ctx context.Context, repoURL, username, accessToken string) error {
 	rdl := ws.env.GetRepoDownloader()
 	if rdl != nil {
-		return rdl.TestRepoAccess(ctx, repoURL, accessToken)
+		return rdl.TestRepoAccess(ctx, repoURL, username, accessToken)
 	}
 	return nil
 }
@@ -106,7 +107,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	}
 	repoReq := req.GetGitRepo()
 	if repoReq.GetRepoUrl() == "" {
-		return nil, status.InvalidArgumentError("A repo_url is required to create a new workflow.")
+		return nil, status.InvalidArgumentError("A repo URL is required to create a new workflow.")
 	}
 
 	// Ensure the request is authenticated so some user can own this workflow.
@@ -122,8 +123,9 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 
 	// Do a quick check to see if this is a valid repo that we can actually access.
 	repoURL := repoReq.GetRepoUrl()
+	username := repoReq.GetUsername()
 	accessToken := repoReq.GetAccessToken()
-	if err := ws.testRepo(ctx, repoURL, accessToken); err != nil {
+	if err := ws.testRepo(ctx, repoURL, username, accessToken); err != nil {
 		return nil, status.UnavailableErrorf("Repo %q is unavailable: %s", repoURL, err.Error())
 	}
 
@@ -151,6 +153,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 			Perms:       permissions.Perms,
 			Name:        req.GetName(),
 			RepoURL:     repoURL,
+			Username:    username,
 			AccessToken: accessToken,
 			WebhookID:   webhookID,
 		}
@@ -176,7 +179,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 	}
 	err = ws.env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
 		var in tables.Workflow
-		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Workflows WHERE workflow_id = ?`, workflowID).Scan(&in).Error; err != nil {
+		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Workflows WHERE workflow_id = ?`, workflowID).Take(&in).Error; err != nil {
 			return err
 		}
 		acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
@@ -281,11 +284,16 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		{Name: "CI_COMMIT_SHA", Value: wd.SHA},
 	}
 	if wd.IsTrusted() {
+		repoUser := wf.AccessToken
+		repoToken := ""
+		if wf.Username != "" {
+			repoUser = wf.Username
+			repoToken = wf.AccessToken
+		}
 		envVars = append(envVars, []*repb.Command_EnvironmentVariable{
 			{Name: "BUILDBUDDY_API_KEY", Value: ak.Value},
-			// TODO: For BitBucket, this will be user => username, token => app password
-			{Name: "REPO_USER", Value: wf.AccessToken},
-			{Name: "REPO_TOKEN", Value: ""},
+			{Name: "REPO_USER", Value: repoUser},
+			{Name: "REPO_TOKEN", Value: repoToken},
 		}...)
 	}
 	conf := ws.env.GetConfigurator()
@@ -325,10 +333,9 @@ func runnerBinaryFile() (*os.File, error) {
 func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Workflow) (*tables.APIKey, error) {
 	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
 	q.AddWhereClause("group_id = ?", wf.GroupID)
-	q.SetLimit(1)
 	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}
-	if err := ws.env.GetDBHandle().Raw(qStr, qArgs...).Scan(&k).Error; err != nil {
+	if err := ws.env.GetDBHandle().Raw(qStr, qArgs...).Take(&k).Error; err != nil {
 		return nil, err
 	}
 	return k, nil
@@ -338,8 +345,9 @@ func parseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 	if r.Header.Get("X-Github-Event") != "" {
 		return github.ParseRequest(r)
 	}
-
-	// TODO: Support non-GitHub providers
+	if r.Header.Get("X-Event-Key") != "" {
+		return bitbucket.ParseRequest(r)
+	}
 	return nil, status.UnimplementedErrorf("failed to classify Git provider from webhook request: %+v", r)
 }
 

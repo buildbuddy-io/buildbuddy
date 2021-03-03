@@ -79,11 +79,11 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 	}
 	return d.h.Transaction(func(tx *gorm.DB) error {
 		var in tables.Invocation
-		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?`, invocationID).Scan(&in).Error; err != nil {
+		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?`, invocationID).Take(&in).Error; err != nil {
 			return err
 		}
 		var group tables.Group
-		if err := tx.Raw(`SELECT sharing_enabled FROM `+"`Groups`"+` WHERE group_id = ?`, in.GroupID).Scan(&group).Error; err != nil {
+		if err := tx.Raw(`SELECT sharing_enabled FROM `+"`Groups`"+` WHERE group_id = ?`, in.GroupID).Take(&group).Error; err != nil {
 			return err
 		}
 		if !group.SharingEnabled {
@@ -105,7 +105,7 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 
 func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error) {
 	ti := &tables.Invocation{}
-	if err := d.h.Raw(`SELECT * FROM Invocations WHERE invocation_id = ?`, invocationID).Scan(ti).Error; err != nil {
+	if err := d.h.Raw(`SELECT * FROM Invocations WHERE invocation_id = ?`, invocationID).Take(ti).Error; err != nil {
 		return nil, err
 	}
 	if ti.Perms&perms.OTHERS_READ == 0 {
@@ -129,7 +129,7 @@ func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocation
 	}
 	queryStr, args := q.Build()
 	existingRow := d.h.Raw(queryStr, args...)
-	if err := existingRow.Scan(ti).Error; err != nil {
+	if err := existingRow.Take(ti).Error; err != nil {
 		return nil, err
 	}
 	return ti, nil
@@ -170,7 +170,7 @@ func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat
 		int64(time.Now().Truncate(24*time.Hour).Add(-24*time.Hour).UnixNano()/1000),
 		int64(time.Now().Truncate(24*time.Hour).UnixNano()/1000))
 
-	if err := counts.Scan(stat).Error; err != nil {
+	if err := counts.Take(stat).Error; err != nil {
 		return err
 	}
 	return nil
@@ -184,7 +184,7 @@ func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
 	return d.h.Transaction(func(tx *gorm.DB) error {
 		var in tables.Invocation
-		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?`, invocationID).Scan(&in).Error; err != nil {
+		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?`, invocationID).Take(&in).Error; err != nil {
 			return err
 		}
 		acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)

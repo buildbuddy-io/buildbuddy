@@ -303,7 +303,7 @@ type MetricsCollector interface {
 
 // A RepoDownloader allows testing a git-repo to see if it's downloadable.
 type RepoDownloader interface {
-	TestRepoAccess(ctx context.Context, repoURL, accessToken string) error
+	TestRepoAccess(ctx context.Context, repoURL, username, accessToken string) error
 }
 
 type Checker interface {
