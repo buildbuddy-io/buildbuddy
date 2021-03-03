@@ -58,9 +58,9 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 			event,
 			"Action",
 			"PullRequest.Base.Ref",
+			"PullRequest.Head.Repo.CloneURL",
 			"PullRequest.Base.Repo.Private",
 			"PullRequest.Head.Ref",
-			"PullRequest.Head.Repo.CloneURL",
 			"PullRequest.Head.SHA",
 		)
 		if err != nil {
