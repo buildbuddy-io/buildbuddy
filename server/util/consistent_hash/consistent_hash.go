@@ -48,6 +48,7 @@ func (c *ConsistentHash) Set(items ...string) {
 	sort.Ints(c.keys)
 }
 
+// Get returns the single "item" responsible for the specified key.
 func (c *ConsistentHash) Get(key string) string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -64,6 +65,9 @@ func (c *ConsistentHash) Get(key string) string {
 	return c.ring[c.keys[idx]]
 }
 
+// GetNReplicas returns the N "items" responsible for the specified key, in
+// order. It does this by walking the consistent hash ring, in order,
+// until N unique replicas have been found.
 func (c *ConsistentHash) GetNReplicas(key string, n int) []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -99,12 +103,4 @@ func (c *ConsistentHash) GetNReplicas(key string, n int) []string {
 		log.Printf("Warning: client requested %d replicas but only %d were available.", n, len(replicas))
 	}
 	return replicas
-}
-
-func (c *ConsistentHash) GetNext(key string) string {
-	r := c.GetNReplicas(key, 2)
-	if len(r) != 2 {
-		return ""
-	}
-	return r[1]
 }

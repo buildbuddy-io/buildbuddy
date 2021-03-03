@@ -20,17 +20,31 @@ import (
 )
 
 type Cache struct {
-	local             interfaces.Cache
-	myAddr            string
-	groupName         string
-	prefix            string
-	replicationFactor int
+	local interfaces.Cache
 
-	cacheProxy       *cacheproxy.CacheProxy
-	consistentHash   *consistent_hash.ConsistentHash
-	heartbeatChannel *heartbeat.HeartbeatChannel
+	// Address to listen on.
+	myAddr string
+
+	// The distributed cache group to join.
+	groupName string
+
+	// How many times to replicate each key.
+	replicationFactor int
+	prefix            string
+	cacheProxy        *cacheproxy.CacheProxy
+	consistentHash    *consistent_hash.ConsistentHash
+	heartbeatChannel  *heartbeat.HeartbeatChannel
 }
 
+// NewDistributedCache creates a new cache by wrapping the provided cache "c",
+// in a HTTP API and announcing its presence over redis to other distributed
+// cache nodes. Together, these distributed caches each maintain a consistent
+// hash ring which identifies the owner (and replicas) of any stored keys.
+//  - myAddr is the interface to listen on in "host:port" format.
+//  - groupName is a string namespace which the distributed cache nodes must
+// match to peer.
+//  - replicationFactor is an int specifying how many copies of each key will
+// be stored across unique caches.
 func NewDistributedCache(env environment.Env, c interfaces.Cache, myAddr, groupName string, replicationFactor int) (*Cache, error) {
 	chash := consistent_hash.NewConsistentHash()
 	dc := &Cache{
@@ -67,18 +81,13 @@ func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
 	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
 		newPrefix += "/"
 	}
-	return &Cache{
-		local:             c.local.WithPrefix(prefix),
-		cacheProxy:        c.cacheProxy,
-		myAddr:            c.myAddr,
-		groupName:         c.groupName,
-		consistentHash:    c.consistentHash,
-		heartbeatChannel:  c.heartbeatChannel,
-		prefix:            newPrefix,
-		replicationFactor: c.replicationFactor,
-	}
+	clone := *c
+	clone.local = c.local.WithPrefix(prefix)
+	return &clone
 }
 
+// peers returns the ordered slice of replicationFactor peers
+// responsible for this key. They should be tried in order.
 func (c *Cache) peers(d *repb.Digest) []string {
 	return c.consistentHash.GetNReplicas(d.GetHash(), c.replicationFactor)
 }
@@ -204,19 +213,15 @@ func (mc *multiCloser) Close() error {
 
 func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
 	peers := c.peers(d)
-	var wc io.WriteCloser
+	var wcs []io.WriteCloser
 	for _, peer := range peers {
 		rwc, err := c.cacheProxy.RemoteWriter(ctx, peer, c.prefix, d)
 		if err != nil {
 			return nil, err
 		}
-		if wc == nil {
-			wc = rwc
-		} else {
-			wc = &multiCloser{[]io.WriteCloser{rwc, wc}}
-		}
+		wcs = append(wcs, rwc)
 	}
-	return wc, nil
+	return &multiCloser{wcs}, nil
 }
 
 func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {

@@ -108,7 +108,7 @@ type DistributedCacheConfig struct {
 	ListenAddr        string `yaml:"listen_addr" usage:"The address to listen for local BuildBuddy distributed cache traffic on."`
 	RedisTarget       string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. ** Enterprise only **"`
 	GroupName         string `yaml:"group_name" usage:"A unique name for this distributed cache group. ** Enterprise only **"`
-	ReplicationFactor int    `yaml:"replication_factor" usage:"How many servers the data should be replicated to. ** Enterprise only **"`
+	ReplicationFactor int    `yaml:"replication_factor" usage:"How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **"`
 }
 
 type cacheConfig struct {

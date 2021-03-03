@@ -24,8 +24,14 @@ const (
 type PeersUpdateFn func(peerSet ...string)
 
 type HeartbeatChannel struct {
-	Period      time.Duration
-	Timeout     time.Duration
+	// This node will send heartbeats every this often.
+	Period time.Duration
+
+	// After this timeout, a node will be removed from the set of active
+	// nodes.
+	Timeout time.Duration
+
+	// How often this node will check if heartbeats are still valid.
 	CheckPeriod time.Duration
 
 	groupName string
@@ -75,7 +81,7 @@ func (c *HeartbeatChannel) StopAdvertising() {
 func (c *HeartbeatChannel) sendHeartbeat(ctx context.Context) {
 	err := c.ps.Publish(ctx, c.groupName, c.myAddr)
 	if err != nil {
-		log.Printf("HeartbeatChannel(%s): error publishing: %s", c.groupName, err.Error())
+		log.Printf("HeartbeatChannel(%s): error publishing: %s", c.groupName, err)
 	}
 }
 
