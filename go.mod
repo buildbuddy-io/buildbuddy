@@ -15,6 +15,7 @@ require (
 	github.com/aws/aws-sdk-go v1.35.37
 	github.com/bazelbuild/bazelisk v1.7.4 // indirect
 	github.com/bazelbuild/rules_go v0.24.3
+	github.com/bojand/ghz v0.93.0 // indirect
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/containerd/containerd v1.4.3 // indirect
 	github.com/containerd/continuity v0.0.0-20201208142359-180525291bb7 // indirect
