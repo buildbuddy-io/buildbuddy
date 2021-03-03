@@ -551,8 +551,8 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "com_github_logrusorgru_aurora",
         importpath = "github.com/logrusorgru/aurora",
-        sum = "h1:9MlwzLdW7QSDrhDjFlsEYmxpFyIoXmYRon3dt0io31k=",
-        version = "v0.0.0-20181002194514-a7b3b318ed4e",
+        sum = "h1:tOpm7WcpBTn4fjmVfgpQq0EfczGlG91VSDkswnjF5A8=",
+        version = "v2.0.3+incompatible",
     )
     go_repository(
         name = "com_github_andybalholm_cascadia",
