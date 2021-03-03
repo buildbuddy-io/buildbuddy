@@ -30,9 +30,14 @@ import (
 )
 
 const (
-	sqliteDialect              = "sqlite3"
-	defaultDbStatsPollInterval = 5 * time.Second
-	gormStmtStartTimeKey       = "buildbuddy:op_start_time"
+	sqliteDialect   = "sqlite3"
+	mysqlDialect    = "mysql"
+	postgresDialect = "postgres"
+
+	defaultDbStatsPollInterval       = 5 * time.Second
+	gormStmtStartTimeKey             = "buildbuddy:op_start_time"
+	gormRecordOpStartTimeCallbackKey = "buildbuddy:record_op_start_time"
+	gormRecordMetricsCallbackKey     = "buildbuddy:record_metrics"
 )
 
 var (
@@ -131,12 +136,12 @@ func instrumentGORM(gdb *gorm.DB) {
 		}
 		db.Statement.Settings.Store(gormStmtStartTimeKey, time.Now())
 	}
-	gdb.Callback().Create().Before("*").Register("buildbuddy:record_op_start_time", recordStartTime)
-	gdb.Callback().Delete().Before("*").Register("buildbuddy:record_op_start_time", recordStartTime)
-	gdb.Callback().Query().Before("*").Register("buildbuddy:record_op_start_time", recordStartTime)
-	gdb.Callback().Raw().Before("*").Register("buildbuddy:record_op_start_time", recordStartTime)
-	gdb.Callback().Row().Before("*").Register("buildbuddy:record_op_start_time", recordStartTime)
-	gdb.Callback().Update().Before("*").Register("buildbuddy:record_op_start_time", recordStartTime)
+	gdb.Callback().Create().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
+	gdb.Callback().Delete().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
+	gdb.Callback().Query().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
+	gdb.Callback().Raw().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
+	gdb.Callback().Row().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
+	gdb.Callback().Update().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
 
 	// Add callback that runs after other callbacks that records executed queries and their durations.
 	recordMetrics := func(db *gorm.DB) {
@@ -146,6 +151,7 @@ func instrumentGORM(gdb *gorm.DB) {
 		labels := prometheus.Labels{
 			metrics.SQLQueryTemplateLabel: db.Statement.SQL.String(),
 		}
+		// v will be nil if our key is not in the map so we can ignore the presence indicator.
 		v, _ := db.Statement.Settings.LoadAndDelete(gormStmtStartTimeKey)
 		if opStartTime, ok := v.(time.Time); ok {
 			metrics.SQLQueryDurationUsec.With(labels).Observe(float64(time.Now().Sub(opStartTime).Microseconds()))
@@ -156,32 +162,32 @@ func instrumentGORM(gdb *gorm.DB) {
 			metrics.SQLErrorCount.With(labels).Inc()
 		}
 	}
-	gdb.Callback().Create().After("*").Register("buildbuddy:record_metrics", recordMetrics)
-	gdb.Callback().Delete().After("*").Register("buildbuddy:record_metrics", recordMetrics)
-	gdb.Callback().Query().After("*").Register("buildbuddy:record_metrics", recordMetrics)
-	gdb.Callback().Raw().After("*").Register("buildbuddy:record_metrics", recordMetrics)
-	gdb.Callback().Row().After("*").Register("buildbuddy:record_metrics", recordMetrics)
-	gdb.Callback().Update().After("*").Register("buildbuddy:record_metrics", recordMetrics)
+	gdb.Callback().Create().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
+	gdb.Callback().Delete().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
+	gdb.Callback().Query().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
+	gdb.Callback().Raw().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
+	gdb.Callback().Row().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
+	gdb.Callback().Update().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
 }
 
 func openDB(configurator *config.Configurator, dialect string, connString string) (*gorm.DB, error) {
 	var dialector gorm.Dialector
 	switch dialect {
-	case "sqlite3":
+	case sqliteDialect:
 		dialector = sqlite.Open(connString)
-	case "mysql":
+	case mysqlDialect:
 		// Set default string size to 255 to avoid unnecessary schema modifications by GORM.
 		// Newer versions of GORM use a smaller default size (191) to account for InnoDB index limits
 		// that don't apply to modern MysQL installations.
 		dialector = mysql.New(mysql.Config{DSN: connString, DefaultStringSize: 255})
-	case "postgres":
+	case postgresDialect:
 		dialector = postgres.Open(connString)
 	default:
 		return nil, fmt.Errorf("unsupported database dialect %s", dialect)
 	}
 
 	var l logger.Interface
-	l = sqlLogger{delegate: logger.Default, logLevel: logger.Warn}
+	l = sqlLogger{Interface: logger.Default, logLevel: logger.Warn}
 	if configurator.GetDatabaseConfig().LogQueries {
 		l = l.LogMode(logger.Info)
 	}
@@ -212,19 +218,10 @@ func parseDatasource(datasource string) (string, string, error) {
 
 // sqlLogger is a GORM logger wrapper that supresses "record not found" errors.
 type sqlLogger struct {
+	logger.Interface
 	logLevel logger.LogLevel
-	delegate logger.Interface
 }
 
-func (l sqlLogger) Info(ctx context.Context, msg string, v ...interface{}) {
-	l.delegate.Info(ctx, msg, v...)
-}
-func (l sqlLogger) Warn(ctx context.Context, msg string, v ...interface{}) {
-	l.delegate.Warn(ctx, msg, v...)
-}
-func (l sqlLogger) Error(ctx context.Context, msg string, v ...interface{}) {
-	l.delegate.Error(ctx, msg, v...)
-}
 func (l sqlLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
 	// Avoid logging errors when no records are matched for a lookup as it
 	// generally does not indicate a problem with the server.
@@ -232,13 +229,10 @@ func (l sqlLogger) Trace(ctx context.Context, begin time.Time, fc func() (string
 	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) && l.logLevel != logger.Info {
 		return
 	}
-	l.delegate.Trace(ctx, begin, fc, err)
+	l.Interface.Trace(ctx, begin, fc, err)
 }
 func (l sqlLogger) LogMode(level logger.LogLevel) logger.Interface {
-	newLogger := l
-	newLogger.logLevel = level
-	newLogger.delegate = l.delegate.LogMode(level)
-	return newLogger
+	return sqlLogger{l.Interface.LogMode(level), level}
 }
 
 func setDBOptions(c *config.Configurator, dialect string, gdb *gorm.DB) error {
