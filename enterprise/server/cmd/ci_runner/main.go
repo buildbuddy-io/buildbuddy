@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowconf"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
@@ -32,6 +33,7 @@ import (
 	git "github.com/go-git/go-git/v5"
 	gitcfg "github.com/go-git/go-git/v5/config"
 	gitplumbing "github.com/go-git/go-git/v5/plumbing"
+	"google.golang.org/grpc/metadata"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -43,11 +45,10 @@ const (
 
 	// Env vars
 	// NOTE: These env vars are not populated for non-private repos.
-	// TODO: Allow populating BUILDBUDDY_API_KEY for private repos,
-	// so that workflow invocations can be private.
 
-	repoUserEnvVarName  = "REPO_USER"
-	repoTokenEnvVarName = "REPO_TOKEN"
+	buildbuddyAPIKeyEnvVarName = "BUILDBUDDY_API_KEY"
+	repoUserEnvVarName         = "REPO_USER"
+	repoTokenEnvVarName        = "REPO_TOKEN"
 
 	// Exit code placeholder used when a command doesn't return an exit code on its own.
 	noExitCode = -1
@@ -259,6 +260,11 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 	}
 	defer conn.Close()
 	besClient := pepb.NewPublishBuildEventClient(conn)
+	buildbuddyAPIKey := os.Getenv(buildbuddyAPIKeyEnvVarName)
+	if buildbuddyAPIKey != "" {
+		log.Printf("BEP: found API key in env")
+		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, buildbuddyAPIKey)
+	}
 	stream, err := besClient.PublishBuildToolEventStream(ctx)
 	if err != nil {
 		bep.setError(status.WrapError(err, "error opening build event stream"))

@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
     visibility = ["//visibility:private"],
     deps = [
+        "//enterprise/server/auth:go_default_library",
         "//enterprise/server/workflowconf:go_default_library",
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
@@ -21,6 +22,7 @@ go_library(
         "@com_github_google_uuid//:go_default_library",
         "@com_github_logrusorgru_aurora//:go_default_library",
         "@in_gopkg_yaml_v2//:go_default_library",
+        "@org_golang_google_grpc//metadata:go_default_library",
         "@org_golang_google_grpc//status:go_default_library",
     ],
 )
