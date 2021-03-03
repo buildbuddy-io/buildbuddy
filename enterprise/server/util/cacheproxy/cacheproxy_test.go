@@ -75,6 +75,9 @@ func TestReader(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	go func() {
+		c.Server().ListenAndServe()
+	}()
 	waitUntilServerIsAlive(peer)
 
 	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
@@ -132,6 +135,9 @@ func TestWriter(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	go func() {
+		c.Server().ListenAndServe()
+	}()
 	waitUntilServerIsAlive(peer)
 
 	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
@@ -196,6 +202,9 @@ func TestContains(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	go func() {
+		c.Server().ListenAndServe()
+	}()
 	waitUntilServerIsAlive(peer)
 
 	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
@@ -261,6 +270,9 @@ func TestOversizeBlobs(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	go func() {
+		c.Server().ListenAndServe()
+	}()
 	waitUntilServerIsAlive(peer)
 
 	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
