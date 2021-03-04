@@ -535,11 +535,13 @@ var (
 	/// )
 	/// ```
 
-	SQLErrorCount = promauto.NewCounter(prometheus.CounterOpts{
+	SQLErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "sql",
 		Name:      "error_count",
 		Help:      "Number of SQL queries that resulted in an error.",
+	}, []string{
+		SQLQueryTemplateLabel,
 	})
 
 	/// #### Examples

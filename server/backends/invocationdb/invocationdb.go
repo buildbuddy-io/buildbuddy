@@ -2,6 +2,7 @@ package invocationdb
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
@@ -59,7 +60,7 @@ func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.
 	return d.h.Transaction(func(tx *gorm.DB) error {
 		var existing tables.Invocation
 		if err := tx.Where("invocation_id = ?", ti.InvocationID).First(&existing).Error; err != nil {
-			if gorm.IsRecordNotFoundError(err) {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return d.createInvocation(tx, ctx, ti)
 			}
 		} else {

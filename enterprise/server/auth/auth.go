@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -19,11 +20,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"github.com/dgrijalva/jwt-go"
-	"github.com/jinzhu/gorm"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
+	"gorm.io/gorm"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
@@ -382,7 +383,7 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(apiKey string) (*apiKe
 		return existingRow.Take(akg).Error
 	})
 	if err != nil {
-		if gorm.IsRecordNotFoundError(err) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, status.UnauthenticatedErrorf("Invalid API key %s", apiKey)
 		}
 		return nil, err
@@ -405,7 +406,7 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromBasicAuth(login, pass string)
 		return existingRow.Take(akg).Error
 	})
 	if err != nil {
-		if gorm.IsRecordNotFoundError(err) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, status.UnauthenticatedErrorf("User/Group specified by %s:%s not found", login, pass)
 		}
 		return nil, err

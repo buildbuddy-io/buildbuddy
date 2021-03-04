@@ -23,8 +23,8 @@ go_library(
         "//server/util/query_builder:go_default_library",
         "//server/util/status:go_default_library",
         "@com_github_google_uuid//:go_default_library",
-        "@com_github_jinzhu_gorm//:go_default_library",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@io_gorm_gorm//:go_default_library",
     ],
 )
 
@@ -39,8 +39,8 @@ go_test(
         "//server/tables:go_default_library",
         "//server/testutil/auth:go_default_library",
         "//server/testutil/environment:go_default_library",
-        "@com_github_jinzhu_gorm//:go_default_library",
         "@com_github_stretchr_testify//assert:go_default_library",
+        "@io_gorm_gorm//:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//metadata:go_default_library",
     ],
