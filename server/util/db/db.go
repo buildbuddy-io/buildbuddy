@@ -7,18 +7,19 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/jinzhu/gorm"
 	"github.com/prometheus/client_golang/prometheus"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
-	// We support MySQL (preferred), Postgresql, and Sqlite3
-	_ "github.com/jinzhu/gorm/dialects/mysql"
-	_ "github.com/jinzhu/gorm/dialects/postgres"
-	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	// We support MySQL (preferred), Postgresql, and Sqlite3.
+	// New dialects need to be added to openDB() as well.
+	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlite"
 
 	// Allow for "cloudsql" type connections that support workload identity.
 	_ "github.com/GoogleCloudPlatform/cloudsql-proxy/proxy/dialers/mysql"
@@ -29,8 +30,14 @@ import (
 )
 
 const (
-	sqliteDialect              = "sqlite3"
-	defaultDbStatsPollInterval = 5 * time.Second
+	sqliteDialect   = "sqlite3"
+	mysqlDialect    = "mysql"
+	postgresDialect = "postgres"
+
+	defaultDbStatsPollInterval       = 5 * time.Second
+	gormStmtStartTimeKey             = "buildbuddy:op_start_time"
+	gormRecordOpStartTimeCallbackKey = "buildbuddy:record_op_start_time"
+	gormRecordMetricsCallbackKey     = "buildbuddy:record_metrics"
 )
 
 var (
@@ -119,12 +126,81 @@ func maybeRunMigrations(dialect string, gdb *gorm.DB) error {
 	return nil
 }
 
-func openDB(dialect string, args ...interface{}) (*gorm.DB, error) {
-	gdb, err := gorm.Open(dialect, args...)
+// instrumentGORM adds GORM callbacks that populate query metrics.
+func instrumentGORM(gdb *gorm.DB) {
+	// Add callback that runs before other callbacks that records when the operation began.
+	// We use this to calculate how long a query takes to run.
+	recordStartTime := func(db *gorm.DB) {
+		if db.DryRun || db.Statement == nil {
+			return
+		}
+		db.Statement.Settings.Store(gormStmtStartTimeKey, time.Now())
+	}
+	gdb.Callback().Create().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
+	gdb.Callback().Delete().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
+	gdb.Callback().Query().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
+	gdb.Callback().Raw().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
+	gdb.Callback().Row().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
+	gdb.Callback().Update().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
+
+	// Add callback that runs after other callbacks that records executed queries and their durations.
+	recordMetrics := func(db *gorm.DB) {
+		if db.DryRun || db.Statement == nil {
+			return
+		}
+		labels := prometheus.Labels{
+			metrics.SQLQueryTemplateLabel: db.Statement.SQL.String(),
+		}
+		// v will be nil if our key is not in the map so we can ignore the presence indicator.
+		v, _ := db.Statement.Settings.LoadAndDelete(gormStmtStartTimeKey)
+		if opStartTime, ok := v.(time.Time); ok {
+			metrics.SQLQueryDurationUsec.With(labels).Observe(float64(time.Now().Sub(opStartTime).Microseconds()))
+		}
+		// Ignore "record not found" errors as they don't generally indicate a
+		// problem with the server.
+		if db.Error != nil && !errors.Is(db.Error, gorm.ErrRecordNotFound) {
+			metrics.SQLErrorCount.With(labels).Inc()
+		}
+	}
+	gdb.Callback().Create().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
+	gdb.Callback().Delete().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
+	gdb.Callback().Query().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
+	gdb.Callback().Raw().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
+	gdb.Callback().Row().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
+	gdb.Callback().Update().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
+}
+
+func openDB(configurator *config.Configurator, dialect string, connString string) (*gorm.DB, error) {
+	var dialector gorm.Dialector
+	switch dialect {
+	case sqliteDialect:
+		dialector = sqlite.Open(connString)
+	case mysqlDialect:
+		// Set default string size to 255 to avoid unnecessary schema modifications by GORM.
+		// Newer versions of GORM use a smaller default size (191) to account for InnoDB index limits
+		// that don't apply to modern MysQL installations.
+		dialector = mysql.New(mysql.Config{DSN: connString, DefaultStringSize: 255})
+	case postgresDialect:
+		dialector = postgres.Open(connString)
+	default:
+		return nil, fmt.Errorf("unsupported database dialect %s", dialect)
+	}
+
+	var l logger.Interface
+	l = sqlLogger{Interface: logger.Default, logLevel: logger.Warn}
+	if configurator.GetDatabaseConfig().LogQueries {
+		l = l.LogMode(logger.Info)
+	}
+	config := gorm.Config{
+		Logger: l,
+	}
+	gdb, err := gorm.Open(dialector, &config)
 	if err != nil {
 		return nil, err
 	}
-	gdb.SingularTable(true)
+
+	instrumentGORM(gdb)
+
 	return gdb, nil
 }
 
@@ -140,88 +216,48 @@ func parseDatasource(datasource string) (string, string, error) {
 	return "", "", fmt.Errorf("No database configured -- please specify at least one in the config")
 }
 
+// sqlLogger is a GORM logger wrapper that supresses "record not found" errors.
 type sqlLogger struct {
-	logQueries bool
-	delegate   gorm.Logger
+	logger.Interface
+	logLevel logger.LogLevel
 }
 
-func (l sqlLogger) Print(v ...interface{}) {
-	if len(v) == 0 {
+func (l sqlLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	// Avoid logging errors when no records are matched for a lookup as it
+	// generally does not indicate a problem with the server.
+	// Except when log level is "info" where we log all queries.
+	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) && l.logLevel != logger.Info {
 		return
 	}
-	logType := v[0]
-	// Note: a quirk of gorm is that when it logs errors, it sets
-	// the log type to `log` when in "detailed" mode and `error`
-	// when in "default" mode.
-	//
-	// By calling `LogMode(true)` we've set the log mode to "detailed"
-	// so that we can log SQL queries, but we also check `error` here
-	// just for the sake of future-proofing.
-	if logType == "log" || logType == "error" {
-		// Always log errors to the console.
-		l.delegate.Print(v...)
-
-		if len(v) < 3 {
-			return
-		}
-		_, ok := v[2].(error)
-		if !ok {
-			return
-		}
-		metrics.SQLErrorCount.Inc()
-		return
-	}
-	if logType == "sql" {
-		if l.logQueries {
-			l.delegate.Print(v...)
-		}
-		if len(v) < 6 {
-			return
-		}
-		duration, ok := v[2].(time.Duration)
-		if !ok {
-			return
-		}
-		// TODO(bduffany): Find a way to associate errors with query templates.
-		// We could maybe check whether the previous log call was an error log,
-		// but that seems brittle.
-		queryTemplate, ok := v[3].(string)
-		if !ok {
-			return
-		}
-		labels := prometheus.Labels{
-			metrics.SQLQueryTemplateLabel: queryTemplate,
-		}
-		metrics.SQLQueryCount.With(labels).Inc()
-		metrics.SQLQueryDurationUsec.With(labels).Observe(float64(duration.Microseconds()))
-		return
-	}
+	l.Interface.Trace(ctx, begin, fc, err)
+}
+func (l sqlLogger) LogMode(level logger.LogLevel) logger.Interface {
+	return sqlLogger{l.Interface.LogMode(level), level}
 }
 
-func setDBOptions(c *config.Configurator, dialect string, gdb *gorm.DB) {
+func setDBOptions(c *config.Configurator, dialect string, gdb *gorm.DB) error {
+	db, err := gdb.DB()
+	if err != nil {
+		return err
+	}
+
 	// SQLITE Special! To avoid "database is locked errors":
 	if dialect == sqliteDialect {
-		gdb.DB().SetMaxOpenConns(1)
+		db.SetMaxOpenConns(1)
 		gdb.Exec("PRAGMA journal_mode=WAL;")
 	} else {
 		if maxOpenConns := c.GetDatabaseConfig().MaxOpenConns; maxOpenConns != 0 {
-			gdb.DB().SetMaxOpenConns(maxOpenConns)
+			db.SetMaxOpenConns(maxOpenConns)
 		}
 		if maxIdleConns := c.GetDatabaseConfig().MaxIdleConns; maxIdleConns != 0 {
-			gdb.DB().SetMaxIdleConns(maxIdleConns)
+			db.SetMaxIdleConns(maxIdleConns)
 		}
 		if connMaxLifetimeSecs := c.GetDatabaseConfig().ConnMaxLifetimeSeconds; connMaxLifetimeSecs != 0 {
-			gdb.DB().SetConnMaxLifetime(time.Duration(connMaxLifetimeSecs) * time.Second)
+			db.SetConnMaxLifetime(time.Duration(connMaxLifetimeSecs) * time.Second)
 		}
 	}
-	// Note: Although we're setting gorm to "detailed" log mode here,
-	// SQL logs are only printed to stdout if `LogQueries` is configured.
-	// (See the impl of sqlLogger#Print)
-	gdb.LogMode(true)
-	gdb.SetLogger(sqlLogger{
-		logQueries: c.GetDatabaseConfig().LogQueries,
-		delegate:   gorm.Logger{log.New(os.Stdout, "\r\n", 0)},
-	})
+
+	return nil
 }
 
 type dbStatsRecorder struct {
@@ -276,11 +312,15 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 	if err != nil {
 		return nil, err
 	}
-	primaryDB, err := openDB(dialect, connString)
+	primaryDB, err := openDB(c, dialect, connString)
 	if err != nil {
 		return nil, err
 	}
-	setDBOptions(c, dialect, primaryDB)
+
+	err = setDBOptions(c, dialect, primaryDB)
+	if err != nil {
+		return nil, err
+	}
 
 	statsPollInterval := defaultDbStatsPollInterval
 	dbConf := c.GetDatabaseConfig()
@@ -290,8 +330,12 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 		}
 	}
 
+	primarySQLDB, err := primaryDB.DB()
+	if err != nil {
+		return nil, err
+	}
 	statsRecorder := &dbStatsRecorder{
-		db:   primaryDB.DB(),
+		db:   primarySQLDB,
 		role: "primary",
 	}
 	go statsRecorder.poll(statsPollInterval)
@@ -305,7 +349,7 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 		dialect: dialect,
 	}
 	hc.AddHealthCheck("sql_primary", interfaces.CheckerFunc(func(ctx context.Context) error {
-		return dbh.DB.DB().Ping()
+		return primarySQLDB.Ping()
 	}))
 
 	// Setup a read replica if one is configured.
@@ -314,7 +358,7 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 		if err != nil {
 			return nil, err
 		}
-		replicaDB, err := openDB(readDialect, readConnString)
+		replicaDB, err := openDB(c, readDialect, readConnString)
 		if err != nil {
 			return nil, err
 		}
@@ -322,14 +366,18 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 		log.Print("Read replica was present -- connecting to it.")
 		dbh.readReplicaDB = replicaDB
 
+		replicaSQLDB, err := replicaDB.DB()
+		if err != nil {
+			return nil, err
+		}
 		statsRecorder := &dbStatsRecorder{
-			db:   replicaDB.DB(),
+			db:   replicaSQLDB,
 			role: "read_replica",
 		}
 		go statsRecorder.poll(statsPollInterval)
 
 		hc.AddHealthCheck("sql_read_replica", interfaces.CheckerFunc(func(ctx context.Context) error {
-			return dbh.readReplicaDB.DB().Ping()
+			return replicaSQLDB.Ping()
 		}))
 	}
 	return dbh, nil

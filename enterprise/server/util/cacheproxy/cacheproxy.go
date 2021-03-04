@@ -51,10 +51,6 @@ func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *
 		Addr:    listenAddr,
 		Handler: http.Handler(mux),
 	}
-	go func() {
-		log.Printf("CacheProxy listening on %q", listenAddr)
-		proxy.fileServer.ListenAndServe()
-	}()
 	return proxy
 }
 
@@ -146,6 +142,10 @@ func writer(c context.Context, cache interfaces.Cache, d *repb.Digest, r *http.R
 	w.WriteHeader(200)
 }
 
+func (c *CacheProxy) Server() *http.Server {
+	return c.fileServer
+}
+
 func (c *CacheProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	ctx := readJWT(r.Context(), r)
@@ -166,7 +166,7 @@ func (c *CacheProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		{
 			if r.Method == http.MethodHead {
 				contains(ctx, cache, d, w)
-				log.Printf("CacheProxy: /Contains took %s", time.Since(start))
+				log.Printf("CacheProxy(%s): /Contains %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
 				return
 			}
 			if r.Method == http.MethodPost {
@@ -177,7 +177,7 @@ func (c *CacheProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				reader(ctx, cache, d, offset, w)
-				log.Printf("CacheProxy: /Read took %s", time.Since(start))
+				log.Printf("CacheProxy(%s): /Read %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
 				return
 			}
 			writeErr(status.InvalidArgumentError("Invalid method (use HEAD or POST)"), w)
@@ -186,7 +186,7 @@ func (c *CacheProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		{
 			if r.Method == http.MethodPost {
 				writer(ctx, cache, d, r, w)
-				log.Printf("CacheProxy: /Write took %s", time.Since(start))
+				log.Printf("CacheProxy(%s): /Write %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
 				return
 			}
 			writeErr(status.InvalidArgumentError("Invalid method (use POST)"), w)
@@ -225,12 +225,12 @@ func (c *CacheProxy) RemoteContains(ctx context.Context, peer, prefix string, d 
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
 	if err != nil {
-		return false, nil
+		return false, err
 	}
 	setJWT(ctx, req)
 	rsp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return false, err
+		return false, status.UnavailableError(err.Error())
 	}
 	defer rsp.Body.Close()
 	return rsp.StatusCode == 200, nil
@@ -262,14 +262,14 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *r
 	setJWT(ctx, req)
 	rsp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, status.UnavailableError(err.Error())
 	}
 	if rsp.StatusCode == 200 {
 		return &AutoCloser{rsp.Body}, nil
 	} else if rsp.StatusCode == 404 {
 		return nil, status.NotFoundError("File not found (remotely).")
 	} else {
-		return nil, status.InternalErrorf("Unexpected error: %+v, error: %s", rsp, err)
+		return nil, status.UnavailableError("Remote reader unavailable.")
 	}
 }
 
@@ -293,7 +293,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, prefix string, d *r
 	reader, writer := io.Pipe()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, reader)
 	if err != nil {
-		return nil, err
+		return nil, status.UnavailableError(err.Error())
 	}
 	setJWT(ctx, req)
 	eg, _ := errgroup.WithContext(ctx)
@@ -301,6 +301,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, prefix string, d *r
 		client := &http.Client{}
 		rsp, err := client.Do(req)
 		if err != nil {
+			err = status.UnavailableError(err.Error())
 			reader.CloseWithError(err)
 			return err
 		}

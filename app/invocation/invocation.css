@@ -260,3 +260,19 @@
   padding: 16px;
   border-radius: 8px;
 }
+
+.invocation-sort-title {
+  margin-right: 8px;
+}
+
+.invocation-sort-controls {
+  display: flex;
+  align-items: center;
+}
+
+.invocation-content-header {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  grid-gap: 8px;
+}

@@ -9,6 +9,6 @@ go_library(
         "//proto:group_go_proto",
         "//proto:user_id_go_proto",
         "//server/util/random:go_default_library",
-        "@com_github_jinzhu_gorm//:go_default_library",
+        "@io_gorm_gorm//:go_default_library",
     ],
 )

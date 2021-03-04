@@ -1,15 +1,14 @@
 package github
 
 import (
-	"fmt"
 	"io/ioutil"
 	"log"
 	"mime"
 	"net/http"
 	"net/url"
-	"reflect"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -32,25 +31,35 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 	log.Printf("Received GitHub webhook event: %T\n", event)
 	switch event := event.(type) {
 	case *gh.PushEvent:
-		v, err := fieldValues(event, "Ref", "HeadCommit.ID", "Repo.DefaultBranch", "Repo.CloneURL")
+		v, err := fieldgetter.ExtractValues(
+			event,
+			"HeadCommit.ID",
+			"Ref",
+			"Repo.CloneURL",
+			"Repo.Private",
+		)
 		if err != nil {
 			return nil, err
 		}
-		defaultBranchRef := fmt.Sprintf("refs/heads/%s", v["Repo.DefaultBranch"])
-		// Only run workflows on the default branch.
-		if v["Ref"] != defaultBranchRef {
-			log.Printf("Ignoring push event for non-default branch %q", v["Ref"])
-			return nil, nil
-		}
 		return &webhook_data.WebhookData{
-			RepoURL: v["Repo.CloneURL"],
+			EventName:     webhook_data.EventName.Push,
+			TargetBranch:  strings.TrimPrefix(v["Ref"], "refs/heads/"),
+			RepoURL:       v["Repo.CloneURL"],
+			IsRepoPrivate: v["Repo.Private"] == "true",
 			// For some reason, "HeadCommit.SHA" is nil, but ID has the commit SHA,
 			// so we use that instead.
 			SHA: v["HeadCommit.ID"],
 		}, nil
 
 	case *gh.PullRequestEvent:
-		v, err := fieldValues(event, "Action", "PullRequest.Head.SHA", "PullRequest.Head.Repo.CloneURL")
+		v, err := fieldgetter.ExtractValues(
+			event,
+			"Action",
+			"PullRequest.Base.Ref",
+			"PullRequest.Head.Repo.CloneURL",
+			"PullRequest.Base.Repo.Private",
+			"PullRequest.Head.SHA",
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -60,8 +69,11 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 			return nil, nil
 		}
 		return &webhook_data.WebhookData{
-			RepoURL: v["PullRequest.Head.Repo.CloneURL"],
-			SHA:     v["PullRequest.Head.SHA"],
+			EventName:     webhook_data.EventName.PullRequest,
+			TargetBranch:  v["PullRequest.Base.Ref"],
+			RepoURL:       v["PullRequest.Head.Repo.CloneURL"],
+			IsRepoPrivate: v["PullRequest.Base.Repo.Private"] == "true",
+			SHA:           v["PullRequest.Head.SHA"],
 		}, nil
 
 	default:
@@ -96,38 +108,4 @@ func webhookJSONPayload(r *http.Request) ([]byte, error) {
 	default:
 		return nil, status.InvalidArgumentErrorf("unhandled MIME type: %q", contentType)
 	}
-}
-
-// fieldValues extracts values from an object given field paths which may include dot
-// separators. As the paths are traversed, pointers will be de-referenced. If a nil
-// value is encountered in any path, an error is returned.
-func fieldValues(obj interface{}, fieldPaths ...string) (map[string]string, error) {
-	values := map[string]string{}
-	objVal := reflect.Indirect(reflect.ValueOf(obj))
-	if !objVal.IsValid() {
-		return nil, status.InvalidArgumentError("cannot get fieldValues on a nil value")
-	}
-	for _, path := range fieldPaths {
-		fields := strings.Split(path, ".")
-		cur := objVal
-		curPath := []string{}
-		for _, name := range fields {
-			curPath = append(curPath, name)
-			cur = cur.FieldByName(name)
-			if !cur.IsValid() {
-				return nil, status.InternalErrorf("encountered invalid field name at %q", strings.Join(curPath, "."))
-			}
-			cur = reflect.Indirect(cur)
-			if !cur.IsValid() {
-				return nil, status.InvalidArgumentErrorf("encountered nil value at %q", strings.Join(curPath, "."))
-			}
-		}
-		el := cur.Interface()
-		str, ok := el.(string)
-		if !ok {
-			return nil, status.InternalErrorf("encountered non-string value at %q", path)
-		}
-		values[path] = str
-	}
-	return values, nil
 }

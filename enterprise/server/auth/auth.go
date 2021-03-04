@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -20,11 +21,11 @@ import (
 
 	"github.com/ReneKroon/ttlcache/v2"
 	"github.com/dgrijalva/jwt-go"
-	"github.com/jinzhu/gorm"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
+	"gorm.io/gorm"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
@@ -372,8 +373,8 @@ func (a *OpenIDAuthenticator) lookupUserFromSubID(subID string) (*tables.User, e
 	}
 	user := &tables.User{}
 	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
-		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC LIMIT 1`, subID)
-		if err := userRow.Scan(user).Error; err != nil {
+		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC`, subID)
+		if err := userRow.Take(user).Error; err != nil {
 			return err
 		}
 		groupRows, err := tx.Raw(`SELECT g.* FROM `+"`Groups`"+` as g JOIN UserGroups as ug
