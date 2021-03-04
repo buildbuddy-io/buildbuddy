@@ -97,7 +97,11 @@ func (c *Cache) remoteContains(ctx context.Context, d *repb.Digest) (bool, error
 	for i, peer := range peers {
 		b, err := c.cacheProxy.RemoteContains(ctx, peer, c.prefix, d)
 		isLastPeer := i == len(peers)-1
-		if !isLastPeer && status.IsUnavailableError(err) {
+		if isLastPeer && err != nil {
+			log.Printf("All peers failed. Last err: %s", err)
+			return false, nil
+		}
+		if status.IsUnavailableError(err) {
 			continue
 		}
 		return b, err
@@ -142,7 +146,11 @@ func (c *Cache) remoteReader(ctx context.Context, d *repb.Digest, offset int64) 
 	for i, peer := range peers {
 		r, err := c.cacheProxy.RemoteReader(ctx, peer, c.prefix, d, offset)
 		isLastPeer := i == len(peers)-1
-		if !isLastPeer && status.IsUnavailableError(err) {
+		if isLastPeer && err != nil {
+			log.Printf("All peers failed. Last err: %s", err)
+			return nil, status.NotFoundError("Peers unavailable")
+		}
+		if status.IsUnavailableError(err) {
 			continue
 		}
 		return r, err
@@ -186,11 +194,11 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 	return foundMap, nil
 }
 
-type multiCloser struct {
+type multiWriteCloser struct {
 	closers []io.WriteCloser
 }
 
-func (mc *multiCloser) Write(data []byte) (int, error) {
+func (mc *multiWriteCloser) Write(data []byte) (int, error) {
 	for _, w := range mc.closers {
 		n, err := w.Write(data)
 		if err != nil {
@@ -202,7 +210,7 @@ func (mc *multiCloser) Write(data []byte) (int, error) {
 	}
 	return len(data), nil
 }
-func (mc *multiCloser) Close() error {
+func (mc *multiWriteCloser) Close() error {
 	for _, w := range mc.closers {
 		if err := w.Close(); err != nil {
 			return err
@@ -221,7 +229,7 @@ func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser
 		}
 		wcs = append(wcs, rwc)
 	}
-	return &multiCloser{wcs}, nil
+	return &multiWriteCloser{wcs}, nil
 }
 
 func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
