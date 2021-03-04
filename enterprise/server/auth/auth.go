@@ -260,7 +260,7 @@ func (a *authenticator) verifyTokenAndExtractUser(ctx context.Context, jwt strin
 }
 
 type apiKeyGroupCacheEntry struct {
-	interfaces.APIKeyGroup
+	data         interfaces.APIKeyGroup
 	expiresAfter time.Time
 }
 
@@ -312,12 +312,12 @@ func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bo
 	if time.Now().After(entry.expiresAfter) {
 		return nil, false
 	}
-	return entry.APIKeyGroup, true
+	return entry.data, true
 }
 
 func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup interfaces.APIKeyGroup) {
 	c.mu.Lock()
-	c.lru.Add(apiKey, &apiKeyGroupCacheEntry{APIKeyGroup: apiKeyGroup, expiresAfter: time.Now().Add(c.ttl)})
+	c.lru.Add(apiKey, &apiKeyGroupCacheEntry{data: apiKeyGroup, expiresAfter: time.Now().Add(c.ttl)})
 	c.mu.Unlock()
 }
 
