@@ -286,8 +286,11 @@ func newAPIKeyGroupCache(configurator *config.Configurator) (*apiKeyGroupCache, 
 		ttl = configTTL
 	}
 
-	sizeFunc := func(k, v interface{}) int64 { return 1 }
-	lru, err := lru.NewLRU(apiKeyGroupCacheSize, nil /* onEvict */, nil /* onAdd */, sizeFunc)
+	config := &lru.Config{
+		MaxSize: apiKeyGroupCacheSize,
+		SizeFn:  func(k, v interface{}) int64 { return 1 },
+	}
+	lru, err := lru.NewLRU(config)
 	if err != nil {
 		return nil, status.InternalErrorf("error initializing API Key -> Group cache: %v", err)
 	}

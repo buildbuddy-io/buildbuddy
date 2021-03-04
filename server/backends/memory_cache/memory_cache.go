@@ -34,7 +34,7 @@ func sizeFn(key interface{}, value interface{}) int64 {
 }
 
 func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
-	l, err := lru.NewLRU(maxSizeBytes, nil /*=evictFn*/, nil /*=addFn*/, sizeFn)
+	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, SizeFn: sizeFn})
 	if err != nil {
 		return nil, err
 	}
