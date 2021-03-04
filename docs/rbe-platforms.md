@@ -23,6 +23,11 @@ You can configure BuildBuddy RBE to use a custom docker image, by adding the fol
 ```
 platform(
     name = "docker_image_platform",
+    constraint_values = [
+        "@bazel_tools//platforms:x86_64",
+        "@bazel_tools//platforms:linux",
+        "@bazel_tools//tools/cpp:clang",
+    ],
     exec_properties = {
         "OSFamily": "Linux",
         "container-image": "docker://gcr.io/YOUR:IMAGE",
@@ -47,6 +52,11 @@ You can configure BuildBuddy RBE to use a custom executor pool, by adding the fo
 ```
 platform(
     name = "gpu_platform",
+    constraint_values = [
+        "@bazel_tools//platforms:x86_64",
+        "@bazel_tools//platforms:linux",
+        "@bazel_tools//tools/cpp:clang",
+    ],
     exec_properties = {
         "OSFamily": "Linux",
         "Pool": "my-gpu-pool",

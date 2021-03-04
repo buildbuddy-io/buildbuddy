@@ -151,6 +151,7 @@ func instrumentGORM(gdb *gorm.DB) {
 		labels := prometheus.Labels{
 			metrics.SQLQueryTemplateLabel: db.Statement.SQL.String(),
 		}
+		metrics.SQLQueryCount.With(labels).Inc()
 		// v will be nil if our key is not in the map so we can ignore the presence indicator.
 		v, _ := db.Statement.Settings.LoadAndDelete(gormStmtStartTimeKey)
 		if opStartTime, ok := v.(time.Time); ok {

@@ -155,6 +155,14 @@ container_pull(
     repository = "distroless/base-debian10",
 )
 
+load("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
+
+dockerfile_image(
+    name = "ci_runner_image",
+    dockerfile = "//enterprise/dockerfiles/ci_runner_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
 # BuildBuddy Toolchain
 
 http_archive(

@@ -38,10 +38,8 @@ go_test(
     deps = [
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
-        "//proto:command_line_go_proto",
         "//proto:invocation_go_proto",
         "//proto:publish_build_event_go_proto",
-        "//server/build_event_protocol/event_parser:go_default_library",
         "//server/testutil/auth:go_default_library",
         "//server/testutil/environment:go_default_library",
         "@com_github_stretchr_testify//assert:go_default_library",
