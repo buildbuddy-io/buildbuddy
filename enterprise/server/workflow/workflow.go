@@ -320,7 +320,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		},
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "container-image", Value: "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.0"},
+				{Name: "container-image", Value: "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1"},
 			},
 		},
 	}
