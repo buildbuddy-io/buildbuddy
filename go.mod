@@ -15,6 +15,7 @@ require (
 	github.com/aws/aws-sdk-go v1.35.37
 	github.com/bazelbuild/bazelisk v1.7.4 // indirect
 	github.com/bazelbuild/rules_go v0.24.3
+	github.com/bojand/ghz v0.93.0 // indirect
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/containerd/containerd v1.4.3 // indirect
 	github.com/containerd/continuity v0.0.0-20201208142359-180525291bb7 // indirect
@@ -58,6 +59,7 @@ require (
 	github.com/kr/pty v1.1.8 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.5.2 // indirect
+	github.com/logrusorgru/aurora v2.0.3+incompatible // indirect
 	github.com/lyft/protoc-gen-star v0.4.14 // indirect
 	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
 	github.com/nbutton23/zxcvbn-go v0.0.0-20180912185939-ae427f1e4c1d // indirect
