@@ -8,8 +8,10 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -262,14 +264,68 @@ type apiKeyGroupCacheEntry struct {
 	expiresAfter time.Time
 }
 
-type OpenIDAuthenticator struct {
-	env            environment.Env
-	myURL          *url.URL
-	authenticators []*authenticator
+// apiKeyGroupCache is a cache for API Key -> Group lookups. A single Bazel invocation
+// can generate large bursts of RPCs, each of which needs to be authed.
+// There's no need to go to the database for every single request as this data
+// rarely changes.
+type apiKeyGroupCache struct {
 	// Note that even though we base this off an LRU cache, every entry has a hard expiration
 	// time to force a refresh of the underlying data.
-	apiKeyGroupCache    *lru.LRU
-	apiKeyGroupCacheTTL time.Duration
+	lru *lru.LRU
+	ttl time.Duration
+	mu  sync.RWMutex
+}
+
+func newAPIKeyGroupCache(configurator *config.Configurator) (*apiKeyGroupCache, error) {
+	var err error
+	var ttl time.Duration
+	if configurator.GetAuthAPIKeyGroupCacheTTL() != "" {
+		ttl, err = time.ParseDuration(configurator.GetAuthAPIKeyGroupCacheTTL())
+		if err != nil {
+			return nil, fmt.Errorf("invalid API Key -> Group cache TTL [%s]: %v", configurator.GetAuthAPIKeyGroupCacheTTL(), err)
+		}
+	} else {
+		ttl = defaultAPIKeyGroupCacheTTL
+	}
+
+	sizeFunc := func(k, v interface{}) int64 { return 1 }
+	lru, err := lru.NewLRU(apiKeyGroupCacheSize, nil /* onEvict */, nil /* onAdd */, sizeFunc)
+	if err != nil {
+		return nil, fmt.Errorf("error initializing API Key -> Group cache: %v", err)
+	}
+	return &apiKeyGroupCache{lru: lru, ttl: ttl}, nil
+}
+
+func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bool) {
+	c.mu.RLock()
+	v, ok := c.lru.Get(apiKey)
+	c.mu.RUnlock()
+	if !ok {
+		return nil, ok
+	}
+	entry, ok := v.(*apiKeyGroupCacheEntry)
+	if !ok {
+		// Should never happen.
+		log.Printf("Data in cache was of wrong type, got type %T", v)
+		return nil, false
+	}
+	if time.Now().After(entry.expiresAfter) {
+		return nil, false
+	}
+	return entry.APIKeyGroup, true
+}
+
+func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup interfaces.APIKeyGroup) {
+	c.mu.Lock()
+	c.lru.Add(apiKey, &apiKeyGroupCacheEntry{APIKeyGroup: apiKeyGroup, expiresAfter: time.Now().Add(c.ttl)})
+	c.mu.Unlock()
+}
+
+type OpenIDAuthenticator struct {
+	env              environment.Env
+	myURL            *url.URL
+	authenticators   []*authenticator
+	apiKeyGroupCache *apiKeyGroupCache
 }
 
 func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAuthenticator, error) {
@@ -325,26 +381,11 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAu
 	// Set the JWT key.
 	jwtKey = []byte(env.GetConfigurator().GetAuthJWTKey())
 
-	// Cache for API Key -> Group lookups. A single Bazel invocation
-	// can generate large bursts of RPCs, each of which needs to be authed.
-	// There's no need to go to the database for every single request as this data
-	// rarely changes.
+	// Initialize API Key -> Group cache unless it's disabled by config.
 	if env.GetConfigurator().GetAuthAPIKeyGroupCacheTTL() != "0" {
-		var ttl time.Duration
-		if env.GetConfigurator().GetAuthAPIKeyGroupCacheTTL() != "" {
-			ttl, err = time.ParseDuration(env.GetConfigurator().GetAuthAPIKeyGroupCacheTTL())
-			if err != nil {
-				return nil, fmt.Errorf("invalid API Key -> Group cache TTL [%s]: %v", env.GetConfigurator().GetAuthAPIKeyGroupCacheTTL(), err)
-			}
-		} else {
-			ttl = defaultAPIKeyGroupCacheTTL
-		}
-
-		oia.apiKeyGroupCacheTTL = ttl
-		sizeFunc := func(k, v interface{}) int64 { return 1 }
-		oia.apiKeyGroupCache, err = lru.NewLRU(apiKeyGroupCacheSize, nil /* onEvict */, nil /* onAdd */, sizeFunc)
+		oia.apiKeyGroupCache, err = newAPIKeyGroupCache(env.GetConfigurator())
 		if err != nil {
-			return nil, fmt.Errorf("error initializing API Key -> Group cache: %v", err)
+			return nil, err
 		}
 	}
 
@@ -414,18 +455,12 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(apiKey string) (interf
 	if a.apiKeyGroupCache != nil {
 		d, ok := a.apiKeyGroupCache.Get(apiKey)
 		if ok {
-			entry, ok := d.(apiKeyGroupCacheEntry)
-			if !ok {
-				return nil, status.InternalError("Invalid type in APIKeyGroupCache")
-			}
-			if time.Now().Before(entry.expiresAfter) {
-				return entry.APIKeyGroup, nil
-			}
+			return d, nil
 		}
 	}
 	apkg, err := a.env.GetAuthDB().GetAPIKeyGroupFromAPIKey(apiKey)
 	if err == nil && a.apiKeyGroupCache != nil {
-		a.apiKeyGroupCache.Add(apiKey, apiKeyGroupCacheEntry{APIKeyGroup: apkg, expiresAfter: time.Now().Add(a.apiKeyGroupCacheTTL)})
+		a.apiKeyGroupCache.Add(apiKey, apkg)
 	}
 	return apkg, err
 }
