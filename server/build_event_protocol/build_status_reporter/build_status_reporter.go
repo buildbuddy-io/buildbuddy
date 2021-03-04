@@ -49,6 +49,10 @@ func NewBuildStatusReporter(env environment.Env, buildEventAccumulator *accumula
 }
 
 func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+	// Note: For workflow invocations, we send the `BuildMetadata` event (which
+	// includes the WorkflowID) before any of the events captured in the switch
+	// case below. So in the workflow case, every status that we report should
+	// be using the same access token.
 	if r.githubClient.WorkflowID() != r.buildEventAccumulator.WorkflowID() {
 		r.githubClient.SetWorkflowID(r.buildEventAccumulator.WorkflowID())
 	}

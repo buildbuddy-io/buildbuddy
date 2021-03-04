@@ -408,12 +408,10 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if webhookData == nil {
 		return nil
 	}
-	log.Printf("Parsed webhook payload: %+v", webhookData)
 	wf, err := ws.readWorkflowForWebhook(ctx, webhookID)
 	if err != nil {
 		return err
 	}
-	log.Printf("Found workflow %v matching webhook %q", wf, webhookID)
 
 	key, err := ws.apiKeyForWorkflow(ctx, wf)
 	if err != nil {

@@ -28,7 +28,6 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("failed to parse webhook payload: %s", err)
 	}
-	log.Printf("Received GitHub webhook event: %T\n", event)
 	switch event := event.(type) {
 	case *gh.PushEvent:
 		v, err := fieldgetter.ExtractValues(
@@ -68,7 +67,6 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		}
 		// Only build when the PR is opened or pushed to.
 		if !(v["Action"] == "opened" || v["Action"] == "synchronize") {
-			log.Printf("Ignoring pull_request webhook event (action=%q)", v["Action"])
 			return nil, nil
 		}
 		return &webhook_data.WebhookData{
@@ -81,7 +79,6 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		}, nil
 
 	default:
-		log.Printf("Ignoring webhook event: %T", event)
 		return nil, nil
 	}
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/google/shlex"
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
+	"google.golang.org/grpc/metadata"
 	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -33,7 +34,6 @@ import (
 	git "github.com/go-git/go-git/v5"
 	gitcfg "github.com/go-git/go-git/v5/config"
 	gitplumbing "github.com/go-git/go-git/v5/plumbing"
-	"google.golang.org/grpc/metadata"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -262,7 +262,6 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 	besClient := pepb.NewPublishBuildEventClient(conn)
 	buildbuddyAPIKey := os.Getenv(buildbuddyAPIKeyEnvVarName)
 	if buildbuddyAPIKey != "" {
-		log.Printf("BEP: found API key in env")
 		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, buildbuddyAPIKey)
 	}
 	stream, err := besClient.PublishBuildToolEventStream(ctx)
