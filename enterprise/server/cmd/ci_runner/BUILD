@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
 go_library(
     name = "go_default_library",
@@ -27,5 +28,15 @@ go_library(
 go_binary(
     name = "ci_runner",
     embed = [":go_default_library"],
+    visibility = ["//visibility:public"],
+)
+
+# Note: the CI runner image only includes the setup needed for the CI runner;
+# it doesn't include the CI runner binary itself. We ship the CI runner binary
+# to the CAS and the executor downloads it as needed.
+container_image(
+    name = "ci_runner_image",
+    base = "@ci_runner_image//image:dockerfile_image.tar",
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
