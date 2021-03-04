@@ -10,7 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/ptypes"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"

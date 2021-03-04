@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowconf"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
@@ -24,11 +25,15 @@ import (
 	"github.com/google/shlex"
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
+	"google.golang.org/grpc/metadata"
 	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	git "github.com/go-git/go-git/v5"
+	gitcfg "github.com/go-git/go-git/v5/config"
+	gitplumbing "github.com/go-git/go-git/v5/plumbing"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -40,11 +45,10 @@ const (
 
 	// Env vars
 	// NOTE: These env vars are not populated for non-private repos.
-	// TODO: Allow populating BUILDBUDDY_API_KEY for private repos,
-	// so that workflow invocations can be private.
 
-	repoUserEnvVarName  = "REPO_USER"
-	repoTokenEnvVarName = "REPO_TOKEN"
+	buildbuddyAPIKeyEnvVarName = "BUILDBUDDY_API_KEY"
+	repoUserEnvVarName         = "REPO_USER"
+	repoTokenEnvVarName        = "REPO_TOKEN"
 
 	// Exit code placeholder used when a command doesn't return an exit code on its own.
 	noExitCode = -1
@@ -78,9 +82,11 @@ var (
 	besBackend    = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
 	besResultsURL = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
 	repoURL       = flag.String("repo_url", "", "URL of the Git repo to check out.")
+	branch        = flag.String("branch", "", "Branch name of the commit to be checked out.")
 	commitSHA     = flag.String("commit_sha", "", "SHA of the commit to be checked out.")
 	triggerEvent  = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	triggerBranch = flag.String("trigger_branch", "", "Branch to check action triggers against.")
+	workflowID    = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 )
@@ -89,13 +95,12 @@ func main() {
 	flag.Parse()
 
 	ctx := context.Background()
-	if err := cloneRepo(ctx); err != nil {
-		fatal(err)
+	if err := setupGitRepo(ctx); err != nil {
+		fatal(status.WrapError(err, "failed to clone repo"))
 	}
 	cfg, err := readConfig()
 	if err != nil {
-		log.Printf("failed to read BuildBuddy config: %s", err)
-		os.Exit(1)
+		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
 	}
 
 	RunAllActions(ctx, cfg)
@@ -143,9 +148,13 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 			username: username,
 		}
 		exitCode := 0
+		exitCodeName := "OK"
 		if err := ar.Run(ctx); err != nil {
 			ar.log.Printf(aurora.Sprintf(aurora.Red("\nAction failed: %s"), err))
 			exitCode = getExitCode(err)
+			// TODO: More descriptive exit code names, so people have a better
+			// sense of what happened without even needing to open the invocation.
+			exitCodeName = "Failed"
 		}
 
 		// Ignore errors from the events published here; they'll be surfaced in `bep.Wait()`
@@ -156,7 +165,11 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 				{Id: &bespb.BuildEventId_BuildToolLogs{BuildToolLogs: &bespb.BuildEventId_BuildToolLogsId{}}},
 			},
 			Payload: &bespb.BuildEvent_Finished{Finished: &bespb.BuildFinished{
-				ExitCode:         &bespb.BuildFinished_ExitCode{Code: int32(exitCode)},
+				OverallSuccess: exitCode == 0,
+				ExitCode: &bespb.BuildFinished_ExitCode{
+					Name: exitCodeName,
+					Code: int32(exitCode),
+				},
 				FinishTimeMillis: time.Now().UnixNano() / int64(time.Millisecond),
 			}},
 		})
@@ -247,6 +260,10 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 	}
 	defer conn.Close()
 	besClient := pepb.NewPublishBuildEventClient(conn)
+	buildbuddyAPIKey := os.Getenv(buildbuddyAPIKeyEnvVarName)
+	if buildbuddyAPIKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, buildbuddyAPIKey)
+	}
 	stream, err := besClient.PublishBuildToolEventStream(ctx)
 	if err != nil {
 		bep.setError(status.WrapError(err, "error opening build event stream"))
@@ -378,6 +395,7 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 	startedEvent := &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}}},
 		Children: []*bespb.BuildEventId{
+			{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
 			{Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: 0}}},
 			{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
 			{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
@@ -393,6 +411,21 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 	if err := ar.flushProgress(); err != nil {
 		return nil
 	}
+	buildMetadataEvent := &bespb.BuildEvent{
+		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
+		Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: &bespb.BuildMetadata{
+			Metadata: map[string]string{
+				"ROLE":                             "CI",
+				"BUILDBUDDY_WORKFLOW_ID":           *workflowID,
+				"BUILDBUDDY_ACTION_NAME":           ar.action.Name,
+				"BUILDBUDDY_ACTION_TRIGGER_EVENT":  *triggerEvent,
+				"BUILDBUDDY_ACTION_TRIGGER_BRANCH": *triggerBranch,
+			},
+		}},
+	}
+	if err := bep.Publish(buildMetadataEvent); err != nil {
+		return nil
+	}
 	workspaceStatusEvent := &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
 		Payload: &bespb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bespb.WorkspaceStatus{
@@ -401,10 +434,8 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 				{Key: "BUILD_HOST", Value: ar.hostname},
 				{Key: "REPO_URL", Value: *repoURL},
 				{Key: "COMMIT_SHA", Value: *commitSHA},
+				{Key: "GIT_BRANCH", Value: *branch},
 				{Key: "GIT_TREE_STATUS", Value: "Clean"},
-				// TODO: Populate GIT_BRANCH. Can't source this from the `trigger_branch` flag
-				// in the PR case, because that refers to the branch into which the PR would be
-				// merged, which doesn't reflect the currently checked out branch.
 				// TODO: Consider parsing the `.bazelrc` and running the user's actual workspace
 				// status command that they've configured for bazel.
 			},
@@ -513,28 +544,41 @@ func bazelArgs(cmd string) ([]string, error) {
 	return tokens, nil
 }
 
-func cloneRepo(ctx context.Context) error {
+func setupGitRepo(ctx context.Context) error {
 	if err := os.Mkdir(repoDirName, 0o775); err != nil {
 		return status.WrapErrorf(err, "mkdir %q", repoDirName)
 	}
 	if err := os.Chdir(repoDirName); err != nil {
 		return status.WrapErrorf(err, "cd %q", repoDirName)
 	}
-	if err := runCommand(ctx, "git", []string{"init"} /*env=*/, nil, os.Stderr); err != nil {
+
+	repo, err := git.PlainInit("." /*isBare=*/, false)
+	if err != nil {
 		return err
 	}
 	authURL, err := authRepoURL()
 	if err != nil {
 		return err
 	}
-	if err := runCommand(ctx, "git", []string{"remote", "add", "origin", authURL} /*env=*/, nil, os.Stderr); err != nil {
+	remote, err := repo.CreateRemote(&gitcfg.RemoteConfig{
+		Name: "origin",
+		URLs: []string{authURL},
+	})
+	if err != nil {
 		return err
 	}
-	if err := runCommand(ctx, "git", []string{"fetch", "origin", *commitSHA} /*env=*/, nil, os.Stderr); err != nil {
-		// If `git fetch` fails, might be due to a transient network error -- return UNAVAILABLE.
-		return status.UnavailableErrorf("git fetch failed: %s", err)
+
+	fetchOpts := &git.FetchOptions{
+		RefSpecs: []gitcfg.RefSpec{gitcfg.RefSpec(fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", *branch, *branch))},
 	}
-	if err := runCommand(ctx, "git", []string{"checkout", *commitSHA} /*env=*/, nil, os.Stderr); err != nil {
+	if err := remote.Fetch(fetchOpts); err != nil {
+		return err
+	}
+	tree, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+	if err := tree.Checkout(&git.CheckoutOptions{Hash: gitplumbing.NewHash(*commitSHA)}); err != nil {
 		return err
 	}
 	return nil

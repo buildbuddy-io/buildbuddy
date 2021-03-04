@@ -22,7 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -236,6 +236,18 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	return rsp, nil
 }
 
+func LookupWorkflowByID(ctx context.Context, env environment.Env, workflowID string) (*tables.Workflow, error) {
+	db := env.GetDBHandle()
+	if db == nil {
+		return nil, status.FailedPreconditionError("database not configured")
+	}
+	workflow := &tables.Workflow{}
+	if err := db.Raw(`SELECT * from Workflows WHERE workflow_id = ?`, workflowID).Take(workflow).Error; err != nil {
+		return nil, err
+	}
+	return workflow, nil
+}
+
 func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID string) (*tables.Workflow, error) {
 	if ws.env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
@@ -278,11 +290,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if err != nil {
 		return nil, err
 	}
-	envVars := []*repb.Command_EnvironmentVariable{
-		{Name: "CI", Value: "1"},
-		{Name: "CI_REPOSITORY_URL", Value: wf.RepoURL},
-		{Name: "CI_COMMIT_SHA", Value: wd.SHA},
-	}
+	envVars := []*repb.Command_EnvironmentVariable{}
 	if wd.IsTrusted() {
 		repoUser := wf.AccessToken
 		repoToken := ""
@@ -305,8 +313,15 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
 			"--repo_url=" + wf.RepoURL,
 			"--commit_sha=" + wd.SHA,
+			"--branch=" + wd.PushedBranch,
+			"--workflow_id=" + wf.WorkflowID,
 			"--trigger_event=" + wd.EventName,
 			"--trigger_branch=" + wd.TargetBranch,
+		},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "container-image", Value: "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.0"},
+			},
 		},
 	}
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, cmd)
@@ -398,12 +413,10 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if webhookData == nil {
 		return nil
 	}
-	log.Printf("Parsed webhook payload: %+v", webhookData)
 	wf, err := ws.readWorkflowForWebhook(ctx, webhookID)
 	if err != nil {
 		return err
 	}
-	log.Printf("Found workflow %v matching webhook %q", wf, webhookID)
 
 	key, err := ws.apiKeyForWorkflow(ctx, wf)
 	if err != nil {

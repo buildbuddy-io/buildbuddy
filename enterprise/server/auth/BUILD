@@ -17,7 +17,7 @@ go_library(
         "//server/util/status:go_default_library",
         "@com_github_coreos_go_oidc//:go_default_library",
         "@com_github_dgrijalva_jwt_go//:go_default_library",
-        "@com_github_jinzhu_gorm//:go_default_library",
+        "@io_gorm_gorm//:go_default_library",
         "@org_golang_google_grpc//credentials:go_default_library",
         "@org_golang_google_grpc//metadata:go_default_library",
         "@org_golang_google_grpc//peer:go_default_library",
