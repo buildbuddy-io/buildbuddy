@@ -151,6 +151,9 @@ func TestDroppedNode(t *testing.T) {
 
 			// Compute a digest for the bytes returned.
 			d2, err := digest.Compute(bytes.NewReader(rbuf))
+			if err != nil {
+				t.Fatalf("Error computing digest: %s", err.Error())
+			}
 			if d.GetHash() != d2.GetHash() {
 				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 			}
@@ -185,6 +188,9 @@ func TestDroppedNode(t *testing.T) {
 
 			// Compute a digest for the bytes returned.
 			d2, err := digest.Compute(bytes.NewReader(rbuf))
+			if err != nil {
+				t.Fatalf("Error computing digest: %s", err.Error())
+			}
 			if d.GetHash() != d2.GetHash() {
 				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 			}
