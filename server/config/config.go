@@ -126,7 +126,7 @@ type authConfig struct {
 	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
 	JWTKey               string          `yaml:"jwt_key" usage:"The key to use when signing JWT tokens."`
-	APIKeyGroupCacheTTL  string          `yaml:"api_key_group_cache_ttl" usage:"If set, API Key to group mappings will be cached in memory to avoid excessive database lookups."`
+	APIKeyGroupCacheTTL  string          `yaml:"api_key_group_cache_ttl" usage:"Override for the TTL for API Key to Group caching. Set to '0' to disable cache."`
 }
 
 type OauthProvider struct {
