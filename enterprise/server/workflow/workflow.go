@@ -308,6 +308,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--trigger_event=" + wd.EventName,
 			"--trigger_branch=" + wd.TargetBranch,
 		},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "container-image", Value: "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.0"},
+			},
+		},
 	}
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, cmd)
 	if err != nil {
