@@ -2,7 +2,6 @@ package github
 
 import (
 	"io/ioutil"
-	"log"
 	"mime"
 	"net/http"
 	"net/url"
