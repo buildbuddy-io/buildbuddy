@@ -13,7 +13,7 @@ go_test(
     # keep
     embed = [],
     deps = [
-        ":go_default_test",  # keep
+        ":go_default_library",  # keep
         "@com_github_stretchr_testify//assert:go_default_library",
     ],
 )
