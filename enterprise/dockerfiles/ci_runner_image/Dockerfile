@@ -7,5 +7,5 @@ RUN curl -Lo /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/rele
     chmod +x /usr/local/bin/bazelisk
 
 # Pre-install bazel 3.7.0 to avoid bazelisk downloading & installing bazel on every
-# CI run, at least for our internal repo.
+# CI run, at least for CI runs on the BuildBuddy repo itself.
 RUN USE_BAZEL_VERSION=3.7.0 bazelisk version
