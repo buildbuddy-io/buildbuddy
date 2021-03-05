@@ -399,7 +399,7 @@ type actionRunner struct {
 }
 
 func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
-	ar.log.Printf("Action: %s", ar.action.Name)
+	ar.log.Printf("Running action: %s", ar.action.Name)
 
 	// Only print this to the local logs -- it's mostly useful for development purposes.
 	log.Printf("Invocation URL:  %s", invocationURL(ar.bep.streamID.InvocationId))
