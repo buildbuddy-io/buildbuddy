@@ -52,7 +52,7 @@ function sync() {
   local current_branch
   current_branch=$(git branch --show-current)
   if [[ "$current_branch" != "$start_branch" ]]; then
-    echo -e "$0: \033[33mWARNING: git branch has changed since you started the grafana server. Changes to the dashboard will not be auto-saved.\033[0m"
+    echo -e "$0: \033[33mWARNING: git branch has changed. Changes to the dashboard will not be auto-saved.\033[0m"
     return
   fi
 
