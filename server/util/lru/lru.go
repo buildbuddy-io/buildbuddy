@@ -17,7 +17,6 @@ type SizeFn func(key interface{}, value interface{}) int64
 type Config struct {
 	// Maximum amount of data to store in the cache.
 	// The size of each entry is determined by SizeFn.
-	// If SizeFn is not specified, each entry has a size of "1".
 	MaxSize int64
 	// Function to calculate size of cache entries.
 	SizeFn SizeFn
