@@ -665,6 +665,40 @@ func (s *BuildBuddyServer) GetExecution(ctx context.Context, req *espb.GetExecut
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (s *BuildBuddyServer) GetExecutionNodes(ctx context.Context, req *espb.GetExecutionNodesRequest) (*espb.GetExecutionNodesResponse, error) {
+	return espb.GetExecutionNodesResponse{
+		ExecutionNodes: []*espb.ExecutionNode{
+			{
+				"host":                    "10.52.6.5",
+				"port":                    "1987",
+				"assignable_memory_bytes": 26843545600,
+				"assignable_milli_cpu":    7000,
+				"os":                      "linux",
+				"arch":                    "amd64",
+				"pool":                    "buildbuddy-executors-us-west1-b",
+			},
+			{
+				"host":                    "207.254.55.158",
+				"port":                    "1987",
+				"assignable_memory_bytes": 25614368768,
+				"assignable_milli_cpu":    12000,
+				"os":                      "darwin",
+				"arch":                    "amd64",
+				"pool":                    "baremetal-test-pool",
+			},
+			{
+				"host":                    "10.52.15.4",
+				"port":                    "1987",
+				"assignable_memory_bytes": 26843545600,
+				"assignable_milli_cpu":    7000,
+				"os":                      "darwin",
+				"arch":                    "amd64",
+				"pool":                    "buildbuddy-executors-us-west1-b",
+			},
+		},
+	}, nil
+}
+
 func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
 	return target.GetTarget(ctx, s.env, req)
 }

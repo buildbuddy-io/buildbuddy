@@ -64,6 +64,14 @@ class Router {
     this.navigateTo(Path.trendsPath);
   }
 
+  navigateToExecutors() {
+    if (!capabilities.canNavigateToPath(Path.executorsPath)) {
+      alert(`Executorss are not available in ${capabilities.name}`);
+      return;
+    }
+    this.navigateTo(Path.executorsPath);
+  }
+
   navigateToTap() {
     if (!capabilities.canNavigateToPath(Path.tapPath)) {
       alert(`The test dashboard is not available in ${capabilities.name}`);
@@ -219,6 +227,7 @@ export class Path {
   static createOrgPath = "/org/create";
   static editOrgPath = "/org/edit";
   static trendsPath = "/trends/";
+  static executorsPath = "/executors/";
   static tapPath = "/tests/";
   static workflowsPath = "/workflows/";
 }
