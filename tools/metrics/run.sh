@@ -1,10 +1,12 @@
 #!/bin/bash
 
 set -e -o pipefail
-__file__="$0"
+__file__=$(realpath "$0")
 __dir__=$(dirname "$__file__")
 
 cd "$__dir__"
+
+start_branch=$(git branch --show-current)
 
 : ${GRAFANA_PORT:=4500}
 : ${GRAFANA_ADMIN_PASSWORD:="admin"}
@@ -21,10 +23,10 @@ GRAFANA_DASHBOARD_FILE_PATH="./grafana/dashboards/buildbuddy.json"
 (
   open=$(which open &>/dev/null && echo "open" || echo "xdg-open")
   tries=100
-  while ! ( curl "$GRAFANA_STARTUP_URL" &>/dev/null && curl "http://localhost:9100/metrics" &>/dev/null ); do
+  while ! (curl "$GRAFANA_STARTUP_URL" &>/dev/null && curl "http://localhost:9100/metrics" &>/dev/null); do
     sleep 0.5
-    tries=$(( tries - 1 ))
-    if [[ $tries == 0 ]] ; then
+    tries=$((tries - 1))
+    if [[ $tries == 0 ]]; then
       exit 1
     fi
   done
@@ -32,9 +34,18 @@ GRAFANA_DASHBOARD_FILE_PATH="./grafana/dashboards/buildbuddy.json"
   "$open" "$GRAFANA_STARTUP_URL"
 ) &
 
-function sync () {
-  local json=$(curl "$GRAFANA_DASHBOARD_URL" 2>/dev/null)
-  if [[ -z "$json" ]] ; then
+function sync() {
+  local current_branch
+  current_branch=$(git branch --show-current)
+  if [[ "$current_branch" != "$start_branch" ]]; then
+    # If git branch changed, stop auto-saving and quit the sync loop.
+    exit 1
+    return
+  fi
+
+  local json
+  json=$(curl "$GRAFANA_DASHBOARD_URL" 2>/dev/null)
+  if [[ -z "$json" ]]; then
     echo "$0: WARNING: Could not download dashboard from $GRAFANA_DASHBOARD_URL"
     return
   fi
@@ -44,25 +55,25 @@ function sync () {
   # If the dashboard hasn't changed, don't write a new JSON file, to avoid
   # updating the file timestamp (causing Grafana to show "someone else updated
   # this dashboard")
-  if [ "$json" == "$current" ] ; then return; fi
+  if [ "$json" == "$current" ]; then return; fi
   echo "$0: Detected change in Grafana dashboard. Saving to $GRAFANA_DASHBOARD_FILE_PATH"
-  echo "$json" > "$GRAFANA_DASHBOARD_FILE_PATH"
+  echo "$json" >"$GRAFANA_DASHBOARD_FILE_PATH"
 }
 
 # Poll for dashboard changes and update the local JSON files.
 (
-  while true ; do
+  while true; do
     sleep 3
     sync
   done
 ) &
 
 docker_compose_args=("-f" "docker-compose.grafana.yml")
-if [[ "$1" == "kube" ]] ; then
+if [[ "$1" == "kube" ]]; then
   # Start a thread to forward port 9100 locally to the Prometheus server on Kube.
   (
     kubectl --context="$KUBE_CONTEXT" --namespace="$KUBE_NAMESPACE" \
-        port-forward "$KUBE_PROM_SERVER_RESOURCE" 9100:"$KUBE_PROM_SERVER_PORT"
+      port-forward "$KUBE_PROM_SERVER_RESOURCE" 9100:"$KUBE_PROM_SERVER_PORT"
   ) &
 else
   # Run the Prometheus server locally.
