@@ -35,14 +35,6 @@ GRAFANA_DASHBOARD_FILE_PATH="./grafana/dashboards/buildbuddy.json"
 ) &
 
 function sync() {
-  local current_branch
-  current_branch=$(git branch --show-current)
-  if [[ "$current_branch" != "$start_branch" ]]; then
-    # If git branch changed, stop auto-saving and quit the sync loop.
-    exit 1
-    return
-  fi
-
   local json
   json=$(curl "$GRAFANA_DASHBOARD_URL" 2>/dev/null)
   if [[ -z "$json" ]]; then
@@ -56,6 +48,14 @@ function sync() {
   # updating the file timestamp (causing Grafana to show "someone else updated
   # this dashboard")
   if [ "$json" == "$current" ]; then return; fi
+
+  local current_branch
+  current_branch=$(git branch --show-current)
+  if [[ "$current_branch" != "$start_branch" ]]; then
+    echo -e "$0: \033[33mWARNING: git branch has changed since you started the grafana server. Changes to the dashboard will not be auto-saved.\033[0m"
+    return
+  fi
+
   echo "$0: Detected change in Grafana dashboard. Saving to $GRAFANA_DASHBOARD_FILE_PATH"
   echo "$json" >"$GRAFANA_DASHBOARD_FILE_PATH"
 }
