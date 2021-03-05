@@ -277,21 +277,19 @@ type apiKeyGroupCache struct {
 }
 
 func newAPIKeyGroupCache(configurator *config.Configurator) (*apiKeyGroupCache, error) {
-	var err error
-	var ttl time.Duration
+	ttl := defaultAPIKeyGroupCacheTTL
 	if configurator.GetAuthAPIKeyGroupCacheTTL() != "" {
-		ttl, err = time.ParseDuration(configurator.GetAuthAPIKeyGroupCacheTTL())
+		configTTL, err := time.ParseDuration(configurator.GetAuthAPIKeyGroupCacheTTL())
 		if err != nil {
-			return nil, fmt.Errorf("invalid API Key -> Group cache TTL [%s]: %v", configurator.GetAuthAPIKeyGroupCacheTTL(), err)
+			return nil, status.InvalidArgumentErrorf("invalid API Key -> Group cache TTL [%s]: %v", configurator.GetAuthAPIKeyGroupCacheTTL(), err)
 		}
-	} else {
-		ttl = defaultAPIKeyGroupCacheTTL
+		ttl = configTTL
 	}
 
 	sizeFunc := func(k, v interface{}) int64 { return 1 }
 	lru, err := lru.NewLRU(apiKeyGroupCacheSize, nil /* onEvict */, nil /* onAdd */, sizeFunc)
 	if err != nil {
-		return nil, fmt.Errorf("error initializing API Key -> Group cache: %v", err)
+		return nil, status.InternalErrorf("error initializing API Key -> Group cache: %v", err)
 	}
 	return &apiKeyGroupCache{lru: lru, ttl: ttl}, nil
 }
