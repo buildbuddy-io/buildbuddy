@@ -82,6 +82,7 @@ func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
 		newPrefix += "/"
 	}
 	clone := *c
+	clone.prefix = newPrefix
 	clone.local = c.local.WithPrefix(prefix)
 	return &clone
 }
