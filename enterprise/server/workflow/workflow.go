@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 	"log"
 	"net/http"
 	"net/url"
@@ -440,6 +442,9 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err != nil {
 		return err
 	}
+	metrics.WebhookHandlerWorkflowsStarted.With(prometheus.Labels{
+		metrics.WebhookEventName: webhookData.EventName,
+	})
 	log.Printf("Started workflow execution (ID: %q)", executionID)
 	return nil
 }
