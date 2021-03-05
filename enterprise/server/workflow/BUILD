@@ -27,7 +27,6 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus:go_default_library",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
         "@io_gorm_gorm//:go_default_library",
-        "@org_golang_google_grpc//codes:go_default_library",
     ],
 )
 
