@@ -6,7 +6,7 @@ __dir__=$(dirname "$__file__")
 
 cd "$__dir__"
 
-start_branch=$(git branch --show-current)
+START_BRANCH=$(git branch --show-current)
 
 : ${GRAFANA_PORT:=4500}
 : ${GRAFANA_ADMIN_PASSWORD:="admin"}
@@ -51,7 +51,7 @@ function sync() {
 
   local current_branch
   current_branch=$(git branch --show-current)
-  if [[ "$current_branch" != "$start_branch" ]]; then
+  if [[ "$current_branch" != "$START_BRANCH" ]]; then
     echo -e "$0: \033[33mWARNING: git branch has changed. Changes to the dashboard will not be auto-saved.\033[0m"
     return
   fi
