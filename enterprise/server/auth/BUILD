@@ -7,11 +7,13 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:api_key_go_proto",
+        "//server/config:go_default_library",
         "//server/environment:go_default_library",
         "//server/interfaces:go_default_library",
         "//server/tables:go_default_library",
         "//server/util/capabilities:go_default_library",
         "//server/util/db:go_default_library",
+        "//server/util/lru:go_default_library",
         "//server/util/random:go_default_library",
         "//server/util/request_context:go_default_library",
         "//server/util/status:go_default_library",

@@ -2,20 +2,22 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -76,6 +78,11 @@ const (
 
 	// BuildBuddy JWT duration maximum.
 	defaultBuildBuddyJWTDuration = 24 * time.Hour
+
+	// Maximum amount of time we will cache Group information for an API key.
+	defaultAPIKeyGroupCacheTTL = 5 * time.Minute
+	// Maximum number of entries in API Key -> Group cache.
+	apiKeyGroupCacheSize = 10000
 )
 
 var (
@@ -252,15 +259,80 @@ func (a *authenticator) verifyTokenAndExtractUser(ctx context.Context, jwt strin
 	return extractToken(a.issuer, validToken)
 }
 
+type apiKeyGroupCacheEntry struct {
+	data         interfaces.APIKeyGroup
+	expiresAfter time.Time
+}
+
+// apiKeyGroupCache is a cache for API Key -> Group lookups. A single Bazel invocation
+// can generate large bursts of RPCs, each of which needs to be authed.
+// There's no need to go to the database for every single request as this data
+// rarely changes.
+type apiKeyGroupCache struct {
+	// Note that even though we base this off an LRU cache, every entry has a hard expiration
+	// time to force a refresh of the underlying data.
+	lru *lru.LRU
+	ttl time.Duration
+	mu  sync.RWMutex
+}
+
+func newAPIKeyGroupCache(configurator *config.Configurator) (*apiKeyGroupCache, error) {
+	ttl := defaultAPIKeyGroupCacheTTL
+	if configurator.GetAuthAPIKeyGroupCacheTTL() != "" {
+		configTTL, err := time.ParseDuration(configurator.GetAuthAPIKeyGroupCacheTTL())
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid API Key -> Group cache TTL [%s]: %v", configurator.GetAuthAPIKeyGroupCacheTTL(), err)
+		}
+		ttl = configTTL
+	}
+
+	sizeFunc := func(k, v interface{}) int64 { return 1 }
+	lru, err := lru.NewLRU(apiKeyGroupCacheSize, nil /* onEvict */, nil /* onAdd */, sizeFunc)
+	if err != nil {
+		return nil, status.InternalErrorf("error initializing API Key -> Group cache: %v", err)
+	}
+	return &apiKeyGroupCache{lru: lru, ttl: ttl}, nil
+}
+
+func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bool) {
+	c.mu.RLock()
+	v, ok := c.lru.Get(apiKey)
+	c.mu.RUnlock()
+	if !ok {
+		return nil, ok
+	}
+	entry, ok := v.(*apiKeyGroupCacheEntry)
+	if !ok {
+		// Should never happen.
+		log.Printf("Data in cache was of wrong type, got type %T", v)
+		return nil, false
+	}
+	if time.Now().After(entry.expiresAfter) {
+		return nil, false
+	}
+	return entry.data, true
+}
+
+func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup interfaces.APIKeyGroup) {
+	c.mu.Lock()
+	c.lru.Add(apiKey, &apiKeyGroupCacheEntry{data: apiKeyGroup, expiresAfter: time.Now().Add(c.ttl)})
+	c.mu.Unlock()
+}
+
 type OpenIDAuthenticator struct {
-	env            environment.Env
-	myURL          *url.URL
-	authenticators []*authenticator
+	env              environment.Env
+	myURL            *url.URL
+	authenticators   []*authenticator
+	apiKeyGroupCache *apiKeyGroupCache
 }
 
 func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAuthenticator, error) {
 	oia := &OpenIDAuthenticator{
 		env: env,
+	}
+
+	if env.GetAuthDB() == nil {
+		return nil, status.FailedPreconditionError("AuthDB not present")
 	}
 
 	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
@@ -306,6 +378,15 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAu
 
 	// Set the JWT key.
 	jwtKey = []byte(env.GetConfigurator().GetAuthJWTKey())
+
+	// Initialize API Key -> Group cache unless it's disabled by config.
+	if env.GetConfigurator().GetAuthAPIKeyGroupCacheTTL() != "0" {
+		oia.apiKeyGroupCache, err = newAPIKeyGroupCache(env.GetConfigurator())
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return oia, nil
 }
 
@@ -368,53 +449,21 @@ func (a *OpenIDAuthenticator) lookupUserFromSubID(subID string) (*tables.User, e
 	return user, err
 }
 
-func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(apiKey string) (*apiKeyGroup, error) {
-	dbHandle := a.env.GetDBHandle()
-	if dbHandle == nil {
-		return nil, status.FailedPreconditionErrorf("No handle to query database")
-	}
-	akg := &apiKeyGroup{}
-	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
-		existingRow := tx.Raw(`
-			SELECT ak.capabilities, g.group_id
-			FROM `+"`Groups`"+` AS g, APIKeys AS ak
-			WHERE g.group_id = ak.group_id AND ak.value = ?`,
-			apiKey)
-		return existingRow.Take(akg).Error
-	})
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, status.UnauthenticatedErrorf("Invalid API key %s", apiKey)
+func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(apiKey string) (interfaces.APIKeyGroup, error) {
+	if a.apiKeyGroupCache != nil {
+		d, ok := a.apiKeyGroupCache.Get(apiKey)
+		if ok {
+			return d, nil
 		}
-		return nil, err
 	}
-	return akg, nil
+	apkg, err := a.env.GetAuthDB().GetAPIKeyGroupFromAPIKey(apiKey)
+	if err == nil && a.apiKeyGroupCache != nil {
+		a.apiKeyGroupCache.Add(apiKey, apkg)
+	}
+	return apkg, err
 }
 
-func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromBasicAuth(login, pass string) (*apiKeyGroup, error) {
-	dbHandle := a.env.GetDBHandle()
-	if dbHandle == nil {
-		return nil, status.FailedPreconditionErrorf("No handle to query database")
-	}
-	akg := &apiKeyGroup{}
-	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
-		existingRow := tx.Raw(`
-			SELECT ak.capabilities, g.group_id
-			FROM `+"`Groups`"+` AS g, APIKeys AS ak
-			WHERE g.group_id = ? AND g.write_token = ? AND g.group_id = ak.group_id`,
-			login, pass)
-		return existingRow.Take(akg).Error
-	})
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, status.UnauthenticatedErrorf("User/Group specified by %s:%s not found", login, pass)
-		}
-		return nil, err
-	}
-	return akg, nil
-}
-
-func authenticatedUserTokenString(ctx context.Context, u *tables.User, akg *apiKeyGroup) (string, error) {
+func authenticatedUserTokenString(ctx context.Context, u *tables.User, akg interfaces.APIKeyGroup) (string, error) {
 	userID := ""
 	groupID := ""
 	allowedGroups := make([]string, 0)
@@ -426,9 +475,9 @@ func authenticatedUserTokenString(ctx context.Context, u *tables.User, akg *apiK
 			allowedGroups = append(allowedGroups, g.GroupID)
 		}
 	} else if akg != nil {
-		groupID = akg.GroupID
-		allowedGroups = append(allowedGroups, akg.GroupID)
-		capabilities = akg.Capabilities
+		groupID = akg.GetGroupID()
+		allowedGroups = append(allowedGroups, akg.GetGroupID())
+		capabilities = akg.GetCapabilities()
 	} else {
 		return "", status.FailedPreconditionErrorf("No user/group to generate JWT for")
 	}
@@ -440,7 +489,7 @@ func authContextWithError(ctx context.Context, err error) context.Context {
 	return context.WithValue(ctx, contextUserErrorKey, err)
 }
 
-func authContextWithInfo(ctx context.Context, u *tables.User, akg *apiKeyGroup) context.Context {
+func authContextWithInfo(ctx context.Context, u *tables.User, akg interfaces.APIKeyGroup) context.Context {
 	tokenString, err := authenticatedUserTokenString(ctx, u, akg)
 	if err != nil {
 		return authContextWithError(ctx, err)
@@ -475,7 +524,7 @@ func (a *OpenIDAuthenticator) authContextFromAPIKey(ctx context.Context, apiKey 
 }
 
 func (a *OpenIDAuthenticator) authContextFromBasicAuth(ctx context.Context, login, pass string) context.Context {
-	akg, err := a.lookupAPIKeyGroupFromBasicAuth(login, pass)
+	akg, err := a.env.GetAuthDB().GetAPIKeyGroupFromBasicAuth(login, pass)
 	if err != nil {
 		return authContextWithError(ctx, err)
 	}
