@@ -163,7 +163,7 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig, im *
 		// Include the repo's download time as part of the first invocation.
 		if !im.reported {
 			im.reported = true
-			ar.log.Printf("Loaded Git repository in %s\n", startTime.Sub(im.start))
+			ar.log.Printf("Fetched Git repository in %s\n", startTime.Sub(im.start))
 			startTime = im.start
 		}
 
