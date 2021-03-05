@@ -401,7 +401,7 @@ type actionRunner struct {
 func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 	ar.log.Printf("Action: %s", ar.action.Name)
 
-	// Only print this to the local logs -- it's mostly useful for debug purposes.
+	// Only print this to the local logs -- it's mostly useful for development purposes.
 	log.Printf("Invocation URL:  %s", invocationURL(ar.bep.streamID.InvocationId))
 
 	// NOTE: In this func we return immediately with an error of nil if event publishing fails,
