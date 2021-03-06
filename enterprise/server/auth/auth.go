@@ -334,10 +334,6 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAu
 		env: env,
 	}
 
-	if env.GetAuthDB() == nil {
-		return nil, status.FailedPreconditionError("AuthDB not present")
-	}
-
 	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
 	if len(authConfigs) == 0 {
 		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
@@ -459,7 +455,11 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(apiKey string) (interf
 			return d, nil
 		}
 	}
-	apkg, err := a.env.GetAuthDB().GetAPIKeyGroupFromAPIKey(apiKey)
+	authDB := a.env.GetAuthDB()
+	if authDB == nil {
+		return nil, status.FailedPreconditionError("AuthDB not configured")
+	}
+	apkg, err := authDB.GetAPIKeyGroupFromAPIKey(apiKey)
 	if err == nil && a.apiKeyGroupCache != nil {
 		a.apiKeyGroupCache.Add(apiKey, apkg)
 	}
@@ -527,7 +527,11 @@ func (a *OpenIDAuthenticator) authContextFromAPIKey(ctx context.Context, apiKey 
 }
 
 func (a *OpenIDAuthenticator) authContextFromBasicAuth(ctx context.Context, login, pass string) context.Context {
-	akg, err := a.env.GetAuthDB().GetAPIKeyGroupFromBasicAuth(login, pass)
+	authDB := a.env.GetAuthDB()
+	if authDB == nil {
+		return authContextWithError(ctx, status.FailedPreconditionError("AuthDB not configured"))
+	}
+	akg, err := authDB.GetAPIKeyGroupFromBasicAuth(login, pass)
 	if err != nil {
 		return authContextWithError(ctx, err)
 	}
