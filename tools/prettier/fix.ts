@@ -1,7 +1,7 @@
-const prettier = require("prettier");
-const { getFilePathsToFormat, getWorkspacePath } = require("./common");
-const fs = require("fs");
-const chalk = require("chalk");
+import chalk from "chalk";
+import fs from "fs";
+import prettier from "prettier";
+import { getFilePathsToFormat, getWorkspacePath } from "./common";
 
 async function main() {
   const paths = await getFilePathsToFormat();

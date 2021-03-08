@@ -1,10 +1,10 @@
-import prettier from "prettier";
 import child_process from "child_process";
+import prettier from "prettier";
 
 const FORMATTED_EXTENSIONS = ["ts", "tsx", "js", "jsx", "css", "json", "yaml", "html", "xml"];
 const FORMATTED_EXTENSIONS_REGEX = new RegExp(`.(${FORMATTED_EXTENSIONS.join("|")})$`);
 
-function getWorkspacePath() {
+export function getWorkspacePath() {
   const directory = process.env["BUILD_WORKSPACE_DIRECTORY"];
   if (!directory) {
     console.error("error: BUILD_WORKSPACE_DIRECTORY is unset");
@@ -24,7 +24,7 @@ function getModifiedFilePaths(baseBranch = "master") {
     .filter(Boolean);
 }
 
-function getPrettierrcPath() {
+export function getPrettierrcPath() {
   return `${getWorkspacePath()}/.prettierrc`;
 }
 
@@ -32,7 +32,7 @@ function getPrettierignorePath() {
   return `${getWorkspacePath()}/.prettierignore`;
 }
 
-async function getFilePathsToFormat() {
+export async function getFilePathsToFormat() {
   const paths = [];
   for (const path of getModifiedFilePaths()) {
     if (!FORMATTED_EXTENSIONS_REGEX.test(path)) continue;
@@ -44,10 +44,3 @@ async function getFilePathsToFormat() {
   }
   return paths;
 }
-
-module.exports = {
-  getFilePathsToFormat,
-  getPrettierrcPath,
-  getPrettierignorePath,
-  getWorkspacePath,
-};

@@ -1,7 +1,7 @@
-const prettier = require("prettier");
-const { getFilePathsToFormat, getWorkspacePath } = require("./common");
-const fs = require("fs");
-const chalk = require("chalk");
+import chalk from "chalk";
+import fs from "fs";
+import prettier from "prettier";
+import { getFilePathsToFormat, getWorkspacePath } from "./common";
 
 /** Checks files which differ from the main branch for proper formatting. */
 async function main() {
@@ -10,7 +10,7 @@ async function main() {
   const failedPaths = [];
   for (const path of paths) {
     const absolutePath = `${workspacePath}/${path}`;
-    const config = await prettier.resolveConfig(absolutePath);
+    const config = await (prettier as any).resolveConfig(absolutePath);
     const source = fs.readFileSync(absolutePath, { encoding: "utf-8" });
     process.stdout.write(`${path} `);
     if (
