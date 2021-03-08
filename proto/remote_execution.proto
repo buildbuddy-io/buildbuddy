@@ -1595,7 +1595,7 @@ message SizedDirectory {
 
 message TreeToken { repeated SizedDirectory sized_directories = 1; }
 
-// Next tag: 8
+// Next tag: 13
 message ExecutionTask {
   ExecuteRequest execute_request = 1;
   Action action = 4;
@@ -1604,4 +1604,9 @@ message ExecutionTask {
   string jwt = 2;
   string invocation_id = 3;
   google.protobuf.Timestamp queued_timestamp = 7;
+  string os = 8;
+  string arch = 9;
+  string pool = 10;
+  int64 estimated_memory_bytes = 11;
+  int64 estimated_milli_cpu = 12;
 }
