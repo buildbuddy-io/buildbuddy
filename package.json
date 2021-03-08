@@ -4,8 +4,7 @@
   "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "clean": "bazel clean && rm -rf node_modules",
-    "dev": "concurrently 'ibazel run server --define=use_devserver=true' 'ibazel run app:devserver'"
+    "clean": "bazel clean && rm -rf node_modules"
   },
   "husky": {
     "hooks": {

@@ -494,36 +494,77 @@ go_proto_library(
 
 # TypeScript proto rules below here
 
-TS_PROTO_NAMES = [
-    "workflow",
-    "user",
-    "user_id",
-    "target",
-    "invocation",
-    "group",
-    "execution_stats",
-    "context",
-    "command_line",
-    "cache",
-    "buildbuddy_service",
-    "build_event_stream",
-    "bazel_config",
-    "api_key",
-    "acl",
-]
+ts_proto_library(
+    name = "acl_ts_proto",
+    proto = ":acl_proto",
+)
 
-[
-    ts_proto_library(
-        name = "%s_ts_proto" % name,
-        proto = ":%s_proto" % name,
-    )
-    for name in TS_PROTO_NAMES
-]
+ts_proto_library(
+    name = "api_key_ts_proto",
+    proto = ":api_key_proto",
+)
 
-# filegroup(
-#     name = "all_umd",
-#     srcs = [
-#         (":%s_ts_proto__umd" % name)
-#         for name in TS_PROTO_NAMES
-#     ],
-# )
+ts_proto_library(
+    name = "bazel_config_ts_proto",
+    proto = ":bazel_config_proto",
+)
+
+ts_proto_library(
+    name = "execution_stats_ts_proto",
+    proto = ":execution_stats_proto",
+)
+
+ts_proto_library(
+    name = "build_event_stream_ts_proto",
+    proto = ":build_event_stream_proto",
+)
+
+ts_proto_library(
+    name = "target_ts_proto",
+    proto = ":target_proto",
+)
+
+ts_proto_library(
+    name = "workflow_ts_proto",
+    proto = ":workflow_proto",
+)
+
+ts_proto_library(
+    name = "command_line_ts_proto",
+    proto = ":command_line_proto",
+)
+
+ts_proto_library(
+    name = "context_ts_proto",
+    proto = ":context_proto",
+)
+
+ts_proto_library(
+    name = "invocation_ts_proto",
+    proto = ":invocation_proto",
+)
+
+ts_proto_library(
+    name = "group_ts_proto",
+    proto = ":group_proto",
+)
+
+ts_proto_library(
+    name = "cache_ts_proto",
+    proto = ":cache_proto",
+)
+
+ts_proto_library(
+    name = "user_id_ts_proto",
+    proto = ":user_id_proto",
+)
+
+ts_proto_library(
+    name = "user_ts_proto",
+    proto = ":user_proto",
+)
+
+ts_proto_library(
+    name = "buildbuddy_service_ts_proto",
+    proto = ":buildbuddy_service_proto",
+)
