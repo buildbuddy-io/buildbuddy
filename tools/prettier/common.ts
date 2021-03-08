@@ -1,5 +1,5 @@
-const child_process = require("child_process");
-const tty = require("tty");
+import prettier from "prettier";
+import child_process from "child_process";
 
 const FORMATTED_EXTENSIONS = ["ts", "tsx", "js", "jsx", "css", "json", "yaml", "html", "xml"];
 const FORMATTED_EXTENSIONS_REGEX = new RegExp(`.(${FORMATTED_EXTENSIONS.join("|")})$`);
@@ -28,25 +28,26 @@ function getPrettierrcPath() {
   return `${getWorkspacePath()}/.prettierrc`;
 }
 
-function getFilePathsToFormat() {
-  return getModifiedFilePaths().filter((path) => FORMATTED_EXTENSIONS_REGEX.test(path));
+function getPrettierignorePath() {
+  return `${getWorkspacePath()}/.prettierignore`;
 }
 
-function ansiColor(code, text) {
-  if (!tty.isatty(1)) return text;
-  return `\x1b[${code}m${text}\x1b[0m`;
-}
+async function getFilePathsToFormat() {
+  const paths = [];
+  for (const path of getModifiedFilePaths()) {
+    if (!FORMATTED_EXTENSIONS_REGEX.test(path)) continue;
 
-const color = {
-  red: ansiColor.bind(null, 31),
-  green: ansiColor.bind(null, 32),
-  yellow: ansiColor.bind(null, 33),
-  blue: ansiColor.bind(null, 34),
-};
+    const info = await prettier.getFileInfo(`${getWorkspacePath()}/${path}`, { ignorePath: getPrettierignorePath() });
+    if (info.ignored) continue;
+
+    paths.push(path);
+  }
+  return paths;
+}
 
 module.exports = {
   getFilePathsToFormat,
   getPrettierrcPath,
+  getPrettierignorePath,
   getWorkspacePath,
-  color,
 };

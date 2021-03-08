@@ -1,18 +1,19 @@
 const prettier = require("prettier");
-const { getFilePathsToFormat, getPrettierrcPath, getWorkspacePath, color } = require("./common");
+const { getFilePathsToFormat, getWorkspacePath } = require("./common");
 const fs = require("fs");
+const chalk = require("chalk");
 
 async function main() {
-  const paths = getFilePathsToFormat();
+  const paths = await getFilePathsToFormat();
   const workspacePath = getWorkspacePath();
-  const config = await prettier.resolveConfig(getPrettierrcPath());
   for (const path of paths) {
     const absolutePath = `${workspacePath}/${path}`;
+    const config = await prettier.resolveConfig(absolutePath);
     const source = fs.readFileSync(absolutePath, { encoding: "utf-8" });
     const options = { ...config, filepath: path };
     if (!prettier.check(source, options)) {
       fs.writeFileSync(absolutePath, prettier.format(source, options));
-      process.stdout.write(`${path} ${color.blue("FIXED")}\n`);
+      process.stdout.write(`${path} ${chalk.blue("FIXED")}\n`);
     }
   }
 }
