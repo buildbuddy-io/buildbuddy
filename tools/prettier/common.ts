@@ -2,7 +2,7 @@ import child_process from "child_process";
 import prettier from "prettier";
 
 const FORMATTED_EXTENSIONS = ["ts", "tsx", "js", "jsx", "css", "json", "yaml", "html", "xml"];
-const FORMATTED_EXTENSIONS_REGEX = new RegExp(`.(${FORMATTED_EXTENSIONS.join("|")})$`);
+const FORMATTED_EXTENSIONS_REGEX = new RegExp(`\\.(${FORMATTED_EXTENSIONS.join("|")})$`);
 
 export function getWorkspacePath() {
   const directory = process.env["BUILD_WORKSPACE_DIRECTORY"];
