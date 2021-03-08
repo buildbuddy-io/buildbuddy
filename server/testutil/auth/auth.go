@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -32,6 +33,10 @@ const (
 	testAuthenticationHeader = "test-auth-header"
 
 	TestApiKeyHeader = "test-buildbuddy-api-key"
+)
+
+var (
+	testApiKeyRegex = regexp.MustCompile(TestApiKeyHeader + "=([a-zA-Z0-9]+)")
 )
 
 // TestUsers creates a map of test users from arguments of the form:
@@ -113,11 +118,15 @@ func (a *TestAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *TestAuthenticator) ParseAPIKeyFromString(input string) string {
+	matches := testApiKeyRegex.FindStringSubmatch(input)
+	if matches != nil && len(matches) > 1 {
+		return matches[1]
+	}
 	return ""
 }
 
 func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
-	return ctx
+	return context.WithValue(ctx, testAuthenticationHeader, a.testUsers[apiKey])
 }
 
 func RequestContext(userID string, groupID string) *ctxpb.RequestContext {

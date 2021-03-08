@@ -105,9 +105,10 @@ type S3CacheConfig struct {
 }
 
 type DistributedCacheConfig struct {
-	ListenAddr  string `yaml:"listen_addr" usage:"The address to listen for local BuildBuddy distributed cache traffic on."`
-	RedisTarget string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. ** Enterprise only **"`
-	GroupName   string `yaml:"group_name" usage:"A unique name for this distributed cache group. ** Enterprise only **"`
+	ListenAddr        string `yaml:"listen_addr" usage:"The address to listen for local BuildBuddy distributed cache traffic on."`
+	RedisTarget       string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. ** Enterprise only **"`
+	GroupName         string `yaml:"group_name" usage:"A unique name for this distributed cache group. ** Enterprise only **"`
+	ReplicationFactor int    `yaml:"replication_factor" usage:"How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **"`
 }
 
 type cacheConfig struct {
@@ -125,6 +126,7 @@ type authConfig struct {
 	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
 	JWTKey               string          `yaml:"jwt_key" usage:"The key to use when signing JWT tokens."`
+	APIKeyGroupCacheTTL  string          `yaml:"api_key_group_cache_ttl" usage:"Override for the TTL for API Key to Group caching. Set to '0' to disable cache."`
 }
 
 type OauthProvider struct {
@@ -437,6 +439,10 @@ func (c *Configurator) GetAuthOauthProviders() []OauthProvider {
 		}
 	}
 	return op
+}
+
+func (c *Configurator) GetAuthAPIKeyGroupCacheTTL() string {
+	return c.gc.Auth.APIKeyGroupCacheTTL
 }
 
 func (c *Configurator) GetSSLConfig() *SSLConfig {

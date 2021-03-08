@@ -7,6 +7,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/util/fieldgetter:go_default_library",
         "//enterprise/server/webhooks/webhook_data:go_default_library",
         "//server/util/status:go_default_library",
         "@com_github_google_go_github//github:go_default_library",
@@ -23,11 +24,13 @@ go_embed_data(
 go_test(
     name = "go_default_test",
     srcs = ["github_test.go"],
+    # keep
     embed = [
         ":go_default_library",
         ":data",
     ],
     deps = [
+        "//enterprise/server/webhooks/webhook_data:go_default_library",
         "@com_github_stretchr_testify//assert:go_default_library",
     ],
 )

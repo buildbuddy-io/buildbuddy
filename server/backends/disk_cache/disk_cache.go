@@ -41,9 +41,6 @@ type fileRecord struct {
 
 func sizeFn(key interface{}, value interface{}) int64 {
 	size := int64(0)
-	if k, ok := key.(string); ok {
-		size += int64(len(k))
-	}
 	if v, ok := value.(*fileRecord); ok {
 		size += v.sizeBytes
 	}
@@ -80,7 +77,7 @@ func makeRecord(fullPath string, info os.FileInfo) *fileRecord {
 }
 
 func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
-	l, err := lru.NewLRU(maxSizeBytes, evictFn, nil /*=addFn*/, sizeFn)
+	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: evictFn, SizeFn: sizeFn})
 	if err != nil {
 		return nil, err
 	}

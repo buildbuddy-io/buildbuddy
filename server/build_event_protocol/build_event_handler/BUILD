@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "go_default_library",
@@ -28,5 +28,21 @@ go_library(
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_prometheus_client_golang//prometheus:go_default_library",
         "@org_golang_google_grpc//status:go_default_library",
+    ],
+)
+
+go_test(
+    name = "go_default_test",
+    srcs = ["build_event_handler_test.go"],
+    embed = [":go_default_library"],
+    deps = [
+        "//proto:build_event_stream_go_proto",
+        "//proto:build_events_go_proto",
+        "//proto:invocation_go_proto",
+        "//proto:publish_build_event_go_proto",
+        "//server/testutil/auth:go_default_library",
+        "//server/testutil/environment:go_default_library",
+        "@com_github_stretchr_testify//assert:go_default_library",
+        "@io_bazel_rules_go//proto/wkt:any_go_proto",
     ],
 )

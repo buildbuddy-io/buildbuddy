@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -89,7 +89,7 @@ func (m *Model) BeforeUpdate(tx *gorm.DB) (err error) {
 
 type Invocation struct {
 	Model
-	InvocationID                     string `gorm:"primary_key;"`
+	InvocationID                     string `gorm:"primaryKey;"`
 	UserID                           string `gorm:"index:user_id"`
 	GroupID                          string `gorm:"index:group_id"`
 	Perms                            int    `gorm:"index:perms"`
@@ -118,7 +118,7 @@ type Invocation struct {
 	TotalCachedActionExecUsec        int64
 	DownloadThroughputBytesPerSecond int64
 	UploadThroughputBytesPerSecond   int64
-	InvocationPK                     int64 `gorm:"unique_index:invocation_invocation_pk"`
+	InvocationPK                     int64 `gorm:"uniqueIndex:invocation_invocation_pk"`
 }
 
 func (i *Invocation) TableName() string {
@@ -127,7 +127,7 @@ func (i *Invocation) TableName() string {
 
 type CacheEntry struct {
 	Model
-	EntryID            string `gorm:"primary_key;"`
+	EntryID            string `gorm:"primaryKey;"`
 	ExpirationTimeUsec int64
 	SizeBytes          int64
 	ReadCount          int64
@@ -144,7 +144,7 @@ type Group struct {
 	Model
 	// The group ID -- a unique ID.
 
-	GroupID string `gorm:"primary_key;"`
+	GroupID string `gorm:"primaryKey;"`
 	// The user that OWNS this group. Only this user may modify it.
 	UserID string
 
@@ -154,7 +154,7 @@ type Group struct {
 	// A unique URL segment that is displayed in group-related URLs.
 	// e.g. "example-org" in app.buildbuddy.com/join/example-org or
 	// "example-org.buildbuddy.com" if we support subdomains in the future.
-	URLIdentifier *string `gorm:"unique_index:url_identifier_unique_index"`
+	URLIdentifier *string `gorm:"uniqueIndex:url_identifier_unique_index"`
 
 	SharingEnabled bool `gorm:"default:true"`
 
@@ -180,8 +180,8 @@ func (g *Group) TableName() string {
 }
 
 type UserGroup struct {
-	UserUserID   string `gorm:"primary_key"`
-	GroupGroupID string `gorm:"primary_key"`
+	UserUserID   string `gorm:"primaryKey"`
+	GroupGroupID string `gorm:"primaryKey"`
 
 	// The user's membership status.
 	// Values correspond to `GroupMembershipStatus` enum values in `grp.proto`.
@@ -196,7 +196,7 @@ type User struct {
 	Model
 
 	// The buildbuddy user ID.
-	UserID string `gorm:"primary_key;"`
+	UserID string `gorm:"primaryKey;"`
 
 	// The subscriber ID, a concatenated string of the
 	// auth Issuer ID and the subcriber ID string.
@@ -236,7 +236,7 @@ type Token struct {
 	Model
 	// The subscriber ID, a concatenated string of the
 	// auth Issuer ID and the subcriber ID string.
-	SubID        string `gorm:"primary_key"`
+	SubID        string `gorm:"primaryKey"`
 	AccessToken  string
 	RefreshToken string
 	ExpiryUsec   int64
@@ -249,12 +249,12 @@ func (t *Token) TableName() string {
 type APIKey struct {
 	Model
 
-	APIKeyID string `gorm:"primary_key"`
+	APIKeyID string `gorm:"primaryKey"`
 	UserID   string
 	GroupID  string `gorm:"index:api_key_group_id_index"`
 	Perms    int
 	// The API key token used for authentication.
-	Value string `gorm:"unique_index:api_key_value_index"`
+	Value string `gorm:"uniqueIndex:api_key_value_index"`
 	// The user-specified description of the API key that helps them
 	// remember what it's for.
 	Label string
@@ -273,7 +273,7 @@ type Execution struct {
 	Model
 	// The subscriber ID, a concatenated string of the
 	// auth Issuer ID and the subcriber ID string.
-	ExecutionID string `gorm:"primary_key"`
+	ExecutionID string `gorm:"primaryKey"`
 	UserID      string `gorm:"index:executions_user_id"`
 	GroupID     string `gorm:"index:executions_group_id"`
 	Perms       int    `gorm:"index:executions_perms"`
@@ -316,9 +316,9 @@ func (t *Execution) TableName() string {
 
 type TelemetryLog struct {
 	Model
-	InstallationUUID    string `gorm:"primary_key"`
-	InstanceUUID        string `gorm:"primary_key"`
-	TelemetryLogUUID    string `gorm:"primary_key"`
+	InstallationUUID    string `gorm:"primaryKey"`
+	InstanceUUID        string `gorm:"primaryKey"`
+	TelemetryLogUUID    string `gorm:"primaryKey"`
 	RecordedAtUsec      int64
 	AppVersion          string
 	AppURL              string
@@ -339,8 +339,8 @@ func (t *TelemetryLog) TableName() string {
 
 type ExecutionNode struct {
 	Model
-	Host                  string `gorm:"primary_key"`
-	Port                  int32  `gorm:"primary_key;auto_increment:false"`
+	Host                  string `gorm:"primaryKey"`
+	Port                  int32  `gorm:"primaryKey;autoIncrement:false"`
 	AssignableMemoryBytes int64
 	AssignableMilliCPU    int64
 	Constraints           string
@@ -355,7 +355,7 @@ func (n *ExecutionNode) TableName() string {
 
 type ExecutionTask struct {
 	Model
-	TaskID               string `gorm:"primary_key"`
+	TaskID               string `gorm:"primaryKey"`
 	SerializedTask       []byte `gorm:"size:max"`
 	EstimatedMemoryBytes int64
 	EstimatedMilliCPU    int64
@@ -372,8 +372,8 @@ func (n *ExecutionTask) TableName() string {
 
 type CacheLog struct {
 	Model
-	InvocationID       string `gorm:"primary_key"`
-	JoinKey            string `gorm:"primary_key"`
+	InvocationID       string `gorm:"primaryKey"`
+	JoinKey            string `gorm:"primaryKey"`
 	DigestHash         string
 	RemoteInstanceName string
 	SerializedProto    []byte `gorm:"size:max"`
@@ -386,7 +386,7 @@ func (c *CacheLog) TableName() string {
 type Target struct {
 	Model
 	// TargetID is made up of repoURL + label.
-	TargetID int64  `gorm:"unique_index:target_target_id"`
+	TargetID int64  `gorm:"uniqueIndex:target_target_id"`
 	UserID   string `gorm:"index:target_user_id"`
 	GroupID  string `gorm:"index:target_group_id"`
 	RepoURL  string
@@ -402,8 +402,8 @@ func (t *Target) TableName() string {
 // The Status of a target.
 type TargetStatus struct {
 	Model
-	TargetID      int64 `gorm:"primary_key;auto_increment:false"`
-	InvocationPK  int64 `gorm:"primary_key;auto_increment:false;index:target_status_invocation_pk"`
+	TargetID      int64 `gorm:"primaryKey;autoIncrement:false"`
+	InvocationPK  int64 `gorm:"primaryKey;autoIncrement:false;index:target_status_invocation_pk"`
 	TargetType    int32
 	TestSize      int32
 	Status        int32
@@ -419,14 +419,15 @@ func (ts *TargetStatus) TableName() string {
 // events published to a Git webhook.
 type Workflow struct {
 	Model
-	WorkflowID  string `gorm:"primary_key"`
+	WorkflowID  string `gorm:"primaryKey"`
 	UserID      string `gorm:"index:workflow_user_id"`
 	GroupID     string `gorm:"index:workflow_group_id"`
 	Perms       int    `gorm:"index:workflow_perms"`
 	Name        string
 	RepoURL     string
+	Username    string
 	AccessToken string
-	WebhookID   string `gorm:"unique_index:workflow_webhook_id_index"`
+	WebhookID   string `gorm:"uniqueIndex:workflow_webhook_id_index"`
 }
 
 func (wf *Workflow) TableName() string {
@@ -444,10 +445,10 @@ type PostAutoMigrateLogic func() error
 func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	postMigrate := make([]PostAutoMigrateLogic, 0)
 
-	d := db.Dialect()
+	m := db.Migrator()
 
 	// Initialize UserGroups.membership_status to 1 if the column doesn't exist.
-	if d.HasTable("UserGroups") && !d.HasColumn("UserGroups", "membership_status") {
+	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "membership_status") {
 		if err := db.Exec("ALTER TABLE UserGroups ADD membership_status int").Error; err != nil {
 			return nil, err
 		}
@@ -457,15 +458,15 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	}
 
 	// Prepare Groups.url_identifier for index update (non-unique index to unique index).
-	if d.HasTable("Groups") {
+	if m.HasTable("Groups") {
 		// Remove the old url_identifier_index.
-		if d.HasIndex("Groups", "url_identifier_index") {
-			if err := d.RemoveIndex("Groups", "url_identifier_index"); err != nil {
+		if m.HasIndex("Groups", "url_identifier_index") {
+			if err := m.DropIndex("Groups", "url_identifier_index"); err != nil {
 				return nil, err
 			}
 		}
 		// Before creating a unique index, need to replace empty strings with NULL.
-		if !d.HasIndex("Groups", "url_identifier_unique_index") {
+		if !m.HasIndex("Groups", "url_identifier_unique_index") {
 			if err := db.Exec(`UPDATE Groups SET url_identifier = NULL WHERE url_identifier = ""`).Error; err != nil {
 				return nil, err
 			}
@@ -473,7 +474,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	}
 
 	// Migrate Groups.APIKey to APIKey rows.
-	if d.HasTable("Groups") && !d.HasTable("APIKeys") {
+	if m.HasTable("Groups") && !m.HasTable("APIKeys") {
 		postMigrate = append(postMigrate, func() error {
 			rows, err := db.Raw(`SELECT group_id, api_key FROM ` + "`Groups`" + ``).Rows()
 			if err != nil {
@@ -515,11 +516,6 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 
 // Manual migration called after auto-migration.
 func PostAutoMigrate(db *gorm.DB) error {
-	// These types don't apply for sqlite -- just mysql.
-	if db.Dialect().GetName() == mySQLDialect {
-		db.Model(&Invocation{}).ModifyColumn("pattern", "text")
-		db.Model(&Execution{}).ModifyColumn("serialized_operation", "text")
-	}
 	return nil
 }
 
