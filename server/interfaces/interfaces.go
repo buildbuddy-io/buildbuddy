@@ -142,9 +142,16 @@ type InvocationDB interface {
 	FillCounts(ctx context.Context, log *telpb.TelemetryStat) error
 }
 
+type APIKeyGroup interface {
+	GetCapabilities() int32
+	GetGroupID() string
+}
+
 type AuthDB interface {
 	InsertOrUpdateUserToken(ctx context.Context, subID string, token *tables.Token) error
 	ReadToken(ctx context.Context, subID string) (*tables.Token, error)
+	GetAPIKeyGroupFromAPIKey(apiKey string) (APIKeyGroup, error)
+	GetAPIKeyGroupFromBasicAuth(login, pass string) (APIKeyGroup, error)
 }
 
 type UserDB interface {
@@ -303,7 +310,7 @@ type MetricsCollector interface {
 
 // A RepoDownloader allows testing a git-repo to see if it's downloadable.
 type RepoDownloader interface {
-	TestRepoAccess(ctx context.Context, repoURL, accessToken string) error
+	TestRepoAccess(ctx context.Context, repoURL, username, accessToken string) error
 }
 
 type Checker interface {

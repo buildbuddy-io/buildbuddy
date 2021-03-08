@@ -3,12 +3,29 @@ package lru
 import (
 	"container/list"
 	"errors"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
-// EvictCallback is used to get a callback when a cache Entry is evicted
+// EvictedCallback is used to get a callback when a cache Entry is evicted
 type EvictedCallback func(key interface{}, value interface{})
 type AddedCallback func(key interface{}, value interface{})
 type SizeFn func(key interface{}, value interface{}) int64
+
+// Config specifies how the LRU cache is to be constructed.
+// MaxSize & SizeFn are required.
+type Config struct {
+	// Maximum amount of data to store in the cache.
+	// The size of each entry is determined by SizeFn.
+	MaxSize int64
+	// Function to calculate size of cache entries.
+	SizeFn SizeFn
+
+	// Optional callback for cache eviction events.
+	OnEvict EvictedCallback
+	// Optional callback for cache add events.
+	OnAdd AddedCallback
+}
 
 // LRU implements a non-thread safe fixed size LRU cache
 type LRU struct {
@@ -27,19 +44,22 @@ type Entry struct {
 	value interface{}
 }
 
-// NewLRU constructs an LRU of the given size
-func NewLRU(maxSize int64, onEvict EvictedCallback, onAdd AddedCallback, sizeFn SizeFn) (*LRU, error) {
-	if maxSize <= 0 {
+// NewLRU constructs an LRU based on the specified config.
+func NewLRU(config *Config) (*LRU, error) {
+	if config.MaxSize <= 0 {
 		return nil, errors.New("must provide a positive size")
+	}
+	if config.SizeFn == nil {
+		return nil, status.InvalidArgumentError("SizeFn is required")
 	}
 	c := &LRU{
 		currentSize: 0,
-		maxSize:     maxSize,
+		maxSize:     config.MaxSize,
 		evictList:   list.New(),
 		items:       make(map[interface{}]*list.Element),
-		onEvict:     onEvict,
-		onAdd:       onAdd,
-		sizeFn:      sizeFn,
+		onEvict:     config.OnEvict,
+		onAdd:       config.OnAdd,
+		sizeFn:      config.SizeFn,
 	}
 	return c, nil
 }

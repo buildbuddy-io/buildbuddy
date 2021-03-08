@@ -19,10 +19,19 @@ message CreateWorkflowRequest {
     string repo_url = 1;
 
     // The access token to use when cloning this repository.
-    // For Github, Gitlab, and BitBucket, this is known as a
-    // Personal Access Token.
-    // Ex. "ABASDBASDBASBD@!#!@#23323!!"
+    // For Github, and Gitlab, this is known as a Personal Access Token.
+    //
+    // For Bitbucket, this is known as an App Password, which requires
+    // an associated username. The app password requires the following
+    // permissions: [webhooks: r+w, pull requests: r+w; repo: r+w]
+    //
+    // Ex. "ABASDBASDBASBD"
     string access_token = 2;
+
+    // The username to use when cloning this repository.
+    // This is required for Bitbucket, whose "app passwords" require an
+    // associated username.
+    string username = 3;
   }
 
   // The git repository to associate with this project. For now, only a single

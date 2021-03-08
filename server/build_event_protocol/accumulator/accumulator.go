@@ -9,11 +9,27 @@ import (
 )
 
 const (
-	repoURLFieldName   = "repoURL"
-	commitSHAFieldName = "commitSHA"
-	roleFieldName      = "role"
-	commandFieldName   = "command"
-	patternFieldName   = "pattern"
+	repoURLFieldName             = "repoURL"
+	commitSHAFieldName           = "commitSHA"
+	roleFieldName                = "role"
+	commandFieldName             = "command"
+	patternFieldName             = "pattern"
+	workflowIDFieldName          = "workflowID"
+	actionNameFieldName          = "actionName"
+	actionTriggerEventFieldName  = "actionTriggerEvent"
+	actionTriggerBranchFieldName = "actionTriggerBranch"
+)
+
+var (
+	buildMetadataFieldMapping = map[string]string{
+		"REPO_URL":                         repoURLFieldName,
+		"COMMIT_SHA":                       commitSHAFieldName,
+		"ROLE":                             roleFieldName,
+		"BUILDBUDDY_WORKFLOW_ID":           workflowIDFieldName,
+		"BUILDBUDDY_ACTION_NAME":           actionNameFieldName,
+		"BUILDBUDDY_ACTION_TRIGGER_EVENT":  actionTriggerEventFieldName,
+		"BUILDBUDDY_ACTION_TRIGGER_BRANCH": actionTriggerBranchFieldName,
+	}
 )
 
 // BEValues is an in-memory data structure created for each new stream of build
@@ -76,6 +92,22 @@ func (v *BEValues) Pattern() string {
 	return v.getStringValue(patternFieldName)
 }
 
+func (v *BEValues) WorkflowID() string {
+	return v.getStringValue(workflowIDFieldName)
+}
+
+func (v *BEValues) ActionName() string {
+	return v.getStringValue(actionNameFieldName)
+}
+
+func (v *BEValues) ActionTriggerEvent() string {
+	return v.getStringValue(actionTriggerEventFieldName)
+}
+
+func (v *BEValues) ActionTriggerBranch() string {
+	return v.getStringValue(actionTriggerBranchFieldName)
+}
+
 func (v *BEValues) WorkspaceIsLoaded() bool {
 	return v.sawWorkspaceStatusEvent
 }
@@ -129,15 +161,10 @@ func (v *BEValues) populateWorkspaceInfoFromStructuredCommandLine(commandLine *c
 }
 
 func (v *BEValues) populateWorkspaceInfoFromBuildMetadata(metadata *build_event_stream.BuildMetadata) {
-	if url, ok := metadata.Metadata["REPO_URL"]; ok {
-		v.setStringValue(repoURLFieldName, url)
-	}
-	if sha, ok := metadata.Metadata["COMMIT_SHA"]; ok {
-		v.setStringValue(commitSHAFieldName, sha)
-	}
-
-	if role, ok := metadata.Metadata["ROLE"]; ok {
-		v.setStringValue(roleFieldName, role)
+	for mdKey, mdVal := range metadata.Metadata {
+		if fieldName := buildMetadataFieldMapping[mdKey]; fieldName != "" {
+			v.setStringValue(fieldName, mdVal)
+		}
 	}
 }
 

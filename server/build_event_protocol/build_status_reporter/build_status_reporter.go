@@ -49,6 +49,15 @@ func NewBuildStatusReporter(env environment.Env, buildEventAccumulator *accumula
 }
 
 func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+	// Note: For workflow invocations, we send the `BuildMetadata` event (which
+	// includes the WorkflowID) before any of the events captured in the switch
+	// case below. So in the workflow case, every status that we report should
+	// be using the same access token.
+	if r.githubClient.WorkflowID() != r.buildEventAccumulator.WorkflowID() {
+		r.githubClient.SetWorkflowID(r.buildEventAccumulator.WorkflowID())
+	}
+
+	// TODO: support other providers than just GitHub
 	var githubPayload *github.GithubStatusPayload
 
 	switch event.Payload.(type) {
@@ -79,7 +88,7 @@ func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *b
 
 func (r *BuildStatusReporter) ReportDisconnect(ctx context.Context) {
 	for label := range r.inFlight {
-		r.payloads = append(r.payloads, github.NewGithubStatusPayload(label, r.invocationURL(), "Disconnected", "error"))
+		r.payloads = append(r.payloads, github.NewGithubStatusPayload(label, r.invocationURL(), "Disconnected", github.ErrorState))
 	}
 	r.flushPayloadsIfWorkspaceLoaded(ctx)
 }
@@ -90,7 +99,7 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 	}
 
 	for _, payload := range r.payloads {
-		if payload.State == "pending" {
+		if payload.State == github.PendingState {
 			r.inFlight[payload.Context] = true
 		} else {
 			delete(r.inFlight, payload.Context)
@@ -106,7 +115,7 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 }
 
 func (r *BuildStatusReporter) githubPayloadFromWorkspaceStatusEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
-	return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), "Running...", "pending")
+	return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), "Running...", github.PendingState)
 }
 
 func (r *BuildStatusReporter) githubPayloadFromConfiguredEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
@@ -121,10 +130,10 @@ func (r *BuildStatusReporter) githubPayloadFromConfiguredEvent(event *build_even
 	}
 
 	if groupStatus != nil && groupStatus.numTargets == 1 {
-		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(groupStatus.name), "Running...", "pending")
+		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(groupStatus.name), "Running...", github.PendingState)
 	}
 
-	return github.NewGithubStatusPayload(label, r.targetURL(label), "Running...", "pending")
+	return github.NewGithubStatusPayload(label, r.targetURL(label), "Running...", github.PendingState)
 }
 
 func (r *BuildStatusReporter) githubPayloadFromTestSummaryEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
@@ -142,27 +151,27 @@ func (r *BuildStatusReporter) githubPayloadFromTestSummaryEvent(event *build_eve
 	description := descriptionFromOverallStatus(event.GetTestSummary().OverallStatus)
 
 	if groupStatus != nil && groupStatus.numFailed == 1 {
-		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(label), description, "failure")
+		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(label), description, github.FailureState)
 	}
 
 	if groupStatus != nil && groupStatus.numPassed == groupStatus.numTargets {
-		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(label), description, "success")
+		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(label), description, github.SuccessState)
 	}
 
 	if passed {
-		return github.NewGithubStatusPayload(label, r.targetURL(label), description, "success")
+		return github.NewGithubStatusPayload(label, r.targetURL(label), description, github.SuccessState)
 	}
 
-	return github.NewGithubStatusPayload(label, r.targetURL(label), description, "failure")
+	return github.NewGithubStatusPayload(label, r.targetURL(label), description, github.FailureState)
 }
 
 func (r *BuildStatusReporter) githubPayloadFromFinishedEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
 	description := descriptionFromExitCodeName(event.GetFinished().ExitCode.Name)
 	if event.GetFinished().OverallSuccess {
-		return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, "success")
+		return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, github.SuccessState)
 	}
 
-	return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, "failure")
+	return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, github.FailureState)
 }
 
 func (r *BuildStatusReporter) githubPayloadFromAbortedEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
@@ -177,13 +186,19 @@ func (r *BuildStatusReporter) githubPayloadFromAbortedEvent(event *build_event_s
 	}
 
 	if groupStatus != nil && groupStatus.numAborted == 1 {
-		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(groupStatus.name), "Cancelled", "error")
+		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(groupStatus.name), "Cancelled", github.ErrorState)
 	}
 
-	return github.NewGithubStatusPayload(label, r.targetURL(label), "Cancelled", "error")
+	return github.NewGithubStatusPayload(label, r.targetURL(label), "Cancelled", github.ErrorState)
 }
 
 func (r *BuildStatusReporter) invocationLabel() string {
+	// If this is a synthetic action invocation as part of a workflow, return the
+	// action name configured in /buildbuddy.yaml
+	if r.buildEventAccumulator.ActionName() != "" {
+		return r.buildEventAccumulator.ActionName()
+	}
+
 	command := r.buildEventAccumulator.Command()
 	pattern := r.buildEventAccumulator.Pattern()
 	return fmt.Sprintf("bazel %s %s", command, pattern)
@@ -271,5 +286,8 @@ func descriptionFromOverallStatus(overallStatus build_event_stream.TestStatus) s
 }
 
 func descriptionFromExitCodeName(exitCodeName string) string {
+	if exitCodeName == "OK" {
+		return exitCodeName
+	}
 	return strings.Title(strings.ToLower(strings.ReplaceAll(exitCodeName, "_", " ")))
 }

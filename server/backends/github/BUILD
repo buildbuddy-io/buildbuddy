@@ -6,8 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/github",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/workflow:go_default_library",
         "//server/environment:go_default_library",
         "//server/tables:go_default_library",
         "//server/util/random:go_default_library",
+        "//server/util/status:go_default_library",
     ],
 )

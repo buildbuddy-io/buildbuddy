@@ -7,6 +7,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/environment",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/backends/blobstore:go_default_library",
+        "//server/backends/invocationdb:go_default_library",
         "//server/backends/memory_cache:go_default_library",
         "//server/config:go_default_library",
         "//server/real_environment:go_default_library",

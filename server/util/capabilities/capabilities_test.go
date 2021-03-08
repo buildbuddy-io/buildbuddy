@@ -93,6 +93,17 @@ func TestIsGranted_NullAuthenticator(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+func TestIsGranted_NilAuthenticator(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	te.SetAuthenticator(nil)
+	anonCtx := context.Background()
+
+	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+
+	assert.True(t, canWrite)
+	assert.Nil(t, err)
+}
+
 func TestIsGranted_TestUserWithCapability_True(t *testing.T) {
 	user := &auth.Claims{
 		UserID:       "US1",
