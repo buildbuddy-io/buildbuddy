@@ -97,7 +97,7 @@ Using BuildBuddy's default Java 8 config:
 
 If you need a different version of Java, we recommend using [bazel-toolchains](https://releases.bazel.build/bazel-toolchains.html) for now.
 
-### Environment variables
+### Attributes
 
 Some tools like Bazel's zipper (@bazel_tools//tools/zip:zipper) use an attribute to determine whether or not they're being run remotely or not. For tools like these to work properly, you'll need to define an attribute called `EXECUTOR` and set it to the value `remote`.
 
