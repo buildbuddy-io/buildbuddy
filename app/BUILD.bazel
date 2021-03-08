@@ -14,7 +14,6 @@ esbuild(
     name = "app_bundle",
     define = ["process.env.NODE_ENV=\"production\""],
     entry_point = "app.tsx",
-    format = "iife",
     minify = select({
         ":fastbuild": False,
         "//conditions:default": True,
