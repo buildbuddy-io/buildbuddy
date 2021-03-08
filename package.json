@@ -33,8 +33,6 @@
     "@bazel/ibazel": "^0.13.2",
     "@bazel/jasmine": "^3.2.1",
     "@bazel/labs": "^3.2.1",
-    "@bazel/rollup": "^3.2.1",
-    "@bazel/terser": "^3.2.1",
     "@bazel/typescript": "^3.2.1",
     "@types/diff": "^4.0.2",
     "@types/diff-match-patch": "^1.0.32",
