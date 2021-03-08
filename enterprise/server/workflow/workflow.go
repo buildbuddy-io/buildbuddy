@@ -16,12 +16,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/gorm"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
@@ -440,6 +442,9 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err != nil {
 		return err
 	}
+	metrics.WebhookHandlerWorkflowsStarted.With(prometheus.Labels{
+		metrics.WebhookEventName: webhookData.EventName,
+	})
 	log.Printf("Started workflow execution (ID: %q)", executionID)
 	return nil
 }

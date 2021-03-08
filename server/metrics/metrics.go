@@ -77,6 +77,10 @@ const (
 	/// `worker`, includes all stages during which a worker is handling the action,
 	/// which is all stages except the `queued` stage.
 	ExecutedActionStageLabel = "stage"
+
+	/// Type of event sent to BuildBuddy's webhook handler: `push` or
+	/// `pull_request`.
+	WebhookEventName = "event"
 )
 
 const (
@@ -710,6 +714,21 @@ var (
 		Help:      "The time spent handling each build event in **microseconds**.",
 	}, []string{
 		StatusLabel,
+	})
+
+	/// ### Webhooks
+	///
+	/// Webhooks are HTTP endpoints exposed by BuildBuddy server which allow it to
+	/// respond to repository events. These URLs are created as part of BuildBuddy
+	/// workflows.
+
+	WebhookHandlerWorkflowsStarted = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "webhook_handler",
+		Name:      "workflows_started",
+		Help:      "The number of workflows triggered by the webhook handler.",
+	}, []string{
+		WebhookEventName,
 	})
 
 	/// ### Cache
