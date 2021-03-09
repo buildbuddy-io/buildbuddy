@@ -97,6 +97,14 @@ Using BuildBuddy's default Java 8 config:
 
 If you need a different version of Java, we recommend using [bazel-toolchains](https://releases.bazel.build/bazel-toolchains.html) for now.
 
+### Attributes
+
+Some tools like Bazel's zipper (@bazel_tools//tools/zip:zipper) use an attribute to determine whether or not they're being run remotely or not. For tools like these to work properly, you'll need to define an attribute called `EXECUTOR` and set it to the value `remote`.
+
+```
+--define=EXECUTOR=remote
+```
+
 ## Putting it all together
 
 This can be a lot of flags to tack onto each bazel build, so instead you can move these to your `.bazelrc` file under the `remote` config block:
@@ -112,6 +120,7 @@ build:remote --javabase=@buildbuddy_toolchain//:javabase_jdk8
 build:remote --host_javabase=@buildbuddy_toolchain//:javabase_jdk8
 build:remote --java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
 build:remote --host_java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
+build:remote --define=EXECUTOR=remote
 ```
 
 And running:
