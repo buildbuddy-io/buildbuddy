@@ -6,7 +6,7 @@ import { AnimationLoop } from "../util/animation_loop";
 import { createSvgElement } from "../util/dom";
 import { truncateDecimals } from "../util/math";
 import { BlockModel, buildFlameChartModel, FlameChartModel } from "./flame_chart_model";
-import { TraceEvent } from "./profile_model";
+import { Profile } from "./profile_model";
 import {
   BLOCK_HEIGHT,
   INITIAL_END_TIME_SECONDS,
@@ -20,9 +20,7 @@ import {
 type ProfileFlameChartState = {};
 
 export type FlameChartProps = {
-  profile: {
-    traceEvents: TraceEvent[];
-  };
+  profile: Profile;
 };
 
 const stopPropagation = (e: any) => e.stopPropagation();

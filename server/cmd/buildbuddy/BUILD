@@ -9,20 +9,13 @@ go_binary(
     args = [
         "--config_file=config/buildbuddy.local.yaml",
         "--max_shutdown_duration=3s",
-    ] + select({
-        "//app:use_devserver": [
-            "--js_entry_point_path=http://localhost:8082/app/app_bundle.js",
-        ],
-        "//conditions:default": ["--js_entry_point_path=/app/app_bundle.min.js"],
-    }),
+    ],
     data = [
         "//:config_files",
+        "//app:app_bundle",
         "//app:style.css",
         "//static",
-    ] + select({
-        "//app:use_devserver": [],
-        "//conditions:default": ["//app:app_bundle.min"],
-    }),
+    ],
     embed = [":go_default_library"],
     visibility = ["//visibility:public"],
 )
