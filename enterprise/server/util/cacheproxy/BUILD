@@ -4,7 +4,10 @@ go_library(
     name = "go_default_library",
     srcs = ["cacheproxy.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cacheproxy",
-    visibility = ["//enterprise:__subpackages__"],
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/environment:go_default_library",
@@ -21,7 +24,10 @@ go_test(
     name = "go_default_test",
     srcs = ["cacheproxy_test.go"],
     embed = [":go_default_library"],
-    visibility = ["//enterprise:__subpackages__"],
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
     deps = [
         "//server/interfaces:go_default_library",
         "//server/remote_cache/digest:go_default_library",

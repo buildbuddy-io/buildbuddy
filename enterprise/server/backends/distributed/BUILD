@@ -4,7 +4,10 @@ go_library(
     name = "go_default_library",
     srcs = ["distributed.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed",
-    visibility = ["//enterprise:__subpackages__"],
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
     deps = [
         "//enterprise/server/util/cacheproxy:go_default_library",
         "//enterprise/server/util/heartbeat:go_default_library",
@@ -21,7 +24,10 @@ go_test(
     name = "go_default_test",
     srcs = ["distributed_test.go"],
     embed = [":go_default_library"],
-    visibility = ["//enterprise:__subpackages__"],
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
     deps = [
         "//enterprise/server/util/heartbeat:go_default_library",
         "//proto:remote_execution_go_proto",

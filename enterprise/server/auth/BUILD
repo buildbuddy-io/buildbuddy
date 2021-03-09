@@ -4,7 +4,10 @@ go_library(
     name = "go_default_library",
     srcs = ["auth.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/auth",
-    visibility = ["//enterprise:__subpackages__"],
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
     deps = [
         "//proto:api_key_go_proto",
         "//server/config:go_default_library",
