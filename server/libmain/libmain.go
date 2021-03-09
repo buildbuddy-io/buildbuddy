@@ -322,7 +322,7 @@ func StartAndRunServices(env environment.Env) {
 	}
 
 	if githubConfig := env.GetConfigurator().GetGithubConfig(); githubConfig != nil {
-		githubClient := github.NewGithubClient(env)
+		githubClient := github.NewGithubClient(env, "")
 		mux.Handle("/auth/github/link/", httpfilters.WrapAuthenticatedExternalHandler(env, http.HandlerFunc(githubClient.Link)))
 	}
 

@@ -4,7 +4,10 @@ go_library(
     name = "go_default_library",
     srcs = ["tasksize.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize",
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",

@@ -36,3 +36,27 @@ config_setting(
     name = "release_build",
     values = {"define": "release=true"},
 )
+
+package_group(
+    name = "os",
+    packages = [
+        "//app/...",
+        "//config/...",
+        "//deployment/...",
+        "//docs/...",
+        "//node_modules/...",
+        "//proto/...",
+        "//rules/...",
+        "//server/...",
+        "//static/...",
+        "//templates/...",
+        "//tools/...",
+    ],
+)
+
+package_group(
+    name = "enterprise",
+    packages = [
+        "//enterprise/...",
+    ],
+)
