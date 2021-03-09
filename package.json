@@ -6,25 +6,6 @@
   "scripts": {
     "clean": "bazel clean && rm -rf node_modules"
   },
-  "husky": {
-    "hooks": {
-      "pre-commit": "lint-staged"
-    }
-  },
-  "lint-staged": {
-    "./{app,static}/**/*.{js,jsx,ts,tsx,css,html}": [
-      "prettier --write"
-    ],
-    "**/{BUILD,WORKSPACE,*.bazel,*.bzl}": [
-      "buildifier"
-    ],
-    "**/*.go": [
-      "gofmt -w"
-    ],
-    "**/*.proto": [
-      "clang-format -i"
-    ]
-  },
   "devDependencies": {
     "@bazel/bazelisk": "^1.6.1",
     "@bazel/buildifier": "^3.4.0",
@@ -57,7 +38,6 @@
     "glob": "^7.1.4",
     "google-protobuf": "^3.14.0",
     "grpc-web": "^1.2.1",
-    "husky": "^4.2.5",
     "jasmine": "^3.6.4",
     "jsdoc": "^3.6.2",
     "lint-staged": "^10.2.13",
