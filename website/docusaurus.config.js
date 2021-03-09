@@ -175,13 +175,11 @@ module.exports = {
         docs: {
           path: '../docs',
           sidebarPath: require.resolve('./sidebars.js'),
-          editUrl:
-          'https://github.com/buildbuddy-io/buildbuddy/edit/master/',
+          editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/',
         },
         blog: {
           showReadingTime: true,
-          editUrl:
-            'https://github.com/buildbuddy-io/buildbuddy/edit/master/',
+          editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/',
         },
         theme: {
           customCss: [
