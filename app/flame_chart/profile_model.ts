@@ -1,3 +1,8 @@
+/** Represents the profile data for an invocation. */
+export interface Profile {
+  traceEvents: TraceEvent[];
+}
+
 /** Represents a trace event in the profile. */
 export interface TraceEvent {
   pid: number;
