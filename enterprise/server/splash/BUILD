@@ -4,6 +4,6 @@ go_library(
     name = "go_default_library",
     srcs = ["splash.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/splash",
-    visibility = ["//visibility:public"],
+    visibility = ["//enterprise:__subpackages__"],
     deps = ["@com_github_logrusorgru_aurora//:go_default_library"],
 )

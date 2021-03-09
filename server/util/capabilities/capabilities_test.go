@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -105,7 +104,7 @@ func TestIsGranted_NilAuthenticator(t *testing.T) {
 }
 
 func TestIsGranted_TestUserWithCapability_True(t *testing.T) {
-	user := &auth.Claims{
+	user := &testauth.TestUser{
 		UserID:       "US1",
 		GroupID:      "GR1",
 		Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
@@ -121,7 +120,7 @@ func TestIsGranted_TestUserWithCapability_True(t *testing.T) {
 }
 
 func TestIsGranted_TestUserWithoutCapability_False(t *testing.T) {
-	user := &auth.Claims{
+	user := &testauth.TestUser{
 		UserID:       "US1",
 		GroupID:      "GR1",
 		Capabilities: []akpb.ApiKey_Capability{},

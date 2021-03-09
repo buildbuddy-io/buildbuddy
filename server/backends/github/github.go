@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow"
@@ -58,15 +59,14 @@ type GithubClient struct {
 	env                environment.Env
 	client             *http.Client
 	githubToken        string
-	githubTokenFetched bool
-	workflowID         string
+	tokenLookup        sync.Once
 }
 
-func NewGithubClient(env environment.Env) *GithubClient {
+func NewGithubClient(env environment.Env, token string) *GithubClient {
 	return &GithubClient{
 		env:                env,
 		client:             &http.Client{},
-		githubTokenFetched: false,
+		githubToken: token,
 	}
 }
 

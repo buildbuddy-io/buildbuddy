@@ -5,7 +5,7 @@ go_library(
     name = "go_default_library",
     srcs = ["workflowconf.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowconf",
-    visibility = ["//visibility:public"],
+    visibility = ["//enterprise:__subpackages__"],
     deps = ["@in_gopkg_yaml_v2//:go_default_library"],
 )
 
@@ -13,6 +13,7 @@ go_embed_data(
     name = "test_data",
     srcs = glob(["test_data/**/*"]),
     package = "workflowconf_test",
+    visibility = ["//enterprise:__subpackages__"],
 )
 
 go_test(
@@ -20,6 +21,7 @@ go_test(
     srcs = ["workflowconf_test.go"],
     # keep
     embed = [":test_data"],
+    visibility = ["//enterprise:__subpackages__"],
     deps = [
         ":go_default_library",  # keep
         "@com_github_stretchr_testify//assert:go_default_library",

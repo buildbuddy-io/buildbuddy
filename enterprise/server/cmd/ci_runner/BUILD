@@ -5,7 +5,7 @@ go_library(
     name = "go_default_library",
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
-    visibility = ["//visibility:private"],
+    visibility = ["//enterprise:__subpackages__"],
     deps = [
         "//enterprise/server/auth:go_default_library",
         "//enterprise/server/workflowconf:go_default_library",
@@ -31,7 +31,7 @@ go_library(
 go_binary(
     name = "ci_runner",
     embed = [":go_default_library"],
-    visibility = ["//visibility:public"],
+    visibility = ["//enterprise:__subpackages__"],
 )
 
 # Note: the CI runner image only includes the setup needed for the CI runner;
@@ -41,5 +41,5 @@ container_image(
     name = "ci_runner_image",
     base = "@ci_runner_image//image:dockerfile_image.tar",
     tags = ["manual"],
-    visibility = ["//visibility:public"],
+    visibility = ["//enterprise:__subpackages__"],
 )

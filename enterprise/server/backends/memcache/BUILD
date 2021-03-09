@@ -4,7 +4,7 @@ go_library(
     name = "go_default_library",
     srcs = ["memcache.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache",
-    visibility = ["//visibility:public"],
+    visibility = ["//enterprise:__subpackages__"],
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/interfaces:go_default_library",

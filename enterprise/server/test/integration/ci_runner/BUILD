@@ -10,6 +10,7 @@ go_test(
     # to tell it to use a fixed version of Bazel that we include via
     # data dep.
     tags = ["manual"],
+    visibility = ["//enterprise:__subpackages__"],
     deps = [
         "//proto:invocation_go_proto",
         "//server/testutil/bazel:go_default_library",

@@ -4,6 +4,6 @@ go_library(
     name = "go_default_library",
     srcs = ["heartbeat.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/heartbeat",
-    visibility = ["//visibility:public"],
+    visibility = ["//enterprise:__subpackages__"],
     deps = ["//server/interfaces:go_default_library"],
 )

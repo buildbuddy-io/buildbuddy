@@ -4,7 +4,7 @@ go_library(
     name = "go_default_library",
     srcs = ["invocation_stat_service.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service",
-    visibility = ["//visibility:public"],
+    visibility = ["//enterprise:__subpackages__"],
     deps = [
         "//proto:invocation_go_proto",
         "//server/environment:go_default_library",
