@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"regexp"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,9 +17,11 @@ func TestLockingBuffer_ReadWrite(t *testing.T) {
 
 	buf := lockingbuffer.New()
 
-	writer := func(val string, writeCount int, done *bool) {
+	writer := func(val string, writeCount int, done *bool, doneLock *sync.RWMutex) {
 		defer func() {
+			doneLock.Lock()
 			*done = true
+			doneLock.Unlock()
 		}()
 		for i := 0; i < writeCount; i++ {
 			if _, err := buf.Write([]byte(val)); err != nil {
@@ -33,20 +36,23 @@ func TestLockingBuffer_ReadWrite(t *testing.T) {
 	strA := "AAA"
 	strACount := 1187
 	writerADone := false
-	go writer(strA, strACount, &writerADone)
+	doneLock := sync.RWMutex{}
+	go writer(strA, strACount, &writerADone, &doneLock)
 
 	// Writer B: Write `strBCount` copies of `strB` to the buffer
 	strB := "BBBBBBB"
 	strBCount := 919
 	writerBDone := false
-	go writer(strB, strBCount, &writerBDone)
+	go writer(strB, strBCount, &writerBDone, &doneLock)
 
 	reader := func(acc *string, done chan struct{}) {
 		defer func() {
 			done <- struct{}{}
 		}()
 		for {
+			doneLock.RLock()
 			writersDone := writerADone && writerBDone
+			doneLock.RUnlock()
 			b, err := ioutil.ReadAll(buf)
 			if err != nil {
 				t.Fail()
