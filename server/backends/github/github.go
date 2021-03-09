@@ -11,11 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 const (
@@ -56,16 +54,16 @@ type GithubAccessTokenResponse struct {
 }
 
 type GithubClient struct {
-	env                environment.Env
-	client             *http.Client
-	githubToken        string
-	tokenLookup        sync.Once
+	env         environment.Env
+	client      *http.Client
+	githubToken string
+	tokenLookup sync.Once
 }
 
 func NewGithubClient(env environment.Env, token string) *GithubClient {
 	return &GithubClient{
-		env:                env,
-		client:             &http.Client{},
+		env:         env,
+		client:      &http.Client{},
 		githubToken: token,
 	}
 }
@@ -176,24 +174,15 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectUrl, http.StatusTemporaryRedirect)
 }
 
-// SetWorkflowID sets the workflow ID and clears any cached credentials.
-func (c *GithubClient) SetWorkflowID(workflowID string) {
-	c.workflowID = workflowID
-	c.githubToken = ""
-	c.githubTokenFetched = false
-}
-
-// WorkflowID returns the workflow ID associated with this client.
-func (c *GithubClient) WorkflowID() string {
-	return c.workflowID
-}
-
 func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commitSHA string, payload *GithubStatusPayload) error {
 	if ownerRepo == "" || commitSHA == "" {
 		return nil // We can't create a status without an owner/repo and a commit SHA.
 	}
 
-	err := c.populateTokenIfNecessary(ctx)
+	var err error
+	c.tokenLookup.Do(func() {
+		err = c.populateTokenIfNecessary(ctx)
+	})
 
 	// If we don't have a github token, we can't post a status.
 	if c.githubToken == "" || err != nil {
@@ -218,24 +207,16 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 }
 
 func (c *GithubClient) populateTokenIfNecessary(ctx context.Context) error {
-	if c.githubTokenFetched {
-		return nil
-	}
-
-	if c.workflowID != "" {
-		w, err := workflow.LookupWorkflowByID(ctx, c.env, c.workflowID)
-		if err != nil {
-			return status.WrapError(err, "workflow lookup failed")
-		}
-		c.setAccessToken(w.AccessToken)
+	if c.githubToken != "" {
 		return nil
 	}
 
 	if c.env.GetConfigurator().GetGithubConfig() == nil {
 		return nil
 	}
+
 	if accessToken := c.env.GetConfigurator().GetGithubConfig().AccessToken; accessToken != "" {
-		c.setAccessToken(accessToken)
+		c.githubToken = accessToken
 		return nil
 	}
 
@@ -257,13 +238,8 @@ func (c *GithubClient) populateTokenIfNecessary(ctx context.Context) error {
 		return err
 	}
 
-	c.setAccessToken(group.GithubToken)
+	c.githubToken = group.GithubToken
 	return nil
-}
-
-func (c *GithubClient) setAccessToken(token string) {
-	c.githubToken = token
-	c.githubTokenFetched = true
 }
 
 func setCookie(w http.ResponseWriter, name, value string) {

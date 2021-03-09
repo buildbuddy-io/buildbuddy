@@ -40,9 +40,9 @@ var (
 )
 
 type TestUser struct {
-	UserID        string   `json:"user_id"`
-	GroupID       string   `json:"group_id"`
-	AllowedGroups []string `json:"allowed_groups"`
+	UserID        string                   `json:"user_id"`
+	GroupID       string                   `json:"group_id"`
+	AllowedGroups []string                 `json:"allowed_groups"`
 	Capabilities  []akpb.ApiKey_Capability `json:"capabilities"`
 }
 
