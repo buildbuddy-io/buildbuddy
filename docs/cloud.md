@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Cloud Quickstart",
-  "category": "5f84be4816a467536a4ca064",
-  "priority": 800
-}
--->
-
-# Cloud Quickstart
+---
+id: cloud
+title: Cloud Quickstart
+sidebar_label: Cloud Quickstart
+---
 
 [Cloud BuildBuddy](https://app.buildbuddy.io/) is a fully managed SaaS solution for Enterprise Bazel features. It provides a results store & UI, remote build caching, remote build execution, and more.
 
@@ -16,7 +12,7 @@ It's easy to get set up and is free for individuals and open source projects. Fo
 
 To use BuildBuddy's Results UI, you just need to configure Bazel to send build events to our cloud BuildBuddy instance. The easiest way to do this is with a `.bazelrc` file in the root of your project.
 
-```
+```bash
 build --bes_results_url=https://app.buildbuddy.io/invocation/
 build --bes_backend=grpcs://cloud.buildbuddy.io
 ```
@@ -27,7 +23,7 @@ That's it, 2 lines and you're up and running. For more advanced configurations, 
 
 Now, when you build or test with Bazel, it will print a url where you can view your build or test results. For example:
 
-```
+```bash
 tylerw@lunchbox:~/buildbuddy-io/buildbuddy$ bazel build server:all
 INFO: Streaming build results to: https://app.buildbuddy.io/invocation/24a37b8f-4cf2-4909-9522-3cc91d2ebfc4
 INFO: Analyzed 13 targets (0 packages loaded, 0 targets configured).

@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Guides",
-  "category": "5f84be4816a46768724ca126",
-  "priority": 1000
-}
--->
-
-# Guides
+---
+id: guides
+title: Guides
+sidebar_label: Guides
+---
 
 We've created a series of helpful guides to walk you through common BuildBuddy tasks.
 
@@ -19,4 +15,4 @@ Here is a list of our available guides:
 
 ## More
 
-Don't see a guide for what you're looking for? Email us at [support@buildbuddy.io](support@buildbuddy.io) or join our [Slack channel](https://slack.buildbuddy.io) and we'd be happy to help!
+Don't see a guide for what you're looking for? Email us at [support@buildbuddy.io](mailto:support@buildbuddy.io) or join our [Slack channel](https://slack.buildbuddy.io) and we'd be happy to help!

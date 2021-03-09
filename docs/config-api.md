@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "API",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 200
-}
--->
-
-# API Configuration
+---
+id: config-api
+title: API Configuration
+sidebar_label: API
+---
 
 The API is only configurable in the [Enterprise version](enterprise.md) of BuildBuddy.
 

@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Flags",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 100
-}
--->
-
-# BuildBuddy Flags
+---
+id: config-flags
+title: BuildBuddy Flags
+sidebar_label: Flags
+---
 
 There are several configuration options that are not in the BuildBuddy configuration file. These are:
 

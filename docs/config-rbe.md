@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "RBE",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 300
-}
--->
-
-# RBE Configuration
+---
+id: config-rbe
+title: RBE Configuration
+sidebar_label: RBE
+---
 
 Remote Build Execution is only configurable in the [Enterprise version](enterprise.md) of BuildBuddy.
 

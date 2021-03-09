@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Contributing",
-  "category": "5f84be4816a467536a4ca064",
-  "priority": 500
-}
--->
-
-# Contributing to BuildBuddy
+---
+id: contributing
+title: Contributing to BuildBuddy
+sidebar_label: Contributing
+---
 
 Thanks for being interested in contributing! We’re so glad you want to help!
 

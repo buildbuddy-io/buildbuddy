@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Build Metadata Guide",
-  "category": "5f84be4816a46768724ca126",
-  "priority": 800
-}
--->
-
-# Build Metadata Guide
+---
+id: guide-metadata
+title: Build Metadata Guide
+sidebar_label: Build Metadata Guide
+---
 
 Additional metadata can be sent up with your Bazel invocation to give BuildBuddy more information about your build.
 

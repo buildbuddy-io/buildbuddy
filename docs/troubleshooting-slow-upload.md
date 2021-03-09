@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Slow Uploads",
-  "category": "5f84be4816a4677e374ca127",
-  "priority": 800
-}
--->
-
-# Troubleshooting Slow Uploads
+---
+id: troubleshooting-slow-upload
+title: Troubleshooting Slow Uploads
+sidebar_label: Slow Uploads
+---
 
 ## The Build Event Protocol upload timed out
 

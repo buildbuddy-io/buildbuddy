@@ -1,10 +1,8 @@
-<!--
-{
-  "name": "Prometheus Metrics",
-  "category": "5fcfd1ede5ded705a0bf5fd0",
-  "priority": 1000
-}
--->
+---
+id: prometheus-metrics
+title: Prometheus Metrics
+sidebar_label: Prometheus Metrics
+---
 
 <!--
 
@@ -15,8 +13,6 @@ GENERATED FILE - DO NOT EDIT
 Run `python3 server/metrics/generate_docs.py` to re-generate.
 
 -->
-
-# BuildBuddy metrics
 
 BuildBuddy exposes [Prometheus](https://prometheus.io) metrics that allow monitoring the
 [four golden signals](https://landing.google.com/sre/sre-book/chapters/monitoring-distributed-systems/):
@@ -39,8 +35,15 @@ The total number of invocations whose logs were uploaded to BuildBuddy.
 
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Number of invocations per second by invocation status</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f8f8f2"> </span><span style="color: #66d9ef">by</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #f8f8f2">invocation_status</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_invocation_count[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br><br><span style="color: #75715e"># Invocation success rate</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_invocation_count{invocation_status</span><span style="color: #f92672">=</span><span style="color: #f8f8f2">&quot;</span><span style="color: #e6db74">success</span><span style="color: #f8f8f2">&quot;}[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  </span><span style="color: #f92672">/</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_invocation_count[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br></code></pre></div>
+```promql
+# Number of invocations per second by invocation status
+sum by (invocation_status) (rate(buildbuddy_invocation_count[5m]))
 
+# Invocation success rate
+sum(rate(buildbuddy_invocation_count{invocation_status="success"}[5m]))
+  /
+sum(rate(buildbuddy_invocation_count[5m]))
+```
 
 ### **`buildbuddy_invocation_duration_usec`** (Histogram)
 
@@ -52,8 +55,13 @@ The total duration of each invocation, in **microseconds**.
 
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Median invocation duration in the past 5 minutes</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">histogram_quantile</span><span style="color: #f92672">(</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  </span><span style="color: #ae81ff">0.5</span><span style="color: #f8f8f2">,</span><br><span style="color: #f8f8f2">  </span><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_invocation_duration_usec_bucket[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"> </span><span style="color: #66d9ef">by</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #f8f8f2">le</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# Median invocation duration in the past 5 minutes
+histogram_quantile(
+  0.5,
+  sum(rate(buildbuddy_invocation_duration_usec_bucket[5m])) by (le)
+)
+```
 
 ### **`buildbuddy_invocation_build_event_count`** (Counter)
 
@@ -65,8 +73,15 @@ Number of [build events](https://docs.bazel.build/versions/master/build-event-pr
 
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Build events uploaded per second</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_invocation_build_event_count[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br><br><span style="color: #75715e"># Approximate error rate of build event upload handler</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_invocation_build_event_count{status</span><span style="color: #f92672">=</span><span style="color: #f8f8f2">&quot;</span><span style="color: #e6db74">0</span><span style="color: #f8f8f2">&quot;}[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  </span><span style="color: #f92672">/</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_invocation_build_event_count[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br></code></pre></div>
+```promql
+# Build events uploaded per second
+sum(rate(buildbuddy_invocation_build_event_count[5m]))
 
+# Approximate error rate of build event upload handler
+sum(rate(buildbuddy_invocation_build_event_count{status="0"}[5m]))
+  /
+sum(rate(buildbuddy_invocation_build_event_count[5m]))
+```
 ## Remote cache metrics
 
 NOTE: Cache metrics are recorded at the end of each invocation,
@@ -94,8 +109,10 @@ Use the **`_sum`** suffix to get the total downloaded bytes and the **`_count`**
 
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Cache download rate (bytes per second)</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_cache_download_size_bytes_sum[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# Cache download rate (bytes per second)
+sum(rate(buildbuddy_cache_download_size_bytes_sum[5m]))
+```
 
 ### **`buildbuddy_remote_cache_download_duration_usec`** (Histogram)
 
@@ -107,8 +124,13 @@ Download duration for each file downloaded from the remote cache, in **microseco
 
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Median download duration for content-addressable store (CAS)</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">histogram_quantile</span><span style="color: #f92672">(</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  </span><span style="color: #ae81ff">0.5</span><span style="color: #f8f8f2">,</span><br><span style="color: #f8f8f2">  </span><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_remote_cache_download_duration_usec{cache_type</span><span style="color: #f92672">=</span><span style="color: #f8f8f2">&quot;</span><span style="color: #e6db74">cas</span><span style="color: #f8f8f2">&quot;}[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"> </span><span style="color: #66d9ef">by</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #f8f8f2">le</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# Median download duration for content-addressable store (CAS)
+histogram_quantile(
+  0.5,
+  sum(rate(buildbuddy_remote_cache_download_duration_usec{cache_type="cas"}[5m])) by (le)
+)
+```
 
 ### **`buildbuddy_remote_cache_upload_size_bytes`** (Histogram)
 
@@ -122,8 +144,10 @@ Use the **`_sum`** suffix to get the total uploaded bytes and the **`_count`** s
 
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Cache upload rate (bytes per second)</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_cache_upload_size_bytes_sum[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# Cache upload rate (bytes per second)
+sum(rate(buildbuddy_cache_upload_size_bytes_sum[5m]))
+```
 
 ### **`buildbuddy_remote_cache_upload_duration_usec`** (Histogram)
 
@@ -135,8 +159,13 @@ Upload duration for each file uploaded to the remote cache, in **microseconds**.
 
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Median upload duration for content-addressable store (CAS)</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">histogram_quantile</span><span style="color: #f92672">(</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  </span><span style="color: #ae81ff">0.5</span><span style="color: #f8f8f2">,</span><br><span style="color: #f8f8f2">  </span><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_remote_cache_upload_duration_usec{cache_type</span><span style="color: #f92672">=</span><span style="color: #f8f8f2">&quot;</span><span style="color: #e6db74">cas</span><span style="color: #f8f8f2">&quot;}[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"> </span><span style="color: #66d9ef">by</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #f8f8f2">le</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# Median upload duration for content-addressable store (CAS)
+histogram_quantile(
+  0.5,
+  sum(rate(buildbuddy_remote_cache_upload_duration_usec{cache_type="cas"}[5m])) by (le)
+)
+```
 ## Remote execution metrics
 
 ### **`buildbuddy_remote_execution_count`** (Counter)
@@ -149,24 +178,58 @@ Number of actions executed remotely.
 
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Total number of actions executed per second</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_remote_execution_count[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br></code></pre></div>
+```promql
+# Total number of actions executed per second
+sum(rate(buildbuddy_remote_execution_count[5m]))
+```
 
+### **`buildbuddy_remote_execution_executed_action_metadata_durations_usec`** (Histogram)
+
+Time spent in each stage of action execution, in **microseconds**.
+
+Queries should filter or group by the `stage` label, taking care not to aggregate different stages.
+
+#### Labels
+
+- **stage**: Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ... Executed action stage. Action execution is split into stages corresponding to the timestamps defined in [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797): `queued`, `input_fetch`, `execution`, and `output_upload`. An additional stage, `worker`, includes all stages during which a worker is handling the action, which is all stages except the `queued` stage.
+
+#### Examples
+
+```promql
+# Median duration of all command stages
+histogram_quantile(
+  0.5,
+  sum(rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket[5m])) by (le, stage)
+)
+
+# p90 duration of just the command execution stage
+histogram_quantile(
+  0.9,
+  sum(rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{stage="execution"}[5m])) by (le)
+)
+```
 
 ### **`buildbuddy_remote_execution_queue_length`** (Gauge)
 
 Number of actions currently waiting in the executor queue.
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Median queue length across all executors</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">quantile</span><span style="color: #f92672">(</span><span style="color: #ae81ff">0.5</span><span style="color: #f8f8f2">, buildbuddy_remote_execution_queue_length</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# Median queue length across all executors
+quantile(0.5, buildbuddy_remote_execution_queue_length)
+```
 
 ### **`buildbuddy_remote_execution_tasks_executing`** (Gauge)
 
 Number of tasks currently being executed by the executor.
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Fraction of idle executors</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">count_values</span><span style="color: #f92672">(</span><span style="color: #ae81ff">0</span><span style="color: #f8f8f2">, buildbuddy_remote_execution_tasks_executing</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  </span><span style="color: #f92672">/</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">count</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_remote_execution_tasks_executing</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# Fraction of idle executors
+count_values(0, buildbuddy_remote_execution_tasks_executing)
+  /
+count(buildbuddy_remote_execution_tasks_executing)
+```
 
 ### **`buildbuddy_remote_execution_assigned_ram_bytes`** (Gauge)
 
@@ -177,8 +240,19 @@ Estimated RAM on the executor that is currently allocated for task execution, in
 Estimated CPU time on the executor that is currently allocated for task execution, in Kubernetes milliCPU.
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Average CPU allocated to tasks (average is computed across executor instances).</span><span style="color: #f8f8f2"></span><br><span style="color: #75715e"># `label_replace` is needed because we export k8s pod name as &quot;pod_name&quot; in Prometheus,</span><span style="color: #f8f8f2"></span><br><span style="color: #75715e"># while k8s exports it as &quot;pod&quot;.</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">avg</span><span style="color: #f92672">(</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  buildbuddy_remote_execution_used_milli_cpu</span><br><span style="color: #f8f8f2">    </span><span style="color: #f92672">/</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  </span><span style="color: #66d9ef">on</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #f8f8f2">pod_name</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #66d9ef">label_replace</span><span style="color: #f92672">(</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">    kube_pod_container_resource_limits_cpu_cores{pod</span><span style="color: #f92672">=~</span><span style="color: #f8f8f2">&quot;</span><span style="color: #e6db74">executor-.*</span><span style="color: #f8f8f2">&quot;},</span><br><span style="color: #f8f8f2">    &quot;</span><span style="color: #e6db74">pod_name</span><span style="color: #f8f8f2">&quot;, &quot;</span><span style="color: #e6db74">$1</span><span style="color: #f8f8f2">&quot;, &quot;</span><span style="color: #e6db74">pod</span><span style="color: #f8f8f2">&quot;, &quot;</span><span style="color: #e6db74">(.*)</span><span style="color: #f8f8f2">&quot;</span><br><span style="color: #f8f8f2">  </span><span style="color: #f92672">)</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">*</span><span style="color: #f8f8f2"> </span><span style="color: #ae81ff">1000</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">*</span><span style="color: #f8f8f2"> </span><span style="color: #ae81ff">0.6</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# Average CPU allocated to tasks (average is computed across executor instances).
+# `label_replace` is needed because we export k8s pod name as "pod_name" in Prometheus,
+# while k8s exports it as "pod".
+avg(
+  buildbuddy_remote_execution_used_milli_cpu
+    /
+  on (pod_name) (label_replace(
+    kube_pod_container_resource_limits_cpu_cores{pod=~"executor-.*"},
+    "pod_name", "$1", "pod", "(.*)"
+  ) * 1000 * 0.6)
+)
+```
 
 ### **`buildbuddy_remote_execution_file_download_count`** (Histogram)
 
@@ -227,8 +301,10 @@ Number of bytes read from the blobstore per file.
 
 - **blobstore_type**: `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Bytes downloaded per second</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_blobstore_read_size_bytes[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# Bytes downloaded per second
+sum(rate(buildbuddy_blobstore_read_size_bytes[5m]))
+```
 
 ### **`buildbuddy_blobstore_read_duration_usec`** (Histogram)
 
@@ -248,8 +324,10 @@ Number of files written to the blobstore.
 - **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
 - **blobstore_type**: `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Bytes uploaded per second</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_blobstore_write_size_bytes[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# Bytes uploaded per second
+sum(rate(buildbuddy_blobstore_write_size_bytes[5m]))
+```
 
 ### **`buildbuddy_blobstore_write_size_bytes`** (Histogram)
 
@@ -307,8 +385,10 @@ Number of SQL queries executed.
 
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># SQL queries per second (by query template).</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f8f8f2"> </span><span style="color: #66d9ef">by</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #f8f8f2">sql_query_template</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_sql_query_count[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# SQL queries per second (by query template).
+sum by (sql_query_template) (rate(buildbuddy_sql_query_count[5m]))
+```
 
 ### **`buildbuddy_sql_query_duration_usec`** (Histogram)
 
@@ -320,16 +400,30 @@ SQL query duration, in **microseconds**.
 
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Median SQL query duration</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">histogram_quantile</span><span style="color: #f92672">(</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  </span><span style="color: #ae81ff">0.5</span><span style="color: #f8f8f2">,</span><br><span style="color: #f8f8f2">  </span><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_sql_query_duration_usec_bucket[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"> </span><span style="color: #66d9ef">by</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #f8f8f2">le</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# Median SQL query duration
+histogram_quantile(
+  0.5,
+  sum(rate(buildbuddy_sql_query_duration_usec_bucket[5m])) by (le)
+)
+```
 
 ### **`buildbuddy_sql_error_count`** (Counter)
 
 Number of SQL queries that resulted in an error.
+
+#### Labels
+
+- **sql_query_template**: SQL query before substituting template parameters.
+
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># SQL error rate</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_sql_error_count[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  </span><span style="color: #f92672">/</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_sql_query_count[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# SQL error rate
+sum(rate(buildbuddy_sql_error_count[5m]))
+  /
+sum(rate(buildbuddy_sql_query_count[5m]))
+```
 ## `database/sql` metrics
 
 The following metrics directly expose
@@ -412,8 +506,15 @@ HTTP request count.
 
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Requests per second, by status code</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f8f8f2"> </span><span style="color: #66d9ef">by</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #f8f8f2">code</span><span style="color: #f92672">)</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_http_request_count[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br><br><span style="color: #75715e"># 5xx error ratio</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_http_request_count{code</span><span style="color: #f92672">=~</span><span style="color: #f8f8f2">&quot;</span><span style="color: #e6db74">5..</span><span style="color: #f8f8f2">&quot;}[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  </span><span style="color: #f92672">/</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">sum</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_http_request_count[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br></code></pre></div>
+```promql
+# Requests per second, by status code
+sum by (code) (rate(buildbuddy_http_request_count[5m]))
 
+# 5xx error ratio
+sum(rate(buildbuddy_http_request_count{code=~"5.."}[5m]))
+  /
+sum(rate(buildbuddy_http_request_count[5m]))
+```
 
 ### **`buildbuddy_http_request_handler_duration_usec`** (Histogram)
 
@@ -427,8 +528,15 @@ Time taken to handle each HTTP request in **microseconds**.
 
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Median request duration for successfuly processed (2xx) requests.</span><span style="color: #f8f8f2"></span><br><span style="color: #75715e"># Other status codes may be associated with early-exits and are</span><span style="color: #f8f8f2"></span><br><span style="color: #75715e"># likely to add too much noise.</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">histogram_quantile</span><span style="color: #f92672">(</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  </span><span style="color: #ae81ff">0.5</span><span style="color: #f8f8f2">,</span><br><span style="color: #f8f8f2">  </span><span style="color: #66d9ef">sum</span><span style="color: #f8f8f2"> </span><span style="color: #66d9ef">by</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #f8f8f2">le</span><span style="color: #f92672">)</span><span style="color: #f8f8f2">	</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_http_request_handler_duration_usec{code</span><span style="color: #f92672">=~</span><span style="color: #f8f8f2">&quot;</span><span style="color: #e6db74">2..</span><span style="color: #f8f8f2">&quot;}[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# Median request duration for successfuly processed (2xx) requests.
+# Other status codes may be associated with early-exits and are
+# likely to add too much noise.
+histogram_quantile(
+  0.5,
+  sum by (le)	(rate(buildbuddy_http_request_handler_duration_usec{code=~"2.."}[5m]))
+)
+```
 
 ### **`buildbuddy_http_response_size_bytes`** (Histogram)
 
@@ -442,8 +550,13 @@ Response size of each HTTP response in **bytes**.
 
 #### Examples
 
-<div class="highlight" style="background: #272822"><pre style="line-height: 125%;"><span></span><code><span style="color: #75715e"># Median HTTP response size</span><span style="color: #f8f8f2"></span><br><span style="color: #66d9ef">histogram_quantile</span><span style="color: #f92672">(</span><span style="color: #f8f8f2"></span><br><span style="color: #f8f8f2">  </span><span style="color: #ae81ff">0.5</span><span style="color: #f8f8f2">,</span><br><span style="color: #f8f8f2">  </span><span style="color: #66d9ef">sum</span><span style="color: #f8f8f2"> </span><span style="color: #66d9ef">by</span><span style="color: #f8f8f2"> </span><span style="color: #f92672">(</span><span style="color: #f8f8f2">le</span><span style="color: #f92672">)</span><span style="color: #f8f8f2">	</span><span style="color: #f92672">(</span><span style="color: #66d9ef">rate</span><span style="color: #f92672">(</span><span style="color: #f8f8f2">buildbuddy_http_response_size_bytes[</span><span style="color: #e6db74">5m</span><span style="color: #f8f8f2">]</span><span style="color: #f92672">))</span><span style="color: #f8f8f2"></span><br><span style="color: #f92672">)</span><span style="color: #f8f8f2"></span><br></code></pre></div>
-
+```promql
+# Median HTTP response size
+histogram_quantile(
+  0.5,
+  sum by (le)	(rate(buildbuddy_http_response_size_bytes[5m]))
+)
+```
 ## Internal metrics
 
 These metrics are for monitoring lower-level subsystems of BuildBuddy.

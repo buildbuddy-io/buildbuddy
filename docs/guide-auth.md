@@ -1,25 +1,21 @@
-<!--
-{
-  "name": "Authentication Guide",
-  "category": "5f84be4816a46768724ca126",
-  "priority": 950
-}
--->
-
-# Authentication Guide
+---
+id: guide-auth
+title: Authentication Guide
+sidebar_label: Authentication Guide
+---
 
 You have two choices for authenticating your BuildBuddy requests:
 
 - API key
 - certificate based mTLS auth
 
-Both of these choices require you to [create a BuildBuddy account](http://app.buildbuddy.io/).
+Both of these choices require you to [create a BuildBuddy account](https://app.buildbuddy.io/).
 
 ## API key
 
 This the simpler of the two methods. It passes an API key along with all grpcs requests that is associated with your BuildBuddy organization. This key can be used by anyone in your organization, as it ties builds to your org - not your individual user.
 
-You can find API key authenticated URLs on your [setup instructions](https://app.buildbuddy.io/docs/setup/) once you've [created an account](<(http://app.buildbuddy.io/)>) and logged in.
+You can find API key authenticated URLs on your [setup instructions](https://app.buildbuddy.io/docs/setup/) once you've [created an account](https://app.buildbuddy.io/) and logged in.
 
 These URLs can be added directly to your `.bazelrc` as long as no one outside of your organization has access to your source code.
 

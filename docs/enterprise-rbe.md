@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Enterprise RBE Setup",
-  "category": "5f84be4816a467581a4ca066",
-  "priority": 500
-}
--->
-
-# Enterprise RBE Setup
+---
+id: enterprise-rbe
+title: Enterprise RBE Setup
+sidebar_label: Enterprise RBE Setup
+--- 
 
 To deploy BuildBuddy Remote Build Execution on-prem, we recommend using the [BuildBuddy Enterprise Helm charts](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise).
 

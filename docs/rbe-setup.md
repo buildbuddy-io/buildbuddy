@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "RBE Setup",
-  "category": "5f84be4816a467f32f4ca128",
-  "priority": 900
-}
--->
-
-# Remote Build Execution Setup
+---
+id: rbe-setup
+title: RBE Setup
+sidebar_label: Remote Build Execution Setup
+---
 
 Getting started with Remote Build Execution (RBE) is less daunting than it may seem. We've put together a guide that not only helps you get started with BuildBuddy RBE, but also helps you understand what is going on under the hood.
 

@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Misc",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 200
-}
--->
-
-# Miscellaneous Configuration
+---
+id: config-misc
+title: Miscellaneous Configuration
+sidebar_label: Misc
+---
 
 ## BuildEventProxy Section
 

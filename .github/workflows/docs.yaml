@@ -1,4 +1,4 @@
-name: Update Docs
+name: Deploy
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - master
     paths:
       - 'docs/**'
+      - 'website/**'
 
 jobs:
   build:
@@ -13,9 +14,16 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'docs skip')"
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v1
+      - name: Checkout
+        uses: actions/checkout@v1
 
-    - name: Update
-      run: |
-        ./docs/update.sh ${{ secrets.WEBFLOW_API_TOKEN }} ${{ secrets.WEBFLOW_DOCS_COLLECTION_ID }} ${{ secrets.BUILDBUDDY_GITHUB_USER_NAME }} ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }} 
+      - name: Build
+        run: |
+          cd website
+          yarn install && yarn build
+
+      - name: Deploy 🚀
+        uses: JamesIves/github-pages-deploy-action@4.1.0
+        with:
+          branch: gh-pages
+          folder: website/build

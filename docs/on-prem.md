@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "On-prem Quickstart",
-  "category": "5f84be4816a467536a4ca064",
-  "priority": 800
-}
--->
-
-# On-prem Quickstart
+---
+id: on-prem
+title: On-prem Quickstart
+sidebar_label: On-prem Quickstart
+---
 
 BuildBuddy is designed to be easy to run on-premise for those use cases where data absolutely must not leave a company's servers. It can be run your own servers, or in your own cloud environment. It supports major cloud providers like GCP, AWS, and Azure.
 
@@ -29,19 +25,19 @@ The simplest method of running BuildBuddy on your own computer is to download an
 
 1. Get the source
 
-```
+```bash
 git clone "https://github.com/buildbuddy-io/buildbuddy"
 ```
 
 2. Navigate into the BuildBuddy directory
 
-```
+```bash
 cd buildbuddy
 ```
 
 3. Build and run using bazel
 
-```
+```bash
 bazel run -c opt server:buildbuddy
 ```
 
@@ -53,7 +49,7 @@ We publish a [Docker](https://www.docker.com/) image with every release that con
 
 To run it, use the following command:
 
-```
+```bash
 docker pull gcr.io/flame-public/buildbuddy-app-onprem:latest && docker run -p 1985:1985 -p 8080:8080 gcr.io/flame-public/buildbuddy-app-onprem:latest
 ```
 
@@ -69,7 +65,7 @@ This script uses [this deployment file](https://github.com/buildbuddy-io/buildbu
 
 To kick of the Kubernetes deploy, use the following command:
 
-```
+```bash
 bash k8s_on_prem.sh
 ```
 

@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Enterprise Setup",
-  "category": "5f84be4816a467581a4ca066",
-  "priority": 900
-}
--->
-
-# Enterprise On-prem Setup
+---
+id: enterprise-setup
+title: Enterprise Setup
+sidebar_label: Enterprise On-prem Setup
+---
 
 There are three ways to run BuildBuddy Enterprise On-prem:
 

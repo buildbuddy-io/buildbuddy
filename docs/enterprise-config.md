@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Enterprise Configuration",
-  "category": "5f84be4816a467581a4ca066",
-  "priority": 800
-}
--->
-
-# Configuring BuildBuddy Enterprise
+---
+id: enterprise-config
+title: Configuring BuildBuddy Enterprise
+sidebar_label: Enterprise Configuration
+--- 
 
 BuildBuddy Enterprise allows configuration of many features that are not available in the open-core version. Below you’ll find examples for configuring some of these features. If you don’t see what you’re looking for below, please don’t hesitate to ask us! For a full overview of what can be configured, see our [Configuration docs](config.md).
 
@@ -181,4 +177,4 @@ remote_execution:
 
 ## Learn more
 
-For more information on configuring BuildBuddy, see our [Configuration docs](config.md). If you have questions please don’t hesitate to email us at [setup@buildbuddy.io](setup@buildbuddy.io) or ping us on our [Slack channel](https://slack.buildbuddy.io).
+For more information on configuring BuildBuddy, see our [Configuration docs](config.md). If you have questions please don’t hesitate to email us at [setup@buildbuddy.io](mailto:setup@buildbuddy.io) or ping us on our [Slack channel](https://slack.buildbuddy.io).
