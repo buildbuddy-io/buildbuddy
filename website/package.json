@@ -1,7 +1,6 @@
 {
-  "name": "docusaurus-2",
-  "version": "0.0.0",
-  "private": true,
+  "name": "buildbuddy-docs-website",
+  "version": "0.0.1",
   "scripts": {
     "start": "docusaurus start",
     "build": "docusaurus build",
