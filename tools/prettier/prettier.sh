@@ -7,6 +7,6 @@ set -e
 # source code) and is set by `bazel run`.
 cd "${BUILD_WORKSPACE_DIRECTORY?}"
 
-git diff --name-only --diff-filter=AMRCT |
+git diff --name-only --diff-filter=AMRCT master |
   grep -P '\.(js|jsx|ts|tsx|html|css|yaml|json|md|xml)$' |
   xargs --no-run-if-empty ./node_modules/.bin/prettier "$@"
