@@ -45,7 +45,8 @@ type appConfig struct {
 }
 
 type buildEventProxy struct {
-	Hosts []string `yaml:"hosts" usage:"The list of hosts to pass build events onto."`
+	Hosts      []string `yaml:"hosts" usage:"The list of hosts to pass build events onto."`
+	BufferSize int      `yaml:"buffer_size" usage:"The number of build events to buffer locally when proxying build events."`
 }
 
 type DatabaseConfig struct {
@@ -377,6 +378,10 @@ func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {
 
 func (c *Configurator) GetBuildEventProxyHosts() []string {
 	return c.gc.BuildEventProxy.Hosts
+}
+
+func (c *Configurator) GetBuildEventProxyBufferSize() int {
+	return c.gc.BuildEventProxy.BufferSize
 }
 
 func (c *Configurator) GetCacheMaxSizeBytes() int64 {
