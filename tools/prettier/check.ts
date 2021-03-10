@@ -28,9 +28,7 @@ async function main() {
 
   if (failedPaths.length) {
     process.stderr.write(
-      `\n${chalk.yellow(
-        "Some files need formatting; to fix, run:\nbazel run //tools/prettier:format_modified_files"
-      )}\n`
+      `\n${chalk.yellow("Some files need formatting; to fix, run:\nbazel run //tools/prettier:fix")}\n`
     );
     process.exit(1);
   }
