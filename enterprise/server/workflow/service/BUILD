@@ -2,11 +2,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "go_default_library",
-    srcs = ["workflow.go"],
+    srcs = ["service.go"],
     data = [
         "//enterprise/server/cmd/ci_runner",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow",
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service",
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
@@ -19,7 +19,6 @@ go_library(
         "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",
         "//server/environment:go_default_library",
-        "//server/metrics:go_default_library",
         "//server/remote_cache/cachetools:go_default_library",
         "//server/tables:go_default_library",
         "//server/util/perms:go_default_library",
@@ -27,7 +26,6 @@ go_library(
         "//server/util/query_builder:go_default_library",
         "//server/util/status:go_default_library",
         "@com_github_google_uuid//:go_default_library",
-        "@com_github_prometheus_client_golang//prometheus:go_default_library",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
         "@io_gorm_gorm//:go_default_library",
     ],
@@ -35,13 +33,15 @@ go_library(
 
 go_test(
     name = "go_default_test",
-    srcs = ["workflow_test.go"],
-    embed = [":go_default_library"],
+    srcs = ["service_test.go"],
+    # keep
+    embed = [],
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        ":go_default_library",  # keep
         "//proto:buildbuddy_service_go_proto",
         "//proto:workflow_go_proto",
         "//server/buildbuddy_server:go_default_library",

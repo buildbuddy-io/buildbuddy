@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowconf"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -27,7 +27,7 @@ import (
 	"github.com/logrusorgru/aurora"
 	"google.golang.org/grpc/metadata"
 	"gopkg.in/yaml.v2"
-
+	
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -118,7 +118,7 @@ type initMetrics struct {
 
 // RunAllActions runs all triggered actions in the BuildBuddy config in serial, creating
 // a synthetic invocation for each one.
-func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig, im *initMetrics) {
+func RunAllActions(ctx context.Context, cfg *config.BuildBuddyConfig, im *initMetrics) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		log.Printf("failed to get hostname: %s", err)
@@ -390,7 +390,7 @@ func (bep *buildEventPublisher) setError(err error) {
 
 // actionRunner runs a single action in the BuildBuddy config.
 type actionRunner struct {
-	action        *workflowconf.Action
+	action        *config.Action
 	log           *invocationLog
 	bep           *buildEventPublisher
 	progressCount int32
@@ -624,19 +624,19 @@ func invocationURL(invocationID string) string {
 	return urlPrefix + invocationID
 }
 
-func readConfig() (*workflowconf.BuildBuddyConfig, error) {
+func readConfig() (*config.BuildBuddyConfig, error) {
 	f, err := os.Open(actionsConfigPath)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("open %q: %s", actionsConfigPath, err)
 	}
-	c, err := workflowconf.NewConfig(f)
+	c, err := config.NewConfig(f)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("read %q: %s", actionsConfigPath, err)
 	}
 	return c, nil
 }
 
-func matchesAnyTrigger(action *workflowconf.Action, event, branch string) bool {
+func matchesAnyTrigger(action *config.Action, event, branch string) bool {
 	if action.Triggers == nil {
 		return false
 	}
@@ -679,7 +679,7 @@ func getExitCode(err error) int {
 	return noExitCode
 }
 
-func actionDebugString(action *workflowconf.Action) string {
+func actionDebugString(action *config.Action) string {
 	yamlBytes, err := yaml.Marshal(action)
 	if err != nil {
 		return fmt.Sprintf("<failed to marshal action: %s>", err)

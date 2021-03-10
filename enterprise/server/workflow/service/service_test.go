@@ -1,10 +1,9 @@
-package workflow_test
+package service_test
 
 import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/auth"
@@ -13,7 +12,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"gorm.io/gorm"
-
+	
+	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 )
