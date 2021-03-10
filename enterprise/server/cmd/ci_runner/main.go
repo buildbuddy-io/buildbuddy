@@ -433,7 +433,7 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
 		Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: &bespb.BuildMetadata{
 			Metadata: map[string]string{
-				"ROLE":                             "CI",
+				"ROLE":                             "CI_RUNNER",
 				"BUILDBUDDY_WORKFLOW_ID":           *workflowID,
 				"BUILDBUDDY_ACTION_NAME":           ar.action.Name,
 				"BUILDBUDDY_ACTION_TRIGGER_EVENT":  *triggerEvent,
