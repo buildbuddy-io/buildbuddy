@@ -229,6 +229,10 @@ export default class InvocationModel {
     return this.clientEnvMap.get("GITHUB_ACTOR");
   }
 
+  getBuildkiteUrl() {
+    return this.clientEnvMap.get("BUILDKITE_BUILD_URL");
+  }
+
   getGithubRepo() {
     return this.clientEnvMap.get("GITHUB_REPOSITORY");
   }
