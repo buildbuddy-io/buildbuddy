@@ -61,6 +61,10 @@ func (r *BuildStatusReporter) initGHClient(ctx context.Context) *github.GithubCl
 }
 
 func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+	if role := r.buildEventAccumulator.Role(); !(role == "CI" || role == "CI_RUNNER") {
+		return
+	}
+
 	// TODO: support other providers than just GitHub
 	var githubPayload *github.GithubStatusPayload
 
@@ -83,8 +87,7 @@ func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *b
 		githubPayload = r.githubPayloadFromFinishedEvent(event)
 	}
 
-	role := r.buildEventAccumulator.Role()
-	if githubPayload != nil && role == "CI" {
+	if githubPayload != nil {
 		r.payloads = append(r.payloads, githubPayload)
 		r.flushPayloadsIfWorkspaceLoaded(ctx)
 	}
