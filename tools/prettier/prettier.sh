@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-# note: BUILD_WORKSPACE_DIRECTORY points to the workspace root (containing all the source code)
-# and is set by `bazel run`.
+# note: BUILD_WORKSPACE_DIRECTORY points to the workspace root (containing all the
+# source code) and is set by `bazel run`.
 cd "${BUILD_WORKSPACE_DIRECTORY?}"
 
 git diff --name-only --diff-filter=AMRCT |
