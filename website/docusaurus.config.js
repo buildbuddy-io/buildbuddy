@@ -22,6 +22,7 @@ module.exports = {
         alt: 'BuildBuddy Logo',
         src: 'img/logo.svg',
         srcDark: 'img/logo_white.svg',
+        target: '_self',
         href: 'https://www.buildbuddy.io'
       },
       items: [
@@ -33,27 +34,32 @@ module.exports = {
         },
         {
           href: 'https://buildbuddy.io/faq',
+          target: '_self',
           label: 'FAQs',
           position: 'left',
         },
         {
           href: 'https://github.com/buildbuddy-io/buildbuddy',
+          target: '_self',
           label: 'GitHub',
           position: 'left',
         },
         {
           href: 'https://buildbuddy.io/pricing',
+          target: '_self',
           label: 'Pricing',
           position: 'left',
         },
         {
           href: 'https://app.buildbuddy.io/',
+          target: '_self',
           label: 'Login',
           position: 'left',
         },
 
         {
           href: 'https://app.buildbuddy.io/',
+          target: '_self',
           label: 'Sign Up',
           position: 'right',
           class: 'sign-up'
@@ -66,7 +72,7 @@ module.exports = {
         {
           items: [
             {
-              html: `<a href="/"><img src="${baseUrl}img/logo_white.svg" class="footer-logo" /></a>`,
+              html: `<a href="https://www.buildbuddy.io/"><img src="${baseUrl}img/logo_white.svg" class="footer-logo" /></a>`,
             }
 
           ],
@@ -77,26 +83,32 @@ module.exports = {
             {
               label: 'Get Started',
               href: 'https://app.buildbuddy.io/',
+              target: '_self',
             },
             {
               label: 'Documentation',
               href: 'https://www.buildbuddy.io/docs/',
+              target: '_self',
             },
             {
               label: 'Pricing',
               href: 'https://www.buildbuddy.io/pricing',
+              target: '_self',
             },
             {
               label: 'Login',
               href: 'https://app.buildbuddy.io/',
+              target: '_self',
             },
             {
               label: 'Privacy Policy',
               href: 'https://www.buildbuddy.io/privacy',
+              target: '_self',
             },
             {
               label: 'Terms of Service',
               href: 'https://www.buildbuddy.io/terms',
+              target: '_self',
             },
           ],
         },
@@ -106,6 +118,7 @@ module.exports = {
             {
               label: 'Blog',
               href: 'https://www.buildbuddy.io/blog',
+              target: '_self',
             },
             {
               label: 'Report an Issue',
@@ -114,14 +127,17 @@ module.exports = {
             {
               label: 'Contact Us',
               href: 'https://www.buildbuddy.io/contact',
+              target: '_self',
             },
             {
               label: 'Our Team',
               href: 'https://www.buildbuddy.io/team',
+              target: '_self',
             },
             {
               label: 'Careers',
               href: 'https://www.buildbuddy.io/careers',
+              target: '_self',
             },
           ],
         },
@@ -131,14 +147,17 @@ module.exports = {
             {
               label: 'Security Overview',
               href: 'https://www.buildbuddy.io/security',
+              target: '_self',
             },
             {
               label: 'Security Updates',
               href: 'https://www.buildbuddy.io/security-updates',
+              target: '_self',
             },
             {
               label: 'Report a Vulnerability',
               href: 'https://www.buildbuddy.io/security-vulnerability-report',
+              target: '_self',
             },
           ],
         },
