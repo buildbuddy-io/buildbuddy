@@ -119,7 +119,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	for _, target := range configurator.GetBuildEventProxyHosts() {
 		// NB: This can block for up to a second on connecting. This would be a
 		// great place to have our health checker and mark these as optional.
-		buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(target))
+		buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(realEnv, target))
 		log.Printf("Proxy: forwarding build events to: %s", target)
 	}
 	realEnv.SetBuildEventProxyClients(buildEventProxyClients)
@@ -322,7 +322,7 @@ func StartAndRunServices(env environment.Env) {
 	}
 
 	if githubConfig := env.GetConfigurator().GetGithubConfig(); githubConfig != nil {
-		githubClient := github.NewGithubClient(env)
+		githubClient := github.NewGithubClient(env, "")
 		mux.Handle("/auth/github/link/", httpfilters.WrapAuthenticatedExternalHandler(env, http.HandlerFunc(githubClient.Link)))
 	}
 

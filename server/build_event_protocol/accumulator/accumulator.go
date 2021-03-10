@@ -155,6 +155,8 @@ func (v *BEValues) populateWorkspaceInfoFromStructuredCommandLine(commandLine *c
 				v.setStringValue(commitSHAFieldName, value)
 			case "CI":
 				v.setStringValue(roleFieldName, "CI")
+			case "CI_RUNNER":
+				v.setStringValue(roleFieldName, "CI_RUNNER")
 			}
 		}
 	}

@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Storage",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 700
-}
--->
-
-# Storage Configuration
+---
+id: config-storage
+title: Storage Configuration
+sidebar_label: Storage
+---
 
 `storage:` The Storage section configures where and how BuildBuddy will store blob data. **Required**
 

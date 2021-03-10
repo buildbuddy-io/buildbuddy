@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Enterprise Helm Charts",
-  "category": "5f84be4816a467581a4ca066",
-  "priority": 600
-}
--->
-
-# Enterprise Helm Charts
+---
+id: enterprise-helm
+title: Enterprise Helm Charts
+sidebar_label: Enterprise Helm Charts
+--- 
 
 If you run or have access to a Kubernetes cluster and are comfortable with [Helm](https://helm.sh/), we maintain official BuildBuddy Helm charts that are easy to configure and deploy.
 
@@ -244,4 +240,4 @@ For more information on configuring your BuildBuddy Enterprise Helm deploy, chec
 
 - [BuildBuddy Enterprise](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise)
 
-For more information on configuring BuildBuddy, see our [Configuration docs](config.md). If you have questions please don’t hesitate to email us at [setup@buildbuddy.io](setup@buildbuddy.io) or ping us on our [Slack channel](https://slack.buildbuddy.io).
+For more information on configuring BuildBuddy, see our [Configuration docs](config.md). If you have questions please don’t hesitate to email us at [setup@buildbuddy.io](mailto:setup@buildbuddy.io) or ping us on our [Slack channel](https://slack.buildbuddy.io).

@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Integrations",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 300
-}
--->
-
-# Integration Configuration
+---
+id: config-integrations
+title: Integration Configuration
+sidebar_label: Integrations
+---
 
 ## Section
 

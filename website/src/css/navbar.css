@@ -1,0 +1,16 @@
+.sign-up {
+  padding: 12px 24px;
+  border-radius: 6px;
+  border: 1px solid rgb(231, 231, 231);
+  display: block;
+  margin-right: 32px;
+  font-weight: 600;
+}
+
+.sign-up:hover {
+  background-color: rgb(231, 231, 231);
+}
+
+.navbar__brand {
+  height: 40px;
+}

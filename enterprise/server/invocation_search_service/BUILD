@@ -4,7 +4,10 @@ go_library(
     name = "go_default_library",
     srcs = ["invocation_search_service.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service",
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
     deps = [
         "//proto:invocation_go_proto",
         "//server/build_event_protocol/build_event_handler:go_default_library",

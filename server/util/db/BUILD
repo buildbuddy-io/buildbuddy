@@ -18,6 +18,5 @@ go_library(
         "@io_gorm_driver_sqlite//:go_default_library",
         "@io_gorm_gorm//:go_default_library",
         "@io_gorm_gorm//logger:go_default_library",
-        "@io_gorm_gorm//schema:go_default_library",
     ],
 )

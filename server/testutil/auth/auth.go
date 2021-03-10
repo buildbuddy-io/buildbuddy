@@ -13,7 +13,7 @@ import (
 
 	"google.golang.org/grpc/metadata"
 
-	realauth "github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -39,6 +39,26 @@ var (
 	testApiKeyRegex = regexp.MustCompile(TestApiKeyHeader + "=([a-zA-Z0-9]+)")
 )
 
+type TestUser struct {
+	UserID        string                   `json:"user_id"`
+	GroupID       string                   `json:"group_id"`
+	AllowedGroups []string                 `json:"allowed_groups"`
+	Capabilities  []akpb.ApiKey_Capability `json:"capabilities"`
+}
+
+func (c *TestUser) GetUserID() string          { return c.UserID }
+func (c *TestUser) GetGroupID() string         { return c.GroupID }
+func (c *TestUser) GetAllowedGroups() []string { return c.AllowedGroups }
+func (c *TestUser) IsAdmin() bool              { return false }
+func (c *TestUser) HasCapability(cap akpb.ApiKey_Capability) bool {
+	for _, cc := range c.Capabilities {
+		if cap == cc {
+			return true
+		}
+	}
+	return false
+}
+
 // TestUsers creates a map of test users from arguments of the form:
 // user_id1, group_id1, user_id2, group_id2, ..., user_idN, group_idN
 func TestUsers(vals ...string) map[string]interfaces.UserInfo {
@@ -46,10 +66,10 @@ func TestUsers(vals ...string) map[string]interfaces.UserInfo {
 		log.Printf("You're calling TestUsers wrong!")
 	}
 	testUsers := make(map[string]interfaces.UserInfo, 0)
-	var u *realauth.Claims
+	var u *TestUser
 	for i, val := range vals {
 		if i%2 == 0 {
-			u = &realauth.Claims{UserID: val}
+			u = &TestUser{UserID: val}
 		} else {
 			u.GroupID = val
 			u.AllowedGroups = []string{val}

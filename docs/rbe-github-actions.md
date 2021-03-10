@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "RBE with GitHub Actions",
-  "category": "5f84be4816a467f32f4ca128",
-  "priority": 600
-}
--->
-
-# RBE with GitHub Actions
+---
+id: rbe-github-actions
+title: RBE with GitHub Actions
+sidebar_label: RBE with GitHub Actions
+---
 
 Using BuildBuddy RBE with Github Actions is the simplest way to get started using BuildBuddy with a CI system.
 

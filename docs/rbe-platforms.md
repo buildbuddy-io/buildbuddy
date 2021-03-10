@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "RBE Platforms",
-  "category": "5f84be4816a467f32f4ca128",
-  "priority": 700
-}
--->
-
-# RBE Platforms
+---
+id: rbe-platforms
+title: RBE Platforms
+sidebar_label: RBE Platforms
+---
 
 ## BuildBuddy default
 

@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -86,13 +87,28 @@ func TestDroppedNode(t *testing.T) {
 	ctx := getAnonContext(t)
 
 	var liveNodes map[string]struct{}
+	liveNodesLock := sync.RWMutex{}
 	hbc := heartbeat.NewHeartbeatChannel(te.GetPubSub(), "", heartbeatGroupName, func(nodes ...string) {
+		liveNodesLock.Lock()
 		liveNodes = make(map[string]struct{}, 0)
 		for _, n := range nodes {
 			liveNodes[n] = struct{}{}
 		}
+		liveNodesLock.Unlock()
 	})
 	_ = hbc // keep hbc around to update liveNodes
+
+	waitForNodes := func(numDesired int) {
+		for {
+			liveNodesLock.RLock()
+			count := len(liveNodes)
+			liveNodesLock.RUnlock()
+			if count == numDesired {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 
 	tests := []struct {
 		replicas          int
@@ -123,12 +139,7 @@ func TestDroppedNode(t *testing.T) {
 		}
 
 		// wait until all nodes have advertised.
-		for {
-			if len(liveNodes) == testStruct.replicas {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
+		waitForNodes(testStruct.replicas)
 
 		digests := make([]*repb.Digest, 0, 100)
 		for i := 0; i < 10; i += 1 {
@@ -171,12 +182,7 @@ func TestDroppedNode(t *testing.T) {
 
 		// Wait until we've reached the desired number of failed nodes.
 		desiredNumberRunning := testStruct.replicas - testStruct.replicasToFail
-		for {
-			if len(liveNodes) == desiredNumberRunning {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
+		waitForNodes(desiredNumberRunning)
 
 		for _, d := range digests {
 			randomPeer := peers[rand.Intn(len(peers))]

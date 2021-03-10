@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "GitHub",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 500
-}
--->
-
-# GitHub Configuration
+---
+id: config-github
+title: GitHub Configuration
+sidebar_label: GitHub
+---
 
 In order to configure BuildBuddy's GitHub integration, you'll either need to:
 

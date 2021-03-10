@@ -4,7 +4,10 @@ go_library(
     name = "go_default_library",
     srcs = ["fieldgetter.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter",
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
 )
 
 go_test(
@@ -12,6 +15,10 @@ go_test(
     srcs = ["fieldgetter_test.go"],
     # keep
     embed = [],
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
     deps = [
         ":go_default_library",  # keep
         "@com_github_stretchr_testify//assert:go_default_library",

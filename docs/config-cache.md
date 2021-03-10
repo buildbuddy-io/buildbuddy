@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Cache",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 500
-}
--->
-
-# Cache Configuration
+---
+id: config-cache
+title: Cache Configuration
+sidebar_label: Cache
+---
 
 ## Section
 

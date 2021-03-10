@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 )
 
 type BuildStatusReporter struct {
@@ -40,7 +41,6 @@ func NewBuildStatusReporter(env environment.Env, buildEventAccumulator *accumula
 
 	return &BuildStatusReporter{
 		env:                       env,
-		githubClient:              github.NewGithubClient(env),
 		shouldReportStatusPerTest: shouldReportStatusPerTest,
 		buildEventAccumulator:     buildEventAccumulator,
 		payloads:                  make([]*github.GithubStatusPayload, 0),
@@ -48,13 +48,21 @@ func NewBuildStatusReporter(env environment.Env, buildEventAccumulator *accumula
 	}
 }
 
+func (r *BuildStatusReporter) initGHClient(ctx context.Context) *github.GithubClient {
+	if workflowID := r.buildEventAccumulator.WorkflowID(); workflowID != "" {
+		if db := r.env.GetDBHandle(); db != nil {
+			workflow := &tables.Workflow{}
+			if err := db.Raw(`SELECT * from Workflows WHERE workflow_id = ?`, workflowID).Take(workflow).Error; err == nil {
+				return github.NewGithubClient(r.env, workflow.AccessToken)
+			}
+		}
+	}
+	return github.NewGithubClient(r.env, "")
+}
+
 func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
-	// Note: For workflow invocations, we send the `BuildMetadata` event (which
-	// includes the WorkflowID) before any of the events captured in the switch
-	// case below. So in the workflow case, every status that we report should
-	// be using the same access token.
-	if r.githubClient.WorkflowID() != r.buildEventAccumulator.WorkflowID() {
-		r.githubClient.SetWorkflowID(r.buildEventAccumulator.WorkflowID())
+	if role := r.buildEventAccumulator.Role(); !(role == "CI" || role == "CI_RUNNER") {
+		return
 	}
 
 	// TODO: support other providers than just GitHub
@@ -79,8 +87,7 @@ func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *b
 		githubPayload = r.githubPayloadFromFinishedEvent(event)
 	}
 
-	role := r.buildEventAccumulator.Role()
-	if githubPayload != nil && role == "CI" {
+	if githubPayload != nil {
 		r.payloads = append(r.payloads, githubPayload)
 		r.flushPayloadsIfWorkspaceLoaded(ctx)
 	}
@@ -96,6 +103,9 @@ func (r *BuildStatusReporter) ReportDisconnect(ctx context.Context) {
 func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context) {
 	if !r.buildEventAccumulator.WorkspaceIsLoaded() {
 		return // If we haven't loaded the workspace, we can't flush payloads yet.
+	}
+	if r.githubClient == nil {
+		r.githubClient = r.initGHClient(ctx)
 	}
 
 	for _, payload := range r.payloads {

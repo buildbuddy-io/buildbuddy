@@ -6,6 +6,7 @@ on:
       - master
     paths-ignore:
       - 'docs/**'
+      - 'website/**'
 
 jobs:
   update:

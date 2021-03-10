@@ -11,4 +11,8 @@ container_push(
     repository = "flame-public/buildbuddy-ci-runner",
     tag = "$(version)",
     tags = ["manual"],  # Don't include this target in wildcard patterns
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
 )

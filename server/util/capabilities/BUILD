@@ -28,7 +28,6 @@ go_test(
     embed = [],  # keep
     deps = [
         ":go_default_library",  # keep
-        "//enterprise/server/auth:go_default_library",
         "//proto:api_key_go_proto",
         "//server/interfaces:go_default_library",
         "//server/nullauth:go_default_library",

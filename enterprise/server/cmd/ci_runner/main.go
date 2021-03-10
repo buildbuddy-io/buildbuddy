@@ -92,9 +92,11 @@ var (
 )
 
 func main() {
-	flag.Parse()
+	im := &initMetrics{start: time.Now()}
 
+	flag.Parse()
 	ctx := context.Background()
+
 	if err := setupGitRepo(ctx); err != nil {
 		fatal(status.WrapError(err, "failed to clone repo"))
 	}
@@ -103,12 +105,20 @@ func main() {
 		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
 	}
 
-	RunAllActions(ctx, cfg)
+	RunAllActions(ctx, cfg, im)
+}
+
+// initMetrics record the time spent between the start of main() and the
+// instant just before running the first action.
+type initMetrics struct {
+	start time.Time
+	// Whether these metrics were already reported and accounted for in an invocation.
+	reported bool
 }
 
 // RunAllActions runs all triggered actions in the BuildBuddy config in serial, creating
 // a synthetic invocation for each one.
-func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
+func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig, im *initMetrics) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		log.Printf("failed to get hostname: %s", err)
@@ -149,7 +159,15 @@ func RunAllActions(ctx context.Context, cfg *workflowconf.BuildBuddyConfig) {
 		}
 		exitCode := 0
 		exitCodeName := "OK"
-		if err := ar.Run(ctx); err != nil {
+
+		// Include the repo's download time as part of the first invocation.
+		if !im.reported {
+			im.reported = true
+			ar.log.Printf("Fetched Git repository in %s\n", startTime.Sub(im.start))
+			startTime = im.start
+		}
+
+		if err := ar.Run(ctx, startTime); err != nil {
 			ar.log.Printf(aurora.Sprintf(aurora.Red("\nAction failed: %s"), err))
 			exitCode = getExitCode(err)
 			// TODO: More descriptive exit code names, so people have a better
@@ -380,11 +398,11 @@ type actionRunner struct {
 	hostname      string
 }
 
-func (ar *actionRunner) Run(ctx context.Context) error {
-	ar.log.Printf("Action:          %s", ar.action.Name)
-	ar.log.Printf("Triggered by:    %s to branch %q", *triggerEvent, *triggerBranch)
-	ar.log.Printf("Invocation ID:   %s", ar.bep.streamID.InvocationId)
-	ar.log.Printf("Invocation URL:  %s", invocationURL(ar.bep.streamID.InvocationId))
+func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
+	ar.log.Printf("Running action: %s", ar.action.Name)
+
+	// Only print this to the local logs -- it's mostly useful for development purposes.
+	log.Printf("Invocation URL:  %s", invocationURL(ar.bep.streamID.InvocationId))
 
 	// NOTE: In this func we return immediately with an error of nil if event publishing fails,
 	// because that error is instead surfaced in the caller func when calling
@@ -402,7 +420,7 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 		},
 		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
 			Uuid:            ar.bep.streamID.InvocationId,
-			StartTimeMillis: time.Now().UnixNano() / int64(time.Millisecond),
+			StartTimeMillis: startTime.UnixNano() / int64(time.Millisecond),
 		}},
 	}
 	if err := bep.Publish(startedEvent); err != nil {
@@ -415,7 +433,7 @@ func (ar *actionRunner) Run(ctx context.Context) error {
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
 		Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: &bespb.BuildMetadata{
 			Metadata: map[string]string{
-				"ROLE":                             "CI",
+				"ROLE":                             "CI_RUNNER",
 				"BUILDBUDDY_WORKFLOW_ID":           *workflowID,
 				"BUILDBUDDY_ACTION_NAME":           ar.action.Name,
 				"BUILDBUDDY_ACTION_TRIGGER_EVENT":  *triggerEvent,
@@ -571,7 +589,7 @@ func setupGitRepo(ctx context.Context) error {
 	fetchOpts := &git.FetchOptions{
 		RefSpecs: []gitcfg.RefSpec{gitcfg.RefSpec(fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", *branch, *branch))},
 	}
-	if err := remote.Fetch(fetchOpts); err != nil {
+	if err := remote.FetchContext(ctx, fetchOpts); err != nil {
 		return err
 	}
 	tree, err := repo.Worktree()

@@ -127,7 +127,7 @@ func NewStreamingEventParser() *StreamingEventParser {
 		startTimeMillis:        undefinedTimestamp,
 		endTimeMillis:          undefinedTimestamp,
 		screenWriter:           terminal.NewScreenWriter(),
-		allowedEnvVars:         []string{"USER", "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID"},
+		allowedEnvVars:         []string{"USER", "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID", "BUILDKITE_BUILD_URL"},
 		structuredCommandLines: make([]*command_line.CommandLine, 0),
 		workspaceStatuses:      make([]*build_event_stream.WorkspaceStatus, 0),
 		buildMetadata:          make([]map[string]string, 0),
@@ -324,6 +324,9 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	}
 	if ci, ok := envVarMap["CI"]; ok && ci != "" {
 		invocation.Role = "CI"
+	}
+	if ciRunner, ok := envVarMap["CI_RUNNER"]; ok && ciRunner != "" {
+		invocation.Role = "CI_RUNNER"
 	}
 
 	// Gitlab CI Environment Variables

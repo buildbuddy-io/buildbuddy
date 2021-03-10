@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "RBE Failures",
-  "category": "5f84be4816a4677e374ca127",
-  "priority": 900
-}
--->
-
-# Troubleshooting RBE Failures
+---
+id: troubleshooting-rbe
+title: Troubleshooting RBE Failures
+sidebar_label: RBE Failures
+---
 
 ## Remote connection/protocol failed with: execution failed
 
