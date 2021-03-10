@@ -325,6 +325,9 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	if ci, ok := envVarMap["CI"]; ok && ci != "" {
 		invocation.Role = "CI"
 	}
+	if ciRunner, ok := envVarMap["CI_RUNNER"]; ok && ciRunner != "" {
+		invocation.Role = "CI_RUNNER"
+	}
 
 	// Gitlab CI Environment Variables
 	// https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
