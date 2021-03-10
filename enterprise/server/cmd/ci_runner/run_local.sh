@@ -34,7 +34,6 @@ while ! [ -e ".git" ]; do cd ..; done
 : "${TRIGGER_BRANCH:=master}"
 
 bazel build //enterprise/server/cmd/ci_runner
-
 runner=$(realpath ./bazel-bin/enterprise/server/cmd/ci_runner/ci_runner_/ci_runner)
 
 mkdir -p "$CI_RUNNER_BAZEL_CACHE_DIR"
