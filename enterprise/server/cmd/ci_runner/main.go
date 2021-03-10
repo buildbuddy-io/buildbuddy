@@ -27,7 +27,7 @@ import (
 	"github.com/logrusorgru/aurora"
 	"google.golang.org/grpc/metadata"
 	"gopkg.in/yaml.v2"
-	
+
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
