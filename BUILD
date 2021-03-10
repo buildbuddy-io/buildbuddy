@@ -1,7 +1,7 @@
+package(default_visibility = ["//visibility:public"])
+
 load("@bazel_gazelle//:def.bzl", "gazelle")
 load("@io_bazel_rules_go//go:def.bzl", "nogo")
-
-package(default_visibility = ["//visibility:public"])
 
 nogo(
     name = "vet",
