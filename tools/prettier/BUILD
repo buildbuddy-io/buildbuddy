@@ -1,15 +1,13 @@
+load(":defs.bzl", "prettier")
+
 package(default_visibility = ["//visibility:public"])
 
-sh_binary(
+prettier(
     name = "check",
-    srcs = ["prettier.sh"],
     args = ["--check"],
-    data = ["@npm//prettier"],
 )
 
-sh_binary(
+prettier(
     name = "fix",
-    srcs = ["prettier.sh"],
     args = ["--write"],
-    data = ["@npm//prettier"],
 )
