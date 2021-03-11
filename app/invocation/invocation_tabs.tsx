@@ -25,7 +25,7 @@ export function getActiveTab({ hash, role, denseMode }: TabsContext): TabId {
 
   if (!denseMode) return "all";
 
-  return role === "CI_RUNNER" ? "log" : "targets";
+  return role === CI_RUNNER_ROLE ? "log" : "targets";
 }
 
 export default class InvocationTabsComponent extends React.Component<InvocationTabsProps> {
