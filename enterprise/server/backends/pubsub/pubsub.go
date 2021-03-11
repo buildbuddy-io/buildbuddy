@@ -5,6 +5,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 
+	redisutils "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redis"
 	redis "github.com/go-redis/redis/v8"
 )
 
@@ -12,11 +13,9 @@ type PubSub struct {
 	rdb *redis.Client
 }
 
-func NewPubSub(redisServer string) *PubSub {
+func NewPubSub(redisTarget string) *PubSub {
 	return &PubSub{
-		rdb: redis.NewClient(&redis.Options{
-			Addr: redisServer,
-		}),
+		rdb: redis.NewClient(redisutils.TargetToOptions(redisTarget)),
 	}
 }
 

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"log"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -13,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	redisutils "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redis"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	redis "github.com/go-redis/redis/v8"
 )
@@ -38,14 +41,10 @@ type Cache struct {
 	rdb    *redis.Client
 }
 
-func NewCache(redisServer string, hc interfaces.HealthChecker) *Cache {
+func NewCache(redisTarget string, hc interfaces.HealthChecker) *Cache {
 	c := &Cache{
 		prefix: "",
-		rdb: redis.NewClient(&redis.Options{
-			Addr:     redisServer,
-			Password: "", // no password set
-			DB:       0,  // use default DB
-		}),
+		rdb:    redis.NewClient(redisutils.TargetToOptions(redisTarget)),
 	}
 	hc.AddHealthCheck("redis_cache", c)
 	return c
@@ -327,4 +326,19 @@ func (c *Cache) IncrementCount(ctx context.Context, counterName string, n int64)
 
 func (c *Cache) ReadCount(ctx context.Context, counterName string) (int64, error) {
 	return c.rdb.IncrBy(ctx, counterName, 0).Result()
+}
+
+func TargetToOptions(redisTarget string) *redis.Options {
+	if !strings.HasPrefix(redisTarget, "redis://") {
+		return &redis.Options{
+			Addr:     redisTarget,
+			Password: "", // no password set
+			DB:       0,  // use default DB
+		}
+	} else if opt, err := redis.ParseURL(redisTarget); err == nil {
+		return opt
+	} else {
+		log.Println(err)
+		return &redis.Options{}
+	}
 }
