@@ -19,7 +19,7 @@ import InvocationModel from "./invocation_model";
 import InvocationNotFoundComponent from "./invocation_not_found";
 import InvocationOverviewComponent from "./invocation_overview";
 import RawLogsCardComponent from "./invocation_raw_logs_card";
-import InvocationTabsComponent, { getDefaultTab, InvocationTabHash } from "./invocation_tabs";
+import InvocationTabsComponent, { getActiveTab } from "./invocation_tabs";
 import TimingCardComponent from "./invocation_timing_card";
 import ExecutionCardComponent from "./invocation_execution_card";
 import TargetsComponent from "./invocation_targets";
@@ -36,7 +36,7 @@ interface State {
 interface Props {
   user?: User;
   invocationId: string;
-  hash: InvocationTabHash;
+  hash: string;
   search: URLSearchParams;
   denseMode: boolean;
 }
@@ -52,8 +52,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
     model: new InvocationModel(),
   };
-
-  props: Props;
 
   timeoutRef: number;
 
@@ -112,10 +110,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
     }, 3000);
   }
 
-  getActiveTab(): InvocationTabHash {
-    return this.props.hash || getDefaultTab({ denseMode: this.props.denseMode, tool: this.state.model.getToolName() });
-  }
-
   render() {
     if (this.state.loading || this.props.user === undefined) {
       return <div className="loading"></div>;
@@ -166,8 +160,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
       );
     }
 
-    const activeTab = this.getActiveTab();
-    const showAll = activeTab === "#";
+    const activeTab = getActiveTab({
+      hash: this.props.hash,
+      role: this.state.model.getRole(),
+      denseMode: this.props.denseMode,
+    });
 
     return (
       <div className="invocation">
@@ -190,48 +187,48 @@ export default class InvocationComponent extends React.Component<Props, State> {
           <InvocationTabsComponent
             hash={activeTab}
             denseMode={this.props.denseMode}
-            tool={this.state.model.getToolName()}
+            role={this.state.model.getRole()}
           />
 
-          {(activeTab === "#targets" || activeTab === "#artifacts") && (
+          {(activeTab === "targets" || activeTab === "artifacts") && (
             <InvocationFilterComponent hash={activeTab} search={this.props.search} />
           )}
 
-          {(showAll || activeTab == "#log") && this.state.model.aborted?.aborted.description && (
+          {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted.description && (
             <ErrorCardComponent model={this.state.model} />
           )}
 
-          {(showAll || activeTab == "#targets") && (
+          {(activeTab === "all" || activeTab == "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="failing"
               filter={this.props.search.get("targetFilter")}
-              pageSize={showAll ? smallPageSize : largePageSize}
+              pageSize={activeTab === "all" ? smallPageSize : largePageSize}
             />
           )}
 
-          {(showAll || activeTab == "#log") && <SuggestionCardComponent model={this.state.model} />}
+          {(activeTab === "all" || activeTab == "log") && <SuggestionCardComponent model={this.state.model} />}
 
-          {(showAll || activeTab == "#log") && (
-            <BuildLogsCardComponent model={this.state.model} expanded={activeTab == "#log"} />
+          {(activeTab === "all" || activeTab == "log") && (
+            <BuildLogsCardComponent model={this.state.model} expanded={activeTab == "log"} />
           )}
 
-          {(showAll || activeTab == "#targets") && (
+          {(activeTab === "all" || activeTab == "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="passing"
               filter={this.props.search.get("targetFilter")}
-              pageSize={showAll ? smallPageSize : largePageSize}
+              pageSize={activeTab === "all" ? smallPageSize : largePageSize}
             />
           )}
 
-          {(showAll || activeTab == "#details") && (
+          {(activeTab === "all" || activeTab == "details") && (
             <InvocationDetailsCardComponent model={this.state.model} limitResults={!activeTab} />
           )}
 
-          {(showAll || activeTab == "#cache") && <CacheCardComponent model={this.state.model} />}
+          {(activeTab === "all" || activeTab == "cache") && <CacheCardComponent model={this.state.model} />}
 
-          {(showAll || activeTab == "#artifacts") && (
+          {(activeTab === "all" || activeTab == "artifacts") && (
             <ArtifactsCardComponent
               model={this.state.model}
               filter={this.props.search.get("artifactFilter")}
@@ -239,17 +236,15 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {activeTab == "#timing" && <TimingCardComponent model={this.state.model} />}
+          {activeTab == "timing" && <TimingCardComponent model={this.state.model} />}
 
-          {activeTab == "#execution" && (
+          {activeTab == "execution" && (
             <ExecutionCardComponent model={this.state.model} inProgress={this.state.inProgress} />
           )}
 
-          {activeTab == "#raw" && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
+          {activeTab == "raw" && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
         </div>
       </div>
     );
   }
 }
-
-export { InvocationTabHash };

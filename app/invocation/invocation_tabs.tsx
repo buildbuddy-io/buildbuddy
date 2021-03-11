@@ -1,5 +1,6 @@
 import React from "react";
-import { ToolName } from "./invocation_model";
+
+const CI_RUNNER_ROLE = "CI_RUNNER";
 
 export type InvocationTabsProps = TabsContext;
 
@@ -10,55 +11,45 @@ export type InvocationTabsProps = TabsContext;
 export type TabsContext = {
   hash: string;
   denseMode: boolean;
-  tool: ToolName;
+  role: string;
 };
 
-export type InvocationTabHash =
-  | "#" // "ALL" tab
-  | "#targets"
-  | "#log"
-  | "#details"
-  | "#artifacts"
-  | "#timing"
-  | "#cache"
-  | "#raw"
-  | "#execution"; // "EXECUTION" tab (currently not rendered).
+export type TabId = "all" | "targets" | "log" | "details" | "artifacts" | "timing" | "cache" | "raw" | "execution";
 
-/** Returns the `TabHash` of the tab that is active when the URL hash is empty. */
-export function getDefaultTab({ tool, denseMode }: Omit<TabsContext, "hash">): InvocationTabHash {
-  if (!denseMode) return "#";
-
-  return tool === "ci_runner" ? "#log" : "#targets";
+export function getTabId(hash: string): TabId {
+  return (hash.substring(1) as TabId) || "all";
 }
 
-/** Returns whether the given tab is selected. */
-export function isTabSelected(tabHash: InvocationTabHash, { tool, hash, denseMode }: TabsContext) {
-  return tabHash === (hash || getDefaultTab({ tool, denseMode }));
+export function getActiveTab({ hash, role, denseMode }: TabsContext): TabId {
+  if (hash) return getTabId(hash);
+
+  if (!denseMode) return "all";
+
+  return role === "CI_RUNNER" ? "log" : "targets";
 }
 
 export default class InvocationTabsComponent extends React.Component<InvocationTabsProps> {
-  private renderTab(tab: InvocationTabHash, { label }: { label: string }) {
-    const { hash, denseMode, tool } = this.props;
-    const selected = isTabSelected(tab, { hash, denseMode, tool });
+  private renderTab(id: TabId, { label, href }: { label: string; href?: string }) {
     return (
-      <a href={tab} className={`tab ${selected ? "selected" : ""}`}>
+      <a href={href || `#${id}`} className={`tab ${getActiveTab(this.props) === id ? "selected" : ""}`}>
         {label}
       </a>
     );
   }
 
   render() {
-    const { denseMode, tool } = this.props;
+    const isBazelInvocation = this.props.role !== CI_RUNNER_ROLE;
+
     return (
       <div className="tabs">
-        {!denseMode && this.renderTab("#", { label: "All" })}
-        {tool === "bazel" && this.renderTab("#targets", { label: "Targets" })}
-        {this.renderTab("#log", { label: "Logs" })}
-        {this.renderTab("#details", { label: "Details" })}
-        {tool === "bazel" && this.renderTab("#artifacts", { label: "Artifacts" })}
-        {tool === "bazel" && this.renderTab("#timing", { label: "Timing" })}
-        {tool === "bazel" && this.renderTab("#cache", { label: "Cache" })}
-        {this.renderTab("#raw", { label: "Raw" })}
+        {!this.props.denseMode && this.renderTab("all", { href: "#", label: "All" })}
+        {isBazelInvocation && this.renderTab("targets", { label: "Targets" })}
+        {this.renderTab("log", { label: "Logs" })}
+        {this.renderTab("details", { label: "Details" })}
+        {isBazelInvocation && this.renderTab("artifacts", { label: "Artifacts" })}
+        {isBazelInvocation && this.renderTab("timing", { label: "Timing" })}
+        {isBazelInvocation && this.renderTab("cache", { label: "Cache" })}
+        {this.renderTab("raw", { label: "Raw" })}
       </div>
     );
   }

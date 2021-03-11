@@ -257,14 +257,11 @@ export default class InvocationModel {
     return this.started?.command || "build";
   }
 
-  getToolName(): ToolName {
-    return this.invocations.find(() => true).role === "CI_RUNNER" ? "ci_runner" : "bazel";
+  getRole(): string {
+    return this.invocations.find(() => true).role;
   }
 
   getTool() {
-    if (this.getToolName() === "ci_runner") {
-      return "ci_runner";
-    }
     return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
   }
 
@@ -433,12 +430,3 @@ export default class InvocationModel {
     );
   }
 }
-
-/**
- * `InvocationTool` is the name of the binary that created the build event stream for
- * this invocation.
- *
- * In most cases, Bazel creates invocations. But we also create "synthetic" invocations
- * when running the CI runner.
- */
-export type ToolName = "bazel" | "ci_runner";
