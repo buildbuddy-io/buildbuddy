@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"log"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -326,19 +324,4 @@ func (c *Cache) IncrementCount(ctx context.Context, counterName string, n int64)
 
 func (c *Cache) ReadCount(ctx context.Context, counterName string) (int64, error) {
 	return c.rdb.IncrBy(ctx, counterName, 0).Result()
-}
-
-func TargetToOptions(redisTarget string) *redis.Options {
-	if !strings.HasPrefix(redisTarget, "redis://") {
-		return &redis.Options{
-			Addr:     redisTarget,
-			Password: "", // no password set
-			DB:       0,  // use default DB
-		}
-	} else if opt, err := redis.ParseURL(redisTarget); err == nil {
-		return opt
-	} else {
-		log.Println(err)
-		return &redis.Options{}
-	}
 }
