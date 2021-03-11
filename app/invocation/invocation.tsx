@@ -201,7 +201,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <ErrorCardComponent model={this.state.model} />
           )}
 
-          {activeTab == "#targets" && (
+          {(showAll || activeTab == "#targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="failing"
