@@ -1,7 +1,7 @@
 import React from "react";
 import FooterComponent from "../footer/footer";
 import MenuComponent from "../menu/menu";
-import InvocationComponent from "../invocation/invocation";
+import InvocationComponent, { InvocationTabHash } from "../invocation/invocation";
 import SetupComponent from "../docs/setup";
 import capabilities from "../capabilities/capabilities";
 import router, { Path } from "../router/router";
@@ -82,7 +82,7 @@ export default class RootComponent extends React.Component {
             {invocationId && (
               <InvocationComponent
                 invocationId={invocationId}
-                hash={this.state.hash}
+                hash={this.state.hash as InvocationTabHash}
                 search={this.state.search}
                 denseMode={this.state.denseMode}
                 user={null}
