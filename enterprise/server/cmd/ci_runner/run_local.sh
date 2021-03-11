@@ -29,9 +29,11 @@ while ! [ -e ".git" ]; do cd ..; done
 # to speed up builds, but note that in production we don't yet
 # have persistent local caching.
 : "${CI_RUNNER_BAZEL_CACHE_DIR:=$(mktemp -d)}"
+: "${CI_RUNNER_IMAGE:=gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1}"
 : "${REPO:=$PWD}"
 : "${BRANCH=$(cd "$REPO" && git branch --show-current)}"
 : "${TRIGGER_BRANCH:=master}"
+: "${TRIGGER_EVENT:=pull_request}"
 
 bazel build //enterprise/server/cmd/ci_runner
 runner=$(realpath ./bazel-bin/enterprise/server/cmd/ci_runner/ci_runner_/ci_runner)
@@ -46,13 +48,13 @@ docker run \
   --tty \
   --net host \
   --rm \
-  gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1 \
+  "$CI_RUNNER_IMAGE" \
   ci_runner \
   --repo_url="file:///root/mounted_repo" \
-  --commit_sha="$(cd "$REPO" && git rev-parse HEAD)" \
-  --trigger_event=push \
+  --commit_sha="$(cd "$REPO" && git rev-parse "$BRANCH")" \
   --branch="$BRANCH" \
   --trigger_branch="$TRIGGER_BRANCH" \
+  --trigger_event="$TRIGGER_EVENT" \
   --bes_backend=grpc://localhost:1985 \
   --bes_results_url=http://localhost:8080/invocation/ \
   "$@"

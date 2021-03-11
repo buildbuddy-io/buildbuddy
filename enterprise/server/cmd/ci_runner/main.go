@@ -585,9 +585,11 @@ func setupGitRepo(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
 	fetchOpts := &git.FetchOptions{
-		RefSpecs: []gitcfg.RefSpec{gitcfg.RefSpec(fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", *branch, *branch))},
+		RefSpecs: []gitcfg.RefSpec{
+			branchRefSpec(*branch),
+			branchRefSpec(*triggerBranch),
+		},
 	}
 	if err := remote.FetchContext(ctx, fetchOpts); err != nil {
 		return err
@@ -600,6 +602,10 @@ func setupGitRepo(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func branchRefSpec(branch string) gitcfg.RefSpec {
+	return gitcfg.RefSpec(fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", branch, branch))
 }
 
 func authRepoURL() (string, error) {
