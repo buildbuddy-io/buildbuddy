@@ -578,7 +578,6 @@ func setupGitRepo(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("AuthURL: ", authURL)
 	remote, err := repo.CreateRemote(&gitcfg.RemoteConfig{
 		Name: "origin",
 		URLs: []string{authURL},
