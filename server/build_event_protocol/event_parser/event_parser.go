@@ -382,6 +382,10 @@ func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inp
 	if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
 		invocation.ReadPermission = inpb.InvocationPermission_PUBLIC
 	}
+	if actionName, ok := metadata["BUILDBUDDY_ACTION_NAME"]; ok && actionName != "" {
+		invocation.Command = "workflow run"
+		invocation.Pattern = []string{actionName}
+	}
 }
 
 func ExtractUserRepoFromRepoUrl(repoURL string) string {
