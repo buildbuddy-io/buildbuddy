@@ -7,7 +7,6 @@ import faviconService from "../favicon/favicon";
 import rpcService from "../service/rpc_service";
 import TargetComponent from "../target/target";
 import DenseInvocationOverviewComponent from "./dense/dense_invocation_overview";
-import DenseInvocationTabsComponent from "./dense/dense_invocation_tabs";
 import ArtifactsCardComponent from "./invocation_artifacts_card";
 import BuildLogsCardComponent from "./invocation_build_logs_card";
 import CacheCardComponent from "./invocation_cache_card";
@@ -20,7 +19,7 @@ import InvocationModel from "./invocation_model";
 import InvocationNotFoundComponent from "./invocation_not_found";
 import InvocationOverviewComponent from "./invocation_overview";
 import RawLogsCardComponent from "./invocation_raw_logs_card";
-import InvocationTabsComponent from "./invocation_tabs";
+import InvocationTabsComponent, { getActiveTab } from "./invocation_tabs";
 import TimingCardComponent from "./invocation_timing_card";
 import ExecutionCardComponent from "./invocation_execution_card";
 import TargetsComponent from "./invocation_targets";
@@ -53,8 +52,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
     model: new InvocationModel(),
   };
-
-  props: Props;
 
   timeoutRef: number;
 
@@ -163,7 +160,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
       );
     }
 
-    var showAll = !this.props.hash && !this.props.denseMode;
+    const activeTab = getActiveTab({
+      hash: this.props.hash,
+      role: this.state.model.getRole(),
+      denseMode: this.props.denseMode,
+    });
 
     return (
       <div className="invocation">
@@ -183,65 +184,65 @@ export default class InvocationComponent extends React.Component<Props, State> {
           )}
         </div>
         <div className="container nopadding-dense">
-          {this.props.denseMode ? (
-            <DenseInvocationTabsComponent hash={this.props.hash} />
-          ) : (
-            <InvocationTabsComponent hash={this.props.hash} />
+          <InvocationTabsComponent
+            hash={this.props.hash}
+            denseMode={this.props.denseMode}
+            role={this.state.model.getRole()}
+          />
+
+          {(activeTab === "targets" || activeTab === "artifacts") && (
+            <InvocationFilterComponent hash={activeTab} search={this.props.search} />
           )}
 
-          {((!this.props.hash && this.props.denseMode) ||
-            this.props.hash == "#targets" ||
-            this.props.hash == "#artifacts") && (
-            <InvocationFilterComponent hash={this.props.hash} search={this.props.search} />
-          )}
-
-          {(showAll || this.props.hash == "#log") && this.state.model.aborted?.aborted.description && (
+          {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted.description && (
             <ErrorCardComponent model={this.state.model} />
           )}
 
-          {(!this.props.hash || this.props.hash == "#targets") && (
+          {(activeTab === "all" || activeTab == "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="failing"
               filter={this.props.search.get("targetFilter")}
-              pageSize={showAll ? smallPageSize : largePageSize}
+              pageSize={activeTab === "all" ? smallPageSize : largePageSize}
             />
           )}
 
-          {(showAll || this.props.hash == "#log") && <SuggestionCardComponent model={this.state.model} />}
+          {(activeTab === "all" || activeTab == "log") && <SuggestionCardComponent model={this.state.model} />}
 
-          {(showAll || this.props.hash == "#log") && (
-            <BuildLogsCardComponent model={this.state.model} expanded={this.props.hash == "#log"} />
+          {(activeTab === "all" || activeTab == "log") && (
+            <BuildLogsCardComponent model={this.state.model} expanded={activeTab == "log"} />
           )}
 
-          {(!this.props.hash || this.props.hash == "#targets") && (
+          {(activeTab === "all" || activeTab == "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="passing"
               filter={this.props.search.get("targetFilter")}
-              pageSize={showAll ? smallPageSize : largePageSize}
+              pageSize={activeTab === "all" ? smallPageSize : largePageSize}
             />
           )}
 
-          {(showAll || this.props.hash == "#details") && (
-            <InvocationDetailsCardComponent model={this.state.model} limitResults={!this.props.hash} />
+          {(activeTab === "all" || activeTab == "details") && (
+            <InvocationDetailsCardComponent model={this.state.model} limitResults={!activeTab} />
           )}
 
-          {(showAll || this.props.hash == "#cache") && <CacheCardComponent model={this.state.model} />}
+          {(activeTab === "all" || activeTab == "cache") && <CacheCardComponent model={this.state.model} />}
 
-          {(showAll || this.props.hash == "#artifacts") && (
+          {(activeTab === "all" || activeTab == "artifacts") && (
             <ArtifactsCardComponent
               model={this.state.model}
               filter={this.props.search.get("artifactFilter")}
-              pageSize={this.props.hash ? largePageSize : smallPageSize}
+              pageSize={activeTab ? largePageSize : smallPageSize}
             />
           )}
 
-          {this.props.hash == "#timing" && <TimingCardComponent model={this.state.model} />}
-          {this.props.hash == "#execution" && (
+          {activeTab == "timing" && <TimingCardComponent model={this.state.model} />}
+
+          {activeTab == "execution" && (
             <ExecutionCardComponent model={this.state.model} inProgress={this.state.inProgress} />
           )}
-          {this.props.hash == "#raw" && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
+
+          {activeTab == "raw" && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
         </div>
       </div>
     );

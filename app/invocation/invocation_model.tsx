@@ -257,6 +257,10 @@ export default class InvocationModel {
     return this.started?.command || "build";
   }
 
+  getRole(): string {
+    return this.invocations.find(() => true).role;
+  }
+
   getTool() {
     return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
   }
