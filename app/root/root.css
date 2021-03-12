@@ -1504,41 +1504,12 @@ code .comment {
   font-size: 12px;
 }
 
-.dense .invocation.ci-runner .shelf {
-  padding-bottom: 0;
-}
-
 .dense-invocation-status-bar {
   border-top: 4px solid #888;
   background-color: #eee;
   padding: 4px 16px;
   display: flex;
-  align-items: center;
   justify-content: space-between;
-}
-
-.dense-invocation-status-bar-left {
-  display: flex;
-  align-items: center;
-}
-
-.dense-invocation-status-bar .invocation-status {
-  display: flex;
-  align-items: center;
-  margin-right: 8px;
-}
-
-.dense-invocation-status-bar .status-icon {
-  margin-right: 8px;
-}
-
-.dense-invocation-status-bar .status-icon img {
-  width: 24px;
-  height: 24px;
-}
-
-.dense-invocation-status-bar .status-text {
-  font-weight: 600;
 }
 
 .dense-invocation-status-bar.success {

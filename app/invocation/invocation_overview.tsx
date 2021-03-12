@@ -87,14 +87,8 @@ export default class InvocationOverviewComponent extends React.Component {
         </div>
         <div className="titles">
           <div className="title" title={this.props.model.getAllPatterns()}>
-            {format.sentenceCase(this.props.model.getUser(true))}{" "}
-            {isBazelInvocation ? (
-              <>
-                {this.props.model.getCommand()} {this.props.model.getPattern()}
-              </>
-            ) : (
-              <>workflow run</>
-            )}
+            {format.sentenceCase(this.props.model.getUser(true))} {this.props.model.getCommand()}{" "}
+            {this.props.model.getPattern()}
           </div>
           <div className="subtitle">
             {this.props.model.getStartDate()} at {this.props.model.getStartTime()}

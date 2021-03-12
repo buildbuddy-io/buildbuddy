@@ -52,10 +52,6 @@ export default class DenseInvocationOverviewComponent extends React.Component {
         </div>
         <div className={`dense-invocation-status-bar ${this.props.model.getStatusClass()}`}>
           <div className="dense-invocation-status-bar-left">
-            <div className="invocation-status">
-              <div className="status-icon">{this.props.model.getStatusIcon()}</div>
-              <span className="status-text">{this.props.model.getStatus()}</span>
-            </div>
             <div>
               {isBazelInvocation ? (
                 <>
@@ -79,34 +75,43 @@ export default class DenseInvocationOverviewComponent extends React.Component {
             </b>
           </div>
         </div>
-        {isBazelInvocation && (
-          <div className="dense-invocation-overview-grid">
-            <div className="dense-invocation-overview-grid-chunk">
-              <div className="dense-invocation-overview-grid-title">Targets affected</div>
-              <div className="dense-invocation-overview-grid-value">{this.props.model.targets.length}</div>
-            </div>
-            <div className="dense-invocation-overview-grid-chunk">
-              <div className="dense-invocation-overview-grid-title">Broken</div>
-              <div className="dense-invocation-overview-grid-value">{this.props.model.brokenTest.length}</div>
-            </div>
-            <div className="dense-invocation-overview-grid-chunk">
-              <div className="dense-invocation-overview-grid-title">Failed</div>
-              <div className="dense-invocation-overview-grid-value">
-                {this.props.model.failed.length + this.props.model.failedTest.length}
-              </div>
-            </div>
-            <div className="dense-invocation-overview-grid-chunk">
-              <div className="dense-invocation-overview-grid-title">Flaky</div>
-              <div className="dense-invocation-overview-grid-value">{this.props.model.flakyTest.length}</div>
-            </div>
-            <div className="dense-invocation-overview-grid-chunk">
-              <div className="dense-invocation-overview-grid-title">Successful</div>
-              <div className="dense-invocation-overview-grid-value">
-                {this.props.model.succeeded.length - this.props.model.failedTest.length}
-              </div>
+        <div className="dense-invocation-overview-grid">
+          <div className="dense-invocation-overview-grid-chunk">
+            <div className="dense-invocation-overview-grid-title">Invocation</div>
+            <div className="dense-invocation-overview-grid-value">
+              {this.props.model.getStatusIcon()}
+              {this.props.model.getStatus()}
             </div>
           </div>
-        )}
+          {isBazelInvocation && (
+            <>
+              <div className="dense-invocation-overview-grid-chunk">
+                <div className="dense-invocation-overview-grid-title">Targets affected</div>
+                <div className="dense-invocation-overview-grid-value">{this.props.model.targets.length}</div>
+              </div>
+              <div className="dense-invocation-overview-grid-chunk">
+                <div className="dense-invocation-overview-grid-title">Broken</div>
+                <div className="dense-invocation-overview-grid-value">{this.props.model.brokenTest.length}</div>
+              </div>
+              <div className="dense-invocation-overview-grid-chunk">
+                <div className="dense-invocation-overview-grid-title">Failed</div>
+                <div className="dense-invocation-overview-grid-value">
+                  {this.props.model.failed.length + this.props.model.failedTest.length}
+                </div>
+              </div>
+              <div className="dense-invocation-overview-grid-chunk">
+                <div className="dense-invocation-overview-grid-title">Flaky</div>
+                <div className="dense-invocation-overview-grid-value">{this.props.model.flakyTest.length}</div>
+              </div>
+              <div className="dense-invocation-overview-grid-chunk">
+                <div className="dense-invocation-overview-grid-title">Successful</div>
+                <div className="dense-invocation-overview-grid-value">
+                  {this.props.model.succeeded.length - this.props.model.failedTest.length}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     );
   }
