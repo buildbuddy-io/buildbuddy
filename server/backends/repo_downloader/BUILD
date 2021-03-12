@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/util/git:go_default_library",
         "@com_github_go_git_go_git_v5//:go_default_library",
         "@com_github_go_git_go_git_v5//config:go_default_library",
         "@com_github_go_git_go_git_v5//storage/memory:go_default_library",

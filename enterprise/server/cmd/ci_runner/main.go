@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
@@ -31,6 +30,7 @@ import (
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	git "github.com/go-git/go-git/v5"
 	gitcfg "github.com/go-git/go-git/v5/config"
 	gitplumbing "github.com/go-git/go-git/v5/plumbing"
@@ -574,10 +574,11 @@ func setupGitRepo(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	authURL, err := authRepoURL()
+	authURL, err := gitutil.AuthRepoURL(*repoURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
 	if err != nil {
 		return err
 	}
+	fmt.Println("AuthURL: ", authURL)
 	remote, err := repo.CreateRemote(&gitcfg.RemoteConfig{
 		Name: "origin",
 		URLs: []string{authURL},
@@ -600,20 +601,6 @@ func setupGitRepo(ctx context.Context) error {
 		return err
 	}
 	return nil
-}
-
-func authRepoURL() (string, error) {
-	user := os.Getenv(repoUserEnvVarName)
-	token := os.Getenv(repoTokenEnvVarName)
-	if user == "" && token == "" {
-		return *repoURL, nil
-	}
-	u, err := url.Parse(*repoURL)
-	if err != nil {
-		return "", status.InvalidArgumentErrorf("failed to parse repo URL %q: %s", *repoURL, err)
-	}
-	u.User = url.UserPassword(user, token)
-	return u.String(), nil
 }
 
 func invocationURL(invocationID string) string {

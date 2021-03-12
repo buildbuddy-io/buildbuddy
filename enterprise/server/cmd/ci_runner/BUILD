@@ -15,6 +15,7 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
         "//proto:publish_build_event_go_proto",
+        "//server/util/git:go_default_library",
         "//server/util/grpc_client:go_default_library",
         "//server/util/lockingbuffer:go_default_library",
         "//server/util/status:go_default_library",
