@@ -268,9 +268,11 @@ export default class InvocationModel {
   }
 
   getTool() {
-    if (this.getRole() === CI_RUNNER_ROLE) return "BuildBuddy CI runner";
+    if (this.isBazelInvocation()) {
+      return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
+    }
 
-    return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
+    return "BuildBuddy CI runner";
   }
 
   getPattern() {
