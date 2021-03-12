@@ -52,6 +52,8 @@ auth:
       client_id: 'test.buildbuddy.io'
       client_secret: 'buildbuddy'
   enable_anonymous_usage: true
+remote_execution:
+   enable_remote_exec: true
 `
 
 type TestEnv struct {
@@ -63,6 +65,9 @@ func (te *TestEnv) bufDialer(context.Context, string) (net.Conn, error) {
 	return te.lis.Dial()
 }
 
+// LocalGRPCServer starts a gRPC server with standard BuildBudy filters that uses an in-memory
+// buffer for communication.
+// Call LocalGRPCConn to get a connection to the returned server.
 func (te *TestEnv) LocalGRPCServer() (*grpc.Server, func()) {
 	te.lis = bufconn.Listen(1024 * 1024)
 	grpcOptions := []grpc.ServerOption{
@@ -80,6 +85,21 @@ func (te *TestEnv) LocalGRPCServer() (*grpc.Server, func()) {
 
 func (te *TestEnv) LocalGRPCConn(ctx context.Context) (*grpc.ClientConn, error) {
 	return grpc.DialContext(ctx, "bufnet", grpc.WithContextDialer(te.bufDialer), grpc.WithInsecure())
+}
+
+// GRPCServer starts a gRPC server with standard BuildBuddy filters that uses the given listener.
+func (te *TestEnv) GRPCServer(lis net.Listener) (*grpc.Server, func()) {
+	grpcOptions := []grpc.ServerOption{
+		rpcfilters.GetUnaryInterceptor(te),
+		rpcfilters.GetStreamInterceptor(te),
+	}
+	srv := grpc.NewServer(grpcOptions...)
+	runFunc := func() {
+		if err := srv.Serve(lis); err != nil {
+			log.Fatal(err)
+		}
+	}
+	return srv, runFunc
 }
 
 func writeTmpConfigFile(testRootDir string) (string, error) {

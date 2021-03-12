@@ -12,8 +12,8 @@ const (
 
 	// This is the default resource estimate for a task that we can't
 	// otherwise determine the size for.
-	defaultMemEstimate = int64(400 * 1e6)
-	defaultCPUEstimate = int64(600)
+	DefaultMemEstimate = int64(400 * 1e6)
+	DefaultCPUEstimate = int64(600)
 )
 
 func testSize(testSize string) (int64, int64) {
@@ -42,8 +42,8 @@ func testSize(testSize string) (int64, int64) {
 }
 
 func Estimate(cmd *repb.Command) *scpb.TaskSize {
-	memEstimate := defaultMemEstimate
-	cpuEstimate := defaultCPUEstimate
+	memEstimate := DefaultMemEstimate
+	cpuEstimate := DefaultCPUEstimate
 	for _, envVar := range cmd.GetEnvironmentVariables() {
 		if envVar.GetName() == testSizeEnvVar {
 			memEstimate, cpuEstimate = testSize(envVar.GetValue())
