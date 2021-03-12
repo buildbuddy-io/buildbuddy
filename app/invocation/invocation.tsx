@@ -168,7 +168,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     const isBazelInvocation = this.state.model.isBazelInvocation();
 
     return (
-      <div className="invocation">
+      <div className={`invocation ${isBazelInvocation ? "bazel" : "ci-runner"}`}>
         <div className={`shelf nopadding-dense ${this.state.model.getStatusClass()}`}>
           {this.props.denseMode ? (
             <DenseInvocationOverviewComponent

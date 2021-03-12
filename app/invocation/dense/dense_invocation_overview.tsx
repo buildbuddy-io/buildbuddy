@@ -26,16 +26,18 @@ export default class DenseInvocationOverviewComponent extends React.Component {
     const isBazelInvocation = this.props.model.isBazelInvocation();
 
     return (
-      <div className="container nopadding-dense">
+      <div className={`container nopadding-dense ${isBazelInvocation ? "" : "workflow-invocation"}`}>
         <div className="dense-invocation">
           <div>
-            <div className="dense-invocation-title">Invocation</div>
+            <div className="dense-invocation-title">
+              {isBazelInvocation ? <>Invocation</> : <>Workflow invocation</>}
+            </div>
             <div className="dense-invocation-invocation-id">
               {this.props.invocationId} ({this.props.model.getStartDate()}, {this.props.model.getStartTime()})
             </div>
           </div>
           <div className="invocation-top-right-buttons">
-            {isBazelInvocation && <InvocationCompareButton invocationId={this.props.invocationId} />}
+            <InvocationCompareButton invocationId={this.props.invocationId} />
             <InvocationShareButton
               user={this.props.user}
               model={this.props.model}
@@ -48,24 +50,21 @@ export default class DenseInvocationOverviewComponent extends React.Component {
             />
           </div>
         </div>
-        <div
-          className={`dense-invocation-status-bar ${this.props.model.getStatusClass()} ${
-            !isBazelInvocation && "dense-ci-run-status-bar"
-          }`}>
+        <div className={`dense-invocation-status-bar ${this.props.model.getStatusClass()}`}>
           <div className="dense-invocation-status-bar-left">
-            {!isBazelInvocation && <div className="ci-run-status-icon">{this.props.model.getStatusIcon()}</div>}
+            <div className="invocation-status">
+              <div className="status-icon">{this.props.model.getStatusIcon()}</div>
+              <span className="status-text">{this.props.model.getStatus()}</span>
+            </div>
             <div>
               {isBazelInvocation ? (
                 <>
-                  {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}&nbsp;
+                  {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
                 </>
               ) : (
-                <>
-                  <span className="ci-run-status-text">{this.props.model.getStatus()}</span> CI run{" "}
-                </>
-              )}
-              on&nbsp;
-              {this.props.model.getStartDate()} at {this.props.model.getStartTime()} for{" "}
+                <>1 action</>
+              )}{" "}
+              on {this.props.model.getStartDate()} at {this.props.model.getStartTime()} for{" "}
               <span title={this.props.model.getDurationSeconds()}>{this.props.model.getTiming()}</span>
             </div>
           </div>
@@ -82,13 +81,6 @@ export default class DenseInvocationOverviewComponent extends React.Component {
         </div>
         {isBazelInvocation && (
           <div className="dense-invocation-overview-grid">
-            <div className="dense-invocation-overview-grid-chunk">
-              <div className="dense-invocation-overview-grid-title">Invocation</div>
-              <div className="dense-invocation-overview-grid-value">
-                {this.props.model.getStatusIcon()}
-                {this.props.model.getStatus()}
-              </div>
-            </div>
             <div className="dense-invocation-overview-grid-chunk">
               <div className="dense-invocation-overview-grid-title">Targets affected</div>
               <div className="dense-invocation-overview-grid-value">{this.props.model.targets.length}</div>

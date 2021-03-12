@@ -4,7 +4,7 @@ import format from "../format/format";
 import router from "../router/router";
 import InvocationCompareButton from "./invocation_compare_button";
 import InvocationMenuComponent from "./invocation_menu";
-import InvocationModel, { CI_RUNNER_ROLE } from "./invocation_model";
+import InvocationModel from "./invocation_model";
 import InvocationShareButton from "./invocation_share_button";
 
 interface Props {
@@ -72,7 +72,7 @@ export default class InvocationOverviewComponent extends React.Component {
             <span>Invocation {this.props.invocationId}</span>
           </div>
           <div className="invocation-top-right-buttons">
-            {isBazelInvocation && <InvocationCompareButton invocationId={this.props.invocationId} />}
+            <InvocationCompareButton invocationId={this.props.invocationId} />
             <InvocationShareButton
               user={this.props.user}
               model={this.props.model}
@@ -87,8 +87,14 @@ export default class InvocationOverviewComponent extends React.Component {
         </div>
         <div className="titles">
           <div className="title" title={this.props.model.getAllPatterns()}>
-            {format.sentenceCase(this.props.model.getUser(true))} {this.props.model.getCommand()}{" "}
-            {this.props.model.getPattern()}
+            {format.sentenceCase(this.props.model.getUser(true))}{" "}
+            {isBazelInvocation ? (
+              <>
+                {this.props.model.getCommand()} {this.props.model.getPattern()}
+              </>
+            ) : (
+              <>workflow run</>
+            )}
           </div>
           <div className="subtitle">
             {this.props.model.getStartDate()} at {this.props.model.getStartTime()}

@@ -272,7 +272,7 @@ export default class InvocationModel {
       return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
     }
 
-    return "BuildBuddy CI runner";
+    return "BuildBuddy workflow runner";
   }
 
   getPattern() {
