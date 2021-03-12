@@ -236,18 +236,6 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	return rsp, nil
 }
 
-func LookupWorkflowByID(ctx context.Context, env environment.Env, workflowID string) (*tables.Workflow, error) {
-	db := env.GetDBHandle()
-	if db == nil {
-		return nil, status.FailedPreconditionError("database not configured")
-	}
-	workflow := &tables.Workflow{}
-	if err := db.Raw(`SELECT * from Workflows WHERE workflow_id = ?`, workflowID).Take(workflow).Error; err != nil {
-		return nil, err
-	}
-	return workflow, nil
-}
-
 func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID string) (*tables.Workflow, error) {
 	if ws.env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
