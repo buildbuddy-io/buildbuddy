@@ -1399,7 +1399,8 @@ code .comment {
 }
 
 .dense .shelf {
-  padding: 16px 0;
+  --dense-shelf-padding: 16px;
+  padding: var(--dense-shelf-padding) 0;
   border-bottom: 0;
 }
 
@@ -1509,7 +1510,31 @@ code .comment {
   background-color: #eee;
   padding: 4px 16px;
   display: flex;
+  align-items: center;
   justify-content: space-between;
+}
+
+.dense-ci-run-status-bar {
+  padding: 8px 16px;
+  margin-bottom: calc(-1 * var(--dense-shelf-padding));
+}
+
+.dense-invocation-status-bar-left {
+  display: flex;
+  align-items: center;
+}
+
+.dense-ci-run-status-bar .ci-run-status-icon {
+  margin-right: 8px;
+}
+
+.dense-ci-run-status-bar .ci-run-status-icon img {
+  width: 24px;
+  height: 24px;
+}
+
+.dense-ci-run-status-bar .ci-run-status-text {
+  font-weight: 600;
 }
 
 .dense-invocation-status-bar.success {

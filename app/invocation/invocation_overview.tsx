@@ -4,7 +4,7 @@ import format from "../format/format";
 import router from "../router/router";
 import InvocationCompareButton from "./invocation_compare_button";
 import InvocationMenuComponent from "./invocation_menu";
-import InvocationModel from "./invocation_model";
+import InvocationModel, { CI_RUNNER_ROLE } from "./invocation_model";
 import InvocationShareButton from "./invocation_share_button";
 
 interface Props {
@@ -53,6 +53,7 @@ export default class InvocationOverviewComponent extends React.Component {
 
   render() {
     const ownerGroup = this.props.model.findOwnerGroup(this.props.user?.groups);
+    const isBazelInvocation = this.props.model.isBazelInvocation();
 
     return (
       <div className="container">
@@ -71,7 +72,7 @@ export default class InvocationOverviewComponent extends React.Component {
             <span>Invocation {this.props.invocationId}</span>
           </div>
           <div className="invocation-top-right-buttons">
-            <InvocationCompareButton invocationId={this.props.invocationId} />
+            {isBazelInvocation && <InvocationCompareButton invocationId={this.props.invocationId} />}
             <InvocationShareButton
               user={this.props.user}
               model={this.props.model}
@@ -114,32 +115,44 @@ export default class InvocationOverviewComponent extends React.Component {
             <img className="icon" src="/image/tool-regular.svg" />
             {this.props.model.getTool()}
           </div>
-          <div className="detail" title={this.props.model.getAllPatterns()}>
-            <img className="icon" src="/image/grid-regular.svg" />
-            {this.props.model.getPattern()}
-          </div>
-          <div
-            className="detail"
-            title={`${this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured / ${this.props.model.buildMetrics?.targetMetrics.targetsLoaded} loaded`}>
-            <img className="icon" src="/image/target-regular.svg" />
-            {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
-          </div>
-          <div title={`${this.props.model.buildMetrics?.actionSummary.actionsCreated} created`} className="detail">
-            <img className="icon" src="/image/activity-regular.svg" />
-            {this.props.model.buildMetrics?.actionSummary.actionsExecuted} actions
-          </div>
-          <div className="detail">
-            <img className="icon" src="/image/box-regular.svg" />
-            {this.props.model.buildMetrics?.packageMetrics.packagesLoaded} packages
-          </div>
-          <div className="detail">
-            <img className="icon" src="/image/cpu-regular.svg" />
-            {this.props.model.getCPU()}
-          </div>
-          <div className="detail">
-            <img className="icon" src="/image/zap-regular.svg" />
-            {this.props.model.getMode()}
-          </div>
+          {isBazelInvocation && (
+            <div className="detail" title={this.props.model.getAllPatterns()}>
+              <img className="icon" src="/image/grid-regular.svg" />
+              {this.props.model.getPattern()}
+            </div>
+          )}
+          {isBazelInvocation && (
+            <div
+              className="detail"
+              title={`${this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured / ${this.props.model.buildMetrics?.targetMetrics.targetsLoaded} loaded`}>
+              <img className="icon" src="/image/target-regular.svg" />
+              {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
+            </div>
+          )}
+          {isBazelInvocation && (
+            <div title={`${this.props.model.buildMetrics?.actionSummary.actionsCreated} created`} className="detail">
+              <img className="icon" src="/image/activity-regular.svg" />
+              {this.props.model.buildMetrics?.actionSummary.actionsExecuted} actions
+            </div>
+          )}
+          {isBazelInvocation && (
+            <div className="detail">
+              <img className="icon" src="/image/box-regular.svg" />
+              {this.props.model.buildMetrics?.packageMetrics.packagesLoaded} packages
+            </div>
+          )}
+          {isBazelInvocation && (
+            <div className="detail">
+              <img className="icon" src="/image/cpu-regular.svg" />
+              {this.props.model.getCPU()}
+            </div>
+          )}
+          {isBazelInvocation && (
+            <div className="detail">
+              <img className="icon" src="/image/zap-regular.svg" />
+              {this.props.model.getMode()}
+            </div>
+          )}
           {this.props.model.getRepo() && (
             <div className="detail clickable" onClick={this.handleRepoClicked.bind(this)}>
               <img className="icon" src="/image/github-regular.svg" />
@@ -152,14 +165,18 @@ export default class InvocationOverviewComponent extends React.Component {
               {format.formatCommitHash(this.props.model.getCommit())}
             </div>
           )}
-          <div className="detail clickable" onClick={this.handleCacheClicked.bind(this)}>
-            <img className="icon" src="/image/package-regular.svg" />
-            {this.props.model.getCache()}
-          </div>
-          <div className="detail clickable" onClick={this.handleRBEClicked.bind(this)}>
-            <img className="icon" src="/image/cloud-regular.svg" />
-            {this.props.model.getRBE()}
-          </div>
+          {isBazelInvocation && (
+            <div className="detail clickable" onClick={this.handleCacheClicked.bind(this)}>
+              <img className="icon" src="/image/package-regular.svg" />
+              {this.props.model.getCache()}
+            </div>
+          )}
+          {isBazelInvocation && (
+            <div className="detail clickable" onClick={this.handleRBEClicked.bind(this)}>
+              <img className="icon" src="/image/cloud-regular.svg" />
+              {this.props.model.getRBE()}
+            </div>
+          )}
           {this.props.model.getBuildkiteUrl() && (
             <div className="detail clickable" onClick={this.handleBuildkiteClicked.bind(this)}>
               <img className="icon" src="/image/buildkite.svg" />

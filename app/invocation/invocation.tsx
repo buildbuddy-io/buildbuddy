@@ -165,6 +165,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       role: this.state.model.getRole(),
       denseMode: this.props.denseMode,
     });
+    const isBazelInvocation = this.state.model.isBazelInvocation();
 
     return (
       <div className="invocation">
@@ -198,7 +199,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <ErrorCardComponent model={this.state.model} />
           )}
 
-          {(activeTab === "all" || activeTab == "targets") && (
+          {isBazelInvocation && (activeTab === "all" || activeTab == "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="failing"
@@ -213,7 +214,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <BuildLogsCardComponent model={this.state.model} expanded={activeTab == "log"} />
           )}
 
-          {(activeTab === "all" || activeTab == "targets") && (
+          {isBazelInvocation && (activeTab === "all" || activeTab == "targets") && (
             <TargetsComponent
               model={this.state.model}
               mode="passing"
@@ -226,9 +227,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <InvocationDetailsCardComponent model={this.state.model} limitResults={!activeTab} />
           )}
 
-          {(activeTab === "all" || activeTab == "cache") && <CacheCardComponent model={this.state.model} />}
+          {isBazelInvocation && (activeTab === "all" || activeTab == "cache") && (
+            <CacheCardComponent model={this.state.model} />
+          )}
 
-          {(activeTab === "all" || activeTab == "artifacts") && (
+          {isBazelInvocation && (activeTab === "all" || activeTab == "artifacts") && (
             <ArtifactsCardComponent
               model={this.state.model}
               filter={this.props.search.get("artifactFilter")}

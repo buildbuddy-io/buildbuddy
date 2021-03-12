@@ -8,6 +8,8 @@ import { invocation } from "../../proto/invocation_ts_proto";
 import { IconType } from "../favicon/favicon";
 import format from "../format/format";
 
+export const CI_RUNNER_ROLE = "CI_RUNNER";
+
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
   cacheStats: cache.CacheStats[] = [];
@@ -261,7 +263,13 @@ export default class InvocationModel {
     return this.invocations.find(() => true).role;
   }
 
+  isBazelInvocation() {
+    return this.getRole() !== CI_RUNNER_ROLE;
+  }
+
   getTool() {
+    if (this.getRole() === CI_RUNNER_ROLE) return "BuildBuddy CI runner";
+
     return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
   }
 
