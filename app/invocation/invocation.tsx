@@ -185,7 +185,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
         </div>
         <div className="container nopadding-dense">
           <InvocationTabsComponent
-            hash={activeTab}
+            hash={this.props.hash}
             denseMode={this.props.denseMode}
             role={this.state.model.getRole()}
           />
