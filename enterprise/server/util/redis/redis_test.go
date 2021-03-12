@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -14,45 +15,50 @@ import (
 	redis "github.com/go-redis/redis/v8"
 )
 
-func genRedisOptions(
-	protocol string,
-	user string,
-	password string,
-	hostname string,
-	port string,
-	database string,
-) *redis.Options {
+func genOptions(scheme, user, password, addr, database string) *redis.Options {
+	if scheme != "redis" && scheme != "rediss" && scheme != "unix" {
+		return nil
+	}
+	if addr == "" {
+		return &redis.Options{}
+	}
 	database_num, err := strconv.Atoi(database)
 	if database != "" && err != nil {
 		return &redis.Options{}
 	}
-	if hostname == "" {
-		hostname = "localhost"
+	network := "unix"
+	var tls_config *tls.Config
+	if strings.HasPrefix(scheme, "redis") {
+		network = "tcp"
+		if host, port, err := net.SplitHostPort(addr); err == nil {
+			if host == "" {
+				host = "localhost"
+			}
+			if port == "" {
+				port = "6379"
+			}
+			addr = net.JoinHostPort(host, port)
+			if scheme == "rediss" {
+				tls_config = &tls.Config{ServerName: host}
+			}
+		} else {
+			return &redis.Options{}
+		}
 	}
-	if port == "" {
-		port = "6379"
+	return &redis.Options{
+		Network:   network,
+		Username:  user,
+		Password:  password,
+		Addr:      addr,
+		DB:        database_num,
+		TLSConfig: tls_config,
 	}
-	opt := &redis.Options{
-		Network:  "tcp",
-		Username: user,
-		Password: password,
-		Addr:     net.JoinHostPort(hostname, port),
-		DB:       database_num,
-	}
-	if protocol == "rediss" {
-		opt.TLSConfig = &tls.Config{ServerName: hostname}
-	}
-	return opt
 }
 
-func genRedisURI(
-	protocol string,
-	user string,
-	password string,
-	hostname string,
-	port string,
-	database string,
-) string {
+func genURI(scheme, user, password, addr, database string) string {
+	if scheme != "redis" && scheme != "rediss" && scheme != "unix" {
+		return ""
+	}
 	at := ""
 	if user != "" {
 		at = "@"
@@ -61,55 +67,64 @@ func genRedisURI(
 		password = ":" + password
 		at = "@"
 	}
-	hostport := hostname
-	if port != "" {
-		hostport = net.JoinHostPort(hostname, port)
+
+	hostport := ""
+	path := ""
+	query := ""
+	if scheme == "unix" {
+		path = addr
+		if database != "" {
+			query = "?db=" + database
+		}
 	}
-	if database != "" {
-		database = "/" + database
+
+	if strings.HasPrefix(scheme, "redis") {
+		if host, port, err := net.SplitHostPort(addr); err == nil {
+			hostport = host
+			if port != "" {
+				hostport = net.JoinHostPort(host, port)
+			}
+		} else {
+			return ""
+		}
+		if database != "" {
+			path = "/" + database
+		}
 	}
 
 	return fmt.Sprintf(
-		"%s://%s%s%s%s%s",
-		protocol,
+		"%s://%s%s%s%s%s%s",
+		scheme,
 		user,
 		password,
 		at,
 		hostport,
-		database,
+		path,
+		query,
 	)
 }
 
-func genRedisURIOptionsMap(
-	protocols []string,
-	users []string,
-	passwords []string,
-	hostnames []string,
-	ports []string,
-	databases []string,
-) map[string]*redis.Options {
+func genRedisURIOptionsMap(schemes, users, passwords, hostnames, ports, databases []string) map[string]*redis.Options {
 	product := make(map[string]*redis.Options)
-	for _, protocol := range protocols {
+	for _, scheme := range schemes {
 		for _, user := range users {
 			for _, password := range passwords {
 				for _, hostname := range hostnames {
 					for _, port := range ports {
 						for _, db := range databases {
-							uri := genRedisURI(
-								protocol,
+							uri := genURI(
+								scheme,
 								user,
 								password,
-								hostname,
-								port,
+								net.JoinHostPort(hostname, port),
 								db,
 							)
 							product[uri] =
-								genRedisOptions(
-									protocol,
+								genOptions(
+									scheme,
 									user,
 									password,
-									hostname,
-									port,
+									net.JoinHostPort(hostname, port),
 									db,
 								)
 						}
@@ -121,73 +136,21 @@ func genRedisURIOptionsMap(
 	return product
 }
 
-func genUnixOptions(
-	user string,
-	password string,
-	socket_path string,
-	database string,
-) *redis.Options {
-	if socket_path == "" {
-		return &redis.Options{}
-	}
-	database_num, err := strconv.Atoi(database)
-	if database != "" && err != nil {
-		return &redis.Options{}
-	}
-	return &redis.Options{
-		Network:  "unix",
-		Username: user,
-		Password: password,
-		Addr:     socket_path,
-		DB:       database_num,
-	}
-}
-
-func genUnixURI(
-	user string,
-	password string,
-	socket_path string,
-	database string,
-) string {
-	at := ""
-	if user != "" {
-		at = "@"
-	}
-	if password != "" {
-		password = ":" + password
-		at = "@"
-	}
-	if database != "" {
-		database = "?db=" + database
-	}
-	return fmt.Sprintf(
-		"unix://%s%s%s%s%s",
-		user,
-		password,
-		at,
-		socket_path,
-		database,
-	)
-}
-
-func genUnixURIOptionsMap(
-	users []string,
-	passwords []string,
-	socket_paths []string,
-	databases []string,
-) map[string]*redis.Options {
+func genUnixURIOptionsMap(users, passwords, socket_paths, databases []string) map[string]*redis.Options {
 	product := make(map[string]*redis.Options)
 	for _, user := range users {
 		for _, password := range passwords {
 			for _, socket_path := range socket_paths {
 				for _, database := range databases {
-					uri := genUnixURI(
+					uri := genURI(
+						"unix",
 						user,
 						password,
 						socket_path,
 						database,
 					)
-					product[uri] = genUnixOptions(
+					product[uri] = genOptions(
+						"unix",
 						user,
 						password,
 						socket_path,
