@@ -1,5 +1,5 @@
 import React from "react";
-import InvocationModel from "./invocation_model";
+import InvocationModel, { CI_RUNNER_ROLE } from "./invocation_model";
 
 interface Props {
   model: InvocationModel;
@@ -27,6 +27,8 @@ export default class ArtifactsCardComponent extends React.Component {
   }
 
   render() {
+    const isBazelInvocation = this.props.model.isBazelInvocation();
+
     return (
       <div className="card">
         <img className="icon" src="/image/info.svg" />
@@ -59,44 +61,48 @@ export default class ArtifactsCardComponent extends React.Component {
               <div className="invocation-section-title">Tool</div>
               <div>{this.props.model.getTool()}</div>
             </div>
-            <div className="invocation-section">
-              <div className="invocation-section-title">Pattern</div>
-              <div title={this.props.model.getAllPatterns()}>{this.props.model.getPattern()}</div>
-            </div>
-            <div className="invocation-section">
-              <div className="invocation-section-title">CPU</div>
-              <div>{this.props.model.getCPU()}</div>
-            </div>
-            <div className="invocation-section">
-              <div className="invocation-section-title">Mode</div>
-              <div>{this.props.model.getMode()}</div>
-            </div>
-            <div className="invocation-section">
-              <div className="invocation-section-title">Targets</div>
-              <div>
-                {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
-                {!!this.props.model.buildMetrics?.targetMetrics.targetsConfigured && (
-                  <span>
-                    {" "}
-                    ({this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured /{" "}
-                    {this.props.model.buildMetrics?.targetMetrics.targetsLoaded} loaded)
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="invocation-section">
-              <div className="invocation-section-title">Actions</div>
-              <div>
-                {this.props.model.buildMetrics?.actionSummary.actionsExecuted} actions
-                {!!this.props.model.buildMetrics?.actionSummary.actionsCreated && (
-                  <span> ({this.props.model.buildMetrics?.actionSummary.actionsCreated} created)</span>
-                )}
-              </div>
-            </div>
-            <div className="invocation-section">
-              <div className="invocation-section-title">Packages</div>
-              <div>{this.props.model.buildMetrics?.packageMetrics.packagesLoaded} packages</div>
-            </div>
+            {isBazelInvocation && (
+              <>
+                <div className="invocation-section">
+                  <div className="invocation-section-title">Pattern</div>
+                  <div title={this.props.model.getAllPatterns()}>{this.props.model.getPattern()}</div>
+                </div>
+                <div className="invocation-section">
+                  <div className="invocation-section-title">CPU</div>
+                  <div>{this.props.model.getCPU()}</div>
+                </div>
+                <div className="invocation-section">
+                  <div className="invocation-section-title">Mode</div>
+                  <div>{this.props.model.getMode()}</div>
+                </div>
+                <div className="invocation-section">
+                  <div className="invocation-section-title">Targets</div>
+                  <div>
+                    {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
+                    {!!this.props.model.buildMetrics?.targetMetrics.targetsConfigured && (
+                      <span>
+                        {" "}
+                        ({this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured /{" "}
+                        {this.props.model.buildMetrics?.targetMetrics.targetsLoaded} loaded)
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="invocation-section">
+                  <div className="invocation-section-title">Actions</div>
+                  <div>
+                    {this.props.model.buildMetrics?.actionSummary.actionsExecuted} actions
+                    {!!this.props.model.buildMetrics?.actionSummary.actionsCreated && (
+                      <span> ({this.props.model.buildMetrics?.actionSummary.actionsCreated} created)</span>
+                    )}
+                  </div>
+                </div>
+                <div className="invocation-section">
+                  <div className="invocation-section-title">Packages</div>
+                  <div>{this.props.model.buildMetrics?.packageMetrics.packagesLoaded} packages</div>
+                </div>
+              </>
+            )}
 
             {this.props.model.getGithubUser() && (
               <div className="invocation-section">

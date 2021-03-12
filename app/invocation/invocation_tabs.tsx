@@ -1,6 +1,5 @@
 import React from "react";
-
-const CI_RUNNER_ROLE = "CI_RUNNER";
+import { CI_RUNNER_ROLE } from "./invocation_model";
 
 export type InvocationTabsProps = TabsContext;
 
