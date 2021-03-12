@@ -51,7 +51,7 @@ export default class DenseInvocationOverviewComponent extends React.Component {
           </div>
         </div>
         <div className={`dense-invocation-status-bar ${this.props.model.getStatusClass()}`}>
-          <div className="dense-invocation-status-bar-left">
+          <div>
             <div>
               {isBazelInvocation ? (
                 <>
