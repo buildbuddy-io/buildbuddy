@@ -14,6 +14,7 @@ go_library(
         "//server/remote_cache/hit_tracker:go_default_library",
         "//server/remote_cache/namespace:go_default_library",
         "//server/util/capabilities:go_default_library",
+        "//server/util/devnull:go_default_library",
         "//server/util/prefix:go_default_library",
         "//server/util/status:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
