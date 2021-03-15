@@ -524,7 +524,7 @@ ts_proto_library(
 
 ts_proto_library(
     name = "scheduler_ts_proto",
-    deps = [":scheduler_proto"],
+    proto = ":scheduler_proto",
 )
 
 ts_proto_library(
