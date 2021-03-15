@@ -66,7 +66,7 @@ class Router {
 
   navigateToExecutors() {
     if (!capabilities.canNavigateToPath(Path.executorsPath)) {
-      alert(`Executorss are not available in ${capabilities.name}`);
+      alert(`Executors are not available in ${capabilities.name}`);
       return;
     }
     this.navigateTo(Path.executorsPath);

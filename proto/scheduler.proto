@@ -12,6 +12,7 @@ message NodeAddress {
   int32 port = 2;
 }
 
+// TODO: Switch over the the ExecutionNodes proto
 message RegisterNodeRequest {
   NodeAddress node_address = 1;
 
@@ -144,11 +145,11 @@ message ExecutionNode {
   string pool = 7;
 }
 
-message GetExecutionNodeRequest {
+message GetExecutionNodesRequest {
   context.ResponseContext response_context = 1;
 }
 
-message GetExecutionNodeResponse {
+message GetExecutionNodesResponse {
   context.ResponseContext response_context = 1;
 
   repeated ExecutionNode execution_node = 2;

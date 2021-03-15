@@ -56,8 +56,8 @@ service BuildBuddyService {
   // Execution API
   rpc GetExecution(execution_stats.GetExecutionRequest)
       returns (execution_stats.GetExecutionResponse);
-  rpc GetExecutionNode(scheduler.GetExecutionNodeRequest) 
-      returns (scheduler.GetExecutionNodeResponse);
+  rpc GetExecutionNodes(scheduler.GetExecutionNodesRequest) 
+      returns (scheduler.GetExecutionNodesResponse);
 
   // Target API
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);
