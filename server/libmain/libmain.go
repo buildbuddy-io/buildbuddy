@@ -79,6 +79,7 @@ var (
 		"/tests/",
 		"/trends/",
 		"/workflows/",
+		"/executors/",
 	}
 )
 

@@ -8,6 +8,7 @@ import "proto/invocation.proto";
 import "proto/target.proto";
 import "proto/user.proto";
 import "proto/workflow.proto";
+import "proto/scheduler.proto";
 
 package buildbuddy.service;
 
@@ -55,6 +56,8 @@ service BuildBuddyService {
   // Execution API
   rpc GetExecution(execution_stats.GetExecutionRequest)
       returns (execution_stats.GetExecutionResponse);
+  rpc GetExecutionNode(scheduler.GetExecutionNodeRequest) 
+      returns (scheduler.GetExecutionNodeResponse);
 
   // Target API
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);

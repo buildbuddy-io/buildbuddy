@@ -187,6 +187,7 @@ proto_library(
         ":execution_stats_proto",
         ":group_proto",
         ":invocation_proto",
+        ":scheduler_proto",
         ":target_proto",
         ":user_proto",
         ":workflow_proto",
@@ -245,6 +246,9 @@ proto_library(
 proto_library(
     name = "scheduler_proto",
     srcs = ["scheduler.proto"],
+    deps = [
+        ":context_proto",
+    ],
 )
 
 # Go proto rules below here
@@ -385,6 +389,7 @@ go_proto_library(
         ":execution_stats_go_proto",
         ":group_go_proto",
         ":invocation_go_proto",
+        ":scheduler_go_proto",
         ":target_go_proto",
         ":user_go_proto",
         ":workflow_go_proto",
@@ -490,6 +495,9 @@ go_proto_library(
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/scheduler",
     proto = ":scheduler_proto",
+    deps = [
+        ":context_go_proto",
+    ],
 )
 
 # TypeScript proto rules below here
@@ -512,6 +520,11 @@ ts_proto_library(
 ts_proto_library(
     name = "execution_stats_ts_proto",
     deps = [":execution_stats_proto"],
+)
+
+ts_proto_library(
+    name = "scheduler_ts_proto",
+    deps = [":scheduler_proto"],
 )
 
 ts_proto_library(

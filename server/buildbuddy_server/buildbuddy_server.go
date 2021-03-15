@@ -26,6 +26,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
@@ -665,38 +666,45 @@ func (s *BuildBuddyServer) GetExecution(ctx context.Context, req *espb.GetExecut
 	return nil, status.UnimplementedError("Not implemented")
 }
 
-func (s *BuildBuddyServer) GetExecutionNodes(ctx context.Context, req *espb.GetExecutionNodesRequest) (*espb.GetExecutionNodesResponse, error) {
-	return espb.GetExecutionNodesResponse{
-		ExecutionNodes: []*espb.ExecutionNode{
-			{
-				"host":                    "10.52.6.5",
-				"port":                    "1987",
-				"assignable_memory_bytes": 26843545600,
-				"assignable_milli_cpu":    7000,
-				"os":                      "linux",
-				"arch":                    "amd64",
-				"pool":                    "buildbuddy-executors-us-west1-b",
-			},
-			{
-				"host":                    "207.254.55.158",
-				"port":                    "1987",
-				"assignable_memory_bytes": 25614368768,
-				"assignable_milli_cpu":    12000,
-				"os":                      "darwin",
-				"arch":                    "amd64",
-				"pool":                    "baremetal-test-pool",
-			},
-			{
-				"host":                    "10.52.15.4",
-				"port":                    "1987",
-				"assignable_memory_bytes": 26843545600,
-				"assignable_milli_cpu":    7000,
-				"os":                      "darwin",
-				"arch":                    "amd64",
-				"pool":                    "buildbuddy-executors-us-west1-b",
-			},
-		},
-	}, nil
+func (s *BuildBuddyServer) GetExecutionNode(ctx context.Context, req *scpb.GetExecutionNodeRequest) (*scpb.GetExecutionNodeResponse, error) {
+	if ss := s.env.GetSchedulerService(); ss != nil {
+		log.Printf("===========Request%+v", req)
+		res, err := ss.GetExecutionNode(ctx, req)
+		log.Printf("===========Response%+v", res)
+		return res, err
+	}
+	return nil, status.UnimplementedError("Not implemented")
+	// return &espb.GetExecutionNodeResponse{
+	// 	ExecutionNode: []*espb.ExecutionNode{
+	// 		{
+	// 			Host:                    "10.52.6.5",
+	// 			Port:                    "1987",
+	// 			AssignableMemoryBytes: 26843545600,
+	// 			AssignableMilliCpu:    7000,
+	// 			Os:                      "linux",
+	// 			Arch:                    "amd64",
+	// 			Pool:                    "buildbuddy-executors-us-west1-b",
+	// 		},
+	// 		{
+	// 			Host:                    "207.254.55.158",
+	// 			Port:                    "1987",
+	// 			AssignableMemoryBytes: 25614368768,
+	// 			AssignableMilliCpu:    12000,
+	// 			Os:                      "darwin",
+	// 			Arch:                    "amd64",
+	// 			Pool:                    "baremetal-test-pool",
+	// 		},
+	// 		{
+	// 			Host:                    "10.52.15.4",
+	// 			Port:                    "1987",
+	// 			AssignableMemoryBytes: 26843545600,
+	// 			AssignableMilliCpu:    7000,
+	// 			Os:                      "darwin",
+	// 			Arch:                    "amd64",
+	// 			Pool:                    "buildbuddy-executors-us-west1-b",
+	// 		},
+	// 	},
+	// }, nil
 }
 
 func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
