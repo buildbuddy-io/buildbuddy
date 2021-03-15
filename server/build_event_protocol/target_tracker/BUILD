@@ -15,7 +15,7 @@ go_library(
         "//server/util/query_builder:go_default_library",
         "//server/util/status:go_default_library",
         "@com_github_golang_protobuf//proto:go_default_library",
-        "@com_github_jinzhu_gorm//:go_default_library",
+        "@io_gorm_gorm//:go_default_library",
         "@org_golang_x_sync//errgroup:go_default_library",
     ],
 )

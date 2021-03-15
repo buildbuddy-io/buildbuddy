@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Samples",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 900
-}
--->
-
-# Sample Configuration Files
+---
+id: config-samples
+title: Sample Configuration Files
+sidebar_label: Samples
+---
 
 ### Running locally (disk only)
 

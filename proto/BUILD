@@ -1,6 +1,6 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@npm//@bazel/labs:index.bzl", ts_proto_library = "protobufjs_ts_library")
+load(":defs.bzl", "ts_proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -504,22 +504,22 @@ go_proto_library(
 
 ts_proto_library(
     name = "acl_ts_proto",
-    deps = [":acl_proto"],
+    proto = ":acl_proto",
 )
 
 ts_proto_library(
     name = "api_key_ts_proto",
-    deps = [":api_key_proto"],
+    proto = ":api_key_proto",
 )
 
 ts_proto_library(
     name = "bazel_config_ts_proto",
-    deps = [":bazel_config_proto"],
+    proto = ":bazel_config_proto",
 )
 
 ts_proto_library(
     name = "execution_stats_ts_proto",
-    deps = [":execution_stats_proto"],
+    proto = ":execution_stats_proto",
 )
 
 ts_proto_library(
@@ -529,55 +529,55 @@ ts_proto_library(
 
 ts_proto_library(
     name = "build_event_stream_ts_proto",
-    deps = [":build_event_stream_proto"],
+    proto = ":build_event_stream_proto",
 )
 
 ts_proto_library(
     name = "target_ts_proto",
-    deps = [":target_proto"],
+    proto = ":target_proto",
 )
 
 ts_proto_library(
     name = "workflow_ts_proto",
-    deps = [":workflow_proto"],
+    proto = ":workflow_proto",
 )
 
 ts_proto_library(
     name = "command_line_ts_proto",
-    deps = [":command_line_proto"],
+    proto = ":command_line_proto",
 )
 
 ts_proto_library(
     name = "context_ts_proto",
-    deps = [":context_proto"],
+    proto = ":context_proto",
 )
 
 ts_proto_library(
     name = "invocation_ts_proto",
-    deps = [":invocation_proto"],
+    proto = ":invocation_proto",
 )
 
 ts_proto_library(
     name = "group_ts_proto",
-    deps = [":group_proto"],
+    proto = ":group_proto",
 )
 
 ts_proto_library(
     name = "cache_ts_proto",
-    deps = [":cache_proto"],
+    proto = ":cache_proto",
 )
 
 ts_proto_library(
     name = "user_id_ts_proto",
-    deps = [":user_id_proto"],
+    proto = ":user_id_proto",
 )
 
 ts_proto_library(
     name = "user_ts_proto",
-    deps = [":user_proto"],
+    proto = ":user_proto",
 )
 
 ts_proto_library(
     name = "buildbuddy_service_ts_proto",
-    deps = [":buildbuddy_service_proto"],
+    proto = ":buildbuddy_service_proto",
 )

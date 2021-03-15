@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "RBE Executor Pools",
-  "category": "5f84be4816a467f32f4ca128",
-  "priority": 500
-}
--->
-
-# RBE Executor Pools
+---
+id: rbe-pools
+title: RBE Executor Pools
+sidebar_label: RBE Executor Pools
+---
 
 By default, all BuildBuddy executors are placed in a single pool - and any task can run on any executor (running the same operating system and cpu architecture).
 

@@ -38,7 +38,6 @@ ts_library(
         "@npm//@types/moment",
         "@npm//@types/pako",
         "@npm//@types/react",
-        "@npm//@types/recharts",
         "@npm//long",
         "@npm//moment",
         "@npm//pako",

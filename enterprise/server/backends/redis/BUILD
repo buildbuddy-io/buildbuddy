@@ -4,7 +4,10 @@ go_library(
     name = "go_default_library",
     srcs = ["redis.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis",
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/interfaces:go_default_library",

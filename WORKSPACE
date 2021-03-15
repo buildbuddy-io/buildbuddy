@@ -19,9 +19,9 @@ http_archive(
 
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "86c6d481b3f7aedc1d60c1c211c6f76da282ae197c3b3160f54bd3a8f847896f",
+    sha256 = "bfd86b3cbe855d6c16c6fce60d76bd51f5c8dbc9cfcaef7a2bb5c1aafd0710e8",
     urls = [
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.19.1/bazel-gazelle-v0.19.1.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.21.0/bazel-gazelle-v0.21.0.tar.gz",
     ],
 )
 
@@ -60,8 +60,8 @@ gazelle_dependencies()
 
 http_archive(
     name = "build_bazel_rules_nodejs",
-    sha256 = "452bef42c4b2fbe0f509a2699ffeb3ae2c914087736b16314dbd356f3641d7e5",
-    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/2.3.0/rules_nodejs-2.3.0.tar.gz"],
+    sha256 = "bfacf15161d96a6a39510e7b3d3b522cf61cb8b82a31e79400a84c5abcab5347",
+    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/3.2.1/rules_nodejs-3.2.1.tar.gz"],
 )
 
 load("@build_bazel_rules_nodejs//:index.bzl", "yarn_install")
@@ -153,6 +153,14 @@ container_pull(
     digest = "sha256:7d950cc48684d34ca5b90345a5eb995435a42d72a4b641cdb33591825fc863f4",
     registry = "gcr.io",
     repository = "distroless/base-debian10",
+)
+
+load("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
+
+dockerfile_image(
+    name = "ci_runner_image",
+    dockerfile = "//enterprise/dockerfiles/ci_runner_image:Dockerfile",
+    visibility = ["//visibility:public"],
 )
 
 # BuildBuddy Toolchain

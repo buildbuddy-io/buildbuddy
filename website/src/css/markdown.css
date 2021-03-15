@@ -1,0 +1,20 @@
+.markdown a {
+  color: #546e7a;
+  text-decoration: none;
+  background-image: url('data:image/svg+xml;utf8,<svg preserveAspectRatio="none" viewBox="0 0 1 1" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="1" y2="1" stroke="rgba(84,110,122 ,1)" /></svg>');
+  background-size: 1px 1px;
+  background-position: 0 calc(1em + 1px);
+  font-weight: 500;
+  background-repeat: repeat-x;
+}
+
+.markdown a.hash-link {
+  background-image: none;
+}
+
+.docusaurus-highlight-code-line {
+  background-color: #37474f;
+  display: block;
+  margin: 0 calc(-1 * var(--ifm-pre-padding));
+  padding: 0 var(--ifm-pre-padding);
+}

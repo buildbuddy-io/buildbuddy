@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -93,8 +92,19 @@ func TestIsGranted_NullAuthenticator(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+func TestIsGranted_NilAuthenticator(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	te.SetAuthenticator(nil)
+	anonCtx := context.Background()
+
+	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+
+	assert.True(t, canWrite)
+	assert.Nil(t, err)
+}
+
 func TestIsGranted_TestUserWithCapability_True(t *testing.T) {
-	user := &auth.Claims{
+	user := &testauth.TestUser{
 		UserID:       "US1",
 		GroupID:      "GR1",
 		Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
@@ -110,7 +120,7 @@ func TestIsGranted_TestUserWithCapability_True(t *testing.T) {
 }
 
 func TestIsGranted_TestUserWithoutCapability_False(t *testing.T) {
-	user := &auth.Claims{
+	user := &testauth.TestUser{
 		UserID:       "US1",
 		GroupID:      "GR1",
 		Capabilities: []akpb.ApiKey_Capability{},

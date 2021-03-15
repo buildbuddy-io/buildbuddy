@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Org",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 300
-}
--->
-
-# Org Configuration
+---
+id: config-org
+title: Organization Configuration
+sidebar_label: Org
+---
 
 Your organization is only configurable in the [Enterprise version](enterprise.md) of BuildBuddy.
 

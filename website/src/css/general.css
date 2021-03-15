@@ -1,0 +1,41 @@
+:root {
+  --ifm-color-primary: #263238;
+  --ifm-color-primary-dark: #37474f;
+  --ifm-color-primary-darker: #455a64;
+  --ifm-color-primary-darkest: #546e7a;
+  --ifm-color-primary-light: #607d8b;
+  --ifm-color-primary-lighter: #78909c;
+  --ifm-color-primary-lightest: #90a4ae;
+  --ifm-color-success: #607d8b;
+
+  --ifm-font-weight-semibold: 600;
+
+  --ifm-code-font-size: 95%;
+
+  --ifm-navbar-shadow: transparent;
+  --ifm-navbar-background-color: #fff;
+  --ifm-navbar-height: 90px;
+  --ifm-navbar-padding-horizontal: 24px;
+
+  --ifm-menu-link-sublist-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16px" height="16px" viewBox="0 0 24 24"><path fill="rgba(0,0,0,0.15)" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"></path></svg>');
+  --ifm-toc-border-color: transparent;
+
+  --ifm-footer-padding-vertical: 96px;
+}
+
+a {
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: none;
+}
+
+html[data-theme="dark"] {
+  --ifm-navbar-background-color: #18191a;
+  --ifm-color-primary: #fff;
+}
+
+html[data-theme="dark"] .footer--dark {
+  --ifm-footer-background-color: rgba(255, 255, 255, 0.05);
+}

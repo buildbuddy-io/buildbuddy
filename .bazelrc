@@ -33,6 +33,7 @@ build:remote --remote_timeout=600
 build:remote --remote_download_minimal
 build:remote --experimental_repo_remote_exec
 build:remote --jobs=100
+build:remote --verbose_failures
 
 # Configuration used for CI
 build:ci --config=remote

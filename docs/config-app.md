@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "App",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 800
-}
--->
-
-# App Configuration
+---
+id: config-app
+title: App Configuration
+sidebar_label: App
+---
 
 ## Section
 

@@ -5,6 +5,7 @@ import (
 	"log"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
@@ -12,13 +13,12 @@ import (
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
 
-const eventBufferSize = 100
-
 type BuildEventProxyClient struct {
-	target    string
-	clientMux sync.Mutex // PROTECTS(client)
-	client    pepb.PublishBuildEventClient
-	rootCtx   context.Context
+	target          string
+	clientMux       sync.Mutex // PROTECTS(client)
+	client          pepb.PublishBuildEventClient
+	rootCtx         context.Context
+	eventBufferSize int
 }
 
 func (c *BuildEventProxyClient) reconnectIfNecessary() {
@@ -36,10 +36,15 @@ func (c *BuildEventProxyClient) reconnectIfNecessary() {
 	c.client = pepb.NewPublishBuildEventClient(conn)
 }
 
-func NewBuildEventProxyClient(target string) *BuildEventProxyClient {
+func NewBuildEventProxyClient(env environment.Env, target string) *BuildEventProxyClient {
+	bufferSize := 100
+	if configuredBufferSize := env.GetConfigurator().GetBuildEventProxyBufferSize(); configuredBufferSize != 0 {
+		bufferSize = configuredBufferSize
+	}
 	c := &BuildEventProxyClient{
-		target:  target,
-		rootCtx: context.Background(),
+		target:          target,
+		rootCtx:         context.Background(),
+		eventBufferSize: bufferSize,
 	}
 	c.reconnectIfNecessary()
 	return c
@@ -65,7 +70,7 @@ type asyncStreamProxy struct {
 func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ...grpc.CallOption) *asyncStreamProxy {
 	asp := &asyncStreamProxy{
 		ctx:    ctx,
-		events: make(chan pepb.PublishBuildToolEventStreamRequest, eventBufferSize),
+		events: make(chan pepb.PublishBuildToolEventStreamRequest, c.eventBufferSize),
 	}
 	// Start a goroutine that will open the stream and pass along events.
 	go func() {

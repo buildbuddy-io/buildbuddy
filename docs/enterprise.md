@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Enterprise Overview",
-  "category": "5f84be4816a467581a4ca066",
-  "priority": 1000
-}
--->
-
-# BuildBuddy Enterprise
+---
+id: enterprise
+title: Enterprise Overview
+sidebar_label: BuildBuddy Enterprise
+---
 
 We offer an enterprise version of BuildBuddy targeted at companies who need advanced features and enterprise level support.
 

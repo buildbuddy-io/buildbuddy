@@ -2,172 +2,44 @@ package memory_cache
 
 import (
 	"bytes"
-	"container/list"
 	"context"
-	"errors"
 	"io"
 	"path/filepath"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-// lru implements a non-thread safe fixed size LRU cache
-type lru struct {
-	maxSizeBytes int64
-	sizeBytes    int64
-	evictList    *list.List
-	items        map[string]*list.Element
-}
-
-// entry is used to hold a value in the evictList
-type entry struct {
-	key   string
-	value []byte
-}
-
-// NewLRU constructs an lru with maxSize
-func newlru(maxSizeBytes int64) (*lru, error) {
-	if maxSizeBytes <= 0 {
-		return nil, errors.New("Must provide a positive size")
-	}
-	c := &lru{
-		sizeBytes:    0,
-		maxSizeBytes: maxSizeBytes,
-		evictList:    list.New(),
-		items:        make(map[string]*list.Element),
-	}
-	return c, nil
-}
-
-// Purge is used to completely clear the cache.
-func (c *lru) Purge() {
-	for k := range c.items {
-		delete(c.items, k)
-	}
-	c.evictList.Init()
-}
-
-// Add adds a value to the cache.  Returns true if an eviction occurred.
-func (c *lru) Add(key string, value []byte) (evicted bool) {
-	// Check for existing item. If it's there, re-up it and
-	// overwrite the value.
-	if ent, ok := c.items[key]; ok {
-		c.evictList.MoveToFront(ent)
-		ent.Value.(*entry).value = value
-		return false
-	}
-
-	c.addElement(&entry{key, value})
-
-	evicted = false
-	for {
-		evict := c.sizeBytes > c.maxSizeBytes
-		if !evict {
-			break
-		}
-		evicted = true
-		c.removeOldest()
-	}
-	return evicted
-}
-
-// Get looks up a key's value from the cache.
-func (c *lru) Get(key string) (value []byte, ok bool) {
-	if ent, ok := c.items[key]; ok {
-		c.evictList.MoveToFront(ent)
-		if ent.Value.(*entry) == nil {
-			return nil, false
-		}
-		return ent.Value.(*entry).value, true
-	}
-	return
-}
-
-// Contains checks if a key is in the cache, without updating the recent-ness
-// or deleting it for being stale.
-func (c *lru) Contains(key string) (ok bool) {
-	_, ok = c.items[key]
-	return ok
-}
-
-// Remove removes the provided key from the cache, returning if the
-// key was contained.
-func (c *lru) Remove(key string) (present bool) {
-	if ent, ok := c.items[key]; ok {
-		c.removeElement(ent)
-		return true
-	}
-	return false
-}
-
-// RemoveOldest removes the oldest item from the cache.
-func (c *lru) RemoveOldest() (key string, value []byte, ok bool) {
-	ent := c.evictList.Back()
-	if ent != nil {
-		c.removeElement(ent)
-		kv := ent.Value.(*entry)
-		return kv.key, kv.value, true
-	}
-	return "", nil, false
-}
-
-// Len returns the number of items in the cache.
-func (c *lru) Len() int {
-	return c.evictList.Len()
-}
-
-// Len returns the number of items in the cache.
-func (c *lru) Size() int64 {
-	return c.sizeBytes
-}
-
-// removeOldest removes the oldest item from the cache.
-func (c *lru) removeOldest() {
-	ent := c.evictList.Back()
-	if ent != nil {
-		c.removeElement(ent)
-	}
-}
-
-func sizeOfEntry(e *entry) int64 {
-	return int64(len([]byte(e.key)) + len(e.value))
-}
-
-// removeElement is used to remove a given list element from the cache
-func (c *lru) addElement(el *entry) {
-	// Add new item
-	ent := c.evictList.PushFront(el)
-	c.items[el.key] = ent
-	c.sizeBytes += sizeOfEntry(el)
-}
-
-// removeElement is used to remove a given list element from the cache
-func (c *lru) removeElement(e *list.Element) {
-	c.evictList.Remove(e)
-	kv := e.Value.(*entry)
-	delete(c.items, kv.key)
-	c.sizeBytes -= sizeOfEntry(kv)
-}
-
 type MemoryCache struct {
-	l      *lru
+	l      *lru.LRU
 	lock   *sync.RWMutex
 	prefix string
 }
 
+func sizeFn(key interface{}, value interface{}) int64 {
+	size := int64(0)
+	if k, ok := key.(string); ok {
+		size += int64(len(k))
+	}
+	if v, ok := value.([]byte); ok {
+		size += int64(len(v))
+	}
+	return size
+}
+
 func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
-	lru, err := newlru(maxSizeBytes)
+	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, SizeFn: sizeFn})
 	if err != nil {
 		return nil, err
 	}
 	return &MemoryCache{
-		l:    lru,
+		l:    l,
 		lock: &sync.RWMutex{},
 	}, nil
 }
@@ -227,10 +99,14 @@ func (m *MemoryCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 		return nil, err
 	}
 	m.lock.Lock()
-	value, ok := m.l.Get(k)
+	v, ok := m.l.Get(k)
 	m.lock.Unlock()
 	if !ok {
 		return nil, status.NotFoundErrorf("Key %s not found", d)
+	}
+	value, ok := v.([]byte)
+	if !ok {
+		return nil, status.InternalErrorf("LRU type assertion failed for %s", d)
 	}
 	return value, nil
 }
@@ -288,7 +164,7 @@ func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset int64) 
 	}
 	r := bytes.NewReader(buf)
 	r.Seek(offset, 0)
-	length := d.GetSizeBytes()
+	length := int64(len(buf))
 	if length > 0 {
 		return io.LimitReader(r, length), nil
 	}

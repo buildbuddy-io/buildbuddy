@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -16,18 +17,28 @@ import (
 )
 
 const (
+	// GitHub status constants
+
+	ErrorState   State = "error"
+	PendingState State = "pending"
+	FailureState State = "failure"
+	SuccessState State = "success"
+
 	stateCookieName    = "Github-State-Token"
 	redirectCookieName = "Github-Redirect-Url"
 )
 
+// State represents a status value that GitHub's statuses API understands.
+type State string
+
 type GithubStatusPayload struct {
-	State       string `json:"state"`
+	State       State  `json:"state"`
 	TargetURL   string `json:"target_url"`
 	Description string `json:"description"`
 	Context     string `json:"context"`
 }
 
-func NewGithubStatusPayload(context, URL, description, state string) *GithubStatusPayload {
+func NewGithubStatusPayload(context, URL, description string, state State) *GithubStatusPayload {
 	return &GithubStatusPayload{
 		Context:     context,
 		TargetURL:   URL,
@@ -43,17 +54,17 @@ type GithubAccessTokenResponse struct {
 }
 
 type GithubClient struct {
-	env                environment.Env
-	client             *http.Client
-	githubToken        string
-	githubTokenFetched bool
+	env         environment.Env
+	client      *http.Client
+	githubToken string
+	tokenLookup sync.Once
 }
 
-func NewGithubClient(env environment.Env) *GithubClient {
+func NewGithubClient(env environment.Env, token string) *GithubClient {
 	return &GithubClient{
-		env:                env,
-		client:             &http.Client{},
-		githubTokenFetched: false,
+		env:         env,
+		client:      &http.Client{},
+		githubToken: token,
 	}
 }
 
@@ -168,7 +179,10 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 		return nil // We can't create a status without an owner/repo and a commit SHA.
 	}
 
-	err := c.populateTokenIfNecessary(ctx)
+	var err error
+	c.tokenLookup.Do(func() {
+		err = c.populateTokenIfNecessary(ctx)
+	})
 
 	// If we don't have a github token, we can't post a status.
 	if c.githubToken == "" || err != nil {
@@ -193,13 +207,16 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 }
 
 func (c *GithubClient) populateTokenIfNecessary(ctx context.Context) error {
-	if c.githubTokenFetched || c.env.GetConfigurator().GetGithubConfig() == nil {
+	if c.githubToken != "" {
+		return nil
+	}
+
+	if c.env.GetConfigurator().GetGithubConfig() == nil {
 		return nil
 	}
 
 	if accessToken := c.env.GetConfigurator().GetGithubConfig().AccessToken; accessToken != "" {
 		c.githubToken = accessToken
-		c.githubTokenFetched = true
 		return nil
 	}
 
@@ -222,7 +239,6 @@ func (c *GithubClient) populateTokenIfNecessary(ctx context.Context) error {
 	}
 
 	c.githubToken = group.GithubToken
-	c.githubTokenFetched = true
 	return nil
 }
 

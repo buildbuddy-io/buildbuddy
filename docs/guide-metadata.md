@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Build Metadata Guide",
-  "category": "5f84be4816a46768724ca126",
-  "priority": 800
-}
--->
-
-# Build Metadata Guide
+---
+id: guide-metadata
+title: Build Metadata Guide
+sidebar_label: Build Metadata Guide
+---
 
 Additional metadata can be sent up with your Bazel invocation to give BuildBuddy more information about your build.
 
@@ -159,7 +155,7 @@ Example:
 
 ## Environment variable redacting
 
-By default, all environment variables are redacted by BuildBuddy except for `USER`, `GITHUB_ACTOR`, `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_RUN_ID` which are displayed in the BuildBuddy UI.
+By default, all environment variables are redacted by BuildBuddy except for `USER`, `GITHUB_ACTOR`, `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_RUN_ID`, `BUILDKITE_BUILD_URL`, which are displayed in the BuildBuddy UI.
 
 Redacted environment variables are displayed in the BuildBuddy UI as `<REDACTED>`.
 

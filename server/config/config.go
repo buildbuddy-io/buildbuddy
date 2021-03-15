@@ -45,7 +45,8 @@ type appConfig struct {
 }
 
 type buildEventProxy struct {
-	Hosts []string `yaml:"hosts" usage:"The list of hosts to pass build events onto."`
+	Hosts      []string `yaml:"hosts" usage:"The list of hosts to pass build events onto."`
+	BufferSize int      `yaml:"buffer_size" usage:"The number of build events to buffer locally when proxying build events."`
 }
 
 type DatabaseConfig struct {
@@ -104,28 +105,29 @@ type S3CacheConfig struct {
 	TTLDays            int64  `yaml:"ttl_days" usage:"The period after which cache files should be TTLd. Disabled if 0."`
 }
 
-type DistributedDiskConfig struct {
-	RootDirectory string `yaml:"root_directory" usage:"The root directory to store all blobs in, if using disk based storage."`
-	ListenAddr    string `yaml:"listen_addr" usage:"The address to listen for local BuildBuddy distributed cache traffic on."`
-	RedisTarget   string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. ** Enterprise only **"`
-	GroupName     string `yaml:"group_name" usage:"A unique name for this distributed cache group. ** Enterprise only **"`
+type DistributedCacheConfig struct {
+	ListenAddr        string `yaml:"listen_addr" usage:"The address to listen for local BuildBuddy distributed cache traffic on."`
+	RedisTarget       string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. ** Enterprise only **"`
+	GroupName         string `yaml:"group_name" usage:"A unique name for this distributed cache group. ** Enterprise only **"`
+	ReplicationFactor int    `yaml:"replication_factor" usage:"How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **"`
 }
 
 type cacheConfig struct {
-	Disk            DiskConfig            `yaml:"disk"`
-	GCS             GCSCacheConfig        `yaml:"gcs"`
-	S3              S3CacheConfig         `yaml:"s3"`
-	DistributedDisk DistributedDiskConfig `yaml:"distributed_disk"`
-	InMemory        bool                  `yaml:"in_memory" usage:"Whether or not to use the in_memory cache."`
-	MaxSizeBytes    int64                 `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
-	MemcacheTargets []string              `yaml:"memcache_targets" usage:"Deprecated. Use Redis Target instead."`
-	RedisTarget     string                `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. ** Enterprise only **"`
+	Disk             DiskConfig             `yaml:"disk"`
+	GCS              GCSCacheConfig         `yaml:"gcs"`
+	S3               S3CacheConfig          `yaml:"s3"`
+	DistributedCache DistributedCacheConfig `yaml:"distributed_cache"`
+	InMemory         bool                   `yaml:"in_memory" usage:"Whether or not to use the in_memory cache."`
+	MaxSizeBytes     int64                  `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
+	MemcacheTargets  []string               `yaml:"memcache_targets" usage:"Deprecated. Use Redis Target instead."`
+	RedisTarget      string                 `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. ** Enterprise only **"`
 }
 
 type authConfig struct {
 	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
 	JWTKey               string          `yaml:"jwt_key" usage:"The key to use when signing JWT tokens."`
+	APIKeyGroupCacheTTL  string          `yaml:"api_key_group_cache_ttl" usage:"Override for the TTL for API Key to Group caching. Set to '0' to disable cache."`
 }
 
 type OauthProvider struct {
@@ -378,6 +380,10 @@ func (c *Configurator) GetBuildEventProxyHosts() []string {
 	return c.gc.BuildEventProxy.Hosts
 }
 
+func (c *Configurator) GetBuildEventProxyBufferSize() int {
+	return c.gc.BuildEventProxy.BufferSize
+}
+
 func (c *Configurator) GetCacheMaxSizeBytes() int64 {
 	return c.gc.Cache.MaxSizeBytes
 }
@@ -403,9 +409,9 @@ func (c *Configurator) GetCacheS3Config() *S3CacheConfig {
 	return nil
 }
 
-func (c *Configurator) GetDistributedDiskConfig() *DistributedDiskConfig {
-	if c.gc.Cache.DistributedDisk.RootDirectory != "" {
-		return &c.gc.Cache.DistributedDisk
+func (c *Configurator) GetDistributedCacheConfig() *DistributedCacheConfig {
+	if c.gc.Cache.DistributedCache.ListenAddr != "" {
+		return &c.gc.Cache.DistributedCache
 	}
 	return nil
 }
@@ -438,6 +444,10 @@ func (c *Configurator) GetAuthOauthProviders() []OauthProvider {
 		}
 	}
 	return op
+}
+
+func (c *Configurator) GetAuthAPIKeyGroupCacheTTL() string {
+	return c.gc.Auth.APIKeyGroupCacheTTL
 }
 
 func (c *Configurator) GetSSLConfig() *SSLConfig {

@@ -4,7 +4,10 @@ go_library(
     name = "go_default_library",
     srcs = ["s3_cache.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache",
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/config:go_default_library",

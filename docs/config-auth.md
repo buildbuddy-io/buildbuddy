@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Auth",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 300
-}
--->
-
-# Auth Configuration
+---
+id: config-auth
+title: Auth Configuration
+sidebar_label: Auth
+---
 
 Auth is only configurable in the [Enterprise version](enterprise.md) of BuildBuddy.
 
