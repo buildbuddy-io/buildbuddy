@@ -668,43 +668,10 @@ func (s *BuildBuddyServer) GetExecution(ctx context.Context, req *espb.GetExecut
 
 func (s *BuildBuddyServer) GetExecutionNode(ctx context.Context, req *scpb.GetExecutionNodeRequest) (*scpb.GetExecutionNodeResponse, error) {
 	if ss := s.env.GetSchedulerService(); ss != nil {
-		log.Printf("===========Request%+v", req)
 		res, err := ss.GetExecutionNode(ctx, req)
-		log.Printf("===========Response%+v", res)
 		return res, err
 	}
 	return nil, status.UnimplementedError("Not implemented")
-	// return &espb.GetExecutionNodeResponse{
-	// 	ExecutionNode: []*espb.ExecutionNode{
-	// 		{
-	// 			Host:                    "10.52.6.5",
-	// 			Port:                    "1987",
-	// 			AssignableMemoryBytes: 26843545600,
-	// 			AssignableMilliCpu:    7000,
-	// 			Os:                      "linux",
-	// 			Arch:                    "amd64",
-	// 			Pool:                    "buildbuddy-executors-us-west1-b",
-	// 		},
-	// 		{
-	// 			Host:                    "207.254.55.158",
-	// 			Port:                    "1987",
-	// 			AssignableMemoryBytes: 25614368768,
-	// 			AssignableMilliCpu:    12000,
-	// 			Os:                      "darwin",
-	// 			Arch:                    "amd64",
-	// 			Pool:                    "baremetal-test-pool",
-	// 		},
-	// 		{
-	// 			Host:                    "10.52.15.4",
-	// 			Port:                    "1987",
-	// 			AssignableMemoryBytes: 26843545600,
-	// 			AssignableMilliCpu:    7000,
-	// 			Os:                      "darwin",
-	// 			Arch:                    "amd64",
-	// 			Pool:                    "buildbuddy-executors-us-west1-b",
-	// 		},
-	// 	},
-	// }, nil
 }
 
 func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
