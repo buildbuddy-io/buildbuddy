@@ -1,4 +1,4 @@
-package workflowconf
+package config
 
 import (
 	"io"

@@ -8,6 +8,8 @@ import { invocation } from "../../proto/invocation_ts_proto";
 import { IconType } from "../favicon/favicon";
 import format from "../format/format";
 
+export const CI_RUNNER_ROLE = "CI_RUNNER";
+
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
   cacheStats: cache.CacheStats[] = [];
@@ -229,6 +231,10 @@ export default class InvocationModel {
     return this.clientEnvMap.get("GITHUB_ACTOR");
   }
 
+  getBuildkiteUrl() {
+    return this.clientEnvMap.get("BUILDKITE_BUILD_URL");
+  }
+
   getGithubRepo() {
     return this.clientEnvMap.get("GITHUB_REPOSITORY");
   }
@@ -253,8 +259,20 @@ export default class InvocationModel {
     return this.started?.command || "build";
   }
 
+  getRole(): string {
+    return this.invocations.find(() => true).role;
+  }
+
+  isBazelInvocation() {
+    return this.getRole() !== CI_RUNNER_ROLE;
+  }
+
   getTool() {
-    return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
+    if (this.isBazelInvocation()) {
+      return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
+    }
+
+    return "BuildBuddy workflow runner";
   }
 
   getPattern() {

@@ -1,39 +1,54 @@
 import React from "react";
+import { CI_RUNNER_ROLE } from "./invocation_model";
 
-interface Props {
+export type InvocationTabsProps = TabsContext;
+
+/**
+ * TabsContext contains common props that determine how tabs are rendered
+ * and which tab is the default tab.
+ */
+export type TabsContext = {
   hash: string;
+  denseMode: boolean;
+  role: string;
+};
+
+export type TabId = "all" | "targets" | "log" | "details" | "artifacts" | "timing" | "cache" | "raw" | "execution";
+
+export function getTabId(hash: string): TabId {
+  return (hash.substring(1) as TabId) || "all";
 }
 
-export default class InvocationTabsComponent extends React.Component {
-  props: Props;
+export function getActiveTab({ hash, role, denseMode }: TabsContext): TabId {
+  if (hash) return getTabId(hash);
+
+  if (!denseMode) return "all";
+
+  return role === CI_RUNNER_ROLE ? "log" : "targets";
+}
+
+export default class InvocationTabsComponent extends React.Component<InvocationTabsProps> {
+  private renderTab(id: TabId, { label, href }: { label: string; href?: string }) {
+    return (
+      <a href={href || `#${id}`} className={`tab ${getActiveTab(this.props) === id ? "selected" : ""}`}>
+        {label}
+      </a>
+    );
+  }
 
   render() {
+    const isBazelInvocation = this.props.role !== CI_RUNNER_ROLE;
+
     return (
       <div className="tabs">
-        <a href="#" className={`tab ${this.props.hash == "" && "selected"}`}>
-          ALL
-        </a>
-        <a href="#log" className={`tab ${this.props.hash == "#log" && "selected"}`}>
-          LOGS
-        </a>
-        <a href="#targets" className={`tab ${this.props.hash == "#targets" && "selected"}`}>
-          TARGETS
-        </a>
-        <a href="#details" className={`tab ${this.props.hash == "#details" && "selected"}`}>
-          DETAILS
-        </a>
-        <a href="#artifacts" className={`tab ${this.props.hash == "#artifacts" && "selected"}`}>
-          ARTIFACTS
-        </a>
-        <a href="#timing" className={`tab ${this.props.hash == "#timing" && "selected"}`}>
-          TIMING
-        </a>
-        <a href="#cache" className={`tab ${this.props.hash == "#cache" && "selected"}`}>
-          CACHE
-        </a>
-        <a href="#raw" className={`tab ${this.props.hash == "#raw" && "selected"}`}>
-          RAW
-        </a>
+        {!this.props.denseMode && this.renderTab("all", { href: "#", label: "All" })}
+        {isBazelInvocation && this.renderTab("targets", { label: "Targets" })}
+        {this.renderTab("log", { label: "Logs" })}
+        {this.renderTab("details", { label: "Details" })}
+        {isBazelInvocation && this.renderTab("artifacts", { label: "Artifacts" })}
+        {isBazelInvocation && this.renderTab("timing", { label: "Timing" })}
+        {isBazelInvocation && this.renderTab("cache", { label: "Cache" })}
+        {this.renderTab("raw", { label: "Raw" })}
       </div>
     );
   }

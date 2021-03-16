@@ -11,7 +11,7 @@ go_library(
     ],
     deps = [
         "//enterprise/server/auth:go_default_library",
-        "//enterprise/server/workflowconf:go_default_library",
+        "//enterprise/server/workflow/config:go_default_library",
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
         "//proto:publish_build_event_go_proto",

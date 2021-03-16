@@ -3,7 +3,6 @@ package byte_stream_server
 import (
 	"context"
 	"io"
-	"io/ioutil"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -11,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -164,22 +164,6 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error 
 	return nil
 }
 
-// A writer that drops anything written to it.
-// Useful when you need an io.Writer but don't intend
-// to actually write bytes to it.
-type discardWriteCloser struct {
-	io.Writer
-}
-
-func NewDiscardWriteCloser() *discardWriteCloser {
-	return &discardWriteCloser{
-		ioutil.Discard,
-	}
-}
-func (discardWriteCloser) Close() error {
-	return nil
-}
-
 func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
 	instanceName, d, err := digest.ExtractDigestFromUploadResourceName(req.ResourceName)
 	if err != nil {
@@ -215,7 +199,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 			return nil, err
 		}
 	} else {
-		wc = NewDiscardWriteCloser()
+		wc = devnull.NewWriteCloser()
 	}
 	ws.writer = wc
 	ws.alreadyExists = exists

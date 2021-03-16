@@ -3,8 +3,8 @@ load("@io_bazel_rules_go//extras:embed_data.bzl", "go_embed_data")
 
 go_library(
     name = "go_default_library",
-    srcs = ["workflowconf.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowconf",
+    srcs = ["config.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config",
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
@@ -15,7 +15,7 @@ go_library(
 go_embed_data(
     name = "test_data",
     srcs = glob(["test_data/**/*"]),
-    package = "workflowconf_test",
+    package = "config_test",
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
@@ -24,7 +24,7 @@ go_embed_data(
 
 go_test(
     name = "go_default_test",
-    srcs = ["workflowconf_test.go"],
+    srcs = ["config_test.go"],
     # keep
     embed = [":test_data"],
     visibility = [

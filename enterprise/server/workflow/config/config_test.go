@@ -1,17 +1,17 @@
-package workflowconf_test
+package config_test
 
 import (
 	"bytes"
 	"io"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflowconf"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func testDataReader(t *testing.T, relPath string) io.Reader {
-	data, ok := Data["enterprise/server/workflowconf/"+relPath]
+	data, ok := Data["enterprise/server/workflow/config/"+relPath]
 	if !ok {
 		t.Fatalf("no such file: %q", relPath)
 	}
@@ -19,18 +19,18 @@ func testDataReader(t *testing.T, relPath string) io.Reader {
 }
 
 func TestWorkflowConf_Parse_BasicConfig_Valid(t *testing.T) {
-	conf, err := workflowconf.NewConfig(testDataReader(t, "test_data/basic.yaml"))
+	conf, err := config.NewConfig(testDataReader(t, "test_data/basic.yaml"))
 
 	assert.NoError(t, err)
-	assert.Equal(t, &workflowconf.BuildBuddyConfig{
-		Actions: []*workflowconf.Action{
+	assert.Equal(t, &config.BuildBuddyConfig{
+		Actions: []*config.Action{
 			{
 				Name: "Build and test",
-				Triggers: &workflowconf.Triggers{
-					Push: &workflowconf.PushTrigger{
+				Triggers: &config.Triggers{
+					Push: &config.PushTrigger{
 						Branches: []string{"main"},
 					},
-					PullRequest: &workflowconf.PullRequestTrigger{
+					PullRequest: &config.PullRequestTrigger{
 						Branches: []string{"main"},
 					},
 				},

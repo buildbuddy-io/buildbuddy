@@ -13,6 +13,7 @@ sidebar_label: Misc
 **Optional**
 
 - `hosts` A list of host strings that BuildBudy should connect and forward events to.
+- `buffer_size` The number of build events to buffer locally when proxying build events.
 
 ## Example section
 
@@ -21,4 +22,5 @@ build_event_proxy:
   hosts:
     - "grpc://localhost:1985"
     - "grpc://events.buildbuddy.io:1985"
+  buffer_size: 1000
 ```

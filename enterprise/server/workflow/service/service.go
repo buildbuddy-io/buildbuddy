@@ -1,4 +1,4 @@
-package workflow
+package service
 
 import (
 	"context"
@@ -16,14 +16,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/gorm"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
@@ -282,16 +280,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	envVars := []*repb.Command_EnvironmentVariable{}
 	if wd.IsTrusted() {
-		repoUser := wf.AccessToken
-		repoToken := ""
-		if wf.Username != "" {
-			repoUser = wf.Username
-			repoToken = wf.AccessToken
-		}
 		envVars = append(envVars, []*repb.Command_EnvironmentVariable{
 			{Name: "BUILDBUDDY_API_KEY", Value: ak.Value},
-			{Name: "REPO_USER", Value: repoUser},
-			{Name: "REPO_TOKEN", Value: repoToken},
+			{Name: "REPO_USER", Value: wf.Username},
+			{Name: "REPO_TOKEN", Value: wf.AccessToken},
 		}...)
 	}
 	conf := ws.env.GetConfigurator()
@@ -301,7 +293,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"./" + runnerBinName,
 			"--bes_backend=" + conf.GetAppEventsAPIURL(),
 			"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
-			"--repo_url=" + wf.RepoURL,
+			"--repo_url=" + wd.RepoURL,
 			"--commit_sha=" + wd.SHA,
 			"--branch=" + wd.PushedBranch,
 			"--workflow_id=" + wf.WorkflowID,
@@ -430,9 +422,6 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	metrics.WebhookHandlerWorkflowsStarted.With(prometheus.Labels{
-		metrics.WebhookEventName: webhookData.EventName,
-	})
 	log.Printf("Started workflow execution (ID: %q)", executionID)
 	return nil
 }
