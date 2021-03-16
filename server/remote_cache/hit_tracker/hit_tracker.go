@@ -192,7 +192,7 @@ func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.
 		sizeMetric(sizeCounter).With(prometheus.Labels{
 			metrics.CacheTypeLabel: ct,
 		}).Observe(float64(d.GetSizeBytes()))
-		sizeMetric(timeCounter).With(prometheus.Labels{
+		durationMetric(timeCounter).With(prometheus.Labels{
 			metrics.CacheTypeLabel: ct,
 		}).Observe(float64(dur.Microseconds()))
 
