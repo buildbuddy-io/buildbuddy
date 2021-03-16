@@ -107,7 +107,7 @@ type S3CacheConfig struct {
 
 type DistributedCacheConfig struct {
 	ListenAddr        string `yaml:"listen_addr" usage:"The address to listen for local BuildBuddy distributed cache traffic on."`
-	RedisTarget       string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. ** Enterprise only **"`
+	RedisTarget       string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
 	GroupName         string `yaml:"group_name" usage:"A unique name for this distributed cache group. ** Enterprise only **"`
 	ReplicationFactor int    `yaml:"replication_factor" usage:"How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **"`
 }
@@ -120,7 +120,7 @@ type cacheConfig struct {
 	InMemory         bool                   `yaml:"in_memory" usage:"Whether or not to use the in_memory cache."`
 	MaxSizeBytes     int64                  `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
 	MemcacheTargets  []string               `yaml:"memcache_targets" usage:"Deprecated. Use Redis Target instead."`
-	RedisTarget      string                 `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. ** Enterprise only **"`
+	RedisTarget      string                 `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
 }
 
 type authConfig struct {

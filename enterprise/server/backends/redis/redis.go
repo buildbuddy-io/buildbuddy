@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	redisutils "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redis"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	redis "github.com/go-redis/redis/v8"
 )
@@ -38,14 +39,10 @@ type Cache struct {
 	rdb    *redis.Client
 }
 
-func NewCache(redisServer string, hc interfaces.HealthChecker) *Cache {
+func NewCache(redisTarget string, hc interfaces.HealthChecker) *Cache {
 	c := &Cache{
 		prefix: "",
-		rdb: redis.NewClient(&redis.Options{
-			Addr:     redisServer,
-			Password: "", // no password set
-			DB:       0,  // use default DB
-		}),
+		rdb:    redis.NewClient(redisutils.TargetToOptions(redisTarget)),
 	}
 	hc.AddHealthCheck("redis_cache", c)
 	return c

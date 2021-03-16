@@ -9,6 +9,7 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//enterprise/server/util/redis:go_default_library",
         "//proto:remote_execution_go_proto",
         "//server/interfaces:go_default_library",
         "//server/remote_cache/digest:go_default_library",
