@@ -70,17 +70,7 @@ func (te *TestEnv) bufDialer(context.Context, string) (net.Conn, error) {
 // Call LocalGRPCConn to get a connection to the returned server.
 func (te *TestEnv) LocalGRPCServer() (*grpc.Server, func()) {
 	te.lis = bufconn.Listen(1024 * 1024)
-	grpcOptions := []grpc.ServerOption{
-		rpcfilters.GetUnaryInterceptor(te),
-		rpcfilters.GetStreamInterceptor(te),
-	}
-	srv := grpc.NewServer(grpcOptions...)
-	runFunc := func() {
-		if err := srv.Serve(te.lis); err != nil {
-			log.Fatal(err)
-		}
-	}
-	return srv, runFunc
+	return te.GRPCServer(te.lis)
 }
 
 func (te *TestEnv) LocalGRPCConn(ctx context.Context) (*grpc.ClientConn, error) {
