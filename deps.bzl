@@ -1743,8 +1743,8 @@ def install_buildbuddy_dependencies():
     go_repository(
         name = "com_github_rs_zerolog",
         importpath = "github.com/rs/zerolog",
-        sum = "h1:uPRuwkWF4J6fGsJ2R0Gn2jB1EQiav9k3S6CSdygQJXY=",
-        version = "v1.15.0",
+        sum = "h1:38k9hgtUBdxFwE34yS8rTHmHBa4eN16E4DJlv177LNs=",
+        version = "v1.20.0",
     )
     go_repository(
         name = "com_github_satori_go_uuid",
