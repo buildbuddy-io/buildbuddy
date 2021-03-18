@@ -1,4 +1,4 @@
-package redis_test
+package redisutil_test
 
 import (
 	"crypto/tls"
@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
-	redisutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redis"
-	redis "github.com/go-redis/redis/v8"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 )
 
 func genOptions(scheme, user, password, addr, database string) *redis.Options {

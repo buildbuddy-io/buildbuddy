@@ -1,10 +1,10 @@
-package redis
+package redisutil
 
 import (
 	"log"
 	"strings"
 
-	redis "github.com/go-redis/redis/v8"
+	"github.com/go-redis/redis/v8"
 )
 
 func isRedisURI(redisTarget string) bool {
