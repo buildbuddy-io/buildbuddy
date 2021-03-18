@@ -243,10 +243,9 @@ type ExecutionService interface {
 	GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error)
 }
 
-// CommandRunner executes commands. Implementations should run untrusted commands
-// in sandboxed environments.
-type CommandRunner interface {
-	// Run the given command.
+// CommandContainer provides an execution environment for commands.
+type CommandContainer interface {
+	// Run the given command within the container.
 	Run(ctx context.Context, command *repb.Command, workingDir string) *CommandResult
 }
 
@@ -264,8 +263,8 @@ type CommandResult struct {
 	// In particular, if the command runs and returns a non-zero exit code (such as 1),
 	// this is considered a successful execution, and this error will NOT be populated.
 	//
-	// In some cases, the command may have failed to start due to an issue with the
-	// CommandRunner itself. For example, the runner may execute the command in a
+	// In some cases, the command may have failed to start due to an issue unrelated
+	// to the command itself. For example, the runner may execute the command in a
 	// sandboxed environment but fail to create the sandbox. In these cases, the
 	// Error field here should be populated with a gRPC error code indicating why the
 	// command failed to start, and the ExitCode field should contain the exit code
