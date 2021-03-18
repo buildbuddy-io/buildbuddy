@@ -9,7 +9,7 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
-        "//enterprise/server/util/redis:go_default_library",
+        "//enterprise/server/util/redisutil:go_default_library",
         "//server/interfaces:go_default_library",
         "@com_github_go_redis_redis_v8//:go_default_library",
     ],

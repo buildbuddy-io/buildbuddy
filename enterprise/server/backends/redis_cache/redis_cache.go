@@ -1,4 +1,4 @@
-package redis
+package redis_cache
 
 import (
 	"bytes"
@@ -12,10 +12,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/go-redis/redis/v8"
 
-	redisutils "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redis"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	redis "github.com/go-redis/redis/v8"
 )
 
 const (
@@ -42,7 +42,7 @@ type Cache struct {
 func NewCache(redisTarget string, hc interfaces.HealthChecker) *Cache {
 	c := &Cache{
 		prefix: "",
-		rdb:    redis.NewClient(redisutils.TargetToOptions(redisTarget)),
+		rdb:    redis.NewClient(redisutil.TargetToOptions(redisTarget)),
 	}
 	hc.AddHealthCheck("redis_cache", c)
 	return c
