@@ -2,10 +2,13 @@ package accumulator
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+
+	urlutil "github.com/buildbuddy-io/buildbuddy/server/util/url"
 )
 
 const (
@@ -120,6 +123,10 @@ func (v *BEValues) getStringValue(fieldName string) string {
 }
 
 func (v *BEValues) setStringValue(fieldName, proposedValue string) bool {
+	if fieldName == repoURLFieldName {
+		proposedValue = urlutil.StripCredentials(proposedValue)
+	}
+
 	existing, ok := v.valuesMap[fieldName]
 	if ok && existing != "" {
 		return false

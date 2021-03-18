@@ -10,6 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+
+	urlutil "github.com/buildbuddy-io/buildbuddy/server/util/url"
 )
 
 const (
@@ -356,7 +358,7 @@ func fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.Works
 		case "ROLE":
 			invocation.Role = item.Value
 		case "REPO_URL":
-			invocation.RepoUrl = item.Value
+			invocation.RepoUrl = urlutil.StripCredentials(item.Value)
 		case "COMMIT_SHA":
 			invocation.CommitSha = item.Value
 		}
@@ -368,7 +370,7 @@ func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inp
 		invocation.CommitSha = sha
 	}
 	if url, ok := metadata["REPO_URL"]; ok && url != "" {
-		invocation.RepoUrl = url
+		invocation.RepoUrl = urlutil.StripCredentials(url)
 	}
 	if user, ok := metadata["USER"]; ok && user != "" {
 		invocation.User = user
