@@ -43,4 +43,5 @@ html[data-theme="dark"] .footer--dark {
 .table-of-contents li {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
