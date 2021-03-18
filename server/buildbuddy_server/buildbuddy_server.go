@@ -666,9 +666,9 @@ func (s *BuildBuddyServer) GetExecution(ctx context.Context, req *espb.GetExecut
 	return nil, status.UnimplementedError("Not implemented")
 }
 
-func (s *BuildBuddyServer) GetExecutionNode(ctx context.Context, req *scpb.GetExecutionNodeRequest) (*scpb.GetExecutionNodeResponse, error) {
+func (s *BuildBuddyServer) GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error) {
 	if ss := s.env.GetSchedulerService(); ss != nil {
-		res, err := ss.GetExecutionNode(ctx, req)
+		res, err := ss.GetExecutionNodes(ctx, req)
 		return res, err
 	}
 	return nil, status.UnimplementedError("Not implemented")
