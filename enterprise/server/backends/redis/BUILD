@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis",
     visibility = [
         "//enterprise:__subpackages__",
+        "//server/testutil:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [

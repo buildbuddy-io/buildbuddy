@@ -11,13 +11,17 @@ import (
 	"testing"
 	"text/template"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/stretchr/testify/assert"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
@@ -55,6 +59,10 @@ auth:
 remote_execution:
    enable_remote_exec: true
 `
+
+type Options struct {
+	RedisTarget string
+}
 
 type TestEnv struct {
 	*real_environment.RealEnv
@@ -109,6 +117,10 @@ func writeTmpConfigFile(testRootDir string) (string, error) {
 }
 
 func GetTestEnv(t *testing.T) *TestEnv {
+	return GetCustomTestEnv(t, &Options{})
+}
+
+func GetCustomTestEnv(t *testing.T, opts *Options) *TestEnv {
 	testRootDir, err := ioutil.TempDir("/tmp", "buildbuddy_test_*")
 	if err != nil {
 		t.Fatal(err)
@@ -131,11 +143,21 @@ func GetTestEnv(t *testing.T) *TestEnv {
 	te := &TestEnv{
 		RealEnv: real_environment.NewRealEnv(configurator, healthChecker),
 	}
-	c, err := memory_cache.NewMemoryCache(1000 * 1000 * 1000 /* 1GB */)
-	if err != nil {
-		t.Fatal(err)
+
+	var cache interfaces.Cache
+	if opts.RedisTarget != "" {
+		log.Print("Using redis cachhe")
+		cache = redis.NewCache(opts.RedisTarget, healthChecker)
+		te.SetPubSub(pubsub.NewPubSub(opts.RedisTarget))
+	} else {
+		log.Print("Using in-memory cache")
+		memoryCache, err := memory_cache.NewMemoryCache(1000 * 1000 * 1000 /* 1GB */)
+		if err != nil {
+			assert.FailNowf(t, "could not initialize in-memory cache", err.Error())
+		}
+		cache = memoryCache
 	}
-	te.SetCache(c)
+	te.SetCache(cache)
 	dbHandle, err := db.GetConfiguredDatabase(configurator, healthChecker)
 	if err != nil {
 		t.Fatal(err)
