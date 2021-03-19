@@ -6,6 +6,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
 const (
@@ -120,6 +122,10 @@ func (v *BEValues) getStringValue(fieldName string) string {
 }
 
 func (v *BEValues) setStringValue(fieldName, proposedValue string) bool {
+	if fieldName == repoURLFieldName {
+		proposedValue = gitutil.StripRepoURLCredentials(proposedValue)
+	}
+
 	existing, ok := v.valuesMap[fieldName]
 	if ok && existing != "" {
 		return false

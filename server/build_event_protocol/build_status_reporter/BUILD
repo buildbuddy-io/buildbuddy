@@ -12,5 +12,6 @@ go_library(
         "//server/build_event_protocol/event_parser:go_default_library",
         "//server/environment:go_default_library",
         "//server/tables:go_default_library",
+        "//server/util/git:go_default_library",
     ],
 )
