@@ -10,8 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-
-	urlutil "github.com/buildbuddy-io/buildbuddy/server/util/url"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
 const (
@@ -295,19 +294,19 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 		invocation.User = user
 	}
 	if url, ok := envVarMap["TRAVIS_REPO_SLUG"]; ok && url != "" {
-		invocation.RepoUrl = url
+		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
 	}
 	if url, ok := envVarMap["GIT_URL"]; ok && url != "" {
-		invocation.RepoUrl = url
+		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
 	}
 	if url, ok := envVarMap["BUILDKITE_REPO"]; ok && url != "" {
-		invocation.RepoUrl = url
+		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
 	}
 	if url, ok := envVarMap["CIRCLE_REPOSITORY_URL"]; ok && url != "" {
-		invocation.RepoUrl = url
+		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
 	}
 	if url, ok := envVarMap["GITHUB_REPOSITORY"]; ok && url != "" {
-		invocation.RepoUrl = url
+		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
 	}
 	if sha, ok := envVarMap["TRAVIS_COMMIT"]; ok && sha != "" {
 		invocation.CommitSha = sha
@@ -334,7 +333,7 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	// Gitlab CI Environment Variables
 	// https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
 	if url, ok := envVarMap["CI_REPOSITORY_URL"]; ok && url != "" {
-		invocation.RepoUrl = url
+		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
 	}
 	if sha, ok := envVarMap["CI_COMMIT_SHA"]; ok && sha != "" {
 		invocation.CommitSha = sha
@@ -358,7 +357,7 @@ func fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.Works
 		case "ROLE":
 			invocation.Role = item.Value
 		case "REPO_URL":
-			invocation.RepoUrl = urlutil.StripCredentials(item.Value)
+			invocation.RepoUrl = gitutil.StripRepoURLCredentials(item.Value)
 		case "COMMIT_SHA":
 			invocation.CommitSha = item.Value
 		}
@@ -370,7 +369,7 @@ func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inp
 		invocation.CommitSha = sha
 	}
 	if url, ok := metadata["REPO_URL"]; ok && url != "" {
-		invocation.RepoUrl = urlutil.StripCredentials(url)
+		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
 	}
 	if user, ok := metadata["USER"]; ok && user != "" {
 		invocation.User = user
@@ -388,16 +387,4 @@ func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inp
 		invocation.Command = "workflow run"
 		invocation.Pattern = []string{actionName}
 	}
-}
-
-func ExtractUserRepoFromRepoUrl(repoURL string) string {
-	// TODO(siggisim): Come up with a regex here.
-	repoURL = strings.ReplaceAll(repoURL, "ssh://", "")
-	repoURL = strings.ReplaceAll(repoURL, "http://", "")
-	repoURL = strings.ReplaceAll(repoURL, "https://", "")
-	repoURL = strings.ReplaceAll(repoURL, "git@", "")
-	repoURL = strings.ReplaceAll(repoURL, ".git", "")
-	repoURL = strings.ReplaceAll(repoURL, "github.com/", "")
-	repoURL = strings.ReplaceAll(repoURL, "github.com:", "")
-	return repoURL
 }

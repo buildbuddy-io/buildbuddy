@@ -2856,3 +2856,9 @@ def install_buildbuddy_dependencies():
         sum = "h1:Z/90sZLPOeCy2PwprqkFa25PdkusRzaj9P8zm/KNyvk=",
         version = "v1.3.2",
     )
+    go_repository(
+        name = "com_github_whilp_git_urls",
+        importpath = "github.com/whilp/git-urls",
+        sum = "h1:95f6UMWN5FKW71ECsXRUd3FVYiXdrE7aX4NZKcPmIjU=",
+        version = "v1.0.0",
+    )

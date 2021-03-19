@@ -1,8 +1,12 @@
 package git
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"log"
 	"net/url"
+	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/whilp/git-urls"
 )
 
 const (
@@ -22,7 +26,7 @@ func AuthRepoURL(repoURL, user, token string) (string, error) {
 	if user == "" && token == "" {
 		return repoURL, nil
 	}
-	u, err := url.Parse(repoURL)
+	u, err := giturls.Parse(repoURL)
 	if err != nil {
 		return "", status.InvalidArgumentErrorf("invalid repo URL %q", repoURL)
 	}
@@ -37,4 +41,30 @@ func AuthRepoURL(repoURL, user, token string) (string, error) {
 	}
 	u.User = url.UserPassword(user, token)
 	return u.String(), nil
+}
+
+func StripRepoURLCredentials(repoURL string) string {
+	u, err := giturls.Parse(repoURL)
+	if err != nil {
+		// NOTE: This should never happen because the giturls package falls back
+		// to file URLs if the URL fails to parse.
+		log.Printf("Failed to parse repo URL. This should not happen.")
+		return repoURL
+	}
+	u.User = nil
+	return u.String()
+}
+
+func OwnerRepoFromRepoURL(repoURL string) string {
+	u, err := giturls.Parse(repoURL)
+	if err != nil {
+		// NOTE: This should never happen because the giturls package falls back
+		// to file URLs if the URL fails to parse.
+		log.Printf("Failed to parse repo URL. This should not happen.")
+		return "unknown-user/unknown-repo"
+	}
+	path := u.Path
+	path = strings.TrimSuffix(path, ".git")
+	path = strings.TrimPrefix(path, "/")
+	return path
 }

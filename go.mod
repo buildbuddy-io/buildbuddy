@@ -74,6 +74,7 @@ require (
 	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/stretchr/testify v1.7.0 // indirect
 	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635 // indirect
+	github.com/whilp/git-urls v1.0.0 // indirect
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/exp v0.0.0-20200331195152-e8c3332aa8e5 // indirect
 	golang.org/x/image v0.0.0-20200430140353-33d19683fad8 // indirect
@@ -93,10 +94,10 @@ require (
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 	gopkg.in/src-d/go-git.v4 v4.13.1 // indirect
 	gopkg.in/yaml.v2 v2.3.0
-	gorm.io/gorm v1.20.12
-	gorm.io/driver/sqlite v1.1.4 
 	gorm.io/driver/mysql v1.0.4
 	gorm.io/driver/postgres v1.0.8
+	gorm.io/driver/sqlite v1.1.4
+	gorm.io/gorm v1.20.12
 	k8s.io/client-go v0.16.11 // indirect
 	k8s.io/gengo v0.0.0-20200413195148-3a45101e95ac // indirect
 	k8s.io/klog/v2 v2.2.0 // indirect

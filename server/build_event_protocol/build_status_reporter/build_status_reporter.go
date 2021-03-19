@@ -8,9 +8,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
 type BuildStatusReporter struct {
@@ -117,8 +118,9 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 
 		// TODO(siggisim): Kick these into a queue or something (but maintain order).
 		repoURL := r.buildEventAccumulator.RepoURL()
+		ownerRepo := gitutil.OwnerRepoFromRepoURL(repoURL)
 		commitSHA := r.buildEventAccumulator.CommitSHA()
-		r.githubClient.CreateStatus(ctx, event_parser.ExtractUserRepoFromRepoUrl(repoURL), commitSHA, payload)
+		r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, payload)
 	}
 
 	r.payloads = make([]*github.GithubStatusPayload, 0)
