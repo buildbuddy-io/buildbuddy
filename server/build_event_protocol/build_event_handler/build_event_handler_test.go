@@ -7,12 +7,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/stretchr/testify/assert"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	testauth "github.com/buildbuddy-io/buildbuddy/server/testutil/auth"
 	anypb "github.com/golang/protobuf/ptypes/any"
 )
 

@@ -6,8 +6,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -42,20 +42,20 @@ func TestCreate(t *testing.T) {
 	te := environment.GetTestEnv(t)
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
 
-	authenticator := auth.NewTestAuthenticator(auth.TestUsers("USER1", "GROUP1"))
+	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(authenticator)
 
 	clientConn := runBBServer(ctx, te, t)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
 
 	req := &wfpb.CreateWorkflowRequest{
-		RequestContext: auth.RequestContext("USER1", "GROUP1"),
+		RequestContext: testauth.RequestContext("USER1", "GROUP1"),
 		Name:           "BuildBuddy OS Workflow",
 		GitRepo: &wfpb.CreateWorkflowRequest_GitRepo{
 			RepoUrl: "git@github.com:buildbuddy-io/buildbuddy.git",
 		},
 	}
-	ctx = metadata.AppendToOutgoingContext(ctx, auth.TestApiKeyHeader, "USER1")
+	ctx = metadata.AppendToOutgoingContext(ctx, testauth.TestApiKeyHeader, "USER1")
 	rsp, err := bbClient.CreateWorkflow(ctx, req)
 	assert.Nil(t, err)
 	assert.Regexp(t, "^WF.*", rsp.GetId(), "workflow ID should exist and match WF.*")
@@ -73,7 +73,7 @@ func TestDelete(t *testing.T) {
 	ctx := context.Background()
 	te := environment.GetTestEnv(t)
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
-	authenticator := auth.NewTestAuthenticator(auth.TestUsers("USER1", "GROUP1"))
+	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(authenticator)
 
 	clientConn := runBBServer(ctx, te, t)
@@ -92,7 +92,7 @@ func TestDelete(t *testing.T) {
 	assert.Nil(t, err)
 
 	req := &wfpb.DeleteWorkflowRequest{Id: "WF1"}
-	ctx = metadata.AppendToOutgoingContext(ctx, auth.TestApiKeyHeader, "USER1")
+	ctx = metadata.AppendToOutgoingContext(ctx, testauth.TestApiKeyHeader, "USER1")
 	_, err = bbClient.DeleteWorkflow(ctx, req)
 	assert.Nil(t, err)
 
@@ -104,7 +104,7 @@ func TestList(t *testing.T) {
 	ctx := context.Background()
 	te := environment.GetTestEnv(t)
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
-	authenticator := auth.NewTestAuthenticator(auth.TestUsers("USER1", "GROUP1", "USER2", "GROUP2"))
+	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1", "USER2", "GROUP2"))
 	te.SetAuthenticator(authenticator)
 
 	clientConn := runBBServer(ctx, te, t)
@@ -148,12 +148,12 @@ func TestList(t *testing.T) {
 	assert.Nil(t, err)
 
 	req := &wfpb.GetWorkflowsRequest{}
-	ctx1 := metadata.AppendToOutgoingContext(ctx, auth.TestApiKeyHeader, "USER1")
+	ctx1 := metadata.AppendToOutgoingContext(ctx, testauth.TestApiKeyHeader, "USER1")
 	rsp, err := bbClient.GetWorkflows(ctx1, req)
 	assert.Nil(t, err)
 	assert.Equal(t, 2, len(rsp.GetWorkflow()), "Two workflows owned by USER1 should be returned")
 
-	ctx2 := metadata.AppendToOutgoingContext(ctx, auth.TestApiKeyHeader, "USER2")
+	ctx2 := metadata.AppendToOutgoingContext(ctx, testauth.TestApiKeyHeader, "USER2")
 	rsp, err = bbClient.GetWorkflows(ctx2, req)
 	assert.Nil(t, err)
 	assert.Equal(t, 1, len(rsp.GetWorkflow()), "One workflow owned by USER2 should be returned")

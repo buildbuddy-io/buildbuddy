@@ -14,10 +14,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 
-	testauth "github.com/buildbuddy-io/buildbuddy/server/testutil/auth"
 	testenv "github.com/buildbuddy-io/buildbuddy/server/testutil/environment"
 )
 

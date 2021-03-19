@@ -6,12 +6,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	testauth "github.com/buildbuddy-io/buildbuddy/server/testutil/auth"
 	testenv "github.com/buildbuddy-io/buildbuddy/server/testutil/environment"
 )
 

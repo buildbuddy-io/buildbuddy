@@ -3,8 +3,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "go_default_library",
     testonly = 1,
-    srcs = ["auth.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/auth",
+    srcs = ["testauth.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testauth",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:api_key_go_proto",
