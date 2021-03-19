@@ -1,4 +1,4 @@
-package distributed_test
+package distributed
 
 import (
 	"bytes"
@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/heartbeat"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -68,15 +67,22 @@ func waitUntilServerIsDead(addr string) {
 	}
 }
 
-func newDistributedCache(t *testing.T, te environment.Env, peer string, replicationFactor int, maxSizeBytes int64) *distributed.Cache {
+func lowerTimeoutsForTesting(hbc *heartbeat.HeartbeatChannel) {
+	hbc.Period = 100 * time.Millisecond
+	hbc.Timeout = 3 * hbc.Period
+	hbc.CheckPeriod = 10 * time.Millisecond
+}
+
+func newDistributedCache(t *testing.T, te environment.Env, peer string, replicationFactor int, maxSizeBytes int64) *Cache {
 	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := distributed.NewDistributedCache(te, mc, peer, heartbeatGroupName, replicationFactor)
+	c, err := NewDistributedCache(te, mc, peer, heartbeatGroupName, replicationFactor)
 	if err != nil {
 		t.Fatal(err)
 	}
+	lowerTimeoutsForTesting(c.heartbeatChannel)
 	return c
 }
 
@@ -96,6 +102,7 @@ func TestDroppedNode(t *testing.T) {
 		}
 		liveNodesLock.Unlock()
 	})
+	lowerTimeoutsForTesting(hbc)
 	_ = hbc // keep hbc around to update liveNodes
 
 	waitForNodes := func(numDesired int) {
@@ -124,7 +131,7 @@ func TestDroppedNode(t *testing.T) {
 	for _, testStruct := range tests {
 		maxSizeBytes := int64(10000000) // 10MB
 		peers := make([]string, 0, testStruct.replicas)
-		caches := make(map[string]*distributed.Cache, testStruct.replicas)
+		caches := make(map[string]*Cache, testStruct.replicas)
 
 		log.Printf("TestStruct; %+v", testStruct)
 		for i := 0; i < testStruct.replicas; i++ {

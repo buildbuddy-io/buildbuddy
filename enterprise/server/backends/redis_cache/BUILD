@@ -2,14 +2,14 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "go_default_library",
-    srcs = ["redis.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis",
+    srcs = ["redis_cache.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache",
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
-        "//enterprise/server/util/redis:go_default_library",
+        "//enterprise/server/util/redisutil:go_default_library",
         "//proto:remote_execution_go_proto",
         "//server/interfaces:go_default_library",
         "//server/remote_cache/digest:go_default_library",

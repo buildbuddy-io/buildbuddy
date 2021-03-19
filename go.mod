@@ -70,6 +70,7 @@ require (
 	github.com/pquerna/cachecontrol v0.0.0-20201205024021-ac21108117ac // indirect
 	github.com/prometheus/client_golang v1.6.0
 	github.com/rogpeppe/go-internal v1.6.0 // indirect
+	github.com/rs/zerolog v1.20.0 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
 	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/stretchr/testify v1.7.0 // indirect

@@ -15,7 +15,7 @@ const (
 
 	// After this timeout, a node will be removed from the set of active
 	// nodes.
-	defaultHeartbeatTimeout = 3 * defaultHeartbeatPeriod
+	defaultHeartbeatTimeout = 30 * defaultHeartbeatPeriod
 
 	// How often this node will check if heartbeats are still valid.
 	defaultHeartbeatCheckPeriod = 100 * time.Millisecond
@@ -111,6 +111,7 @@ func (c *HeartbeatChannel) watchPeers(ctx context.Context) {
 			updated := false
 			for peer, lastBeat := range c.peers {
 				if time.Since(lastBeat) > c.Timeout {
+					log.Printf("Peer %q has timed out. LastBeat: %s, timeout: %s", peer, lastBeat, c.Timeout)
 					delete(c.peers, peer)
 					updated = true
 				}
