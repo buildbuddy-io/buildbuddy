@@ -60,7 +60,7 @@ func OwnerRepoFromRepoURL(repoURL string) string {
 	if err != nil {
 		// NOTE: This should never happen because the giturls package falls back
 		// to file URLs if the URL fails to parse.
-		log.Printf("Failed to parse repo URL. This should not happen.")
+		log.Printf("Failed to parse repo URL %q. This should not happen.", repoURL)
 		return "unknown-user/unknown-repo"
 	}
 	path := u.Path
