@@ -17,8 +17,8 @@ const (
 )
 
 var (
-	startsWithDomainRegexp = regexp.MustCompile(`^[^/]+\.[^/]+`)
-	localhostRegexp        = regexp.MustCompile(`^localhost(:|/|$)`)
+	startsWithDomainRegexp    = regexp.MustCompile(`^[^/]+\.[^/]+`)
+	startsWithLocalhostRegexp = regexp.MustCompile(`^localhost(:|/|$)`)
 )
 
 // AuthRepoURL returns a Git repo URL with the given credentials set. The
@@ -78,7 +78,7 @@ func parse(repoURL string) (*url.URL, error) {
 	// for localhost, which in most cases uses http:// since most people forgo
 	// the hassle of setting up HTTPS locally.
 
-	if localhostRegexp.MatchString(repoURL) {
+	if startsWithLocalhostRegexp.MatchString(repoURL) {
 		repoURL = "http://" + repoURL
 	}
 	// Anything without an explicit "//" or "@" is assumed to be HTTPS, if it
