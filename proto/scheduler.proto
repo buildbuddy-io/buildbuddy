@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package scheduler;
 
-import "proto/remote_execution.proto";
-
 message NodeAddress {
   // The node's hostname. Must be reachable from the scheduler.
   string host = 1;
@@ -70,10 +68,17 @@ message TaskSize {
   int64 estimated_milli_cpu = 2;
 }
 
+message SchedulingMetadata {
+  TaskSize task_size = 1;
+  string os = 2;
+  string arch = 3;
+  string pool = 4;
+}
+
 message ScheduleTaskRequest {
   string task_id = 1;
-  reserved 2 to 6;
-  build.bazel.remote.execution.v2.ExecutionTask task = 7;
+  SchedulingMetadata metadata = 2;
+  bytes serialized_task = 3;
 }
 
 message ScheduleTaskResponse {

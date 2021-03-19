@@ -245,9 +245,6 @@ proto_library(
 proto_library(
     name = "scheduler_proto",
     srcs = ["scheduler.proto"],
-    deps = [
-        ":remote_execution_proto",
-    ],
 )
 
 # Go proto rules below here
@@ -493,9 +490,6 @@ go_proto_library(
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/scheduler",
     proto = ":scheduler_proto",
-    deps = [
-        ":remote_execution_go_proto",
-    ],
 )
 
 # TypeScript proto rules below here
