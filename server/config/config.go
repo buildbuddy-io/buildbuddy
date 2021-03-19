@@ -150,6 +150,7 @@ type SSLConfig struct {
 type RemoteExecutionConfig struct {
 	EnableRemoteExec bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
 	DefaultPoolName  string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
+	TaskPersistence  string `yaml:"task_persistence" usage:"One of redis|db|dualwrite. Specifies where inflight task information is stored."`
 }
 
 type ExecutorConfig struct {
