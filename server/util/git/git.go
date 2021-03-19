@@ -80,10 +80,7 @@ func parse(repoURL string) (*url.URL, error) {
 
 	if startsWithLocalhostRegexp.MatchString(repoURL) {
 		repoURL = "http://" + repoURL
-	}
-	// Anything without an explicit "//" or "@" is assumed to be HTTPS, if it
-	// looks like it starts with a domain name.
-	if !(strings.Contains(repoURL, "@") || strings.Contains(repoURL, "//")) && startsWithDomainRegexp.MatchString(repoURL) {
+	} else if !(strings.Contains(repoURL, "@") || strings.Contains(repoURL, "//")) && startsWithDomainRegexp.MatchString(repoURL) {
 		repoURL = "https://" + repoURL
 	}
 	return giturls.Parse(repoURL)
