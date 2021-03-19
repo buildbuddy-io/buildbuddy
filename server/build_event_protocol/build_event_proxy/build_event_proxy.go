@@ -14,7 +14,6 @@ import (
 )
 
 type BuildEventProxyClient struct {
-	env             environment.Env
 	target          string
 	clientMux       sync.Mutex // PROTECTS(client)
 	client          pepb.PublishBuildEventClient
@@ -28,7 +27,7 @@ func (c *BuildEventProxyClient) reconnectIfNecessary() {
 	}
 	c.clientMux.Lock()
 	defer c.clientMux.Unlock()
-	conn, err := grpc_client.DialTarget(c.env, c.target)
+	conn, err := grpc_client.DialTarget(c.target)
 	if err != nil {
 		log.Printf("Unable to connect to proxy host '%s': %s", c.target, err)
 		c.client = nil
@@ -43,7 +42,6 @@ func NewBuildEventProxyClient(env environment.Env, target string) *BuildEventPro
 		bufferSize = configuredBufferSize
 	}
 	c := &BuildEventProxyClient{
-		env:             env,
 		target:          target,
 		rootCtx:         context.Background(),
 		eventBufferSize: bufferSize,

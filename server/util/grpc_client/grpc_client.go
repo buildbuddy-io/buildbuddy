@@ -2,9 +2,9 @@ package grpc_client
 
 import (
 	"context"
+	"math"
 	"net/url"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
 
 	"google.golang.org/grpc"
@@ -13,12 +13,12 @@ import (
 
 // DialTarget handles some of the logic around detecting the correct GRPC
 // connection type and applying relevant options when connecting.
-func DialTarget(env environment.Env, target string) (*grpc.ClientConn, error) {
-	return DialTargetWithOptions(env, target, true)
+func DialTarget(target string) (*grpc.ClientConn, error) {
+	return DialTargetWithOptions(target, true)
 }
 
-func DialTargetWithOptions(env environment.Env, target string, grpcsBytestream bool, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
-	dialOptions := CommonGRPCClientOptions(env)
+func DialTargetWithOptions(target string, grpcsBytestream bool, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
+	dialOptions := CommonGRPCClientOptions()
 	dialOptions = append(dialOptions, extraOptions...)
 	u, err := url.Parse(target)
 	if err == nil {
@@ -61,13 +61,10 @@ func (c *rpcCredentials) RequireTransportSecurity() bool {
 	return false
 }
 
-func CommonGRPCClientOptions(env environment.Env) []grpc.DialOption {
-	options := []grpc.DialOption{
+func CommonGRPCClientOptions() []grpc.DialOption {
+	return []grpc.DialOption{
 		filters.GetUnaryClientInterceptor(),
 		filters.GetStreamClientInterceptor(),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
 	}
-	if env != nil {
-		options = append(options, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(env.GetConfigurator().GetGRPCMaxRecvMsgSizeBytes())))
-	}
-	return options
 }
