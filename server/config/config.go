@@ -155,7 +155,7 @@ type RemoteExecutionConfig struct {
 type ExecutorConfig struct {
 	AppTarget               string `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
 	RootDirectory           string `yaml:"root_directory" usage:"The root directory to use for build files."`
-	LocalCacheDirectory     string `yaml:"local_cache_directory" usage:"A local on-disk cache directory."`
+	LocalCacheDirectory     string `yaml:"local_cache_directory" usage:"A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result."`
 	LocalCacheSizeBytes     int64  `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
 	DockerSocket            string `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
 	DockerSiblingContainers bool   `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
