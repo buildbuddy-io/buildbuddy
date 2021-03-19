@@ -271,7 +271,7 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 		bep.done <- struct{}{}
 	}()
 
-	conn, err := grpc_client.DialTarget(*besBackend)
+	conn, err := grpc_client.DialTarget(nil, *besBackend)
 	if err != nil {
 		bep.setError(status.WrapError(err, "error dialing bes_backend"))
 		return

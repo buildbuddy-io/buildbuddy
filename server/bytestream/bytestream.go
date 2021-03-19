@@ -25,30 +25,30 @@ func StreamBytestreamFile(ctx context.Context, env environment.Env, url *url.URL
 	if env.GetCache() != nil {
 		localURL, _ := url.Parse(url.String())
 		localURL.Host = "localhost:" + getIntFlag("grpc_port", "1985")
-		err = streamFromUrl(ctx, localURL, false, callback)
+		err = streamFromUrl(ctx, env, localURL, false, callback)
 	}
 
 	// If that fails, try to connect over grpcs
 	if err != nil || env.GetCache() == nil {
-		err = streamFromUrl(ctx, url, true, callback)
+		err = streamFromUrl(ctx, env, url, true, callback)
 	}
 
 	// If that fails, try grpc
 	if err != nil {
-		err = streamFromUrl(ctx, url, false, callback)
+		err = streamFromUrl(ctx, env, url, false, callback)
 	}
 
 	return err
 }
 
-func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func([]byte)) error {
+func streamFromUrl(ctx context.Context, env environment.Env, url *url.URL, grpcs bool, callback func([]byte)) error {
 	if url.Port() == "" && grpcs {
 		url.Host = url.Hostname() + ":443"
 	} else if url.Port() == "" {
 		url.Host = url.Hostname() + ":80"
 	}
 
-	conn, err := grpc_client.DialTargetWithOptions(url.String(), grpcs)
+	conn, err := grpc_client.DialTargetWithOptions(env, url.String(), grpcs)
 	if err != nil {
 		return err
 	}
