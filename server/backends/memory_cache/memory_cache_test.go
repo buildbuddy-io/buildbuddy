@@ -10,12 +10,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	testdigest "github.com/buildbuddy-io/buildbuddy/server/testutil/digest"
-	testenv "github.com/buildbuddy-io/buildbuddy/server/testutil/environment"
 )
 
 var (

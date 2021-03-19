@@ -6,8 +6,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/stretchr/testify/assert"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
@@ -70,7 +70,7 @@ func startedEvent(options string) *anypb.Any {
 }
 
 func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
-	te := environment.GetTestEnv(t)
+	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
@@ -90,7 +90,7 @@ func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
 }
 
 func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
-	te := environment.GetTestEnv(t)
+	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
@@ -110,7 +110,7 @@ func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
 }
 
 func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
-	te := environment.GetTestEnv(t)
+	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
@@ -139,7 +139,7 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 }
 
 func TestUnAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
-	te := environment.GetTestEnv(t)
+	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
@@ -168,7 +168,7 @@ func TestUnAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 }
 
 func TestHandleEventOver100ProgressEventsBeforeStarted(t *testing.T) {
-	te := environment.GetTestEnv(t)
+	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
@@ -199,7 +199,7 @@ func TestHandleEventOver100ProgressEventsBeforeStarted(t *testing.T) {
 }
 
 func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
-	te := environment.GetTestEnv(t)
+	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()

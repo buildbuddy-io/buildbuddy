@@ -19,12 +19,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	testdigest "github.com/buildbuddy-io/buildbuddy/server/testutil/digest"
-	testenv "github.com/buildbuddy-io/buildbuddy/server/testutil/environment"
 )
 
 const heartbeatGroupName = "testGroup"

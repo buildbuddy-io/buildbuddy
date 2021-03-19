@@ -6,8 +6,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -18,7 +18,7 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 )
 
-func runBBServer(ctx context.Context, env *environment.TestEnv, t *testing.T) *grpc.ClientConn {
+func runBBServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
 	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env /*sslService=*/, nil)
 	if err != nil {
 		t.Error(err)
@@ -39,7 +39,7 @@ func runBBServer(ctx context.Context, env *environment.TestEnv, t *testing.T) *g
 
 func TestCreate(t *testing.T) {
 	ctx := context.Background()
-	te := environment.GetTestEnv(t)
+	te := testenv.GetTestEnv(t)
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
 
 	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
@@ -71,7 +71,7 @@ func TestCreate(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	ctx := context.Background()
-	te := environment.GetTestEnv(t)
+	te := testenv.GetTestEnv(t)
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
 	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(authenticator)
@@ -102,7 +102,7 @@ func TestDelete(t *testing.T) {
 
 func TestList(t *testing.T) {
 	ctx := context.Background()
-	te := environment.GetTestEnv(t)
+	te := testenv.GetTestEnv(t)
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
 	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1", "USER2", "GROUP2"))
 	te.SetAuthenticator(authenticator)
