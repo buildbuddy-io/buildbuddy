@@ -5,7 +5,10 @@ go_library(
     srcs = ["git.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/git",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/status:go_default_library"],
+    deps = [
+        "//server/util/status:go_default_library",
+        "@com_github_whilp_git_urls//:go_default_library",
+    ],
 )
 
 go_test(

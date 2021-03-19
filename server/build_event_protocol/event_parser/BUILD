@@ -10,6 +10,7 @@ go_library(
         "//proto:command_line_go_proto",
         "//proto:invocation_go_proto",
         "//server/terminal:go_default_library",
+        "//server/util/git:go_default_library",
     ],
 )
 

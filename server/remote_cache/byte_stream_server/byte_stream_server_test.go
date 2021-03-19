@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 
@@ -18,7 +18,7 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-func runByteStreamServer(ctx context.Context, env *environment.TestEnv, t *testing.T) *grpc.ClientConn {
+func runByteStreamServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
 	byteStreamServer, err := NewByteStreamServer(env)
 	if err != nil {
 		t.Error(err)
@@ -63,7 +63,7 @@ func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.Ins
 
 func TestRPCRead(t *testing.T) {
 	ctx := context.Background()
-	te := environment.GetTestEnv(t)
+	te := testenv.GetTestEnv(t)
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 

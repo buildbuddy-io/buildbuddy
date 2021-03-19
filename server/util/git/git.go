@@ -1,14 +1,24 @@
 package git
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"log"
 	"net/url"
+	"regexp"
+	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/whilp/git-urls"
 )
 
 const (
 	// DefaultUser is the default user set in a repo URL when the username is not
 	// known.
 	DefaultUser = "buildbuddy"
+)
+
+var (
+	startsWithDomainRegexp    = regexp.MustCompile(`^[^/]+\.[^/]+`)
+	startsWithLocalhostRegexp = regexp.MustCompile(`^localhost(:|/|$)`)
 )
 
 // AuthRepoURL returns a Git repo URL with the given credentials set. The
@@ -22,7 +32,7 @@ func AuthRepoURL(repoURL, user, token string) (string, error) {
 	if user == "" && token == "" {
 		return repoURL, nil
 	}
-	u, err := url.Parse(repoURL)
+	u, err := parse(repoURL)
 	if err != nil {
 		return "", status.InvalidArgumentErrorf("invalid repo URL %q", repoURL)
 	}
@@ -37,4 +47,41 @@ func AuthRepoURL(repoURL, user, token string) (string, error) {
 	}
 	u.User = url.UserPassword(user, token)
 	return u.String(), nil
+}
+
+func StripRepoURLCredentials(repoURL string) string {
+	u, err := parse(repoURL)
+	if err != nil {
+		log.Printf("Failed to parse repo URL while attempting to strip credentials.")
+		return repoURL
+	}
+	u.User = nil
+	return u.String()
+}
+
+func OwnerRepoFromRepoURL(repoURL string) (string, error) {
+	u, err := parse(repoURL)
+	if err != nil {
+		return "", status.WrapErrorf(err, "failed to parse repo URL %q", repoURL)
+	}
+	path := u.Path
+	path = strings.TrimSuffix(path, ".git")
+	path = strings.TrimPrefix(path, "/")
+	return path, nil
+}
+
+func parse(repoURL string) (*url.URL, error) {
+	// The giturls package covers most edge cases, but it's a bit unforgiving if
+	// the URL either doesn't look like "git@" or if it fails to specify an
+	// explicit protocol. Here, we attempt to salvage the situation if the URL
+	// looks like a domain without a protocol -- we prepend https:// except
+	// for localhost, which in most cases uses http:// since most people forgo
+	// the hassle of setting up HTTPS locally.
+
+	if startsWithLocalhostRegexp.MatchString(repoURL) {
+		repoURL = "http://" + repoURL
+	} else if !(strings.Contains(repoURL, "@") || strings.Contains(repoURL, "//")) && startsWithDomainRegexp.MatchString(repoURL) {
+		repoURL = "https://" + repoURL
+	}
+	return giturls.Parse(repoURL)
 }

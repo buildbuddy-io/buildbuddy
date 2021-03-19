@@ -3,8 +3,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "go_default_library",
     testonly = 1,
-    srcs = ["environment.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/environment",
+    srcs = ["testenv.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testenv",
     visibility = ["//visibility:public"],
     deps = [
         "//server/backends/blobstore:go_default_library",

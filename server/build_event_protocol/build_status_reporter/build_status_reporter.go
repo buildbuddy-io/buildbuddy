@@ -3,14 +3,16 @@ package build_status_reporter
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
 type BuildStatusReporter struct {
@@ -117,8 +119,13 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 
 		// TODO(siggisim): Kick these into a queue or something (but maintain order).
 		repoURL := r.buildEventAccumulator.RepoURL()
+		ownerRepo, err := gitutil.OwnerRepoFromRepoURL(repoURL)
+		if err != nil {
+			log.Printf("Failed to report GitHub status: %s", err)
+			break
+		}
 		commitSHA := r.buildEventAccumulator.CommitSHA()
-		r.githubClient.CreateStatus(ctx, event_parser.ExtractUserRepoFromRepoUrl(repoURL), commitSHA, payload)
+		r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, payload)
 	}
 
 	r.payloads = make([]*github.GithubStatusPayload, 0)
