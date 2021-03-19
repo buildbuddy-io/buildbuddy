@@ -3,6 +3,7 @@ package build_status_reporter
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -118,7 +119,11 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 
 		// TODO(siggisim): Kick these into a queue or something (but maintain order).
 		repoURL := r.buildEventAccumulator.RepoURL()
-		ownerRepo := gitutil.OwnerRepoFromRepoURL(repoURL)
+		ownerRepo, err := gitutil.OwnerRepoFromRepoURL(repoURL)
+		if err != nil {
+			log.Printf("Failed to report GitHub status: %s", err)
+			break
+		}
 		commitSHA := r.buildEventAccumulator.CommitSHA()
 		r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, payload)
 	}
