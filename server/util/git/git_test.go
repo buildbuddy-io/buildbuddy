@@ -39,7 +39,13 @@ func TestStripRepoURLCredentials(t *testing.T) {
 		{"http://USER:PASS@github.com/org/repo.git", "http://github.com/org/repo.git"},
 		{"ssh://USER:PASS@github.com/org/repo.git", "ssh://github.com/org/repo.git"},
 		{"git@github.com:org/repo.git", "ssh://github.com/org/repo.git"},
-		{"INVALID", "file://INVALID"},
+		{"github.com/org/repo.git", "https://github.com/org/repo.git"},
+		{"bitbucket.org/org/repo", "https://bitbucket.org/org/repo"},
+		{"gitlab.com/org/repo", "https://gitlab.com/org/repo"},
+		{"10.3.1.5/foo/bar.git", "https://10.3.1.5/foo/bar.git"},
+		{"localhost:8888/foo/bar.git", "http://localhost:8888/foo/bar.git"},
+		{"/home/user/local-repo", "file:///home/user/local-repo"},
+		{"unknown", "file://unknown"},
 	} {
 		str := gitutil.StripRepoURLCredentials(testCase.url)
 
@@ -56,9 +62,13 @@ func TestOwnerRepoFromRepoURL(t *testing.T) {
 		"http://USER:PASS@github.com/org/repo.git",
 		"ssh://USER:PASS@github.com/org/repo.git",
 		"git@github.com:org/repo.git",
+		"github.com/org/repo.git",
+		"bitbucket.org/org/repo",
+		"gitlab.com/org/repo",
 	} {
-		ownerRepo := gitutil.OwnerRepoFromRepoURL(url)
+		ownerRepo, err := gitutil.OwnerRepoFromRepoURL(url)
 
+		assert.NoError(t, err)
 		assert.Equal(t, "org/repo", ownerRepo)
 	}
 }
