@@ -2,6 +2,7 @@ package grpc_client
 
 import (
 	"context"
+	"math"
 	"net/url"
 
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
@@ -17,10 +18,7 @@ func DialTarget(target string) (*grpc.ClientConn, error) {
 }
 
 func DialTargetWithOptions(target string, grpcsBytestream bool, extraOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
-	dialOptions := []grpc.DialOption{
-		filters.GetUnaryClientInterceptor(),
-		filters.GetStreamClientInterceptor(),
-	}
+	dialOptions := CommonGRPCClientOptions()
 	dialOptions = append(dialOptions, extraOptions...)
 	u, err := url.Parse(target)
 	if err == nil {
@@ -61,4 +59,12 @@ func (c *rpcCredentials) GetRequestMetadata(ctx context.Context, uri ...string) 
 
 func (c *rpcCredentials) RequireTransportSecurity() bool {
 	return false
+}
+
+func CommonGRPCClientOptions() []grpc.DialOption {
+	return []grpc.DialOption{
+		filters.GetUnaryClientInterceptor(),
+		filters.GetStreamClientInterceptor(),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
+	}
 }
