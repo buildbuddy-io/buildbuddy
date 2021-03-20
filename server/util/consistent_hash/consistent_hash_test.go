@@ -7,11 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/stretchr/testify/assert"
 )
-
 
 func TestNodesetOrderIndependence(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
