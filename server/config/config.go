@@ -112,6 +112,11 @@ type DistributedCacheConfig struct {
 	ReplicationFactor int    `yaml:"replication_factor" usage:"How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **"`
 }
 
+type RedisCacheConfig struct {
+	RedisTarget       string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
+	MaxValueSizeBytes int64  `yaml:"max_value_size_bytes" usage:"The maximum value size to cache in redis (in bytes)."`
+}
+
 type cacheConfig struct {
 	Disk             DiskConfig             `yaml:"disk"`
 	GCS              GCSCacheConfig         `yaml:"gcs"`
@@ -121,6 +126,7 @@ type cacheConfig struct {
 	MaxSizeBytes     int64                  `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
 	MemcacheTargets  []string               `yaml:"memcache_targets" usage:"Deprecated. Use Redis Target instead."`
 	RedisTarget      string                 `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
+	Redis            RedisCacheConfig       `yaml:"redis"`
 }
 
 type authConfig struct {
@@ -423,6 +429,13 @@ func (c *Configurator) GetCacheMemcacheTargets() []string {
 
 func (c *Configurator) GetCacheRedisTarget() string {
 	return c.gc.Cache.RedisTarget
+}
+
+func (c *Configurator) GetCacheRedisConfig() *RedisCacheConfig {
+	if c.gc.Cache.Redis.RedisTarget != "" {
+		return &c.gc.Cache.Redis
+	}
+	return nil
 }
 
 func (c *Configurator) GetCacheInMemory() bool {
