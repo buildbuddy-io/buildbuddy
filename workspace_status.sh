@@ -10,36 +10,18 @@
 # If the script exits with non-zero code, it's considered as a failure
 # and the output will be discarded.
 
-# Git repo
-repo_url=$(git config --get remote.origin.url)
-if [[ $? != 0 ]];
-then
-    exit 1
-fi
-echo "REPO_URL ${repo_url}"
+set -eo pipefail # exit immediately if any command fails.
 
-# Commit SHA
+function remove_url_credentials() { sed -E 's#//.*?:.*?@#//#'; }
+
+repo_url=$(git config --get remote.origin.url | remove_url_credentials)
+echo "REPO_URL $repo_url"
+
 commit_sha=$(git rev-parse HEAD)
-if [[ $? != 0 ]];
-then
-    exit 1
-fi
-echo "COMMIT_SHA ${commit_sha}"
+echo "COMMIT_SHA $commit_sha"
 
-# Git branch
-repo_url=$(git rev-parse --abbrev-ref HEAD)
-if [[ $? != 0 ]];
-then
-    exit 1
-fi
-echo "GIT_BRANCH ${repo_url}"
+git_branch=$(git rev-parse --abbrev-ref HEAD)
+echo "GIT_BRANCH $git_branch"
 
-# Tree status
-git diff-index --quiet HEAD --
-if [[ $? == 0 ]];
-then
-    tree_status="Clean"
-else
-    tree_status="Modified"
-fi
-echo "GIT_TREE_STATUS ${tree_status}"
+git_tree_status=$(git diff-index --quiet HEAD -- && echo 'Clean' || echo 'Modified')
+echo "GIT_TREE_STATUS $git_tree_status"
