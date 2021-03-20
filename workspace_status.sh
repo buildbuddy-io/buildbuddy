@@ -12,7 +12,7 @@
 
 set -eo pipefail # exit immediately if any command fails.
 
-function remove_url_credentials() { sed -E 's#//.*?:.*?@#//#'; }
+function remove_url_credentials() { perl -pe 's#//.*?:.*?@#//#'; }
 
 repo_url=$(git config --get remote.origin.url | remove_url_credentials)
 echo "REPO_URL $repo_url"
