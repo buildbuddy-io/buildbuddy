@@ -19,33 +19,38 @@ import (
 )
 
 const (
-	mcCutoffSizeBytes = 512000000 - 1        // 512 MB
-	ttl               = 259200 * time.Second // 3 days
+	defaultCutoffSizeBytes = 10000000
+	ttl                    = 259200 * time.Second // 3 days
 )
 
 var (
 	cacheLabels = cache_metrics.MakeCacheLabels(cache_metrics.MemoryCacheTier, "redis")
 )
 
-func eligibleForCache(d *repb.Digest) bool {
-	return d.GetSizeBytes() < mcCutoffSizeBytes
-}
-
 // Cache is a cache that uses digests as keys instead of strings.
 // Adding a WithPrefix method allows us to separate AC content from CAS
 // content.
 type Cache struct {
-	prefix string
-	rdb    *redis.Client
+	prefix          string
+	rdb             *redis.Client
+	cutoffSizeBytes int64
 }
 
-func NewCache(redisTarget string, hc interfaces.HealthChecker) *Cache {
+func NewCache(redisTarget string, maxValueSizeBytes int64, hc interfaces.HealthChecker) *Cache {
 	c := &Cache{
-		prefix: "",
-		rdb:    redis.NewClient(redisutil.TargetToOptions(redisTarget)),
+		prefix:          "",
+		rdb:             redis.NewClient(redisutil.TargetToOptions(redisTarget)),
+		cutoffSizeBytes: maxValueSizeBytes,
+	}
+	if c.cutoffSizeBytes == 0 {
+		c.cutoffSizeBytes = defaultCutoffSizeBytes
 	}
 	hc.AddHealthCheck("redis_cache", c)
 	return c
+}
+
+func (c *Cache) eligibleForCache(d *repb.Digest) bool {
+	return d.GetSizeBytes() < c.cutoffSizeBytes
 }
 
 func (c *Cache) Check(ctx context.Context) error {
@@ -114,8 +119,9 @@ func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
 		newPrefix += "/"
 	}
 	return &Cache{
-		prefix: newPrefix,
-		rdb:    c.rdb,
+		prefix:          newPrefix,
+		rdb:             c.rdb,
+		cutoffSizeBytes: c.cutoffSizeBytes,
 	}
 }
 
@@ -164,7 +170,7 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 }
 
 func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	if !eligibleForCache(d) {
+	if !c.eligibleForCache(d) {
 		return nil, status.ResourceExhaustedErrorf("Get: Digest %v too big for redis", d)
 	}
 	k, err := c.key(ctx, d)
@@ -208,7 +214,7 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 }
 
 func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	if !eligibleForCache(d) {
+	if !c.eligibleForCache(d) {
 		return status.ResourceExhaustedErrorf("Set: Digest %v too big for redis", d)
 	}
 	k, err := c.key(ctx, d)
@@ -256,7 +262,7 @@ func offsetLimReader(data []byte, offset, length int64) io.Reader {
 
 // Low level interface used for seeking and stream-writing.
 func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error) {
-	if !eligibleForCache(d) {
+	if !c.eligibleForCache(d) {
 		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for redis", d)
 	}
 	k, err := c.key(ctx, d)
@@ -292,7 +298,7 @@ func (d *setOnClose) Close() error {
 }
 
 func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
-	if !eligibleForCache(d) {
+	if !c.eligibleForCache(d) {
 		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for redis", d)
 	}
 	k, err := c.key(ctx, d)
