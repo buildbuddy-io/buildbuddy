@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"os"
 	"os/exec"
 	"os/user"
@@ -95,6 +96,7 @@ func main() {
 	im := &initMetrics{start: time.Now()}
 
 	flag.Parse()
+	rand.Seed(time.Now().UnixNano())
 	ctx := context.Background()
 
 	if err := setupGitRepo(ctx); err != nil {
