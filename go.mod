@@ -26,6 +26,9 @@ require (
 	github.com/creack/pty v1.1.10 // indirect
 	github.com/denisenkom/go-mssqldb v0.0.0-20200428022330-06a60b6afbbc // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
+	github.com/docker/distribution v2.7.1+incompatible // indirect
+	github.com/docker/docker v20.10.5+incompatible // indirect
+	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
 	github.com/elastic/gosigar v0.11.0 // indirect
 	github.com/elazarl/goproxy v0.0.0-20180725130230-947c36da3153 // indirect
