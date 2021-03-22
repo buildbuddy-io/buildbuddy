@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 
@@ -226,7 +227,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		} else {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.Internal)}
 		}
-		if d.GetSizeBytes() != len(data) {
+		if d.GetSizeBytes() != int64(len(data)) {
 			log.Printf("Warning: cache returned a blob of %d bytes which doesn't match digest: %s/%d. Ignoring.", len(data), d.GetHash(), d.GetSizeBytes())
 			continue
 		}
