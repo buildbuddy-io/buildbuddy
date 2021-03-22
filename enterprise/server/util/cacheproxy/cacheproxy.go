@@ -295,12 +295,16 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, prefix string, d *r
 		client := &http.Client{}
 		rsp, err := client.Do(req)
 		if err != nil {
-			log.Printf("Error in goroutine running client.Do: %s", err)
-			err = status.UnavailableError(err.Error())
-			reader.CloseWithError(err)
 			return err
 		}
 		return rsp.Body.Close()
 	})
+	// Because of goroutine shenanigans above (using io.Pipe), we may already
+	// have an error but it won't show up until a client calls Write. So
+	// we call Write ourselves with an empty byte array and return that error
+	// here if it's present.
+	if _, err := writer.Write([]byte{}); err != nil {
+		return nil, status.UnavailableError(err.Error())
+	}
 	return &PipeGroup{writer, eg}, nil
 }
