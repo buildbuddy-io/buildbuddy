@@ -9,7 +9,6 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//server/backends/github:go_default_library",
         "//server/build_event_protocol/accumulator:go_default_library",
-        "//server/build_event_protocol/event_parser:go_default_library",
         "//server/environment:go_default_library",
         "//server/tables:go_default_library",
         "//server/util/git:go_default_library",
