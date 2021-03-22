@@ -78,6 +78,8 @@ To use BuildBuddy's default C toolchain, we can use the `--crosstool_top` and `-
 --extra_toolchains=@buildbuddy_toolchain//:cc_toolchain
 ```
 
+If you're looking for an llvm based toolchain instead, take a look at [this project](https://github.com/grailbio/bazel-toolchain).
+
 ### Java toolchain
 
 If your project depends on Java code, you'll need 4 more flags to tell the executors where to look for Java tools.
