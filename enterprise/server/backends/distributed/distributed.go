@@ -91,7 +91,7 @@ func (c *Cache) peers(d *repb.Digest) []string {
 }
 
 // The first contains result with a nil err will be returned. If all potential
-// peers for the digest are exhausted, then return a NotFoundError.
+// peers for the digest are exhausted, then return false.
 //
 // This is like setting READ_CONSISTENCY = ONE.
 //
@@ -108,11 +108,11 @@ func (c *Cache) remoteContains(ctx context.Context, d *repb.Digest) (bool, error
 		}
 		continue
 	}
-	return false, status.NotFoundErrorf("Exhausted all peers attempting to check (contains) %q", d.GetHash())
+	log.Printf("Exhausted all peers attempting to check (contains) %q", d.GetHash())
+	return false, nil
 }
 
 func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, dest string) error {
-	log.Printf("Backfilling %q from %q => %q", d.GetHash(), source, dest)
 	r, err := c.cacheProxy.RemoteReader(ctx, source, c.prefix, d, 0)
 	if err != nil {
 		return err
@@ -124,6 +124,7 @@ func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, des
 	if _, err := io.Copy(rwc, r); err != nil {
 		return err
 	}
+	log.Printf("Backfilled %q from %q => %q", d.GetHash(), source, dest)
 	return rwc.Close()
 }
 
@@ -174,10 +175,14 @@ func (c *Cache) remoteReader(ctx context.Context, d *repb.Digest, offset int64) 
 				c.backfillReplica(ctx, d, peer, peers[i-1])
 			}
 			return r, err
+		} else {
+			log.Printf("Skipping read of %q from peer %q which is unavailable: %s", d.GetHash(), peer, err)
 		}
 		continue
 	}
-	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q", d.GetHash())
+	err := status.NotFoundErrorf("Exhausted all peers attempting to read %q (peers: %s)", d.GetHash(), peers)
+	log.Print(err)
+	return nil, err
 }
 
 func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
@@ -248,13 +253,14 @@ func (mc *multiWriteCloser) Close() error {
 // This is like setting WRITE_CONSISTENCY = QUORUM.
 func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
 	peers := c.peers(d)
-	log.Printf("Potential peers: %s for %q", peers, d.GetHash())
 	var wcs []io.WriteCloser
 	for _, peer := range peers {
 		rwc, err := c.cacheProxy.RemoteWriter(ctx, peer, c.prefix, d)
 		if err == nil {
 			wcs = append(wcs, rwc)
 			continue
+		} else {
+			log.Printf("Skipping write of %q to peer %q which is unavailable: %s", d.GetHash(), peer, err)
 		}
 	}
 	if len(wcs) < len(peers)/2 {

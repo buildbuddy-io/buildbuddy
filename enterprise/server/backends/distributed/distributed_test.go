@@ -263,20 +263,20 @@ func TestEventualConsistency(t *testing.T) {
 			i := rand.Intn(len(peers))
 			return i, peers[i]
 		}
-		useRandomCache := func(fn func(c *Cache)) {
+		useRandomCache := func(fn func(c *Cache, peer string)) {
 			mu.Lock()
 			defer mu.Unlock()
 			_, p := randomPeer()
-			fn(caches[p])
+			fn(caches[p], p)
 		}
 		shutdownRandomCache := func() string {
 			i, p := randomPeer()
 			log.Printf("Shutting down %q...", p)
 			mu.Lock()
-			defer mu.Unlock()
 			c := caches[p]
 			delete(caches, p)
 			peers = append(peers[:i], peers[i+1:]...)
+			mu.Unlock()
 			c.Shutdown()
 			waitForNodes(peers)
 			log.Printf("Finished shutting down %q", p)
@@ -285,10 +285,10 @@ func TestEventualConsistency(t *testing.T) {
 		restartCache := func(peer string) {
 			log.Printf("Restarting %q...", peer)
 			mu.Lock()
-			defer mu.Unlock()
 			peers = append(peers, peer)
 			caches[peer] = newDistributedCache(t, te, peer, testStruct.replicationFactor, maxSizeBytes)
 			waitForNodes(peers)
+			mu.Unlock()
 			log.Printf("Finished restarting %q", peer)
 		}
 
@@ -318,19 +318,19 @@ func TestEventualConsistency(t *testing.T) {
 					log.Printf("watcher succesfully ran %d reads and %d writes.", numReads, len(written))
 					return
 				default:
-					useRandomCache(func(c *Cache) {
-						d, buf := testdigest.NewRandomDigestBuf(t, 1500)
+					useRandomCache(func(c *Cache, peer string) {
+						d, buf := testdigest.NewRandomDigestBuf(t, 100)
 						if err := c.Set(ctx, d, buf); err != nil {
-							t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+							t.Fatalf("(coordinator: %q) Error setting %q in cache: %s", peer, d.GetHash(), err.Error())
 						}
 						written = append(written, d)
 					})
 
-					useRandomCache(func(c *Cache) {
+					useRandomCache(func(c *Cache, peer string) {
 						d := written[rand.Intn(len(written))]
 						_, err := c.Get(ctx, d)
 						if err != nil {
-							t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
+							t.Fatalf("(coordinator: %q) Error getting %q from cache: %s", peer, d.GetHash(), err.Error())
 						}
 						numReads += 1
 					})
