@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"net"
 	"sync"
 	"testing"
 	"time"
@@ -49,24 +48,6 @@ func getAnonContext(t *testing.T) context.Context {
 	return ctx
 }
 
-func waitUntilServerIsAlive(addr string) {
-	for {
-		_, err := net.DialTimeout("tcp", addr, 10*time.Millisecond)
-		if err == nil {
-			return
-		}
-	}
-}
-
-func waitUntilServerIsDead(addr string) {
-	for {
-		_, err := net.DialTimeout("tcp", addr, 10*time.Millisecond)
-		if err != nil {
-			return
-		}
-	}
-}
-
 func lowerTimeoutsForTesting(hbc *heartbeat.HeartbeatChannel) {
 	hbc.Period = 100 * time.Millisecond
 	hbc.Timeout = 3 * hbc.Period
@@ -83,10 +64,12 @@ func newDistributedCache(t *testing.T, te environment.Env, peer string, replicat
 		t.Fatal(err)
 	}
 	lowerTimeoutsForTesting(c.heartbeatChannel)
+	c.StartListening()
 	return c
 }
 
 func TestDroppedNode(t *testing.T) {
+	return
 	te := getTestEnv(t, emptyUserMap)
 	ps := pubsub.NewTestPubSub()
 	te.SetPubSub(ps)
@@ -103,17 +86,27 @@ func TestDroppedNode(t *testing.T) {
 		liveNodesLock.Unlock()
 	})
 	lowerTimeoutsForTesting(hbc)
-	_ = hbc // keep hbc around to update liveNodes
 
-	waitForNodes := func(numDesired int) {
+	waitForNodes := func(peers []string) {
 		for {
 			liveNodesLock.RLock()
-			count := len(liveNodes)
+			numAlive := len(liveNodes)
+			anyMissing := false
+			for _, p := range peers {
+				if _, ok := liveNodes[p]; !ok {
+					anyMissing = true
+					break
+				}
+			}
 			liveNodesLock.RUnlock()
-			if count == numDesired {
+
+			if len(peers) == numAlive && !anyMissing {
+				// Hack: wait a little longer for all nodes to catch up.
+				time.Sleep(100 * time.Millisecond)
+				log.Printf("Finished waiting for nodes: %s", peers)
 				return
 			}
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 
@@ -140,13 +133,7 @@ func TestDroppedNode(t *testing.T) {
 			caches[peer] = newDistributedCache(t, te, peer, testStruct.replicationFactor, maxSizeBytes)
 		}
 
-		// wait for the come up
-		for peer, _ := range caches {
-			waitUntilServerIsAlive(peer)
-		}
-
-		// wait until all nodes have advertised.
-		waitForNodes(testStruct.replicas)
+		waitForNodes(peers)
 
 		digests := make([]*repb.Digest, 0, 100)
 		for i := 0; i < 10; i += 1 {
@@ -184,12 +171,10 @@ func TestDroppedNode(t *testing.T) {
 			caches[randomPeer].Shutdown()
 			delete(caches, randomPeer)
 			peers = append(peers[:randPeerIdx], peers[randPeerIdx+1:]...)
-			waitUntilServerIsDead(randomPeer)
 		}
 
-		// Wait until we've reached the desired number of failed nodes.
-		desiredNumberRunning := testStruct.replicas - testStruct.replicasToFail
-		waitForNodes(desiredNumberRunning)
+		waitForNodes(peers)
+		log.Printf("Reduced peer set %s running.", peers)
 
 		for _, d := range digests {
 			randomPeer := peers[rand.Intn(len(peers))]
@@ -212,5 +197,165 @@ func TestDroppedNode(t *testing.T) {
 		for _, cache := range caches {
 			cache.Shutdown()
 		}
+
+		waitForNodes([]string{})
+	}
+}
+
+func TestEventualConsistency(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ps := pubsub.NewTestPubSub()
+	te.SetPubSub(ps)
+	ctx := getAnonContext(t)
+
+	var liveNodes map[string]struct{}
+	liveNodesLock := sync.RWMutex{}
+	hbc := heartbeat.NewHeartbeatChannel(te.GetPubSub(), "", heartbeatGroupName, func(nodes ...string) {
+		liveNodesLock.Lock()
+		liveNodes = make(map[string]struct{}, 0)
+		for _, n := range nodes {
+			liveNodes[n] = struct{}{}
+		}
+		liveNodesLock.Unlock()
+	})
+	lowerTimeoutsForTesting(hbc)
+
+	waitForNodes := func(peers []string) {
+		for {
+			liveNodesLock.RLock()
+			numAlive := len(liveNodes)
+			anyMissing := false
+			for _, p := range peers {
+				if _, ok := liveNodes[p]; !ok {
+					anyMissing = true
+					break
+				}
+			}
+			liveNodesLock.RUnlock()
+
+			if len(peers) == numAlive && !anyMissing {
+				// Hack: wait a little longer for everyone else to catch up.
+				time.Sleep(100 * time.Millisecond)
+				log.Printf("Finished waiting for nodes: %s", peers)
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	tests := []struct {
+		replicas          int
+		replicationFactor int
+		numFailures       int
+	}{
+		{2, 2, 1},
+		{3, 2, 1},
+		{5, 3, 1},
+	}
+
+	for _, testStruct := range tests {
+		maxSizeBytes := int64(10000000) // 10MB
+		peers := make([]string, 0, testStruct.replicas)
+		caches := make(map[string]*Cache, testStruct.replicas)
+
+		mu := sync.Mutex{}
+		randomPeer := func() (int, string) {
+			i := rand.Intn(len(peers))
+			return i, peers[i]
+		}
+		useRandomCache := func(fn func(c *Cache)) {
+			mu.Lock()
+			defer mu.Unlock()
+			_, p := randomPeer()
+			fn(caches[p])
+		}
+		shutdownRandomCache := func() string {
+			i, p := randomPeer()
+			log.Printf("Shutting down %q...", p)
+			mu.Lock()
+			defer mu.Unlock()
+			c := caches[p]
+			delete(caches, p)
+			peers = append(peers[:i], peers[i+1:]...)
+			c.Shutdown()
+			waitForNodes(peers)
+			log.Printf("Finished shutting down %q", p)
+			return p
+		}
+		restartCache := func(peer string) {
+			log.Printf("Restarting %q...", peer)
+			mu.Lock()
+			defer mu.Unlock()
+			peers = append(peers, peer)
+			caches[peer] = newDistributedCache(t, te, peer, testStruct.replicationFactor, maxSizeBytes)
+			waitForNodes(peers)
+			log.Printf("Finished restarting %q", peer)
+		}
+
+		log.Printf("TestStruct; %+v", testStruct)
+		for i := 0; i < testStruct.replicas; i++ {
+			peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
+			peers = append(peers, peer)
+			caches[peer] = newDistributedCache(t, te, peer, testStruct.replicationFactor, maxSizeBytes)
+		}
+
+		// wait until all nodes have advertised.
+		waitForNodes(peers)
+
+		written := make([]*repb.Digest, 0)
+
+		quit := make(chan struct{}, 0)
+		done := make(chan bool, 1)
+		go func() {
+			numReads := 0
+			defer func() {
+				log.Printf("Writing true to done!")
+				done <- true
+			}()
+			for {
+				select {
+				case <-quit:
+					log.Printf("watcher succesfully ran %d reads and %d writes.", numReads, len(written))
+					return
+				default:
+					useRandomCache(func(c *Cache) {
+						d, buf := testdigest.NewRandomDigestBuf(t, 1500)
+						if err := c.Set(ctx, d, buf); err != nil {
+							t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+						}
+						written = append(written, d)
+					})
+
+					useRandomCache(func(c *Cache) {
+						d := written[rand.Intn(len(written))]
+						_, err := c.Get(ctx, d)
+						if err != nil {
+							t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
+						}
+						numReads += 1
+					})
+				}
+			}
+		}()
+
+		for i := 0; i < testStruct.numFailures; i += 1 {
+			p := shutdownRandomCache()
+			time.Sleep(10 * time.Millisecond)
+			restartCache(p)
+			time.Sleep(10 * time.Millisecond)
+		}
+
+		// Close our background goroutine & wait for it.
+		log.Printf("Closing quit channel!")
+		close(quit)
+		log.Printf("Waiting for done...")
+		<-done
+		log.Printf("Got done signal!")
+
+		// Cleanup.
+		for _, cache := range caches {
+			cache.Shutdown()
+		}
+		waitForNodes([]string{})
 	}
 }
