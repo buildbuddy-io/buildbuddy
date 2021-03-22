@@ -220,16 +220,15 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			Digest: d,
 			Data:   data,
 		}
-		if err == nil {
+		if d.GetSizeBytes() != int64(len(data)) {
+			log.Printf("Warning: cache returned a blob of %d bytes which doesn't match digest: %s/%d. Ignoring.", len(data), d.GetHash(), d.GetSizeBytes())
+			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
+		} else if err == nil {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}
 		} else if os.IsNotExist(err) {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
 		} else {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.Internal)}
-		}
-		if d.GetSizeBytes() != int64(len(data)) {
-			log.Printf("Warning: cache returned a blob of %d bytes which doesn't match digest: %s/%d. Ignoring.", len(data), d.GetHash(), d.GetSizeBytes())
-			continue
 		}
 		rsp.Responses = append(rsp.Responses, blobRsp)
 	}
