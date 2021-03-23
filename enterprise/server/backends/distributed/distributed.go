@@ -36,6 +36,12 @@ type Cache struct {
 	heartbeatChannel  *heartbeat.HeartbeatChannel
 }
 
+type CacheConfig struct {
+	ListenAddr        string
+	GroupName         string
+	ReplicationFactor int
+}
+
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
 // in a HTTP API and announcing its presence over redis to other distributed
 // cache nodes. Together, these distributed caches each maintain a consistent
@@ -45,18 +51,31 @@ type Cache struct {
 // match to peer.
 //  - replicationFactor is an int specifying how many copies of each key will
 // be stored across unique caches.
-func NewDistributedCache(env environment.Env, c interfaces.Cache, myAddr, groupName string, replicationFactor int) (*Cache, error) {
+func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheConfig, hc interfaces.HealthChecker) (*Cache, error) {
 	chash := consistent_hash.NewConsistentHash()
 	dc := &Cache{
 		local:             c,
-		cacheProxy:        cacheproxy.NewCacheProxy(env, c, myAddr),
-		myAddr:            myAddr,
-		groupName:         groupName,
+		cacheProxy:        cacheproxy.NewCacheProxy(env, c, config.ListenAddr),
+		myAddr:            config.ListenAddr,
+		groupName:         config.GroupName,
 		consistentHash:    chash,
-		heartbeatChannel:  heartbeat.NewHeartbeatChannel(env.GetPubSub(), myAddr, groupName, chash.Set),
-		replicationFactor: replicationFactor,
+		heartbeatChannel:  heartbeat.NewHeartbeatChannel(env.GetPubSub(), config.ListenAddr, config.GroupName, chash.Set),
+		replicationFactor: config.ReplicationFactor,
 	}
+	hc.AddHealthCheck("distributed_cache", dc)
+	hc.RegisterShutdownFunction(func(ctx context.Context) error {
+		dc.Shutdown()
+		return nil
+	})
 	return dc, nil
+}
+
+func (c *Cache) Check(ctx context.Context) error {
+	peersAvailable := len(c.consistentHash.GetItems())
+	if peersAvailable >= c.replicationFactor/2 {
+		return nil
+	}
+	return status.UnavailableErrorf("Not enough peers available to meet replication factor (%d < %d)", peersAvailable, c.replicationFactor/2)
 }
 
 func (c *Cache) StartListening() {
@@ -108,7 +127,8 @@ func (c *Cache) remoteContains(ctx context.Context, d *repb.Digest) (bool, error
 		}
 		continue
 	}
-	return false, status.NotFoundErrorf("Exhausted all peers attempting to check (contains) %q", d.GetHash())
+	log.Printf("Exhausted all peers attempting to check (contains) %q: peers: %s", d.GetHash(), peers)
+	return false, nil
 }
 
 func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, dest string) error {
@@ -177,7 +197,7 @@ func (c *Cache) remoteReader(ctx context.Context, d *repb.Digest, offset int64) 
 		}
 		continue
 	}
-	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q", d.GetHash())
+	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q, peers: %s", d.GetHash(), peers)
 }
 
 func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
@@ -217,28 +237,60 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 }
 
 type multiWriteCloser struct {
-	closers []io.WriteCloser
+	ctx           context.Context
+	peerClosers   map[string]io.WriteCloser
+	totalNumPeers int
+	mu            *sync.Mutex
+	d             *repb.Digest
 }
 
-func (mc *multiWriteCloser) Write(data []byte) (int, error) {
-	for _, w := range mc.closers {
-		n, err := w.Write(data)
-		if err != nil {
-			return 0, err
-		}
-		if n != len(data) {
-			return n, io.ErrShortWrite
-		}
+func (mc *multiWriteCloser) failCloserWithError(peer string, err error) error {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	delete(mc.peerClosers, peer)
+	writersRemaining := len(mc.peerClosers)
+	var allPeers []string
+	for peer, _ := range mc.peerClosers {
+		allPeers = append(allPeers, peer)
 	}
-	return len(data), nil
-}
-func (mc *multiWriteCloser) Close() error {
-	for _, w := range mc.closers {
-		if err := w.Close(); err != nil {
-			return err
-		}
+	if writersRemaining < mc.totalNumPeers/2 {
+		return status.UnavailableErrorf("Exhausted all peers attempting to write %q, peers: %s", mc.d.GetHash(), allPeers)
 	}
 	return nil
+
+}
+func (mc *multiWriteCloser) Write(data []byte) (int, error) {
+	eg, _ := errgroup.WithContext(mc.ctx)
+	for peer, wc := range mc.peerClosers {
+		peer := peer
+		wc := wc
+		eg.Go(func() error {
+			n, err := wc.Write(data)
+			if err != nil {
+				return mc.failCloserWithError(peer, err)
+			}
+			if n != len(data) {
+				return mc.failCloserWithError(peer, io.ErrShortWrite)
+			}
+			return nil
+		})
+	}
+
+	return len(data), eg.Wait()
+}
+
+func (mc *multiWriteCloser) Close() error {
+	eg, _ := errgroup.WithContext(mc.ctx)
+	for peer, wc := range mc.peerClosers {
+		wc := wc
+		eg.Go(func() error {
+			if err := wc.Close(); err != nil {
+				return mc.failCloserWithError(peer, err)
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
 }
 
 // Attempt to write digest to N peers (where N == replicationFactor).
@@ -248,19 +300,21 @@ func (mc *multiWriteCloser) Close() error {
 // This is like setting WRITE_CONSISTENCY = QUORUM.
 func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
 	peers := c.peers(d)
-	log.Printf("Potential peers: %s for %q", peers, d.GetHash())
-	var wcs []io.WriteCloser
+	mwc := &multiWriteCloser{
+		ctx:           ctx,
+		d:             d,
+		peerClosers:   make(map[string]io.WriteCloser, 0),
+		totalNumPeers: len(peers),
+		mu:            &sync.Mutex{},
+	}
+
 	for _, peer := range peers {
 		rwc, err := c.cacheProxy.RemoteWriter(ctx, peer, c.prefix, d)
 		if err == nil {
-			wcs = append(wcs, rwc)
-			continue
+			mwc.peerClosers[peer] = rwc
 		}
 	}
-	if len(wcs) < len(peers)/2 {
-		return nil, status.UnavailableErrorf("Exhausted all peers attempting to write %q", d.GetHash())
-	}
-	return &multiWriteCloser{wcs}, nil
+	return mwc, nil
 }
 
 func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
