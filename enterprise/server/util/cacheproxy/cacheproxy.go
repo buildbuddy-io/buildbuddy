@@ -295,9 +295,6 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, prefix string, d *r
 		client := &http.Client{}
 		rsp, err := client.Do(req)
 		if err != nil {
-			log.Printf("Error in goroutine running client.Do: %s", err)
-			err = status.UnavailableError(err.Error())
-			reader.CloseWithError(err)
 			return err
 		}
 		return rsp.Body.Close()
