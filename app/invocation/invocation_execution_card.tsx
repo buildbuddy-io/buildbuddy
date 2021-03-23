@@ -166,7 +166,7 @@ export default class ExecutionCardComponent extends React.Component {
       case "action":
         return second?.actionDigest?.hash.localeCompare(first?.actionDigest?.hash);
       default:
-        return first.stage - second.stage;
+        return second.stage - first.stage;
     }
   }
 
