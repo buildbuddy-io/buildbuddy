@@ -6,6 +6,7 @@ import (
 	"io"
 	"path/filepath"
 	"time"
+	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -205,12 +206,23 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 	response := make(map[*repb.Digest][]byte, len(keys))
 	for i, k := range keys {
 		d := digestsByKey[k]
-		item, ok := (rMap[i]).([]byte)
+		item, ok := (rMap[i]).(string)
 		if ok {
-			response[d] = item
+			response[d] = stringToBytes(item)
 		}
 	}
 	return response, nil
+}
+
+// Efficiently convert string to byte slice: https://github.com/go-redis/redis/pull/1106
+// Copied from: https://github.com/go-redis/redis/blob/b965d69fc9defa439a46d8178b60fc1d44f8fe29/internal/util/unsafe.go#L15
+func stringToBytes(s string) []byte {
+	return *(*[]byte)(unsafe.Pointer(
+		&struct {
+			string
+			Cap int
+		}{s, len(s)},
+	))
 }
 
 func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
