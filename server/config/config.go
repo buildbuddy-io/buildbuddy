@@ -160,14 +160,26 @@ type RemoteExecutionConfig struct {
 }
 
 type ExecutorConfig struct {
-	AppTarget               string `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
-	RootDirectory           string `yaml:"root_directory" usage:"The root directory to use for build files."`
-	LocalCacheDirectory     string `yaml:"local_cache_directory" usage:"A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result."`
-	LocalCacheSizeBytes     int64  `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
-	DockerSocket            string `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
-	DockerSiblingContainers bool   `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
-	DockerNetHost           bool   `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
-	ContainerdSocket        string `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
+	AppTarget               string           `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
+	RootDirectory           string           `yaml:"root_directory" usage:"The root directory to use for build files."`
+	LocalCacheDirectory     string           `yaml:"local_cache_directory" usage:"A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result."`
+	LocalCacheSizeBytes     int64            `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
+	DockerSocket            string           `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
+	DockerSiblingContainers bool             `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
+	DockerNetHost           bool             `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
+	ContainerdSocket        string           `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
+	RunnerPool              RunnerPoolConfig `yaml:"runner_pool"`
+}
+
+type RunnerPoolConfig struct {
+	Enabled bool `yaml:"enabled" usage:"(UNSTABLE) Whether the runner pool is enabled, allowing reusable execution containers and workspaces."`
+	// TODO: Find good defaults for these and document them here.
+	// Defaults could probably be some percentage of the total resources available.
+	MaxRunnerCount            int   `yaml:"max_runner_count" usage:"The maximum number of runners that can join the pool (<= 0 means unlimited)."`
+	TotalDiskSizeBytes        int64 `yaml:"total_disk_size_bytes" usage:"The maximum size, in bytes, to use for pooled workspaces."`
+	TotalMemoryUsageBytes     int64 `yaml:"total_memory_bytes" usage:"The maximum memory usage, in bytes, to use for pooled workspaces."`
+	RunnerMaxDiskSizeBytes    int64 `yaml:"runner_max_disk_size_bytes" usage:"The maximum disk size, in bytes, that can be held by a pooled runner."`
+	RunnerMaxMemoryUsageBytes int64 `yaml:"runner_max_memory_usage_bytes" usage:"The maximum memory usage, in bytes, that can be held by a pooled runner."`
 }
 
 type APIConfig struct {
