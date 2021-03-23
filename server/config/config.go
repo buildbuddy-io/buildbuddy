@@ -175,12 +175,12 @@ type RunnerPoolConfig struct {
 	Enabled bool `yaml:"enabled" usage:"(UNSTABLE) Whether the runner pool is enabled, allowing reusable execution containers and workspaces."`
 	// TODO: Find good defaults for these and document them here.
 	// Defaults could probably be some percentage of the total resources available.
-	MaxRunnerCount            int   `yaml:"max_runner_count" usage:"The maximum number of runners that can join the pool (<= 0 means unlimited)."`
-	TotalDiskSizeBytes        int64 `yaml:"total_disk_size_bytes" usage:"The maximum size, in bytes, to use for pooled workspaces."`
-	TotalMemoryUsageBytes     int64 `yaml:"total_memory_bytes" usage:"The maximum memory usage, in bytes, to use for pooled workspaces."`
-	RunnerMaxDiskSizeBytes    int64 `yaml:"runner_max_disk_size_bytes" usage:"The maximum disk size, in bytes, that can be held by a pooled runner."`
-	RunnerMaxMemoryUsageBytes int64 `yaml:"runner_max_memory_usage_bytes" usage:"The maximum memory usage, in bytes, that can be held by a pooled runner."`
-	RunnerTTLSeconds          int64 `yaml:"runner_ttl_seconds" usage:"The maximum duration, in seconds, that a runner can be pooled for."`
+	MaxRunnerCount            int `yaml:"max_runner_count" usage:"The maximum number of runners that can join the pool (<= 0 means unlimited)."`
+	TotalDiskSizeBytes        int `yaml:"total_disk_size_bytes" usage:"The maximum size, in bytes, to use for pooled workspaces."`
+	TotalMemoryUsageBytes     int `yaml:"total_memory_bytes" usage:"The maximum memory usage, in bytes, to use for pooled workspaces."`
+	RunnerMaxDiskSizeBytes    int `yaml:"runner_max_disk_size_bytes" usage:"The maximum disk size, in bytes, that can be held by a pooled runner."`
+	RunnerMaxMemoryUsageBytes int `yaml:"runner_max_memory_usage_bytes" usage:"The maximum memory usage, in bytes, that can be held by a pooled runner."`
+	RunnerTTLSeconds          int `yaml:"runner_ttl_seconds" usage:"The maximum duration, in seconds, that a runner can be pooled for."`
 }
 
 type APIConfig struct {
