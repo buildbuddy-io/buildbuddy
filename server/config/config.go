@@ -180,6 +180,7 @@ type RunnerPoolConfig struct {
 	TotalMemoryUsageBytes     int64 `yaml:"total_memory_bytes" usage:"The maximum memory usage, in bytes, to use for pooled workspaces."`
 	RunnerMaxDiskSizeBytes    int64 `yaml:"runner_max_disk_size_bytes" usage:"The maximum disk size, in bytes, that can be held by a pooled runner."`
 	RunnerMaxMemoryUsageBytes int64 `yaml:"runner_max_memory_usage_bytes" usage:"The maximum memory usage, in bytes, that can be held by a pooled runner."`
+	RunnerTTLSeconds          int64 `yaml:"runner_ttl_seconds" usage:"The maximum duration, in seconds, that a runner can be pooled for."`
 }
 
 type APIConfig struct {
