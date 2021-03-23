@@ -168,6 +168,7 @@ type ExecutorConfig struct {
 	DockerSiblingContainers bool   `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
 	DockerNetHost           bool   `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
 	ContainerdSocket        string `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
+	DockerRunAsRoot         bool   `yaml:"docker_run_as_root" usage:"Sets --user=0 on the docker command."`
 }
 
 type APIConfig struct {
