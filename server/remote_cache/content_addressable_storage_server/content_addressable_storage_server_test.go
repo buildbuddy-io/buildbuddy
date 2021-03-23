@@ -69,7 +69,7 @@ func TestMalevolentCache(t *testing.T) {
 		Requests: []*repb.BatchUpdateBlobsRequest_Request{
 			&repb.BatchUpdateBlobsRequest_Request{
 				Digest: d,
-				Data: buf,
+				Data:   buf,
 			},
 		},
 	})
