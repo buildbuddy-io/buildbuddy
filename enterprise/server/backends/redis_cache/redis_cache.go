@@ -72,9 +72,9 @@ func (c *Cache) key(ctx context.Context, d *repb.Digest) (string, error) {
 }
 
 func (c *Cache) rdbGet(ctx context.Context, key string) ([]byte, error) {
-	val, err := c.rdb.Get(ctx, key).Result()
+	bytes, err := c.rdb.Get(ctx, key).Bytes()
 	if err == nil {
-		return []byte(val), nil
+		return bytes, nil
 	}
 	if err == redis.Nil {
 		return nil, status.NotFoundErrorf("Key %q not found in cache", key)
