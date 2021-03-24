@@ -240,6 +240,8 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value) {
 			flag.IntVar(f.Addr().Interface().(*int), fqFieldName, int(f.Int()), docString)
 		case reflect.Int64:
 			flag.Int64Var(f.Addr().Interface().(*int64), fqFieldName, int64(f.Int()), docString)
+		case reflect.Float64:
+			flag.Float64Var(f.Addr().Interface().(*float64), fqFieldName, float64(f.Float()), docString)
 		case reflect.Slice:
 			if f.Type().Elem().Kind() == reflect.String {
 				if slice, ok := f.Interface().([]string); ok {
