@@ -116,8 +116,12 @@ func BenchmarkSetSingleThreadMemory10000(b *testing.B) {
 	benchmarkSetSingleThread(getMemoryCache(b), 10000, b)
 }
 
-func BenchmarkSetSingleThreadDisk10(b *testing.B)  { benchmarkSetSingleThread(getDiskCache(b), 10, b) }
-func BenchmarkSetSingleThreadDisk100(b *testing.B) { benchmarkSetSingleThread(getDiskCache(b), 100, b) }
+func BenchmarkSetSingleThreadDisk10(b *testing.B) {
+	benchmarkSetSingleThread(getDiskCache(b), 10, b)
+}
+func BenchmarkSetSingleThreadDisk100(b *testing.B) {
+	benchmarkSetSingleThread(getDiskCache(b), 100, b)
+}
 func BenchmarkSetSingleThreadDisk1000(b *testing.B) {
 	benchmarkSetSingleThread(getDiskCache(b), 1000, b)
 }
@@ -142,7 +146,9 @@ func benchmarkSetMultiThread(c interfaces.Cache, digestSizeBytes int64, b *testi
 	})
 }
 
-func BenchmarkSetMultiThreadMemory10(b *testing.B) { benchmarkSetMultiThread(getMemoryCache(b), 10, b) }
+func BenchmarkSetMultiThreadMemory10(b *testing.B) {
+	benchmarkSetMultiThread(getMemoryCache(b), 10, b)
+}
 func BenchmarkSetMultiThreadMemory100(b *testing.B) {
 	benchmarkSetMultiThread(getMemoryCache(b), 100, b)
 }
@@ -153,9 +159,15 @@ func BenchmarkSetMultiThreadMemory10000(b *testing.B) {
 	benchmarkSetMultiThread(getMemoryCache(b), 10000, b)
 }
 
-func BenchmarkSetMultiThreadDisk10(b *testing.B)   { benchmarkSetMultiThread(getDiskCache(b), 10, b) }
-func BenchmarkSetMultiThreadDisk100(b *testing.B)  { benchmarkSetMultiThread(getDiskCache(b), 100, b) }
-func BenchmarkSetMultiThreadDisk1000(b *testing.B) { benchmarkSetMultiThread(getDiskCache(b), 1000, b) }
+func BenchmarkSetMultiThreadDisk10(b *testing.B) {
+	benchmarkSetMultiThread(getDiskCache(b), 10, b)
+}
+func BenchmarkSetMultiThreadDisk100(b *testing.B) {
+	benchmarkSetMultiThread(getDiskCache(b), 100, b)
+}
+func BenchmarkSetMultiThreadDisk1000(b *testing.B) {
+	benchmarkSetMultiThread(getDiskCache(b), 1000, b)
+}
 func BenchmarkSetMultiThreadDisk10000(b *testing.B) {
 	benchmarkSetMultiThread(getDiskCache(b), 10000, b)
 }
@@ -189,8 +201,12 @@ func BenchmarkGetSingleThreadMemory10000(b *testing.B) {
 	benchmarkGetSingleThread(getMemoryCache(b), 10000, b)
 }
 
-func BenchmarkGetSingleThreadDisk10(b *testing.B)  { benchmarkGetSingleThread(getDiskCache(b), 10, b) }
-func BenchmarkGetSingleThreadDisk100(b *testing.B) { benchmarkGetSingleThread(getDiskCache(b), 100, b) }
+func BenchmarkGetSingleThreadDisk10(b *testing.B) {
+	benchmarkGetSingleThread(getDiskCache(b), 10, b)
+}
+func BenchmarkGetSingleThreadDisk100(b *testing.B) {
+	benchmarkGetSingleThread(getDiskCache(b), 100, b)
+}
 func BenchmarkGetSingleThreadDisk1000(b *testing.B) {
 	benchmarkGetSingleThread(getDiskCache(b), 1000, b)
 }
@@ -216,7 +232,9 @@ func benchmarkGetMultiThread(c interfaces.Cache, digestSizeBytes int64, b *testi
 	})
 }
 
-func BenchmarkGetMultiThreadMemory10(b *testing.B) { benchmarkGetMultiThread(getMemoryCache(b), 10, b) }
+func BenchmarkGetMultiThreadMemory10(b *testing.B) {
+	benchmarkGetMultiThread(getMemoryCache(b), 10, b)
+}
 func BenchmarkGetMultiThreadMemory100(b *testing.B) {
 	benchmarkGetMultiThread(getMemoryCache(b), 100, b)
 }
@@ -227,9 +245,15 @@ func BenchmarkGetMultiThreadMemory10000(b *testing.B) {
 	benchmarkGetMultiThread(getMemoryCache(b), 10000, b)
 }
 
-func BenchmarkGetMultiThreadDisk10(b *testing.B)   { benchmarkGetMultiThread(getDiskCache(b), 10, b) }
-func BenchmarkGetMultiThreadDisk100(b *testing.B)  { benchmarkGetMultiThread(getDiskCache(b), 100, b) }
-func BenchmarkGetMultiThreadDisk1000(b *testing.B) { benchmarkGetMultiThread(getDiskCache(b), 1000, b) }
+func BenchmarkGetMultiThreadDisk10(b *testing.B) {
+	benchmarkGetMultiThread(getDiskCache(b), 10, b)
+}
+func BenchmarkGetMultiThreadDisk100(b *testing.B) {
+	benchmarkGetMultiThread(getDiskCache(b), 100, b)
+}
+func BenchmarkGetMultiThreadDisk1000(b *testing.B) {
+	benchmarkGetMultiThread(getDiskCache(b), 1000, b)
+}
 func BenchmarkGetMultiThreadDisk10000(b *testing.B) {
 	benchmarkGetMultiThread(getDiskCache(b), 10000, b)
 }
