@@ -31,6 +31,12 @@ func (c *ConsistentHash) hashKey(key string) int {
 	return int(crc32.ChecksumIEEE([]byte(key)))
 }
 
+func (c *ConsistentHash) GetItems() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.items
+}
+
 func (c *ConsistentHash) Set(items ...string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -442,6 +442,10 @@ func (c *Configurator) GetCacheMemcacheTargets() []string {
 }
 
 func (c *Configurator) GetCacheRedisTarget() string {
+	// Prefer the target from Redis sub-config, is present.
+	if redisConfig := c.GetCacheRedisConfig(); redisConfig != nil {
+		return redisConfig.RedisTarget
+	}
 	return c.gc.Cache.RedisTarget
 }
 
