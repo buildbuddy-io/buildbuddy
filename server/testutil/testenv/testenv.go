@@ -108,7 +108,7 @@ func writeTmpConfigFile(testRootDir string) (string, error) {
 	return configPath, nil
 }
 
-func GetTestEnv(t *testing.T) *TestEnv {
+func GetTestEnv(t testing.TB) *TestEnv {
 	testRootDir, err := ioutil.TempDir("/tmp", "buildbuddy_test_*")
 	if err != nil {
 		t.Fatal(err)
