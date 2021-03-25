@@ -39,7 +39,7 @@ func getAnonContext(t testing.TB) context.Context {
 	te := getTestEnv(t, emptyUserMap)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
 	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
+		t.Fatalf("error attaching user prefix: %v", err)
 	}
 	return ctx
 }
@@ -93,6 +93,7 @@ func benchmarkSetSingleThread(c interfaces.Cache, digestSizeBytes int64, b *test
 	ctx := getAnonContext(b)
 	digests, data := makeDigests(b, numDigests, digestSizeBytes)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		d := digests[rand.Intn(len(digests))]
@@ -133,6 +134,7 @@ func benchmarkSetMultiThread(c interfaces.Cache, digestSizeBytes int64, b *testi
 	ctx := getAnonContext(b)
 
 	digests, data := makeDigests(b, numDigests, digestSizeBytes)
+	b.ReportAllocs()
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
@@ -177,6 +179,7 @@ func benchmarkGetSingleThread(c interfaces.Cache, digestSizeBytes int64, b *test
 
 	digests, data := makeDigests(b, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, data)
+	b.ReportAllocs()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
@@ -219,6 +222,7 @@ func benchmarkGetMultiThread(c interfaces.Cache, digestSizeBytes int64, b *testi
 
 	digests, data := makeDigests(b, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, data)
+	b.ReportAllocs()
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
