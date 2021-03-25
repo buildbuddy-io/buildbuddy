@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "proto/context.proto";
+
 package scheduler;
 
 message NodeAddress {
@@ -10,6 +12,7 @@ message NodeAddress {
   int32 port = 2;
 }
 
+// TODO: Switch over the the ExecutionNodes proto
 message RegisterNodeRequest {
   NodeAddress node_address = 1;
 
@@ -114,4 +117,44 @@ service Scheduler {
 service QueueExecutor {
   rpc EnqueueTaskReservation(EnqueueTaskReservationRequest)
       returns (EnqueueTaskReservationResponse) {}
+}
+
+message ExecutionNode {
+  // Remote execution node host.
+  // Ex. "10.52.6.5"
+  string host = 1;
+
+  // Remote execution node port.
+  // Ex. 1987
+  int32 port = 2;
+
+  // Assignable memory bytes in remote execution node.
+  // Ex. 26843545600
+  int64 assignable_memory_bytes = 3;
+
+  // Assignable cpu in remote execution node.
+  // Ex. 7000
+  int64 assignable_milli_cpu = 4;
+
+  // Remote execution node operating system.
+  // Ex. "linux".
+  string os = 5;
+
+  // Architecture of the remote execution node.
+  // Ex. "amd64"
+  string arch = 6;
+
+  // Remote execution pool that this node is assigned to.
+  // Ex. "buildbuddy-executors-us-west1-b"
+  string pool = 7;
+}
+
+message GetExecutionNodesRequest {
+  context.ResponseContext response_context = 1;
+}
+
+message GetExecutionNodesResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated ExecutionNode execution_node = 2;
 }

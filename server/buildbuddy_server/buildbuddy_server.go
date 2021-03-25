@@ -26,6 +26,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
@@ -661,6 +662,14 @@ func (s *BuildBuddyServer) GetInvocationStat(ctx context.Context, req *inpb.GetI
 func (s *BuildBuddyServer) GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error) {
 	if es := s.env.GetExecutionService(); es != nil {
 		return es.GetExecution(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error) {
+	if ss := s.env.GetSchedulerService(); ss != nil {
+		res, err := ss.GetExecutionNodes(ctx, req)
+		return res, err
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }

@@ -237,6 +237,7 @@ type SchedulerService interface {
 	LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
+	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
 }
 
 type ExecutionService interface {

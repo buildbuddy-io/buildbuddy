@@ -152,13 +152,3 @@ message GetExecutionResponse {
 
   repeated Execution execution = 2;
 }
-
-message GetExecutionNodesRequest {
-  context.ResponseContext response_context = 1;
-}
-
-message GetExecutionNodesResponse {
-  context.ResponseContext response_context = 1;
-
-  repeated ExecutionNode execution_node = 2;
-}
