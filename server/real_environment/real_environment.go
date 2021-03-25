@@ -3,14 +3,17 @@ package real_environment
 import (
 	"time"
 
+	"github.com/go-redis/redis/v8"
+
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 
+	bspb "google.golang.org/genproto/googleapis/bytestream"
+
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 type executionClientConfig struct {
@@ -56,11 +59,12 @@ type RealEnv struct {
 	fileCache                       interfaces.FileCache
 	remoteExecutionService          interfaces.RemoteExecutionService
 	schedulerService                interfaces.SchedulerService
-	pubSub                          interfaces.PubSub
 	metricsCollector                interfaces.MetricsCollector
 	executionService                interfaces.ExecutionService
 	repoDownloader                  interfaces.RepoDownloader
 	workflowService                 interfaces.WorkflowService
+	cacheRedisClient                *redis.Client
+	remoteExecutionRedisClient      *redis.Client
 }
 
 func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
@@ -232,12 +236,6 @@ func (r *RealEnv) SetSchedulerService(s interfaces.SchedulerService) {
 func (r *RealEnv) GetSchedulerService() interfaces.SchedulerService {
 	return r.schedulerService
 }
-func (r *RealEnv) SetPubSub(p interfaces.PubSub) {
-	r.pubSub = p
-}
-func (r *RealEnv) GetPubSub() interfaces.PubSub {
-	return r.pubSub
-}
 func (r *RealEnv) SetMetricsCollector(c interfaces.MetricsCollector) {
 	r.metricsCollector = c
 }
@@ -261,4 +259,20 @@ func (r *RealEnv) GetWorkflowService() interfaces.WorkflowService {
 }
 func (r *RealEnv) SetWorkflowService(wf interfaces.WorkflowService) {
 	r.workflowService = wf
+}
+
+func (r *RealEnv) SetCacheRedisClient(redisClient *redis.Client) {
+	r.cacheRedisClient = redisClient
+}
+
+func (r *RealEnv) GetCacheRedisClient() *redis.Client {
+	return r.cacheRedisClient
+}
+
+func (r *RealEnv) SetRemoteExecutionRedisClient(redisClient *redis.Client) {
+	r.remoteExecutionRedisClient = redisClient
+}
+
+func (r *RealEnv) GetRemoteExecutionRedisClient() *redis.Client {
+	return r.remoteExecutionRedisClient
 }

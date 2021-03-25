@@ -8,13 +8,14 @@ import (
 	"path/filepath"
 	"sync"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cacheproxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/heartbeat"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -51,7 +52,7 @@ type CacheConfig struct {
 // match to peer.
 //  - replicationFactor is an int specifying how many copies of each key will
 // be stored across unique caches.
-func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheConfig, hc interfaces.HealthChecker) (*Cache, error) {
+func NewDistributedCache(env environment.Env, ps interfaces.PubSub, c interfaces.Cache, config CacheConfig, hc interfaces.HealthChecker) (*Cache, error) {
 	chash := consistent_hash.NewConsistentHash()
 	dc := &Cache{
 		local:             c,
@@ -59,7 +60,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		myAddr:            config.ListenAddr,
 		groupName:         config.GroupName,
 		consistentHash:    chash,
-		heartbeatChannel:  heartbeat.NewHeartbeatChannel(env.GetPubSub(), config.ListenAddr, config.GroupName, chash.Set),
+		heartbeatChannel:  heartbeat.NewHeartbeatChannel(ps, config.ListenAddr, config.GroupName, chash.Set),
 		replicationFactor: config.ReplicationFactor,
 	}
 	hc.AddHealthCheck("distributed_cache", dc)

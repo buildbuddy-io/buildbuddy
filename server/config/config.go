@@ -156,6 +156,7 @@ type SSLConfig struct {
 type RemoteExecutionConfig struct {
 	EnableRemoteExec bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
 	DefaultPoolName  string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
+	RedisTarget      string `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Required for remote execution. To ease migration, the redis target from the cache config will be used if this value is not specified."`
 	TaskPersistence  string `yaml:"task_persistence" usage:"One of redis|db|dualwrite. Specifies where inflight task information is stored."`
 }
 
@@ -433,7 +434,13 @@ func (c *Configurator) GetCacheRedisTarget() string {
 	if redisConfig := c.GetCacheRedisConfig(); redisConfig != nil {
 		return redisConfig.RedisTarget
 	}
-	return c.gc.Cache.RedisTarget
+	if c.gc.Cache.RedisTarget != "" {
+		return c.gc.Cache.RedisTarget
+	}
+	if dcc := c.GetDistributedCacheConfig(); dcc != nil && dcc.RedisTarget != "" {
+		return dcc.RedisTarget
+	}
+	return ""
 }
 
 func (c *Configurator) GetCacheRedisConfig() *RedisCacheConfig {
@@ -481,6 +488,15 @@ func (c *Configurator) GetRemoteExecutionConfig() *RemoteExecutionConfig {
 		return &c.gc.RemoteExecution
 	}
 	return nil
+}
+
+func (c *Configurator) GetRemoteExecutionRedisTarget() string {
+	if rec := c.GetRemoteExecutionConfig(); rec != nil && rec.RedisTarget != "" {
+		return rec.RedisTarget
+	}
+	// Fall back to the cache redis target if redis target is not specified in remote execution config.
+	// Historically we did not have a separate redis target for remote execution.
+	return c.GetCacheRedisTarget()
 }
 
 func (c *Configurator) GetExecutorConfig() *ExecutorConfig {
