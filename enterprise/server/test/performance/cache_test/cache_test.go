@@ -44,20 +44,26 @@ func getAnonContext(t testing.TB) context.Context {
 	return ctx
 }
 
-func makeDigests(t testing.TB, numDigests int, digestSizeBytes int64) ([]*repb.Digest, map[*repb.Digest][]byte) {
-	digests := make([]*repb.Digest, 0, numDigests)
-	data := make(map[*repb.Digest][]byte, 0)
-	for i := 0; i < numDigests; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, digestSizeBytes)
-		data[d] = buf
-		digests = append(digests, d)
-	}
-	return digests, data
+type digestBuf struct {
+	d   *repb.Digest
+	buf []byte
 }
 
-func setDigestsInCache(t testing.TB, ctx context.Context, c interfaces.Cache, data map[*repb.Digest][]byte) {
-	for d, buf := range data {
-		if err := c.Set(ctx, d, buf); err != nil {
+func makeDigests(t testing.TB, numDigests int, digestSizeBytes int64) []*digestBuf {
+	digestBufs := make([]*digestBuf, 0, numDigests)
+	for i := 0; i < numDigests; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(t, digestSizeBytes)
+		digestBufs = append(digestBufs, &digestBuf{
+			d:   d,
+			buf: buf,
+		})
+	}
+	return digestBufs
+}
+
+func setDigestsInCache(t testing.TB, ctx context.Context, c interfaces.Cache, dbufs []*digestBuf) {
+	for _, dbuf := range dbufs {
+		if err := c.Set(ctx, dbuf.d, dbuf.buf); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -91,13 +97,13 @@ func getDiskCache(t testing.TB) interfaces.Cache {
 
 func benchmarkSetSingleThread(c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
 	ctx := getAnonContext(b)
-	digests, data := makeDigests(b, numDigests, digestSizeBytes)
+	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		d := digests[rand.Intn(len(digests))]
-		err := c.Set(ctx, d, data[d])
+		dbuf := digestBufs[rand.Intn(len(digestBufs))]
+		err := c.Set(ctx, dbuf.d, dbuf.buf)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -133,14 +139,14 @@ func BenchmarkSetSingleThreadDisk10000(b *testing.B) {
 func benchmarkSetMultiThread(c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
 	ctx := getAnonContext(b)
 
-	digests, data := makeDigests(b, numDigests, digestSizeBytes)
+	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			d := digests[rand.Intn(len(digests))]
-			err := c.Set(ctx, d, data[d])
+			dbuf := digestBufs[rand.Intn(len(digestBufs))]
+			err := c.Set(ctx, dbuf.d, dbuf.buf)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -177,14 +183,14 @@ func BenchmarkSetMultiThreadDisk10000(b *testing.B) {
 func benchmarkGetSingleThread(c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
 	ctx := getAnonContext(b)
 
-	digests, data := makeDigests(b, numDigests, digestSizeBytes)
-	setDigestsInCache(b, ctx, c, data)
+	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
+	setDigestsInCache(b, ctx, c, digestBufs)
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		d := digests[rand.Intn(len(digests))]
-		_, err := c.Get(ctx, d)
+		dbuf := digestBufs[rand.Intn(len(digestBufs))]
+		_, err := c.Get(ctx, dbuf.d)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -220,15 +226,15 @@ func BenchmarkGetSingleThreadDisk10000(b *testing.B) {
 func benchmarkGetMultiThread(c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
 	ctx := getAnonContext(b)
 
-	digests, data := makeDigests(b, numDigests, digestSizeBytes)
-	setDigestsInCache(b, ctx, c, data)
+	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
+	setDigestsInCache(b, ctx, c, digestBufs)
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			d := digests[rand.Intn(len(digests))]
-			_, err := c.Get(ctx, d)
+			dbuf := digestBufs[rand.Intn(len(digestBufs))]
+			_, err := c.Get(ctx, dbuf.d)
 			if err != nil {
 				b.Fatal(err)
 			}
