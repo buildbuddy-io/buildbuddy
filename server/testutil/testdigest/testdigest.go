@@ -41,7 +41,7 @@ func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 	panic("unreachable")
 }
 
-func NewRandomDigestReader(t *testing.T, sizeBytes int64) (*repb.Digest, io.ReadSeeker) {
+func NewRandomDigestReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.ReadSeeker) {
 	randomSeedOnce.Do(func() {
 		randomSrc = &randomDataMaker{rand.NewSource(time.Now().Unix())}
 	})
@@ -60,7 +60,7 @@ func NewRandomDigestReader(t *testing.T, sizeBytes int64) (*repb.Digest, io.Read
 	return d, readSeeker
 }
 
-func NewRandomDigestBuf(t *testing.T, sizeBytes int64) (*repb.Digest, []byte) {
+func NewRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
 	d, rs := NewRandomDigestReader(t, sizeBytes)
 	buf, err := ioutil.ReadAll(rs)
 	if err != nil {
