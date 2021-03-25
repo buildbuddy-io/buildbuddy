@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package api.v1;
+
+// Request passed into GetInvocation
+message GetInvocationRequest {
+  // The selector defining which invocations(s) to retrieve.
+  InvocationSelector selector = 1;
+
+  // The next_page_token value returned from a previous request, if any.
+  string page_token = 3;
+}
+
+// Response from calling GetInvocation
+message GetInvocationResponse {
+  // Invocations matching the request invocation, possibly capped by a
+  // server limit.
+  repeated Invocation invocation = 1;
+
+  // Token to retrieve the next page of results, or empty if there are no
+  // more results in the list.
+  string next_page_token = 2;
+}
+
+// Each Invocation represents metadata associated with a given invocation.
+message Invocation {
+  // The resource ID components that identify the Invocation.
+  message Id {
+    // The Invocation ID.
+    string invocation_id = 1;
+  }
+
+  // The resource ID components that identify the Invocation.
+  Id id = 1;
+
+  // Whether or not the build was successful.
+  bool success = 3;
+
+  // The user who performed this build.
+  string user = 4;
+
+  // The duration of this build, from start to finish.
+  int64 duration_usec = 5;
+
+  // The host this build was executed on.
+  string host = 6;
+
+  // The command performed (usually "build" or "test").
+  string command = 7;
+
+  // The build patterns specified for this build.
+  string pattern = 8;
+
+  // The number of actions performed.
+  int64 action_count = 9;
+
+  // The time this invocation was created and updated, respectively. Invocations
+  // are created as soon as the first event is received from the client and
+  // updated with subsequent events until they are finalized.
+  int64 created_at_usec = 13;
+  int64 updated_at_usec = 14;
+
+  // A URL to the git repo this invocation was for.
+  string repo_url = 15;
+
+  // The commit SHA that this invocation was for.
+  string commit_sha = 16;
+
+  // The role played by this invocation. Ex: "CI"
+  string role = 19;
+}
+
+// The selector used to specify which invocations to return.
+message InvocationSelector {
+  // One invocation_id or commit_sha is required.
+
+  // Optional: The Invocation ID.
+  // Return only the invocation with this invocation ID.
+  string invocation_id = 1;
+
+  // Optional: The commmit SHA.
+  // If set, only the invocations with this commit SHA will be returned.
+  string commit_sha = 2;
+}

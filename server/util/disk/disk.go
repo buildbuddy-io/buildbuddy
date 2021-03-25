@@ -80,9 +80,13 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 	if err != nil {
 		return nil, err
 	}
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
 	f.Seek(offset, 0)
 	if length > 0 {
-		return io.LimitReader(f, length), nil
+		return io.LimitReader(f, info.Size()), nil
 	}
 	return f, nil
 }

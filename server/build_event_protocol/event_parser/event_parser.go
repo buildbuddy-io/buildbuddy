@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
 const (
@@ -127,7 +128,7 @@ func NewStreamingEventParser() *StreamingEventParser {
 		startTimeMillis:        undefinedTimestamp,
 		endTimeMillis:          undefinedTimestamp,
 		screenWriter:           terminal.NewScreenWriter(),
-		allowedEnvVars:         []string{"USER", "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID"},
+		allowedEnvVars:         []string{"USER", "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID", "BUILDKITE_BUILD_URL"},
 		structuredCommandLines: make([]*command_line.CommandLine, 0),
 		workspaceStatuses:      make([]*build_event_stream.WorkspaceStatus, 0),
 		buildMetadata:          make([]map[string]string, 0),
@@ -293,19 +294,19 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 		invocation.User = user
 	}
 	if url, ok := envVarMap["TRAVIS_REPO_SLUG"]; ok && url != "" {
-		invocation.RepoUrl = url
+		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
 	}
 	if url, ok := envVarMap["GIT_URL"]; ok && url != "" {
-		invocation.RepoUrl = url
+		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
 	}
 	if url, ok := envVarMap["BUILDKITE_REPO"]; ok && url != "" {
-		invocation.RepoUrl = url
+		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
 	}
 	if url, ok := envVarMap["CIRCLE_REPOSITORY_URL"]; ok && url != "" {
-		invocation.RepoUrl = url
+		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
 	}
 	if url, ok := envVarMap["GITHUB_REPOSITORY"]; ok && url != "" {
-		invocation.RepoUrl = url
+		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
 	}
 	if sha, ok := envVarMap["TRAVIS_COMMIT"]; ok && sha != "" {
 		invocation.CommitSha = sha
@@ -325,11 +326,14 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	if ci, ok := envVarMap["CI"]; ok && ci != "" {
 		invocation.Role = "CI"
 	}
+	if ciRunner, ok := envVarMap["CI_RUNNER"]; ok && ciRunner != "" {
+		invocation.Role = "CI_RUNNER"
+	}
 
 	// Gitlab CI Environment Variables
 	// https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
 	if url, ok := envVarMap["CI_REPOSITORY_URL"]; ok && url != "" {
-		invocation.RepoUrl = url
+		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
 	}
 	if sha, ok := envVarMap["CI_COMMIT_SHA"]; ok && sha != "" {
 		invocation.CommitSha = sha
@@ -353,7 +357,7 @@ func fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.Works
 		case "ROLE":
 			invocation.Role = item.Value
 		case "REPO_URL":
-			invocation.RepoUrl = item.Value
+			invocation.RepoUrl = gitutil.StripRepoURLCredentials(item.Value)
 		case "COMMIT_SHA":
 			invocation.CommitSha = item.Value
 		}
@@ -365,7 +369,7 @@ func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inp
 		invocation.CommitSha = sha
 	}
 	if url, ok := metadata["REPO_URL"]; ok && url != "" {
-		invocation.RepoUrl = url
+		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
 	}
 	if user, ok := metadata["USER"]; ok && user != "" {
 		invocation.User = user
@@ -379,16 +383,8 @@ func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inp
 	if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
 		invocation.ReadPermission = inpb.InvocationPermission_PUBLIC
 	}
-}
-
-func ExtractUserRepoFromRepoUrl(repoURL string) string {
-	// TODO(siggisim): Come up with a regex here.
-	repoURL = strings.ReplaceAll(repoURL, "ssh://", "")
-	repoURL = strings.ReplaceAll(repoURL, "http://", "")
-	repoURL = strings.ReplaceAll(repoURL, "https://", "")
-	repoURL = strings.ReplaceAll(repoURL, "git@", "")
-	repoURL = strings.ReplaceAll(repoURL, ".git", "")
-	repoURL = strings.ReplaceAll(repoURL, "github.com/", "")
-	repoURL = strings.ReplaceAll(repoURL, "github.com:", "")
-	return repoURL
+	if actionName, ok := metadata["BUILDBUDDY_ACTION_NAME"]; ok && actionName != "" {
+		invocation.Command = "workflow run"
+		invocation.Pattern = []string{actionName}
+	}
 }

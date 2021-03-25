@@ -28,12 +28,11 @@ go_test(
     embed = [],  # keep
     deps = [
         ":go_default_library",  # keep
-        "//enterprise/server/auth:go_default_library",
         "//proto:api_key_go_proto",
         "//server/interfaces:go_default_library",
         "//server/nullauth:go_default_library",
-        "//server/testutil/auth:go_default_library",
-        "//server/testutil/environment:go_default_library",
+        "//server/testutil/testauth:go_default_library",
+        "//server/testutil/testenv:go_default_library",
         "//server/util/testing/flags:go_default_library",
         "@com_github_stretchr_testify//assert:go_default_library",
     ],

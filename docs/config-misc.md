@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Misc",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 200
-}
--->
-
-# Miscellaneous Configuration
+---
+id: config-misc
+title: Miscellaneous Configuration
+sidebar_label: Misc
+---
 
 ## BuildEventProxy Section
 
@@ -17,6 +13,7 @@
 **Optional**
 
 - `hosts` A list of host strings that BuildBudy should connect and forward events to.
+- `buffer_size` The number of build events to buffer locally when proxying build events.
 
 ## Example section
 
@@ -25,4 +22,5 @@ build_event_proxy:
   hosts:
     - "grpc://localhost:1985"
     - "grpc://events.buildbuddy.io:1985"
+  buffer_size: 1000
 ```

@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Database",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 700
-}
--->
-
-# Database Configuration
+---
+id: config-database
+title: Database Configuration
+sidebar_label: Database
+---
 
 ## Section
 

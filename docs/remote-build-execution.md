@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Remote Build Execution",
-  "category": "5f84be4816a467f32f4ca128",
-  "priority": 1000
-}
--->
-
-# Remote Build Execution
+---
+id: remote-build-execution
+title: Remote Build Execution
+sidebar_label: Remote Build Execution
+---
 
 BuildBuddy provides a highly scalable remote build execution service. It's available both as a fully managed cloud service or on-prem.
 

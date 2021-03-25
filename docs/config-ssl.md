@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "SSL",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 400
-}
--->
-
-# SSL Configuration
+---
+id: config-ssl
+title: SSL Configuration
+sidebar_label: SSL
+---
 
 ## Section
 

@@ -68,13 +68,17 @@ message TaskSize {
   int64 estimated_milli_cpu = 2;
 }
 
+message SchedulingMetadata {
+  TaskSize task_size = 1;
+  string os = 2;
+  string arch = 3;
+  string pool = 4;
+}
+
 message ScheduleTaskRequest {
   string task_id = 1;
-  TaskSize task_size = 2;
+  SchedulingMetadata metadata = 2;
   bytes serialized_task = 3;
-  string os = 4;
-  string arch = 5;
-  string pool = 6;
 }
 
 message ScheduleTaskResponse {

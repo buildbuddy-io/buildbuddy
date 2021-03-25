@@ -14,6 +14,7 @@ go_library(
         "//server/remote_cache/hit_tracker:go_default_library",
         "//server/remote_cache/namespace:go_default_library",
         "//server/util/capabilities:go_default_library",
+        "//server/util/devnull:go_default_library",
         "//server/util/prefix:go_default_library",
         "//server/util/status:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
@@ -28,7 +29,7 @@ go_test(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/digest:go_default_library",
-        "//server/testutil/environment:go_default_library",
+        "//server/testutil/testenv:go_default_library",
         "//server/util/prefix:go_default_library",
         "//server/util/random:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",

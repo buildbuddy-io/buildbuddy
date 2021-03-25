@@ -47,8 +47,11 @@ func ToInt(caps []akpb.ApiKey_Capability) int32 {
 func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capability) (bool, error) {
 	authIsRequired := !env.GetConfigurator().GetAnonymousUsageEnabled()
 	a := env.GetAuthenticator()
-	if a == nil && authIsRequired {
-		return false, status.UnimplementedError("Not Implemented")
+	if a == nil {
+		if authIsRequired {
+			return false, status.UnimplementedError("Not Implemented")
+		}
+		return int32(cap)&AnonymousUserCapabilitiesMask > 0, nil
 	}
 	user, err := a.AuthenticatedUser(ctx)
 	if err != nil {

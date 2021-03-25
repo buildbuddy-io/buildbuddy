@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Introduction",
-  "category": "5f84be4816a467536a4ca064",
-  "priority": 1000
-}
--->
-
-# BuildBuddy Documentation
+---
+id: introduction
+title: BuildBuddy Docs
+sidebar_label: Introduction
+---
 
 BuildBuddy is an open-core Bazel build event viewer, result store, remote cache, and remote build execution platform.
 

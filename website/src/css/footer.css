@@ -1,0 +1,17 @@
+.footer--dark {
+  --ifm-footer-background-color: #263238;
+  --ifm-footer-link-color: rgba(255, 255, 255, 0.5);
+  --ifm-footer-link-hover-color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+}
+
+.footer-logo {
+  max-height: 32px;
+  padding-right: 90px;
+  max-width: inherit;
+}
+
+.footer__copyright {
+  margin-top: 124px;
+  color: rgba(255, 255, 255, 0.2);
+}

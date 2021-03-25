@@ -1,12 +1,8 @@
-<!--
-{
-  "name": "Configuration Overview",
-  "category": "5f84be4816a46711e64ca065",
-  "priority": 1000
-}
--->
-
-# Configuring BuildBuddy
+---
+id: config
+title: Configuring BuildBuddy
+sidebar_label: Overview
+---
 
 [BuildBuddy on-prem](on-prem.md) is configured using a [yaml](https://en.wikipedia.org/wiki/YAML) formatted configuration file.
 

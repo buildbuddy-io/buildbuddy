@@ -45,7 +45,8 @@ type appConfig struct {
 }
 
 type buildEventProxy struct {
-	Hosts []string `yaml:"hosts" usage:"The list of hosts to pass build events onto."`
+	Hosts      []string `yaml:"hosts" usage:"The list of hosts to pass build events onto."`
+	BufferSize int      `yaml:"buffer_size" usage:"The number of build events to buffer locally when proxying build events."`
 }
 
 type DatabaseConfig struct {
@@ -104,28 +105,35 @@ type S3CacheConfig struct {
 	TTLDays            int64  `yaml:"ttl_days" usage:"The period after which cache files should be TTLd. Disabled if 0."`
 }
 
-type DistributedDiskConfig struct {
-	RootDirectory string `yaml:"root_directory" usage:"The root directory to store all blobs in, if using disk based storage."`
-	ListenAddr    string `yaml:"listen_addr" usage:"The address to listen for local BuildBuddy distributed cache traffic on."`
-	RedisTarget   string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. ** Enterprise only **"`
-	GroupName     string `yaml:"group_name" usage:"A unique name for this distributed cache group. ** Enterprise only **"`
+type DistributedCacheConfig struct {
+	ListenAddr        string `yaml:"listen_addr" usage:"The address to listen for local BuildBuddy distributed cache traffic on."`
+	RedisTarget       string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
+	GroupName         string `yaml:"group_name" usage:"A unique name for this distributed cache group. ** Enterprise only **"`
+	ReplicationFactor int    `yaml:"replication_factor" usage:"How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **"`
+}
+
+type RedisCacheConfig struct {
+	RedisTarget       string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
+	MaxValueSizeBytes int64  `yaml:"max_value_size_bytes" usage:"The maximum value size to cache in redis (in bytes)."`
 }
 
 type cacheConfig struct {
-	Disk            DiskConfig            `yaml:"disk"`
-	GCS             GCSCacheConfig        `yaml:"gcs"`
-	S3              S3CacheConfig         `yaml:"s3"`
-	DistributedDisk DistributedDiskConfig `yaml:"distributed_disk"`
-	InMemory        bool                  `yaml:"in_memory" usage:"Whether or not to use the in_memory cache."`
-	MaxSizeBytes    int64                 `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
-	MemcacheTargets []string              `yaml:"memcache_targets" usage:"Deprecated. Use Redis Target instead."`
-	RedisTarget     string                `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. ** Enterprise only **"`
+	Disk             DiskConfig             `yaml:"disk"`
+	GCS              GCSCacheConfig         `yaml:"gcs"`
+	S3               S3CacheConfig          `yaml:"s3"`
+	DistributedCache DistributedCacheConfig `yaml:"distributed_cache"`
+	InMemory         bool                   `yaml:"in_memory" usage:"Whether or not to use the in_memory cache."`
+	MaxSizeBytes     int64                  `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
+	MemcacheTargets  []string               `yaml:"memcache_targets" usage:"Deprecated. Use Redis Target instead."`
+	RedisTarget      string                 `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
+	Redis            RedisCacheConfig       `yaml:"redis"`
 }
 
 type authConfig struct {
 	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
 	JWTKey               string          `yaml:"jwt_key" usage:"The key to use when signing JWT tokens."`
+	APIKeyGroupCacheTTL  string          `yaml:"api_key_group_cache_ttl" usage:"Override for the TTL for API Key to Group caching. Set to '0' to disable cache."`
 }
 
 type OauthProvider struct {
@@ -148,16 +156,18 @@ type SSLConfig struct {
 type RemoteExecutionConfig struct {
 	EnableRemoteExec bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
 	DefaultPoolName  string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
+	TaskPersistence  string `yaml:"task_persistence" usage:"One of redis|db|dualwrite. Specifies where inflight task information is stored."`
 }
 
 type ExecutorConfig struct {
-	AppTarget           string `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
-	RootDirectory       string `yaml:"root_directory" usage:"The root directory to use for build files."`
-	LocalCacheDirectory string `yaml:"local_cache_directory" usage:"A local on-disk cache directory."`
-	LocalCacheSizeBytes int64  `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
-	DockerSocket        string `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
-	DockerNetHost       bool   `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
-	ContainerdSocket    string `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
+	AppTarget               string `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
+	RootDirectory           string `yaml:"root_directory" usage:"The root directory to use for build files."`
+	LocalCacheDirectory     string `yaml:"local_cache_directory" usage:"A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result."`
+	LocalCacheSizeBytes     int64  `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
+	DockerSocket            string `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
+	DockerSiblingContainers bool   `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
+	DockerNetHost           bool   `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
+	ContainerdSocket        string `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
 }
 
 type APIConfig struct {
@@ -378,6 +388,10 @@ func (c *Configurator) GetBuildEventProxyHosts() []string {
 	return c.gc.BuildEventProxy.Hosts
 }
 
+func (c *Configurator) GetBuildEventProxyBufferSize() int {
+	return c.gc.BuildEventProxy.BufferSize
+}
+
 func (c *Configurator) GetCacheMaxSizeBytes() int64 {
 	return c.gc.Cache.MaxSizeBytes
 }
@@ -403,9 +417,9 @@ func (c *Configurator) GetCacheS3Config() *S3CacheConfig {
 	return nil
 }
 
-func (c *Configurator) GetDistributedDiskConfig() *DistributedDiskConfig {
-	if c.gc.Cache.DistributedDisk.RootDirectory != "" {
-		return &c.gc.Cache.DistributedDisk
+func (c *Configurator) GetDistributedCacheConfig() *DistributedCacheConfig {
+	if c.gc.Cache.DistributedCache.ListenAddr != "" {
+		return &c.gc.Cache.DistributedCache
 	}
 	return nil
 }
@@ -415,7 +429,18 @@ func (c *Configurator) GetCacheMemcacheTargets() []string {
 }
 
 func (c *Configurator) GetCacheRedisTarget() string {
+	// Prefer the target from Redis sub-config, is present.
+	if redisConfig := c.GetCacheRedisConfig(); redisConfig != nil {
+		return redisConfig.RedisTarget
+	}
 	return c.gc.Cache.RedisTarget
+}
+
+func (c *Configurator) GetCacheRedisConfig() *RedisCacheConfig {
+	if c.gc.Cache.Redis.RedisTarget != "" {
+		return &c.gc.Cache.Redis
+	}
+	return nil
 }
 
 func (c *Configurator) GetCacheInMemory() bool {
@@ -438,6 +463,10 @@ func (c *Configurator) GetAuthOauthProviders() []OauthProvider {
 		}
 	}
 	return op
+}
+
+func (c *Configurator) GetAuthAPIKeyGroupCacheTTL() string {
+	return c.gc.Auth.APIKeyGroupCacheTTL
 }
 
 func (c *Configurator) GetSSLConfig() *SSLConfig {

@@ -1,3 +1,4 @@
+load("@rules_proto//proto:defs.bzl", "proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 
 proto_library(
@@ -25,6 +26,7 @@ proto_library(
     srcs = [
         "action.proto",
         "file.proto",
+        "invocation.proto",
         "service.proto",
         "target.proto",
     ],

@@ -1,0 +1,10 @@
+actions:
+  - name: "Build and test"
+    triggers:
+      push:
+        branches: [main]
+      pull_request:
+        branches: [main]
+    bazel_commands:
+      - build //...
+      - test //...
