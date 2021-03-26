@@ -1,0 +1,15 @@
+executor:
+  enabled: true
+  replicas: 3
+  resources:
+    requests:
+      cpu: "7000m"
+      memory: 20Gi
+    limits:
+      cpu: "7500m"
+      memory: 30Gi
+redis:
+  enabled: true
+config:
+  remote_execution:
+    enable_remote_exec: true
