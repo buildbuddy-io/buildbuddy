@@ -434,13 +434,7 @@ func (c *Configurator) GetCacheRedisTarget() string {
 	if redisConfig := c.GetCacheRedisConfig(); redisConfig != nil {
 		return redisConfig.RedisTarget
 	}
-	if c.gc.Cache.RedisTarget != "" {
-		return c.gc.Cache.RedisTarget
-	}
-	if dcc := c.GetDistributedCacheConfig(); dcc != nil && dcc.RedisTarget != "" {
-		return dcc.RedisTarget
-	}
-	return ""
+	return c.gc.Cache.RedisTarget
 }
 
 func (c *Configurator) GetCacheRedisConfig() *RedisCacheConfig {
