@@ -285,7 +285,7 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 			// This should not happen, but it seems it can happen with certain targets.
 			// For now, we will log the targets that do not meet the required state
 			// so we can better understand whats happening to them.
-			log.Printf("Not all targets reached state: %s, targets: %s", targetStateConfigured, t.targets)
+			log.Printf("Not all targets reached state: %d, targets: %+v", targetStateConfigured, t.targets)
 		}
 	case *build_event_stream.BuildEvent_Completed:
 		t.handleEvent(event)
