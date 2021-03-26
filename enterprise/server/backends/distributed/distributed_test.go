@@ -54,7 +54,7 @@ func lowerTimeoutsForTesting(hbc *heartbeat.HeartbeatChannel) {
 	hbc.CheckPeriod = 10 * time.Millisecond
 }
 
-func newDistributedCache(t *testing.T, te environment.Env, peer string, replicationFactor int, maxSizeBytes int64) *Cache {
+func newDistributedCache(t *testing.T, te environment.Env, ps interfaces.PubSub, peer string, replicationFactor int, maxSizeBytes int64) *Cache {
 	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func newDistributedCache(t *testing.T, te environment.Env, peer string, replicat
 		GroupName:         heartbeatGroupName,
 		ReplicationFactor: replicationFactor,
 	}
-	c, err := NewDistributedCache(te, mc, dcc, te.GetHealthChecker())
+	c, err := NewDistributedCache(te, ps, mc, dcc, te.GetHealthChecker())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,12 +77,11 @@ func TestDroppedNode(t *testing.T) {
 	return
 	te := getTestEnv(t, emptyUserMap)
 	ps := pubsub.NewTestPubSub()
-	te.SetPubSub(ps)
 	ctx := getAnonContext(t)
 
 	var liveNodes map[string]struct{}
 	liveNodesLock := sync.RWMutex{}
-	hbc := heartbeat.NewHeartbeatChannel(te.GetPubSub(), "", heartbeatGroupName, func(nodes ...string) {
+	hbc := heartbeat.NewHeartbeatChannel(ps, "", heartbeatGroupName, func(nodes ...string) {
 		liveNodesLock.Lock()
 		liveNodes = make(map[string]struct{}, 0)
 		for _, n := range nodes {
@@ -135,7 +134,7 @@ func TestDroppedNode(t *testing.T) {
 		for i := 0; i < testStruct.replicas; i++ {
 			peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
 			peers = append(peers, peer)
-			caches[peer] = newDistributedCache(t, te, peer, testStruct.replicationFactor, maxSizeBytes)
+			caches[peer] = newDistributedCache(t, te, ps, peer, testStruct.replicationFactor, maxSizeBytes)
 		}
 
 		waitForNodes(peers)
@@ -210,12 +209,11 @@ func TestDroppedNode(t *testing.T) {
 func TestEventualConsistency(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ps := pubsub.NewTestPubSub()
-	te.SetPubSub(ps)
 	ctx := getAnonContext(t)
 
 	var liveNodes map[string]struct{}
 	liveNodesLock := sync.RWMutex{}
-	hbc := heartbeat.NewHeartbeatChannel(te.GetPubSub(), "", heartbeatGroupName, func(nodes ...string) {
+	hbc := heartbeat.NewHeartbeatChannel(ps, "", heartbeatGroupName, func(nodes ...string) {
 		liveNodesLock.Lock()
 		liveNodes = make(map[string]struct{}, 0)
 		for _, n := range nodes {
@@ -292,7 +290,7 @@ func TestEventualConsistency(t *testing.T) {
 			mu.Lock()
 			defer mu.Unlock()
 			peers = append(peers, peer)
-			caches[peer] = newDistributedCache(t, te, peer, testStruct.replicationFactor, maxSizeBytes)
+			caches[peer] = newDistributedCache(t, te, ps, peer, testStruct.replicationFactor, maxSizeBytes)
 			waitForNodes(peers)
 			log.Printf("Finished restarting %q", peer)
 		}
@@ -301,7 +299,7 @@ func TestEventualConsistency(t *testing.T) {
 		for i := 0; i < testStruct.replicas; i++ {
 			peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
 			peers = append(peers, peer)
-			caches[peer] = newDistributedCache(t, te, peer, testStruct.replicationFactor, maxSizeBytes)
+			caches[peer] = newDistributedCache(t, te, ps, peer, testStruct.replicationFactor, maxSizeBytes)
 		}
 
 		// wait until all nodes have advertised.

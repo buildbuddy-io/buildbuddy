@@ -8,14 +8,14 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/go-redis/redis/v8"
+
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/go-redis/redis/v8"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -37,26 +37,20 @@ type Cache struct {
 	cutoffSizeBytes int64
 }
 
-func NewCache(redisTarget string, maxValueSizeBytes int64, hc interfaces.HealthChecker) *Cache {
+func NewCache(redisClient *redis.Client, maxValueSizeBytes int64) *Cache {
 	c := &Cache{
 		prefix:          "",
-		rdb:             redis.NewClient(redisutil.TargetToOptions(redisTarget)),
+		rdb:             redisClient,
 		cutoffSizeBytes: maxValueSizeBytes,
 	}
 	if c.cutoffSizeBytes == 0 {
 		c.cutoffSizeBytes = defaultCutoffSizeBytes
 	}
-	hc.AddHealthCheck("redis_cache", c)
 	return c
 }
 
 func (c *Cache) eligibleForCache(d *repb.Digest) bool {
 	return d.GetSizeBytes() < c.cutoffSizeBytes
-}
-
-func (c *Cache) Check(ctx context.Context) error {
-	_, err := c.rdb.Ping(ctx).Result()
-	return err
 }
 
 func (c *Cache) key(ctx context.Context, d *repb.Digest) (string, error) {
