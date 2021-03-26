@@ -154,18 +154,9 @@ func isTest(t *target) bool {
 	return strings.HasSuffix(strings.ToLower(t.ruleType), "test")
 }
 
-func (t *TargetTracker) testTargetsInState(state targetState) bool {
+func (t *TargetTracker) testTargetsInAtleastState(state targetState) bool {
 	for _, t := range t.targets {
-		if isTest(t) && t.state != state {
-			return false
-		}
-	}
-	return true
-}
-
-func (t *TargetTracker) allTargetsInState(state targetState) bool {
-	for _, t := range t.targets {
-		if t.state != state {
+		if isTest(t) && t.state < state {
 			return false
 		}
 	}
@@ -283,12 +274,18 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 		}
 	case *build_event_stream.BuildEvent_Configured:
 		t.handleEvent(event)
-		if t.allTargetsInState(targetStateConfigured) {
+	case *build_event_stream.BuildEvent_WorkspaceStatus:
+		if t.testTargetsInAtleastState(targetStateConfigured) {
 			if t.buildEventAccumulator.Role() == "CI" {
 				eg, gctx := errgroup.WithContext(ctx)
 				t.errGroup = eg
 				t.errGroup.Go(func() error { return t.writeTestTargets(gctx) })
 			}
+		} else {
+			// This should not happen, but it seems it can happen with certain targets.
+			// For now, we will log the targets that do not meet the required state
+			// so we can better understand whats happening to them.
+			log.Printf("Not all targets reached state: %s, targets: %s", targetStateConfigured, t.targets)
 		}
 	case *build_event_stream.BuildEvent_Completed:
 		t.handleEvent(event)
@@ -296,7 +293,7 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_TestSummary:
 		t.handleEvent(event)
-		if !t.testTargetsInState(targetStateSummary) || t.buildEventAccumulator.Role() != "CI" || t.errGroup == nil {
+		if !t.testTargetsInAtleastState(targetStateSummary) || t.buildEventAccumulator.Role() != "CI" || t.errGroup == nil {
 			break
 		}
 		// Synchronization point: make sure that all targets were read (or written).
