@@ -9,5 +9,5 @@ echo "Cluster name: $CLUSTER_NAME"
 echo "Cluster region: $CLUSTER_REGION"
 echo "BuildBuddy host: $BUILDBUDDY_HOST"
 
-echo "Want to see live cluster status? TryL"
+echo "Want to see live cluster status? Try:"
 echo "kubectl -n default get events --sort-by='{.lastTimestamp}' -w"
