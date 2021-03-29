@@ -61,8 +61,6 @@ func (s *Subscriber) Chan() <-chan string {
 
 const (
 	listTTL = 15 * time.Minute
-	// Active subscribe will refresh the list TTL periodically at this interval.
-	ttlRefreshInterval = 5 * time.Minute
 )
 
 type ListPubSub struct {
@@ -71,8 +69,10 @@ type ListPubSub struct {
 
 // NewListPubSub creates a PubSub client based on a Redis-list.
 // Publishes are done via RPUSH and subscribes are performed via BLPOP.
-// The underlying list TTL is automatically extended to 15 minutes whenever a new value is published and periodically
-// by active subscribers.
+// The underlying list TTL is automatically extended to 15 minutes whenever a new value is published.
+//
+// CAUTION: Only a single consumer will receive a given published message.
+// Think carefully about whether you may have multiple concurrent consumers and the behavior you expect.
 func NewListPubSub(redisClient *redis.Client) interfaces.PubSub {
 	return &ListPubSub{
 		rdb: redisClient,
@@ -107,14 +107,7 @@ func (p *ListPubSub) Subscribe(ctx context.Context, channelName string) interfac
 	go func() {
 		defer close(ch)
 		for {
-			vals, err := p.rdb.BLPop(ctx, ttlRefreshInterval, channelName).Result()
-			// Timeout.
-			if err == redis.Nil {
-				if err := p.rdb.Expire(ctx, channelName, listTTL).Err(); err != nil {
-					log.Printf("Was not able to refresh TTL for %q: %v", channelName, err)
-				}
-				continue
-			}
+			vals, err := p.rdb.BLPop(ctx, 0*time.Second, channelName).Result()
 			if err != nil {
 				if err != context.Canceled {
 					log.Printf("Error executing BLPop: %v", err)
