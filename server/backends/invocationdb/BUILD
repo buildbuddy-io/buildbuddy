@@ -1,7 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "go_default_library",
+    name = "invocationdb",
     srcs = ["invocationdb.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb",
     visibility = ["//visibility:public"],
@@ -9,13 +9,13 @@ go_library(
         "//proto:acl_go_proto",
         "//proto:telemetry_go_proto",
         "//proto:user_id_go_proto",
-        "//server/environment:go_default_library",
-        "//server/interfaces:go_default_library",
-        "//server/tables:go_default_library",
-        "//server/util/db:go_default_library",
-        "//server/util/perms:go_default_library",
-        "//server/util/query_builder:go_default_library",
-        "//server/util/status:go_default_library",
-        "@io_gorm_gorm//:go_default_library",
+        "//server/environment",
+        "//server/interfaces",
+        "//server/tables",
+        "//server/util/db",
+        "//server/util/perms",
+        "//server/util/query_builder",
+        "//server/util/status",
+        "@io_gorm_gorm//:gorm",
     ],
 )

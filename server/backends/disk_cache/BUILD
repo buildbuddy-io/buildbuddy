@@ -1,35 +1,35 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "go_default_library",
+    name = "disk_cache",
     srcs = ["disk_cache.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
-        "//server/interfaces:go_default_library",
-        "//server/remote_cache/digest:go_default_library",
-        "//server/util/disk:go_default_library",
-        "//server/util/lru:go_default_library",
-        "//server/util/prefix:go_default_library",
-        "//server/util/status:go_default_library",
+        "//server/interfaces",
+        "//server/remote_cache/digest",
+        "//server/util/disk",
+        "//server/util/lru",
+        "//server/util/prefix",
+        "//server/util/status",
     ],
 )
 
 go_test(
-    name = "go_default_test",
+    name = "disk_cache_test",
     srcs = ["disk_cache_test.go"],
-    embed = [":go_default_library"],
     deps = [
+        ":disk_cache",
         "//proto:remote_execution_go_proto",
-        "//server/interfaces:go_default_library",
-        "//server/remote_cache/digest:go_default_library",
-        "//server/testutil/testauth:go_default_library",
-        "//server/testutil/testdigest:go_default_library",
-        "//server/testutil/testenv:go_default_library",
-        "//server/util/disk:go_default_library",
-        "//server/util/prefix:go_default_library",
-        "//server/util/testing/flags:go_default_library",
-        "@org_golang_x_sync//errgroup:go_default_library",
+        "//server/interfaces",
+        "//server/remote_cache/digest",
+        "//server/testutil/testauth",
+        "//server/testutil/testdigest",
+        "//server/testutil/testenv",
+        "//server/util/disk",
+        "//server/util/prefix",
+        "//server/util/testing/flags",
+        "@org_golang_x_sync//errgroup",
     ],
 )

@@ -1,7 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "go_default_library",
+    name = "static",
     srcs = ["static.go"],
     data = [
         "//:VERSION",
@@ -10,8 +10,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:config_go_proto",
-        "//server/environment:go_default_library",
-        "//server/version:go_default_library",
+        "//server/environment",
+        "//server/version",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )
