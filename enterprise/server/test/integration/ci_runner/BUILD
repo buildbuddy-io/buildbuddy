@@ -20,6 +20,6 @@ go_test(
         "//server/testutil/buildbuddy",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@io_bazel_rules_go//go/tools/bazel",
+        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )

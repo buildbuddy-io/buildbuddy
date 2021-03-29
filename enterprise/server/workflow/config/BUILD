@@ -25,7 +25,7 @@ go_embed_data(
 go_test(
     name = "config_test",
     srcs = ["config_test.go"],
-    embed = [":test_data"],
+    embed = [":test_data"],  # keep
     deps = [
         ":config",
         "@com_github_stretchr_testify//assert",

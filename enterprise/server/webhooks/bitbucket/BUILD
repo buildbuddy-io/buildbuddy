@@ -30,7 +30,7 @@ go_embed_data(
 go_test(
     name = "bitbucket_test",
     srcs = ["bitbucket_test.go"],
-    embed = [":data"],
+    embed = [":data"],  # keep
     deps = [
         ":bitbucket",
         "//enterprise/server/webhooks/webhook_data",
