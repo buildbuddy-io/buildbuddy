@@ -33,7 +33,7 @@ actions:
 `,
 	}
 
-	invocationIDPattern = regexp.MustCompile(`Invocation ID:\s+([a-f0-9-]+)`)
+	invocationIDPattern = regexp.MustCompile(`Invocation URL:\s+.*?/invocation/([a-f0-9-]+)`)
 )
 
 type result struct {
@@ -113,6 +113,7 @@ func gitInitAndCommit(t *testing.T, path string) string {
 	sh(t, path, "git config --local user.name Test")
 	sh(t, path, "git add .")
 	sh(t, path, `git commit --message 'Initial commit'`)
+	sh(t, path, "git branch -m main")
 	return strings.TrimSpace(sh(t, path, "git rev-parse HEAD"))
 }
 
@@ -122,6 +123,7 @@ func TestActionRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *t
 	runnerFlags := []string{
 		"--repo_url=file://" + wsPath,
 		"--commit_sha=" + headCommitSHA,
+		"--branch=main",
 		"--trigger_event=push",
 		"--trigger_branch=main",
 	}
@@ -132,7 +134,11 @@ func TestActionRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *t
 	result := invokeRunner(t, runnerFlags, []string{})
 
 	assert.Equal(t, 0, result.ExitCode)
-	require.Equal(t, 1, len(result.InvocationIDs))
+	assert.Equal(t, 1, len(result.InvocationIDs))
+	if result.ExitCode != 0 || len(result.InvocationIDs) != 1 {
+		t.Logf("runner output:\n===\n%s\n===\n", result.Output)
+		t.FailNow()
+	}
 	bbService := app.BuildBuddyServiceClient(t)
 	res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
 		Lookup: &inpb.InvocationLookup{

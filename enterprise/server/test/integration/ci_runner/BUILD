@@ -4,12 +4,6 @@ go_test(
     name = "go_default_test",
     srcs = ["ci_runner_test.go"],
     data = ["//enterprise/server/cmd/ci_runner"],
-    # TODO: Make this automatic when we figure out a good way to include
-    # a `git` binary in this test (since the action runner needs it).
-    # Also would need to support a BAZEL_BINARY env variable or flag
-    # to tell it to use a fixed version of Bazel that we include via
-    # data dep.
-    tags = ["manual"],
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
