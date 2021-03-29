@@ -4,10 +4,11 @@ set -e
 # Usage ./commands/loop.sh --all
 
 # Execute from the /terraform/eks-cluster directory.
-cd "$(cd $(dirname "$0");pwd)/../../"
+WORKING_DIRECTORY="$(cd $(dirname "$0");pwd)/../"
+cd $WORKING_DIRECTORY
 
 COUNT=0
-while ./commands/cycle.sh "$@"; do
+while $WORKING_DIRECTORY/commands/cycle.sh "$@"; do
   let COUNT=COUNT+1
   echo "===================================="
   echo "========== Looped $COUNT times! ========="

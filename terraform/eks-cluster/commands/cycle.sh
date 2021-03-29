@@ -4,10 +4,11 @@ set -ex
 # Usage ./commands/cycle.sh --all
 
 # Execute from the /terraform/eks-cluster directory.
-cd "$(cd $(dirname "$0");pwd)/../../"
+WORKING_DIRECTORY="$(cd $(dirname "$0");pwd)/../"
+cd $WORKING_DIRECTORY
 
 # Spin up app/cluster and run a build
-./commands/create.sh "$@"
+$WORKING_DIRECTORY/commands/create.sh "$@"
 
 # Destroy the app/cluster
-./commands/destroy.sh "$@"
+$WORKING_DIRECTORY/commands/destroy.sh "$@"

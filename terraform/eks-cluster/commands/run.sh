@@ -1,14 +1,10 @@
 #!/bin/bash
 set -e
 
-# Execute from the /terraform/eks-cluster directory.
-cd "$(cd $(dirname "$0");pwd)/../../"
-
 export BUILDBUDDY_HOST=$(kubectl get --namespace default service buildbuddy-enterprise -o jsonpath='{.status.loadBalancer.ingress[0].*}')
-export CURRENT_DIR=$(pwd)
 
-# Navigate to the BuildBuddy dir
-cd ../../
+# Execute from the repo's root directory.
+cd "$(cd $(dirname "$0");pwd)/../../../"
 
 # Print commands as we run them
 set -x
