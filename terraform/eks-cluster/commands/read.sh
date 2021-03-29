@@ -2,7 +2,7 @@
 set -e
 
 # Execute from the /terraform/eks-cluster directory.
-cd "$(cd $(dirname "$0");pwd)/../../"
+cd "$(cd $(dirname "$0");pwd)/.."
 
 export CLUSTER_NAME=$(terraform output -raw cluster_name)
 export CLUSTER_REGION=$(terraform output -raw region)

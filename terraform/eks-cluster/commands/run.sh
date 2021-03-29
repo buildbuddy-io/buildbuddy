@@ -4,7 +4,7 @@ set -e
 export BUILDBUDDY_HOST=$(kubectl get --namespace default service buildbuddy-enterprise -o jsonpath='{.status.loadBalancer.ingress[0].*}')
 
 # Execute from the repo's root directory.
-cd "$(cd $(dirname "$0");pwd)/../../../"
+cd "$(cd $(dirname "$0");pwd)/../../.."
 
 # Print commands as we run them
 set -x
