@@ -132,7 +132,11 @@ func (p *ListPubSub) Subscribe(ctx context.Context, channelName string) interfac
 				log.Printf("Returned key %q did not match expected key %q", vals[0], channelName)
 				return
 			}
-			ch <- vals[1]
+			select {
+			case ch <- vals[1]:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 	return &listSubscriber{
