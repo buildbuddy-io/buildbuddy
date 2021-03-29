@@ -31,10 +31,7 @@ bazel build server \
   --remote_upload_local_results \
   --remote_timeout=3600 \
   --jobs=100
-  # Uncomment and move up for mac builds to work once esbuild supports RBE
-  # https://bazelbuild.slack.com/archives/CEZUUKQ6P/p1616796872102700
-  # --spawn_strategy=remote \
- 
+
 # Stop printing
 set +x
 
