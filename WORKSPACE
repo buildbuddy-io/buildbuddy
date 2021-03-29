@@ -27,12 +27,11 @@ http_archive(
 
 load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
 
-
 go_rules_dependencies()
 
 go_register_toolchains(
-    version = "1.16.2",
     nogo = "@//:vet",
+    version = "1.16.2",
 )
 
 load(":deps.bzl", "install_buildbuddy_dependencies")

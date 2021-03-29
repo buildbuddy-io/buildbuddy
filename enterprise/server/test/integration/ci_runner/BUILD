@@ -23,3 +23,16 @@ go_test(
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )
+
+go_test(
+    name = "ci_runner_test",
+    srcs = ["ci_runner_test.go"],
+    deps = [
+        "//proto:invocation_go_proto",
+        "//server/testutil/bazel",
+        "//server/testutil/buildbuddy",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+    ],
+)

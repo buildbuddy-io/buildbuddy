@@ -1,7 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "go_default_library",
+    name = "terminal",
     srcs = [
         "element.go",
         "node.go",
@@ -16,8 +16,10 @@ go_library(
 )
 
 go_test(
-    name = "go_default_test",
+    name = "terminal_test",
     srcs = ["terminal_test.go"],
-    embed = [":go_default_library"],
-    deps = ["//server/util/random:go_default_library"],
+    deps = [
+        ":terminal",
+        "//server/util/random",
+    ],
 )

@@ -9,3 +9,13 @@ go_test(
         "@com_github_stretchr_testify//assert:go_default_library",
     ],
 )
+
+go_test(
+    name = "build_event_protocol_test",
+    srcs = ["build_event_protocol_test.go"],
+    deps = [
+        "//server/testutil/bazel",
+        "//server/testutil/buildbuddy",
+        "@com_github_stretchr_testify//assert",
+    ],
+)

@@ -1,15 +1,15 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "go_default_library",
+    name = "protofile",
     srcs = ["protofile.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/protofile",
     visibility = ["//visibility:public"],
     deps = [
-        "//server/interfaces:go_default_library",
-        "//server/util/status:go_default_library",
+        "//server/interfaces",
+        "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",
-        "@org_golang_google_grpc//codes:go_default_library",
-        "@org_golang_google_grpc//status:go_default_library",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )
