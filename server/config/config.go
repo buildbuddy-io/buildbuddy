@@ -174,7 +174,7 @@ type ExecutorConfig struct {
 
 type RunnerPoolConfig struct {
 	Enabled          bool    `yaml:"enabled" usage:"(UNSTABLE) Whether the runner pool is enabled, allowing reusable execution containers and workspaces."`
-	MaxRunnerCount   int     `yaml:"max_runner_count" usage:"The maximum number of runners that can join the pool (<= 0 means unlimited)."`
+	MaxPausedRunners int     `yaml:"max_paused_runners" usage:"The maximum number of runners that can be in the pool at a time."`
 	RunnerTTLSeconds float64 `yaml:"runner_ttl_seconds" usage:"The maximum duration, in seconds, that a runner can be pooled for."`
 }
 
