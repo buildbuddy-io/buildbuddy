@@ -11,21 +11,6 @@ go_library(
 )
 
 go_test(
-    name = "go_default_test",
-    srcs = ["fieldgetter_test.go"],
-    # keep
-    embed = [],
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
-    deps = [
-        ":go_default_library",  # keep
-        "@com_github_stretchr_testify//assert:go_default_library",
-    ],
-)
-
-go_test(
     name = "fieldgetter_test",
     srcs = ["fieldgetter_test.go"],
     deps = [

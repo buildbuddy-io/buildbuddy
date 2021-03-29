@@ -28,24 +28,9 @@ go_embed_data(
 )
 
 go_test(
-    name = "go_default_test",
-    srcs = ["bitbucket_test.go"],
-    # keep
-    embed = [":data"],
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
-    deps = [
-        ":go_default_library",  # keep
-        "//enterprise/server/webhooks/webhook_data:go_default_library",
-        "@com_github_stretchr_testify//assert:go_default_library",
-    ],
-)
-
-go_test(
     name = "bitbucket_test",
     srcs = ["bitbucket_test.go"],
+    embed = [":data"],
     deps = [
         ":bitbucket",
         "//enterprise/server/webhooks/webhook_data",

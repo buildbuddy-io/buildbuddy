@@ -32,30 +32,6 @@ go_library(
 )
 
 go_test(
-    name = "go_default_test",
-    srcs = ["service_test.go"],
-    # keep
-    embed = [],
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
-    deps = [
-        ":go_default_library",  # keep
-        "//proto:buildbuddy_service_go_proto",
-        "//proto:workflow_go_proto",
-        "//server/buildbuddy_server:go_default_library",
-        "//server/tables:go_default_library",
-        "//server/testutil/testauth:go_default_library",
-        "//server/testutil/testenv:go_default_library",
-        "@com_github_stretchr_testify//assert:go_default_library",
-        "@io_gorm_gorm//:go_default_library",
-        "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//metadata:go_default_library",
-    ],
-)
-
-go_test(
     name = "service_test",
     srcs = ["service_test.go"],
     deps = [

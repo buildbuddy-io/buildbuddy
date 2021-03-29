@@ -23,23 +23,9 @@ go_embed_data(
 )
 
 go_test(
-    name = "go_default_test",
-    srcs = ["config_test.go"],
-    # keep
-    embed = [":test_data"],
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
-    deps = [
-        ":go_default_library",  # keep
-        "@com_github_stretchr_testify//assert:go_default_library",
-    ],
-)
-
-go_test(
     name = "config_test",
     srcs = ["config_test.go"],
+    embed = [":test_data"],
     deps = [
         ":config",
         "@com_github_stretchr_testify//assert",
