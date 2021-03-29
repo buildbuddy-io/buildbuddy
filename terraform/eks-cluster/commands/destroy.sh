@@ -3,7 +3,7 @@
 # Usage ./commands/destroy.sh [--all|--cluster|--app]
 
 # Execute from the /terraform/eks-cluster directory.
-WORKING_DIRECTORY="$(cd $(dirname "$0");pwd)/../"
+WORKING_DIRECTORY="$(cd $(dirname "$0");pwd)/.."
 cd $WORKING_DIRECTORY
 
 # Parse arguments

@@ -4,7 +4,7 @@ set -e
 # Usage ./commands/loop.sh --all
 
 # Execute from the /terraform/eks-cluster directory.
-WORKING_DIRECTORY="$(cd $(dirname "$0");pwd)/../"
+WORKING_DIRECTORY="$(cd $(dirname "$0");pwd)/.."
 cd $WORKING_DIRECTORY
 
 COUNT=0

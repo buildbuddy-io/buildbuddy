@@ -19,7 +19,7 @@ set -e
 # ./commands/create.sh --all --values ../buildbuddy-enterprise/values/demo.yaml --helm ~/Code/buildbuddy-helm/charts/buildbuddy-enterprise/
 
 # Execute from the /terraform/eks-cluster directory.
-WORKING_DIRECTORY="$(cd $(dirname "$0");pwd)/../"
+WORKING_DIRECTORY="$(cd $(dirname "$0");pwd)/.."
 cd $WORKING_DIRECTORY
 
 # Defaults
