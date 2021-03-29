@@ -2,6 +2,9 @@
 
 # Usage ./commands/destroy.sh [--all|--cluster|--app]
 
+# Execute from the /terraform/eks-cluster directory.
+cd "$(cd $(dirname "$0");pwd)/../../"
+
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -13,7 +16,7 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 # Check if we should destroy the app
-if [ $DESTROY_APP ] || [ $ALL ]; then
+if [[ $DESTROY_APP == 1 ]] || [[ $ALL ]]; then
 
   # Print commands as we run them
   set -x
@@ -33,7 +36,7 @@ if [ $DESTROY_APP ] || [ $ALL ]; then
 fi
 
 # Check if we should destroy the app
-if [ $DESTROY_CLUSTER ] || [ $ALL ]; then
+if [[ $DESTROY_CLUSTER ]] || [[ $ALL ]]; then
 
   # Print commands as we run them
   set -x

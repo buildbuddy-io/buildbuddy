@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Execute from the /terraform/eks-cluster directory.
+cd "$(cd $(dirname "$0");pwd)/../../"
+
 export BUILDBUDDY_HOST=$(kubectl get --namespace default service buildbuddy-enterprise -o jsonpath='{.status.loadBalancer.ingress[0].*}')
 export CURRENT_DIR=$(pwd)
 
@@ -30,10 +33,4 @@ bazel build server \
   --verbose_failures \
   --remote_upload_local_results \
   --remote_timeout=3600 \
-  --jobs=100
-
-# Stop printing
-set +x
-
-# Back to where we started
-cd $CURRENT_DIR
+  --jobs=1000

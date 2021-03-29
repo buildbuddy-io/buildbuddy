@@ -4,8 +4,6 @@ set -e
 # Usage
 # ./command/create.sh [--all|--cluster|--app|--run] [--values /path/to/custom-values.yaml] [--helm /path/to/local/helm/chart]
 #
-# Note: Must be executed from the /terraform/eks-cluster directory.
-#
 # Examples:
 #
 # Create cluster, app and run bazel
@@ -20,12 +18,15 @@ set -e
 # Create cluster, app with custom values.yaml and local helm chart, and run bazel
 # ./commands/create.sh --all --values ../buildbuddy-enterprise/values/demo.yaml --helm ~/Code/buildbuddy-helm/charts/buildbuddy-enterprise/
 
+# Execute from the /terraform/eks-cluster directory.
+cd "$(cd $(dirname "$0");pwd)/../../"
+
 # Defaults
 VALUES_PATH=../buildbuddy-enterprise/values/rbe-minimal.yaml
 HELM_CHART=buildbuddy/buildbuddy-enterprise
 
 # Check if there are arguments
-if [ $# -eq 0 ]; then
+if [[ $# -eq 0 ]]; then
     echo "Missing arguments, try --all, --cluster, --app, --run, or some combination of those"
 fi
 
@@ -44,7 +45,7 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 # Check if we should create a cluster
-if [ $CREATE_CLUSTER ] || [ $ALL ]; then
+if [[ $CREATE_CLUSTER == 1 ]] || [[ $ALL == 1 ]]; then
 
   # Print commands as we run them
   set -x
@@ -65,7 +66,7 @@ if [ $CREATE_CLUSTER ] || [ $ALL ]; then
 fi
 
 # Check if we should create an app
-if [ $CREATE_APP ] || [ $ALL ]; then
+if [[ $CREATE_APP == 1 ]] || [[ $ALL == 1 ]]; then
 
   echo "=============================================================="
   echo "Deploying BuildBuddy - you can monitor the progress with:"
@@ -79,7 +80,7 @@ if [ $CREATE_APP ] || [ $ALL ]; then
   helm repo add buildbuddy https://helm.buildbuddy.io
 
   # Install helm chart
-  helm upgrade --install buildbuddy-enterprise --atomic -f $VALUES_PATH $HELM_CHART
+  helm upgrade --install buildbuddy-enterprise --atomic --timeout 10m0s -f $VALUES_PATH $HELM_CHART
 
   # Stop printing
   set +x
@@ -87,7 +88,7 @@ if [ $CREATE_APP ] || [ $ALL ]; then
 fi
 
 # Check if we should should run a bazel build
-if [ $SHOULD_RUN ] || [ $ALL ]; then
+if [[ $SHOULD_RUN == 1 ]] || [[ $ALL == 1 ]]; then
 
   # Run a bazel build
   ./commands/run.sh
