@@ -1,6 +1,8 @@
 package environment
 
 import (
+	"github.com/go-redis/redis/v8"
+
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -56,7 +58,8 @@ type Env interface {
 	GetFileCache() interfaces.FileCache
 	GetRemoteExecutionService() interfaces.RemoteExecutionService
 	GetSchedulerService() interfaces.SchedulerService
-	GetPubSub() interfaces.PubSub
+	GetCacheRedisClient() *redis.Client
+	GetRemoteExecutionRedisClient() *redis.Client
 	GetMetricsCollector() interfaces.MetricsCollector
 	GetRepoDownloader() interfaces.RepoDownloader
 	GetWorkflowService() interfaces.WorkflowService

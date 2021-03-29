@@ -1,4 +1,3 @@
-#gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
 workspace(
     name = "buildbuddy",
     managed_directories = {"@npm": ["node_modules"]},
@@ -10,40 +9,30 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "dbf5a9ef855684f84cac2e7ae7886c5a001d4f66ae23f6904da0faaaef0d61fc",
+    sha256 = "69de5c704a05ff37862f7e0f5534d4f479418afc21806c887db544a316f3cb6b",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.24.11/rules_go-v0.24.11.tar.gz",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.24.11/rules_go-v0.24.11.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.27.0/rules_go-v0.27.0.tar.gz",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.27.0/rules_go-v0.27.0.tar.gz",
     ],
 )
 
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "bfd86b3cbe855d6c16c6fce60d76bd51f5c8dbc9cfcaef7a2bb5c1aafd0710e8",
+    sha256 = "62ca106be173579c0a167deb23358fdfe71ffa1e4cfdddf5582af26520f1c66f",
     urls = [
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.21.0/bazel-gazelle-v0.21.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.23.0/bazel-gazelle-v0.23.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.23.0/bazel-gazelle-v0.23.0.tar.gz",
     ],
 )
 
 load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
 
-go_download_sdk(
-    name = "go_sdk_linux",
-    goarch = "amd64",
-    goos = "linux",
-    version = "1.15.7",
-)
-
-go_download_sdk(
-    name = "go_sdk_darwin",
-    goarch = "amd64",
-    goos = "darwin",
-    version = "1.15.7",
-)
-
 go_rules_dependencies()
 
-go_register_toolchains(nogo = "@//:vet")
+go_register_toolchains(
+    nogo = "@//:vet",
+    version = "1.16.2",
+)
 
 load(":deps.bzl", "install_buildbuddy_dependencies")
 
@@ -60,8 +49,8 @@ gazelle_dependencies()
 
 http_archive(
     name = "build_bazel_rules_nodejs",
-    sha256 = "bfacf15161d96a6a39510e7b3d3b522cf61cb8b82a31e79400a84c5abcab5347",
-    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/3.2.1/rules_nodejs-3.2.1.tar.gz"],
+    sha256 = "dd7ea7efda7655c218ca707f55c3e1b9c68055a70c31a98f264b3445bc8f4cb1",
+    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/3.2.3/rules_nodejs-3.2.3.tar.gz"],
 )
 
 load("@build_bazel_rules_nodejs//:index.bzl", "yarn_install")
@@ -82,9 +71,9 @@ npm_bazel_labs_dependencies()
 
 http_archive(
     name = "io_bazel_rules_docker",
-    sha256 = "1698624e878b0607052ae6131aa216d45ebb63871ec497f26c67455b34119c80",
-    strip_prefix = "rules_docker-0.15.0",
-    urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.15.0/rules_docker-v0.15.0.tar.gz"],
+    sha256 = "95d39fd84ff4474babaf190450ee034d958202043e366b9fc38f438c9e6c3334",
+    strip_prefix = "rules_docker-0.16.0",
+    urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.16.0/rules_docker-v0.16.0.tar.gz"],
 )
 
 load(

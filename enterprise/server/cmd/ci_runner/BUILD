@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
 go_library(
-    name = "go_default_library",
+    name = "ci_runner_lib",
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
     visibility = [
@@ -10,31 +10,31 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
-        "//enterprise/server/auth:go_default_library",
-        "//enterprise/server/workflow/config:go_default_library",
+        "//enterprise/server/auth",
+        "//enterprise/server/workflow/config",
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
         "//proto:publish_build_event_go_proto",
-        "//server/util/git:go_default_library",
-        "//server/util/grpc_client:go_default_library",
-        "//server/util/lockingbuffer:go_default_library",
-        "//server/util/status:go_default_library",
-        "@com_github_go_git_go_git_v5//:go_default_library",
-        "@com_github_go_git_go_git_v5//config:go_default_library",
-        "@com_github_go_git_go_git_v5//plumbing:go_default_library",
+        "//server/util/git",
+        "//server/util/grpc_client",
+        "//server/util/lockingbuffer",
+        "//server/util/status",
+        "@com_github_go_git_go_git_v5//:go-git",
+        "@com_github_go_git_go_git_v5//config",
+        "@com_github_go_git_go_git_v5//plumbing",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
-        "@com_github_google_shlex//:go_default_library",
-        "@com_github_google_uuid//:go_default_library",
-        "@com_github_logrusorgru_aurora//:go_default_library",
-        "@in_gopkg_yaml_v2//:go_default_library",
-        "@org_golang_google_grpc//metadata:go_default_library",
-        "@org_golang_google_grpc//status:go_default_library",
+        "@com_github_google_shlex//:shlex",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_logrusorgru_aurora//:aurora",
+        "@in_gopkg_yaml_v2//:yaml_v2",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
     ],
 )
 
 go_binary(
     name = "ci_runner",
-    embed = [":go_default_library"],
+    embed = [":ci_runner_lib"],
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",

@@ -16,7 +16,7 @@ go_binary(
         "//app:style.css",
         "//static",
     ],
-    embed = [":go_default_library"],
+    embed = [":buildbuddy_lib"],
     visibility = ["//visibility:public"],
 )
 
@@ -41,16 +41,16 @@ go_image(
 )
 
 go_library(
-    name = "go_default_library",
+    name = "buildbuddy_lib",
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/cmd/buildbuddy",
     visibility = ["//visibility:private"],
     deps = [
-        "//server/config:go_default_library",
-        "//server/janitor:go_default_library",
-        "//server/libmain:go_default_library",
-        "//server/telemetry:go_default_library",
-        "//server/util/healthcheck:go_default_library",
-        "//server/version:go_default_library",
+        "//server/config",
+        "//server/janitor",
+        "//server/libmain",
+        "//server/telemetry",
+        "//server/util/healthcheck",
+        "//server/version",
     ],
 )

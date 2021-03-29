@@ -13,7 +13,7 @@ genrule(
 )
 
 go_library(
-    name = "go_default_library",
+    name = "bazel",
     testonly = 1,
     srcs = ["bazel.go"],
     data = [":bazel-3.7.0"],

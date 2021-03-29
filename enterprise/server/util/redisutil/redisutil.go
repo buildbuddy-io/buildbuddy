@@ -1,10 +1,13 @@
 package redisutil
 
 import (
+	"context"
 	"log"
 	"strings"
 
 	"github.com/go-redis/redis/v8"
+
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 )
 
 func isRedisURI(redisTarget string) bool {
@@ -32,4 +35,18 @@ func TargetToOptions(redisTarget string) *redis.Options {
 				"path must be an absolute unix path.")
 		return &redis.Options{}
 	}
+}
+
+type healthChecker struct {
+	rdb *redis.Client
+}
+
+func (c *healthChecker) Check(ctx context.Context) error {
+	return c.rdb.Ping(ctx).Err()
+}
+
+func NewClient(redisTarget string, checker interfaces.HealthChecker, healthCheckName string) *redis.Client {
+	rdb := redis.NewClient(TargetToOptions(redisTarget))
+	checker.AddHealthCheck(healthCheckName, &healthChecker{rdb})
+	return rdb
 }
