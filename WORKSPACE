@@ -1,4 +1,3 @@
-#gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
 workspace(
     name = "buildbuddy",
     managed_directories = {"@npm": ["node_modules"]},
