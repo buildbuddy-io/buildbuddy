@@ -133,7 +133,6 @@ func (p *ListPubSub) Subscribe(ctx context.Context, channelName string) interfac
 				return
 			}
 			ch <- vals[1]
-			return
 		}
 	}()
 	return &listSubscriber{
