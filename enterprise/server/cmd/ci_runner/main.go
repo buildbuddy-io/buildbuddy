@@ -43,8 +43,7 @@ const (
 	// Path where we expect to find actions config, relative to the repo root.
 	actionsConfigPath = "buildbuddy.yaml"
 
-	// Env vars
-
+	// Env vars set by workflow runner
 	// NOTE: These env vars are not populated for non-private repos.
 
 	buildbuddyAPIKeyEnvVarName = "BUILDBUDDY_API_KEY"
