@@ -10,10 +10,26 @@ import (
 
 type TestingHealthChecker struct {
 	t testing.TB
+
+	done          chan bool
+	shutdownFuncs []interfaces.CheckerFunc
 }
 
 func NewTestingHealthChecker(t testing.TB) interfaces.HealthChecker {
-	return &TestingHealthChecker{t}
+	hc := &TestingHealthChecker{
+		t:             t,
+		done:          make(chan bool),
+		shutdownFuncs: []interfaces.CheckerFunc{},
+	}
+	t.Cleanup(func() {
+		for _, fn := range hc.shutdownFuncs {
+			if err := fn(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		hc.done <- true
+	})
+	return hc
 }
 
 func (hc *TestingHealthChecker) RegisterShutdownFunction(f interfaces.CheckerFunc) {
@@ -25,7 +41,7 @@ func (hc *TestingHealthChecker) RegisterShutdownFunction(f interfaces.CheckerFun
 }
 func (hc *TestingHealthChecker) AddHealthCheck(name string, f interfaces.Checker) {}
 func (hc *TestingHealthChecker) WaitForGracefulShutdown() {
-	select {}
+	<-hc.done
 }
 func (hc *TestingHealthChecker) LivenessHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
