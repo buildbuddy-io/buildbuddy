@@ -195,8 +195,8 @@ func (c *Cache) remoteReader(ctx context.Context, d *repb.Digest, offset int64) 
 		if err == nil {
 			if i != 0 {
 				if err := c.backfillReplica(ctx, d, peer, peers[i-1]); err != nil {
-                                    log.Printf("Error backfilling %q => %q: %s", peer, peers[i-1], err)
-                                }
+					log.Printf("Error backfilling %q => %q: %s", peer, peers[i-1], err)
+				}
 			}
 			return r, err
 		}
