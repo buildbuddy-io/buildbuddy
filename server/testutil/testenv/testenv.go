@@ -127,7 +127,7 @@ func GetTestEnv(t testing.TB) *TestEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	healthChecker := healthcheck.NewTestingHealthChecker()
+	healthChecker := healthcheck.NewTestingHealthChecker(t)
 	te := &TestEnv{
 		RealEnv: real_environment.NewRealEnv(configurator, healthChecker),
 	}
