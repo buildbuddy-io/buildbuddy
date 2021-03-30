@@ -113,7 +113,7 @@ func gitInitAndCommit(t *testing.T, path string) string {
 	sh(t, path, "git config --local user.name Test")
 	sh(t, path, "git add .")
 	sh(t, path, `git commit --message 'Initial commit'`)
-	sh(t, path, "git branch -m main")
+	sh(t, path, "git branch --move main")
 	return strings.TrimSpace(sh(t, path, "git rev-parse HEAD"))
 }
 
