@@ -40,6 +40,8 @@ type CacheConfig struct {
 	ListenAddr        string
 	GroupName         string
 	ReplicationFactor int
+	PubSub            interfaces.PubSub
+	Nodes             []string
 }
 
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
@@ -51,7 +53,7 @@ type CacheConfig struct {
 // match to peer.
 //  - replicationFactor is an int specifying how many copies of each key will
 // be stored across unique caches.
-func NewDistributedCache(env environment.Env, ps interfaces.PubSub, c interfaces.Cache, config CacheConfig, hc interfaces.HealthChecker) (*Cache, error) {
+func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheConfig, hc interfaces.HealthChecker) (*Cache, error) {
 	chash := consistent_hash.NewConsistentHash()
 	dc := &Cache{
 		local:             c,
@@ -59,10 +61,15 @@ func NewDistributedCache(env environment.Env, ps interfaces.PubSub, c interfaces
 		myAddr:            config.ListenAddr,
 		groupName:         config.GroupName,
 		consistentHash:    chash,
-		heartbeatChannel:  heartbeat.NewHeartbeatChannel(ps, config.ListenAddr, config.GroupName, chash.Set),
 		replicationFactor: config.ReplicationFactor,
 	}
-	hc.AddHealthCheck("distributed_cache", dc)
+	if len(config.Nodes) > 0 {
+		// Nodes are hardcoded. Set them once and be done with it.
+		chash.Set(config.Nodes...)
+	} else {
+		// No nodes were hardcoded, use redis for discovery.
+		dc.heartbeatChannel = heartbeat.NewHeartbeatChannel(config.PubSub, config.ListenAddr, config.GroupName, chash.Set)
+	}
 	hc.RegisterShutdownFunction(func(ctx context.Context) error {
 		dc.Shutdown()
 		return nil
@@ -70,25 +77,21 @@ func NewDistributedCache(env environment.Env, ps interfaces.PubSub, c interfaces
 	return dc, nil
 }
 
-func (c *Cache) Check(ctx context.Context) error {
-	peersAvailable := len(c.consistentHash.GetItems())
-	if peersAvailable >= c.replicationFactor/2 {
-		return nil
-	}
-	return status.UnavailableErrorf("Not enough peers available to meet replication factor (%d < %d)", peersAvailable, c.replicationFactor/2)
-}
-
 func (c *Cache) StartListening() {
 	go func() {
-		log.Printf("Distributed disk listening on %q", c.myAddr)
-		c.heartbeatChannel.StartAdvertising()
+		log.Printf("Distributed cache listening on %q", c.myAddr)
+		if c.heartbeatChannel != nil {
+			c.heartbeatChannel.StartAdvertising()
+		}
 		c.cacheProxy.Server().ListenAndServe()
 	}()
 }
 
 func (c *Cache) Shutdown() {
-	log.Printf("Distributed disk shutting down %q", c.myAddr)
-	c.heartbeatChannel.StopAdvertising()
+	log.Printf("Distributed cache shutting down %q", c.myAddr)
+	if c.heartbeatChannel != nil {
+		c.heartbeatChannel.StopAdvertising()
+	}
 	c.cacheProxy.Server().Close()
 }
 
@@ -191,7 +194,9 @@ func (c *Cache) remoteReader(ctx context.Context, d *repb.Digest, offset int64) 
 		r, err := c.cacheProxy.RemoteReader(ctx, peer, c.prefix, d, offset)
 		if err == nil {
 			if i != 0 {
-				c.backfillReplica(ctx, d, peer, peers[i-1])
+				if err := c.backfillReplica(ctx, d, peer, peers[i-1]); err != nil {
+                                    log.Printf("Error backfilling %q => %q: %s", peer, peers[i-1], err)
+                                }
 			}
 			return r, err
 		}

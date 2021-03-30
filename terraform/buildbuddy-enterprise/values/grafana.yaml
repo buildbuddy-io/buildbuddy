@@ -1,0 +1,22 @@
+grafana:
+  enabled: true
+  adminUser: admin
+  adminPassword: mysuperstrongpassword
+
+prometheus:
+  enabled: true
+
+ingress:
+  enabled: true
+  httpHost: buildbuddy.example.com
+  grpcHost: buildbuddy-grpc.example.com
+
+certmanager:
+  enabled: true
+  emailAddress: your-email@gmail.com
+
+config:
+  app:
+    build_buddy_url: "http://{{ .Values.ingress.httpHost }}"
+    events_api_url: "grpc://{{ .Values.ingress.grpcHost }}"
+    cache_api_url: "grpc://{{ .Values.ingress.grpcHost }}"

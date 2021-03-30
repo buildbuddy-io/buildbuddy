@@ -63,8 +63,9 @@ func newDistributedCache(t *testing.T, te environment.Env, ps interfaces.PubSub,
 		ListenAddr:        peer,
 		GroupName:         heartbeatGroupName,
 		ReplicationFactor: replicationFactor,
+		PubSub:            ps,
 	}
-	c, err := NewDistributedCache(te, ps, mc, dcc, te.GetHealthChecker())
+	c, err := NewDistributedCache(te, mc, dcc, te.GetHealthChecker())
 	if err != nil {
 		t.Fatal(err)
 	}
