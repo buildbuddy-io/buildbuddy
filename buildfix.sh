@@ -2,10 +2,8 @@
 set -e
 
 # buildifier format all BUILD files
-echo "Formatting WORKSPACE files..."
-find . -name WORKSPACE -exec buildifier {} \;
-echo "Formatting BUILD files..."
-find . -name BUILD -exec buildifier {} \;
+echo "Formatting WORKSPACE/BUILD files..."
+buildifier -r .
 
 # go fmt all .go files
 echo "Formatting .go files..."
