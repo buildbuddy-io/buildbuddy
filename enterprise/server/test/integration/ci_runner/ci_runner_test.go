@@ -1,14 +1,12 @@
 package ci_runner_test
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -19,6 +17,7 @@ import (
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	git "github.com/go-git/go-git/v5"
 )
 
 var (
@@ -28,7 +27,7 @@ var (
 		"buildbuddy.yaml": `
 actions:
   - name: "Show bazel version"
-    triggers: { push: { branches: [ main ] } }
+    triggers: { push: { branches: [ master ] } }
     bazel_commands: [ version ]
 `,
 	}
@@ -51,7 +50,10 @@ func invokeRunner(t *testing.T, args []string, env []string) *result {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	bazelPath, err := bazelgo.Runfile("server/testutil/bazel/bazel-3.7.0")
+	if err != nil {
+		t.Fatal(err)
+	}
 	runnerWorkDir := bazel.MakeTempWorkspace(t, map[string]string{})
 	// Need a home dir so bazel commands invoked by the runner know where to put their local cache.
 	runnerHomeDir := filepath.Join(runnerWorkDir, ".home")
@@ -66,6 +68,7 @@ func invokeRunner(t *testing.T, args []string, env []string) *result {
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, env...)
 	cmd.Env = append(cmd.Env, []string{
+		fmt.Sprintf("BAZEL_COMMAND=%s", bazelPath),
 		fmt.Sprintf("HOME=%s", runnerHomeDir),
 	}...)
 	outputBytes, err := cmd.CombinedOutput()
@@ -93,28 +96,23 @@ func invokeRunner(t *testing.T, args []string, env []string) *result {
 	}
 }
 
-// Run a shell command and return its stdout, exiting fatally if it fails.
-func sh(t *testing.T, dir, command string) string {
-	cmd := exec.Command("sh", []string{"-c", command}...)
-	cmd.Dir = dir
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	if err != nil {
-		t.Fatal(fmt.Errorf("command %q failed: %s. stderr:\n%s", command, err, string(stderr.Bytes())))
-	}
-	return string(stdout.Bytes())
-}
-
 func gitInitAndCommit(t *testing.T, path string) string {
-	sh(t, path, "git init")
-	sh(t, path, "git config --local user.email test@buildbuddy.io")
-	sh(t, path, "git config --local user.name Test")
-	sh(t, path, "git add .")
-	sh(t, path, `git commit --message 'Initial commit'`)
-	sh(t, path, "git branch --move main")
-	return strings.TrimSpace(sh(t, path, "git rev-parse HEAD"))
+	repo, err := git.PlainInit(path, false /*=bare*/)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tree.AddGlob("*"); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := tree.Commit("Initial commit", &git.CommitOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hash.String()
 }
 
 func TestActionRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *testing.T) {
@@ -123,9 +121,9 @@ func TestActionRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *t
 	runnerFlags := []string{
 		"--repo_url=file://" + wsPath,
 		"--commit_sha=" + headCommitSHA,
-		"--branch=main",
+		"--branch=master",
 		"--trigger_event=push",
-		"--trigger_branch=main",
+		"--trigger_branch=master",
 	}
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
