@@ -18,6 +18,7 @@ import (
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	git "github.com/go-git/go-git/v5"
+	gitobject "github.com/go-git/go-git/v5/plumbing/object"
 )
 
 var (
@@ -108,7 +109,12 @@ func gitInitAndCommit(t *testing.T, path string) string {
 	if err := tree.AddGlob("*"); err != nil {
 		t.Fatal(err)
 	}
-	hash, err := tree.Commit("Initial commit", &git.CommitOptions{})
+	hash, err := tree.Commit("Initial commit", &git.CommitOptions{
+		Author: &gitobject.Signature{
+			Name:  "Test",
+			Email: "test@buildbuddy.io",
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

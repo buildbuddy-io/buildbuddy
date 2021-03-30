@@ -18,6 +18,7 @@ go_test(
         "@com_github_go_git_go_git_v5//:go-git",
         "@com_github_go_git_go_git_v5//config",
         "@com_github_go_git_go_git_v5//plumbing",
+        "@com_github_go_git_go_git_v5//plumbing/object",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/tools/bazel",
