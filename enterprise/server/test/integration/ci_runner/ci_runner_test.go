@@ -1,14 +1,12 @@
 package ci_runner_test
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -19,6 +17,8 @@ import (
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	git "github.com/go-git/go-git/v5"
+	gitobject "github.com/go-git/go-git/v5/plumbing/object"
 )
 
 var (
@@ -28,12 +28,12 @@ var (
 		"buildbuddy.yaml": `
 actions:
   - name: "Show bazel version"
-    triggers: { push: { branches: [ main ] } }
+    triggers: { push: { branches: [ master ] } }
     bazel_commands: [ version ]
 `,
 	}
 
-	invocationIDPattern = regexp.MustCompile(`Invocation ID:\s+([a-f0-9-]+)`)
+	invocationIDPattern = regexp.MustCompile(`Invocation URL:\s+.*?/invocation/([a-f0-9-]+)`)
 )
 
 type result struct {
@@ -51,7 +51,10 @@ func invokeRunner(t *testing.T, args []string, env []string) *result {
 	if err != nil {
 		t.Fatal(err)
 	}
-
+	bazelPath, err := bazelgo.Runfile("server/testutil/bazel/bazel-3.7.0")
+	if err != nil {
+		t.Fatal(err)
+	}
 	runnerWorkDir := bazel.MakeTempWorkspace(t, map[string]string{})
 	// Need a home dir so bazel commands invoked by the runner know where to put their local cache.
 	runnerHomeDir := filepath.Join(runnerWorkDir, ".home")
@@ -66,6 +69,7 @@ func invokeRunner(t *testing.T, args []string, env []string) *result {
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, env...)
 	cmd.Env = append(cmd.Env, []string{
+		fmt.Sprintf("BAZEL_COMMAND=%s", bazelPath),
 		fmt.Sprintf("HOME=%s", runnerHomeDir),
 	}...)
 	outputBytes, err := cmd.CombinedOutput()
@@ -93,27 +97,28 @@ func invokeRunner(t *testing.T, args []string, env []string) *result {
 	}
 }
 
-// Run a shell command and return its stdout, exiting fatally if it fails.
-func sh(t *testing.T, dir, command string) string {
-	cmd := exec.Command("sh", []string{"-c", command}...)
-	cmd.Dir = dir
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	if err != nil {
-		t.Fatal(fmt.Errorf("command %q failed: %s. stderr:\n%s", command, err, string(stderr.Bytes())))
-	}
-	return string(stdout.Bytes())
-}
-
 func gitInitAndCommit(t *testing.T, path string) string {
-	sh(t, path, "git init")
-	sh(t, path, "git config --local user.email test@buildbuddy.io")
-	sh(t, path, "git config --local user.name Test")
-	sh(t, path, "git add .")
-	sh(t, path, `git commit --message 'Initial commit'`)
-	return strings.TrimSpace(sh(t, path, "git rev-parse HEAD"))
+	repo, err := git.PlainInit(path, false /*=bare*/)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tree.AddGlob("*"); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := tree.Commit("Initial commit", &git.CommitOptions{
+		Author: &gitobject.Signature{
+			Name:  "Test",
+			Email: "test@buildbuddy.io",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hash.String()
 }
 
 func TestActionRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *testing.T) {
@@ -122,8 +127,9 @@ func TestActionRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *t
 	runnerFlags := []string{
 		"--repo_url=file://" + wsPath,
 		"--commit_sha=" + headCommitSHA,
+		"--branch=master",
 		"--trigger_event=push",
-		"--trigger_branch=main",
+		"--trigger_branch=master",
 	}
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
@@ -132,7 +138,11 @@ func TestActionRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *t
 	result := invokeRunner(t, runnerFlags, []string{})
 
 	assert.Equal(t, 0, result.ExitCode)
-	require.Equal(t, 1, len(result.InvocationIDs))
+	assert.Equal(t, 1, len(result.InvocationIDs))
+	if result.ExitCode != 0 || len(result.InvocationIDs) != 1 {
+		t.Logf("runner output:\n===\n%s\n===\n", result.Output)
+		t.FailNow()
+	}
 	bbService := app.BuildBuddyServiceClient(t)
 	res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
 		Lookup: &inpb.InvocationLookup{
