@@ -571,43 +571,76 @@ func bazelCommand() string {
 }
 
 func setupGitRepo(ctx context.Context) error {
-	if err := os.Mkdir(repoDirName, 0o775); err != nil {
+	if err := os.MkdirAll(repoDirName, 0o775); err != nil {
 		return status.WrapErrorf(err, "mkdir %q", repoDirName)
 	}
 	if err := os.Chdir(repoDirName); err != nil {
 		return status.WrapErrorf(err, "cd %q", repoDirName)
 	}
-
-	repo, err := git.PlainInit("." /*isBare=*/, false)
+	repo, remote, err := readOrInitRepo()
 	if err != nil {
-		return err
-	}
-	authURL, err := gitutil.AuthRepoURL(*repoURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
-	if err != nil {
-		return err
-	}
-	remote, err := repo.CreateRemote(&gitcfg.RemoteConfig{
-		Name: "origin",
-		URLs: []string{authURL},
-	})
-	if err != nil {
-		return err
+		return status.WrapErrorf(err, "init repo")
 	}
 
 	fetchOpts := &git.FetchOptions{
 		RefSpecs: []gitcfg.RefSpec{gitcfg.RefSpec(fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", *branch, *branch))},
 	}
-	if err := remote.FetchContext(ctx, fetchOpts); err != nil {
-		return err
+	if err := remote.FetchContext(ctx, fetchOpts); err != nil && err != git.NoErrAlreadyUpToDate {
+		return status.WrapErrorf(err, "fetch")
 	}
 	tree, err := repo.Worktree()
 	if err != nil {
-		return err
+		return status.WrapErrorf(err, "get worktree")
 	}
-	if err := tree.Checkout(&git.CheckoutOptions{Hash: gitplumbing.NewHash(*commitSHA)}); err != nil {
-		return err
+	if err := tree.Clean(&git.CleanOptions{Dir: true}); err != nil {
+		return status.WrapErrorf(err, "clean")
+	}
+	checkoutOpts := &git.CheckoutOptions{
+		Hash:  gitplumbing.NewHash(*commitSHA),
+		Force: true, // remove local changes
+	}
+	if err := tree.Checkout(checkoutOpts); err != nil {
+		return status.WrapErrorf(err, "checkout %s", *commitSHA)
 	}
 	return nil
+}
+
+func readOrInitRepo() (*git.Repository, *git.Remote, error) {
+	_, err := os.Stat(".git")
+	if err != nil && !os.IsNotExist(err) {
+		return nil, nil, err
+	}
+
+	if os.IsNotExist(err) {
+		log.Printf("Initializing git repo")
+		repo, err := git.PlainInit("." /*isBare=*/, false)
+		if err != nil {
+			return nil, nil, err
+		}
+		authURL, err := gitutil.AuthRepoURL(*repoURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
+		if err != nil {
+			return nil, nil, err
+		}
+		remote, err := repo.CreateRemote(&gitcfg.RemoteConfig{
+			Name: "origin",
+			URLs: []string{authURL},
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return repo, remote, nil
+	}
+
+	log.Printf("Using existing git repo")
+	repo, err := git.PlainOpen(".")
+	if err != nil {
+		return nil, nil, err
+	}
+	remote, err := repo.Remote("origin")
+	if err != nil {
+		return nil, nil, err
+	}
+	return repo, remote, nil
 }
 
 func invocationURL(invocationID string) string {

@@ -46,7 +46,18 @@ type result struct {
 	ExitCode int
 }
 
-func invokeRunner(t *testing.T, args []string, env []string) *result {
+func makeRunnerWorkspace(t *testing.T) string {
+	wsDir := bazel.MakeTempWorkspace(t, map[string]string{})
+	// Need a home dir so bazel commands invoked by the runner know where to put
+	// their local cache.
+	homeDir := filepath.Join(wsDir, ".home")
+	if err := os.Mkdir(homeDir, 0777); err != nil {
+		t.Fatal(err)
+	}
+	return wsDir
+}
+
+func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
 	binPath, err := bazelgo.Runfile("enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
 	if err != nil {
 		t.Fatal(err)
@@ -55,22 +66,16 @@ func invokeRunner(t *testing.T, args []string, env []string) *result {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runnerWorkDir := bazel.MakeTempWorkspace(t, map[string]string{})
-	// Need a home dir so bazel commands invoked by the runner know where to put their local cache.
-	runnerHomeDir := filepath.Join(runnerWorkDir, ".home")
-	err = os.Mkdir(runnerHomeDir, 0777)
-	if err != nil {
-		t.Fatal(err)
-	}
+
 	cmd := exec.Command(binPath, args...)
-	cmd.Dir = runnerWorkDir
+	cmd.Dir = workDir
 	// Use the same environment, including PATH, as this dev machine for now.
 	// TODO: Make this closer to the real deployed runner setup.
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, env...)
 	cmd.Env = append(cmd.Env, []string{
 		fmt.Sprintf("BAZEL_COMMAND=%s", bazelPath),
-		fmt.Sprintf("HOME=%s", runnerHomeDir),
+		fmt.Sprintf("HOME=%s", filepath.Join(workDir, ".home")),
 	}...)
 	outputBytes, err := cmd.CombinedOutput()
 	exitCode := 0
@@ -97,7 +102,9 @@ func invokeRunner(t *testing.T, args []string, env []string) *result {
 	}
 }
 
-func gitInitAndCommit(t *testing.T, path string) string {
+func makeGitRepo(t *testing.T) (path, commitSHA string) {
+	path = bazel.MakeTempWorkspace(t, testWorkspaceContents)
+
 	repo, err := git.PlainInit(path, false /*=bare*/)
 	if err != nil {
 		t.Fatal(err)
@@ -118,14 +125,14 @@ func gitInitAndCommit(t *testing.T, path string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return hash.String()
+	return path, hash.String()
 }
 
-func TestActionRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *testing.T) {
-	wsPath := bazel.MakeTempWorkspace(t, testWorkspaceContents)
-	headCommitSHA := gitInitAndCommit(t, wsPath)
+func TestCIRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *testing.T) {
+	wsPath := makeRunnerWorkspace(t)
+	repoPath, headCommitSHA := makeGitRepo(t)
 	runnerFlags := []string{
-		"--repo_url=file://" + wsPath,
+		"--repo_url=file://" + repoPath,
 		"--commit_sha=" + headCommitSHA,
 		"--branch=master",
 		"--trigger_event=push",
@@ -135,7 +142,7 @@ func TestActionRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *t
 	app := buildbuddy.Run(t)
 	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
 
-	result := invokeRunner(t, runnerFlags, []string{})
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 
 	assert.Equal(t, 0, result.ExitCode)
 	assert.Equal(t, 1, len(result.InvocationIDs))
@@ -143,6 +150,53 @@ func TestActionRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *t
 		t.Logf("runner output:\n===\n%s\n===\n", result.Output)
 		t.FailNow()
 	}
+	bbService := app.BuildBuddyServiceClient(t)
+	res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
+		Lookup: &inpb.InvocationLookup{
+			InvocationId: result.InvocationIDs[0],
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(res.Invocation), "couldn't find runner invocation in DB")
+	runnerInvocation := res.Invocation[0]
+	// Since our workflow just runs `bazel version`, we should be able to see its
+	// output in the action logs.testWorkspaceContents
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7.0")
+}
+
+func TestCIRunner_ReusedWorkspaceWithTestAllAction_CanReuseWorkspace(t *testing.T) {
+	wsPath := makeRunnerWorkspace(t)
+	repoPath, headCommitSHA := makeGitRepo(t)
+	runnerFlags := []string{
+		"--repo_url=file://" + repoPath,
+		"--commit_sha=" + headCommitSHA,
+		"--branch=master",
+		"--trigger_event=push",
+		"--trigger_branch=master",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	assert.Equal(t, 0, result.ExitCode)
+	assert.Equal(t, 1, len(result.InvocationIDs))
+	if result.ExitCode != 0 || len(result.InvocationIDs) != 1 {
+		t.Logf("runner output (first run):\n===\n%s\n===\n", result.Output)
+		t.FailNow()
+	}
+
+	// Invoke the runner a second time in the same workspace.
+	result = invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	assert.Equal(t, 0, result.ExitCode)
+	assert.Equal(t, 1, len(result.InvocationIDs))
+	if result.ExitCode != 0 || len(result.InvocationIDs) != 1 {
+		t.Logf("runner output (second run in reused workspace):\n===\n%s\n===\n", result.Output)
+		t.FailNow()
+	}
+
 	bbService := app.BuildBuddyServiceClient(t)
 	res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
 		Lookup: &inpb.InvocationLookup{
