@@ -29,9 +29,22 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchai
 
 go_rules_dependencies()
 
+go_download_sdk(
+    name = "go_sdk_linux",
+    goarch = "amd64",
+    goos = "linux",
+    version = "1.16.2",
+)
+
+go_download_sdk(
+    name = "go_sdk_darwin",
+    goarch = "amd64",
+    goos = "darwin",
+    version = "1.16.2",
+)
+
 go_register_toolchains(
     nogo = "@//:vet",
-    version = "1.16.2",
 )
 
 load(":deps.bzl", "install_buildbuddy_dependencies")
