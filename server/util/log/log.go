@@ -77,18 +77,22 @@ func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCo
 	Printf("HTTP %s %q %d %s [%s]", reqID, url, statusCode, http.StatusText(statusCode), formatDuration(dur))
 }
 
-func ConfigureLogging(level string, enableStructured bool) error {
+func Configure(level string, enableStructured bool) error {
+	fmt.Printf("Configured called: level: %q, enableStructured: %t\n", level, enableStructured)
 	if enableStructured {
 		log.Logger = StructuredLogger()
 	} else {
 		log.Logger = LocalLogger(level)
 	}
-	l, err := zerolog.ParseLevel(level)
-	if err != nil {
-		fmt.Println(err)
-		return err
+	intLogLevel := zerolog.InfoLevel
+	if level != "" {
+		if l, err := zerolog.ParseLevel(level); err == nil {
+			intLogLevel = l
+		} else {
+			return err
+		}
 	}
-	zerolog.SetGlobalLevel(l)
+	zerolog.SetGlobalLevel(intLogLevel)
 	return nil
 }
 
@@ -124,6 +128,7 @@ func Printf(format string, v ...interface{}) {
 func Info(message string) {
 	log.Info().Msg(message)
 }
+
 // Infof logs to the INFO log. Arguments are handled in the manner of fmt.Printf.
 func Infof(format string, args ...interface{}) {
 	log.Info().Msgf(format, args...)
@@ -133,6 +138,7 @@ func Infof(format string, args ...interface{}) {
 func Warning(message string) {
 	log.Warn().Msg(message)
 }
+
 // Warningf logs to the WARNING log. Arguments are handled in the manner of fmt.Printf.
 func Warningf(format string, args ...interface{}) {
 	log.Warn().Msgf(format, args...)
@@ -142,6 +148,7 @@ func Warningf(format string, args ...interface{}) {
 func Error(message string) {
 	log.Error().Msg(message)
 }
+
 // Errorf logs to the ERROR log. Arguments are handled in the manner of fmt.Printf.
 func Errorf(format string, args ...interface{}) {
 	log.Error().Msgf(format, args...)
@@ -154,6 +161,7 @@ func Fatal(message string) {
 	// Make sure fatal logs will exit.
 	os.Exit(1)
 }
+
 // Fatalf logs to the FATAL log. Arguments are handled in the manner of fmt.Printf.
 // It calls os.Exit() with exit code 1.
 func Fatalf(format string, args ...interface{}) {

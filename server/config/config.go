@@ -363,6 +363,14 @@ func (c *Configurator) GetAppAddUserToDomainGroup() bool {
 	return c.gc.App.AddUserToDomainGroup
 }
 
+func (c *Configurator) GetAppEnableStructuredLogging() bool {
+	return c.gc.App.EnableStructuredLogging
+}
+
+func (c *Configurator) GetAppLogLevel() string {
+	return c.gc.App.LogLevel
+}
+
 func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {
 	return c.gc.App.GRPCOverHTTPPortEnabled
 }
