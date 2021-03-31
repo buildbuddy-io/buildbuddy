@@ -55,6 +55,10 @@
   background-color: #eee;
 }
 
+.content .button {
+  float: right;
+}
+
 .download-color-swatch {
   background-color: #03a9f4;
 }
