@@ -7,7 +7,6 @@ import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 import Button from "../components/button/button";
 
-
 interface Props {
   model: InvocationModel;
 }
@@ -123,10 +122,9 @@ export default class InvocationTimingCardComponent extends React.Component {
     let profileFile = this.props.model.buildToolLogs?.log.find((log: any) => log.uri);
 
     try {
-      rpcService
-      .downloadBytestreamFile("timing_profile.gz", profileFile?.uri, this.props.model.getId())
+      rpcService.downloadBytestreamFile("timing_profile.gz", profileFile?.uri, this.props.model.getId());
     } catch {
-      console.error("Error downloading bytestream timing profile")
+      console.error("Error downloading bytestream timing profile");
     }
   }
 
@@ -225,10 +223,7 @@ export default class InvocationTimingCardComponent extends React.Component {
           <div className="content">
             <div className="title">All events</div>
             <div className="button">
-              <Button
-                className="download-gz-file"
-                onClick={this.downloadProfile.bind(this)}
-                >
+              <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
                 Download profile
               </Button>
             </div>
