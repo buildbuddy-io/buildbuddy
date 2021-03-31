@@ -42,6 +42,8 @@ type appConfig struct {
 	DefaultToDenseMode      bool   `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
 	GRPCMaxRecvMsgSizeBytes int    `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
 	EnableTargetTracking    bool   `yaml:"enable_target_tracking" usage:"Cloud-Only"`
+	EnableStructuredLogging bool   `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
+	LogLevel                string `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {"fatal", "error", "warn", "info", "debug"}`
 }
 
 type buildEventProxy struct {

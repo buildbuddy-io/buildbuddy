@@ -77,23 +77,45 @@ func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCo
 	Printf("HTTP %s %q %d %s [%s]", reqID, url, statusCode, http.StatusText(statusCode), formatDuration(dur))
 }
 
+func ConfigureLogging(level string, enableStructured bool) error {
+	if enableStructured {
+		log.Logger = StructuredLogger()
+	} else {
+		log.Logger = LocalLogger(level)
+	}
+	l, err := zerolog.ParseLevel(level)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	zerolog.SetGlobalLevel(l)
+	return nil
+}
 
-func Configure(level int) {
+func LocalLogger(level string) zerolog.Logger {
 	output := zerolog.ConsoleWriter{Out: os.Stdout}
-	// 2021/03/30 15:29:37 gRPC 7c3b8119-aae8-4e8f-9842-15730bd15d00 7080eda9-e50a-4370-b821-5e634d66bb26 /FindMissingBlobs OK [49 us]
-	log.Logger = zerolog.New(output).With().Timestamp().Logger()
+	// Skipping 3 frames prints the correct source file + line number, rather
+	// than printing a line number in this file or in the zerolog library.
+	return zerolog.New(output).With().Timestamp().Logger().With().CallerWithSkipFrameCount(3).Logger()
 }
 
-// TODO(tylerw): move this to main or libmain?
-func init() {
-	Configure(0)
+func StructuredLogger() zerolog.Logger {
+	// These overrides configure the logger to emit structured
+	// events compatible with GCP's logging infrastructure.
+	zerolog.LevelFieldName = "severity"
+	zerolog.TimestampFieldName = "timestamp"
+	zerolog.TimeFieldFormat = time.RFC3339Nano
+	return log.Logger
 }
 
-// Zerolog convenience wrapper here:
+// Zerolog convenience wrapper below here:
 
+// DEPRECATED: use log.Info instead!
 func Print(message string) {
 	log.Info().Msg(message)
 }
+
+// DEPRECATED: use log.Infof instead!
 func Printf(format string, v ...interface{}) {
 	log.Info().Msgf(format, v...)
 }
