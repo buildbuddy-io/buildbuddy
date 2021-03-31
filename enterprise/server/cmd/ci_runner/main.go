@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -38,8 +40,6 @@ import (
 )
 
 const (
-	// Name of the dir into which the repo is cloned.
-	repoDirName = "repo-root"
 	// Path where we expect to find actions config, relative to the repo root.
 	actionsConfigPath = "buildbuddy.yaml"
 
@@ -90,6 +90,7 @@ var (
 	workflowID    = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
+	strippedDirChars         = regexp.MustCompile(`[^\w@%+,.-]+`)
 )
 
 func main() {
@@ -571,6 +572,8 @@ func bazelCommand() string {
 }
 
 func setupGitRepo(ctx context.Context) error {
+	repoDirName := dirNameForRepo(*repoURL)
+
 	if err := os.MkdirAll(repoDirName, 0o775); err != nil {
 		return status.WrapErrorf(err, "mkdir %q", repoDirName)
 	}
@@ -641,6 +644,15 @@ func readOrInitRepo() (*git.Repository, *git.Remote, error) {
 		return nil, nil, err
 	}
 	return repo, remote, nil
+}
+
+// generateRepoDirName returns a unique and consistent dir name for the given
+// URL. It consists of a human readable prefix based on the URL for debug purposes,
+// followed by a hex SHA256 of the URL.
+func dirNameForRepo(url string) string {
+	sha := sha256.Sum256([]byte(url))
+	shaStr := hex.EncodeToString(sha[:])
+	return fmt.Sprintf("%s_%s", strippedDirChars.ReplaceAllLiteralString(url, "_"), shaStr)
 }
 
 func invocationURL(invocationID string) string {

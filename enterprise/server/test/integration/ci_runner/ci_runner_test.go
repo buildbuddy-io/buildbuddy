@@ -3,17 +3,18 @@ package ci_runner_test
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -102,8 +103,22 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	}
 }
 
+func newUUID(t *testing.T) string {
+	id, err := uuid.NewRandom()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id.String()
+}
+
 func makeGitRepo(t *testing.T) (path, commitSHA string) {
 	path = bazel.MakeTempWorkspace(t, testWorkspaceContents)
+	// Make the repo contents globally unique so that this makeGitRepo func can be
+	// called more than once to create unique repos with incompatible commit
+	// history.
+	if err := ioutil.WriteFile(filepath.Join(path, ".repo_id"), []byte(newUUID(t)), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	repo, err := git.PlainInit(path, false /*=bare*/)
 	if err != nil {
@@ -209,4 +224,63 @@ func TestCIRunner_ReusedWorkspaceWithTestAllAction_CanReuseWorkspace(t *testing.
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7.0")
+}
+
+func TestCIRunner_ReusedWorkspaceWithMultipleGitRepos_CanReuseWorkspace(t *testing.T) {
+	wsPath := makeRunnerWorkspace(t)
+
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	bbService := app.BuildBuddyServiceClient(t)
+
+	// Create 2 different git repos
+
+	repoPath1, headCommitSHA1 := makeGitRepo(t)
+	runnerFlags1 := []string{
+		"--repo_url=file://" + repoPath1,
+		"--commit_sha=" + headCommitSHA1,
+		"--branch=master",
+		"--trigger_event=push",
+		"--trigger_branch=master",
+	}
+	runnerFlags1 = append(runnerFlags1, app.BESBazelFlags()...)
+
+	repoPath2, headCommitSHA2 := makeGitRepo(t)
+	runnerFlags2 := []string{
+		"--repo_url=file://" + repoPath2,
+		"--commit_sha=" + headCommitSHA2,
+		"--branch=master",
+		"--trigger_event=push",
+		"--trigger_branch=master",
+	}
+	runnerFlags2 = append(runnerFlags2, app.BESBazelFlags()...)
+
+	require.NotEqual(
+		t, headCommitSHA1, headCommitSHA2,
+		"sanity check: 2 repos tested should have incompatible commit history")
+
+	runWith := func(runnerFlags []string) {
+		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+		assert.Equal(t, 0, result.ExitCode)
+		assert.Equal(t, 1, len(result.InvocationIDs))
+		if result.ExitCode != 0 || len(result.InvocationIDs) != 1 {
+			t.Logf("runner output:\n===\n%s\n===\n", result.Output)
+			t.FailNow()
+		}
+		res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
+			Lookup: &inpb.InvocationLookup{
+				InvocationId: result.InvocationIDs[0],
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, 1, len(res.Invocation), "couldn't find runner invocation in DB")
+		runnerInvocation := res.Invocation[0]
+		// Since our workflow just runs `bazel version`, we should be able to see its
+		// output in the action logs.testWorkspaceContents
+		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7.0")
+	}
+
+	runWith(runnerFlags1)
+	runWith(runnerFlags2)
 }
