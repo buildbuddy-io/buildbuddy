@@ -57,15 +57,11 @@
 
 .header {
   display: flex;
+  justify-content: space-between;
 }
 
 .header .button {
-  flex-shrink: 1;
-  justify-content: right;
-}
-
-.header .title {
-  flex-grow: 9;
+  flex-grow: 0;
 }
 
 .button .download-gz-file {
