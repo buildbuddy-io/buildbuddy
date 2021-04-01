@@ -71,6 +71,10 @@ const (
 	bazeliskBinaryName             = "bazelisk"
 	bazelCommandOverrideEnvVarName = "BAZEL_COMMAND"
 
+	// Git
+
+	remoteName = "origin"
+
 	// ANSI codes for cases where the aurora equivalent is not supported by our UI
 	// (ex: aurora's "grayscale" mode results in some ANSI codes that we don't currently
 	// parse correctly).
@@ -89,6 +93,9 @@ var (
 	triggerBranch = flag.String("trigger_branch", "", "Branch to check action triggers against.")
 	workflowID    = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 
+	// Test-only flags
+	fatalSyncErrors = flag.Bool("fatal_sync_errors", false, "Disable fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
+
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 	strippedDirChars         = regexp.MustCompile(`[^\w@%+,.-]+`)
 )
@@ -99,8 +106,12 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	if err := setupGitRepo(ctx); err != nil {
-		fatal(status.WrapError(err, "failed to clone repo"))
+	repoDirName := dirNameForRepo(*repoURL)
+	if err := setupGitRepo(ctx, repoDirName); err != nil {
+		fatal(status.WrapError(err, "failed to set up git repo"))
+	}
+	if err := os.Chdir(repoDirName); err != nil {
+		fatal(status.WrapErrorf(err, "cd %q", repoDirName))
 	}
 	cfg, err := readConfig()
 	if err != nil {
@@ -571,25 +582,80 @@ func bazelCommand() string {
 	return bazeliskBinaryName
 }
 
-func setupGitRepo(ctx context.Context) error {
-	repoDirName := dirNameForRepo(*repoURL)
+func setupGitRepo(ctx context.Context, repoDirName string) error {
+	repoDirInfo, err := os.Stat(repoDirName)
+	if err != nil && !os.IsNotExist(err) {
+		return status.WrapErrorf(err, "stat %q", repoDirName)
+	}
+	if repoDirInfo != nil {
+		err := syncExistingRepo(ctx, repoDirName)
+		if err == nil {
+			return nil
+		}
+		if *fatalSyncErrors {
+			return err
+		}
+		log.Printf(
+			"Failed to sync existing repo (maybe due to destructive '.git' dir edit or incompatible remote update). "+
+				"Deleting and initializing from scratch. Error: %s",
+			err,
+		)
+		if err := os.RemoveAll(repoDirName); err != nil {
+			return status.WrapErrorf(err, "rm -r %q", repoDirName)
+		}
+	}
 
-	if err := os.MkdirAll(repoDirName, 0o775); err != nil {
+	if err := os.Mkdir(repoDirName, 0o775); err != nil {
 		return status.WrapErrorf(err, "mkdir %q", repoDirName)
 	}
-	if err := os.Chdir(repoDirName); err != nil {
-		return status.WrapErrorf(err, "cd %q", repoDirName)
-	}
-	repo, remote, err := readOrInitRepo()
-	if err != nil {
-		return status.WrapErrorf(err, "init repo")
-	}
 
+	return setupNewGitRepo(ctx, repoDirName)
+}
+
+func fetchOrigin(ctx context.Context, remote *git.Remote) error {
 	fetchOpts := &git.FetchOptions{
 		RefSpecs: []gitcfg.RefSpec{gitcfg.RefSpec(fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", *branch, *branch))},
 	}
 	if err := remote.FetchContext(ctx, fetchOpts); err != nil && err != git.NoErrAlreadyUpToDate {
-		return status.WrapErrorf(err, "fetch")
+		return status.WrapErrorf(err, "fetch remote %q", remoteName)
+	}
+	return nil
+}
+
+func setupNewGitRepo(ctx context.Context, path string) error {
+	repo, err := git.PlainInit(path, false /*=isBare*/)
+	if err != nil {
+		return err
+	}
+	authURL, err := gitutil.AuthRepoURL(*repoURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
+	if err != nil {
+		return err
+	}
+	remote, err := repo.CreateRemote(&gitcfg.RemoteConfig{
+		Name: remoteName,
+		URLs: []string{authURL},
+	})
+	if err != nil {
+		return err
+	}
+	if err := fetchOrigin(ctx, remote); err != nil {
+		return err
+	}
+	tree, err := repo.Worktree()
+	if err != nil {
+		return status.WrapErrorf(err, "get tree")
+	}
+	if err := tree.Checkout(&git.CheckoutOptions{Hash: gitplumbing.NewHash(*commitSHA)}); err != nil {
+		return status.WrapErrorf(err, "checkout %s", *commitSHA)
+	}
+	return nil
+}
+
+func syncExistingRepo(ctx context.Context, path string) error {
+	log.Printf("Attempting to set up existing git repo")
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return err
 	}
 	tree, err := repo.Worktree()
 	if err != nil {
@@ -597,6 +663,13 @@ func setupGitRepo(ctx context.Context) error {
 	}
 	if err := tree.Clean(&git.CleanOptions{Dir: true}); err != nil {
 		return status.WrapErrorf(err, "clean")
+	}
+	remote, err := repo.Remote(remoteName)
+	if err != nil {
+		return status.WrapErrorf(err, "get existing remote %q", remoteName)
+	}
+	if err := fetchOrigin(ctx, remote); err != nil {
+		return err
 	}
 	checkoutOpts := &git.CheckoutOptions{
 		Hash:  gitplumbing.NewHash(*commitSHA),
@@ -606,44 +679,6 @@ func setupGitRepo(ctx context.Context) error {
 		return status.WrapErrorf(err, "checkout %s", *commitSHA)
 	}
 	return nil
-}
-
-func readOrInitRepo() (*git.Repository, *git.Remote, error) {
-	_, err := os.Stat(".git")
-	if err != nil && !os.IsNotExist(err) {
-		return nil, nil, err
-	}
-
-	if os.IsNotExist(err) {
-		log.Printf("Initializing git repo")
-		repo, err := git.PlainInit("." /*isBare=*/, false)
-		if err != nil {
-			return nil, nil, err
-		}
-		authURL, err := gitutil.AuthRepoURL(*repoURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
-		if err != nil {
-			return nil, nil, err
-		}
-		remote, err := repo.CreateRemote(&gitcfg.RemoteConfig{
-			Name: "origin",
-			URLs: []string{authURL},
-		})
-		if err != nil {
-			return nil, nil, err
-		}
-		return repo, remote, nil
-	}
-
-	log.Printf("Using existing git repo")
-	repo, err := git.PlainOpen(".")
-	if err != nil {
-		return nil, nil, err
-	}
-	remote, err := repo.Remote("origin")
-	if err != nil {
-		return nil, nil, err
-	}
-	return repo, remote, nil
 }
 
 // generateRepoDirName returns a unique and consistent dir name for the given

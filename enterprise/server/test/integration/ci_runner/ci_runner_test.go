@@ -116,7 +116,7 @@ func makeGitRepo(t *testing.T) (path, commitSHA string) {
 	// Make the repo contents globally unique so that this makeGitRepo func can be
 	// called more than once to create unique repos with incompatible commit
 	// history.
-	if err := ioutil.WriteFile(filepath.Join(path, ".repo_id"), []byte(newUUID(t)), 0644); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(path, ".repo_id"), []byte(newUUID(t)), 0775); err != nil {
 		t.Fatal(err)
 	}
 
@@ -152,6 +152,7 @@ func TestCIRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *testi
 		"--branch=master",
 		"--trigger_event=push",
 		"--trigger_branch=master",
+		"--fatal_sync_errors=true",
 	}
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
@@ -188,6 +189,7 @@ func TestCIRunner_ReusedWorkspaceWithTestAllAction_CanReuseWorkspace(t *testing.
 		"--branch=master",
 		"--trigger_event=push",
 		"--trigger_branch=master",
+		"--fatal_sync_errors=true",
 	}
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
@@ -242,6 +244,7 @@ func TestCIRunner_ReusedWorkspaceWithMultipleGitRepos_CanReuseWorkspace(t *testi
 			"--branch=master",
 			"--trigger_event=push",
 			"--trigger_branch=master",
+			"--fatal_sync_errors=true",
 		}
 		runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
 
@@ -268,4 +271,54 @@ func TestCIRunner_ReusedWorkspaceWithMultipleGitRepos_CanReuseWorkspace(t *testi
 
 	runWithNewRepo()
 	runWithNewRepo()
+}
+
+func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
+	// Use the same workspace to hold multiple different repos.
+	wsPath := makeRunnerWorkspace(t)
+
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	bbService := app.BuildBuddyServiceClient(t)
+
+	repoPath, headCommitSHA := makeGitRepo(t)
+	runnerFlags := []string{
+		"--repo_url=file://" + repoPath,
+		"--commit_sha=" + headCommitSHA,
+		"--branch=master",
+		"--trigger_event=push",
+		"--trigger_branch=master",
+		"--fatal_sync_errors=false",
+	}
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	run := func() {
+		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+		assert.Equal(t, 0, result.ExitCode)
+		assert.Equal(t, 1, len(result.InvocationIDs))
+		if result.ExitCode != 0 || len(result.InvocationIDs) != 1 {
+			t.Logf("runner output:\n===\n%s\n===\n", result.Output)
+			t.FailNow()
+		}
+		res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
+			Lookup: &inpb.InvocationLookup{
+				InvocationId: result.InvocationIDs[0],
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, 1, len(res.Invocation), "couldn't find runner invocation in DB")
+		runnerInvocation := res.Invocation[0]
+		// Since our workflow just runs `bazel version`, we should be able to see its
+		// output in the action logs.testWorkspaceContents
+		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7.0")
+	}
+
+	run()
+
+	if err := os.RemoveAll(filepath.Join(wsPath, ".git/refs")); err != nil {
+		t.Fatal(err)
+	}
+
+	run()
 }
