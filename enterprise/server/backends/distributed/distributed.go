@@ -351,8 +351,9 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error) {
-	return c.remoteReader(ctx, d, offset)
+func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+	r, err := c.remoteReader(ctx, d, offset)
+	return io.NopCloser(r), err
 }
 
 func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
