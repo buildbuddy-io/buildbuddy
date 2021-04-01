@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/autoclose"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -255,7 +256,7 @@ func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return nil
 }
 
-func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error) {
+func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	k, err := c.key(ctx, d)
 	if err != nil {
 		return nil, err
@@ -270,7 +271,7 @@ func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (i
 	} else {
 		c.l.Get(k) // mark the file as used.
 	}
-	return r, nil
+	return autoclose.AutoCloser(r), nil
 }
 
 type dbCloseFn func(totalBytesWritten int64) error

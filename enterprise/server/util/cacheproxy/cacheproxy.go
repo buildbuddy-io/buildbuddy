@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/autoclose"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
@@ -230,20 +231,6 @@ func (c *CacheProxy) RemoteContains(ctx context.Context, peer, prefix string, d 
 	return rsp.StatusCode == 200, nil
 }
 
-// AutoCloser closes the provided ReadCloser upon the
-// first call to Read which returns a non-nil error.
-type AutoCloser struct {
-	io.ReadCloser
-}
-
-func (c *AutoCloser) Read(data []byte) (int, error) {
-	n, err := c.ReadCloser.Read(data)
-	if err != nil {
-		defer c.ReadCloser.Close()
-	}
-	return n, err
-}
-
 func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *repb.Digest, offset int64) (io.Reader, error) {
 	u, err := c.remoteFileURL(peer, downloadPath, prefix, d.GetHash(), d.GetSizeBytes(), offset)
 	if err != nil {
@@ -259,7 +246,7 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *r
 		return nil, status.UnavailableError(err.Error())
 	}
 	if rsp.StatusCode == 200 {
-		return &AutoCloser{rsp.Body}, nil
+		return autoclose.AutoCloser(rsp.Body), nil
 	} else if rsp.StatusCode == 404 {
 		return nil, status.NotFoundError("File not found (remotely).")
 	} else {
