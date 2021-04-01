@@ -2,8 +2,10 @@ package cacheproxy
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -14,6 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -37,19 +41,34 @@ type CacheProxy struct {
 	env        environment.Env
 	cache      interfaces.Cache
 	fileServer *http.Server
+	client     *http.Client
+}
+
+func getHTTP2Client() *http.Client {
+	return &http.Client{
+		Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+		},
+	}
 }
 
 func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *CacheProxy {
 	mux := http.NewServeMux()
 	proxy := &CacheProxy{
-		env:   env,
-		cache: c,
+		env:    env,
+		cache:  c,
+		client: getHTTP2Client(),
 	}
 	mux.Handle(downloadPath, proxy)
 	mux.Handle(uploadPath, proxy)
+
+	h2s := &http2.Server{}
 	proxy.fileServer = &http.Server{
 		Addr:    listenAddr,
-		Handler: http.Handler(mux),
+		Handler: h2c.NewHandler(http.Handler(mux), h2s),
 	}
 	return proxy
 }
@@ -119,6 +138,11 @@ func reader(c context.Context, cache interfaces.Cache, d *repb.Digest, offset in
 }
 
 func writer(c context.Context, cache interfaces.Cache, d *repb.Digest, r *http.Request, w http.ResponseWriter) {
+	ok, err := cache.Contains(c, d)
+	if err != nil && ok {
+		w.WriteHeader(200)
+		return
+	}
 	wc, err := cache.Writer(c, d)
 	if err != nil {
 		writeErr(err, w)
@@ -154,7 +178,6 @@ func (c *CacheProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cache := c.cache.WithPrefix(r.URL.Query().Get(prefixParam))
-
 	switch r.URL.Path {
 	case downloadPath:
 		{
@@ -222,7 +245,7 @@ func (c *CacheProxy) RemoteContains(ctx context.Context, peer, prefix string, d 
 		return false, err
 	}
 	setJWT(ctx, req)
-	rsp, err := http.DefaultClient.Do(req)
+	rsp, err := c.client.Do(req)
 	if err != nil {
 		return false, status.UnavailableError(err.Error())
 	}
@@ -254,7 +277,7 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *r
 		return nil, err
 	}
 	setJWT(ctx, req)
-	rsp, err := http.DefaultClient.Do(req)
+	rsp, err := c.client.Do(req)
 	if err != nil {
 		return nil, status.UnavailableError(err.Error())
 	}
@@ -292,8 +315,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, prefix string, d *r
 	setJWT(ctx, req)
 	eg, _ := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		client := &http.Client{}
-		rsp, err := client.Do(req)
+		rsp, err := c.client.Do(req)
 		if err != nil {
 			return err
 		}
