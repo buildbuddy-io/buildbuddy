@@ -55,8 +55,21 @@
   background-color: #eee;
 }
 
-.content .button {
-  float: right;
+.header {
+  display: flex;
+}
+
+.header .button {
+  flex-shrink: 1;
+  justify-content: right;
+}
+
+.header .title {
+  flex-grow: 9;
+}
+
+.button .download-gz-file {
+  font-size: 14px;
 }
 
 .download-color-swatch {

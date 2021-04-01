@@ -221,11 +221,13 @@ export default class InvocationTimingCardComponent extends React.Component {
         <div className="card timing">
           <img className="icon" src="/image/clock-regular.svg" />
           <div className="content">
-            <div className="title">All events</div>
-            <div className="button">
-              <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
-                Download profile
-              </Button>
+            <div className="header">
+              <div className="title">All events</div>
+              <div className="button">
+                <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
+                  Download profile
+                </Button>
+              </div>
             </div>
             <div className="sort-controls">
               <div className="sort-control">
