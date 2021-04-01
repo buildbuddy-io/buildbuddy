@@ -227,39 +227,24 @@ func TestCIRunner_ReusedWorkspaceWithTestAllAction_CanReuseWorkspace(t *testing.
 }
 
 func TestCIRunner_ReusedWorkspaceWithMultipleGitRepos_CanReuseWorkspace(t *testing.T) {
+	// Use the same workspace to hold multiple different repos.
 	wsPath := makeRunnerWorkspace(t)
 
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
 	bbService := app.BuildBuddyServiceClient(t)
 
-	// Create 2 different git repos
+	runWithNewRepo := func() {
+		repoPath, headCommitSHA := makeGitRepo(t)
+		runnerFlags := []string{
+			"--repo_url=file://" + repoPath,
+			"--commit_sha=" + headCommitSHA,
+			"--branch=master",
+			"--trigger_event=push",
+			"--trigger_branch=master",
+		}
+		runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
 
-	repoPath1, headCommitSHA1 := makeGitRepo(t)
-	runnerFlags1 := []string{
-		"--repo_url=file://" + repoPath1,
-		"--commit_sha=" + headCommitSHA1,
-		"--branch=master",
-		"--trigger_event=push",
-		"--trigger_branch=master",
-	}
-	runnerFlags1 = append(runnerFlags1, app.BESBazelFlags()...)
-
-	repoPath2, headCommitSHA2 := makeGitRepo(t)
-	runnerFlags2 := []string{
-		"--repo_url=file://" + repoPath2,
-		"--commit_sha=" + headCommitSHA2,
-		"--branch=master",
-		"--trigger_event=push",
-		"--trigger_branch=master",
-	}
-	runnerFlags2 = append(runnerFlags2, app.BESBazelFlags()...)
-
-	require.NotEqual(
-		t, headCommitSHA1, headCommitSHA2,
-		"sanity check: 2 repos tested should have incompatible commit history")
-
-	runWith := func(runnerFlags []string) {
 		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 
 		assert.Equal(t, 0, result.ExitCode)
@@ -281,6 +266,6 @@ func TestCIRunner_ReusedWorkspaceWithMultipleGitRepos_CanReuseWorkspace(t *testi
 		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7.0")
 	}
 
-	runWith(runnerFlags1)
-	runWith(runnerFlags2)
+	runWithNewRepo()
+	runWithNewRepo()
 }
