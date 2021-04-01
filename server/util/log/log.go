@@ -124,6 +124,16 @@ func Printf(format string, v ...interface{}) {
 	log.Info().Msgf(format, v...)
 }
 
+// Debug logs to the DEBUG log.
+func Debug(message string) {
+	log.Debug().Msg(message)
+}
+
+// Debugf logs to the DEBUG log. Arguments are handled in the manner of fmt.Printf.
+func Debugf(format string, args ...interface{}) {
+	log.Debug().Msgf(format, args...)
+}
+
 // Info logs to the INFO log.
 func Info(message string) {
 	log.Info().Msg(message)
