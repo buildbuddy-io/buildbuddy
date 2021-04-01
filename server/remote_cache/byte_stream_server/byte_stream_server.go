@@ -2,6 +2,9 @@ package byte_stream_server
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
+	"log"
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -104,9 +107,16 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 
 	downloadTracker := ht.TrackDownload(d)
-	_, err = io.Copy(&streamWriter{stream}, reader)
+
+	hash := sha256.New()
+	w := io.MultiWriter(&streamWriter{stream}, hash)
+	_, err = io.Copy(w, reader)
 	if err == nil {
 		downloadTracker.Close()
+		dvHash := fmt.Sprintf("%x", hash.Sum(nil))
+		if d.GetHash() != dvHash {
+			log.Printf("BADDATA: bytestream-READ blob sum %s did not match digest hash: %s", dvHash, d.GetHash())
+		}
 	}
 	return err
 }

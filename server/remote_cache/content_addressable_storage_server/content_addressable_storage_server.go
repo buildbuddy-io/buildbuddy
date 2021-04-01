@@ -1,6 +1,7 @@
 package content_addressable_storage_server
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -156,6 +157,9 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			// cache to be queried for empty files.
 			continue
 		}
+		if dv, err := digest.Compute(bytes.NewReader(uploadRequest.GetData())); err == nil && dv.GetHash() != uploadDigest.GetHash() {
+			log.Printf("BADDATA: BatchWriteBlobs blob sum %s did not match digest hash: %s", dv.GetHash(), uploadDigest.GetHash())
+		}
 		kvs[uploadDigest] = uploadRequest.GetData()
 	}
 
@@ -219,6 +223,9 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		blobRsp := &repb.BatchReadBlobsResponse_Response{
 			Digest: d,
 			Data:   data,
+		}
+		if dv, err := digest.Compute(bytes.NewReader(data)); err == nil && dv.GetHash() != d.GetHash() {
+			log.Printf("BADDATA: BatchReadBlobs blob sum %s did not match digest hash: %s", dv.GetHash(), d.GetHash())
 		}
 		if d.GetSizeBytes() != int64(len(data)) {
 			log.Printf("Warning: cache returned a blob of %d bytes which doesn't match digest: %s/%d. Ignoring.", len(data), d.GetHash(), d.GetSizeBytes())
