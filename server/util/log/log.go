@@ -78,7 +78,6 @@ func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCo
 }
 
 func Configure(level string, enableStructured bool) error {
-	fmt.Printf("Configured called: level: %q, enableStructured: %t\n", level, enableStructured)
 	if enableStructured {
 		log.Logger = StructuredLogger()
 	} else {
