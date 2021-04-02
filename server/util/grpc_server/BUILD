@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/environment",
         "//server/rpc/filters",
+        "//server/util/log",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@org_golang_google_grpc//:go_default_library",
     ],

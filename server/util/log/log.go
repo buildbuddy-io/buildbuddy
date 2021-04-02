@@ -77,6 +77,12 @@ func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCo
 	Printf("HTTP %s %q %d %s [%s]", reqID, url, statusCode, http.StatusText(statusCode), formatDuration(dur))
 }
 
+func init() {
+	// Start us in a "nice" configuration, in case logging
+	// is done before Configure is called.
+	Configure("info", false)
+}
+
 func Configure(level string, enableStructured bool) error {
 	if enableStructured {
 		log.Logger = StructuredLogger()

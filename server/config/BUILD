@@ -5,5 +5,8 @@ go_library(
     srcs = ["config.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/config",
     visibility = ["//visibility:public"],
-    deps = ["@in_gopkg_yaml_v2//:yaml_v2"],
+    deps = [
+        "//server/util/log",
+        "@in_gopkg_yaml_v2//:yaml_v2",
+    ],
 )

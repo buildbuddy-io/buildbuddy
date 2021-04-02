@@ -2,10 +2,11 @@ package consistent_hash
 
 import (
 	"hash/crc32"
-	"log"
 	"sort"
 	"strconv"
 	"sync"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 const defaultNumReplicas = 100
@@ -106,7 +107,7 @@ func (c *ConsistentHash) GetNReplicas(key string, n int) []string {
 		}
 	}
 	if len(replicas) < n {
-		log.Printf("Warning: client requested %d replicas but only %d were available.", n, len(replicas))
+		log.Warningf("Warning: client requested %d replicas but only %d were available.", n, len(replicas))
 	}
 	return replicas
 }

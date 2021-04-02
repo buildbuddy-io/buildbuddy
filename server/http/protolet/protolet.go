@@ -5,10 +5,10 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"reflect"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
@@ -140,7 +140,7 @@ func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
 			continue
 		}
 		handlerFns[method.Name] = method.Func
-		log.Printf("Auto-registered HTTP handler for %s", method.Name)
+		log.Debugf("Auto-registered HTTP handler for %s", method.Name)
 	}
 
 	bodyParserMiddleware := func(next http.Handler) http.Handler {

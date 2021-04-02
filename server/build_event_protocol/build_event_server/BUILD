@@ -11,6 +11,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/util/background",
+        "//server/util/log",
         "@io_bazel_rules_go//proto/wkt:empty_go_proto",
         "@org_golang_google_grpc//:go_default_library",
     ],

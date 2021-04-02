@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/option"
@@ -146,16 +146,13 @@ func decompress(in []byte, err error) ([]byte, error) {
 		return in, nil
 	}
 	if err != nil {
-		log.Printf("zr err: %s", err)
 		return nil, err
 	}
 	rsp, err := ioutil.ReadAll(zr)
 	if err != nil {
-		log.Printf("readall err: %s", err)
 		return nil, err
 	}
 	if err := zr.Close(); err != nil {
-		log.Printf("close err: %s", err)
 		return nil, err
 	}
 	return rsp, nil
@@ -254,7 +251,7 @@ func NewGCSBlobStore(bucketName, projectID string, opts ...option.ClientOption) 
 
 func (g *GCSBlobStore) createBucketIfNotExists(ctx context.Context, bucketName string) error {
 	if _, err := g.gcsClient.Bucket(bucketName).Attrs(ctx); err != nil {
-		log.Printf("Creating storage bucket: %s", bucketName)
+		log.Infof("Creating storage bucket: %s", bucketName)
 		g.bucketHandle = g.gcsClient.Bucket(bucketName)
 		return g.bucketHandle.Create(ctx, g.projectID, nil)
 	}
@@ -348,7 +345,7 @@ func NewAwsS3BlobStore(awsConfig *config.AwsS3Config) (*AwsS3BlobStore, error) {
 	// https://github.com/awsdocs/amazon-s3-developer-guide/blob/master/doc_source/access-points.md
 	const s3AccessPointPrefix = "arn:aws:s3"
 	if strings.HasPrefix(awsConfig.Bucket, s3AccessPointPrefix) {
-		log.Printf("Encountered an S3 access point %s...not creating bucket", awsConfig.Bucket)
+		log.Infof("Encountered an S3 access point %s...not creating bucket", awsConfig.Bucket)
 	} else {
 		if err := awsBlobStore.createBucketIfNotExists(ctx, awsConfig.Bucket); err != nil {
 			return nil, err
@@ -367,7 +364,7 @@ func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName
 			return err
 		}
 
-		log.Printf("Creating storage bucket: %s", bucketName)
+		log.Infof("Creating storage bucket: %s", bucketName)
 		if _, err := a.s3.CreateBucketWithContext(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)}); err != nil {
 			return err
 		}

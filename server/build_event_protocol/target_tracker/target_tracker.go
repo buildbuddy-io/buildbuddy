@@ -5,13 +5,13 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -209,13 +209,13 @@ func (t *TargetTracker) writeTestTargets(ctx context.Context) error {
 	}
 	if len(updatedTargets) > 0 {
 		if err := updateTargets(ctx, t.env, updatedTargets); err != nil {
-			log.Printf("Error updating targets: %s", err.Error())
+			log.Warningf("Error updating targets: %s", err.Error())
 			return err
 		}
 	}
 	if len(newTargets) > 0 {
 		if err := insertTargets(ctx, t.env, newTargets); err != nil {
-			log.Printf("Error inserting targets: %s", err.Error())
+			log.Warningf("Error inserting targets: %s", err.Error())
 			return err
 		}
 	}
@@ -250,7 +250,7 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context) error {
 		})
 	}
 	if err := insertOrUpdateTargetStatuses(ctx, t.env, newTargetStatuses); err != nil {
-		log.Printf("Error inserting target statuses: %s", err.Error())
+		log.Warningf("Error inserting target statuses: %s", err.Error())
 		return err
 	}
 	return nil
@@ -310,7 +310,8 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 		}
 		// Synchronization point: make sure that all statuses were written.
 		if err := t.errGroup.Wait(); err != nil {
-			log.Printf("Error writing target statuses: %s", err.Error())
+			// Debug because this logs when unauthorized/non-CI builds skip writing targets.
+			log.Debugf("Error writing target statuses: %s", err.Error())
 		}
 	}
 }

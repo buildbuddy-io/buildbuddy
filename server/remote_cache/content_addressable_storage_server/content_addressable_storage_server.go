@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
@@ -221,7 +221,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			Data:   data,
 		}
 		if d.GetSizeBytes() != int64(len(data)) {
-			log.Printf("Warning: cache returned a blob of %d bytes which doesn't match digest: %s/%d. Ignoring.", len(data), d.GetHash(), d.GetSizeBytes())
+			log.Warningf("Cache returned a blob of %d bytes which doesn't match digest: %s/%d. Ignoring.", len(data), d.GetHash(), d.GetSizeBytes())
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
 		} else if err == nil {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}

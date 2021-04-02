@@ -8,5 +8,8 @@ go_library(
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
-    deps = ["@com_github_elastic_gosigar//:gosigar"],
+    deps = [
+        "//server/util/log",
+        "@com_github_elastic_gosigar//:gosigar",
+    ],
 )
