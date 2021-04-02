@@ -79,27 +79,9 @@ func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCo
 }
 
 func init() {
-	// Start us in a "nice" configuration, in case logging
+	// Start us in a "nice" configuration, in case any logging
 	// is done before Configure is called.
-	Configure("info", false)
-}
-
-func Configure(level string, enableStructured bool) error {
-	if enableStructured {
-		log.Logger = StructuredLogger()
-	} else {
-		log.Logger = LocalLogger(level)
-	}
-	intLogLevel := zerolog.InfoLevel
-	if level != "" {
-		if l, err := zerolog.ParseLevel(level); err == nil {
-			intLogLevel = l
-		} else {
-			return err
-		}
-	}
-	zerolog.SetGlobalLevel(intLogLevel)
-	return nil
+	Configure("info", false, false)
 }
 
 func LocalLogger(level string) zerolog.Logger {
@@ -115,7 +97,7 @@ func LocalLogger(level string) zerolog.Logger {
 	}
 	// Skipping 3 frames prints the correct source file + line number, rather
 	// than printing a line number in this file or in the zerolog library.
-	return zerolog.New(output).With().Timestamp().Logger().With().CallerWithSkipFrameCount(3).Logger()
+	return zerolog.New(output).With().Timestamp().Logger()
 }
 
 func StructuredLogger() zerolog.Logger {
@@ -125,6 +107,29 @@ func StructuredLogger() zerolog.Logger {
 	zerolog.TimestampFieldName = "timestamp"
 	zerolog.TimeFieldFormat = time.RFC3339Nano
 	return log.Logger
+}
+
+func Configure(level string, enableFileName, enableStructured bool) error {
+	var logger zerolog.Logger
+	if enableStructured {
+		logger = StructuredLogger()
+	} else {
+		logger = LocalLogger(level)
+	}
+	intLogLevel := zerolog.InfoLevel
+	if level != "" {
+		if l, err := zerolog.ParseLevel(level); err == nil {
+			intLogLevel = l
+		} else {
+			return err
+		}
+	}
+	zerolog.SetGlobalLevel(intLogLevel)
+	if enableFileName {
+		logger = logger.With().CallerWithSkipFrameCount(3).Logger()
+	}
+	log.Logger = logger
+	return nil
 }
 
 // Zerolog convenience wrapper below here:

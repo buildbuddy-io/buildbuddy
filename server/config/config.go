@@ -44,6 +44,7 @@ type appConfig struct {
 	GRPCMaxRecvMsgSizeBytes int    `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
 	EnableTargetTracking    bool   `yaml:"enable_target_tracking" usage:"Cloud-Only"`
 	EnableStructuredLogging bool   `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
+	LogIncludeShortFileName bool   `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
 	LogLevel                string `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {"fatal", "error", "warn", "info", "debug"}`
 }
 
@@ -362,6 +363,10 @@ func (c *Configurator) GetAppCreateGroupPerUser() bool {
 
 func (c *Configurator) GetAppAddUserToDomainGroup() bool {
 	return c.gc.App.AddUserToDomainGroup
+}
+
+func (c *Configurator) GetAppLogIncludeShortFileName() bool {
+	return c.gc.App.LogIncludeShortFileName
 }
 
 func (c *Configurator) GetAppEnableStructuredLogging() bool {
