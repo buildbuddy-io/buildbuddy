@@ -12,5 +12,6 @@ go_library(
         "//server/environment",
         "//server/tables",
         "//server/util/git",
+        "//server/util/log",
     ],
 )

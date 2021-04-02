@@ -2,12 +2,12 @@ package resources
 
 import (
 	"flag"
-	"log"
 	"os"
 	"runtime"
 	"strconv"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/elastic/gosigar"
 )
 
@@ -44,7 +44,7 @@ func setSysRAMBytes() {
 	mem := gosigar.Mem{}
 	mem.Get()
 	allocatedRAMBytes = int64(mem.ActualFree)
-	log.Printf("set allocatedRAMBytes to %d", allocatedRAMBytes)
+	log.Debugf("Set allocatedRAMBytes to %d", allocatedRAMBytes)
 }
 
 func setSysMilliCPUCapacity() {
@@ -60,7 +60,7 @@ func setSysMilliCPUCapacity() {
 	cpuList.Get()
 	numCores := len(cpuList.List)
 	allocatedCPUMillis = int64(numCores * 1000)
-	log.Printf("set allocatedCPUMillis to %d", allocatedCPUMillis)
+	log.Debugf("Set allocatedCPUMillis to %d", allocatedCPUMillis)
 }
 
 func GetSysFreeRAMBytes() int64 {

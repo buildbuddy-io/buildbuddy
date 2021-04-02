@@ -235,9 +235,9 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 	grpcOptions := grpc_server.CommonGRPCServerOptions(env)
 	if credentialOption != nil {
 		grpcOptions = append(grpcOptions, credentialOption)
-		log.Printf("gRPCS listening on http://%s\n", hostAndPort)
+		log.Printf("gRPCS listening on http://%s", hostAndPort)
 	} else {
-		log.Printf("gRPC listening on http://%s\n", hostAndPort)
+		log.Printf("gRPC listening on http://%s", hostAndPort)
 	}
 
 	grpcServer := grpc.NewServer(grpcOptions...)

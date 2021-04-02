@@ -2,12 +2,12 @@ package consistent_hash_test
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/stretchr/testify/assert"
 )
@@ -40,6 +40,6 @@ func TestNodesetOrderIndependence(t *testing.T) {
 
 	for d, host := range mappings {
 		assert.Equal(host, ch.Get(d))
-		log.Printf("d %q => host %q", d, host)
+		log.Debugf("d %q => host %q", d, host)
 	}
 }

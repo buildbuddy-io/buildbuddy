@@ -3,13 +3,13 @@ package build_event_server
 import (
 	"context"
 	"io"
-	"log"
 	"sort"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
 
@@ -62,7 +62,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	for _, client := range s.env.GetBuildEventProxyClients() {
 		stream, err := client.PublishBuildToolEventStream(ctx, grpc.WaitForReady(false))
 		if err != nil {
-			log.Printf("Unable to proxy stream: %s", err)
+			log.Warningf("Unable to proxy stream: %s", err)
 			continue
 		}
 		defer stream.CloseSend()
@@ -71,11 +71,11 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 
 	disconnectWithErr := func(e error) error {
 		if channel != nil && streamID != nil {
-			log.Printf("Marking invocation %q as disconnected: %s", streamID.InvocationId, e)
+			log.Warningf("Marking invocation %q as disconnected: %s", streamID.InvocationId, e)
 			ctx, cancel := background.ExtendContextForFinalization(ctx, 3*time.Second)
 			defer cancel()
 			if err := channel.MarkInvocationDisconnected(ctx, streamID.InvocationId); err != nil {
-				log.Printf("Error marking invocation %q as disconnected: %s", streamID.InvocationId, err)
+				log.Warningf("Error marking invocation %q as disconnected: %s", streamID.InvocationId, err)
 			}
 		}
 		return e
@@ -87,7 +87,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			break
 		}
 		if err != nil {
-			log.Printf("Error receiving build event stream %+v: %s", streamID, err)
+			log.Warningf("Error receiving build event stream %+v: %s", streamID, err)
 			return disconnectWithErr(err)
 		}
 		if streamID == nil {
@@ -96,7 +96,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		}
 
 		if err := channel.HandleEvent(in); err != nil {
-			log.Printf("Error handling event; this means a broken build command: %s", err)
+			log.Warningf("Error handling event; this means a broken build command: %s", err)
 			return disconnectWithErr(err)
 		}
 		for _, stream := range forwardingStreams {
@@ -114,13 +114,13 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	sort.Sort(sort.IntSlice(acks))
 	for i, ack := range acks {
 		if ack != i+1 {
-			log.Printf("Missing ack: saw %d and wanted %d. Bailing!", ack, i+1)
+			log.Warningf("Missing ack: saw %d and wanted %d. Bailing!", ack, i+1)
 			return io.EOF
 		}
 	}
 
 	if err := channel.FinalizeInvocation(streamID.InvocationId); err != nil {
-		log.Printf("Error finalizing invocation %q: %s", streamID.InvocationId, err)
+		log.Warningf("Error finalizing invocation %q: %s", streamID.InvocationId, err)
 		return disconnectWithErr(err)
 	}
 
@@ -131,7 +131,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			SequenceNumber: int64(ack),
 		}
 		if err := stream.Send(rsp); err != nil {
-			log.Printf("Error sending ack stream for invocation %q: %s", streamID.InvocationId, err)
+			log.Warningf("Error sending ack stream for invocation %q: %s", streamID.InvocationId, err)
 			return disconnectWithErr(err)
 		}
 	}

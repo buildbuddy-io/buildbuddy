@@ -2,9 +2,9 @@ package prefix
 
 import (
 	"context"
-	"log"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -47,6 +47,6 @@ func UserPrefixFromContext(ctx context.Context) (string, error) {
 	if v := ctx.Value(userPrefix); v != nil {
 		return v.(string), nil
 	}
-	log.Print("No user prefix on context -- did you forget to call AttachUserPrefixToContext")
+	log.Warning("No user prefix on context -- did you forget to call AttachUserPrefixToContext")
 	return "", status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 }

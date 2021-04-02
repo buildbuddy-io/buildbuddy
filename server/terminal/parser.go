@@ -1,9 +1,10 @@
 package terminal
 
 import (
-	"log"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 const (
@@ -120,7 +121,7 @@ func (p *parser) handleOperatingSystemCommand(char rune) {
 	p.mode = MODE_NORMAL
 
 	if !withinBounds(p.ansi, p.instructionStartedAt, p.cursor) {
-		log.Printf("handleOperatingSystemCommand out of bounds: len(ansi): %d, start: %d, end: %d", len(p.ansi), p.instructionStartedAt, p.cursor)
+		log.Debugf("handleOperatingSystemCommand out of bounds: len(ansi): %d, start: %d, end: %d", len(p.ansi), p.instructionStartedAt, p.cursor)
 		return
 	}
 
@@ -161,7 +162,7 @@ func (p *parser) handleApplicationProgramCommand(char rune) {
 	p.mode = MODE_NORMAL
 
 	if !withinBounds(p.ansi, p.instructionStartedAt, p.cursor) {
-		log.Printf("handleApplicationProgramCommand out of bounds: len(ansi): %d, start: %d, end: %d", len(p.ansi), p.instructionStartedAt, p.cursor)
+		log.Debugf("handleApplicationProgramCommand out of bounds: len(ansi): %d, start: %d, end: %d", len(p.ansi), p.instructionStartedAt, p.cursor)
 		return
 	}
 
@@ -243,7 +244,7 @@ func (p *parser) handleEscape(char rune) {
 
 func (p *parser) addInstruction() {
 	if !withinBounds(p.ansi, p.instructionStartedAt, p.cursor) {
-		log.Printf("addInstruction out of bounds: len(ansi): %d, start: %d, end: %d", len(p.ansi), p.instructionStartedAt, p.cursor)
+		log.Debugf("addInstruction out of bounds: len(ansi): %d, start: %d, end: %d", len(p.ansi), p.instructionStartedAt, p.cursor)
 		return
 	}
 	instruction := string(p.ansi[p.instructionStartedAt:p.cursor])

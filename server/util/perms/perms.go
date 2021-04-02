@@ -3,11 +3,11 @@ package perms
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -158,7 +158,7 @@ func AuthorizeWrite(authenticatedUser *interfaces.UserInfo, acl *aclpb.ACL) erro
 	}
 
 	if perms&OTHERS_WRITE != 0 {
-		log.Print("Ignoring request to allow OTHERS_WRITE. This should not happen!")
+		log.Warning("Ignoring request to allow OTHERS_WRITE. This should not happen!")
 	}
 	isOwner := u.GetUserID() == acl.GetUserId().GetId()
 	if isOwner && perms&OWNER_WRITE != 0 {

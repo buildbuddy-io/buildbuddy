@@ -3,11 +3,11 @@ package janitor
 import (
 	"context"
 	"flag"
-	"log"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 var (
@@ -34,12 +34,12 @@ func NewJanitor(env environment.Env) *Janitor {
 func (j *Janitor) deleteInvocation(invocation *tables.Invocation) {
 	ctx := context.Background()
 	if err := j.env.GetBlobstore().DeleteBlob(ctx, invocation.BlobID); err != nil && *logDeletionErrors {
-		log.Printf("Error deleting blob (%s): %s", invocation.BlobID, err)
+		log.Warningf("Error deleting blob (%s): %s", invocation.BlobID, err)
 	}
 
 	// Try to delete the row too, even if blob deletion failed.
 	if err := j.env.GetInvocationDB().DeleteInvocation(ctx, invocation.InvocationID); err != nil && *logDeletionErrors {
-		log.Printf("Error deleting invocation (%s): %s", invocation.InvocationID, err)
+		log.Warningf("Error deleting invocation (%s): %s", invocation.InvocationID, err)
 	}
 }
 
@@ -48,7 +48,7 @@ func (j *Janitor) deleteExpiredInvocations() {
 	cutoff := time.Now().Add(-1 * j.ttl)
 	expired, err := j.env.GetInvocationDB().LookupExpiredInvocations(ctx, cutoff, 10)
 	if err != nil && *logDeletionErrors {
-		log.Printf("Error finding expired deletions: %s", err)
+		log.Warningf("Error finding expired deletions: %s", err)
 		return
 	}
 
@@ -62,7 +62,7 @@ func (j *Janitor) Start() {
 	j.quit = make(chan struct{})
 
 	if j.ttl == 0 {
-		log.Printf("configured TTL was 0; disabling janitor")
+		log.Infof("Configured TTL was 0; disabling invocation janitor")
 		return
 	}
 

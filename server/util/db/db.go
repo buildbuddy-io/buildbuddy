@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -364,7 +364,7 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 			return nil, err
 		}
 		setDBOptions(c, readDialect, replicaDB)
-		log.Print("Read replica was present -- connecting to it.")
+		log.Info("Read replica was present -- connecting to it.")
 		dbh.readReplicaDB = replicaDB
 
 		replicaSQLDB, err := replicaDB.DB()

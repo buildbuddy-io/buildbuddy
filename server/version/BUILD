@@ -8,5 +8,8 @@ go_library(
     x_defs = {
         "commitSha": "{COMMIT_SHA}",
     },
-    deps = ["@io_bazel_rules_go//go/tools/bazel:go_default_library"],
+    deps = [
+        "//server/util/log",
+        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+    ],
 )

@@ -22,6 +22,7 @@ go_library(
         "//server/tables",
         "//server/target",
         "//server/util/capabilities",
+        "//server/util/log",
         "//server/util/perms",
         "//server/util/request_context",
         "//server/util/status",

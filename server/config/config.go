@@ -4,12 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"reflect"
 	"strings"
 
 	"gopkg.in/yaml.v2"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 // When adding new storage fields, always be explicit about their yaml field
@@ -260,7 +261,7 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 	if fullConfigPath == "" {
 		return &sharedGeneralConfig, nil
 	}
-	log.Printf("Reading buildbuddy config from '%s'", fullConfigPath)
+	log.Infof("Reading buildbuddy config from '%s'", fullConfigPath)
 
 	_, err := os.Stat(fullConfigPath)
 

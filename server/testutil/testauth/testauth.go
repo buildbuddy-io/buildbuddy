@@ -2,13 +2,13 @@ package testauth
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"google.golang.org/grpc/metadata"
@@ -63,7 +63,7 @@ func (c *TestUser) HasCapability(cap akpb.ApiKey_Capability) bool {
 // user_id1, group_id1, user_id2, group_id2, ..., user_idN, group_idN
 func TestUsers(vals ...string) map[string]interfaces.UserInfo {
 	if len(vals)%2 != 0 {
-		log.Printf("You're calling TestUsers wrong!")
+		log.Errorf("You're calling TestUsers wrong!")
 	}
 	testUsers := make(map[string]interfaces.UserInfo, 0)
 	var u *TestUser

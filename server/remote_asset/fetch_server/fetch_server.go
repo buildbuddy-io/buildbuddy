@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -16,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/ptypes"
@@ -138,17 +138,17 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		}
 		data, err := ioutil.ReadAll(rsp.Body)
 		if err != nil {
-			log.Printf("Error reading object bytes: %s", err.Error())
+			log.Warningf("Error reading object bytes: %s", err.Error())
 			continue
 		}
 		reader := bytes.NewReader(data)
 		blobDigest, err := digest.Compute(reader)
 		if err != nil {
-			log.Printf("Error computing object digest: %s", err.Error())
+			log.Warningf("Error computing object digest: %s", err.Error())
 			continue
 		}
 		if err := cache.Set(ctx, blobDigest, data); err != nil {
-			log.Printf("Error inserting object into cache: %s", err.Error())
+			log.Warningf("Error inserting object into cache: %s", err.Error())
 			continue
 		}
 		return &rapb.FetchBlobResponse{

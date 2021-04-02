@@ -51,6 +51,7 @@ go_library(
         "//server/libmain",
         "//server/telemetry",
         "//server/util/healthcheck",
+        "//server/util/log",
         "//server/version",
     ],
 )

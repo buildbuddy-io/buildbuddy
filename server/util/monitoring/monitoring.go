@@ -1,10 +1,10 @@
 package monitoring
 
 import (
-	"log"
 	"net/http"
 	"net/http/pprof"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -34,7 +34,9 @@ func StartMonitoringHandler(hostPort string) {
 	}
 
 	go func() {
-		log.Printf("Enabling monitoring (pprof/prometheus) interface on http://%s", hostPort)
-		log.Fatal(s.ListenAndServe())
+		log.Infof("Enabling monitoring (pprof/prometheus) interface on http://%s", hostPort)
+		if err := s.ListenAndServe(); err != nil {
+			log.Fatal(err.Error())
+		}
 	}()
 }

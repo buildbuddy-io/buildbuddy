@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 )
 
@@ -93,7 +93,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 	// Verify "state" cookie matches
 	if r.FormValue("state") != getCookie(r, stateCookieName) {
-		log.Printf("Github link state mismatch: %s != %s", r.FormValue("state"), getCookie(r, stateCookieName))
+		log.Warningf("Github link state mismatch: %s != %s", r.FormValue("state"), getCookie(r, stateCookieName))
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -109,7 +109,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
-		log.Printf("Error creating request: %v", err)
+		log.Warningf("Error creating request: %v", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -119,14 +119,14 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	resp, err := client.Do(req)
 	defer resp.Body.Close()
 	if err != nil {
-		log.Printf("Error getting access token: %v", err)
+		log.Warningf("Error getting access token: %v", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("Error reading Github response: %v", err)
+		log.Warningf("Error reading Github response: %v", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -136,21 +136,21 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 	auth := c.env.GetAuthenticator()
 	if auth == nil {
-		log.Printf("No authenticator configured")
+		log.Warningf("No authenticator configured")
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
 
 	userInfo, err := auth.AuthenticatedUser(r.Context())
 	if err != nil {
-		log.Printf("Error getting authenticated user: %v", err)
+		log.Warningf("Error getting authenticated user: %v", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
 
 	dbHandle := c.env.GetDBHandle()
 	if dbHandle == nil {
-		log.Printf("No database configured")
+		log.Warningf("No database configured")
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -161,7 +161,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		"UPDATE Groups SET github_token = ? WHERE group_id IN (?)",
 		accessTokenResponse.AccessToken, userInfo.GetAllowedGroups()).Error
 	if err != nil {
-		log.Printf("Error linking github account to user: %v", err)
+		log.Warningf("Error linking github account to user: %v", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -201,7 +201,7 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 	req.Header.Set("Authorization", "token "+c.githubToken)
 	_, err = c.client.Do(req)
 	if err != nil {
-		log.Printf("Error posting Github status: %v", err)
+		log.Warningf("Error posting Github status: %v", err)
 	}
 	return err
 }
