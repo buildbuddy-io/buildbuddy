@@ -68,7 +68,13 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		chash.Set(config.Nodes...)
 	} else {
 		// No nodes were hardcoded, use redis for discovery.
-		dc.heartbeatChannel = heartbeat.NewHeartbeatChannel(config.PubSub, config.ListenAddr, config.GroupName, chash.Set)
+		heartbeatConfig := &heartbeat.Config{
+			MyPublicAddr:     config.ListenAddr,
+			GroupName:        config.GroupName,
+			UpdateFn:         chash.Set,
+			EnablePeerExpiry: false,
+		}
+		dc.heartbeatChannel = heartbeat.NewHeartbeatChannel(config.PubSub, heartbeatConfig)
 	}
 	hc.RegisterShutdownFunction(func(ctx context.Context) error {
 		dc.Shutdown()
