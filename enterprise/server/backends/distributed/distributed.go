@@ -134,6 +134,7 @@ func (c *Cache) remoteContains(ctx context.Context, d *repb.Digest) (bool, error
 func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, dest string) error {
 	log.Printf("Backfilling %q from %q => %q", d.GetHash(), source, dest)
 	r, err := c.cacheProxy.RemoteReader(ctx, source, c.prefix, d, 0)
+	defer r.Close()
 	if err != nil {
 		return err
 	}
@@ -185,7 +186,7 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 // This is like setting READ_CONSISTENCY = ONE.
 //
 // Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) remoteReader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error) {
+func (c *Cache) remoteReader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	peers := c.peers(d)
 	for i, peer := range peers {
 		r, err := c.cacheProxy.RemoteReader(ctx, peer, c.prefix, d, offset)
@@ -202,6 +203,7 @@ func (c *Cache) remoteReader(ctx context.Context, d *repb.Digest, offset int64) 
 
 func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	r, err := c.remoteReader(ctx, d, 0)
+	defer r.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -352,8 +354,7 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 }
 
 func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
-	r, err := c.remoteReader(ctx, d, offset)
-	return io.NopCloser(r), err
+	return c.remoteReader(ctx, d, offset)
 }
 
 func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {

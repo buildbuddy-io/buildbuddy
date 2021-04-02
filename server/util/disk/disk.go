@@ -75,11 +75,6 @@ func FileExists(fullPath string) (bool, error) {
 	}
 }
 
-type ReadSeekCloseReaderAt interface {
-	io.ReadSeekCloser
-	io.ReaderAt
-}
-
 type readerCloseWrapper struct {
 	reader io.Reader
 	closer io.Closer
@@ -105,9 +100,8 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 	f.Seek(offset, 0)
 	if length > 0 {
 		return &readerCloseWrapper{reader: io.LimitReader(f, info.Size()), closer: f}, nil
-	} else {
-		return f, nil
 	}
+	return f, nil
 }
 
 type writeMover struct {

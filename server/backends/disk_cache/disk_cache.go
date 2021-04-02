@@ -14,7 +14,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/autoclose"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -271,7 +270,7 @@ func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (i
 	} else {
 		c.l.Get(k) // mark the file as used.
 	}
-	return autoclose.AutoCloser(r), nil
+	return r, nil
 }
 
 type dbCloseFn func(totalBytesWritten int64) error

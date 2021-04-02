@@ -9,7 +9,6 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",
-        "//server/util/autoclose",
         "//server/util/disk",
         "//server/util/lru",
         "//server/util/prefix",

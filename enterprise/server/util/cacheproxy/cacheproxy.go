@@ -12,7 +12,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/autoclose"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
@@ -104,6 +103,7 @@ func contains(c context.Context, cache interfaces.Cache, d *repb.Digest, w http.
 
 func reader(c context.Context, cache interfaces.Cache, d *repb.Digest, offset int64, w http.ResponseWriter) {
 	r, err := cache.Reader(c, d, offset)
+	defer r.Close()
 	if gstatus.Code(err) == gcodes.NotFound {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
@@ -231,7 +231,7 @@ func (c *CacheProxy) RemoteContains(ctx context.Context, peer, prefix string, d 
 	return rsp.StatusCode == 200, nil
 }
 
-func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *repb.Digest, offset int64) (io.Reader, error) {
+func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	u, err := c.remoteFileURL(peer, downloadPath, prefix, d.GetHash(), d.GetSizeBytes(), offset)
 	if err != nil {
 		return nil, err
@@ -246,7 +246,7 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *r
 		return nil, status.UnavailableError(err.Error())
 	}
 	if rsp.StatusCode == 200 {
-		return autoclose.AutoCloser(rsp.Body), nil
+		return rsp.Body, nil
 	} else if rsp.StatusCode == 404 {
 		return nil, status.NotFoundError("File not found (remotely).")
 	} else {
