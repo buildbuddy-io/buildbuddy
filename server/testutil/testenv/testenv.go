@@ -86,7 +86,7 @@ func (te *TestEnv) GRPCServer(lis net.Listener) (*grpc.Server, func()) {
 	srv := grpc.NewServer(grpcOptions...)
 	runFunc := func() {
 		if err := srv.Serve(lis); err != nil {
-			log.Fatal(err)
+			log.Fatal(err.Error())
 		}
 	}
 	return srv, runFunc
