@@ -3,13 +3,15 @@ package log
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
+	"os"
 	"path"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/proto"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -64,13 +66,115 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 	reqID, _ := uuid.GetFromContext(ctx) // Ignore error, we're logging anyway.
 	shortPath := "/" + path.Base(fullMethod)
 	if iid := getInvocationIDFromMD(ctx); iid != "" {
-		log.Printf("%s %s %s %s %s [%s]", "gRPC", reqID, iid, shortPath, fmtErr(err), formatDuration(dur))
+		Printf("%s %s %s %s %s [%s]", "gRPC", reqID, iid, shortPath, fmtErr(err), formatDuration(dur))
 	} else {
-		log.Printf("%s %s %s %s [%s]", "gRPC", reqID, shortPath, fmtErr(err), formatDuration(dur))
+		Printf("%s %s %s %s [%s]", "gRPC", reqID, shortPath, fmtErr(err), formatDuration(dur))
 	}
 }
 
 func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCode int) {
 	reqID, _ := uuid.GetFromContext(ctx) // Ignore error, we're logging anyway.
-	log.Printf("HTTP %s %q %d %s [%s]", reqID, url, statusCode, http.StatusText(statusCode), formatDuration(dur))
+	Printf("HTTP %s %q %d %s [%s]", reqID, url, statusCode, http.StatusText(statusCode), formatDuration(dur))
+}
+
+func Configure(level string, enableStructured bool) error {
+	if enableStructured {
+		log.Logger = StructuredLogger()
+	} else {
+		log.Logger = LocalLogger(level)
+	}
+	intLogLevel := zerolog.InfoLevel
+	if level != "" {
+		if l, err := zerolog.ParseLevel(level); err == nil {
+			intLogLevel = l
+		} else {
+			return err
+		}
+	}
+	zerolog.SetGlobalLevel(intLogLevel)
+	return nil
+}
+
+func LocalLogger(level string) zerolog.Logger {
+	output := zerolog.ConsoleWriter{Out: os.Stdout}
+	// Skipping 3 frames prints the correct source file + line number, rather
+	// than printing a line number in this file or in the zerolog library.
+	return zerolog.New(output).With().Timestamp().Logger().With().CallerWithSkipFrameCount(3).Logger()
+}
+
+func StructuredLogger() zerolog.Logger {
+	// These overrides configure the logger to emit structured
+	// events compatible with GCP's logging infrastructure.
+	zerolog.LevelFieldName = "severity"
+	zerolog.TimestampFieldName = "timestamp"
+	zerolog.TimeFieldFormat = time.RFC3339Nano
+	return log.Logger
+}
+
+// Zerolog convenience wrapper below here:
+
+// DEPRECATED: use log.Info instead!
+func Print(message string) {
+	log.Info().Msg(message)
+}
+
+// DEPRECATED: use log.Infof instead!
+func Printf(format string, v ...interface{}) {
+	log.Info().Msgf(format, v...)
+}
+
+// Debug logs to the DEBUG log.
+func Debug(message string) {
+	log.Debug().Msg(message)
+}
+
+// Debugf logs to the DEBUG log. Arguments are handled in the manner of fmt.Printf.
+func Debugf(format string, args ...interface{}) {
+	log.Debug().Msgf(format, args...)
+}
+
+// Info logs to the INFO log.
+func Info(message string) {
+	log.Info().Msg(message)
+}
+
+// Infof logs to the INFO log. Arguments are handled in the manner of fmt.Printf.
+func Infof(format string, args ...interface{}) {
+	log.Info().Msgf(format, args...)
+}
+
+// Warning logs to the WARNING log.
+func Warning(message string) {
+	log.Warn().Msg(message)
+}
+
+// Warningf logs to the WARNING log. Arguments are handled in the manner of fmt.Printf.
+func Warningf(format string, args ...interface{}) {
+	log.Warn().Msgf(format, args...)
+}
+
+// Error logs to the ERROR log.
+func Error(message string) {
+	log.Error().Msg(message)
+}
+
+// Errorf logs to the ERROR log. Arguments are handled in the manner of fmt.Printf.
+func Errorf(format string, args ...interface{}) {
+	log.Error().Msgf(format, args...)
+}
+
+// Fatal logs to the FATAL log. Arguments are handled in the manner of fmt.Print.
+// It calls os.Exit() with exit code 1.
+func Fatal(message string) {
+	log.Fatal().Msg(message)
+	// Make sure fatal logs will exit.
+	os.Exit(1)
+}
+
+// Fatalf logs to the FATAL log. Arguments are handled in the manner of fmt.Printf.
+// It calls os.Exit() with exit code 1.
+func Fatalf(format string, args ...interface{}) {
+	log.Fatal().Msgf(format, args...)
+	// Make sure fatal logs will exit.
+	os.Exit(1)
 }
