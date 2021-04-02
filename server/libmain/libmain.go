@@ -93,7 +93,7 @@ func init() {
 // not substantially different enough yet to warrant the extra complexity of
 // always updating both main files.
 func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
-	if err := log.Configure(configurator.GetAppLogLevel(), configurator.GetAppEnableStructuredLogging()); err != nil {
+	if err := log.Configure(configurator.GetAppLogLevel(), configurator.GetAppLogIncludeShortFileName(), configurator.GetAppEnableStructuredLogging()); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
 	}
