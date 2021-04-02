@@ -43,6 +43,7 @@ go_library(
         "//server/util/db",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
+        "//server/util/log",
         "//server/util/monitoring",
         "//server/util/rlimit",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
