@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -103,6 +104,15 @@ func Configure(level string, enableStructured bool) error {
 
 func LocalLogger(level string) zerolog.Logger {
 	output := zerolog.ConsoleWriter{Out: os.Stdout}
+	output.FormatCaller = func(i interface{}) string {
+		s, ok := i.(string)
+		if !ok {
+			return ""
+		}
+		// max length based on "content_addressable_storage_server.go".
+		// we're not going to have any file names longer than that... right?
+		return fmt.Sprintf("%41s >", filepath.Base(s))
+	}
 	// Skipping 3 frames prints the correct source file + line number, rather
 	// than printing a line number in this file or in the zerolog library.
 	return zerolog.New(output).With().Timestamp().Logger().With().CallerWithSkipFrameCount(3).Logger()
