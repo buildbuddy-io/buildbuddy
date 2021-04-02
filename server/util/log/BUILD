@@ -9,6 +9,8 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/util/uuid",
         "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_rs_zerolog//:zerolog",
+        "@com_github_rs_zerolog//log",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
