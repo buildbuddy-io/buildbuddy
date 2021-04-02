@@ -75,20 +75,24 @@ func newDistributedCache(t *testing.T, te environment.Env, ps interfaces.PubSub,
 }
 
 func TestDroppedNode(t *testing.T) {
-	return
 	te := getTestEnv(t, emptyUserMap)
 	ps := pubsub.NewTestPubSub()
 	ctx := getAnonContext(t)
 
 	var liveNodes map[string]struct{}
 	liveNodesLock := sync.RWMutex{}
-	hbc := heartbeat.NewHeartbeatChannel(ps, "", heartbeatGroupName, func(nodes ...string) {
-		liveNodesLock.Lock()
-		liveNodes = make(map[string]struct{}, 0)
-		for _, n := range nodes {
-			liveNodes[n] = struct{}{}
-		}
-		liveNodesLock.Unlock()
+	hbc := heartbeat.NewHeartbeatChannel(ps, &heartbeat.Config{
+		MyPublicAddr:     "",
+		GroupName:        heartbeatGroupName,
+		EnablePeerExpiry: true,
+		UpdateFn: func(nodes ...string) {
+			liveNodesLock.Lock()
+			liveNodes = make(map[string]struct{}, 0)
+			for _, n := range nodes {
+				liveNodes[n] = struct{}{}
+			}
+			liveNodesLock.Unlock()
+		},
 	})
 	lowerTimeoutsForTesting(hbc)
 
@@ -111,6 +115,7 @@ func TestDroppedNode(t *testing.T) {
 				log.Printf("Finished waiting for nodes: %s", peers)
 				return
 			}
+			log.Printf("Waiting for nodes %s, %s", peers, liveNodes)
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
@@ -199,6 +204,7 @@ func TestDroppedNode(t *testing.T) {
 			}
 		}
 
+		log.Printf("Shutting down caches")
 		for _, cache := range caches {
 			cache.Shutdown()
 		}
@@ -214,13 +220,18 @@ func TestEventualConsistency(t *testing.T) {
 
 	var liveNodes map[string]struct{}
 	liveNodesLock := sync.RWMutex{}
-	hbc := heartbeat.NewHeartbeatChannel(ps, "", heartbeatGroupName, func(nodes ...string) {
-		liveNodesLock.Lock()
-		liveNodes = make(map[string]struct{}, 0)
-		for _, n := range nodes {
-			liveNodes[n] = struct{}{}
-		}
-		liveNodesLock.Unlock()
+	hbc := heartbeat.NewHeartbeatChannel(ps, &heartbeat.Config{
+		MyPublicAddr:     "",
+		GroupName:        heartbeatGroupName,
+		EnablePeerExpiry: true,
+		UpdateFn: func(nodes ...string) {
+			liveNodesLock.Lock()
+			liveNodes = make(map[string]struct{}, 0)
+			for _, n := range nodes {
+				liveNodes[n] = struct{}{}
+			}
+			liveNodesLock.Unlock()
+		},
 	})
 	lowerTimeoutsForTesting(hbc)
 
@@ -243,6 +254,7 @@ func TestEventualConsistency(t *testing.T) {
 				log.Printf("Finished waiting for nodes: %s", peers)
 				return
 			}
+			log.Printf("Waiting for nodes %s, %s", peers, liveNodes)
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
