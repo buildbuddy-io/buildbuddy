@@ -95,6 +95,8 @@ func LocalLogger(level string) zerolog.Logger {
 		// we're not going to have any file names longer than that... right?
 		return fmt.Sprintf("%41s >", filepath.Base(s))
 	}
+	zerolog.TimeFieldFormat = time.RFC3339Nano
+	output.TimeFormat = "2006/01/02 15:04:05.000"
 	// Skipping 3 frames prints the correct source file + line number, rather
 	// than printing a line number in this file or in the zerolog library.
 	return zerolog.New(output).With().Timestamp().Logger()
