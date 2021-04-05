@@ -134,10 +134,10 @@ func (c *Cache) remoteContains(ctx context.Context, d *repb.Digest) (bool, error
 func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, dest string) error {
 	log.Printf("Backfilling %q from %q => %q", d.GetHash(), source, dest)
 	r, err := c.cacheProxy.RemoteReader(ctx, source, c.prefix, d, 0)
-	defer r.Close()
 	if err != nil {
 		return err
 	}
+	defer r.Close()
 	rwc, err := c.cacheProxy.RemoteWriter(ctx, dest, c.prefix, d)
 	if err != nil {
 		return err
@@ -203,10 +203,10 @@ func (c *Cache) remoteReader(ctx context.Context, d *repb.Digest, offset int64) 
 
 func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	r, err := c.remoteReader(ctx, d, 0)
-	defer r.Close()
 	if err != nil {
 		return nil, err
 	}
+	defer r.Close()
 	return ioutil.ReadAll(r)
 }
 

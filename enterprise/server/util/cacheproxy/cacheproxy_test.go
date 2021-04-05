@@ -107,10 +107,10 @@ func TestReader(t *testing.T) {
 
 		// Use the cacheproxy to read the bytes back remotely.
 		r, err := c.RemoteReader(ctx, peer, prefix, d, 0 /*=offset*/)
-		defer r.Close()
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer r.Close()
 
 		// Ensure that the bytes remotely read back have the same hash.
 		d2, err := digest.Compute(r)
@@ -177,10 +177,10 @@ func TestWriter(t *testing.T) {
 		// Read the bytes back directly from the cache and check that
 		// they match..
 		r, err := te.GetCache().WithPrefix(prefix).Reader(ctx, d, 0 /*=offset*/)
-		defer r.Close()
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer r.Close()
 		d2, err := digest.Compute(r)
 		if err != nil {
 			t.Fatal(err)
@@ -314,10 +314,10 @@ func TestOversizeBlobs(t *testing.T) {
 
 		// Remote-read the random bytes back.
 		r, err := c.RemoteReader(ctx, peer, prefix, d, 0)
-		defer r.Close()
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer r.Close()
 
 		// Ensure that the bytes remotely read back match the
 		// bytes that were uploaded, even though they are keyed

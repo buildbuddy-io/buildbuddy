@@ -98,11 +98,11 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		return nil
 	}
 	reader, err := cache.Reader(ctx, d, req.ReadOffset)
-	defer reader.Close()
 	if err != nil {
 		ht.TrackMiss(d)
 		return err
 	}
+	defer reader.Close()
 
 	downloadTracker := ht.TrackDownload(d)
 	_, err = io.Copy(&streamWriter{stream}, reader)

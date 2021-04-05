@@ -137,10 +137,10 @@ func TestReadWrite(t *testing.T) {
 		}
 		// Use Reader() to get the bytes from the cache.
 		reader, err := mc.Reader(ctx, d, 0)
-		defer reader.Close()
 		if err != nil {
 			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 		}
+		defer reader.Close()
 
 		// Compute a digest for the bytes returned.
 		d2, err := digest.Compute(reader)

@@ -103,7 +103,6 @@ func contains(c context.Context, cache interfaces.Cache, d *repb.Digest, w http.
 
 func reader(c context.Context, cache interfaces.Cache, d *repb.Digest, offset int64, w http.ResponseWriter) {
 	r, err := cache.Reader(c, d, offset)
-	defer r.Close()
 	if gstatus.Code(err) == gcodes.NotFound {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
@@ -112,6 +111,7 @@ func reader(c context.Context, cache interfaces.Cache, d *repb.Digest, offset in
 		writeErr(err, w)
 		return
 	}
+	defer r.Close()
 	_, err = io.Copy(w, r)
 	if err != nil {
 		writeErr(err, w)
