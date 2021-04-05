@@ -135,15 +135,19 @@ func TestReadWrite(t *testing.T) {
 		if err := wc.Close(); err != nil {
 			t.Fatalf("Error closing writer: %s", err.Error())
 		}
-		// Use Reader() to get the bytes from the cache.
-		reader, err := mc.Reader(ctx, d, 0)
-		if err != nil {
-			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
-		}
-		defer reader.Close()
+		// Wrap the Reader in a closure to appropriately trigger the defer
+		d2 := func() *repb.Digest {
+			// Use Reader() to get the bytes from the cache.
+			reader, err := mc.Reader(ctx, d, 0)
+			if err != nil {
+				t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
+			}
+			defer reader.Close()
 
-		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(reader)
+			// Compute a digest for the bytes returned.
+			d2, _ := digest.Compute(reader)
+			return d2
+		}()
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}

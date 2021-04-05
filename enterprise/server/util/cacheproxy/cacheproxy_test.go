@@ -18,6 +18,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -105,18 +107,22 @@ func TestReader(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Use the cacheproxy to read the bytes back remotely.
-		r, err := c.RemoteReader(ctx, peer, prefix, d, 0 /*=offset*/)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer r.Close()
+		// Wrap the Reader in a closure to appropriately trigger the defer
+		d2 := func() *repb.Digest {
+			// Use the cacheproxy to read the bytes back remotely.
+			r, err := c.RemoteReader(ctx, peer, prefix, d, 0 /*=offset*/)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close()
 
-		// Ensure that the bytes remotely read back have the same hash.
-		d2, err := digest.Compute(r)
-		if err != nil {
-			t.Fatal(err)
-		}
+			// Ensure that the bytes remotely read back have the same hash.
+			d2, err := digest.Compute(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return d2
+		}()
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Digest uploaded %q != %q downloaded", d.GetHash(), d2.GetHash())
 		}
@@ -174,17 +180,21 @@ func TestWriter(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Read the bytes back directly from the cache and check that
-		// they match..
-		r, err := te.GetCache().WithPrefix(prefix).Reader(ctx, d, 0 /*=offset*/)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer r.Close()
-		d2, err := digest.Compute(r)
-		if err != nil {
-			t.Fatal(err)
-		}
+		// Wrap the Reader in a closure to appropriately trigger the defer
+		d2 := func() *repb.Digest {
+			// Read the bytes back directly from the cache and check that
+			// they match..
+			r, err := te.GetCache().WithPrefix(prefix).Reader(ctx, d, 0 /*=offset*/)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close()
+			d2, err := digest.Compute(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return d2
+		}()
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Digest uploaded %q != %q downloaded", d.GetHash(), d2.GetHash())
 		}
@@ -312,26 +322,30 @@ func TestOversizeBlobs(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Remote-read the random bytes back.
-		r, err := c.RemoteReader(ctx, peer, prefix, d, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer r.Close()
+		// Wrap the Reader in a closure to appropriately trigger the defer
+		d1, d2 := func() (*repb.Digest, *repb.Digest) {
+			// Remote-read the random bytes back.
+			r, err := c.RemoteReader(ctx, peer, prefix, d, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close()
 
-		// Ensure that the bytes remotely read back match the
-		// bytes that were uploaded, even though they are keyed
-		// under a different digest.
-		readSeeker.Seek(0, 0)
-		d1, err := digest.Compute(readSeeker)
-		if err != nil {
-			t.Fatal(err)
-		}
+			// Ensure that the bytes remotely read back match the
+			// bytes that were uploaded, even though they are keyed
+			// under a different digest.
+			readSeeker.Seek(0, 0)
+			d1, err := digest.Compute(readSeeker)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-		d2, err := digest.Compute(r)
-		if err != nil {
-			t.Fatal(err)
-		}
+			d2, err := digest.Compute(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return d1, d2
+		}()
 		if d1.GetHash() != d2.GetHash() {
 			t.Fatalf("Digest of uploaded contents %q != %q downloaded contents", d.GetHash(), d2.GetHash())
 		}

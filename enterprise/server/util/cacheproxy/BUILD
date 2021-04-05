@@ -29,6 +29,7 @@ go_test(
     ],
     deps = [
         ":cacheproxy",
+        "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/testutil/app",
