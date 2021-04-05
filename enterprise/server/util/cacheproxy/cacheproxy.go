@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/net/http2"
@@ -26,8 +26,8 @@ import (
 )
 
 const (
-	downloadPath = "/download"
-	uploadPath   = "/upload"
+	downloadPath = "/download/"
+	uploadPath   = "/upload/"
 
 	hashParam      = "hash"
 	sizeBytesParam = "size_bytes"
@@ -183,7 +183,7 @@ func (c *CacheProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		{
 			if r.Method == http.MethodHead {
 				contains(ctx, cache, d, w)
-				log.Printf("CacheProxy(%s): /Contains %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
+				log.Debugf("CacheProxy(%s): /Contains %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
 				return
 			}
 			if r.Method == http.MethodPost {
@@ -194,7 +194,7 @@ func (c *CacheProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				reader(ctx, cache, d, offset, w)
-				log.Printf("CacheProxy(%s): /Read %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
+				log.Debugf("CacheProxy(%s): /Read %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
 				return
 			}
 			writeErr(status.InvalidArgumentError("Invalid method (use HEAD or POST)"), w)
@@ -203,7 +203,7 @@ func (c *CacheProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		{
 			if r.Method == http.MethodPost {
 				writer(ctx, cache, d, r, w)
-				log.Printf("CacheProxy(%s): /Write %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
+				log.Debugf("CacheProxy(%s): /Write %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
 				return
 			}
 			writeErr(status.InvalidArgumentError("Invalid method (use POST)"), w)
@@ -236,6 +236,10 @@ func (c *CacheProxy) remoteFileURL(peer, action, prefix, hash string, sizeBytes,
 }
 
 func (c *CacheProxy) RemoteContains(ctx context.Context, peer, prefix string, d *repb.Digest) (bool, error) {
+	// Fast path: if peer is us, return local cache.
+	if peer == c.fileServer.Addr {
+		return c.cache.WithPrefix(prefix).Contains(ctx, d)
+	}
 	u, err := c.remoteFileURL(peer, downloadPath, prefix, d.GetHash(), d.GetSizeBytes(), 0)
 	if err != nil {
 		return false, err
@@ -268,6 +272,10 @@ func (c *AutoCloser) Read(data []byte) (int, error) {
 }
 
 func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *repb.Digest, offset int64) (io.Reader, error) {
+	// Fast path: if peer is us, return local cache.
+	if peer == c.fileServer.Addr {
+		return c.cache.WithPrefix(prefix).Reader(ctx, d, offset)
+	}
 	u, err := c.remoteFileURL(peer, downloadPath, prefix, d.GetHash(), d.GetSizeBytes(), offset)
 	if err != nil {
 		return nil, err
@@ -303,6 +311,10 @@ func (p *PipeGroup) Close() error {
 }
 
 func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, prefix string, d *repb.Digest) (io.WriteCloser, error) {
+	// Fast path: if peer is us, return local cache.
+	if peer == c.fileServer.Addr {
+		return c.cache.WithPrefix(prefix).Writer(ctx, d)
+	}
 	u, err := c.remoteFileURL(peer, uploadPath, prefix, d.GetHash(), d.GetSizeBytes(), 0)
 	if err != nil {
 		return nil, err

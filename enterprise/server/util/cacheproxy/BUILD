@@ -12,6 +12,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
         "@org_golang_google_grpc//codes",
