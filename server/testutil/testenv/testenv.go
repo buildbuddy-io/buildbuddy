@@ -25,6 +25,14 @@ import (
 	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
 )
 
+func init() {
+	// N.B. We do this here to avoid a data race condition that happens when
+	// multiple tests Configure the logger simultaneously.
+	if err := log.Configure("debug", true /*=logFileName*/, false /*=enableStructuredLogging*/); err != nil {
+		log.Fatalf("Error configuring logging: %s", err)
+	}
+}
+
 type ConfigTemplateParams struct {
 	TestRootDir string
 }
@@ -32,8 +40,6 @@ type ConfigTemplateParams struct {
 const testConfigFileTemplate string = `
 app:
   build_buddy_url: "http://localhost:8080"
-  log_include_short_file_name: true
-  log_level: "debug"
 database:
   data_source: "sqlite3://:memory:"
 storage:
@@ -128,9 +134,6 @@ func GetTestEnv(t testing.TB) *TestEnv {
 	configurator, err := config.NewConfigurator(tmpConfigFile)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if err := log.Configure(configurator.GetAppLogLevel(), configurator.GetAppLogIncludeShortFileName(), configurator.GetAppEnableStructuredLogging()); err != nil {
-		t.Fatalf("Error configuring logging: %s", err)
 	}
 	healthChecker := healthcheck.NewTestingHealthChecker()
 	te := &TestEnv{
