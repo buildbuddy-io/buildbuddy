@@ -26,6 +26,8 @@ import (
 )
 
 func init() {
+	// Need to init logging in the main goroutine, otherwise the race detector
+	// will be unhappy. Related: https://github.com/rs/zerolog/issues/242
 	if err := log.Configure("debug", true, false); err != nil {
 		panic(err)
 	}
