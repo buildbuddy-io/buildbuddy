@@ -7,7 +7,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -20,11 +19,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-)
-
-var (
-	logMu     sync.Mutex
-	zerologMu sync.Mutex
 )
 
 func formatDuration(dur time.Duration) string {
@@ -101,9 +95,7 @@ func LocalLogger(level string) zerolog.Logger {
 		// we're not going to have any file names longer than that... right?
 		return fmt.Sprintf("%41s >", filepath.Base(s))
 	}
-	zerologMu.Lock()
 	zerolog.TimeFieldFormat = time.RFC3339Nano
-	zerologMu.Unlock()
 	output.TimeFormat = "2006/01/02 15:04:05.000"
 	// Skipping 3 frames prints the correct source file + line number, rather
 	// than printing a line number in this file or in the zerolog library.
@@ -113,11 +105,9 @@ func LocalLogger(level string) zerolog.Logger {
 func StructuredLogger() zerolog.Logger {
 	// These overrides configure the logger to emit structured
 	// events compatible with GCP's logging infrastructure.
-	zerologMu.Lock()
 	zerolog.LevelFieldName = "severity"
 	zerolog.TimestampFieldName = "timestamp"
 	zerolog.TimeFieldFormat = time.RFC3339Nano
-	zerologMu.Unlock()
 	return log.Logger
 }
 
@@ -136,15 +126,11 @@ func Configure(level string, enableFileName, enableStructured bool) error {
 			return err
 		}
 	}
-	zerologMu.Lock()
 	zerolog.SetGlobalLevel(intLogLevel)
-	zerologMu.Unlock()
 	if enableFileName {
 		logger = logger.With().CallerWithSkipFrameCount(3).Logger()
 	}
-	logMu.Lock()
 	log.Logger = logger
-	logMu.Unlock()
 	return nil
 }
 
