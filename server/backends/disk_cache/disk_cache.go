@@ -255,7 +255,7 @@ func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return nil
 }
 
-func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error) {
+func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	k, err := c.key(ctx, d)
 	if err != nil {
 		return nil, err

@@ -380,7 +380,7 @@ func (s3c *S3Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (
 	return foundMap, nil
 }
 
-func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error) {
+func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	k, err := s3c.key(ctx, d)
 	if err != nil {
 		return nil, err
@@ -396,7 +396,7 @@ func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (i
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
-	return timer.NewInstrumentedReader(result.Body, d.GetSizeBytes()), err
+	return io.NopCloser(timer.NewInstrumentedReader(result.Body, d.GetSizeBytes())), err
 }
 
 type waitForUploadWriteCloser struct {

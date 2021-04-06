@@ -130,6 +130,7 @@ func reader(c context.Context, cache interfaces.Cache, d *repb.Digest, offset in
 		writeErr(err, w)
 		return
 	}
+	defer r.Close()
 	_, err = io.Copy(w, r)
 	if err != nil {
 		writeErr(err, w)
@@ -257,21 +258,7 @@ func (c *CacheProxy) RemoteContains(ctx context.Context, peer, prefix string, d 
 	return rsp.StatusCode == 200, nil
 }
 
-// AutoCloser closes the provided ReadCloser upon the
-// first call to Read which returns a non-nil error.
-type AutoCloser struct {
-	io.ReadCloser
-}
-
-func (c *AutoCloser) Read(data []byte) (int, error) {
-	n, err := c.ReadCloser.Read(data)
-	if err != nil {
-		defer c.ReadCloser.Close()
-	}
-	return n, err
-}
-
-func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *repb.Digest, offset int64) (io.Reader, error) {
+func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	// Fast path: if peer is us, return local cache.
 	if peer == c.fileServer.Addr {
 		return c.cache.WithPrefix(prefix).Reader(ctx, d, offset)
@@ -290,7 +277,7 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *r
 		return nil, status.UnavailableError(err.Error())
 	}
 	if rsp.StatusCode == 200 {
-		return &AutoCloser{rsp.Body}, nil
+		return rsp.Body, nil
 	} else if rsp.StatusCode == 404 {
 		return nil, status.NotFoundError("File not found (remotely).")
 	} else {
