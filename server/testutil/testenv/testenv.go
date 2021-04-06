@@ -29,7 +29,7 @@ import (
 func init() {
 	// N.B. We do this here to avoid a data race condition that happens when
 	// multiple tests Configure the logger simultaneously.
-	if err := log.Configure("info", true /*=logFileName*/, false /*=enableStructuredLogging*/); err != nil {
+	if err := log.Configure("debug", true /*=logFileName*/, false /*=enableStructuredLogging*/); err != nil {
 		log.Fatalf("Error configuring logging: %s", err)
 	}
 }

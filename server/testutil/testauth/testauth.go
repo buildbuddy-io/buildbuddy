@@ -101,11 +101,7 @@ func (a *TestAuthenticator) AuthenticateHTTPRequest(w http.ResponseWriter, r *ht
 }
 
 func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) context.Context {
-	// log.Printf("\033[32m[DEBUG]\033[0m ctx=%+v\n", ctx)
-
 	if grpcMD, ok := metadata.FromIncomingContext(ctx); ok {
-		// log.Printf("\033[32m[DEBUG]\033[0m grpcMD=%+v\n", grpcMD)
-
 		for _, h := range []string{TestApiKeyHeader, jwtHeader} {
 			headerVals := grpcMD[h]
 			for _, headerVal := range headerVals {
