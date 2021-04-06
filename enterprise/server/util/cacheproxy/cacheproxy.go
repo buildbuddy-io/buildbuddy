@@ -257,6 +257,7 @@ func (c *CacheProxy) RemoteContains(ctx context.Context, peer, prefix string, d 
 	defer rsp.Body.Close()
 	return rsp.StatusCode == 200, nil
 }
+
 func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	// Fast path: if peer is us, return local cache.
 	if peer == c.fileServer.Addr {
