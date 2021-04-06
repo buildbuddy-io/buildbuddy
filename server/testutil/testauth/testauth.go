@@ -93,8 +93,7 @@ func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthent
 
 func (a *TestAuthenticator) AuthenticateHTTPRequest(w http.ResponseWriter, r *http.Request) context.Context {
 	headerVal := r.Header.Get(TestApiKeyHeader)
-	user, ok := a.testUsers[headerVal]
-	if ok {
+	if user, ok := a.testUsers[headerVal]; ok {
 		return context.WithValue(r.Context(), testAuthenticationHeader, user)
 	}
 	return r.Context()
@@ -105,8 +104,7 @@ func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) context
 		for _, h := range []string{TestApiKeyHeader, jwtHeader} {
 			headerVals := grpcMD[h]
 			for _, headerVal := range headerVals {
-				user, ok := a.testUsers[headerVal]
-				if ok {
+				if user, ok := a.testUsers[headerVal]; ok {
 					return context.WithValue(ctx, testAuthenticationHeader, user)
 				}
 			}
