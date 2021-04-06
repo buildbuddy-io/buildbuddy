@@ -75,20 +75,32 @@ func FileExists(fullPath string) (bool, error) {
 	}
 }
 
-type readerCloseWrapper struct {
-	reader io.Reader
-	closer io.Closer
+type SectionReaderCloser struct {
+	sectionReader *io.SectionReader
+	closer        io.Closer
 }
 
-func (w *readerCloseWrapper) Read(b []byte) (int, error) {
-	return w.reader.Read(b)
+func (w *SectionReaderCloser) Read(b []byte) (int, error) {
+	return w.sectionReader.Read(b)
 }
 
-func (w *readerCloseWrapper) Close() error {
+func (w *SectionReaderCloser) ReadAt(b []byte, offset int64) (int, error) {
+	return w.sectionReader.ReadAt(b, offset)
+}
+
+func (w *SectionReaderCloser) Seek(offset int64, whence int) (int64, error) {
+	return w.sectionReader.Seek(offset, whence)
+}
+
+func (w *SectionReaderCloser) Size() int64 {
+	return w.sectionReader.Size()
+}
+
+func (w *SectionReaderCloser) Close() error {
 	return w.closer.Close()
 }
 
-func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.ReadCloser, error) {
+func FileReader(ctx context.Context, fullPath string, offset, length int64) (*SectionReaderCloser, error) {
 	f, err := os.Open(fullPath)
 	if err != nil {
 		return nil, err
@@ -97,11 +109,10 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 	if err != nil {
 		return nil, err
 	}
-	f.Seek(offset, 0)
 	if length > 0 {
-		return &readerCloseWrapper{reader: io.LimitReader(f, info.Size()), closer: f}, nil
+		return &SectionReaderCloser{sectionReader: io.NewSectionReader(f, offset, length), closer: f}, nil
 	}
-	return f, nil
+	return &SectionReaderCloser{sectionReader: io.NewSectionReader(f, offset, info.Size()-offset), closer: f}, nil
 }
 
 type writeMover struct {
