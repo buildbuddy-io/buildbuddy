@@ -29,11 +29,11 @@ go_test(
     ],
     deps = [
         ":cacheproxy",
-        "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/testutil/app",
         "//server/testutil/testauth",
+        "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/util/prefix",
         "//server/util/testing/flags",
