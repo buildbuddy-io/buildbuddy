@@ -5,4 +5,5 @@ go_library(
     srcs = ["rlimit.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/rlimit",
     visibility = ["//visibility:public"],
+    deps = ["//server/util/log"],
 )

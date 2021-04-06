@@ -3,13 +3,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 go_test(
     name = "ci_runner_test",
     srcs = ["ci_runner_test.go"],
-    data = ["//enterprise/server/cmd/ci_runner"],
-    # TODO: Make this automatic when we figure out a good way to include
-    # a `git` binary in this test (since the action runner needs it).
-    # Also would need to support a BAZEL_BINARY env variable or flag
-    # to tell it to use a fixed version of Bazel that we include via
-    # data dep.
-    tags = ["manual"],
+    data = [
+        "//enterprise/server/cmd/ci_runner",
+        "//server/testutil/bazel:bazel-3.7.0_crossplatform",
+    ],
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
@@ -18,6 +15,8 @@ go_test(
         "//proto:invocation_go_proto",
         "//server/testutil/bazel",
         "//server/testutil/buildbuddy",
+        "@com_github_go_git_go_git_v5//:go-git",
+        "@com_github_go_git_go_git_v5//plumbing/object",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",

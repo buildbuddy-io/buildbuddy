@@ -4,12 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"reflect"
 	"strings"
 
 	"gopkg.in/yaml.v2"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 // When adding new storage fields, always be explicit about their yaml field
@@ -42,6 +43,9 @@ type appConfig struct {
 	DefaultToDenseMode      bool   `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
 	GRPCMaxRecvMsgSizeBytes int    `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
 	EnableTargetTracking    bool   `yaml:"enable_target_tracking" usage:"Cloud-Only"`
+	EnableStructuredLogging bool   `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
+	LogIncludeShortFileName bool   `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
+	LogLevel                string `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {"fatal", "error", "warn", "info", "debug"}`
 }
 
 type buildEventProxy struct {
@@ -106,10 +110,11 @@ type S3CacheConfig struct {
 }
 
 type DistributedCacheConfig struct {
-	ListenAddr        string `yaml:"listen_addr" usage:"The address to listen for local BuildBuddy distributed cache traffic on."`
-	RedisTarget       string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
-	GroupName         string `yaml:"group_name" usage:"A unique name for this distributed cache group. ** Enterprise only **"`
-	ReplicationFactor int    `yaml:"replication_factor" usage:"How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **"`
+	ListenAddr        string   `yaml:"listen_addr" usage:"The address to listen for local BuildBuddy distributed cache traffic on."`
+	RedisTarget       string   `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
+	GroupName         string   `yaml:"group_name" usage:"A unique name for this distributed cache group. ** Enterprise only **"`
+	ReplicationFactor int      `yaml:"replication_factor" usage:"How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **"`
+	Nodes             []string `yaml:"nodes" usage:"The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **"`
 }
 
 type RedisCacheConfig struct {
@@ -257,7 +262,7 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 	if fullConfigPath == "" {
 		return &sharedGeneralConfig, nil
 	}
-	log.Printf("Reading buildbuddy config from '%s'", fullConfigPath)
+	log.Infof("Reading buildbuddy config from '%s'", fullConfigPath)
 
 	_, err := os.Stat(fullConfigPath)
 
@@ -358,6 +363,18 @@ func (c *Configurator) GetAppCreateGroupPerUser() bool {
 
 func (c *Configurator) GetAppAddUserToDomainGroup() bool {
 	return c.gc.App.AddUserToDomainGroup
+}
+
+func (c *Configurator) GetAppLogIncludeShortFileName() bool {
+	return c.gc.App.LogIncludeShortFileName
+}
+
+func (c *Configurator) GetAppEnableStructuredLogging() bool {
+	return c.gc.App.EnableStructuredLogging
+}
+
+func (c *Configurator) GetAppLogLevel() string {
+	return c.gc.App.LogLevel
 }
 
 func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {

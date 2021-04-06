@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 )
@@ -134,7 +134,7 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 	newReadinessState := true
 	if err != nil {
 		newReadinessState = false
-		log.Printf("Checker err: %s", err)
+		log.Warningf("Checker err: %s", err)
 	}
 
 	previousReadinessState := false
@@ -146,7 +146,7 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 	h.lock.Unlock()
 
 	if newReadinessState != previousReadinessState {
-		log.Printf("HealthChecker transitioning from ready: %t => ready: %t", previousReadinessState, newReadinessState)
+		log.Infof("HealthChecker transitioning from ready: %t => ready: %t", previousReadinessState, newReadinessState)
 	}
 }
 
@@ -167,7 +167,7 @@ func (h *HealthChecker) ReadinessHandler() http.Handler {
 			return
 		}
 		err := fmt.Errorf("Server type: '%s' unknown (did not match: %q)", reqServerType, h.serverType)
-		log.Printf("Readiness check returning error: %s", err)
+		log.Warningf("Readiness check returning error: %s", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	})
 }
@@ -180,7 +180,7 @@ func (h *HealthChecker) LivenessHandler() http.Handler {
 			return
 		}
 		err := fmt.Errorf("Server type: '%s' unknown (did not match: %q)", reqServerType, h.serverType)
-		log.Printf("Liveness check returning error: %s", err)
+		log.Warningf("Liveness check returning error: %s", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	})
 }

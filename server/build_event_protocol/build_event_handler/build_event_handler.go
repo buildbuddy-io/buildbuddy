@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -124,7 +124,7 @@ func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string,
 		} else if err == io.EOF {
 			break
 		} else {
-			log.Printf("returning some other error: %s", err)
+			log.Warningf("Error reading proto from log: %s", err)
 			return err
 		}
 	}
@@ -235,14 +235,14 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 			// We use context background here because the request context will
 			// be closed soon and we don't want to block while calling webhooks.
 			if err := hook.NotifyComplete(context.Background(), invocation); err != nil {
-				log.Printf("Error calling webhook: %s", err)
+				log.Warningf("Error calling webhook: %s", err)
 			}
 		}()
 	}
 	if searcher := e.env.GetInvocationSearchService(); searcher != nil {
 		go func() {
 			if err := searcher.IndexInvocation(context.Background(), invocation); err != nil {
-				log.Printf("Error indexing invocation: %s", err)
+				log.Warningf("Error indexing invocation: %s", err)
 			}
 		}()
 	}
@@ -272,7 +272,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 	var bazelBuildEvent build_event_stream.BuildEvent
 	if err := readBazelEvent(event.OrderedBuildEvent, &bazelBuildEvent); err != nil {
-		log.Printf("error reading bazel event: %s", err)
+		log.Warningf("error reading bazel event: %s", err)
 		return err
 	}
 
@@ -285,7 +285,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	// If this is the first event, keep track of the project ID and save any notification keywords.
 	if isStartedEvent(&bazelBuildEvent) {
 		e.hasReceivedStartedEvent = true
-		log.Printf("Started event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
+		log.Debugf("Started event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
 		ti := &tables.Invocation{
 			InvocationID:     iid,
 			InvocationPK:     md5Int64(iid),
@@ -315,7 +315,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	} else if !e.hasReceivedStartedEvent {
 		e.eventsBeforeStarted = append(e.eventsBeforeStarted, invocationEvent)
 		if len(e.eventsBeforeStarted) > 10 {
-			log.Printf("We got over 10 build events before the started event for invocation %s, dropping %+v", iid, e.eventsBeforeStarted[0])
+			log.Warningf("We got over 10 build events before the started event for invocation %s, dropping %+v", iid, e.eventsBeforeStarted[0])
 			e.eventsBeforeStarted = e.eventsBeforeStarted[1:]
 		}
 		return nil
@@ -420,7 +420,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 		} else if err == io.EOF {
 			break
 		} else {
-			log.Printf("returning some other error: %s", err)
+			log.Warningf("Error reading proto from log: %s", err)
 			return nil, err
 		}
 	}

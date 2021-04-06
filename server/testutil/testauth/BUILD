@@ -13,6 +13,7 @@ go_library(
         "//server/interfaces",
         "//server/tables",
         "//server/util/capabilities",
+        "//server/util/log",
         "//server/util/status",
         "@org_golang_google_grpc//metadata",
     ],

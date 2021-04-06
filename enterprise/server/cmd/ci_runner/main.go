@@ -43,7 +43,7 @@ const (
 	// Path where we expect to find actions config, relative to the repo root.
 	actionsConfigPath = "buildbuddy.yaml"
 
-	// Env vars
+	// Env vars set by workflow runner
 	// NOTE: These env vars are not populated for non-private repos.
 
 	buildbuddyAPIKeyEnvVarName = "BUILDBUDDY_API_KEY"
@@ -65,10 +65,11 @@ const (
 	pushEventName        = "push"
 	pullRequestEventName = "pull_request"
 
-	// Binary constants
+	// Bazel binary constants
 
-	bazelBinaryName    = "bazel"
-	bazeliskBinaryName = "bazelisk"
+	bazelBinaryName                = "bazel"
+	bazeliskBinaryName             = "bazelisk"
+	bazelCommandOverrideEnvVarName = "BAZEL_COMMAND"
 
 	// ANSI codes for cases where the aurora equivalent is not supported by our UI
 	// (ex: aurora's "grayscale" mode results in some ANSI codes that we don't currently
@@ -478,7 +479,7 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
 		ar.printCommandLine(args)
-		err = runCommand(ctx, bazeliskBinaryName, args /*env=*/, nil, ar.log)
+		err = runCommand(ctx, bazelCommand(), args /*env=*/, nil, ar.log)
 		if exitCode := getExitCode(err); exitCode != noExitCode {
 			ar.log.Printf("%s(command exited with code %d)%s", ansiGray, exitCode, ansiReset)
 		}
@@ -560,6 +561,13 @@ func bazelArgs(cmd string) ([]string, error) {
 		tokens = tokens[1:]
 	}
 	return tokens, nil
+}
+
+func bazelCommand() string {
+	if override := os.Getenv(bazelCommandOverrideEnvVarName); override != "" {
+		return override
+	}
+	return bazeliskBinaryName
 }
 
 func setupGitRepo(ctx context.Context) error {

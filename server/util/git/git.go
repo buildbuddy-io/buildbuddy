@@ -1,11 +1,11 @@
 package git
 
 import (
-	"log"
 	"net/url"
 	"regexp"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/whilp/git-urls"
 )
@@ -52,7 +52,7 @@ func AuthRepoURL(repoURL, user, token string) (string, error) {
 func StripRepoURLCredentials(repoURL string) string {
 	u, err := parse(repoURL)
 	if err != nil {
-		log.Printf("Failed to parse repo URL while attempting to strip credentials.")
+		log.Warning("Failed to parse repo URL while attempting to strip credentials.")
 		return repoURL
 	}
 	u.User = nil

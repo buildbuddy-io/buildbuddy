@@ -2,11 +2,11 @@ package build_event_proxy
 
 import (
 	"context"
-	"log"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
 
@@ -29,7 +29,7 @@ func (c *BuildEventProxyClient) reconnectIfNecessary() {
 	defer c.clientMux.Unlock()
 	conn, err := grpc_client.DialTarget(c.target)
 	if err != nil {
-		log.Printf("Unable to connect to proxy host '%s': %s", c.target, err)
+		log.Warningf("Unable to connect to proxy host '%s': %s", c.target, err)
 		c.client = nil
 		return
 	}
@@ -55,7 +55,7 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(_ context.Context, req *pe
 	go func() {
 		_, err := c.client.PublishLifecycleEvent(c.rootCtx, req)
 		if err != nil {
-			log.Printf("Error publishing lifecycle event: %s", err.Error())
+			log.Warningf("Error publishing lifecycle event: %s", err.Error())
 		}
 	}()
 	return &empty.Empty{}, nil
@@ -76,14 +76,14 @@ func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ..
 	go func() {
 		stream, err := c.client.PublishBuildToolEventStream(ctx, opts...)
 		if err != nil {
-			log.Printf("Error opening BES stream to proxy: %s", err.Error())
+			log.Warningf("Error opening BES stream to proxy: %s", err.Error())
 			return
 		}
 		asp.PublishBuildEvent_PublishBuildToolEventStreamClient = stream
 		for req := range asp.events {
 			err := stream.Send(&req)
 			if err != nil {
-				log.Printf("Error sending req on stream: %s", err.Error())
+				log.Warningf("Error sending req on stream: %s", err.Error())
 				break
 			}
 		}
@@ -97,7 +97,7 @@ func (asp *asyncStreamProxy) Send(req *pepb.PublishBuildToolEventStreamRequest) 
 	case asp.events <- *req:
 		// does not fallthrough.
 	default:
-		log.Printf("BuildEventProxy dropped message.")
+		log.Warningf("BuildEventProxy dropped message.")
 	}
 	return nil
 }

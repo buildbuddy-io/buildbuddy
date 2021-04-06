@@ -2,13 +2,13 @@ package testauth
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"google.golang.org/grpc/metadata"
@@ -33,6 +33,7 @@ const (
 	testAuthenticationHeader = "test-auth-header"
 
 	TestApiKeyHeader = "test-buildbuddy-api-key"
+	jwtHeader        = "x-buildbuddy-jwt"
 )
 
 var (
@@ -63,7 +64,7 @@ func (c *TestUser) HasCapability(cap akpb.ApiKey_Capability) bool {
 // user_id1, group_id1, user_id2, group_id2, ..., user_idN, group_idN
 func TestUsers(vals ...string) map[string]interfaces.UserInfo {
 	if len(vals)%2 != 0 {
-		log.Printf("You're calling TestUsers wrong!")
+		log.Errorf("You're calling TestUsers wrong!")
 	}
 	testUsers := make(map[string]interfaces.UserInfo, 0)
 	var u *TestUser
@@ -92,8 +93,7 @@ func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthent
 
 func (a *TestAuthenticator) AuthenticateHTTPRequest(w http.ResponseWriter, r *http.Request) context.Context {
 	headerVal := r.Header.Get(TestApiKeyHeader)
-	user, ok := a.testUsers[headerVal]
-	if ok {
+	if user, ok := a.testUsers[headerVal]; ok {
 		return context.WithValue(r.Context(), testAuthenticationHeader, user)
 	}
 	return r.Context()
@@ -101,11 +101,12 @@ func (a *TestAuthenticator) AuthenticateHTTPRequest(w http.ResponseWriter, r *ht
 
 func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) context.Context {
 	if grpcMD, ok := metadata.FromIncomingContext(ctx); ok {
-		headerVals := grpcMD[TestApiKeyHeader]
-		for _, headerVal := range headerVals {
-			user, ok := a.testUsers[headerVal]
-			if ok {
-				return context.WithValue(ctx, testAuthenticationHeader, user)
+		for _, h := range []string{TestApiKeyHeader, jwtHeader} {
+			headerVals := grpcMD[h]
+			for _, headerVal := range headerVals {
+				if user, ok := a.testUsers[headerVal]; ok {
+					return context.WithValue(ctx, testAuthenticationHeader, user)
+				}
 			}
 		}
 	}
@@ -117,6 +118,11 @@ func (a *TestAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.U
 	u, ok := uVal.(interfaces.UserInfo)
 	if ok {
 		return u, nil
+	}
+	if jwt, ok := ctx.Value(jwtHeader).(string); ok {
+		if u := a.testUsers[jwt]; u != nil {
+			return u, nil
+		}
 	}
 	return nil, status.PermissionDeniedError("User not found")
 }

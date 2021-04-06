@@ -55,6 +55,19 @@
   background-color: #eee;
 }
 
+.header {
+  display: flex;
+  justify-content: space-between;
+}
+
+.header .button {
+  flex-grow: 0;
+}
+
+.button .download-gz-file {
+  font-size: 14px;
+}
+
 .download-color-swatch {
   background-color: #03a9f4;
 }

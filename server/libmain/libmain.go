@@ -4,9 +4,9 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
+	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 
@@ -92,6 +93,10 @@ func init() {
 // not substantially different enough yet to warrant the extra complexity of
 // always updating both main files.
 func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
+	if err := log.Configure(configurator.GetAppLogLevel(), configurator.GetAppLogIncludeShortFileName(), configurator.GetAppEnableStructuredLogging()); err != nil {
+		fmt.Printf("Error configuring logging: %s", err)
+		os.Exit(1)
+	}
 	bs, err := blobstore.GetConfiguredBlobstore(configurator)
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
@@ -230,9 +235,9 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 	grpcOptions := grpc_server.CommonGRPCServerOptions(env)
 	if credentialOption != nil {
 		grpcOptions = append(grpcOptions, credentialOption)
-		log.Printf("gRPCS listening on http://%s\n", hostAndPort)
+		log.Printf("gRPCS listening on http://%s", hostAndPort)
 	} else {
-		log.Printf("gRPC listening on http://%s\n", hostAndPort)
+		log.Printf("gRPC listening on http://%s", hostAndPort)
 	}
 
 	grpcServer := grpc.NewServer(grpcOptions...)
@@ -301,7 +306,7 @@ func StartAndRunServices(env environment.Env) {
 	if sslService.IsEnabled() {
 		creds, err := sslService.GetGRPCSTLSCreds()
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("Error getting SSL creds: %s", err)
 		}
 
 		StartGRPCServiceOrDie(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
@@ -365,7 +370,7 @@ func StartAndRunServices(env environment.Env) {
 	if sslService.IsEnabled() {
 		tlsConfig, sslHandler := sslService.ConfigureTLS(handler)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("Error configuring TLS: %s", err)
 		}
 		sslServer := &http.Server{
 			Addr:      fmt.Sprintf("%s:%d", *listen, *sslPort),

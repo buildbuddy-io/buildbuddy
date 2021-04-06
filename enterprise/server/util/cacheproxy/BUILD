@@ -12,10 +12,13 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_x_net//http2",
+        "@org_golang_x_net//http2/h2c",
         "@org_golang_x_sync//errgroup",
     ],
 )

@@ -2,9 +2,10 @@ package rlimit
 
 import (
 	"fmt"
-	"log"
 	"runtime"
 	"syscall"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 func MaxRLimit() error {
@@ -19,7 +20,7 @@ func MaxRLimit() error {
 		limit.Max = 10240
 	}
 	if limit.Cur != limit.Max {
-		log.Printf("Increasing open files limit %d => %d", limit.Cur, limit.Max)
+		log.Infof("Increasing open files limit %d => %d", limit.Cur, limit.Max)
 		limit.Cur = limit.Max
 		if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &limit); err != nil {
 			return fmt.Errorf("Error increasing open files limit: %s", err.Error())

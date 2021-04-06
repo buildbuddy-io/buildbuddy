@@ -2,11 +2,11 @@ package grpc_server
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
@@ -28,10 +28,10 @@ func GRPCShutdown(ctx context.Context, grpcServer *grpc.Server) error {
 	go func() {
 		select {
 		case <-ctx.Done():
-			log.Printf("Graceful stop of GRPC server succeeded.")
+			log.Infof("Graceful stop of GRPC server succeeded.")
 			grpcServer.Stop()
 		case <-time.After(delay):
-			log.Printf("Hard-stopping GRPC Server!")
+			log.Warningf("Hard-stopping GRPC Server!")
 			grpcServer.Stop()
 		}
 	}()

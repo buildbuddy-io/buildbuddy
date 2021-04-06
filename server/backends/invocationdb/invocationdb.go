@@ -3,13 +3,13 @@ package invocationdb
 import (
 	"context"
 	"errors"
-	"log"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -66,7 +66,8 @@ func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.
 		} else {
 			err := tx.Model(&existing).Where("invocation_id = ?", ti.InvocationID).Updates(ti).Error
 			if err != nil {
-				log.Printf("Error updating invocation %s: %s", ti.InvocationID, err.Error())
+				log.Warningf("Error updating invocation %s: %s", ti.InvocationID, err.Error())
+				// TODO(tylerw): return an error here!
 			}
 		}
 		return nil

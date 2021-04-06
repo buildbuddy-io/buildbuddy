@@ -10,6 +10,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/util/disk",
+        "//server/util/log",
         "//server/util/status",
         "@com_github_aws_aws_sdk_go//aws",
         "@com_github_aws_aws_sdk_go//aws/awserr",

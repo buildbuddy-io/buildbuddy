@@ -3,7 +3,6 @@ package build_status_reporter
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -11,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
@@ -121,7 +121,7 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 		repoURL := r.buildEventAccumulator.RepoURL()
 		ownerRepo, err := gitutil.OwnerRepoFromRepoURL(repoURL)
 		if err != nil {
-			log.Printf("Failed to report GitHub status: %s", err)
+			log.Warningf("Failed to report GitHub status: %s", err)
 			break
 		}
 		commitSHA := r.buildEventAccumulator.CommitSHA()

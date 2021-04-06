@@ -34,25 +34,38 @@ type HeartbeatChannel struct {
 	// How often this node will check if heartbeats are still valid.
 	CheckPeriod time.Duration
 
-	groupName string
-	myAddr    string
-	peers     map[string]time.Time
-	ps        interfaces.PubSub
-	updateFn  PeersUpdateFn
-	quit      chan struct{}
+	groupName        string
+	myAddr           string
+	peers            map[string]time.Time
+	ps               interfaces.PubSub
+	updateFn         PeersUpdateFn
+	enablePeerExpiry bool
+	quit             chan struct{}
 }
 
-func NewHeartbeatChannel(ps interfaces.PubSub, myAddr, groupName string, updateFn PeersUpdateFn) *HeartbeatChannel {
+type Config struct {
+	// The address of this node to broadcast to peers.
+	MyPublicAddr string
+	// The name of the group to broadcast in.
+	GroupName string
+	// A func(peerSet ...string) that will be called on peerset updates.
+	UpdateFn PeersUpdateFn
+	// If true, enable peers to be dropped after defaultHeartbeatTimeout.
+	EnablePeerExpiry bool
+}
+
+func NewHeartbeatChannel(ps interfaces.PubSub, config *Config) *HeartbeatChannel {
 	hac := &HeartbeatChannel{
-		groupName:   groupName,
-		myAddr:      myAddr,
-		peers:       make(map[string]time.Time, 0),
-		ps:          ps,
-		updateFn:    updateFn,
-		quit:        make(chan struct{}),
-		Period:      defaultHeartbeatPeriod,
-		Timeout:     defaultHeartbeatTimeout,
-		CheckPeriod: defaultHeartbeatCheckPeriod,
+		groupName:        config.GroupName,
+		myAddr:           config.MyPublicAddr,
+		peers:            make(map[string]time.Time, 0),
+		ps:               ps,
+		updateFn:         config.UpdateFn,
+		quit:             make(chan struct{}),
+		enablePeerExpiry: config.EnablePeerExpiry,
+		Period:           defaultHeartbeatPeriod,
+		Timeout:          defaultHeartbeatTimeout,
+		CheckPeriod:      defaultHeartbeatCheckPeriod,
 	}
 	ctx := context.Background()
 	go hac.watchPeers(ctx)
@@ -111,9 +124,11 @@ func (c *HeartbeatChannel) watchPeers(ctx context.Context) {
 			updated := false
 			for peer, lastBeat := range c.peers {
 				if time.Since(lastBeat) > c.Timeout {
-					log.Printf("Peer %q has timed out. LastBeat: %s, timeout: %s", peer, lastBeat, c.Timeout)
-					delete(c.peers, peer)
-					updated = true
+					if c.enablePeerExpiry {
+						log.Printf("Peer %q has timed out. LastBeat: %s, timeout: %s", peer, lastBeat, c.Timeout)
+						delete(c.peers, peer)
+						updated = true
+					}
 				}
 			}
 			if updated {

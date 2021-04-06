@@ -11,6 +11,7 @@ go_library(
         "//server/build_event_protocol/accumulator",
         "//server/environment",
         "//server/tables",
+        "//server/util/log",
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",

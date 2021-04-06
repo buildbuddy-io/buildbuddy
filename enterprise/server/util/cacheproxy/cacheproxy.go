@@ -2,8 +2,9 @@ package cacheproxy
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
-	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -12,8 +13,11 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -22,8 +26,8 @@ import (
 )
 
 const (
-	downloadPath = "/download"
-	uploadPath   = "/upload"
+	downloadPath = "/download/"
+	uploadPath   = "/upload/"
 
 	hashParam      = "hash"
 	sizeBytesParam = "size_bytes"
@@ -37,19 +41,34 @@ type CacheProxy struct {
 	env        environment.Env
 	cache      interfaces.Cache
 	fileServer *http.Server
+	client     *http.Client
+}
+
+func makeHTTP2Client() *http.Client {
+	return &http.Client{
+		Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+		},
+	}
 }
 
 func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *CacheProxy {
 	mux := http.NewServeMux()
 	proxy := &CacheProxy{
-		env:   env,
-		cache: c,
+		env:    env,
+		cache:  c,
+		client: makeHTTP2Client(),
 	}
 	mux.Handle(downloadPath, proxy)
 	mux.Handle(uploadPath, proxy)
+
+	h2s := &http2.Server{}
 	proxy.fileServer = &http.Server{
 		Addr:    listenAddr,
-		Handler: http.Handler(mux),
+		Handler: h2c.NewHandler(http.Handler(mux), h2s),
 	}
 	return proxy
 }
@@ -120,6 +139,11 @@ func reader(c context.Context, cache interfaces.Cache, d *repb.Digest, offset in
 }
 
 func writer(c context.Context, cache interfaces.Cache, d *repb.Digest, r *http.Request, w http.ResponseWriter) {
+	ok, err := cache.Contains(c, d)
+	if err != nil && ok {
+		w.WriteHeader(200)
+		return
+	}
 	wc, err := cache.Writer(c, d)
 	if err != nil {
 		writeErr(err, w)
@@ -155,13 +179,12 @@ func (c *CacheProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cache := c.cache.WithPrefix(r.URL.Query().Get(prefixParam))
-
 	switch r.URL.Path {
 	case downloadPath:
 		{
 			if r.Method == http.MethodHead {
 				contains(ctx, cache, d, w)
-				log.Printf("CacheProxy(%s): /Contains %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
+				log.Debugf("CacheProxy(%s): /Contains %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
 				return
 			}
 			if r.Method == http.MethodPost {
@@ -172,7 +195,7 @@ func (c *CacheProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				reader(ctx, cache, d, offset, w)
-				log.Printf("CacheProxy(%s): /Read %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
+				log.Debugf("CacheProxy(%s): /Read %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
 				return
 			}
 			writeErr(status.InvalidArgumentError("Invalid method (use HEAD or POST)"), w)
@@ -181,7 +204,7 @@ func (c *CacheProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		{
 			if r.Method == http.MethodPost {
 				writer(ctx, cache, d, r, w)
-				log.Printf("CacheProxy(%s): /Write %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
+				log.Debugf("CacheProxy(%s): /Write %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
 				return
 			}
 			writeErr(status.InvalidArgumentError("Invalid method (use POST)"), w)
@@ -214,6 +237,10 @@ func (c *CacheProxy) remoteFileURL(peer, action, prefix, hash string, sizeBytes,
 }
 
 func (c *CacheProxy) RemoteContains(ctx context.Context, peer, prefix string, d *repb.Digest) (bool, error) {
+	// Fast path: if peer is us, return local cache.
+	if peer == c.fileServer.Addr {
+		return c.cache.WithPrefix(prefix).Contains(ctx, d)
+	}
 	u, err := c.remoteFileURL(peer, downloadPath, prefix, d.GetHash(), d.GetSizeBytes(), 0)
 	if err != nil {
 		return false, err
@@ -223,15 +250,18 @@ func (c *CacheProxy) RemoteContains(ctx context.Context, peer, prefix string, d 
 		return false, err
 	}
 	setJWT(ctx, req)
-	rsp, err := http.DefaultClient.Do(req)
+	rsp, err := c.client.Do(req)
 	if err != nil {
 		return false, status.UnavailableError(err.Error())
 	}
 	defer rsp.Body.Close()
 	return rsp.StatusCode == 200, nil
 }
-
 func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+	// Fast path: if peer is us, return local cache.
+	if peer == c.fileServer.Addr {
+		return c.cache.WithPrefix(prefix).Reader(ctx, d, offset)
+	}
 	u, err := c.remoteFileURL(peer, downloadPath, prefix, d.GetHash(), d.GetSizeBytes(), offset)
 	if err != nil {
 		return nil, err
@@ -241,7 +271,7 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *r
 		return nil, err
 	}
 	setJWT(ctx, req)
-	rsp, err := http.DefaultClient.Do(req)
+	rsp, err := c.client.Do(req)
 	if err != nil {
 		return nil, status.UnavailableError(err.Error())
 	}
@@ -267,6 +297,10 @@ func (p *PipeGroup) Close() error {
 }
 
 func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, prefix string, d *repb.Digest) (io.WriteCloser, error) {
+	// Fast path: if peer is us, return local cache.
+	if peer == c.fileServer.Addr {
+		return c.cache.WithPrefix(prefix).Writer(ctx, d)
+	}
 	u, err := c.remoteFileURL(peer, uploadPath, prefix, d.GetHash(), d.GetSizeBytes(), 0)
 	if err != nil {
 		return nil, err
@@ -279,8 +313,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, prefix string, d *r
 	setJWT(ctx, req)
 	eg, _ := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		client := &http.Client{}
-		rsp, err := client.Do(req)
+		rsp, err := c.client.Do(req)
 		if err != nil {
 			return err
 		}

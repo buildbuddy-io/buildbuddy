@@ -5,6 +5,7 @@ import FlameChart from "../flame_chart/flame_chart";
 import { Profile } from "../flame_chart/profile_model";
 import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
+import Button from "../components/button/button";
 
 interface Props {
   model: InvocationModel;
@@ -117,6 +118,16 @@ export default class InvocationTimingCardComponent extends React.Component {
       });
   }
 
+  downloadProfile() {
+    let profileFile = this.props.model.buildToolLogs?.log.find((log: any) => log.uri);
+
+    try {
+      rpcService.downloadBytestreamFile("timing_profile.gz", profileFile?.uri, this.props.model.getId());
+    } catch {
+      console.error("Error downloading bytestream timing profile");
+    }
+  }
+
   updateProfile(profile: Profile) {
     this.state.profile = profile;
     for (let event of this.state.profile?.traceEvents || []) {
@@ -210,7 +221,14 @@ export default class InvocationTimingCardComponent extends React.Component {
         <div className="card timing">
           <img className="icon" src="/image/clock-regular.svg" />
           <div className="content">
-            <div className="title">All events</div>
+            <div className="header">
+              <div className="title">All events</div>
+              <div className="button">
+                <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
+                  Download profile
+                </Button>
+              </div>
+            </div>
             <div className="sort-controls">
               <div className="sort-control">
                 Sort by&nbsp;
