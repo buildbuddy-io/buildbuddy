@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 
 	"google.golang.org/grpc"
@@ -28,7 +29,7 @@ import (
 func init() {
 	// N.B. We do this here to avoid a data race condition that happens when
 	// multiple tests Configure the logger simultaneously.
-	if err := log.Configure("debug", true /*=logFileName*/, false /*=enableStructuredLogging*/); err != nil {
+	if err := log.Configure("info", true /*=logFileName*/, false /*=enableStructuredLogging*/); err != nil {
 		log.Fatalf("Error configuring logging: %s", err)
 	}
 }
@@ -82,7 +83,10 @@ func (te *TestEnv) LocalGRPCServer() (*grpc.Server, func()) {
 }
 
 func (te *TestEnv) LocalGRPCConn(ctx context.Context) (*grpc.ClientConn, error) {
-	return grpc.DialContext(ctx, "bufnet", grpc.WithContextDialer(te.bufDialer), grpc.WithInsecure())
+	dialOptions := grpc_client.CommonGRPCClientOptions()
+	dialOptions = append(dialOptions, grpc.WithContextDialer(te.bufDialer))
+	dialOptions = append(dialOptions, grpc.WithInsecure())
+	return grpc.DialContext(ctx, "bufnet", dialOptions...)
 }
 
 // GRPCServer starts a gRPC server with standard BuildBuddy filters that uses the given listener.

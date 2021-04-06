@@ -33,6 +33,7 @@ const (
 	testAuthenticationHeader = "test-auth-header"
 
 	TestApiKeyHeader = "test-buildbuddy-api-key"
+	jwtHeader        = "x-buildbuddy-jwt"
 )
 
 var (
@@ -100,12 +101,19 @@ func (a *TestAuthenticator) AuthenticateHTTPRequest(w http.ResponseWriter, r *ht
 }
 
 func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) context.Context {
+	// log.Printf("\033[32m[DEBUG]\033[0m ctx=%+v\n", ctx)
+
 	if grpcMD, ok := metadata.FromIncomingContext(ctx); ok {
-		headerVals := grpcMD[TestApiKeyHeader]
-		for _, headerVal := range headerVals {
-			user, ok := a.testUsers[headerVal]
-			if ok {
-				return context.WithValue(ctx, testAuthenticationHeader, user)
+		// log.Printf("\033[32m[DEBUG]\033[0m grpcMD=%+v\n", grpcMD)
+
+		for _, h := range []string{TestApiKeyHeader, jwtHeader} {
+			headerVals := grpcMD[h]
+			for _, headerVal := range headerVals {
+				user, ok := a.testUsers[headerVal]
+				if ok {
+					ctx = context.WithValue(ctx, jwtHeader, headerVal)
+					ctx = context.WithValue(ctx, testAuthenticationHeader, user)
+				}
 			}
 		}
 	}
@@ -117,6 +125,11 @@ func (a *TestAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.U
 	u, ok := uVal.(interfaces.UserInfo)
 	if ok {
 		return u, nil
+	}
+	if jwt, ok := ctx.Value(jwtHeader).(string); ok {
+		if u := a.testUsers[jwt]; u != nil {
+			return u, nil
+		}
 	}
 	return nil, status.PermissionDeniedError("User not found")
 }
