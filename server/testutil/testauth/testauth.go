@@ -107,8 +107,7 @@ func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) context
 			for _, headerVal := range headerVals {
 				user, ok := a.testUsers[headerVal]
 				if ok {
-					ctx = context.WithValue(ctx, jwtHeader, headerVal)
-					ctx = context.WithValue(ctx, testAuthenticationHeader, user)
+					return context.WithValue(ctx, testAuthenticationHeader, user)
 				}
 			}
 		}
