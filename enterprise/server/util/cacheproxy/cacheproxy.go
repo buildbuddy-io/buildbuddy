@@ -56,15 +56,19 @@ func makeHTTP2Client() *http.Client {
 }
 
 func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *CacheProxy {
+	mux := http.NewServeMux()
 	proxy := &CacheProxy{
 		env:    env,
 		cache:  c,
 		client: makeHTTP2Client(),
 	}
+	mux.Handle(downloadPath, proxy)
+	mux.Handle(uploadPath, proxy)
+
 	h2s := &http2.Server{}
 	proxy.fileServer = &http.Server{
 		Addr:    listenAddr,
-		Handler: h2c.NewHandler(proxy, h2s),
+		Handler: h2c.NewHandler(http.Handler(mux), h2s),
 	}
 	return proxy
 }
