@@ -2,14 +2,17 @@ package cache_test
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -34,9 +37,8 @@ func getTestEnv(t testing.TB, users map[string]interfaces.UserInfo) *testenv.Tes
 	return te
 }
 
-func getAnonContext(t testing.TB) context.Context {
+func getAnonContext(t testing.TB, te *testenv.TestEnv) context.Context {
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
 	if err != nil {
 		t.Fatalf("error attaching user prefix: %v", err)
@@ -95,8 +97,23 @@ func getDiskCache(t testing.TB) interfaces.Cache {
 	return dc
 }
 
-func benchmarkSetSingleThread(c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	ctx := getAnonContext(b)
+func getDistributedDiskCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache {
+	dc := getDiskCache(t)
+	listenAddr := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	conf := distributed.CacheConfig{
+		ListenAddr:       listenAddr,
+		GroupName:        "default",
+		ReplicationFactor: 1,
+		Nodes:             []string{listenAddr},
+	}
+	c, err := distributed.NewDistributedCache(te, dc, conf, te.GetHealthChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func benchmarkSetSingleThread(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
 	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
 
 	b.ReportAllocs()
@@ -110,35 +127,7 @@ func benchmarkSetSingleThread(c interfaces.Cache, digestSizeBytes int64, b *test
 	}
 }
 
-func BenchmarkSetSingleThreadMemory10(b *testing.B) {
-	benchmarkSetSingleThread(getMemoryCache(b), 10, b)
-}
-func BenchmarkSetSingleThreadMemory100(b *testing.B) {
-	benchmarkSetSingleThread(getMemoryCache(b), 100, b)
-}
-func BenchmarkSetSingleThreadMemory1000(b *testing.B) {
-	benchmarkSetSingleThread(getMemoryCache(b), 1000, b)
-}
-func BenchmarkSetSingleThreadMemory10000(b *testing.B) {
-	benchmarkSetSingleThread(getMemoryCache(b), 10000, b)
-}
-
-func BenchmarkSetSingleThreadDisk10(b *testing.B) {
-	benchmarkSetSingleThread(getDiskCache(b), 10, b)
-}
-func BenchmarkSetSingleThreadDisk100(b *testing.B) {
-	benchmarkSetSingleThread(getDiskCache(b), 100, b)
-}
-func BenchmarkSetSingleThreadDisk1000(b *testing.B) {
-	benchmarkSetSingleThread(getDiskCache(b), 1000, b)
-}
-func BenchmarkSetSingleThreadDisk10000(b *testing.B) {
-	benchmarkSetSingleThread(getDiskCache(b), 10000, b)
-}
-
-func benchmarkSetMultiThread(c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	ctx := getAnonContext(b)
-
+func benchmarkSetMultiThread(ctx context.Context,c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
 	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -154,35 +143,7 @@ func benchmarkSetMultiThread(c interfaces.Cache, digestSizeBytes int64, b *testi
 	})
 }
 
-func BenchmarkSetMultiThreadMemory10(b *testing.B) {
-	benchmarkSetMultiThread(getMemoryCache(b), 10, b)
-}
-func BenchmarkSetMultiThreadMemory100(b *testing.B) {
-	benchmarkSetMultiThread(getMemoryCache(b), 100, b)
-}
-func BenchmarkSetMultiThreadMemory1000(b *testing.B) {
-	benchmarkSetMultiThread(getMemoryCache(b), 1000, b)
-}
-func BenchmarkSetMultiThreadMemory10000(b *testing.B) {
-	benchmarkSetMultiThread(getMemoryCache(b), 10000, b)
-}
-
-func BenchmarkSetMultiThreadDisk10(b *testing.B) {
-	benchmarkSetMultiThread(getDiskCache(b), 10, b)
-}
-func BenchmarkSetMultiThreadDisk100(b *testing.B) {
-	benchmarkSetMultiThread(getDiskCache(b), 100, b)
-}
-func BenchmarkSetMultiThreadDisk1000(b *testing.B) {
-	benchmarkSetMultiThread(getDiskCache(b), 1000, b)
-}
-func BenchmarkSetMultiThreadDisk10000(b *testing.B) {
-	benchmarkSetMultiThread(getDiskCache(b), 10000, b)
-}
-
-func benchmarkGetSingleThread(c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	ctx := getAnonContext(b)
-
+func benchmarkGetSingleThread(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
 	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	b.ReportAllocs()
@@ -197,35 +158,7 @@ func benchmarkGetSingleThread(c interfaces.Cache, digestSizeBytes int64, b *test
 	}
 }
 
-func BenchmarkGetSingleThreadMemory10(b *testing.B) {
-	benchmarkGetSingleThread(getMemoryCache(b), 10, b)
-}
-func BenchmarkGetSingleThreadMemory100(b *testing.B) {
-	benchmarkGetSingleThread(getMemoryCache(b), 100, b)
-}
-func BenchmarkGetSingleThreadMemory1000(b *testing.B) {
-	benchmarkGetSingleThread(getMemoryCache(b), 1000, b)
-}
-func BenchmarkGetSingleThreadMemory10000(b *testing.B) {
-	benchmarkGetSingleThread(getMemoryCache(b), 10000, b)
-}
-
-func BenchmarkGetSingleThreadDisk10(b *testing.B) {
-	benchmarkGetSingleThread(getDiskCache(b), 10, b)
-}
-func BenchmarkGetSingleThreadDisk100(b *testing.B) {
-	benchmarkGetSingleThread(getDiskCache(b), 100, b)
-}
-func BenchmarkGetSingleThreadDisk1000(b *testing.B) {
-	benchmarkGetSingleThread(getDiskCache(b), 1000, b)
-}
-func BenchmarkGetSingleThreadDisk10000(b *testing.B) {
-	benchmarkGetSingleThread(getDiskCache(b), 10000, b)
-}
-
-func benchmarkGetMultiThread(c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	ctx := getAnonContext(b)
-
+func benchmarkGetMultiThread(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
 	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	b.ReportAllocs()
@@ -242,28 +175,71 @@ func benchmarkGetMultiThread(c interfaces.Cache, digestSizeBytes int64, b *testi
 	})
 }
 
-func BenchmarkGetMultiThreadMemory10(b *testing.B) {
-	benchmarkGetMultiThread(getMemoryCache(b), 10, b)
-}
-func BenchmarkGetMultiThreadMemory100(b *testing.B) {
-	benchmarkGetMultiThread(getMemoryCache(b), 100, b)
-}
-func BenchmarkGetMultiThreadMemory1000(b *testing.B) {
-	benchmarkGetMultiThread(getMemoryCache(b), 1000, b)
-}
-func BenchmarkGetMultiThreadMemory10000(b *testing.B) {
-	benchmarkGetMultiThread(getMemoryCache(b), 10000, b)
+
+func getAllCaches(b *testing.B, te *testenv.TestEnv) map[string]interfaces.Cache {
+	return map[string]interfaces.Cache{
+		"Memory": getMemoryCache(b),
+		"Disk": getDiskCache(b),
+		"DistributedDisk": getDistributedDiskCache(b, te),
+	}
 }
 
-func BenchmarkGetMultiThreadDisk10(b *testing.B) {
-	benchmarkGetMultiThread(getDiskCache(b), 10, b)
+func BenchmarkSetSingleThread(b *testing.B) {
+	sizes := []int64{10, 100, 1000, 10000}
+	te := testenv.GetTestEnv(b)
+	ctx := getAnonContext(b, te)
+
+	for cacheName, cache := range getAllCaches(b, te) {
+		for _, size := range sizes {
+			name := fmt.Sprintf("%s%d", cacheName, size)
+			b.Run(name, func(b *testing.B) {
+				benchmarkSetSingleThread(ctx, cache, size, b)
+			})
+		}
+	}
 }
-func BenchmarkGetMultiThreadDisk100(b *testing.B) {
-	benchmarkGetMultiThread(getDiskCache(b), 100, b)
+
+func BenchmarkSetMultiThread(b *testing.B) {
+	sizes := []int64{10, 100, 1000, 10000}
+	te := testenv.GetTestEnv(b)
+	ctx := getAnonContext(b, te)
+
+	for cacheName, cache := range getAllCaches(b, te) {
+		for _, size := range sizes {
+			name := fmt.Sprintf("%s%d", cacheName, size)
+			b.Run(name, func(b *testing.B) {
+				benchmarkSetMultiThread(ctx, cache, size, b)
+			})
+		}
+	}
 }
-func BenchmarkGetMultiThreadDisk1000(b *testing.B) {
-	benchmarkGetMultiThread(getDiskCache(b), 1000, b)
+
+func BenchmarkGetSingleThread(b *testing.B) {
+	sizes := []int64{10, 100, 1000, 10000}
+	te := testenv.GetTestEnv(b)
+	ctx := getAnonContext(b, te)
+
+	for cacheName, cache := range getAllCaches(b, te) {
+		for _, size := range sizes {
+			name := fmt.Sprintf("%s%d", cacheName, size)
+			b.Run(name, func(b *testing.B) {
+				benchmarkGetSingleThread(ctx, cache, size, b)
+			})
+		}
+	}
 }
-func BenchmarkGetMultiThreadDisk10000(b *testing.B) {
-	benchmarkGetMultiThread(getDiskCache(b), 10000, b)
+
+func BenchmarkGetMultiThread(b *testing.B) {
+	sizes := []int64{10, 100, 1000, 10000}
+	te := testenv.GetTestEnv(b)
+	ctx := getAnonContext(b, te)
+
+	for cacheName, cache := range getAllCaches(b, te) {
+		for _, size := range sizes {
+			name := fmt.Sprintf("%s%d", cacheName, size)
+			b.Run(name, func(b *testing.B) {
+				benchmarkGetMultiThread(ctx, cache, size, b)
+			})
+		}
+	}
 }
