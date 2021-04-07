@@ -107,6 +107,9 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, ad *d
 			FinishWrite:  readDone,
 		}
 		if err := stream.Send(req); err != nil {
+			if err == io.EOF {
+				break
+			}
 			return nil, err
 		}
 		bytesUploaded += int64(n)
