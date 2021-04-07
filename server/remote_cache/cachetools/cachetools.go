@@ -98,19 +98,20 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, ad *d
 		if err != nil && err != io.EOF {
 			return nil, err
 		}
+		readDone := err == io.EOF
+
 		req := &bspb.WriteRequest{
 			ResourceName: resourceName,
 			WriteOffset:  bytesUploaded,
 			Data:         buf[:n],
-			FinishWrite:  err == io.EOF,
+			FinishWrite:  readDone,
 		}
-		err = stream.Send(req)
-		bytesUploaded += int64(n)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
+		if err := stream.Send(req); err != nil {
 			return nil, err
+		}
+		bytesUploaded += int64(n)
+		if readDone {
+			break
 		}
 
 	}
