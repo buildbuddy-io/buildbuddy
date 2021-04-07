@@ -77,8 +77,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		dc.heartbeatChannel = heartbeat.NewHeartbeatChannel(config.PubSub, heartbeatConfig)
 	}
 	hc.RegisterShutdownFunction(func(ctx context.Context) error {
-		dc.Shutdown()
-		return nil
+		return dc.Shutdown(ctx)
 	})
 	return dc, nil
 }
@@ -93,12 +92,12 @@ func (c *Cache) StartListening() {
 	}()
 }
 
-func (c *Cache) Shutdown() {
+func (c *Cache) Shutdown(ctx context.Context) error {
 	log.Printf("Distributed cache shutting down %q", c.myAddr)
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StopAdvertising()
 	}
-	c.cacheProxy.Server().Close()
+	return c.cacheProxy.Server().Shutdown(ctx)
 }
 
 func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
