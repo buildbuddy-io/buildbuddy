@@ -126,7 +126,7 @@ func Configure(level string, enableFileName, enableStructured bool) error {
 			return err
 		}
 	}
-	zerolog.SetGlobalLevel(intLogLevel)
+	logger = logger.Level(intLogLevel)
 	if enableFileName {
 		logger = logger.With().CallerWithSkipFrameCount(3).Logger()
 	}
@@ -134,8 +134,73 @@ func Configure(level string, enableFileName, enableStructured bool) error {
 	return nil
 }
 
-// Zerolog convenience wrapper below here:
+type Logger struct {
+	zl zerolog.Logger
+}
 
+// Debug logs to the DEBUG log.
+func (l *Logger) Debug(message string) {
+	l.zl.Debug().Msg(message)
+}
+
+// Debugf logs to the DEBUG log. Arguments are handled in the manner of fmt.Printf.
+func (l *Logger) Debugf(format string, args ...interface{}) {
+	l.zl.Debug().Msgf(format, args...)
+}
+
+// Info logs to the INFO log.
+func (l *Logger) Info(message string) {
+	l.zl.Info().Msg(message)
+}
+
+// Infof logs to the INFO log. Arguments are handled in the manner of fmt.Printf.
+func (l *Logger) Infof(format string, args ...interface{}) {
+	l.zl.Info().Msgf(format, args...)
+}
+
+// Warning logs to the WARNING log.
+func (l *Logger) Warning(message string) {
+	l.zl.Warn().Msg(message)
+}
+
+// Warningf logs to the WARNING log. Arguments are handled in the manner of fmt.Printf.
+func (l *Logger) Warningf(format string, args ...interface{}) {
+	l.zl.Warn().Msgf(format, args...)
+}
+
+// Error logs to the ERROR log.
+func (l *Logger) Error(message string) {
+	l.zl.Error().Msg(message)
+}
+
+// Errorf logs to the ERROR log. Arguments are handled in the manner of fmt.Printf.
+func (l *Logger) Errorf(format string, args ...interface{}) {
+	l.zl.Error().Msgf(format, args...)
+}
+
+// Fatal logs to the FATAL log. Arguments are handled in the manner of fmt.Print.
+// It calls os.Exit() with exit code 1.
+func (l *Logger) Fatal(message string) {
+	log.Fatal().Msg(message)
+	// Make sure fatal logs will exit.
+	os.Exit(1)
+}
+
+// Fatalf logs to the FATAL log. Arguments are handled in the manner of fmt.Printf.
+// It calls os.Exit() with exit code 1.
+func (l *Logger) Fatalf(format string, args ...interface{}) {
+	log.Fatal().Msgf(format, args...)
+	// Make sure fatal logs will exit.
+	os.Exit(1)
+}
+
+func NamedSubLogger(name string) Logger {
+	return Logger{
+		zl: log.Logger.With().Str("name", name).Logger(),
+	}
+}
+
+// Zerolog convenience wrapper below here:
 // DEPRECATED: use log.Info instead!
 func Print(message string) {
 	log.Info().Msg(message)

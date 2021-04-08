@@ -322,7 +322,7 @@ func (g *GCSCache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (m
 	return foundMap, nil
 }
 
-func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error) {
+func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	k, err := g.key(ctx, d)
 	if err != nil {
 		return nil, err
@@ -335,7 +335,7 @@ func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io
 		return nil, err
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
-	return timer.NewInstrumentedReader(reader, d.GetSizeBytes()), nil
+	return io.NopCloser(timer.NewInstrumentedReader(reader, d.GetSizeBytes())), nil
 }
 
 func isRetryableGCSError(err error) bool {

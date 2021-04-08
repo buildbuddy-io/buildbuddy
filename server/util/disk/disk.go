@@ -75,7 +75,20 @@ func FileExists(fullPath string) (bool, error) {
 	}
 }
 
-func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.Reader, error) {
+type readerCloseWrapper struct {
+	reader io.Reader
+	closer io.Closer
+}
+
+func (w *readerCloseWrapper) Read(b []byte) (int, error) {
+	return w.reader.Read(b)
+}
+
+func (w *readerCloseWrapper) Close() error {
+	return w.closer.Close()
+}
+
+func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.ReadCloser, error) {
 	f, err := os.Open(fullPath)
 	if err != nil {
 		return nil, err
@@ -86,7 +99,7 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 	}
 	f.Seek(offset, 0)
 	if length > 0 {
-		return io.LimitReader(f, info.Size()), nil
+		return &readerCloseWrapper{reader: io.LimitReader(f, info.Size()), closer: f}, nil
 	}
 	return f, nil
 }

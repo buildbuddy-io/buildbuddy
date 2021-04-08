@@ -102,6 +102,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		ht.TrackMiss(d)
 		return err
 	}
+	defer reader.Close()
 
 	downloadTracker := ht.TrackDownload(d)
 	_, err = io.Copy(&streamWriter{stream}, reader)

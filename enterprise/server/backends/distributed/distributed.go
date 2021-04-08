@@ -77,8 +77,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		dc.heartbeatChannel = heartbeat.NewHeartbeatChannel(config.PubSub, heartbeatConfig)
 	}
 	hc.RegisterShutdownFunction(func(ctx context.Context) error {
-		dc.Shutdown()
-		return nil
+		return dc.Shutdown(ctx)
 	})
 	return dc, nil
 }
@@ -93,12 +92,12 @@ func (c *Cache) StartListening() {
 	}()
 }
 
-func (c *Cache) Shutdown() {
+func (c *Cache) Shutdown(ctx context.Context) error {
 	log.Printf("Distributed cache shutting down %q", c.myAddr)
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StopAdvertising()
 	}
-	c.cacheProxy.Server().Close()
+	return c.cacheProxy.Server().Shutdown(ctx)
 }
 
 func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
@@ -146,6 +145,7 @@ func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, des
 	if err != nil {
 		return err
 	}
+	defer r.Close()
 	rwc, err := c.cacheProxy.RemoteWriter(ctx, dest, c.prefix, d)
 	if err != nil {
 		return err
@@ -194,7 +194,7 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 // This is like setting READ_CONSISTENCY = ONE.
 //
 // Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) remoteReader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error) {
+func (c *Cache) remoteReader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	peers := c.peers(d)
 	for i, peer := range peers {
 		r, err := c.cacheProxy.RemoteReader(ctx, peer, c.prefix, d, offset)
@@ -216,6 +216,7 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer r.Close()
 	return ioutil.ReadAll(r)
 }
 
@@ -362,7 +363,7 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error) {
+func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	return c.remoteReader(ctx, d, offset)
 }
 

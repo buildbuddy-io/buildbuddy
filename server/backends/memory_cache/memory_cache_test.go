@@ -140,9 +140,7 @@ func TestReadWrite(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 		}
-
-		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(reader)
+		d2 := testdigest.ReadDigestAndClose(t, reader)
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}

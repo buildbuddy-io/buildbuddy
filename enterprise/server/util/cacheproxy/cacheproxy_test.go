@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -105,17 +106,12 @@ func TestReader(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Use the cacheproxy to read the bytes back remotely.
+		// Remote-read the random bytes back.
 		r, err := c.RemoteReader(ctx, peer, prefix, d, 0 /*=offset*/)
 		if err != nil {
 			t.Fatal(err)
 		}
-
-		// Ensure that the bytes remotely read back have the same hash.
-		d2, err := digest.Compute(r)
-		if err != nil {
-			t.Fatal(err)
-		}
+		d2 := testdigest.ReadDigestAndClose(t, r)
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Digest uploaded %q != %q downloaded", d.GetHash(), d2.GetHash())
 		}
@@ -179,10 +175,7 @@ func TestWriter(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		d2, err := digest.Compute(r)
-		if err != nil {
-			t.Fatal(err)
-		}
+		d2 := testdigest.ReadDigestAndClose(t, r)
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Digest uploaded %q != %q downloaded", d.GetHash(), d2.GetHash())
 		}
@@ -310,12 +303,6 @@ func TestOversizeBlobs(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Remote-read the random bytes back.
-		r, err := c.RemoteReader(ctx, peer, prefix, d, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-
 		// Ensure that the bytes remotely read back match the
 		// bytes that were uploaded, even though they are keyed
 		// under a different digest.
@@ -325,10 +312,12 @@ func TestOversizeBlobs(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		d2, err := digest.Compute(r)
+		// Remote-read the random bytes back.
+		r, err := c.RemoteReader(ctx, peer, prefix, d, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
+		d2 := testdigest.ReadDigestAndClose(t, r)
 		if d1.GetHash() != d2.GetHash() {
 			t.Fatalf("Digest of uploaded contents %q != %q downloaded contents", d.GetHash(), d2.GetHash())
 		}
