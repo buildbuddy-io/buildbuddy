@@ -28,7 +28,8 @@ func NewBuildEventProtocolServer(env environment.Env) (*BuildEventProtocolServer
 }
 
 func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, req *pepb.PublishLifecycleEventRequest) (*empty.Empty, error) {
-	for _, client := range s.env.GetBuildEventProxyClients() {
+	for _, c := range s.env.GetBuildEventProxyClients() {
+		client := c
 		go func() {
 			client.PublishLifecycleEvent(ctx, req)
 		}()
