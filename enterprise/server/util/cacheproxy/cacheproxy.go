@@ -1,10 +1,13 @@
 package cacheproxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
@@ -192,12 +195,23 @@ func getMulti(c context.Context, cache interfaces.Cache, r *http.Request, w http
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	data := url.Values{}
-	for d, buf := range got {
-		data.Set(d.GetHash(), string(buf))
+	mw := multipart.NewWriter(w)
+	w.Header().Set("Content-Type", mw.FormDataContentType())
+	for _, d := range digests {
+		fw, err := mw.CreateFormField(d.GetHash())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if _, err := fw.Write(got[d]); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
-	w.Write([]byte(data.Encode()))
-	w.WriteHeader(200)
+	if err := mw.Close(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func contains(c context.Context, cache interfaces.Cache, d *repb.Digest, w http.ResponseWriter) {
@@ -427,9 +441,11 @@ func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer, prefix string, di
 	if err != nil {
 		return nil, err
 	}
+	hashedDigests := make(map[string]*repb.Digest, 0)
 	data := url.Values{}
 	for _, d := range digests {
 		data.Set(d.GetHash(), fmt.Sprintf("%d", d.GetSizeBytes()))
+		hashedDigests[d.GetHash()] = d
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(data.Encode()))
 	if err != nil {
@@ -441,15 +457,21 @@ func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer, prefix string, di
 		return nil, status.UnavailableError(err.Error())
 	}
 	defer rsp.Body.Close()
-	values, err := parseValues(rsp.Body)
-	if err != nil {
-		return nil, err
-	}
 	results := make(map[*repb.Digest][]byte, 0)
-	for _, d := range digests {
-		if buf := values.Get(d.GetHash()); len(buf) > 0 {
-			results[d] = []byte(buf)
+
+	_, params, err := mime.ParseMediaType(rsp.Header.Get("Content-Type"))
+	if err != nil {
+		return nil, status.InternalErrorf("Error parsing media type: %s", err)
+	}
+	mr := multipart.NewReader(rsp.Body, params["boundary"])
+	for part, err := mr.NextPart(); err == nil; part, err = mr.NextPart() {
+		buf := &bytes.Buffer{}
+		io.Copy(buf, part)
+		d, ok := hashedDigests[part.FormName()]
+		if !ok {
+			return nil, status.InternalErrorf("Digest %q not found in hashedDigests.", part.FormName())
 		}
+		results[d] = buf.Bytes()
 	}
 	return results, nil
 }
