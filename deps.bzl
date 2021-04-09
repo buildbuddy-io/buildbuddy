@@ -24,24 +24,26 @@ def install_buildbuddy_dependencies():
 
     # esbuild
 
+    _ESBUILD_VERSION = "0.11.5"  # reminder: update SHAs below when changing this value
+
     http_archive(
         name = "esbuild_darwin",
         urls = [
-            "https://registry.npmjs.org/esbuild-darwin-64/-/esbuild-darwin-64-0.8.53.tgz",
+            "https://registry.npmjs.org/esbuild-darwin-64/-/esbuild-darwin-64-%s.tgz" % _ESBUILD_VERSION,
         ],
         strip_prefix = "package",
         build_file_content = """exports_files(["bin/esbuild"])""",
-        sha256 = "3b5691b3d5eb7706479e1727ec333640c5a5769a2b3477c13c93f96a473d5c77",
+        sha256 = "98436890727bdb0d4beddd9c9e07d0aeff0e8dfe0169f85e568eca0dd43f665e",
     )
 
     http_archive(
         name = "esbuild_linux",
         urls = [
-            "https://registry.npmjs.org/esbuild-linux-64/-/esbuild-linux-64-0.8.53.tgz",
+            "https://registry.npmjs.org/esbuild-linux-64/-/esbuild-linux-64-%s.tgz" % _ESBUILD_VERSION,
         ],
         strip_prefix = "package",
         build_file_content = """exports_files(["bin/esbuild"])""",
-        sha256 = "d49f41fc310d4c12494c68e7fd3b03e0e0301440f2ad50ca9b2c14b65c8124c6",
+        sha256 = "113c2e84895f4422a3676db4e15d9f01b2b4fac041edab25284fdb9574ba58a0",
     )
 
     # gRPC
