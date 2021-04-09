@@ -75,20 +75,12 @@ func FileExists(fullPath string) (bool, error) {
 	}
 }
 
-type readerCloseWrapper struct {
-	reader io.Reader
-	closer io.Closer
+type SectionReaderCloser struct {
+	*io.SectionReader
+	io.Closer
 }
 
-func (w *readerCloseWrapper) Read(b []byte) (int, error) {
-	return w.reader.Read(b)
-}
-
-func (w *readerCloseWrapper) Close() error {
-	return w.closer.Close()
-}
-
-func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.ReadCloser, error) {
+func FileReader(ctx context.Context, fullPath string, offset, length int64) (*SectionReaderCloser, error) {
 	f, err := os.Open(fullPath)
 	if err != nil {
 		return nil, err
@@ -97,11 +89,10 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 	if err != nil {
 		return nil, err
 	}
-	f.Seek(offset, 0)
 	if length > 0 {
-		return &readerCloseWrapper{reader: io.LimitReader(f, info.Size()), closer: f}, nil
+		return &SectionReaderCloser{io.NewSectionReader(f, offset, length), f}, nil
 	}
-	return f, nil
+	return &SectionReaderCloser{io.NewSectionReader(f, offset, info.Size()-offset), f}, nil
 }
 
 type writeMover struct {

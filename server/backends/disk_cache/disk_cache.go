@@ -289,8 +289,8 @@ func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (i
 	if err != nil {
 		return nil, err
 	}
-	length := d.GetSizeBytes()
-	r, err := disk.FileReader(ctx, k, offset, length)
+	// Can't specify length because this might be ActionCache
+	r, err := disk.FileReader(ctx, k, offset, 0)
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if err != nil {
