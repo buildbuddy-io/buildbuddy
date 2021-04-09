@@ -14,6 +14,7 @@ go_library(
         "//server/util/lru",
         "//server/util/prefix",
         "//server/util/status",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

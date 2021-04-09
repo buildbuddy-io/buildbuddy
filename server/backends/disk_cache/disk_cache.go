@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -170,17 +171,30 @@ func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) 
 }
 
 func (c *DiskCache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
+	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest]bool, len(digests))
-	// No parallelism here -- we don't know enough about what kind of io
-	// characteristics our disk has anyway. And disk is usually used for
-	// on-prem / small instances where this doesn't matter as much.
+	eg, ctx := errgroup.WithContext(ctx)
+
 	for _, d := range digests {
-		ok, err := c.Contains(ctx, d)
-		if err != nil {
-			return nil, err
+		fetchFn := func(d *repb.Digest) {
+			eg.Go(func() error {
+				exists, err := c.Contains(ctx, d)
+				if err != nil {
+					return err
+				}
+				lock.Lock()
+				defer lock.Unlock()
+				foundMap[d] = exists
+				return nil
+			})
 		}
-		foundMap[d] = ok
+		fetchFn(d)
 	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
 	return foundMap, nil
 }
 
@@ -202,15 +216,30 @@ func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 }
 
 func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest][]byte, len(digests))
-	// No parallelism here either. Not necessary for an in-memory cache.
+	eg, ctx := errgroup.WithContext(ctx)
+
 	for _, d := range digests {
-		data, err := c.Get(ctx, d)
-		if err != nil {
-			return nil, err
+		fetchFn := func(d *repb.Digest) {
+			eg.Go(func() error {
+				data, err := c.Get(ctx, d)
+				if err != nil {
+					return err
+				}
+				lock.Lock()
+				defer lock.Unlock()
+				foundMap[d] = data
+				return nil
+			})
 		}
-		foundMap[d] = data
+		fetchFn(d)
 	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
 	return foundMap, nil
 }
 
