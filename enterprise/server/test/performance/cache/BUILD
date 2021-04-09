@@ -16,6 +16,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
+        "//server/util/log",
         "//server/util/prefix",
         "//server/util/testing/flags",
     ],
