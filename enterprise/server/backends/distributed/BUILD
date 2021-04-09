@@ -15,6 +15,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/util/consistent_hash",
+        "//server/util/log",
         "//server/util/status",
         "@org_golang_x_sync//errgroup",
     ],
