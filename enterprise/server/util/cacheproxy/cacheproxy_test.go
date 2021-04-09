@@ -19,6 +19,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -320,6 +322,124 @@ func TestOversizeBlobs(t *testing.T) {
 		d2 := testdigest.ReadDigestAndClose(t, r)
 		if d1.GetHash() != d2.GetHash() {
 			t.Fatalf("Digest of uploaded contents %q != %q downloaded contents", d.GetHash(), d2.GetHash())
+		}
+	}
+}
+
+func TestContainsMulti(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "auth.enable_anonymous_usage", "true")
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	go func() {
+		c.Server().ListenAndServe()
+	}()
+	waitUntilServerIsAlive(peer)
+
+	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
+	testSizes := []int{
+		1, 10, 100, 1000, 10000,
+	}
+
+	for _, numDigests := range testSizes {
+		prefix := fmt.Sprintf("prefix/%d", numDigests)
+
+		digests := make([]*repb.Digest, 0, numDigests)
+		for i := 0; i < numDigests; i++ {
+			// Read some random bytes.
+			buf := new(bytes.Buffer)
+			io.CopyN(buf, randomSrc, 100)
+			readSeeker := bytes.NewReader(buf.Bytes())
+
+			// Compute a digest for the random bytes.
+			d, err := digest.Compute(readSeeker)
+			if err != nil {
+				t.Fatal(err)
+			}
+			digests = append(digests, d)
+			// Set the random bytes in the cache (with a prefix)
+			err = te.GetCache().WithPrefix(prefix).Set(ctx, d, buf.Bytes())
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		// Ensure key exists.
+		foundMap, err := c.RemoteContainsMulti(ctx, peer, prefix, digests)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range digests {
+			exists, ok := foundMap[d]
+			if !ok || !exists {
+				t.Fatalf("Digest %q was uploaded but is not contained in cache", d.GetHash())
+			}
+		}
+	}
+}
+
+func TestGetMulti(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "auth.enable_anonymous_usage", "true")
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	go func() {
+		c.Server().ListenAndServe()
+	}()
+	waitUntilServerIsAlive(peer)
+
+	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
+	testSizes := []int{
+		1, 10, 100, 1000, 10000,
+	}
+
+	for _, numDigests := range testSizes {
+		prefix := fmt.Sprintf("prefix/%d", numDigests)
+
+		digests := make([]*repb.Digest, 0, numDigests)
+		for i := 0; i < numDigests; i++ {
+			// Read some random bytes.
+			buf := new(bytes.Buffer)
+			io.CopyN(buf, randomSrc, 100)
+			readSeeker := bytes.NewReader(buf.Bytes())
+
+			// Compute a digest for the random bytes.
+			d, err := digest.Compute(readSeeker)
+			if err != nil {
+				t.Fatal(err)
+			}
+			digests = append(digests, d)
+			// Set the random bytes in the cache (with a prefix)
+			err = te.GetCache().WithPrefix(prefix).Set(ctx, d, buf.Bytes())
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		// Ensure key exists.
+		gotMap, err := c.RemoteGetMulti(ctx, peer, prefix, digests)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range digests {
+			buf, ok := gotMap[d]
+			if !ok || int64(len(buf)) != d.GetSizeBytes() {
+				t.Fatalf("Digest %q was uploaded but is not contained in cache", d.GetHash())
+			}
 		}
 	}
 }
