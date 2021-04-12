@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package exec;
+
+import "proto/remote_execution.proto";
+
+message ExecRequest {
+  string working_directory = 1;
+  build.bazel.remote.execution.v2.Command command = 2;
+}
+
+message ExecResponse {
+  int32 exit_code = 1;
+  bytes stdout = 2;
+  bytes stderr = 3;
+}
+
+service Exec {
+  rpc Exec(ExecRequest) returns (ExecResponse);
+}

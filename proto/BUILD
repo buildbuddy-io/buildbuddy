@@ -195,6 +195,14 @@ proto_library(
 )
 
 proto_library(
+    name = "exec_proto",
+    srcs = ["exec.proto"],
+    deps = [
+        ":remote_execution_proto",
+    ],
+)
+
+proto_library(
     name = "semver_proto",
     srcs = ["semver.proto"],
 )
@@ -301,6 +309,16 @@ go_proto_library(
         ":context_go_proto",
         ":remote_execution_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "exec_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/exec",
+    proto = ":exec_proto",
+    deps = [
+        ":remote_execution_go_proto",
     ],
 )
 
