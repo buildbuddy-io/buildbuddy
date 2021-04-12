@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"io/ioutil"
-	"log"
 	"path/filepath"
 	"sync"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 
@@ -20,28 +20,23 @@ import (
 )
 
 type Cache struct {
-	local interfaces.Cache
+	local  interfaces.Cache
+	config CacheConfig
 
-	// Address to listen on.
-	myAddr string
-
-	// The distributed cache group to join.
-	groupName string
-
-	// How many times to replicate each key.
-	replicationFactor int
-	prefix            string
-	cacheProxy        *cacheproxy.CacheProxy
-	consistentHash    *consistent_hash.ConsistentHash
-	heartbeatChannel  *heartbeat.HeartbeatChannel
+	prefix           string
+	cacheProxy       *cacheproxy.CacheProxy
+	consistentHash   *consistent_hash.ConsistentHash
+	heartbeatChannel *heartbeat.HeartbeatChannel
 }
 
 type CacheConfig struct {
-	ListenAddr        string
-	GroupName         string
-	ReplicationFactor int
-	PubSub            interfaces.PubSub
-	Nodes             []string
+	ListenAddr         string
+	GroupName          string
+	ReplicationFactor  int
+	DisableLocalLookup bool
+
+	PubSub interfaces.PubSub
+	Nodes  []string
 }
 
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
@@ -56,12 +51,10 @@ type CacheConfig struct {
 func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheConfig, hc interfaces.HealthChecker) (*Cache, error) {
 	chash := consistent_hash.NewConsistentHash()
 	dc := &Cache{
-		local:             c,
-		cacheProxy:        cacheproxy.NewCacheProxy(env, c, config.ListenAddr),
-		myAddr:            config.ListenAddr,
-		groupName:         config.GroupName,
-		consistentHash:    chash,
-		replicationFactor: config.ReplicationFactor,
+		local:          c,
+		config:         config,
+		cacheProxy:     cacheproxy.NewCacheProxy(env, c, config.ListenAddr),
+		consistentHash: chash,
 	}
 	if len(config.Nodes) > 0 {
 		// Nodes are hardcoded. Set them once and be done with it.
@@ -84,7 +77,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 
 func (c *Cache) StartListening() {
 	go func() {
-		log.Printf("Distributed cache listening on %q", c.myAddr)
+		log.Printf("Distributed cache listening on %q", c.config.ListenAddr)
 		if c.heartbeatChannel != nil {
 			c.heartbeatChannel.StartAdvertising()
 		}
@@ -93,7 +86,7 @@ func (c *Cache) StartListening() {
 }
 
 func (c *Cache) Shutdown(ctx context.Context) error {
-	log.Printf("Distributed cache shutting down %q", c.myAddr)
+	log.Printf("Distributed cache shutting down %q", c.config.ListenAddr)
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StopAdvertising()
 	}
@@ -114,29 +107,38 @@ func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
 // peers returns the ordered slice of replicationFactor peers
 // responsible for this key. They should be tried in order.
 func (c *Cache) peers(d *repb.Digest) []string {
-	return c.consistentHash.GetNReplicas(d.GetHash(), c.replicationFactor)
+	return c.consistentHash.GetNReplicas(d.GetHash(), c.config.ReplicationFactor)
 }
 
-// The first contains result with a nil err will be returned. If all potential
-// peers for the digest are exhausted, then return a NotFoundError.
-//
-// This is like setting READ_CONSISTENCY = ONE.
-//
-// Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) remoteContains(ctx context.Context, d *repb.Digest) (bool, error) {
-	peers := c.peers(d)
-	for i, peer := range peers {
-		b, err := c.cacheProxy.RemoteContains(ctx, peer, c.prefix, d)
-		if err == nil {
-			if i != 0 {
-				c.backfillReplica(ctx, d, peer, peers[i-1])
-			}
-			return b, err
-		}
-		continue
+func (c *Cache) remoteContains(ctx context.Context, peer, prefix string, d *repb.Digest) (bool, error) {
+	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+		return c.local.Contains(ctx, d)
 	}
-	log.Printf("Exhausted all peers attempting to check (contains) %q: peers: %s", d.GetHash(), peers)
-	return false, nil
+	return c.cacheProxy.RemoteContains(ctx, peer, prefix, d)
+}
+func (c *Cache) remoteContainsMulti(ctx context.Context, peer, prefix string, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
+	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+		return c.local.ContainsMulti(ctx, digests)
+	}
+	return c.cacheProxy.RemoteContainsMulti(ctx, peer, prefix, digests)
+}
+func (c *Cache) remoteGetMulti(ctx context.Context, peer, prefix string, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+		return c.local.GetMulti(ctx, digests)
+	}
+	return c.cacheProxy.RemoteGetMulti(ctx, peer, prefix, digests)
+}
+func (c *Cache) remoteReader(ctx context.Context, peer, prefix string, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+		return c.local.Reader(ctx, d, offset)
+	}
+	return c.cacheProxy.RemoteReader(ctx, peer, prefix, d, offset)
+}
+func (c *Cache) remoteWriter(ctx context.Context, peer, prefix string, d *repb.Digest) (io.WriteCloser, error) {
+	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+		return c.local.Writer(ctx, d)
+	}
+	return c.cacheProxy.RemoteWriter(ctx, peer, prefix, d)
 }
 
 func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, dest string) error {
@@ -156,33 +158,77 @@ func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, des
 	return rwc.Close()
 }
 
+// The first contains result with a nil err will be returned. If all potential
+// peers for the digest are exhausted, then return a NotFoundError.
+//
+// This is like setting READ_CONSISTENCY = ONE.
+//
+// Values found on a non-primary replica will be backfilled to the primary.
 func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	return c.remoteContains(ctx, d)
+	peers := c.peers(d)
+	for i, peer := range peers {
+		b, err := c.remoteContains(ctx, peer, c.prefix, d)
+		if err == nil {
+			if i != 0 {
+				c.backfillReplica(ctx, d, peer, peers[i-1])
+			}
+			return b, err
+		}
+		continue
+	}
+	log.Printf("Exhausted all peers attempting to check (contains) %q: peers: %s", d.GetHash(), peers)
+	return false, nil
 }
 
 func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest]bool, len(digests))
-	eg, ctx := errgroup.WithContext(ctx)
-
+	peerMap := make(map[*repb.Digest][]string, len(digests))
 	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
+		peerMap[d] = c.peers(d)
+	}
+
+	for {
+		// Each iteration through this outer loop sends a "batch" of requests in
+		// parallel, until all digests have been returned from a request without
+		// error or we have exhausted our set of peers.
+		eg, gCtx := errgroup.WithContext(ctx)
+		peerRequests := make(map[string][]*repb.Digest, 0)
+		for _, d := range digests {
+			// If a previous request has already found this digest, skip it.
+			if _, ok := foundMap[d]; ok {
+				continue
+			}
+			// If no peers remain, return an error.
+			peers := peerMap[d]
+			if len(peers) == 0 {
+				return nil, status.NotFoundErrorf("Exhausted all peers attempting to check (batch contains) %q", d.GetHash())
+			}
+			peer := peers[0]
+			peers = peers[1:]
+			peerRequests[peer] = append(peerRequests[peer], d)
+		}
+		for peer, digests := range peerRequests {
+			peer := peer
+			digests := digests
 			eg.Go(func() error {
-				exists, err := c.Contains(ctx, d)
+				foundOnPeer, err := c.cacheProxy.RemoteContainsMulti(gCtx, peer, c.prefix, digests)
 				if err != nil {
 					return err
 				}
 				lock.Lock()
 				defer lock.Unlock()
-				foundMap[d] = exists
+				for d, exists := range foundOnPeer {
+					foundMap[d] = exists
+				}
 				return nil
 			})
 		}
-		fetchFn(d)
-	}
-
-	if err := eg.Wait(); err != nil {
-		return nil, err
+		err := eg.Wait()
+		if err == nil {
+			return foundMap, nil
+		}
+		log.Warningf("Error checking contains batch; will retry: %s", err)
 	}
 
 	return foundMap, nil
@@ -194,10 +240,10 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 // This is like setting READ_CONSISTENCY = ONE.
 //
 // Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) remoteReader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	peers := c.peers(d)
 	for i, peer := range peers {
-		r, err := c.cacheProxy.RemoteReader(ctx, peer, c.prefix, d, offset)
+		r, err := c.remoteReader(ctx, peer, c.prefix, d, offset)
 		if err == nil {
 			if i != 0 {
 				if err := c.backfillReplica(ctx, d, peer, peers[i-1]); err != nil {
@@ -212,7 +258,7 @@ func (c *Cache) remoteReader(ctx context.Context, d *repb.Digest, offset int64) 
 }
 
 func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	r, err := c.remoteReader(ctx, d, 0)
+	r, err := c.distributedReader(ctx, d, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +266,7 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	return ioutil.ReadAll(r)
 }
 
-func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (c *Cache) GetMultiOld(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest][]byte, len(digests))
 	eg, ctx := errgroup.WithContext(ctx)
@@ -246,6 +292,59 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 	}
 
 	return foundMap, nil
+}
+
+func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	lock := sync.RWMutex{} // protects(foundMap)
+	gotMap := make(map[*repb.Digest][]byte, len(digests))
+	peerMap := make(map[*repb.Digest][]string, len(digests))
+	for _, d := range digests {
+		peerMap[d] = c.peers(d)
+	}
+
+	for {
+		// Each iteration through this outer loop sends a "batch" of requests in
+		// parallel, until all digests have been returned from a request without
+		// error or we have exhausted our set of peers.
+		eg, gCtx := errgroup.WithContext(ctx)
+		peerRequests := make(map[string][]*repb.Digest, 0)
+		for _, d := range digests {
+			// If a previous request has already found this digest, skip it.
+			if _, ok := gotMap[d]; ok {
+				continue
+			}
+			// If no peers remain, return an error.
+			peers := peerMap[d]
+			if len(peers) == 0 {
+				return nil, status.NotFoundErrorf("Exhausted all peers attempting to check (batch contains) %q", d.GetHash())
+			}
+			peer := peers[0]
+			peers = peers[1:]
+			peerRequests[peer] = append(peerRequests[peer], d)
+		}
+		for peer, digests := range peerRequests {
+			peer := peer
+			digests := digests
+			eg.Go(func() error {
+				got, err := c.cacheProxy.RemoteGetMulti(gCtx, peer, c.prefix, digests)
+				if err != nil {
+					return err
+				}
+				lock.Lock()
+				defer lock.Unlock()
+				for d, buf := range got {
+					gotMap[d] = buf
+				}
+				return nil
+			})
+		}
+		err := eg.Wait()
+		if err == nil {
+			return gotMap, nil
+		}
+		log.Warningf("Error reading batch; will retry: %s", err)
+	}
+	return gotMap, nil
 }
 
 type multiWriteCloser struct {
@@ -321,7 +420,7 @@ func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser
 	}
 
 	for _, peer := range peers {
-		rwc, err := c.cacheProxy.RemoteWriter(ctx, peer, c.prefix, d)
+		rwc, err := c.remoteWriter(ctx, peer, c.prefix, d)
 		if err == nil {
 			mwc.peerClosers[peer] = rwc
 		}
@@ -364,7 +463,7 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 }
 
 func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
-	return c.remoteReader(ctx, d, offset)
+	return c.distributedReader(ctx, d, offset)
 }
 
 func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
