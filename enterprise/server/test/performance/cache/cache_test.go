@@ -34,7 +34,7 @@ var (
 )
 
 func init() {
-	if err := log.Configure("warn", true /*=logFileName*/, false /*=enableStructuredLogging*/); err != nil {
+	if err := log.Configure(log.Opts{Level: "warn", EnableShortFileName: true}); err != nil {
 		log.Fatalf("Error configuring logging: %s", err)
 	}
 }
