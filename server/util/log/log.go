@@ -108,7 +108,7 @@ func StructuredLogger() zerolog.Logger {
 	zerolog.LevelFieldName = "severity"
 	zerolog.TimestampFieldName = "timestamp"
 	zerolog.TimeFieldFormat = time.RFC3339Nano
-	return log.Logger
+	return zerolog.New(os.Stdout).With().Timestamp().Logger()
 }
 
 func Configure(level string, enableFileName, enableStructured bool) error {
