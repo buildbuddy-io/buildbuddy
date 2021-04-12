@@ -159,10 +159,12 @@ type SSLConfig struct {
 }
 
 type RemoteExecutionConfig struct {
-	EnableRemoteExec bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
-	DefaultPoolName  string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
-	RedisTarget      string `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Required for remote execution. To ease migration, the redis target from the cache config will be used if this value is not specified."`
-	TaskPersistence  string `yaml:"task_persistence" usage:"One of redis|db|dualwrite. Specifies where inflight task information is stored."`
+	EnableRemoteExec       bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
+	DefaultPoolName        string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
+	RedisTarget            string `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Required for remote execution. To ease migration, the redis target from the cache config will be used if this value is not specified."`
+	TaskPersistence        string `yaml:"task_persistence" usage:"One of redis|db|dualwrite. Specifies where inflight task information is stored."`
+	DisableRedisListPubSub bool   `yaml:"disable_redis_list_pubsub" usage:"If true, revert to native redis PubSub."`
+	RedisPubSubPoolSize    int    `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
 }
 
 type ExecutorConfig struct {

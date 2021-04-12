@@ -60,6 +60,7 @@ type Env interface {
 	GetSchedulerService() interfaces.SchedulerService
 	GetCacheRedisClient() *redis.Client
 	GetRemoteExecutionRedisClient() *redis.Client
+	GetRemoteExecutionRedisPubSubClient() *redis.Client
 	GetMetricsCollector() interfaces.MetricsCollector
 	GetRepoDownloader() interfaces.RepoDownloader
 	GetWorkflowService() interfaces.WorkflowService

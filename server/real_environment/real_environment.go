@@ -36,35 +36,36 @@ type RealEnv struct {
 	configurator  *config.Configurator
 	healthChecker interfaces.HealthChecker
 
-	dbHandle                        *db.DBHandle
-	blobstore                       interfaces.Blobstore
-	invocationDB                    interfaces.InvocationDB
-	authenticator                   interfaces.Authenticator
-	webhooks                        []interfaces.Webhook
-	buildEventProxyClients          []pepb.PublishBuildEventClient
-	cache                           interfaces.Cache
-	userDB                          interfaces.UserDB
-	authDB                          interfaces.AuthDB
-	buildEventHandler               interfaces.BuildEventHandler
-	invocationSearchService         interfaces.InvocationSearchService
-	invocationStatService           interfaces.InvocationStatService
-	splashPrinter                   interfaces.SplashPrinter
-	actionCacheClient               repb.ActionCacheClient
-	byteStreamClient                bspb.ByteStreamClient
-	schedulerClient                 scpb.SchedulerClient
-	remoteExecutionClient           repb.ExecutionClient
-	contentAddressableStorageClient repb.ContentAddressableStorageClient
-	executionClients                map[string]*executionClientConfig
-	APIService                      interfaces.ApiService
-	fileCache                       interfaces.FileCache
-	remoteExecutionService          interfaces.RemoteExecutionService
-	schedulerService                interfaces.SchedulerService
-	metricsCollector                interfaces.MetricsCollector
-	executionService                interfaces.ExecutionService
-	repoDownloader                  interfaces.RepoDownloader
-	workflowService                 interfaces.WorkflowService
-	cacheRedisClient                *redis.Client
-	remoteExecutionRedisClient      *redis.Client
+	dbHandle                         *db.DBHandle
+	blobstore                        interfaces.Blobstore
+	invocationDB                     interfaces.InvocationDB
+	authenticator                    interfaces.Authenticator
+	webhooks                         []interfaces.Webhook
+	buildEventProxyClients           []pepb.PublishBuildEventClient
+	cache                            interfaces.Cache
+	userDB                           interfaces.UserDB
+	authDB                           interfaces.AuthDB
+	buildEventHandler                interfaces.BuildEventHandler
+	invocationSearchService          interfaces.InvocationSearchService
+	invocationStatService            interfaces.InvocationStatService
+	splashPrinter                    interfaces.SplashPrinter
+	actionCacheClient                repb.ActionCacheClient
+	byteStreamClient                 bspb.ByteStreamClient
+	schedulerClient                  scpb.SchedulerClient
+	remoteExecutionClient            repb.ExecutionClient
+	contentAddressableStorageClient  repb.ContentAddressableStorageClient
+	executionClients                 map[string]*executionClientConfig
+	APIService                       interfaces.ApiService
+	fileCache                        interfaces.FileCache
+	remoteExecutionService           interfaces.RemoteExecutionService
+	schedulerService                 interfaces.SchedulerService
+	metricsCollector                 interfaces.MetricsCollector
+	executionService                 interfaces.ExecutionService
+	repoDownloader                   interfaces.RepoDownloader
+	workflowService                  interfaces.WorkflowService
+	cacheRedisClient                 *redis.Client
+	remoteExecutionRedisClient       *redis.Client
+	remoteExecutionRedisPubSubClient *redis.Client
 }
 
 func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
@@ -275,4 +276,12 @@ func (r *RealEnv) SetRemoteExecutionRedisClient(redisClient *redis.Client) {
 
 func (r *RealEnv) GetRemoteExecutionRedisClient() *redis.Client {
 	return r.remoteExecutionRedisClient
+}
+
+func (r *RealEnv) SetRemoteExecutionRedisPubSubClient(client *redis.Client) {
+	r.remoteExecutionRedisPubSubClient = client
+}
+
+func (r *RealEnv) GetRemoteExecutionRedisPubSubClient() *redis.Client {
+	return r.remoteExecutionRedisPubSubClient
 }

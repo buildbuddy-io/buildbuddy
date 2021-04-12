@@ -37,16 +37,16 @@ func TargetToOptions(redisTarget string) *redis.Options {
 	}
 }
 
-type healthChecker struct {
-	rdb *redis.Client
+type HealthChecker struct {
+	Rdb *redis.Client
 }
 
-func (c *healthChecker) Check(ctx context.Context) error {
-	return c.rdb.Ping(ctx).Err()
+func (c *HealthChecker) Check(ctx context.Context) error {
+	return c.Rdb.Ping(ctx).Err()
 }
 
 func NewClient(redisTarget string, checker interfaces.HealthChecker, healthCheckName string) *redis.Client {
 	rdb := redis.NewClient(TargetToOptions(redisTarget))
-	checker.AddHealthCheck(healthCheckName, &healthChecker{rdb})
+	checker.AddHealthCheck(healthCheckName, &HealthChecker{rdb})
 	return rdb
 }
