@@ -273,6 +273,13 @@ var (
 		ExecutedActionStageLabel,
 	})
 
+	RemoteExecutionWaitingExecutionResult = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "waiting_execution_result",
+		Help:      "Number of execution requests for which the client is actively waiting for results.",
+	})
+
 	/// #### Examples
 	///
 	/// ```promql
