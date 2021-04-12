@@ -32,20 +32,21 @@ type generalConfig struct {
 }
 
 type appConfig struct {
-	BuildBuddyURL           string `yaml:"build_buddy_url" usage:"The external URL where your BuildBuddy instance can be found."`
-	EventsAPIURL            string `yaml:"events_api_url" usage:"Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	CacheAPIURL             string `yaml:"cache_api_url" usage:"Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	RemoteExecutionAPIURL   string `yaml:"remote_execution_api_url" usage:"Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	NoDefaultUserGroup      bool   `yaml:"no_default_user_group" usage:"Cloud-Only"`
-	CreateGroupPerUser      bool   `yaml:"create_group_per_user" usage:"Cloud-Only"`
-	AddUserToDomainGroup    bool   `yaml:"add_user_to_domain_group" usage:"Cloud-Only"`
-	GRPCOverHTTPPortEnabled bool   `yaml:"grpc_over_http_port_enabled" usage:"Cloud-Only"`
-	DefaultToDenseMode      bool   `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
-	GRPCMaxRecvMsgSizeBytes int    `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
-	EnableTargetTracking    bool   `yaml:"enable_target_tracking" usage:"Cloud-Only"`
-	EnableStructuredLogging bool   `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
-	LogIncludeShortFileName bool   `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
-	LogLevel                string `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {"fatal", "error", "warn", "info", "debug"}`
+	BuildBuddyURL             string `yaml:"build_buddy_url" usage:"The external URL where your BuildBuddy instance can be found."`
+	EventsAPIURL              string `yaml:"events_api_url" usage:"Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	CacheAPIURL               string `yaml:"cache_api_url" usage:"Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	RemoteExecutionAPIURL     string `yaml:"remote_execution_api_url" usage:"Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	NoDefaultUserGroup        bool   `yaml:"no_default_user_group" usage:"Cloud-Only"`
+	CreateGroupPerUser        bool   `yaml:"create_group_per_user" usage:"Cloud-Only"`
+	AddUserToDomainGroup      bool   `yaml:"add_user_to_domain_group" usage:"Cloud-Only"`
+	GRPCOverHTTPPortEnabled   bool   `yaml:"grpc_over_http_port_enabled" usage:"Cloud-Only"`
+	DefaultToDenseMode        bool   `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
+	GRPCMaxRecvMsgSizeBytes   int    `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
+	EnableTargetTracking      bool   `yaml:"enable_target_tracking" usage:"Cloud-Only"`
+	EnableStructuredLogging   bool   `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
+	LogIncludeShortFileName   bool   `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
+	LogLevel                  string `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {"fatal", "error", "warn", "info", "debug"}`
+	LogEnableGCPLoggingFormat bool   `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
 }
 
 type buildEventProxy struct {
@@ -377,6 +378,10 @@ func (c *Configurator) GetAppEnableStructuredLogging() bool {
 
 func (c *Configurator) GetAppLogLevel() string {
 	return c.gc.App.LogLevel
+}
+
+func (c *Configurator) GetAppLogEnableGCPLoggingFormat() bool {
+	return c.gc.App.LogEnableGCPLoggingFormat
 }
 
 func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {

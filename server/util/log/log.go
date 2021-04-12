@@ -7,6 +7,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -19,6 +21,10 @@ import (
 	"google.golang.org/grpc/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+const (
+	callerSkipFrameCount = 3
 )
 
 func formatDuration(dur time.Duration) string {
@@ -81,7 +87,7 @@ func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCo
 func init() {
 	// Start us in a "nice" configuration, in case any logging
 	// is done before Configure is called.
-	Configure("info", false, false)
+	Configure(Opts{Level: "info"})
 }
 
 func LocalLogger(level string) zerolog.Logger {
@@ -111,24 +117,46 @@ func StructuredLogger() zerolog.Logger {
 	return zerolog.New(os.Stdout).With().Timestamp().Logger()
 }
 
-func Configure(level string, enableFileName, enableStructured bool) error {
+type gcpLoggingCallerHook struct{}
+
+func (h gcpLoggingCallerHook) Run(e *zerolog.Event, level zerolog.Level, msg string) {
+	_, file, line, ok := runtime.Caller(callerSkipFrameCount)
+	if !ok {
+		return
+	}
+	sourceLocation := zerolog.Dict().Str("file", filepath.Base(file)).Str("line", strconv.Itoa(line))
+	e.Dict("logging.googleapis.com/sourceLocation", sourceLocation)
+}
+
+type Opts struct {
+	Level                  string
+	EnableShortFileName    bool
+	EnableGCPLoggingFormat bool
+	EnableStructured       bool
+}
+
+func Configure(opts Opts) error {
 	var logger zerolog.Logger
-	if enableStructured {
+	if opts.EnableStructured {
 		logger = StructuredLogger()
 	} else {
-		logger = LocalLogger(level)
+		logger = LocalLogger(opts.Level)
 	}
 	intLogLevel := zerolog.InfoLevel
-	if level != "" {
-		if l, err := zerolog.ParseLevel(level); err == nil {
+	if opts.Level != "" {
+		if l, err := zerolog.ParseLevel(opts.Level); err == nil {
 			intLogLevel = l
 		} else {
 			return err
 		}
 	}
 	logger = logger.Level(intLogLevel)
-	if enableFileName {
-		logger = logger.With().CallerWithSkipFrameCount(3).Logger()
+	if opts.EnableShortFileName {
+		if opts.EnableStructured && opts.EnableGCPLoggingFormat {
+			logger = logger.Hook(gcpLoggingCallerHook{})
+		} else {
+			logger = logger.With().CallerWithSkipFrameCount(callerSkipFrameCount).Logger()
+		}
 	}
 	log.Logger = logger
 	return nil
