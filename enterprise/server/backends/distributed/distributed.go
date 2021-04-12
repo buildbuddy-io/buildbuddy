@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"path/filepath"
 	"sync"
 
@@ -104,10 +105,32 @@ func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
 	return &clone
 }
 
-// peers returns the ordered slice of replicationFactor peers
-// responsible for this key. They should be tried in order.
+// peers returns the ordered slice of replicationFactor peers responsible for
+// this key. They should be tried in order.
 func (c *Cache) peers(d *repb.Digest) []string {
 	return c.consistentHash.GetNReplicas(d.GetHash(), c.config.ReplicationFactor)
+}
+
+// readPeers returns a slice of replicationFactor peers responsible for this
+// key. If this peer is a member of the set, it is returned first. Other
+// peers are returned in random order.
+func (c *Cache) readPeers(d *repb.Digest) []string {
+	ordered := c.peers(d)
+	reordered := make([]string, 0, len(ordered))
+
+	for i := len(ordered)-1; i >= 0; i-- {
+		p := ordered[i]
+		if p == c.config.ListenAddr {
+			reordered = append(reordered, p)
+			ordered = append(ordered[:i], ordered[i+1:]...)
+			break
+		}
+	}
+	rand.Shuffle(len(ordered), func(i, j int) {
+		ordered[i], ordered[j] = ordered[j], ordered[i]
+	})
+	reordered = append(reordered, ordered...)
+	return reordered
 }
 
 func (c *Cache) remoteContains(ctx context.Context, peer, prefix string, d *repb.Digest) (bool, error) {
@@ -165,7 +188,7 @@ func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, des
 //
 // Values found on a non-primary replica will be backfilled to the primary.
 func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	peers := c.peers(d)
+	peers := c.readPeers(d)
 	for i, peer := range peers {
 		b, err := c.remoteContains(ctx, peer, c.prefix, d)
 		if err == nil {
@@ -185,7 +208,7 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 	foundMap := make(map[*repb.Digest]bool, len(digests))
 	peerMap := make(map[*repb.Digest][]string, len(digests))
 	for _, d := range digests {
-		peerMap[d] = c.peers(d)
+		peerMap[d] = c.readPeers(d)
 	}
 
 	for {
@@ -228,7 +251,11 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 		if err == nil {
 			return foundMap, nil
 		}
-		log.Warningf("Error checking contains batch; will retry: %s", err)
+		// Don't log context cancelled errors, they are common and expected when
+		// clients cancel a request.
+		if err != context.Canceled {
+			log.Warningf("Error checking contains batch; will retry: %s", err)
+		}
 	}
 
 	return foundMap, nil
@@ -241,7 +268,7 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 //
 // Values found on a non-primary replica will be backfilled to the primary.
 func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
-	peers := c.peers(d)
+	peers := c.readPeers(d)
 	for i, peer := range peers {
 		r, err := c.remoteReader(ctx, peer, c.prefix, d, offset)
 		if err == nil {
@@ -299,7 +326,7 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 	gotMap := make(map[*repb.Digest][]byte, len(digests))
 	peerMap := make(map[*repb.Digest][]string, len(digests))
 	for _, d := range digests {
-		peerMap[d] = c.peers(d)
+		peerMap[d] = c.readPeers(d)
 	}
 
 	for {
@@ -342,7 +369,11 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 		if err == nil {
 			return gotMap, nil
 		}
-		log.Warningf("Error reading batch; will retry: %s", err)
+		// Don't log context cancelled errors, they are common and expected when
+		// clients cancel a request.
+		if err != context.Canceled {
+			log.Warningf("Error reading batch; will retry: %s", err)
+		}
 	}
 	return gotMap, nil
 }
