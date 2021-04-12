@@ -90,7 +90,7 @@ func init() {
 	Configure(Opts{Level: "info"})
 }
 
-func LocalLogger(level string) zerolog.Logger {
+func LocalLogger() zerolog.Logger {
 	output := zerolog.ConsoleWriter{Out: os.Stdout}
 	output.FormatCaller = func(i interface{}) string {
 		s, ok := i.(string)
@@ -140,7 +140,7 @@ func Configure(opts Opts) error {
 	if opts.EnableStructured {
 		logger = StructuredLogger()
 	} else {
-		logger = LocalLogger(opts.Level)
+		logger = LocalLogger()
 	}
 	intLogLevel := zerolog.InfoLevel
 	if opts.Level != "" {
