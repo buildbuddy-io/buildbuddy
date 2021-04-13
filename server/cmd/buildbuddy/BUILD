@@ -9,6 +9,8 @@ go_binary(
     args = [
         "--config_file=config/buildbuddy.local.yaml",
         "--max_shutdown_duration=3s",
+        "--static_directory=/static",
+        "--app_directory=/app",
     ],
     data = [
         "//:config_files",

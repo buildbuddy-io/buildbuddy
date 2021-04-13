@@ -67,8 +67,8 @@ var (
 	gRPCSPort      = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 
-	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
-	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
+	staticDirectory = flag.String("static_directory", "", "the directory containing static files to host")
+	appDirectory    = flag.String("app_directory", "", "the directory containing app binary files to host")
 
 	// URL path prefixes that should be handled by serving the app's HTML.
 	appRoutes = []string{
