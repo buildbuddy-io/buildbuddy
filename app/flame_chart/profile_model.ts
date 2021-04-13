@@ -47,6 +47,11 @@ function eventComparator(a: TraceEvent, b: TraceEvent) {
   return durationDiff;
 }
 
+function threadNameComparator(a: ThreadTimeline, b: ThreadTimeline) {
+  // Group by thread ID.
+  return a.threadName.localeCompare(b.threadName);
+}
+
 function getThreadNames(events: TraceEvent[]) {
   const threadNameByTid = new Map<number, string>();
   for (const event of events as ThreadEvent[]) {
@@ -75,7 +80,7 @@ function normalizeThreadNames(events: TraceEvent[]) {
 export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold = 0 } = {}): ThreadTimeline[] {
   normalizeThreadNames(events);
   const threadNameByTid = getThreadNames(events);
-  const tidByName = new Map<string, number>();
+  const tidByThreadName = new Map<string, number>();
   events = events.filter(
     (event) =>
       event.tid !== undefined &&
@@ -86,20 +91,20 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
       event.dur > visibilityThreshold
   );
   
-  for (const event of events) {
-    if (tidByName.has(event.name)) {
-      tidByName.set(event.name, Math.min(tidByName.get(event.name), event.tid));
+  for (const [tid, threadName] of threadNameByTid.entries()) {
+    if (tidByThreadName.has(threadName)) {
+      tidByThreadName.set(threadName, Math.min(tidByThreadName.get(threadName), tid));
     } else {
-      tidByName.set(event.name, event.tid)
+      tidByThreadName.set(threadName, tid)
     }
   }
 
-  events.sort(eventComparator);
-
   for (const event of events) {
-    event.tid = tidByName.get(event.name);
+    event.tid = tidByThreadName.get(threadNameByTid.get(event.tid));
   }
 
+  events.sort(eventComparator);
+  
   const timelines: ThreadTimeline[] = [];
   let tid = null;
   let timeline: ThreadTimeline | null = null;
@@ -148,6 +153,8 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
   for (const timeline of timelines) {
     timeline.threadName = threadNameByTid.get(timeline.tid);
   }
+
+  timelines.sort(threadNameComparator);
 
   return timelines;
 }
