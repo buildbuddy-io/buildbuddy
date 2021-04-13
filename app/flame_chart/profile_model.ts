@@ -47,25 +47,6 @@ function eventComparator(a: TraceEvent, b: TraceEvent) {
   return durationDiff;
 }
 
-// function mergeDuplicates(rawTimelines: ThreadTimeline[]) {
-//   let timelines: ThreadTimeline[];
-//   const threadByName = new Map<string, ThreadTimeline>();
-//   for (const line of rawTimelines) {
-//     const name = line.threadName;
-//     if (threadByName.has(name)) {
-//       const double = threadByName.get(name);
-//       if (double.tid > line.tid) {
-//         double.tid = line.tid;
-//       }
-//       double.events = double.events.concat(line.events);
-//       double.maxDepth = double.maxDepth + line.maxDepth;
-//     } else {
-//       threadByName.set(line.threadName, line);
-//     }
-//   }
-//   return timelines;
-// }
-
 function getThreadNames(events: TraceEvent[]) {
   const threadNameByTid = new Map<number, string>();
   for (const event of events as ThreadEvent[]) {
