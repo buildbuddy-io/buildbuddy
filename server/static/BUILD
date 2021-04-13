@@ -9,7 +9,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/static",
     visibility = ["//visibility:public"],
     deps = [
-        "//:bundle",
         "//proto:config_go_proto",
         "//server/environment",
         "//server/util/log",
