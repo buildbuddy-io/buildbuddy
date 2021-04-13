@@ -115,6 +115,7 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 			if err != nil {
 				log.Fatalf("Error getting static FS from bundle: %s", err)
 			}
+			log.Debug("Using bundled static filesystem.")
 			realEnv.SetStaticFilesystem(staticFS)
 		}
 		if realEnv.GetAppFilesystem() == nil {
@@ -122,6 +123,7 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 			if err != nil {
 				log.Fatalf("Error getting app FS from bundle: %s", err)
 			}
+			log.Debug("Using bundled app filesystem.")
 			realEnv.SetAppFilesystem(appFS)
 		}
 	}
