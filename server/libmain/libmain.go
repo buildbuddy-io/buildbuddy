@@ -4,10 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
 
+	"github.com/buildbuddy-io/buildbuddy/bundle"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -88,6 +90,43 @@ func init() {
 	grpc.EnableTracing = false
 }
 
+func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
+	if *staticDirectory != "" {
+		staticFS, err := static.FSFromRelPath(*staticDirectory)
+		if err != nil {
+			log.Fatalf("Error getting static FS from relPath: %q: %s", *staticDirectory, err)
+		}
+		realEnv.SetStaticFilesystem(staticFS)
+	}
+	if *appDirectory != "" {
+		appFS, err := static.FSFromRelPath(*appDirectory)
+		if err != nil {
+			log.Fatalf("Error getting app FS from relPath: %q: %s", *appDirectory, err)
+		}
+		realEnv.SetAppFilesystem(appFS)
+	}
+	if realEnv.GetStaticFilesystem() == nil || realEnv.GetAppFilesystem() == nil {
+		bundleFS, err := bundle.Get()
+		if err != nil {
+			log.Fatalf("Error getting bundle FS: %s", err)
+		}
+		if realEnv.GetStaticFilesystem() == nil {
+			staticFS, err := fs.Sub(bundleFS, "static")
+			if err != nil {
+				log.Fatalf("Error getting static FS from bundle: %s", err)
+			}
+			realEnv.SetStaticFilesystem(staticFS)
+		}
+		if realEnv.GetAppFilesystem() == nil {
+			appFS, err := fs.Sub(bundleFS, "app")
+			if err != nil {
+				log.Fatalf("Error getting app FS from bundle: %s", err)
+			}
+			realEnv.SetAppFilesystem(appFS)
+		}
+	}
+}
+
 // Normally this code would live in main.go -- we put it here for now because
 // the environments used by the open-core version and the enterprise version are
 // not substantially different enough yet to warrant the extra complexity of
@@ -113,6 +152,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	}
 
 	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
+	configureFilesystemsOrDie(realEnv)
 	realEnv.SetDBHandle(dbHandle)
 	realEnv.SetBlobstore(bs)
 	realEnv.SetInvocationDB(invocationdb.NewInvocationDB(realEnv, dbHandle))
@@ -276,13 +316,13 @@ func StartAndRunServices(env environment.Env) {
 	if err := rlimit.MaxRLimit(); err != nil {
 		log.Printf("Error raising open files limit: %s", err)
 	}
-	staticFileServer, err := static.NewStaticFileServer(env, *staticDirectory, appRoutes)
 
+	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes)
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)
 	}
 
-	afs, err := static.NewStaticFileServer(env, *appDirectory, []string{})
+	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{})
 	if err != nil {
 		log.Fatalf("Error initializing app server: %s", err)
 	}

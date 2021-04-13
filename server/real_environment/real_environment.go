@@ -1,6 +1,7 @@
 package real_environment
 
 import (
+	"io/fs"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -37,6 +38,8 @@ type RealEnv struct {
 	healthChecker interfaces.HealthChecker
 
 	dbHandle                         *db.DBHandle
+	staticFilesystem                fs.FS
+	appFilesystem                   fs.FS
 	blobstore                        interfaces.Blobstore
 	invocationDB                     interfaces.InvocationDB
 	authenticator                    interfaces.Authenticator
@@ -92,6 +95,20 @@ func (r *RealEnv) SetDBHandle(h *db.DBHandle) {
 }
 func (r *RealEnv) GetDBHandle() *db.DBHandle {
 	return r.dbHandle
+}
+
+func (r *RealEnv) SetStaticFilesystem(staticFS fs.FS) {
+	r.staticFilesystem = staticFS
+}
+func (r *RealEnv) GetStaticFilesystem() fs.FS {
+	return r.staticFilesystem
+}
+
+func (r *RealEnv) SetAppFilesystem(staticFS fs.FS) {
+	r.appFilesystem = staticFS
+}
+func (r *RealEnv) GetAppFilesystem() fs.FS {
+	return r.appFilesystem
 }
 
 func (r *RealEnv) GetBlobstore() interfaces.Blobstore {

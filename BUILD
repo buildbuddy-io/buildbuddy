@@ -1,5 +1,5 @@
 load("@bazel_gazelle//:def.bzl", "gazelle")
-load("@io_bazel_rules_go//go:def.bzl", "nogo")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "nogo")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -60,5 +60,23 @@ package_group(
     name = "enterprise",
     packages = [
         "//enterprise/...",
+    ],
+)
+
+go_library(
+    name = "bundle",
+    srcs = ["bundle.go"],
+    embedsrcs = [
+        # keep
+        "//:VERSION",
+        "//:config_files",
+        "//app:app_bundle",
+        "//app:style.css",
+        "//static",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/bundle",
+    deps = [
+        "//server/util/log",
+        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )

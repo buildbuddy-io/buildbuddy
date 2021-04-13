@@ -9,8 +9,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/static",
     visibility = ["//visibility:public"],
     deps = [
+        "//:bundle",
         "//proto:config_go_proto",
         "//server/environment",
+        "//server/util/log",
         "//server/version",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
