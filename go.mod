@@ -25,6 +25,7 @@ require (
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/creack/pty v1.1.10 // indirect
 	github.com/denisenkom/go-mssqldb v0.0.0-20200428022330-06a60b6afbbc // indirect
+	github.com/dghubble/trie v0.0.0-20201011220304-ed6d6b8add55 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/docker/distribution v2.7.1+incompatible // indirect
 	github.com/docker/docker v20.10.5+incompatible // indirect
