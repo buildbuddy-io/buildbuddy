@@ -234,6 +234,7 @@ type FileCache interface {
 
 type SchedulerService interface {
 	RegisterNode(stream scpb.Scheduler_RegisterNodeServer) error
+	RegisterExecutor(stream scpb.Scheduler_RegisterExecutorServer) error
 	LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
