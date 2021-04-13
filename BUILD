@@ -64,11 +64,13 @@ package_group(
     ],
 )
 
+# N.B. this is ignored by gazelle so must be updated by hand.
+# It must live at the repo root to be able to bundle other files using
+# "go:embed".
 go_library(
     name = "bundle",
     srcs = ["bundle.go"],
     embedsrcs = [
-        # keep
         "//:VERSION",
         "//:config_files",
         "//app:app_bundle",
@@ -78,6 +80,5 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/bundle",
     deps = [
         "//server/util/log",
-        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )

@@ -11,7 +11,6 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 
 	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
@@ -26,27 +25,12 @@ var (
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
 )
 
-func enumerate(efs fs.FS) {
-	matches, err := fs.Glob(efs, "*")
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	log.Printf("efs contained %d matches: %s", len(matches), matches)
-	for _, m := range matches {
-		fs.WalkDir(efs, m, func(path string, d fs.DirEntry, err error) error {
-			log.Printf("path: %s", path)
-			return nil
-		})
-	}
-}
-
 func FSFromRelPath(relPath string) (fs.FS, error) {
 	// Figure out where our runfiles (static content bundled with the binary) live.
 	rfp, err := bazel.RunfilesPath()
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("relpath is: %q", rfp)
 	dirFS := os.DirFS(filepath.Join(rfp, relPath))
 	return dirFS, nil
 }
