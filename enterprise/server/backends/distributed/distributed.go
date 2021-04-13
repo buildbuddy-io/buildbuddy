@@ -118,7 +118,7 @@ func (c *Cache) readPeers(d *repb.Digest) []string {
 	ordered := c.peers(d)
 	reordered := make([]string, 0, len(ordered))
 
-	for i := len(ordered)-1; i >= 0; i-- {
+	for i := len(ordered) - 1; i >= 0; i-- {
 		p := ordered[i]
 		if p == c.config.ListenAddr {
 			reordered = append(reordered, p)

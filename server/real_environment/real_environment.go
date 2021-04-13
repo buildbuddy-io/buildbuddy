@@ -38,8 +38,8 @@ type RealEnv struct {
 	healthChecker interfaces.HealthChecker
 
 	dbHandle                         *db.DBHandle
-	staticFilesystem                fs.FS
-	appFilesystem                   fs.FS
+	staticFilesystem                 fs.FS
+	appFilesystem                    fs.FS
 	blobstore                        interfaces.Blobstore
 	invocationDB                     interfaces.InvocationDB
 	authenticator                    interfaces.Authenticator
