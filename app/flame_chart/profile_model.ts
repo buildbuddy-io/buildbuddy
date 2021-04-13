@@ -48,7 +48,7 @@ function eventComparator(a: TraceEvent, b: TraceEvent) {
 }
 
 function threadNameComparator(a: ThreadTimeline, b: ThreadTimeline) {
-  // Group by thread ID.
+  // Group by thread name.
   return a.threadName.localeCompare(b.threadName);
 }
 
