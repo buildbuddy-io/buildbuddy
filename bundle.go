@@ -9,8 +9,9 @@ import (
 )
 
 // NB: We cannot embed "static", "bazel-out", etc here, because when this
-// package is build as dependency of the enterprise package, those files
-// do not exist. Instead we bundle *, which never fails.
+// package is built as dependency of the enterprise package, those files
+// do not exist. Instead we bundle *, which never fails, although the
+// resulting filesystem may be empty.
 //
 //go:embed *
 var all embed.FS
