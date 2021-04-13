@@ -87,11 +87,10 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
   );
   
   for (const event of events) {
-    const name = event.name;
-    if (tidByName.has(name)) {
-      tidByName.set(name, Math.min(tidByName.get(name), event.tid));
+    if (tidByName.has(event.name)) {
+      tidByName.set(event.name, Math.min(tidByName.get(event.name), event.tid));
     } else {
-      tidByName.set(name, event.tid)
+      tidByName.set(event.name, event.tid)
     }
   }
 
