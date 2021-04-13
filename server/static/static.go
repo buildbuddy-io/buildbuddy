@@ -3,7 +3,9 @@ package static
 import (
 	"flag"
 	"html/template"
+	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -23,6 +25,16 @@ var (
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
 )
 
+func FSFromRelPath(relPath string) (fs.FS, error) {
+	// Figure out where our runfiles (static content bundled with the binary) live.
+	rfp, err := bazel.RunfilesPath()
+	if err != nil {
+		return nil, err
+	}
+	dirFS := os.DirFS(filepath.Join(rfp, relPath))
+	return dirFS, nil
+}
+
 // StaticFileServer implements a static file http server that serves static
 // files out of the runfiles bundled with this application.
 type StaticFileServer struct {
@@ -31,23 +43,16 @@ type StaticFileServer struct {
 
 // NewStaticFileServer returns a new static file server that will serve the
 // content in relpath, optionally stripping the prefix.
-func NewStaticFileServer(env environment.Env, relPath string, rootPaths []string) (*StaticFileServer, error) {
-	// Figure out where our runfiles (static content bundled with the binary) live.
-	rfp, err := bazel.RunfilesPath()
-	if err != nil {
-		return nil, err
-	}
-
+func NewStaticFileServer(env environment.Env, fs fs.FS, rootPaths []string) (*StaticFileServer, error) {
 	// Handle "/static/*" requests by serving those static files out of the bundled runfiles.
-	pkgStaticDir := filepath.Join(rfp, relPath)
-	handler := http.FileServer(http.Dir(pkgStaticDir))
+	handler := http.FileServer(http.FS(fs))
 	if len(rootPaths) > 0 {
-		template, err := template.ParseFiles(filepath.Join(pkgStaticDir, indexTemplateFilename))
+		template, err := template.ParseFS(fs, indexTemplateFilename)
 		if err != nil {
 			return nil, err
 		}
 
-		handler = handleRootPaths(env, relPath, rootPaths, template, version.AppVersion(), handler)
+		handler = handleRootPaths(env, rootPaths, template, version.AppVersion(), handler)
 	}
 	return &StaticFileServer{
 		handler: handler,
@@ -59,7 +64,7 @@ func (s *StaticFileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
 }
 
-func handleRootPaths(env environment.Env, relPath string, rootPaths []string, template *template.Template, version string, h http.Handler) http.Handler {
+func handleRootPaths(env environment.Env, rootPaths []string, template *template.Template, version string, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for _, rootPath := range rootPaths {
 			if strings.HasPrefix(r.URL.Path, rootPath) {

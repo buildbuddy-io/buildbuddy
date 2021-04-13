@@ -1,5 +1,5 @@
 load("@bazel_gazelle//:def.bzl", "gazelle")
-load("@io_bazel_rules_go//go:def.bzl", "nogo")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "nogo")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -13,6 +13,7 @@ nogo(
 # gazelle:exclude node_modules
 # Ignore generated proto files
 # gazelle:exclude **/*.pb.go
+# gazelle:exclude bundle.go
 # Prefer generated BUILD files to be called BUILD over BUILD.bazel
 # gazelle:build_file_name BUILD,BUILD.bazel
 # gazelle:prefix github.com/buildbuddy-io/buildbuddy
@@ -60,5 +61,24 @@ package_group(
     name = "enterprise",
     packages = [
         "//enterprise/...",
+    ],
+)
+
+# N.B. this is ignored by gazelle so must be updated by hand.
+# It must live at the repo root to be able to bundle other files using
+# "go:embed".
+go_library(
+    name = "bundle",
+    srcs = ["bundle.go"],
+    embedsrcs = [
+        "//:VERSION",
+        "//:config_files",
+        "//app:app_bundle",
+        "//app:style.css",
+        "//static",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/bundle",
+    deps = [
+        "//server/util/log",
     ],
 )
