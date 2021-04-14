@@ -78,38 +78,44 @@ func (w *streamWriter) Write(buf []byte) (int, error) {
 // `Read()` is used to retrieve the contents of a resource as a sequence
 // of bytes. The bytes are returned in a sequence of responses, and the
 // responses are delivered as the results of a server-side streaming FUNC (S *BYTESTREAMSERVER).
-func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
-	if err := checkReadPreconditions(req); err != nil {
-		return err
+func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) (err error) {
+	err = checkReadPreconditions(req)
+	if err != nil {
+		return
 	}
 	instanceName, d, err := digest.ExtractDigestFromDownloadResourceName(req.GetResourceName())
 	if err != nil {
-		return err
+		return
 	}
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 	if err != nil {
-		return err
+		return
 	}
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 	cache := s.getCache(instanceName)
 	if d.GetHash() == digest.EmptySha256 {
 		ht.TrackEmptyHit()
-		return nil
+		return
 	}
 	reader, err := cache.Reader(ctx, d, req.ReadOffset)
 	if err != nil {
 		ht.TrackMiss(d)
-		return err
+		return
 	}
-	defer reader.Close()
+	defer func() {
+		cerr := reader.Close()
+		if err == nil {
+			err = cerr
+		}
+	}()
 
 	downloadTracker := ht.TrackDownload(d)
 	_, err = io.Copy(&streamWriter{stream}, reader)
 	if err == nil {
 		downloadTracker.Close()
 	}
-	return err
+	return
 }
 
 // `Write()` is used to send the contents of a resource as a sequence of

@@ -273,17 +273,23 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 	return decompress(b, err)
 }
 
-func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
+func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (n int, err error) {
 	writer := g.bucketHandle.Object(blobName).NewWriter(ctx)
-	defer writer.Close()
+	defer func() {
+		cerr := writer.Close()
+		if err == nil {
+			err = cerr
+		}
+	}()
+
 	compressedData, err := compress(data)
 	if err != nil {
-		return 0, err
+		return
 	}
 	start := time.Now()
-	n, err := writer.Write(compressedData)
+	n, err = writer.Write(compressedData)
 	recordWriteMetrics(gcsLabel, start, n, err)
-	return n, err
+	return
 }
 
 func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {

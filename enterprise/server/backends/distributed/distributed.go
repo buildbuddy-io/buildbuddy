@@ -237,24 +237,31 @@ func (c *Cache) remoteWriter(ctx context.Context, peer, prefix string, d *repb.D
 	return c.cacheProxy.RemoteWriter(ctx, peer, prefix, d)
 }
 
-func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, dest string) error {
+func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, dest string) (err error) {
 	if exists, err := c.remoteContains(ctx, dest, c.prefix, d); err == nil && exists {
 		return nil
 	}
 	log.Debugf("Backfilling (%s) from source %q to dest %q.", d.GetHash(), source, dest)
 	r, err := c.remoteReader(ctx, source, c.prefix, d, 0)
 	if err != nil {
-		return err
+		return
 	}
-	defer r.Close()
+	defer func() {
+		cerr := r.Close()
+		if err == nil {
+			err = cerr
+		}
+	}()
 	rwc, err := c.remoteWriter(ctx, dest, c.prefix, d)
 	if err != nil {
-		return err
+		return
 	}
-	if _, err := io.Copy(rwc, r); err != nil {
-		return err
+	_, err = io.Copy(rwc, r)
+	if err != nil {
+		return
 	}
-	return rwc.Close()
+	err = rwc.Close()
+	return
 }
 
 // lets say we're doing a write to 3 nodes.
@@ -449,13 +456,19 @@ func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset in
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q, peers: %s", d.GetHash(), peers)
 }
 
-func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (c *Cache) Get(ctx context.Context, d *repb.Digest) (data []byte, err error) {
 	r, err := c.distributedReader(ctx, d, 0)
 	if err != nil {
-		return nil, err
+		return
 	}
-	defer r.Close()
-	return ioutil.ReadAll(r)
+	defer func() {
+		cerr := r.Close()
+		if err == nil {
+			err = cerr
+		}
+	}()
+	data, err = ioutil.ReadAll(r)
+	return
 }
 
 func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {

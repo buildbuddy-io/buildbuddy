@@ -66,13 +66,20 @@ func ComputeDigest(in io.ReadSeeker, instanceName string) (*digest.InstanceNameD
 	return digest.NewInstanceNameDigest(d, instanceName), nil
 }
 
-func ComputeFileDigest(fullFilePath, instanceName string) (*digest.InstanceNameDigest, error) {
+func ComputeFileDigest(fullFilePath, instanceName string) (d *digest.InstanceNameDigest, err error) {
 	f, err := os.Open(fullFilePath)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	return ComputeDigest(f, instanceName)
+	defer func() {
+		cerr := f.Close()
+		if err == nil {
+			err = cerr
+		}
+	}()
+
+	d, err = ComputeDigest(f, instanceName)
+	return
 }
 
 func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, ad *digest.InstanceNameDigest, in io.ReadSeeker) (*repb.Digest, error) {
@@ -178,21 +185,29 @@ func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	return UploadFromReader(ctx, bsClient, ad, in)
 }
 
-func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName, fullFilePath string) (*repb.Digest, error) {
+func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName, fullFilePath string) (d *repb.Digest, err error) {
 	f, err := os.Open(fullFilePath)
 	if err != nil {
-		return nil, err
+		return
 	}
-	defer f.Close()
+	defer func() {
+		cerr := f.Close()
+		if err == nil {
+			err = cerr
+		}
+	}()
+
 	ad, err := ComputeDigest(f, instanceName)
 	if err != nil {
-		return nil, err
+		return
 	}
 	// Go back to the beginning so we can re-read the file contents as we upload.
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return nil, err
+	_, err = f.Seek(0, io.SeekStart)
+	if err != nil {
+		return
 	}
-	return UploadFromReader(ctx, bsClient, ad, f)
+	d, err = UploadFromReader(ctx, bsClient, ad, f)
+	return
 }
 
 func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.InstanceNameDigest, out proto.Message) error {
