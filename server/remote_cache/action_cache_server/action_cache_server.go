@@ -53,10 +53,7 @@ func (s *ActionCacheServer) checkFilesExist(ctx context.Context, cache interface
 	}
 	for _, d := range digests {
 		found, ok := foundMap[d]
-		if !ok {
-			return status.InternalErrorf("AC Inconsistent result from cache.ContainsMulti (missing %q)", d)
-		}
-		if !found {
+		if !ok || !found {
 			return status.NotFoundErrorf("ActionResult output file: '%s' not found in cache", d)
 		}
 	}

@@ -75,10 +75,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	}
 	for _, d := range digestsToLookup {
 		found, ok := foundMap[d]
-		if !ok {
-			return nil, status.InternalErrorf("CAS Inconsistent result from cache.ContainsMulti (missing %v)", d)
-		}
-		if !found {
+		if !ok || !found {
 			rsp.MissingBlobDigests = append(rsp.MissingBlobDigests, d)
 		}
 	}
