@@ -101,11 +101,37 @@ message EnqueueTaskReservationRequest {
 }
 
 message EnqueueTaskReservationResponse {
-  // Intentionally left blank.
+  string task_id = 1;
 }
 
-service Scheduler {
+message RegisterExecutorRequest {
+  ExecutionNode node = 1;
+}
+
+message RegisterAndStreamWorkRequest {
+  // Only one of the fields should be sent. oneofs not used due to awkward Go APIs.
+
+  // Request to register the executor with the scheduler.
+  // This message should be sent immediately after establishing stream and be resent periodically as long as the
+  // executor should continue to receive task reservations.
+  RegisterExecutorRequest register_executor_request = 1;
+
+  // Response to a previous EnqueueTaskReservationRequest.
+  EnqueueTaskReservationResponse enqueue_task_reservation_response = 2;
+}
+
+message RegisterAndStreamWorkResponse {
+  // Request to enqueue a task reservation. A EnqueueTaskReservationResponse message will be sent to ack the task
+  // reservation.
+  EnqueueTaskReservationRequest enqueue_task_reservation_request = 3;
+}
+
+service Scheduler{
+  // Deprecated. Being replaced by RegisterAndStreamWork which allows task reservations to be sent via the stream.
   rpc RegisterNode(stream RegisterNodeRequest) returns (RegisterNodeResponse) {}
+
+  rpc RegisterAndStreamWork(stream RegisterAndStreamWorkRequest)
+      returns (stream RegisterAndStreamWorkResponse) {}
 
   rpc LeaseTask(stream LeaseTaskRequest) returns (stream LeaseTaskResponse) {}
 
