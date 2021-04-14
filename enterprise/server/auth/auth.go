@@ -2,11 +2,11 @@ package auth
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -721,10 +721,13 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	state, err := random.RandUint64()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 	// Set the "state" cookie which will be returned to us by tha authentication
 	// provider in the URL. We verify that it matches.
-	state := fmt.Sprintf("%d", random.RandUint64())
-	setCookie(w, stateCookie, state, time.Now().Add(tempCookieDuration))
+	setCookie(w, stateCookie, strconv.FormatUint(state, 10), time.Now().Add(tempCookieDuration))
 
 	redirectURL := r.URL.Query().Get(authRedirectParam)
 	if err := a.validateRedirectURL(redirectURL); err != nil {
@@ -741,7 +744,7 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	setCookie(w, authIssuerCookie, issuer, time.Now().Add(tempCookieDuration))
 
 	// Redirect to the login provider (and ask for a refresh token).
-	u := auth.oauth2Config.AuthCodeURL(state, authCodeOption...)
+	u := auth.oauth2Config.AuthCodeURL(strconv.FormatUint(state, 10), authCodeOption...)
 	http.Redirect(w, r, u, http.StatusTemporaryRedirect)
 }
 

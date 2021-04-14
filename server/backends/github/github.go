@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -76,15 +77,20 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 	// If we don't have a state yet parameter, start oauth flow.
 	if r.FormValue("state") == "" {
-		state := fmt.Sprintf("%d", random.RandUint64())
-		setCookie(w, stateCookieName, state)
+		state, err := random.RandUint64()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		state_string := strconv.FormatUint(state, 10)
+		setCookie(w, stateCookieName, state_string)
 		setCookie(w, redirectCookieName, r.FormValue("redirect_url"))
 
 		appURL := c.env.GetConfigurator().GetAppBuildBuddyURL()
 		url := fmt.Sprintf(
 			"https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
 			githubConfig.ClientID,
-			state,
+			state_string,
 			appURL+"/auth/github/link/",
 			"repo")
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)

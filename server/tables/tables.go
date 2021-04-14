@@ -44,7 +44,11 @@ func GetAllTables() []interface{} {
 func PrimaryKeyForTable(tableName string) (string, error) {
 	for _, d := range allTables {
 		if d.name == tableName {
-			return fmt.Sprintf("%s%d", d.prefix, random.RandUint64()), nil
+			n, err := random.RandUint64()
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("%s%d", d.prefix, n), nil
 		}
 	}
 	return "", fmt.Errorf("Unknown table: %s", tableName)
