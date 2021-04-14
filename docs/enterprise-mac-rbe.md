@@ -23,7 +23,7 @@ When starting with a clean Mac, you'll first need to make sure XCode is installe
 We recommend installing at least XCode 12.2 (which is the default XCode version used if no `--xcode_version` Bazel flag is specified).
 
 :::note
-If installing on many machines, we recommend downloading XCode the XCode .xip file to a location you control (like a cloud storage bucket) and downloading from there using a simple curl command. This reduces the number of times you have to login to your Apple Developer account.
+If installing on many machines, we recommend downloading the XCode .xip file to a location you control (like a cloud storage bucket) and downloading from there using a simple curl command. This reduces the number of times you have to login to your Apple Developer account.
 :::
 
 ### Installing XCode
