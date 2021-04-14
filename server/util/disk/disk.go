@@ -112,23 +112,18 @@ func FileWriter(ctx context.Context, fullPath string) (io.WriteCloser, error) {
 	if err := EnsureDirectoryExists(filepath.Dir(fullPath)); err != nil {
 		return nil, err
 	}
-	randStr, err := random.RandomString(10)
-	if err != nil {
-		return nil, err
-	}
 
-	tmpFileName := fullPath + fmt.Sprintf(".%s.tmp", randStr)
-	f, err := os.OpenFile(tmpFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	tmpFile, err := ioutil.TempFile(filepath.Dir(fullPath), fmt.Sprintf("%s.*.tmp", filepath.Base(fullPath)))
 	if err != nil {
 		return nil, err
 	}
 	wm := &writeMover{
-		File:      f,
+		File:      tmpFile,
 		finalPath: fullPath,
 	}
 	// Ensure that the temp file is cleaned up here too!
 	runtime.SetFinalizer(wm, func(m *writeMover) {
-		DeleteLocalFileIfExists(tmpFileName)
+		DeleteLocalFileIfExists(tmpFile.Name())
 	})
 	return wm, nil
 }
