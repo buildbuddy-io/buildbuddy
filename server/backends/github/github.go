@@ -123,12 +123,12 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
-	defer resp.Body.Close()
 	if err != nil {
 		log.Warningf("Error getting access token: %v", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
+	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
