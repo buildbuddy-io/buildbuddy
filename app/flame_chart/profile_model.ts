@@ -80,7 +80,7 @@ function normalizeThreadNames(events: TraceEvent[]) {
 export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold = 0 } = {}): ThreadTimeline[] {
   normalizeThreadNames(events);
   const threadNameByTid = getThreadNames(events);
-  const threadNameToMinTidMap = new Map<string, number>();
+  const threadNameToTidMap = new Map<string, number>();
   events = events.filter(
     (event) =>
       event.tid !== undefined &&
@@ -91,16 +91,13 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
       event.dur > visibilityThreshold
   );
   
-  for (const [tid, threadName] of threadNameByTid.entries()) {
-    if (threadNameToMinTidMap.has(threadName)) {
-      threadNameToMinTidMap.set(threadName, Math.min(threadNameToMinTidMap.get(threadName), tid));
-    } else {
-      threadNameToMinTidMap.set(threadName, tid)
-    }
-  }
   // Merge all of the threads with a single thread name under the same tid.
+  for (const [tid, threadName] of threadNameByTid.entries()) {
+      threadNameToTidMap.set(threadName, tid)
+  }
+
   for (const event of events) {
-    event.tid = threadNameToMinTidMap.get(threadNameByTid.get(event.tid));
+    event.tid = threadNameToTidMap.get(threadNameByTid.get(event.tid));
   }
 
   events.sort(eventComparator);
