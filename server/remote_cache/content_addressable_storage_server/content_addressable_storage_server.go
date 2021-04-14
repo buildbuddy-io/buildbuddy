@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
@@ -212,20 +211,26 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		}
 	}
 	cacheRsp, err := cache.GetMulti(ctx, cacheRequest)
-	for d, data := range cacheRsp {
+	for _, d := range req.GetDigests() {
+		if d.GetHash() == digest.EmptySha256 {
+			rsp.Responses = append(rsp.Responses, &repb.BatchReadBlobsResponse_Response{
+				Digest: d,
+				Status: &statuspb.Status{Code: int32(codes.OK)},
+			})
+			continue
+		}
+
+		data, ok := cacheRsp[d]
 		blobRsp := &repb.BatchReadBlobsResponse_Response{
 			Digest: d,
 			Data:   data,
 		}
-		if d.GetSizeBytes() != int64(len(data)) {
-			log.Warningf("Cache returned a blob of %d bytes which doesn't match digest: %s/%d. Ignoring.", len(data), d.GetHash(), d.GetSizeBytes())
+		if !ok || os.IsNotExist(err) || d.GetSizeBytes() != int64(len(data)) {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
-		} else if err == nil {
-			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}
-		} else if os.IsNotExist(err) {
-			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
-		} else {
+		} else if err != nil {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.Internal)}
+		} else {
+			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}
 		}
 		rsp.Responses = append(rsp.Responses, blobRsp)
 	}

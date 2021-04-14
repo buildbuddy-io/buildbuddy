@@ -116,6 +116,9 @@ func (m *MemoryCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 	// No parallelism here either. Not necessary for an in-memory cache.
 	for _, d := range digests {
 		data, err := m.Get(ctx, d)
+		if status.IsNotFoundError(err) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

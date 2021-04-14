@@ -181,8 +181,15 @@ func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, des
 	return rwc.Close()
 }
 
-// The first contains result with a nil err will be returned. If all potential
-// peers for the digest are exhausted, then return a NotFoundError.
+// lets say we're doing a write to 3 nodes.
+// we write to 2 of them, but our 3rd node fails.
+// we return success, because we've written to a quorum.
+// now we get a Contains call, our first request goes
+// to the 3rd node, which is now back up. We report
+// the digest as missing, and we've told a lie.
+
+// The first contains result that finds the digest will be returned. If all
+// potential peers for the digest are exhausted, then return false.
 //
 // This is like setting READ_CONSISTENCY = ONE.
 //
@@ -191,7 +198,7 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	peers := c.readPeers(d)
 	for i, peer := range peers {
 		b, err := c.remoteContains(ctx, peer, c.prefix, d)
-		if err == nil {
+		if err == nil && b {
 			if i != 0 {
 				c.backfillReplica(ctx, d, peer, peers[i-1])
 			}
@@ -199,7 +206,6 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 		}
 		continue
 	}
-	log.Printf("Exhausted all peers attempting to check (contains) %q: peers: %s", d.GetHash(), peers)
 	return false, nil
 }
 
@@ -213,49 +219,60 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 
 	for {
 		// Each iteration through this outer loop sends a "batch" of requests in
-		// parallel, until all digests have been returned from a request without
-		// error or we have exhausted our set of peers.
-		eg, gCtx := errgroup.WithContext(ctx)
+		// parallel, until all digests have been found or we have exhausted all
+		// peers.
 		peerRequests := make(map[string][]*repb.Digest, 0)
 		for _, d := range digests {
 			// If a previous request has already found this digest, skip it.
 			if _, ok := foundMap[d]; ok {
 				continue
 			}
-			// If no peers remain, return an error.
+			// If no peers remain, skip this digest, we can't do anything more.
 			peers := peerMap[d]
 			if len(peers) == 0 {
-				return nil, status.NotFoundErrorf("Exhausted all peers attempting to check (batch contains) %q", d.GetHash())
+				continue
 			}
 			peer := peers[0]
-			peers = peers[1:]
+			peerMap[d] = peers[1:]
 			peerRequests[peer] = append(peerRequests[peer], d)
 		}
+		if len(peerRequests) == 0 {
+			// If we aren't able to plan any more batch requests, that means
+			// we're out of peers and should exit, returning what we have.
+			break
+		}
+		eg, gCtx := errgroup.WithContext(ctx)
 		for peer, digests := range peerRequests {
 			peer := peer
 			digests := digests
 			eg.Go(func() error {
-				foundOnPeer, err := c.cacheProxy.RemoteContainsMulti(gCtx, peer, c.prefix, digests)
+				peerRsp, err := c.cacheProxy.RemoteContainsMulti(gCtx, peer, c.prefix, digests)
 				if err != nil {
 					return err
 				}
 				lock.Lock()
-				defer lock.Unlock()
-				for d, exists := range foundOnPeer {
-					foundMap[d] = exists
+				for d, exists := range peerRsp {
+					if exists {
+						foundMap[d] = exists
+					}
 				}
+				lock.Unlock()
 				return nil
 			})
 		}
-		err := eg.Wait()
-		if err == nil {
-			return foundMap, nil
+		if err := eg.Wait(); err != nil {
+			if err != context.Canceled {
+				// Don't log context cancelled errors, they are common and expected when
+				// clients cancel a request.
+				log.Warningf("Error checking contains batch; will retry: %s", err)
+			}
+			continue
 		}
-		// Don't log context cancelled errors, they are common and expected when
-		// clients cancel a request.
-		if err != context.Canceled {
-			log.Warningf("Error checking contains batch; will retry: %s", err)
+		if len(foundMap) == len(digests) {
+			// If we've found everything, we can exit now.
+			break
 		}
+
 	}
 
 	return foundMap, nil
@@ -331,50 +348,60 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 
 	for {
 		// Each iteration through this outer loop sends a "batch" of requests in
-		// parallel, until all digests have been returned from a request without
-		// error or we have exhausted our set of peers.
-		eg, gCtx := errgroup.WithContext(ctx)
+		// parallel, until all digests have been found or we have exhausted all
+		// peers.
 		peerRequests := make(map[string][]*repb.Digest, 0)
 		for _, d := range digests {
 			// If a previous request has already found this digest, skip it.
 			if _, ok := gotMap[d]; ok {
 				continue
 			}
-			// If no peers remain, return an error.
+			// If no peers remain, skip this digest, we can't do anything more.
 			peers := peerMap[d]
 			if len(peers) == 0 {
-				return nil, status.NotFoundErrorf("Exhausted all peers attempting to check (batch contains) %q", d.GetHash())
+				continue
 			}
 			peer := peers[0]
-			peers = peers[1:]
+			peerMap[d] = peers[1:]
 			peerRequests[peer] = append(peerRequests[peer], d)
 		}
+		if len(peerRequests) == 0 {
+			// If we aren't able to plan any more batch requests, that means
+			// we're out of peers and should exit, returning what we have.
+			break
+		}
+		eg, gCtx := errgroup.WithContext(ctx)
 		for peer, digests := range peerRequests {
 			peer := peer
 			digests := digests
 			eg.Go(func() error {
-				got, err := c.cacheProxy.RemoteGetMulti(gCtx, peer, c.prefix, digests)
+				peerRsp, err := c.cacheProxy.RemoteGetMulti(gCtx, peer, c.prefix, digests)
 				if err != nil {
 					return err
 				}
 				lock.Lock()
-				defer lock.Unlock()
-				for d, buf := range got {
-					gotMap[d] = buf
+				for d, data := range peerRsp {
+					gotMap[d] = data
 				}
+				lock.Unlock()
 				return nil
 			})
 		}
-		err := eg.Wait()
-		if err == nil {
-			return gotMap, nil
+		if err := eg.Wait(); err != nil {
+			if err != context.Canceled {
+				// Don't log context cancelled errors, they are common and expected when
+				// clients cancel a request.
+				log.Warningf("Error checking contains batch; will retry: %s", err)
+			}
+			continue
 		}
-		// Don't log context cancelled errors, they are common and expected when
-		// clients cancel a request.
-		if err != context.Canceled {
-			log.Warningf("Error reading batch; will retry: %s", err)
+		if len(gotMap) == len(digests) {
+			// If we've found everything, we can exit now.
+			break
 		}
+
 	}
+
 	return gotMap, nil
 }
 
