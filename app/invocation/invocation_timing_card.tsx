@@ -227,7 +227,7 @@ export default class InvocationTimingCardComponent extends React.Component {
           <div className="content">
             <div className="header">
               <div className="title">All events</div>
-              {this.state.timingEnabled && !this.state.isMissingProfile && this.state.timingLoaded && (
+              {this.state.timingLoaded && (
                 <div className="button">
                   <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
                     Download profile
