@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
@@ -225,7 +226,10 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			Digest: d,
 			Data:   data,
 		}
-		if !ok || os.IsNotExist(err) || d.GetSizeBytes() != int64(len(data)) {
+		if d.GetSizeBytes() != int64(len(data)) {
+			log.Debugf("Digest %s, but data len: %d", d, len(data))
+			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
+		} else if !ok || os.IsNotExist(err) {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
 		} else if err != nil {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.Internal)}
