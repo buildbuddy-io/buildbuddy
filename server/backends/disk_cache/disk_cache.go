@@ -28,10 +28,11 @@ import (
 // serialize this ledger, we regenerate it from scratch on startup by looking
 // at the filesystem.
 type DiskCache struct {
-	rootDir string
-	prefix  string
-	l       *lru.LRU
-	lock    *sync.RWMutex
+	rootDir      string
+	prefix       string
+	l            *lru.LRU
+	lock         *sync.RWMutex
+	diskIsMapped bool
 }
 
 type fileRecord struct {
@@ -90,7 +91,6 @@ func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
 	if err := c.initializeCache(); err != nil {
 		return nil, err
 	}
-	log.Infof("Initialized disk cache at %q. Current size: %d (max: %d) bytes", c.rootDir, c.l.Size(), c.l.MaxSize())
 	return c, nil
 }
 
@@ -105,6 +105,7 @@ func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
 		rootDir: c.rootDir,
 		lock:    c.lock,
 		prefix:  newPrefix,
+		diskIsMapped: c.diskIsMapped,
 	}
 }
 
@@ -112,24 +113,36 @@ func (c *DiskCache) initializeCache() error {
 	if err := disk.EnsureDirectoryExists(c.rootDir); err != nil {
 		return err
 	}
-	records := make([]*fileRecord, 0)
-	walkFn := func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() {
-			records = append(records, makeRecord(path, info))
+	c.diskIsMapped = false
+	go func() {
+		start := time.Now()
+		records := make([]*fileRecord, 0)
+		walkFn := func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() {
+				records = append(records, makeRecord(path, info))
+			}
+			return nil
 		}
-		return nil
-	}
-	if err := filepath.Walk(c.rootDir, walkFn); err != nil {
-		return err
-	}
+		if err := filepath.Walk(c.rootDir, walkFn); err != nil {
+			log.Warningf("Error walking disk directory: %s", err)
+		}
 
-	// Sort entries by ascending ATime.
-	sort.Slice(records, func(i, j int) bool { return records[i].lastUse.Before(records[j].lastUse) })
+		// Sort entries by ascending ATime.
+		sort.Slice(records, func(i, j int) bool { return records[i].lastUse.Before(records[j].lastUse) })
 
-	// Populate our state tracking datastructures.
-	for _, record := range records {
-		c.l.Add(record.key, record)
-	}
+		// Populate our state tracking datastructures.
+		for _, record := range records {
+			c.lock.Lock()
+			c.l.Add(record.key, record)
+			c.lock.Unlock()
+		}
+		c.diskIsMapped = true
+		log.Debugf("Statd %d files in %s", len(records), time.Since(start))
+		log.Infof("Finished initializing disk cache at %q. Current size: %d (max: %d) bytes", c.rootDir, c.l.Size(), c.l.MaxSize())
+	}()
 	return nil
 }
 
@@ -144,6 +157,18 @@ func (c *DiskCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	}
 
 	return filepath.Join(c.rootDir, userPrefix+c.prefix+hash), nil
+}
+
+// Adds a single file, using the provided path, to the LRU.
+// NB: Callers are responsible for locking the LRU before calling this function.
+func (c *DiskCache) addSingleFileToLRU(k string) bool {
+	info, err := os.Stat(k)
+	if os.IsExist(err) {
+		record := makeRecord(k, info)
+		c.l.Add(record.key, record)
+		return true
+	}
+	return false
 }
 
 func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
@@ -167,6 +192,15 @@ func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) 
 	c.lock.Lock()
 	_, ok := c.l.Get(k)
 	c.lock.Unlock()
+
+	if !ok && !c.diskIsMapped {
+		// OK if we're here it means the disk contents are still being loaded
+		// into the LRU. But we still need to return an answer! So we'll go
+		// check the FS, and if the file is there we'll add it to the LRU.
+		c.lock.Lock()
+		ok = c.addSingleFileToLRU(k)
+		c.lock.Unlock()
+	}
 	return ok, nil
 }
 
@@ -211,8 +245,12 @@ func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	if err != nil {
 		c.l.Remove(k) // remove it just in case
 		return nil, status.NotFoundErrorf("DiskCache missing file: %s", err)
-	} else {
+	}
+
+	if c.l.Contains(k) {
 		c.l.Get(k) // mark the file as used.
+	} else if !c.diskIsMapped {
+		c.addSingleFileToLRU(k)
 	}
 	return f, nil
 }
