@@ -24,6 +24,7 @@ interface State {
   groupBy: string;
   threadPageSize: number;
   eventPageSize: number;
+  timingLoaded: boolean;
   error: string;
 }
 
@@ -58,6 +59,7 @@ export default class InvocationTimingCardComponent extends React.Component {
     groupBy: window.localStorage[groupByStorageKey] || groupByThreadStorageValue,
     threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
     eventPageSize: window.localStorage[eventPageSizeStorageKey] || 100,
+    timingLoaded: false,
     error: "",
   };
 
@@ -113,6 +115,7 @@ export default class InvocationTimingCardComponent extends React.Component {
         console.error("Error loading bytestream timing profile!");
         this.setState({
           ...this.state,
+          timingLoaded: false,
           error: "Error loading timing profile. Make sure your cache is correctly configured.",
         });
       });
@@ -150,6 +153,7 @@ export default class InvocationTimingCardComponent extends React.Component {
       this.state.threadMap.set(event.tid, thread);
     }
     this.state.buildInProgress = false;
+    this.state.timingLoaded = true;
     this.state.error = "";
     this.setState(this.state);
   }
@@ -223,11 +227,13 @@ export default class InvocationTimingCardComponent extends React.Component {
           <div className="content">
             <div className="header">
               <div className="title">All events</div>
-              <div className="button">
-                <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
-                  Download profile
-                </Button>
-              </div>
+              {this.state.timingEnabled && !this.state.isMissingProfile && this.state.timingLoaded && (
+                <div className="button">
+                  <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
+                    Download profile
+                  </Button>
+                </div>
+              )}
             </div>
             <div className="sort-controls">
               <div className="sort-control">
