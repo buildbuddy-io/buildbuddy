@@ -540,6 +540,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, prefix string, d *r
 	eg.Go(func() error {
 		rsp, err := c.client.Do(req)
 		if err != nil {
+			reader.CloseWithError(err)
 			return err
 		}
 		return rsp.Body.Close()
