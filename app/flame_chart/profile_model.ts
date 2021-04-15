@@ -47,6 +47,11 @@ function eventComparator(a: TraceEvent, b: TraceEvent) {
   return durationDiff;
 }
 
+function threadNameComparator(a: ThreadTimeline, b: ThreadTimeline) {
+  // Sort by thread name.
+  return a.threadName.localeCompare(b.threadName);
+}
+
 function getThreadNames(events: TraceEvent[]) {
   const threadNameByTid = new Map<number, string>();
   for (const event of events as ThreadEvent[]) {
@@ -75,7 +80,7 @@ function normalizeThreadNames(events: TraceEvent[]) {
 export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold = 0 } = {}): ThreadTimeline[] {
   normalizeThreadNames(events);
   const threadNameByTid = getThreadNames(events);
-
+  const threadNameToTidMap = new Map<string, number>();
   events = events.filter(
     (event) =>
       event.tid !== undefined &&
@@ -85,8 +90,18 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
       event.dur &&
       event.dur > visibilityThreshold
   );
-  events.sort(eventComparator);
+  
+  // Merge all of the threads with a single thread name under the same tid.
+  for (const [tid, threadName] of threadNameByTid.entries()) {
+      threadNameToTidMap.set(threadName, tid)
+  }
 
+  for (const event of events) {
+    event.tid = threadNameToTidMap.get(threadNameByTid.get(event.tid));
+  }
+
+  events.sort(eventComparator);
+  
   const timelines: ThreadTimeline[] = [];
   let tid = null;
   let timeline: ThreadTimeline | null = null;
@@ -135,6 +150,8 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
   for (const timeline of timelines) {
     timeline.threadName = threadNameByTid.get(timeline.tid);
   }
+
+  timelines.sort(threadNameComparator);
 
   return timelines;
 }
