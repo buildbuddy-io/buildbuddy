@@ -179,12 +179,14 @@ func (c *DiskCache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (
 		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
 				exists, err := c.Contains(ctx, d)
+				// NotFoundError is never returned from contains above, so
+				// we don't check for it.
 				if err != nil {
 					return err
 				}
 				lock.Lock()
-				defer lock.Unlock()
 				foundMap[d] = exists
+				lock.Unlock()
 				return nil
 			})
 		}
@@ -224,12 +226,15 @@ func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*
 		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
 				data, err := c.Get(ctx, d)
+				if status.IsNotFoundError(err) {
+					return nil
+				}
 				if err != nil {
 					return err
 				}
 				lock.Lock()
-				defer lock.Unlock()
 				foundMap[d] = data
+				lock.Unlock()
 				return nil
 			})
 		}

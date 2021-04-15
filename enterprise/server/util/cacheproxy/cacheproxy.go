@@ -197,13 +197,13 @@ func getMulti(c context.Context, cache interfaces.Cache, r *http.Request, w http
 	}
 	mw := multipart.NewWriter(w)
 	w.Header().Set("Content-Type", mw.FormDataContentType())
-	for _, d := range digests {
+	for d, buf := range got {
 		fw, err := mw.CreateFormField(d.GetHash())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if _, err := fw.Write(got[d]); err != nil {
+		if _, err := fw.Write(buf); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
