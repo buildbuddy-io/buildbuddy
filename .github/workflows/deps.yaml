@@ -32,7 +32,12 @@ jobs:
         git config --local user.email ${{ github.event.head_commit.author.email }}
         git config --local user.name ${{ github.event.head_commit.author.name }}
         git add WORKSPACE
-        git commit -m ${{ github.event.head_commit.url }} -m "Update OSS commit SHA" -a
+        cat <<EOF > message.txt
+        ${{ github.event.head_commit.message }}
+        ${{ github.event.head_commit.url }}
+        "Update OSS commit SHA"
+        EOF
+        git commit -F message.txt -a
 
     - name: Push changes
       uses: ad-m/github-push-action@v0.6.0
