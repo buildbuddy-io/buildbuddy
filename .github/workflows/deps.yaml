@@ -33,8 +33,9 @@ jobs:
         git config --local user.name ${{ github.event.head_commit.author.name }}
         git add WORKSPACE
         cat <<EOF > message.txt
-        ${{ github.event.head_commit.message }}
-        Update OSS commit SHA
+        [Sync] ${{ github.event.head_commit.message }}
+        Update https://github.com/buildbuddy-io/buildbuddy commit SHA
+
         Original commit: ${{ github.event.head_commit.url }}
         EOF
         git commit -F message.txt -a
