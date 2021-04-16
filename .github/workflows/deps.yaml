@@ -19,7 +19,7 @@ jobs:
       with:
         repository: "buildbuddy-io/buildbuddy-internal"
         ref: 'master'
-        token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+        token: ${{ secrets.BUILDBUDDY_APP_TOKEN }}
     
     - name: Update SHA
       run: | 
@@ -29,10 +29,10 @@ jobs:
     - name: Commit
       run: |
         cd ../buildbuddy-internal
-        git config --local user.email "bot@buildbuddy.io"
-        git config --local user.name "BuildBuddy Bot"
+        git config --local user.email ${{ github.event.head_commit.author.email }}
+        git config --local user.name ${{ github.event.head_commit.author.name }}
         git add WORKSPACE
-        git commit -m "Update OSS commit SHA" -a
+        git commit -m ${{ github.event.head_commit.message }} -m ${{ github.event.head_commit.url }} -m "Update OSS commit SHA" -a
 
     - name: Push changes
       uses: ad-m/github-push-action@v0.6.0
