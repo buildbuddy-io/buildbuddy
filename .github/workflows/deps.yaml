@@ -34,8 +34,8 @@ jobs:
         git add WORKSPACE
         cat <<EOF > message.txt
         ${{ github.event.head_commit.message }}
-        ${{ github.event.head_commit.url }}
-        "Update OSS commit SHA"
+        Update OSS commit SHA
+        Original commit: ${{ github.event.head_commit.url }}
         EOF
         git commit -F message.txt -a
 
