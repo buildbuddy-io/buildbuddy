@@ -25,9 +25,6 @@ func MakeTempDir(t testing.TB) string {
 			t.Fatal(err)
 		}
 	})
-	if err := os.Chmod(tmpDir, 0777); err != nil {
-		t.Fatal(err)
-	}
 	return tmpDir
 }
 
