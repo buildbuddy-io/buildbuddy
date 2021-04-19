@@ -33,6 +33,20 @@ func MakeTempDir(t testing.TB) string {
 	return tmpDir
 }
 
+func CopyFile(t testing.TB, src, destRootDir, destPath string) {
+	info, err := os.Stat(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := ioutil.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ioutil.WriteFile(filepath.Join(destRootDir, destPath), b, info.Mode()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func WriteAllFileContents(t testing.TB, rootDir string, contents map[string]string) {
 	for relPath, content := range contents {
 		path := filepath.Join(rootDir, relPath)
