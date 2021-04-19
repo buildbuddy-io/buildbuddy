@@ -206,7 +206,6 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		}
 		n, err := writeCloser.Write(req.Data)
 		if err != nil {
-			log.Printf("Error writing data?")
 			return err
 		}
 		bytesWritten += int64(n)
