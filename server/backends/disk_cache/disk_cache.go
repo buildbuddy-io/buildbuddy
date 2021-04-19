@@ -3,6 +3,7 @@ package disk_cache
 import (
 	"context"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -28,10 +29,12 @@ import (
 // serialize this ledger, we regenerate it from scratch on startup by looking
 // at the filesystem.
 type DiskCache struct {
-	rootDir string
-	prefix  string
-	l       *lru.LRU
-	lock    *sync.RWMutex
+	rootDir      string
+	prefix       string
+	l            *lru.LRU
+	mu           *sync.RWMutex
+	fileChannel  chan *fileRecord
+	diskIsMapped bool
 }
 
 type fileRecord struct {
@@ -83,14 +86,14 @@ func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
 		return nil, err
 	}
 	c := &DiskCache{
-		l:       l,
-		rootDir: rootDir,
-		lock:    &sync.RWMutex{},
+		l:           l,
+		rootDir:     rootDir,
+		mu:          &sync.RWMutex{},
+		fileChannel: make(chan *fileRecord),
 	}
 	if err := c.initializeCache(); err != nil {
 		return nil, err
 	}
-	log.Infof("Initialized disk cache at %q. Current size: %d (max: %d) bytes", c.rootDir, c.l.Size(), c.l.MaxSize())
 	return c, nil
 }
 
@@ -101,10 +104,12 @@ func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
 	}
 
 	return &DiskCache{
-		l:       c.l,
-		rootDir: c.rootDir,
-		lock:    c.lock,
-		prefix:  newPrefix,
+		l:            c.l,
+		rootDir:      c.rootDir,
+		mu:           c.mu,
+		prefix:       newPrefix,
+		fileChannel:  c.fileChannel,
+		diskIsMapped: c.diskIsMapped,
 	}
 }
 
@@ -112,24 +117,57 @@ func (c *DiskCache) initializeCache() error {
 	if err := disk.EnsureDirectoryExists(c.rootDir); err != nil {
 		return err
 	}
-	records := make([]*fileRecord, 0)
-	walkFn := func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() {
-			records = append(records, makeRecord(path, info))
+	c.mu.Lock()
+	c.diskIsMapped = false
+	c.mu.Unlock()
+
+	go func() {
+		start := time.Now()
+		records := make([]*fileRecord, 0)
+		inFlightRecords := make([]*fileRecord, 0)
+		go func() {
+			for record := range c.fileChannel {
+				inFlightRecords = append(inFlightRecords, record)
+			}
+		}()
+		walkFn := func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !d.IsDir() {
+				info, err := d.Info()
+				if err != nil {
+					return err
+				}
+				records = append(records, makeRecord(path, info))
+			}
+			return nil
 		}
-		return nil
-	}
-	if err := filepath.Walk(c.rootDir, walkFn); err != nil {
-		return err
-	}
+		if err := filepath.WalkDir(c.rootDir, walkFn); err != nil {
+			log.Warningf("Error walking disk directory: %s", err)
+		}
 
-	// Sort entries by ascending ATime.
-	sort.Slice(records, func(i, j int) bool { return records[i].lastUse.Before(records[j].lastUse) })
+		// Sort entries by ascending ATime.
+		sort.Slice(records, func(i, j int) bool { return records[i].lastUse.Before(records[j].lastUse) })
 
-	// Populate our state tracking datastructures.
-	for _, record := range records {
-		c.l.Add(record.key, record)
-	}
+		c.mu.Lock()
+		// Populate our LRU with everything we scanned from disk.
+		for _, record := range records {
+			c.l.Add(record.key, record)
+		}
+		// Add in-flight records to the LRU. These were new files
+		// touched during the loading phase, so we assume they are new
+		// enough to just add to the top of the LRU without sorting.
+		close(c.fileChannel)
+		for _, record := range inFlightRecords {
+			c.l.Add(record.key, record)
+		}
+		c.diskIsMapped = true
+		c.mu.Unlock()
+
+		log.Debugf("DiskCache: statd %d files in %s", len(records), time.Since(start))
+		log.Infof("Finished initializing disk cache at %q. Current size: %d (max: %d) bytes", c.rootDir, c.l.Size(), c.l.MaxSize())
+	}()
 	return nil
 }
 
@@ -144,6 +182,22 @@ func (c *DiskCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	}
 
 	return filepath.Join(c.rootDir, userPrefix+c.prefix+hash), nil
+}
+
+// Adds a single file, using the provided path, to the LRU.
+// NB: Callers are responsible for locking the LRU before calling this function.
+func (c *DiskCache) addSingleFileToLRU(k string) bool {
+	if !c.diskIsMapped {
+		return false
+	}
+	info, err := os.Stat(k)
+	if os.IsExist(err) {
+		record := makeRecord(k, info)
+		c.fileChannel <- record
+		c.l.Add(record.key, record)
+		return true
+	}
+	return false
 }
 
 func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
@@ -164,9 +218,16 @@ func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) 
 	// [ActionResult][build.bazel.remote.execution.v2.ActionResult] and will be
 	// for some period of time afterwards. The TTLs of the referenced blobs SHOULD be increased
 	// if necessary and applicable.
-	c.lock.Lock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	_, ok := c.l.Get(k)
-	c.lock.Unlock()
+
+	if !ok && !c.diskIsMapped {
+		// OK if we're here it means the disk contents are still being loaded
+		// into the LRU. But we still need to return an answer! So we'll go
+		// check the FS, and if the file is there we'll add it to the LRU.
+		ok = c.addSingleFileToLRU(k)
+	}
 	return ok, nil
 }
 
@@ -206,13 +267,17 @@ func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 		return nil, err
 	}
 	f, err := disk.ReadFile(ctx, k)
-	c.lock.Lock()
-	defer c.lock.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if err != nil {
 		c.l.Remove(k) // remove it just in case
 		return nil, status.NotFoundErrorf("DiskCache missing file: %s", err)
-	} else {
+	}
+
+	if c.l.Contains(k) {
 		c.l.Get(k) // mark the file as used.
+	} else if !c.diskIsMapped {
+		c.addSingleFileToLRU(k)
 	}
 	return f, nil
 }
@@ -258,8 +323,8 @@ func (c *DiskCache) Set(ctx context.Context, d *repb.Digest, data []byte) error 
 		// If we had an error writing the file, just return that.
 		return err
 	}
-	c.lock.Lock()
-	defer c.lock.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.l.Add(k, &fileRecord{
 		key:       k,
 		sizeBytes: int64(n),
@@ -283,8 +348,8 @@ func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
 	if err != nil {
 		return err
 	}
-	c.lock.Lock()
-	defer c.lock.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.l.Remove(k)
 	return nil
 }
@@ -296,8 +361,8 @@ func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (i
 	}
 	// Can't specify length because this might be ActionCache
 	r, err := disk.FileReader(ctx, k, offset, 0)
-	c.lock.Lock()
-	defer c.lock.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if err != nil {
 		c.l.Remove(k) // remove it just in case
 		return nil, status.NotFoundErrorf("DiskCache missing file: %s", err)
@@ -341,8 +406,8 @@ func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser,
 	return &dbWriteOnClose{
 		WriteCloser: writeCloser,
 		closeFn: func(totalBytesWritten int64) error {
-			c.lock.Lock()
-			defer c.lock.Unlock()
+			c.mu.Lock()
+			defer c.mu.Unlock()
 			c.l.Add(k, &fileRecord{
 				key:       k,
 				sizeBytes: totalBytesWritten,
