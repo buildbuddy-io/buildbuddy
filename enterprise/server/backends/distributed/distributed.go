@@ -82,7 +82,7 @@ func (c *Cache) StartListening() {
 		if c.heartbeatChannel != nil {
 			c.heartbeatChannel.StartAdvertising()
 		}
-		c.cacheProxy.Server().ListenAndServe()
+		c.cacheProxy.StartListening()
 	}()
 }
 
@@ -91,7 +91,7 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StopAdvertising()
 	}
-	return c.cacheProxy.Server().Shutdown(ctx)
+	return c.cacheProxy.Shutdown(ctx)
 }
 
 func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
@@ -165,13 +165,12 @@ func (c *Cache) remoteWriter(ctx context.Context, peer, prefix string, d *repb.D
 }
 
 func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, dest string) error {
-	log.Printf("Backfilling %q from %q => %q", d.GetHash(), source, dest)
-	r, err := c.cacheProxy.RemoteReader(ctx, source, c.prefix, d, 0)
+	r, err := c.remoteReader(ctx, source, c.prefix, d, 0)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
-	rwc, err := c.cacheProxy.RemoteWriter(ctx, dest, c.prefix, d)
+	rwc, err := c.remoteWriter(ctx, dest, c.prefix, d)
 	if err != nil {
 		return err
 	}
@@ -276,7 +275,7 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 			peer := peer
 			digests := digests
 			eg.Go(func() error {
-				peerRsp, err := c.cacheProxy.RemoteContainsMulti(gCtx, peer, c.prefix, digests)
+				peerRsp, err := c.remoteContainsMulti(gCtx, peer, c.prefix, digests)
 				if err != nil {
 					return err
 				}
@@ -387,7 +386,7 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 			peer := peer
 			digests := digests
 			eg.Go(func() error {
-				peerRsp, err := c.cacheProxy.RemoteGetMulti(gCtx, peer, c.prefix, digests)
+				peerRsp, err := c.remoteGetMulti(gCtx, peer, c.prefix, digests)
 				if err != nil {
 					return err
 				}
