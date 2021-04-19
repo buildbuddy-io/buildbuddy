@@ -59,7 +59,7 @@ func WriteRandomString(t testing.TB, rootDir, path string, n int) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ioutil.WriteFile(filepath.Join(rootDir, path), []byte(s), 0777); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(rootDir, path), []byte(s), 0644); err != nil {
 		t.Fatal(err)
 	}
 	return s
