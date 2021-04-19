@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	jwtHeader          = "x-buildbuddy-jwt"
-	maxDialTimeout     = 10 * time.Second
+	jwtHeader      = "x-buildbuddy-jwt"
+	maxDialTimeout = 10 * time.Second
 )
 
 type CacheProxy struct {
