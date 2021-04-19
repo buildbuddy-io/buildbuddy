@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -17,7 +16,6 @@ import (
 // MakeTempDir creates and returns an empty directory that exists for the scope
 // of a test.
 func MakeTempDir(t testing.TB) string {
-	syscall.Umask(0)
 	tmpDir, err := ioutil.TempDir("", "buildbuddy-test-*")
 	if err != nil {
 		t.Fatal(err)
