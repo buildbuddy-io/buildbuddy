@@ -77,9 +77,9 @@ func TestReader(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
-	}
+	go func() {
+		c.Server().ListenAndServe()
+	}()
 	waitUntilServerIsAlive(peer)
 
 	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
@@ -109,7 +109,7 @@ func TestReader(t *testing.T) {
 		}
 
 		// Remote-read the random bytes back.
-		r, err := c.RemoteReader(ctx, peer, prefix, d, 0)
+		r, err := c.RemoteReader(ctx, peer, prefix, d, 0 /*=offset*/)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -132,10 +132,9 @@ func TestWriter(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
-	}
-
+	go func() {
+		c.Server().ListenAndServe()
+	}()
 	waitUntilServerIsAlive(peer)
 
 	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
@@ -145,6 +144,7 @@ func TestWriter(t *testing.T) {
 
 	for _, testSize := range testSizes {
 		prefix := fmt.Sprintf("prefix/%d", testSize)
+		prefix = ""
 
 		// Read some random bytes.
 		buf := new(bytes.Buffer)
@@ -173,7 +173,7 @@ func TestWriter(t *testing.T) {
 
 		// Read the bytes back directly from the cache and check that
 		// they match..
-		r, err := te.GetCache().WithPrefix(prefix).Reader(ctx, d, 0)
+		r, err := te.GetCache().WithPrefix(prefix).Reader(ctx, d, 0 /*=offset*/)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -196,9 +196,9 @@ func TestContains(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
-	}
+	go func() {
+		c.Server().ListenAndServe()
+	}()
 	waitUntilServerIsAlive(peer)
 
 	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
@@ -264,10 +264,9 @@ func TestOversizeBlobs(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
-	}
-
+	go func() {
+		c.Server().ListenAndServe()
+	}()
 	waitUntilServerIsAlive(peer)
 
 	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
@@ -337,11 +336,11 @@ func TestContainsMulti(t *testing.T) {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 
-	peer := net.JoinHostPort("localhost", fmt.Sprintf("%d", app.FreePort(t)))
+	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error starting cache proxy: %s", err)
-	}
+	go func() {
+		c.Server().ListenAndServe()
+	}()
 	waitUntilServerIsAlive(peer)
 
 	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
@@ -398,9 +397,9 @@ func TestGetMulti(t *testing.T) {
 
 	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
-	}
+	go func() {
+		c.Server().ListenAndServe()
+	}()
 	waitUntilServerIsAlive(peer)
 
 	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}

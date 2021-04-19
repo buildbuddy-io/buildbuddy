@@ -57,13 +57,6 @@ proto_library(
 )
 
 proto_library(
-    name = "distributed_cache_proto",
-    srcs = [
-        "distributed_cache.proto",
-    ],
-)
-
-proto_library(
     name = "execution_stats_proto",
     srcs = [
         "execution_stats.proto",
@@ -458,14 +451,6 @@ go_proto_library(
         ":api_key_go_proto",
         ":context_go_proto",
     ],
-)
-
-go_proto_library(
-    name = "distributed_cache_go_proto",
-    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache",
-    proto = ":distributed_cache_proto",
-    deps = [],
 )
 
 go_proto_library(

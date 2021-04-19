@@ -82,7 +82,7 @@ func (c *Cache) StartListening() {
 		if c.heartbeatChannel != nil {
 			c.heartbeatChannel.StartAdvertising()
 		}
-		c.cacheProxy.StartListening()
+		c.cacheProxy.Server().ListenAndServe()
 	}()
 }
 
@@ -91,7 +91,7 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StopAdvertising()
 	}
-	return c.cacheProxy.Shutdown(ctx)
+	return c.cacheProxy.Server().Shutdown(ctx)
 }
 
 func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
