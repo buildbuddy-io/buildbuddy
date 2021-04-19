@@ -282,7 +282,6 @@ type BatchCASUploader struct {
 	ctx              context.Context
 	eg               *errgroup.Group
 	cache            interfaces.Cache
-	fc               interfaces.FileCache
 	bsClient         bspb.ByteStreamClient
 	casClient        repb.ContentAddressableStorageClient
 	req              *repb.BatchUpdateBlobsRequest
@@ -307,14 +306,15 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 
 	eg, ctx := errgroup.WithContext(ctx)
 	return &BatchCASUploader{
-		eg:           eg,
-		ctx:          ctx,
-		instanceName: instanceName,
-		cache:        cache,
-		bsClient:     bsClient,
-		casClient:    casClient,
-		req:          &repb.BatchUpdateBlobsRequest{InstanceName: instanceName},
-		uploads:      make(map[digest.Key]struct{}),
+		ctx:              ctx,
+		eg:               eg,
+		cache:            cache,
+		bsClient:         bsClient,
+		casClient:        casClient,
+		req:              &repb.BatchUpdateBlobsRequest{InstanceName: instanceName},
+		currentBatchSize: 0,
+		instanceName:     instanceName,
+		uploads:          make(map[digest.Key]struct{}),
 	}, nil
 }
 func (ul *BatchCASUploader) Upload(absFilePath string) (*repb.Digest, error) {
