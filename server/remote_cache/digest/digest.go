@@ -58,6 +58,19 @@ func (i *InstanceNameDigest) GetInstanceName() string {
 	return i.instanceName
 }
 
+// Key is a representation of a digest that can be used as a map key.
+type Key struct {
+	Hash      string
+	SizeBytes int64
+}
+
+func NewKey(digest *repb.Digest) Key {
+	return Key{Hash: digest.Hash, SizeBytes: digest.SizeBytes}
+}
+func (dk Key) ToDigest() *repb.Digest {
+	return &repb.Digest{Hash: dk.Hash, SizeBytes: dk.SizeBytes}
+}
+
 func Validate(d *repb.Digest) (string, error) {
 	if d == nil {
 		return "", status.InvalidArgumentError("Invalid (nil) Digest")
