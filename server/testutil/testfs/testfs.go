@@ -48,7 +48,7 @@ func WriteAllFileContents(t testing.TB, rootDir string, contents map[string]stri
 		if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
 			t.Fatal(err)
 		}
-		if err := ioutil.WriteFile(path, []byte(content), 0777); err != nil {
+		if err := ioutil.WriteFile(path, []byte(content), 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
