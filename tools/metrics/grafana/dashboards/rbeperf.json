@@ -16,7 +16,7 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": 2,
-  "iteration": 1617903929338,
+  "iteration": 1618858079899,
   "links": [],
   "panels": [
     {
@@ -70,7 +70,7 @@
           "expr": "rbeperf_remote_stats_millis{percentile=\"$percentile\",workload=\"$workload\",stage=\"total\"}",
           "instant": false,
           "interval": "",
-          "legendFormat": "",
+          "legendFormat": "Remote",
           "queryType": "randomWalk",
           "refId": "A"
         },
@@ -78,7 +78,7 @@
           "expr": "rbeperf_local_stats_millis{percentile=\"$percentile\",workload=\"$workload\",stage=\"total\"}",
           "instant": false,
           "interval": "",
-          "legendFormat": "",
+          "legendFormat": "Local",
           "queryType": "randomWalk",
           "refId": "B"
         }
@@ -175,7 +175,7 @@
           "expr": "rbeperf_remote_stats_millis{percentile=\"$percentile\",workload=\"$workload\",stage!=\"total\"}",
           "instant": false,
           "interval": "",
-          "legendFormat": "",
+          "legendFormat": "{{stage}}",
           "queryType": "randomWalk",
           "refId": "A"
         }
@@ -272,7 +272,7 @@
           "expr": "rbeperf_local_stats_millis{percentile=\"$percentile\",workload=\"$workload\",stage!=\"total\"}",
           "instant": false,
           "interval": "",
-          "legendFormat": "",
+          "legendFormat": "{{stage}}",
           "queryType": "randomWalk",
           "refId": "A"
         }
@@ -436,7 +436,7 @@
       {
         "allValue": null,
         "current": {
-          "selected": false,
+          "selected": true,
           "text": "basic_sequential",
           "value": "basic_sequential"
         },
@@ -448,15 +448,9 @@
         "label": null,
         "multi": false,
         "name": "workload",
-        "options": [
-          {
-            "selected": true,
-            "text": "basic_sequential",
-            "value": "basic_sequential"
-          }
-        ],
+        "options": [],
         "query": "label_values(rbeperf_remote_stats_millis, workload)",
-        "refresh": 0,
+        "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
         "sort": 0,
@@ -519,5 +513,5 @@
   "timezone": "",
   "title": "BuildBuddy Remote Execution Performance",
   "uid": "bKW9Rr_Mk",
-  "version": 9
+  "version": 10
 }
