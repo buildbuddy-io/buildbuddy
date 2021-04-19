@@ -3,6 +3,7 @@ package disk_cache
 import (
 	"context"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -129,16 +130,20 @@ func (c *DiskCache) initializeCache() error {
 				inFlightRecords = append(inFlightRecords, record)
 			}
 		}()
-		walkFn := func(path string, info os.FileInfo, err error) error {
+		walkFn := func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			if !info.IsDir() {
+			if !d.IsDir() {
+				info, err := d.Info()
+				if err != nil {
+					return err
+				}
 				records = append(records, makeRecord(path, info))
 			}
 			return nil
 		}
-		if err := filepath.Walk(c.rootDir, walkFn); err != nil {
+		if err := filepath.WalkDir(c.rootDir, walkFn); err != nil {
 			log.Warningf("Error walking disk directory: %s", err)
 		}
 
