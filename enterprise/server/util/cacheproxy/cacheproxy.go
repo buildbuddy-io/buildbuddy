@@ -23,7 +23,6 @@ import (
 const (
 	jwtHeader          = "x-buildbuddy-jwt"
 	maxDialTimeout     = 10 * time.Second
-	uploadBufSizeBytes = 1000000 // 1MB
 )
 
 type CacheProxy struct {
