@@ -65,7 +65,7 @@ type Key struct {
 }
 
 func NewKey(digest *repb.Digest) Key {
-	return Key{Hash: digest.Hash, SizeBytes: digest.SizeBytes}
+	return Key{Hash: digest.GetHash(), SizeBytes: digest.GetSizeBytes()}
 }
 func (dk Key) ToDigest() *repb.Digest {
 	return &repb.Digest{Hash: dk.Hash, SizeBytes: dk.SizeBytes}
