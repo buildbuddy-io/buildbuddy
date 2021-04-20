@@ -13,6 +13,7 @@ go_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/terminal",
     visibility = ["//visibility:public"],
+    deps = ["//server/util/log"],
 )
 
 go_test(

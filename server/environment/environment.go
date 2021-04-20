@@ -1,6 +1,8 @@
 package environment
 
 import (
+	"io/fs"
+
 	"github.com/go-redis/redis/v8"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -34,6 +36,8 @@ type Env interface {
 	// Optional dependencies below here. For example: enterprise-only things,
 	// or services that may not always be configured, like webhooks.
 	GetDBHandle() *db.DBHandle
+	GetStaticFilesystem() fs.FS
+	GetAppFilesystem() fs.FS
 	GetBlobstore() interfaces.Blobstore
 	GetInvocationDB() interfaces.InvocationDB
 	GetHealthChecker() interfaces.HealthChecker
@@ -60,6 +64,7 @@ type Env interface {
 	GetSchedulerService() interfaces.SchedulerService
 	GetCacheRedisClient() *redis.Client
 	GetRemoteExecutionRedisClient() *redis.Client
+	GetRemoteExecutionRedisPubSubClient() *redis.Client
 	GetMetricsCollector() interfaces.MetricsCollector
 	GetRepoDownloader() interfaces.RepoDownloader
 	GetWorkflowService() interfaces.WorkflowService

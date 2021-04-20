@@ -5,6 +5,7 @@ go_library(
     srcs = ["consistent_hash.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash",
     visibility = ["//visibility:public"],
+    deps = ["//server/util/log"],
 )
 
 go_test(
@@ -12,6 +13,7 @@ go_test(
     srcs = ["consistent_hash_test.go"],
     deps = [
         ":consistent_hash",
+        "//server/util/log",
         "//server/util/random",
         "@com_github_stretchr_testify//assert",
     ],

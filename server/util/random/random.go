@@ -2,9 +2,10 @@ package random
 
 import (
 	"io"
-	"log"
 	"sync"
 	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 
 	crand "crypto/rand"
 	mrand "math/rand"
@@ -23,7 +24,7 @@ func init() {
 func RandUint64() uint64 {
 	once.Do(func() {
 		mrand.Seed(time.Now().UnixNano())
-		log.Printf("Seeded random with current time!")
+		log.Debugf("Seeded random with current time!")
 	})
 	return mrand.Uint64()
 }

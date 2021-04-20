@@ -227,7 +227,7 @@ func offsetLimReader(data []byte, offset, length int64) io.Reader {
 }
 
 // Low level interface used for seeking and stream-writing.
-func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error) {
+func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	if !eligibleForMc(d) {
 		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for memcache", d)
 	}
@@ -244,9 +244,9 @@ func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Re
 	r.Seek(offset, 0)
 	length := d.GetSizeBytes()
 	if length > 0 {
-		return io.LimitReader(r, length), nil
+		return io.NopCloser(io.LimitReader(r, length)), nil
 	}
-	return r, nil
+	return io.NopCloser(r), nil
 }
 
 type closeFn func(b *bytes.Buffer) error

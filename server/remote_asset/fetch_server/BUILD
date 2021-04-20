@@ -11,6 +11,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
+        "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",

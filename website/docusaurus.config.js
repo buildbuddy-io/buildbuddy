@@ -1,9 +1,8 @@
-const baseUrl = "/";
 module.exports = {
   title: 'BuildBuddy',
   tagline: 'BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to build and test software 10x faster.',
   url: 'https://buildbuddy.io',
-  baseUrl: baseUrl,
+  baseUrl: '/',
   favicon: 'img/favicon_black.svg',
   organizationName: 'buildbuddy-io',
   projectName: 'buildbuddy',
@@ -72,7 +71,7 @@ module.exports = {
         {
           items: [
             {
-              html: `<a href="https://www.buildbuddy.io/"><img src="${baseUrl}img/logo_white.svg" class="footer-logo" /></a>`,
+              html: `<a href="https://www.buildbuddy.io/"><img src="/img/logo_white.svg" class="footer-logo" /></a>`,
             }
 
           ],
@@ -87,7 +86,7 @@ module.exports = {
             },
             {
               label: 'Documentation',
-              href: 'https://www.buildbuddy.io/docs/',
+              href: 'https://docs.buildbuddy.io/docs/introduction/',
               target: '_self',
             },
             {
@@ -117,7 +116,7 @@ module.exports = {
           items: [
             {
               label: 'Blog',
-              href: 'https://www.buildbuddy.io/blog',
+              href: 'https://blog.buildbuddy.io/blog/',
               target: '_self',
             },
             {
@@ -197,7 +196,9 @@ module.exports = {
           editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/docs/',
         },
         blog: {
+          path: 'blog',
           showReadingTime: true,
+          blogSidebarCount: 5,
           editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/blog/',
         },
         theme: {
@@ -217,8 +218,12 @@ module.exports = {
       {
         redirects: [
           {
+            to: process.env.BLOG ? '/blog' : '/docs/introduction',
+            from: ['/'],
+          },
+          {
             to: '/docs/introduction',
-            from: ['/', '/docs'],
+            from: ['/docs'],
           },
         ],
       },

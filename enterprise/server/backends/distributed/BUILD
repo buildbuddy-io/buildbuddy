@@ -15,6 +15,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/util/consistent_hash",
+        "//server/util/log",
         "//server/util/status",
         "@org_golang_x_sync//errgroup",
     ],
@@ -24,6 +25,7 @@ go_test(
     name = "distributed_test",
     srcs = ["distributed_test.go"],
     embed = [":distributed"],
+    tags = ["manual"],
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",

@@ -4,10 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
+	"io/fs"
 	"net"
 	"net/http"
+	"os"
 
+	"github.com/buildbuddy-io/buildbuddy/bundle"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -38,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 
@@ -64,8 +67,8 @@ var (
 	gRPCSPort      = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 
-	staticDirectory = flag.String("static_directory", "/static", "the directory containing static files to host")
-	appDirectory    = flag.String("app_directory", "/app", "the directory containing app binary files to host")
+	staticDirectory = flag.String("static_directory", "", "the directory containing static files to host")
+	appDirectory    = flag.String("app_directory", "", "the directory containing app binary files to host")
 
 	// URL path prefixes that should be handled by serving the app's HTML.
 	appRoutes = []string{
@@ -87,11 +90,60 @@ func init() {
 	grpc.EnableTracing = false
 }
 
+func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
+	if *staticDirectory != "" {
+		staticFS, err := static.FSFromRelPath(*staticDirectory)
+		if err != nil {
+			log.Fatalf("Error getting static FS from relPath: %q: %s", *staticDirectory, err)
+		}
+		realEnv.SetStaticFilesystem(staticFS)
+	}
+	if *appDirectory != "" {
+		appFS, err := static.FSFromRelPath(*appDirectory)
+		if err != nil {
+			log.Fatalf("Error getting app FS from relPath: %q: %s", *appDirectory, err)
+		}
+		realEnv.SetAppFilesystem(appFS)
+	}
+	if realEnv.GetStaticFilesystem() == nil || realEnv.GetAppFilesystem() == nil {
+		bundleFS, err := bundle.Get()
+		if err != nil {
+			log.Fatalf("Error getting bundle FS: %s", err)
+		}
+		if realEnv.GetStaticFilesystem() == nil {
+			staticFS, err := fs.Sub(bundleFS, "static")
+			if err != nil {
+				log.Fatalf("Error getting static FS from bundle: %s", err)
+			}
+			log.Debug("Using bundled static filesystem.")
+			realEnv.SetStaticFilesystem(staticFS)
+		}
+		if realEnv.GetAppFilesystem() == nil {
+			appFS, err := fs.Sub(bundleFS, "app")
+			if err != nil {
+				log.Fatalf("Error getting app FS from bundle: %s", err)
+			}
+			log.Debug("Using bundled app filesystem.")
+			realEnv.SetAppFilesystem(appFS)
+		}
+	}
+}
+
 // Normally this code would live in main.go -- we put it here for now because
 // the environments used by the open-core version and the enterprise version are
 // not substantially different enough yet to warrant the extra complexity of
 // always updating both main files.
 func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
+	opts := log.Opts{
+		Level:                  configurator.GetAppLogLevel(),
+		EnableShortFileName:    configurator.GetAppLogIncludeShortFileName(),
+		EnableGCPLoggingFormat: configurator.GetAppLogEnableGCPLoggingFormat(),
+		EnableStructured:       configurator.GetAppEnableStructuredLogging(),
+	}
+	if err := log.Configure(opts); err != nil {
+		fmt.Printf("Error configuring logging: %s", err)
+		os.Exit(1)
+	}
 	bs, err := blobstore.GetConfiguredBlobstore(configurator)
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
@@ -102,6 +154,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	}
 
 	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
+	configureFilesystemsOrDie(realEnv)
 	realEnv.SetDBHandle(dbHandle)
 	realEnv.SetBlobstore(bs)
 	realEnv.SetInvocationDB(invocationdb.NewInvocationDB(realEnv, dbHandle))
@@ -230,9 +283,9 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 	grpcOptions := grpc_server.CommonGRPCServerOptions(env)
 	if credentialOption != nil {
 		grpcOptions = append(grpcOptions, credentialOption)
-		log.Printf("gRPCS listening on http://%s\n", hostAndPort)
+		log.Printf("gRPCS listening on http://%s", hostAndPort)
 	} else {
-		log.Printf("gRPC listening on http://%s\n", hostAndPort)
+		log.Printf("gRPC listening on http://%s", hostAndPort)
 	}
 
 	grpcServer := grpc.NewServer(grpcOptions...)
@@ -265,13 +318,13 @@ func StartAndRunServices(env environment.Env) {
 	if err := rlimit.MaxRLimit(); err != nil {
 		log.Printf("Error raising open files limit: %s", err)
 	}
-	staticFileServer, err := static.NewStaticFileServer(env, *staticDirectory, appRoutes)
 
+	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes)
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)
 	}
 
-	afs, err := static.NewStaticFileServer(env, *appDirectory, []string{})
+	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{})
 	if err != nil {
 		log.Fatalf("Error initializing app server: %s", err)
 	}
@@ -301,7 +354,7 @@ func StartAndRunServices(env environment.Env) {
 	if sslService.IsEnabled() {
 		creds, err := sslService.GetGRPCSTLSCreds()
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("Error getting SSL creds: %s", err)
 		}
 
 		StartGRPCServiceOrDie(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
@@ -365,7 +418,7 @@ func StartAndRunServices(env environment.Env) {
 	if sslService.IsEnabled() {
 		tlsConfig, sslHandler := sslService.ConfigureTLS(handler)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("Error configuring TLS: %s", err)
 		}
 		sslServer := &http.Server{
 			Addr:      fmt.Sprintf("%s:%d", *listen, *sslPort),

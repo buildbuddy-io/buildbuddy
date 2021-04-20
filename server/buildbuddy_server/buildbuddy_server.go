@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -17,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
@@ -780,7 +780,7 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		log.Printf("Error downloading file: %s", err.Error())
+		log.Warningf("Error downloading file: %s", err.Error())
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}

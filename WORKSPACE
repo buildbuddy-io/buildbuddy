@@ -62,8 +62,8 @@ gazelle_dependencies()
 
 http_archive(
     name = "build_bazel_rules_nodejs",
-    sha256 = "dd7ea7efda7655c218ca707f55c3e1b9c68055a70c31a98f264b3445bc8f4cb1",
-    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/3.2.3/rules_nodejs-3.2.3.tar.gz"],
+    sha256 = "f533eeefc8fe1ddfe93652ec50f82373d0c431f7faabd5e6323f6903195ef227",
+    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/3.3.0/rules_nodejs-3.3.0.tar.gz"],
 )
 
 load("@build_bazel_rules_nodejs//:index.bzl", "yarn_install")
@@ -152,7 +152,7 @@ load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
 
 container_pull(
     name = "buildbuddy_go_image_base",
-    digest = "sha256:7d950cc48684d34ca5b90345a5eb995435a42d72a4b641cdb33591825fc863f4",
+    digest = "sha256:75f63d4edd703030d4312dc7528a349ca34d48bec7bd754652b2d47e5a0b7873",
     registry = "gcr.io",
     repository = "distroless/base-debian10",
 )

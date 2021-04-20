@@ -3,12 +3,12 @@ package version
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 const (
@@ -16,7 +16,7 @@ const (
 	versionFilename = "VERSION"
 )
 
-// This is set by x_defs the BUILD file.
+// This is set by x_defs in the BUILD file.
 //    x_defs = {
 //        "commitSha": "{COMMIT_SHA}",
 //    },
@@ -27,7 +27,7 @@ func Print() {
 	if commitHash := Commit(); commitHash != unknownValue {
 		appVersion = fmt.Sprintf("%s (%s)", appVersion, commitHash)
 	}
-	log.Printf("%s compiled with %s", appVersion, GoVersion())
+	log.Infof("%s compiled with %s", appVersion, GoVersion())
 }
 
 func AppVersion(in ...[]byte) string {

@@ -1,7 +1,7 @@
 package splash
 
 import (
-	"log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 type Printer struct{}

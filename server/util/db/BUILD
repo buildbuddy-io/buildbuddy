@@ -10,6 +10,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/tables",
+        "//server/util/log",
         "//server/util/status",
         "@com_github_googlecloudplatform_cloudsql_proxy//proxy/dialers/mysql",
         "@com_github_prometheus_client_golang//prometheus",

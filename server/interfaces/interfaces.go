@@ -126,7 +126,7 @@ type Cache interface {
 	Delete(ctx context.Context, d *repb.Digest) error
 
 	// Low level interface used for seeking and stream-writing.
-	Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Reader, error)
+	Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error)
 	Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error)
 }
 
@@ -234,6 +234,7 @@ type FileCache interface {
 
 type SchedulerService interface {
 	RegisterNode(stream scpb.Scheduler_RegisterNodeServer) error
+	RegisterAndStreamWork(stream scpb.Scheduler_RegisterAndStreamWorkServer) error
 	LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)

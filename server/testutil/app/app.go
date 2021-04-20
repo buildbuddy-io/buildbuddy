@@ -130,7 +130,7 @@ func runfile(t *testing.T, path string) string {
 	return resolvedPath
 }
 
-func FreePort(t *testing.T) int {
+func FreePort(t testing.TB) int {
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
 		t.Fatal(err)

@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/libmain",
     visibility = ["//visibility:public"],
     deps = [
+        "//:bundle",
         "//proto:buildbuddy_service_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_asset_go_proto",
@@ -43,6 +44,7 @@ go_library(
         "//server/util/db",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
+        "//server/util/log",
         "//server/util/monitoring",
         "//server/util/rlimit",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",

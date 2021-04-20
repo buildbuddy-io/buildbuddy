@@ -1,9 +1,14 @@
 package cacheproxy
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
+	"fmt"
 	"io"
-	"log"
+	"mime"
+	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -12,8 +17,11 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -22,8 +30,10 @@ import (
 )
 
 const (
-	downloadPath = "/download"
-	uploadPath   = "/upload"
+	batchContainsPath = "/batch/contains/"
+	batchDownloadPath = "/batch/download/"
+	downloadPath      = "/download/"
+	uploadPath        = "/upload/"
 
 	hashParam      = "hash"
 	sizeBytesParam = "size_bytes"
@@ -37,19 +47,30 @@ type CacheProxy struct {
 	env        environment.Env
 	cache      interfaces.Cache
 	fileServer *http.Server
+	client     *http.Client
+}
+
+func makeHTTP2Client() *http.Client {
+	return &http.Client{
+		Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+		},
+	}
 }
 
 func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *CacheProxy {
-	mux := http.NewServeMux()
 	proxy := &CacheProxy{
-		env:   env,
-		cache: c,
+		env:    env,
+		cache:  c,
+		client: makeHTTP2Client(),
 	}
-	mux.Handle(downloadPath, proxy)
-	mux.Handle(uploadPath, proxy)
+	h2s := &http2.Server{}
 	proxy.fileServer = &http.Server{
 		Addr:    listenAddr,
-		Handler: http.Handler(mux),
+		Handler: h2c.NewHandler(proxy, h2s),
 	}
 	return proxy
 }
@@ -88,6 +109,111 @@ func setJWT(ctx context.Context, r *http.Request) {
 	}
 }
 
+func parseValues(r io.Reader) (*url.Values, error) {
+	body, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	values, err := url.ParseQuery(string(body))
+	if err != nil {
+		return nil, err
+	}
+	return &values, nil
+}
+
+func containsMulti(c context.Context, cache interfaces.Cache, r *http.Request, w http.ResponseWriter) {
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	values, err := parseValues(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	digests := make([]*repb.Digest, 0)
+	for hash, values := range *values {
+		if len(values) != 1 {
+			http.Error(w, "wrong number of values", http.StatusInternalServerError)
+			return
+		}
+		n, err := strconv.ParseInt(values[0], 10, 64)
+		if err != nil {
+			http.Error(w, "error parsing sizeBytes", http.StatusInternalServerError)
+			return
+		}
+		digests = append(digests, &repb.Digest{
+			Hash:      hash,
+			SizeBytes: n,
+		})
+	}
+	found, err := cache.ContainsMulti(c, digests)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	data := url.Values{}
+	for d, exists := range found {
+		if exists {
+			data.Set(d.GetHash(), "1")
+		}
+	}
+	w.Write([]byte(data.Encode()))
+	w.WriteHeader(200)
+}
+
+func getMulti(c context.Context, cache interfaces.Cache, r *http.Request, w http.ResponseWriter) {
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	values, err := parseValues(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	digests := make([]*repb.Digest, 0)
+	for hash, values := range *values {
+		if len(values) != 1 {
+			http.Error(w, "wrong number of values", http.StatusInternalServerError)
+			return
+		}
+		n, err := strconv.ParseInt(values[0], 10, 64)
+		if err != nil {
+			http.Error(w, "error parsing sizeBytes", http.StatusInternalServerError)
+			return
+		}
+		digests = append(digests, &repb.Digest{
+			Hash:      hash,
+			SizeBytes: n,
+		})
+	}
+	got, err := cache.GetMulti(c, digests)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	mw := multipart.NewWriter(w)
+	w.Header().Set("Content-Type", mw.FormDataContentType())
+	for d, buf := range got {
+		fw, err := mw.CreateFormField(d.GetHash())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if _, err := fw.Write(buf); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	if err := mw.Close(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 func contains(c context.Context, cache interfaces.Cache, d *repb.Digest, w http.ResponseWriter) {
 	ok, err := cache.Contains(c, d)
 	if err != nil {
@@ -111,6 +237,7 @@ func reader(c context.Context, cache interfaces.Cache, d *repb.Digest, offset in
 		writeErr(err, w)
 		return
 	}
+	defer r.Close()
 	_, err = io.Copy(w, r)
 	if err != nil {
 		writeErr(err, w)
@@ -119,6 +246,11 @@ func reader(c context.Context, cache interfaces.Cache, d *repb.Digest, offset in
 }
 
 func writer(c context.Context, cache interfaces.Cache, d *repb.Digest, r *http.Request, w http.ResponseWriter) {
+	ok, err := cache.Contains(c, d)
+	if err != nil && ok {
+		w.WriteHeader(200)
+		return
+	}
 	wc, err := cache.Writer(c, d)
 	if err != nil {
 		writeErr(err, w)
@@ -148,19 +280,38 @@ func (c *CacheProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	d, err := readDigest(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 	cache := c.cache.WithPrefix(r.URL.Query().Get(prefixParam))
 
 	switch r.URL.Path {
+	case batchContainsPath:
+		{
+			if r.Method == http.MethodPost {
+				containsMulti(ctx, cache, r, w)
+				log.Debugf("CacheProxy(%s): /ContainsMulti took %s", c.fileServer.Addr, time.Since(start))
+				return
+			}
+			writeErr(status.InvalidArgumentError("Invalid method (use POST)"), w)
+		}
+	case batchDownloadPath:
+		{
+			if r.Method == http.MethodPost {
+				getMulti(ctx, cache, r, w)
+				log.Debugf("CacheProxy(%s): /GetMulti took %s", c.fileServer.Addr, time.Since(start))
+				return
+			}
+			writeErr(status.InvalidArgumentError("Invalid method (use POST)"), w)
+		}
 	case downloadPath:
 		{
+			d, err := readDigest(r)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
 			if r.Method == http.MethodHead {
 				contains(ctx, cache, d, w)
-				log.Printf("CacheProxy(%s): /Contains %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
+				log.Debugf("CacheProxy(%s): /Contains %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
 				return
 			}
 			if r.Method == http.MethodPost {
@@ -171,16 +322,22 @@ func (c *CacheProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				reader(ctx, cache, d, offset, w)
-				log.Printf("CacheProxy(%s): /Read %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
+				log.Debugf("CacheProxy(%s): /Read %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
 				return
 			}
 			writeErr(status.InvalidArgumentError("Invalid method (use HEAD or POST)"), w)
 		}
 	case uploadPath:
 		{
+			d, err := readDigest(r)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
 			if r.Method == http.MethodPost {
 				writer(ctx, cache, d, r, w)
-				log.Printf("CacheProxy(%s): /Write %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
+				log.Debugf("CacheProxy(%s): /Write %q took %s", c.fileServer.Addr, d.GetHash(), time.Since(start))
 				return
 			}
 			writeErr(status.InvalidArgumentError("Invalid method (use POST)"), w)
@@ -222,12 +379,101 @@ func (c *CacheProxy) RemoteContains(ctx context.Context, peer, prefix string, d 
 		return false, err
 	}
 	setJWT(ctx, req)
-	rsp, err := http.DefaultClient.Do(req)
+	rsp, err := c.client.Do(req)
 	if err != nil {
 		return false, status.UnavailableError(err.Error())
 	}
 	defer rsp.Body.Close()
 	return rsp.StatusCode == 200, nil
+}
+
+func (c *CacheProxy) remoteBatchURL(peer, action, prefix string) (string, error) {
+	if !strings.HasPrefix(peer, "http") {
+		peer = "http://" + peer
+	}
+	base, err := url.Parse(peer)
+	if err != nil {
+		return "", err
+	}
+	rel, err := base.Parse(action)
+	if err != nil {
+		return "", err
+	}
+	q := rel.Query()
+	q.Set(prefixParam, prefix)
+	rel.RawQuery = q.Encode()
+	return rel.String(), nil
+}
+
+func (c *CacheProxy) RemoteContainsMulti(ctx context.Context, peer, prefix string, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
+	u, err := c.remoteBatchURL(peer, batchContainsPath, prefix)
+	if err != nil {
+		return nil, err
+	}
+	data := url.Values{}
+	for _, d := range digests {
+		data.Set(d.GetHash(), fmt.Sprintf("%d", d.GetSizeBytes()))
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	setJWT(ctx, req)
+	rsp, err := c.client.Do(req)
+	if err != nil {
+		return nil, status.UnavailableError(err.Error())
+	}
+	defer rsp.Body.Close()
+	values, err := parseValues(rsp.Body)
+	if err != nil {
+		return nil, err
+	}
+	results := make(map[*repb.Digest]bool, 0)
+	for _, d := range digests {
+		found := values.Get(d.GetHash()) == "1"
+		results[d] = found
+	}
+	return results, nil
+}
+
+func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer, prefix string, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	u, err := c.remoteBatchURL(peer, batchDownloadPath, prefix)
+	if err != nil {
+		return nil, err
+	}
+	hashedDigests := make(map[string]*repb.Digest, 0)
+	data := url.Values{}
+	for _, d := range digests {
+		data.Set(d.GetHash(), fmt.Sprintf("%d", d.GetSizeBytes()))
+		hashedDigests[d.GetHash()] = d
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	setJWT(ctx, req)
+	rsp, err := c.client.Do(req)
+	if err != nil {
+		return nil, status.UnavailableError(err.Error())
+	}
+	defer rsp.Body.Close()
+	results := make(map[*repb.Digest][]byte, 0)
+
+	_, params, err := mime.ParseMediaType(rsp.Header.Get("Content-Type"))
+	if err != nil {
+		return nil, status.InternalErrorf("Error parsing media type: %s", err)
+	}
+	mr := multipart.NewReader(rsp.Body, params["boundary"])
+	for part, err := mr.NextPart(); err == nil; part, err = mr.NextPart() {
+		buf := &bytes.Buffer{}
+		io.Copy(buf, part)
+		d, ok := hashedDigests[part.FormName()]
+		if !ok {
+			return nil, status.InternalErrorf("Digest %q not found in hashedDigests.", part.FormName())
+		}
+		results[d] = buf.Bytes()
+	}
+	return results, nil
 }
 
 // AutoCloser closes the provided ReadCloser upon the
@@ -244,7 +490,7 @@ func (c *AutoCloser) Read(data []byte) (int, error) {
 	return n, err
 }
 
-func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *repb.Digest, offset int64) (io.Reader, error) {
+func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	u, err := c.remoteFileURL(peer, downloadPath, prefix, d.GetHash(), d.GetSizeBytes(), offset)
 	if err != nil {
 		return nil, err
@@ -254,12 +500,12 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *r
 		return nil, err
 	}
 	setJWT(ctx, req)
-	rsp, err := http.DefaultClient.Do(req)
+	rsp, err := c.client.Do(req)
 	if err != nil {
 		return nil, status.UnavailableError(err.Error())
 	}
 	if rsp.StatusCode == 200 {
-		return &AutoCloser{rsp.Body}, nil
+		return rsp.Body, nil
 	} else if rsp.StatusCode == 404 {
 		return nil, status.NotFoundError("File not found (remotely).")
 	} else {
@@ -292,9 +538,9 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, prefix string, d *r
 	setJWT(ctx, req)
 	eg, _ := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		client := &http.Client{}
-		rsp, err := client.Do(req)
+		rsp, err := c.client.Do(req)
 		if err != nil {
+			reader.CloseWithError(err)
 			return err
 		}
 		return rsp.Body.Close()

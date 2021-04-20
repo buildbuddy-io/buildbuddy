@@ -68,3 +68,13 @@ func NewRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
 	}
 	return d, buf
 }
+
+func ReadDigestAndClose(t *testing.T, r io.ReadCloser) *repb.Digest {
+	defer r.Close()
+
+	d, err := realdigest.Compute(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}

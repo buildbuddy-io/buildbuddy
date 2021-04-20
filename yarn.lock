@@ -45,33 +45,33 @@
   resolved "https://registry.yarnpkg.com/@bazel/buildifier/-/buildifier-3.5.0.tgz#afbee61d61543d0a0a28e2b29a5cbdb64c852953"
   integrity sha512-cbUS0/GMg57g6NIg6JekgmqVtuobYzW4aGHk7KzMS/bFZvxg6WY19JJ5UZSzGyAGDu2152oUTFbh4WN74Fz1+Q==
 
-"@bazel/esbuild@^3.2.3":
-  version "3.2.3"
-  resolved "https://registry.yarnpkg.com/@bazel/esbuild/-/esbuild-3.2.3.tgz#fb6658ae11f706c0472d52a3df88e7171bbdc56f"
-  integrity sha512-W6kyYKcuZFES6dA5tE8J9M8OFGaLNCCqvX+MmHo3bCEFESGJmMq0NBnOP0cnFmuXyDn7hVsOU1jF2CzAVRzqgQ==
+"@bazel/esbuild@^3.3.0":
+  version "3.3.0"
+  resolved "https://registry.yarnpkg.com/@bazel/esbuild/-/esbuild-3.3.0.tgz#7fbe7e9511b925f6bdc12e45af312322b302ca88"
+  integrity sha512-0+sN0mbZHzI/NEvOU7VrdBymtKO+/+WAfcmubw89rECNoXiqgswYc9cjGVwrmiy+kWQuW9vNgIXuaqzG/ov6Aw==
 
 "@bazel/ibazel@^0.13.2":
   version "0.13.2"
   resolved "https://registry.yarnpkg.com/@bazel/ibazel/-/ibazel-0.13.2.tgz#eb914c41c66af4606db786457a7b130634355e8f"
   integrity sha512-q5fGwjTY76MLNcYpF2zEu/y1Clu4DjdjhvJM9+yDKc3+3mBlbX+uiMJYiCz5b0oSYdJTlw1QSRptTYA7CID8EQ==
 
-"@bazel/jasmine@^3.2.3":
-  version "3.2.3"
-  resolved "https://registry.yarnpkg.com/@bazel/jasmine/-/jasmine-3.2.3.tgz#fee0372af7ee85354a58cb1457b61c53ce76f50a"
-  integrity sha512-d1VxXVbpahnQrCihXyzHRcINeDKubA2v7VkMuDhRLrf/VagUkmg0PC6fYQ7AwniNUoR74s5sv/McMnpxfwOQ8g==
+"@bazel/jasmine@^3.3.0":
+  version "3.3.0"
+  resolved "https://registry.yarnpkg.com/@bazel/jasmine/-/jasmine-3.3.0.tgz#40d64507dec504df79d8877f6ceb9d9b0ea7886a"
+  integrity sha512-nsB1P/NQIOvxSTqVmQ3BqOSRQOvhqBP3M7owqDOl+3aQy1oIekXtj0S4s4pVFVMUFZf4acXXgZ4TOv0uuMOB5Q==
   dependencies:
     c8 "~7.5.0"
     jasmine-reporters "~2.4.0"
 
-"@bazel/labs@^3.2.3":
-  version "3.2.3"
-  resolved "https://registry.yarnpkg.com/@bazel/labs/-/labs-3.2.3.tgz#00202de3064db60df425653c9fa5ce807941ffb5"
-  integrity sha512-OLqc/pxcUco2grYq7/Dt502w5RQNA+3PMSSFu4NI0EEYP3EWFHGSAPtEy4mfibdJukJ4+NccjKt1x3RWatKcQQ==
+"@bazel/labs@^3.3.0":
+  version "3.3.0"
+  resolved "https://registry.yarnpkg.com/@bazel/labs/-/labs-3.3.0.tgz#a95cbcf4cbc9d37b31155e82abef865a526899b0"
+  integrity sha512-jIfN4TdRcH2dfLiY0181Pr/CadmBAn5rU8SHevC7l5MScliG4FiqiuZdr3Ae+d4ZSiz5mFfizuXzOjk4MCU7Ng==
 
-"@bazel/typescript@^3.2.3":
-  version "3.2.3"
-  resolved "https://registry.yarnpkg.com/@bazel/typescript/-/typescript-3.2.3.tgz#6e40bdb7c5294e588bac3b7d1269e58b98a1856c"
-  integrity sha512-Q1Yin/AYdh9yrkSJo3H6nVn6mMaohr5syjLd0Df0w7WI4zerdJTxrY5nhoWZwO/S1rPj8/MedDwZudCqPDeDMA==
+"@bazel/typescript@^3.3.0":
+  version "3.3.0"
+  resolved "https://registry.yarnpkg.com/@bazel/typescript/-/typescript-3.3.0.tgz#6781f3aec3f974b864519ae9f47eaf09b134910b"
+  integrity sha512-neprCOVshAjlDAHgD5PAA4uqhkBzWve20Rl07Ip6BGnCNhU3XLkv+b86TtyWcU8tYMILoCSey9gzXs07XhEz6g==
   dependencies:
     protobufjs "6.8.8"
     semver "5.6.0"
