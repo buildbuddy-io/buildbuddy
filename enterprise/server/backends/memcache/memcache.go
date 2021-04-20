@@ -217,15 +217,6 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	return c.mc.Delete(k)
 }
 
-func offsetLimReader(data []byte, offset, length int64) io.Reader {
-	r := bytes.NewReader(data)
-	r.Seek(offset, 0)
-	if length > 0 {
-		return io.LimitReader(r, length)
-	}
-	return r
-}
-
 // Low level interface used for seeking and stream-writing.
 func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	if !eligibleForMc(d) {
