@@ -36,8 +36,9 @@ type CacheConfig struct {
 	ReplicationFactor  int
 	DisableLocalLookup bool
 
-	PubSub interfaces.PubSub
-	Nodes  []string
+	PubSub      interfaces.PubSub
+	Nodes       []string
+	ClusterSize int
 }
 
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
@@ -78,11 +79,15 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 }
 
 func (c *Cache) Check(ctx context.Context) error {
-	nodesAvailable := len(c.consistentHash.GetItems())
-	if nodesAvailable > c.config.ReplicationFactor/2 {
+	if c.config.ClusterSize == 0 {
 		return nil
 	}
-	return status.UnavailableErrorf("%d nodes available but replication factor is %d, unable to achieve quorum.", nodesAvailable, c.config.ReplicationFactor)
+
+	nodesAvailable := len(c.consistentHash.GetItems())
+	if nodesAvailable == c.config.ClusterSize {
+		return nil
+	}
+	return status.UnavailableErrorf("%d nodes available but cluster size is %d.", nodesAvailable, c.config.ClusterSize)
 }
 
 func (c *Cache) StartListening() {
