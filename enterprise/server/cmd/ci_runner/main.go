@@ -40,6 +40,8 @@ import (
 )
 
 const (
+	// Name of the dir into which the repo is cloned.
+	repoDirName = "repo-root"
 	// Path where we expect to find actions config, relative to the repo root.
 	actionsConfigPath = "buildbuddy.yaml"
 
@@ -106,8 +108,7 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	repoDirName := dirNameForRepo(*repoURL)
-	if err := setupGitRepo(ctx, repoDirName); err != nil {
+	if err := setupGitRepo(ctx); err != nil {
 		fatal(status.WrapError(err, "failed to set up git repo"))
 	}
 	if err := os.Chdir(repoDirName); err != nil {
@@ -582,7 +583,7 @@ func bazelCommand() string {
 	return bazeliskBinaryName
 }
 
-func setupGitRepo(ctx context.Context, repoDirName string) error {
+func setupGitRepo(ctx context.Context) error {
 	repoDirInfo, err := os.Stat(repoDirName)
 	if err != nil && !os.IsNotExist(err) {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
@@ -679,15 +680,6 @@ func syncExistingRepo(ctx context.Context, path string) error {
 		return status.WrapErrorf(err, "checkout %s", *commitSHA)
 	}
 	return nil
-}
-
-// generateRepoDirName returns a unique and consistent dir name for the given
-// URL. It consists of a human readable prefix based on the URL for debug purposes,
-// followed by a hex SHA256 of the URL.
-func dirNameForRepo(url string) string {
-	sha := sha256.Sum256([]byte(url))
-	shaStr := hex.EncodeToString(sha[:])
-	return fmt.Sprintf("%s_%s", strippedDirChars.ReplaceAllLiteralString(url, "_"), shaStr)
 }
 
 func invocationURL(invocationID string) string {
