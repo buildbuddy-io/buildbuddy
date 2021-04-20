@@ -422,6 +422,9 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 				}
 				lock.Lock()
 				for d, data := range peerRsp {
+					if len(data) == 0 {
+						log.Warningf("Peer %q (prefix: %q) returned a zero-length response for %s", peer, c.prefix, d.GetHash())
+					}
 					gotMap[d] = data
 				}
 				lock.Unlock()

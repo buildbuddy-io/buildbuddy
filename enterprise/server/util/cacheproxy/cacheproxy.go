@@ -147,6 +147,9 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 	}
 	rsp := &dcpb.GetMultiResponse{}
 	for d, buf := range found {
+		if len(buf) == 0 {
+			log.Warningf("Cache on peer %q (prefix %q) returned a zero-length response for %s", c.listenAddr, req.GetPrefix(), d.GetHash())
+		}
 		rsp.KeyValue = append(rsp.KeyValue, &dcpb.KV{
 			Key:   digestToKey(d),
 			Value: buf,
