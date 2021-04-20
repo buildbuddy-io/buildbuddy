@@ -1,9 +1,8 @@
-const baseUrl = "/";
 module.exports = {
   title: 'BuildBuddy',
   tagline: 'BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to build and test software 10x faster.',
   url: 'https://buildbuddy.io',
-  baseUrl: baseUrl,
+  baseUrl: '/',
   favicon: 'img/favicon_black.svg',
   organizationName: 'buildbuddy-io',
   projectName: 'buildbuddy',
@@ -72,7 +71,7 @@ module.exports = {
         {
           items: [
             {
-              html: `<a href="https://www.buildbuddy.io/"><img src="${baseUrl}img/logo_white.svg" class="footer-logo" /></a>`,
+              html: `<a href="https://www.buildbuddy.io/"><img src="/img/logo_white.svg" class="footer-logo" /></a>`,
             }
 
           ],
@@ -219,8 +218,12 @@ module.exports = {
       {
         redirects: [
           {
+            to: process.env.BLOG ? '/blog' : '/docs/introduction',
+            from: ['/'],
+          },
+          {
             to: '/docs/introduction',
-            from: ['/', '/docs'],
+            from: ['/docs'],
           },
         ],
       },

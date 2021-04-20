@@ -17,7 +17,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v1
 
-      - name: Build
+      - name: Build Docs
         run: |
           cd website
           yarn install && yarn build
@@ -27,7 +27,11 @@ jobs:
         with:
           branch: gh-pages
           folder: website/build
-      
+
+      - name: Build Blog
+        run: |
+          BLOG=true yarn build
+
       - name: Deploy Blog 🚀
         uses: JamesIves/github-pages-deploy-action@4.1.0
         with:
