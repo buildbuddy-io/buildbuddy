@@ -73,7 +73,16 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	hc.RegisterShutdownFunction(func(ctx context.Context) error {
 		return dc.Shutdown(ctx)
 	})
+	hc.AddHealthCheck("distributed_cache", dc)
 	return dc, nil
+}
+
+func (c *Cache) Check(ctx context.Context) error {
+	nodesAvailable := len(c.consistentHash.GetItems())
+	if nodesAvailable > c.config.ReplicationFactor/2 {
+		return nil
+	}
+	return status.UnavailableErrorf("%d nodes available but replication factor is %d, unable to achieve quorum.", nodesAvailable, c.config.ReplicationFactor)
 }
 
 func (c *Cache) StartListening() {
@@ -217,7 +226,7 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 type backfillOrder struct {
 	source string
 	dest   string
-	d *repb.Digest
+	d      *repb.Digest
 }
 
 type peerSet struct {
@@ -319,8 +328,8 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 			if ps.index > 1 {
 				backfills = append(backfills, &backfillOrder{
 					source: ps.peers[ps.index-1],
-					dest: ps.peers[ps.index-2],
-					d: d,
+					dest:   ps.peers[ps.index-2],
+					d:      d,
 				})
 			}
 		}
@@ -438,8 +447,8 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 		if ps.index > 1 {
 			backfills = append(backfills, &backfillOrder{
 				source: ps.peers[ps.index-1],
-				dest: ps.peers[ps.index-2],
-				d: d,
+				dest:   ps.peers[ps.index-2],
+				d:      d,
 			})
 		}
 	}
