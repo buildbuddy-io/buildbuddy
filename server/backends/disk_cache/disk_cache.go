@@ -266,7 +266,7 @@ func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := disk.ReadFile(ctx, k)
+	buf, err := disk.ReadFile(ctx, k)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err != nil {
@@ -279,7 +279,7 @@ func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	} else if !c.diskIsMapped {
 		c.addSingleFileToLRU(k)
 	}
-	return f, nil
+	return buf, nil
 }
 
 func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
