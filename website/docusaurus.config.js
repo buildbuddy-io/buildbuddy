@@ -220,7 +220,7 @@ module.exports = {
         redirects: [
           {
             to: '/docs/introduction',
-            from: ['/', '/docs'],
+            from: ['/docs'],
           },
         ],
       },
