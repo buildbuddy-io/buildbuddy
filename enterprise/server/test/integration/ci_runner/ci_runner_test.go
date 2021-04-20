@@ -265,7 +265,7 @@ func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 		require.Equal(t, 1, len(res.Invocation), "couldn't find runner invocation in DB")
 		runnerInvocation := res.Invocation[0]
 		// Since our workflow just runs `bazel version`, we should be able to see its
-		// output in the action logs.testWorkspaceContents
+		// output in the action logs.
 		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7.0")
 	}
 
