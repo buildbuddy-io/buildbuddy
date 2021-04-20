@@ -22,8 +22,16 @@ jobs:
           cd website
           yarn install && yarn build
 
-      - name: Deploy 🚀
+      - name: Deploy Docs 🚀
         uses: JamesIves/github-pages-deploy-action@4.1.0
         with:
           branch: gh-pages
           folder: website/build
+      
+      - name: Deploy Blog 🚀
+        uses: JamesIves/github-pages-deploy-action@4.1.0
+        with:
+          branch: main
+          folder: website/build
+          repository-name: buildbuddy-io/buildbuddy-blog
+          token: ${{ BUILDBUDDY_APP_TOKEN }}
