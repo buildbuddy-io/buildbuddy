@@ -165,6 +165,9 @@ func (c *Cache) remoteWriter(ctx context.Context, peer, prefix string, d *repb.D
 }
 
 func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, dest string) error {
+	if exists, err := c.remoteContains(ctx, dest, c.prefix, d); err == nil && exists {
+		return nil
+	}
 	log.Debugf("Backfilling (%s) from source %q to dest %q.", d.GetHash(), source, dest)
 	r, err := c.remoteReader(ctx, source, c.prefix, d, 0)
 	if err != nil {
