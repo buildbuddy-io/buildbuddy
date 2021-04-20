@@ -34,4 +34,4 @@ jobs:
           branch: main
           folder: website/build
           repository-name: buildbuddy-io/buildbuddy-blog
-          token: ${{ BUILDBUDDY_APP_TOKEN }}
+          token: ${{ secrets.BUILDBUDDY_APP_TOKEN }}
