@@ -86,7 +86,7 @@ module.exports = {
             },
             {
               label: 'Documentation',
-              href: 'https://www.buildbuddy.io/docs/',
+              href: 'https://docs.buildbuddy.io/docs/introduction/',
               target: '_self',
             },
             {
@@ -116,7 +116,7 @@ module.exports = {
           items: [
             {
               label: 'Blog',
-              href: 'https://www.buildbuddy.io/blog',
+              href: 'https://blog.buildbuddy.io/blog/',
               target: '_self',
             },
             {

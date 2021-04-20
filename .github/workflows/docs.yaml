@@ -30,6 +30,7 @@ jobs:
 
       - name: Build Blog
         run: |
+          cd website
           BLOG=true yarn build
 
       - name: Deploy Blog 🚀
