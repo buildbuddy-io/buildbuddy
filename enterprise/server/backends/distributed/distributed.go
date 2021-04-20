@@ -74,15 +74,13 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	hc.RegisterShutdownFunction(func(ctx context.Context) error {
 		return dc.Shutdown(ctx)
 	})
-	hc.AddHealthCheck("distributed_cache", dc)
+	if dc.config.ClusterSize > 0 {
+		hc.AddHealthCheck("distributed_cache", dc)
+	}
 	return dc, nil
 }
 
 func (c *Cache) Check(ctx context.Context) error {
-	if c.config.ClusterSize == 0 {
-		return nil
-	}
-
 	nodesAvailable := len(c.consistentHash.GetItems())
 	if nodesAvailable == c.config.ClusterSize {
 		return nil
