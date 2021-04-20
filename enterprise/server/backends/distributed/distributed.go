@@ -36,8 +36,9 @@ type CacheConfig struct {
 	ReplicationFactor  int
 	DisableLocalLookup bool
 
-	PubSub interfaces.PubSub
-	Nodes  []string
+	PubSub      interfaces.PubSub
+	Nodes       []string
+	ClusterSize int
 }
 
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
@@ -73,7 +74,18 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	hc.RegisterShutdownFunction(func(ctx context.Context) error {
 		return dc.Shutdown(ctx)
 	})
+	if dc.config.ClusterSize > 0 {
+		hc.AddHealthCheck("distributed_cache", dc)
+	}
 	return dc, nil
+}
+
+func (c *Cache) Check(ctx context.Context) error {
+	nodesAvailable := len(c.consistentHash.GetItems())
+	if nodesAvailable == c.config.ClusterSize {
+		return nil
+	}
+	return status.UnavailableErrorf("%d nodes available but cluster size is %d.", nodesAvailable, c.config.ClusterSize)
 }
 
 func (c *Cache) StartListening() {
@@ -217,7 +229,7 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 type backfillOrder struct {
 	source string
 	dest   string
-	d *repb.Digest
+	d      *repb.Digest
 }
 
 type peerSet struct {
@@ -319,8 +331,8 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 			if ps.index > 1 {
 				backfills = append(backfills, &backfillOrder{
 					source: ps.peers[ps.index-1],
-					dest: ps.peers[ps.index-2],
-					d: d,
+					dest:   ps.peers[ps.index-2],
+					d:      d,
 				})
 			}
 		}
@@ -438,8 +450,8 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 		if ps.index > 1 {
 			backfills = append(backfills, &backfillOrder{
 				source: ps.peers[ps.index-1],
-				dest: ps.peers[ps.index-2],
-				d: d,
+				dest:   ps.peers[ps.index-2],
+				d:      d,
 			})
 		}
 	}
