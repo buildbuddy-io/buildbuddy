@@ -48,7 +48,7 @@ func getAnonContext(t *testing.T) context.Context {
 	return ctx
 }
 
-func lowerTimeoutsForTesting(hbc *heartbeat.HeartbeatChannel) {
+func lowerTimeoutsForTesting(hbc *heartbeat.Channel) {
 	hbc.Period = 100 * time.Millisecond
 	hbc.Timeout = 3 * hbc.Period
 	hbc.CheckPeriod = 10 * time.Millisecond

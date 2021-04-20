@@ -2,11 +2,11 @@ package heartbeat
 
 import (
 	"context"
-	"log"
 	"sort"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 const (
@@ -23,7 +23,7 @@ const (
 
 type PeersUpdateFn func(peerSet ...string)
 
-type HeartbeatChannel struct {
+type Channel struct {
 	// This node will send heartbeats every this often.
 	Period time.Duration
 
@@ -54,8 +54,8 @@ type Config struct {
 	EnablePeerExpiry bool
 }
 
-func NewHeartbeatChannel(ps interfaces.PubSub, config *Config) *HeartbeatChannel {
-	hac := &HeartbeatChannel{
+func NewHeartbeatChannel(ps interfaces.PubSub, config *Config) *Channel {
+	hac := &Channel{
 		groupName:        config.GroupName,
 		myAddr:           config.MyPublicAddr,
 		peers:            make(map[string]time.Time, 0),
@@ -72,7 +72,7 @@ func NewHeartbeatChannel(ps interfaces.PubSub, config *Config) *HeartbeatChannel
 	return hac
 }
 
-func (c *HeartbeatChannel) StartAdvertising() {
+func (c *Channel) StartAdvertising() {
 	close(c.quit)
 	c.quit = make(chan struct{})
 	go func() {
@@ -87,31 +87,32 @@ func (c *HeartbeatChannel) StartAdvertising() {
 	}()
 }
 
-func (c *HeartbeatChannel) StopAdvertising() {
+func (c *Channel) StopAdvertising() {
 	close(c.quit)
 }
 
-func (c *HeartbeatChannel) sendHeartbeat(ctx context.Context) {
+func (c *Channel) sendHeartbeat(ctx context.Context) {
 	err := c.ps.Publish(ctx, c.groupName, c.myAddr)
 	if err != nil {
-		log.Printf("HeartbeatChannel(%s): error publishing: %s", c.groupName, err)
+		log.Warningf("HeartbeatChannel(%s): error publishing: %s", c.groupName, err)
 	}
 }
 
-func (c *HeartbeatChannel) notifySetChanged() {
+func (c *Channel) notifySetChanged() {
 	nodes := make([]string, 0, len(c.peers))
 	for peer, _ := range c.peers {
 		nodes = append(nodes, peer)
 	}
 	sort.Strings(nodes)
-	log.Printf("HeartbeatChannel(%s): peerset changed: %s", c.groupName, nodes)
+	log.Infof("HeartbeatChannel(%s): peerset changed: %s", c.groupName, nodes)
 	c.updateFn(nodes...)
 }
 
-func (c *HeartbeatChannel) watchPeers(ctx context.Context) {
+func (c *Channel) watchPeers(ctx context.Context) {
 	subscriber := c.ps.Subscribe(ctx, c.groupName)
 	defer subscriber.Close()
 	pubsubChan := subscriber.Chan()
+	checkTimer := time.NewTimer(c.CheckPeriod)
 	for {
 		select {
 		case peer := <-pubsubChan:
@@ -120,12 +121,12 @@ func (c *HeartbeatChannel) watchPeers(ctx context.Context) {
 			if !ok {
 				c.notifySetChanged()
 			}
-		case <-time.After(c.CheckPeriod):
+		case <-checkTimer.C:
 			updated := false
 			for peer, lastBeat := range c.peers {
 				if time.Since(lastBeat) > c.Timeout {
 					if c.enablePeerExpiry {
-						log.Printf("Peer %q has timed out. LastBeat: %s, timeout: %s", peer, lastBeat, c.Timeout)
+						log.Infof("Peer %q has timed out. LastBeat: %s, timeout: %s", peer, lastBeat, c.Timeout)
 						delete(c.peers, peer)
 						updated = true
 					}
@@ -134,6 +135,7 @@ func (c *HeartbeatChannel) watchPeers(ctx context.Context) {
 			if updated {
 				c.notifySetChanged()
 			}
+			checkTimer.Reset(c.CheckPeriod)
 		}
 	}
 }

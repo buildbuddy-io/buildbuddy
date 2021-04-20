@@ -27,7 +27,7 @@ type Cache struct {
 	prefix           string
 	cacheProxy       *cacheproxy.CacheProxy
 	consistentHash   *consistent_hash.ConsistentHash
-	heartbeatChannel *heartbeat.HeartbeatChannel
+	heartbeatChannel *heartbeat.Channel
 }
 
 type CacheConfig struct {
