@@ -99,7 +99,6 @@ var (
 	fatalSyncErrors = flag.Bool("fatal_sync_errors", false, "Disable fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
-	strippedDirChars         = regexp.MustCompile(`[^\w@%+,.-]+`)
 )
 
 func main() {
