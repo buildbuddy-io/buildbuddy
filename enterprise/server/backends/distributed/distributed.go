@@ -165,6 +165,7 @@ func (c *Cache) remoteWriter(ctx context.Context, peer, prefix string, d *repb.D
 }
 
 func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, dest string) error {
+	log.Debugf("Backfilling (%s) from source %q to dest %q.", d.GetHash(), source, dest)
 	r, err := c.remoteReader(ctx, source, c.prefix, d, 0)
 	if err != nil {
 		return err
@@ -199,7 +200,9 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 		b, err := c.remoteContains(ctx, peer, c.prefix, d)
 		if err == nil && b {
 			if i != 0 {
-				c.backfillReplica(ctx, d, peer, peers[i-1])
+				if err := c.backfillReplica(ctx, d, peer, peers[i-1]); err != nil {
+					log.Debugf("Error backfilling %q => %q: %s", peer, peers[i-1], err)
+				}
 			}
 			return b, err
 		}
@@ -208,30 +211,31 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	return false, nil
 }
 
+type backfillOrder struct {
+	source string
+	dest   string
+	d *repb.Digest
+}
+
 type peerSet struct {
 	peers []string
 	index int
 }
 
-func (c *Cache) backfillPeers(ctx context.Context, peerMap map[*repb.Digest]*peerSet) {
-	eg, gCtx := errgroup.WithContext(ctx)
-	for d, ps := range peerMap {
-		if ps.index <= 1 {
-			continue
-		}
-		successfulIndex := ps.index - 1
-		sourcePeer := ps.peers[successfulIndex]
-		targetPeers := ps.peers[:successfulIndex]
-		for _, destPeer := range targetPeers {
-			eg.Go(func() error {
-				if err := c.backfillReplica(gCtx, d, sourcePeer, destPeer); err != nil {
-					log.Debugf("Error backfilling %q => %q: %s", sourcePeer, destPeer, err)
-				}
-				return nil
-			})
-		}
+func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) error {
+	if len(backfills) == 0 {
+		return nil
 	}
-	eg.Wait()
+	eg, gCtx := errgroup.WithContext(ctx)
+	for _, bf := range backfills {
+		eg.Go(func() error {
+			if err := c.backfillReplica(gCtx, bf.d, bf.source, bf.dest); err != nil {
+				log.Debugf("Error backfilling %q => %q: %s", bf.source, bf.dest, err)
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
 }
 
 func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
@@ -301,15 +305,26 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 			// If we've found everything, we can exit now.
 			break
 		}
-
 	}
 
-	for d, _ := range peerMap {
-		if _, ok := foundMap[d]; !ok {
-			delete(peerMap, d)
+	// For every digest we found, if we did not find it
+	// on the first peer in our list, we want to backfill it.
+	backfills := make([]*backfillOrder, 0)
+	for d, exists := range foundMap {
+		if exists {
+			ps := peerMap[d]
+			if ps.index > 1 {
+				backfills = append(backfills, &backfillOrder{
+					source: ps.peers[ps.index-1],
+					dest: ps.peers[ps.index-2],
+					d: d,
+				})
+			}
 		}
 	}
-	c.backfillPeers(ctx, peerMap)
+	if err := c.backfillPeers(ctx, backfills); err != nil {
+		log.Debugf("Error backfilling peers: %s", err)
+	}
 	return foundMap, nil
 }
 
@@ -412,12 +427,22 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 		}
 	}
 
-	for d, _ := range peerMap {
-		if _, ok := gotMap[d]; !ok {
-			delete(peerMap, d)
+	// For every digest we found, if we did not find it
+	// on the first peer in our list, we want to backfill it.
+	backfills := make([]*backfillOrder, 0)
+	for d, _ := range gotMap {
+		ps := peerMap[d]
+		if ps.index > 1 {
+			backfills = append(backfills, &backfillOrder{
+				source: ps.peers[ps.index-1],
+				dest: ps.peers[ps.index-2],
+				d: d,
+			})
 		}
 	}
-	c.backfillPeers(ctx, peerMap)
+	if err := c.backfillPeers(ctx, backfills); err != nil {
+		log.Debugf("Error backfilling peers: %s", err)
+	}
 	return gotMap, nil
 }
 
