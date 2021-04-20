@@ -21,7 +21,6 @@ import (
 )
 
 const (
-	jwtHeader      = "x-buildbuddy-jwt"
 	maxDialTimeout = 10 * time.Second
 )
 
@@ -319,11 +318,11 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *r
 			}
 			if err == io.EOF {
 				writer.Close()
-				return
+				break
 			}
 			if err != nil {
 				writer.CloseWithError(err)
-				return
+				break
 			}
 			writer.Write(rsp.Data)
 		}
