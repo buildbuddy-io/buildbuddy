@@ -197,7 +197,9 @@ module.exports = {
           editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/docs/',
         },
         blog: {
+          path: 'blog',
           showReadingTime: true,
+          blogSidebarCount: 5,
           editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/blog/',
         },
         theme: {
