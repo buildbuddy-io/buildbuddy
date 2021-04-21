@@ -178,7 +178,16 @@ type ExecutorConfig struct {
 	DockerSiblingContainers bool   `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
 	DockerNetHost           bool   `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
 	ContainerdSocket        string `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
-	DockerMountMode         string `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/`
+	DockerMountMode         string `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/"`
+
+	RunnerPool RunnerPoolConfig `yaml:"runner_pool"`
+}
+
+type RunnerPoolConfig struct {
+	MaxRunnerCount            int     `yaml:"max_runner_count" usage:"Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory."`
+	MaxRunnerDiskSizeBytes    int     `yaml:"max_runner_disk_size_bytes" usage:"Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB."`
+	MaxRunnerMemoryUsageBytes int     `yaml:"max_runner_memory_usage_bytes" usage:"Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors)."`
+	MaxRunnerIdleTimeSeconds  float64 `yaml:"max_runner_idle_time_seconds" usage:"Maximum amount of time a runner can be idle before it is removed from the pool and cleaned up. Defaults to 30 minutes. Values < 0 are treated as infinity."`
 }
 
 type APIConfig struct {
@@ -238,6 +247,8 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value) {
 			flag.IntVar(f.Addr().Interface().(*int), fqFieldName, int(f.Int()), docString)
 		case reflect.Int64:
 			flag.Int64Var(f.Addr().Interface().(*int64), fqFieldName, int64(f.Int()), docString)
+		case reflect.Float64:
+			flag.Float64Var(f.Addr().Interface().(*float64), fqFieldName, f.Float(), docString)
 		case reflect.Slice:
 			if f.Type().Elem().Kind() == reflect.String {
 				if slice, ok := f.Interface().([]string); ok {
