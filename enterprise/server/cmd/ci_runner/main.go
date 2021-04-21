@@ -581,7 +581,7 @@ func setupGitRepo(ctx context.Context) error {
 	if err != nil && !os.IsNotExist(err) {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
 	}
-	if os.IsExist(err) && repoDirInfo != nil {
+	if repoDirInfo != nil {
 		err := syncExistingRepo(ctx, repoDirName)
 		if err == nil {
 			return nil
