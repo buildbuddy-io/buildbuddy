@@ -226,10 +226,10 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			Digest: d,
 			Data:   data,
 		}
-		if d.GetSizeBytes() != int64(len(data)) {
-			log.Debugf("Digest %s, but data len: %d", d, len(data))
+		if !ok || os.IsNotExist(err) {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
-		} else if !ok || os.IsNotExist(err) {
+		} else if d.GetSizeBytes() != int64(len(data)) {
+			log.Debugf("Digest %s, but data len: %d", d, len(data))
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
 		} else if err != nil {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.Internal)}
