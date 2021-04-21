@@ -71,10 +71,6 @@ const (
 	bazeliskBinaryName             = "bazelisk"
 	bazelCommandOverrideEnvVarName = "BAZEL_COMMAND"
 
-	// Git
-
-	remoteName = "origin"
-
 	// ANSI codes for cases where the aurora equivalent is not supported by our UI
 	// (ex: aurora's "grayscale" mode results in some ANSI codes that we don't currently
 	// parse correctly).
@@ -94,7 +90,7 @@ var (
 	workflowID    = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 
 	// Test-only flags
-	fatalSyncErrors = flag.Bool("fatal_sync_errors", false, "Disable fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
+	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 )
@@ -585,12 +581,12 @@ func setupGitRepo(ctx context.Context) error {
 	if err != nil && !os.IsNotExist(err) {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
 	}
-	if repoDirInfo != nil {
+	if os.IsExist(err) && repoDirInfo != nil {
 		err := syncExistingRepo(ctx, repoDirName)
 		if err == nil {
 			return nil
 		}
-		if *fatalSyncErrors {
+		if !*fallbackToCleanCheckout {
 			return err
 		}
 		log.Printf(
@@ -615,7 +611,7 @@ func fetchOrigin(ctx context.Context, remote *git.Remote) error {
 		RefSpecs: []gitcfg.RefSpec{gitcfg.RefSpec(fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", *branch, *branch))},
 	}
 	if err := remote.FetchContext(ctx, fetchOpts); err != nil && err != git.NoErrAlreadyUpToDate {
-		return status.WrapErrorf(err, "fetch remote %q", remoteName)
+		return status.WrapErrorf(err, "fetch remote %q", git.DefaultRemoteName)
 	}
 	return nil
 }
@@ -630,7 +626,7 @@ func setupNewGitRepo(ctx context.Context, path string) error {
 		return err
 	}
 	remote, err := repo.CreateRemote(&gitcfg.RemoteConfig{
-		Name: remoteName,
+		Name: git.DefaultRemoteName,
 		URLs: []string{authURL},
 	})
 	if err != nil {
@@ -650,7 +646,6 @@ func setupNewGitRepo(ctx context.Context, path string) error {
 }
 
 func syncExistingRepo(ctx context.Context, path string) error {
-	log.Printf("Attempting to set up existing git repo")
 	repo, err := git.PlainOpen(path)
 	if err != nil {
 		return err
@@ -662,9 +657,9 @@ func syncExistingRepo(ctx context.Context, path string) error {
 	if err := tree.Clean(&git.CleanOptions{Dir: true}); err != nil {
 		return status.WrapErrorf(err, "clean")
 	}
-	remote, err := repo.Remote(remoteName)
+	remote, err := repo.Remote(git.DefaultRemoteName)
 	if err != nil {
-		return status.WrapErrorf(err, "get existing remote %q", remoteName)
+		return status.WrapErrorf(err, "get existing remote %q", git.DefaultRemoteName)
 	}
 	if err := fetchOrigin(ctx, remote); err != nil {
 		return err

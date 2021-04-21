@@ -48,7 +48,7 @@ type result struct {
 }
 
 func makeRunnerWorkspace(t *testing.T) string {
-	wsDir := bazel.MakeTempWorkspace(t, map[string]string{})
+	wsDir := bazel.MakeTempWorkspace(t, nil /*=contents*/)
 	// Need a home dir so bazel commands invoked by the runner know where to put
 	// their local cache.
 	homeDir := filepath.Join(wsDir, ".home")
@@ -152,7 +152,6 @@ func TestCIRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *testi
 		"--branch=master",
 		"--trigger_event=push",
 		"--trigger_branch=master",
-		"--fatal_sync_errors=true",
 	}
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
@@ -189,7 +188,9 @@ func TestCIRunner_ReusedWorkspaceWithTestAllAction_CanReuseWorkspace(t *testing.
 		"--branch=master",
 		"--trigger_event=push",
 		"--trigger_branch=master",
-		"--fatal_sync_errors=true",
+		// Disable clean checkout fallback for this test since we expect to sync
+		// the existing repo without errors.
+		"--fallback_to_clean_checkout=false",
 	}
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
@@ -243,7 +244,6 @@ func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 		"--branch=master",
 		"--trigger_event=push",
 		"--trigger_branch=master",
-		"--fatal_sync_errors=false",
 	}
 	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
 
