@@ -256,92 +256,31 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) e
 func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest]bool, len(digests))
-	peerMap := make(map[*repb.Digest]*peerSet, len(digests))
-	for _, d := range digests {
-		peerMap[d] = &peerSet{
-			peers: c.readPeers(d),
-			index: 0,
-		}
-	}
+	eg, ctx := errgroup.WithContext(ctx)
 
-	for {
-		// Each iteration through this outer loop sends a "batch" of requests in
-		// parallel, until all digests have been found or we have exhausted all
-		// peers.
-		peerRequests := make(map[string][]*repb.Digest, 0)
-		for _, d := range digests {
-			// If a previous request has already found this digest, skip it.
-			if _, ok := foundMap[d]; ok {
-				continue
-			}
-			// If no peers remain, skip this digest, we can't do anything more.
-			ps := peerMap[d]
-			if len(ps.peers) == ps.index {
-				log.Debugf("Exhausted all peers for %q. Peerset: %s", d.GetHash(), ps.peers)
-				continue
-			}
-			peer := ps.peers[ps.index]
-			ps.index += 1
-			peerRequests[peer] = append(peerRequests[peer], d)
-		}
-		if len(peerRequests) == 0 {
-			// If we aren't able to plan any more batch requests, that means
-			// we're out of peers and should exit, returning what we have.
-			break
-		}
-		eg, gCtx := errgroup.WithContext(ctx)
-		for peer, digests := range peerRequests {
-			peer := peer
-			digests := digests
+	for _, d := range digests {
+		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
-				peerRsp, err := c.remoteContainsMulti(gCtx, peer, c.prefix, digests)
+				exists, err := c.Contains(ctx, d)
 				if err != nil {
 					return err
 				}
 				lock.Lock()
-				for d, exists := range peerRsp {
-					if exists {
-						foundMap[d] = exists
-					}
-				}
-				lock.Unlock()
+				defer lock.Unlock()
+				foundMap[d] = exists
 				return nil
 			})
 		}
-		if err := eg.Wait(); err != nil {
-			if err != context.Canceled {
-				// Don't log context cancelled errors, they are common and expected when
-				// clients cancel a request.
-				log.Warningf("Error checking contains batch; will retry: %s", err)
-			}
-			continue
-		}
-		if len(foundMap) == len(digests) {
-			// If we've found everything, we can exit now.
-			break
-		}
+		fetchFn(d)
 	}
 
-	// For every digest we found, if we did not find it
-	// on the first peer in our list, we want to backfill it.
-	backfills := make([]*backfillOrder, 0)
-	for d, exists := range foundMap {
-		if exists {
-			ps := peerMap[d]
-			if ps.index > 1 {
-				backfills = append(backfills, &backfillOrder{
-					source: ps.peers[ps.index-1],
-					dest:   ps.peers[ps.index-2],
-					d:      d,
-				})
-			}
-		}
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
-	if err := c.backfillPeers(ctx, backfills); err != nil {
-		log.Debugf("Error backfilling peers: %s", err)
-	}
+
 	return foundMap, nil
 }
+
 
 // The first reader with a non-empty value will be returned. If all potential
 // peers for the digest are exhausted, then return a NotFoundError.
@@ -376,93 +315,33 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 }
 
 func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	lock := sync.RWMutex{} // protects(gotMap)
-	gotMap := make(map[*repb.Digest][]byte, len(digests))
-	peerMap := make(map[*repb.Digest]*peerSet, len(digests))
-	for _, d := range digests {
-		peerMap[d] = &peerSet{
-			peers: c.readPeers(d),
-			index: 0,
-		}
-	}
+	lock := sync.RWMutex{} // protects(foundMap)
+	foundMap := make(map[*repb.Digest][]byte, len(digests))
+	eg, ctx := errgroup.WithContext(ctx)
 
-	for {
-		// Each iteration through this outer loop sends a "batch" of requests in
-		// parallel, until all digests have been found or we have exhausted all
-		// peers.
-		peerRequests := make(map[string][]*repb.Digest, 0)
-		for _, d := range digests {
-			// If a previous request has already found this digest, skip it.
-			if _, ok := gotMap[d]; ok {
-				continue
-			}
-			// If no peers remain, skip this digest, we can't do anything more.
-			ps := peerMap[d]
-			if len(ps.peers) == ps.index {
-				log.Debugf("Exhausted all peers for %q. Peerset: %s", d.GetHash(), ps.peers)
-				continue
-			}
-			peer := ps.peers[ps.index]
-			ps.index += 1
-			peerRequests[peer] = append(peerRequests[peer], d)
-		}
-		if len(peerRequests) == 0 {
-			// If we aren't able to plan any more batch requests, that means
-			// we're out of peers and should exit, returning what we have.
-			break
-		}
-		eg, gCtx := errgroup.WithContext(ctx)
-		for peer, digests := range peerRequests {
-			peer := peer
-			digests := digests
+	for _, d := range digests {
+		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
-				peerRsp, err := c.remoteGetMulti(gCtx, peer, c.prefix, digests)
+				data, err := c.Get(ctx, d)
 				if err != nil {
 					return err
 				}
 				lock.Lock()
-				for d, data := range peerRsp {
-					if len(data) == 0 {
-						log.Warningf("Peer %q (prefix: %q) returned a zero-length response for %s", peer, c.prefix, d.GetHash())
-					}
-					gotMap[d] = data
-				}
-				lock.Unlock()
+				defer lock.Unlock()
+				foundMap[d] = data
 				return nil
 			})
 		}
-		if err := eg.Wait(); err != nil {
-			if err != context.Canceled {
-				// Don't log context cancelled errors, they are common and expected when
-				// clients cancel a request.
-				log.Warningf("Error checking contains batch; will retry: %s", err)
-			}
-			continue
-		}
-		if len(gotMap) == len(digests) {
-			// If we've found everything, we can exit now.
-			break
-		}
+		fetchFn(d)
 	}
 
-	// For every digest we found, if we did not find it
-	// on the first peer in our list, we want to backfill it.
-	backfills := make([]*backfillOrder, 0)
-	for d, _ := range gotMap {
-		ps := peerMap[d]
-		if ps.index > 1 {
-			backfills = append(backfills, &backfillOrder{
-				source: ps.peers[ps.index-1],
-				dest:   ps.peers[ps.index-2],
-				d:      d,
-			})
-		}
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
-	if err := c.backfillPeers(ctx, backfills); err != nil {
-		log.Debugf("Error backfilling peers: %s", err)
-	}
-	return gotMap, nil
+
+	return foundMap, nil
 }
+
 
 type multiWriteCloser struct {
 	ctx           context.Context
