@@ -2,84 +2,84 @@
 <rss version="2.0">
     <channel>
         <title>BuildBuddy Blog</title>
-        <link>https://buildbuddy.io/blog</link>
+        <link>https://docs.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
         <lastBuildDate>Thu, 18 Mar 2021 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <item>
             <title><![CDATA[BuildBuddy v1.8.0 Release Notes]]></title>
-            <link>https://buildbuddy.io/blog/buildbuddy-v1-8-0-release-notes</link>
+            <link>https://docs.buildbuddy.io/blog/buildbuddy-v1-8-0-release-notes</link>
             <guid>buildbuddy-v1-8-0-release-notes</guid>
             <pubDate>Thu, 18 Mar 2021 12:00:00 GMT</pubDate>
             <description><![CDATA[We're excited to share that v1.8.0 of BuildBuddy is live on Cloud Hosted BuildBuddy, Enterprise, and Open Source via GitHub, Docker, and our Helm Charts!]]></description>
         </item>
         <item>
             <title><![CDATA[BuildBuddy v1.5.0 Release Notes]]></title>
-            <link>https://buildbuddy.io/blog/buildbuddy-v1-5-0-release-notes</link>
+            <link>https://docs.buildbuddy.io/blog/buildbuddy-v1-5-0-release-notes</link>
             <guid>buildbuddy-v1-5-0-release-notes</guid>
             <pubDate>Fri, 08 Jan 2021 12:00:00 GMT</pubDate>
             <description><![CDATA[We're excited to share that v1.5.0 of BuildBuddy is live on both Cloud Hosted BuildBuddy and open-source via Github, Docker, and our Helm Charts!]]></description>
         </item>
         <item>
             <title><![CDATA[BuildBuddy v1.4.0 Release Notes]]></title>
-            <link>https://buildbuddy.io/blog/buildbuddy-v1-4-0-release-notes</link>
+            <link>https://docs.buildbuddy.io/blog/buildbuddy-v1-4-0-release-notes</link>
             <guid>buildbuddy-v1-4-0-release-notes</guid>
             <pubDate>Thu, 12 Nov 2020 12:00:00 GMT</pubDate>
             <description><![CDATA[We're excited to share that v1.4.0 of BuildBuddy is live on both Cloud Hosted BuildBuddy and open-source via Github and Docker!]]></description>
         </item>
         <item>
             <title><![CDATA[Welcoming George Li, Head of Sales]]></title>
-            <link>https://buildbuddy.io/blog/welcoming-george-li-head-of-sales</link>
+            <link>https://docs.buildbuddy.io/blog/welcoming-george-li-head-of-sales</link>
             <guid>welcoming-george-li-head-of-sales</guid>
             <pubDate>Thu, 12 Nov 2020 12:00:00 GMT</pubDate>
             <description><![CDATA[To fulfill our mission of bringing the world's best developer tools to every company, we're building a team that's ready to work with the world's best enterprises. That's why we're excited to share today that George Li is joining BuildBuddy to lead our enterprise sales efforts as our Head of Sales.]]></description>
         </item>
         <item>
             <title><![CDATA[BuildBuddy v1.3.0 Release Notes]]></title>
-            <link>https://buildbuddy.io/blog/buildbuddy-v1-3-0-release-notes</link>
+            <link>https://docs.buildbuddy.io/blog/buildbuddy-v1-3-0-release-notes</link>
             <guid>buildbuddy-v1-3-0-release-notes</guid>
             <pubDate>Wed, 30 Sep 2020 12:00:00 GMT</pubDate>
             <description><![CDATA[Excited to share that v1.1.0 of BuildBuddy is live on both Cloud Hosted BuildBuddy and open source via Github and Docker!]]></description>
         </item>
         <item>
             <title><![CDATA[BuildBuddy v1.1.0 Release Notes]]></title>
-            <link>https://buildbuddy.io/blog/buildbuddy-v1-1-0-release-notes</link>
+            <link>https://docs.buildbuddy.io/blog/buildbuddy-v1-1-0-release-notes</link>
             <guid>buildbuddy-v1-1-0-release-notes</guid>
             <pubDate>Thu, 03 Sep 2020 12:00:00 GMT</pubDate>
             <description><![CDATA[Excited to share that v1.1.0 of BuildBuddy is live on both Cloud Hosted BuildBuddy and open source via Github and Docker!]]></description>
         </item>
         <item>
             <title><![CDATA[BuildBuddy v1.2.1 Release Notes]]></title>
-            <link>https://buildbuddy.io/blog/buildbuddy-v1-2-1-release-notes</link>
+            <link>https://docs.buildbuddy.io/blog/buildbuddy-v1-2-1-release-notes</link>
             <guid>buildbuddy-v1-2-1-release-notes</guid>
             <pubDate>Wed, 15 Jul 2020 12:00:00 GMT</pubDate>
             <description><![CDATA[Excited to share that v1.2.1 of BuildBuddy is live on both Cloud Hosted BuildBuddy and open source via Github and Docker!]]></description>
         </item>
         <item>
             <title><![CDATA[BuildBuddy v1.0.6 Release Notes]]></title>
-            <link>https://buildbuddy.io/blog/buildbuddy-v1-0-6-release-notes</link>
+            <link>https://docs.buildbuddy.io/blog/buildbuddy-v1-0-6-release-notes</link>
             <guid>buildbuddy-v1-0-6-release-notes</guid>
             <pubDate>Wed, 20 May 2020 12:00:00 GMT</pubDate>
             <description><![CDATA[Excited to share that v1.0.6 of BuildBuddy is live on both Cloud Hosted BuildBuddy and open source via Github and Docker!]]></description>
         </item>
         <item>
             <title><![CDATA[Introducing BuildBuddy Version 1.0]]></title>
-            <link>https://buildbuddy.io/blog/introducing-buildbuddy-v1</link>
+            <link>https://docs.buildbuddy.io/blog/introducing-buildbuddy-v1</link>
             <guid>introducing-buildbuddy-v1</guid>
             <pubDate>Fri, 24 Apr 2020 12:00:00 GMT</pubDate>
             <description><![CDATA[We released our initial open source version of BuildBuddy to the Bazel community last month and have received a ton of interest, support, and feedback. We really appreciate everyone who's taken the time to kick the tires and try it out!]]></description>
         </item>
         <item>
             <title><![CDATA[BuildBuddy joins Y Combinator]]></title>
-            <link>https://buildbuddy.io/blog/buildbuddy-joins-y-combinator</link>
+            <link>https://docs.buildbuddy.io/blog/buildbuddy-joins-y-combinator</link>
             <guid>buildbuddy-joins-y-combinator</guid>
             <pubDate>Mon, 16 Mar 2020 12:00:00 GMT</pubDate>
             <description><![CDATA[If you've hung out around developers for any extended period --- you've probably heard "my code is compiling" as an excuse from them when they're slacking off and browsing Hacker News.]]></description>
         </item>
         <item>
             <title><![CDATA[Meet BuildBuddy]]></title>
-            <link>https://buildbuddy.io/blog/meet-buildbuddy</link>
+            <link>https://docs.buildbuddy.io/blog/meet-buildbuddy</link>
             <guid>meet-buildbuddy</guid>
             <pubDate>Wed, 04 Mar 2020 12:00:00 GMT</pubDate>
             <description><![CDATA[BuildBuddy is a managed Bazel build system --- it brings a Google-style development environment to any company in minutes.]]></description>
