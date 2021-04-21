@@ -20,7 +20,7 @@ jobs:
       - name: Build Docs
         run: |
           cd website
-          yarn install && yarn build
+          yarn install && PROD=true yarn build
 
       - name: Deploy Docs 🚀
         uses: JamesIves/github-pages-deploy-action@4.1.0
@@ -31,7 +31,7 @@ jobs:
       - name: Build Blog
         run: |
           cd website
-          BLOG=true yarn build
+          PROD=true BLOG=true yarn build
 
       - name: Deploy Blog 🚀
         uses: JamesIves/github-pages-deploy-action@4.1.0

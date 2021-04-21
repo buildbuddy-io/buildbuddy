@@ -191,12 +191,12 @@ module.exports = {
       '@docusaurus/preset-classic',
       {
         docs: {
-          path: '../docs',
+          path: (process.env.PROD && process.env.BLOG) ? 'empty' : '../docs',
           sidebarPath: require.resolve('./sidebars.js'),
           editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/docs/',
         },
         blog: {
-          path: 'blog',
+          path: (process.env.PROD && !process.env.BLOG) ? 'empty' : 'blog',
           showReadingTime: true,
           blogSidebarCount: 5,
           editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/website/',
