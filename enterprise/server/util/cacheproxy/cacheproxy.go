@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
@@ -42,29 +43,44 @@ func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *
 		// server goes here
 		clients: make(map[string]dcpb.DistributedCacheClient, 0),
 	}
-
-	grpcOptions := grpc_server.CommonGRPCServerOptions(env)
-	grpcServer := grpc.NewServer(grpcOptions...)
-	reflection.Register(grpcServer)
-	dcpb.RegisterDistributedCacheServer(grpcServer, proxy)
-	proxy.server = grpcServer
 	return proxy
 }
 
 func (c *CacheProxy) StartListening() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.server != nil {
+		return status.FailedPreconditionError("The server is already running.")
+	}
+
 	lis, err := net.Listen("tcp", c.listenAddr)
 	if err != nil {
 		return err
 	}
+	grpcOptions := grpc_server.CommonGRPCServerOptions(c.env)
+	grpcServer := grpc.NewServer(grpcOptions...)
+	reflection.Register(grpcServer)
+	dcpb.RegisterDistributedCacheServer(grpcServer, c)
+	c.server = grpcServer
+
 	go func() {
 		log.Printf("Listening on %s", c.listenAddr)
-		c.server.Serve(lis)
+		if err := c.server.Serve(lis); err != nil {
+			log.Warningf("Error serving: %s", err)
+		}
 	}()
 	return nil
 }
 
 func (c *CacheProxy) Shutdown(ctx context.Context) error {
-	return grpc_server.GRPCShutdown(ctx, c.server)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.server == nil {
+		return status.FailedPreconditionError("The server was already stopped.")
+	}
+	err := grpc_server.GRPCShutdown(ctx, c.server)
+	c.server = nil
+	return err
 }
 
 func digestFromKey(k *dcpb.Key) *repb.Digest {
