@@ -98,9 +98,7 @@ func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.Distribut
 		return client, nil
 	}
 	log.Debugf("Creating new client for peer: %q", peer)
-	dialOptions := grpc_client.CommonGRPCClientOptions()
-	dialOptions = append(dialOptions, grpc.WithInsecure())
-	conn, err := grpc_client.DialTargetWithOptions("grpc://"+peer, true, grpc.WithTimeout(dialTimeout(ctx)), grpc.WithBlock())
+	conn, err := grpc_client.DialTarget("grpc://" + peer)
 	if err != nil {
 		return nil, err
 	}
