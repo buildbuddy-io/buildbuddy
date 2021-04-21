@@ -190,13 +190,13 @@ module.exports = {
     [
       '@docusaurus/preset-classic',
       {
-        docs: {
-          path: (process.env.PROD && process.env.BLOG) ? 'empty' : '../docs',
+        docs: (process.env.PROD && process.env.BLOG) ? { path: 'empty'} : {
+          path: '../docs',
           sidebarPath: require.resolve('./sidebars.js'),
           editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/docs/',
         },
-        blog: {
-          path: (process.env.PROD && !process.env.BLOG) ? 'empty' : 'blog',
+        blog: (process.env.PROD && !process.env.BLOG) ? { path: 'empty'} : {
+          path: 'blog',
           showReadingTime: true,
           blogSidebarCount: 5,
           editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/website/',
@@ -220,15 +220,20 @@ module.exports = {
     [
       '@docusaurus/plugin-client-redirects',
       {
-        redirects: [
+        redirects: process.env.BLOG ? [
           {
-            to: process.env.BLOG ? '/blog' : '/docs/introduction',
+            to: '/blog',
+            from: ['/'],
+          },
+        ] : [
+          {
+            to: '/docs/introduction',
             from: ['/'],
           },
           {
             to: '/docs/introduction',
             from: ['/docs'],
-          },
+          }
         ],
       },
     ],
