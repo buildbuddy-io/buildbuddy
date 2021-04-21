@@ -17,6 +17,7 @@ go_library(
         "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/prefix",
+        "//server/util/status",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//reflection",
     ],
