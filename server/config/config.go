@@ -184,10 +184,9 @@ type ExecutorConfig struct {
 }
 
 type RunnerPoolConfig struct {
-	MaxRunnerCount            int     `yaml:"max_runner_count" usage:"Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory."`
-	MaxRunnerDiskSizeBytes    int     `yaml:"max_runner_disk_size_bytes" usage:"Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB."`
-	MaxRunnerMemoryUsageBytes int     `yaml:"max_runner_memory_usage_bytes" usage:"Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors)."`
-	MaxRunnerIdleTimeSeconds  float64 `yaml:"max_runner_idle_time_seconds" usage:"Maximum amount of time a runner can be idle before it is removed from the pool and cleaned up. Defaults to 30 minutes. Values < 0 are treated as infinity."`
+	MaxRunnerCount            int `yaml:"max_runner_count" usage:"Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory."`
+	MaxRunnerDiskSizeBytes    int `yaml:"max_runner_disk_size_bytes" usage:"Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB."`
+	MaxRunnerMemoryUsageBytes int `yaml:"max_runner_memory_usage_bytes" usage:"Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors)."`
 }
 
 type APIConfig struct {
@@ -247,8 +246,6 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value) {
 			flag.IntVar(f.Addr().Interface().(*int), fqFieldName, int(f.Int()), docString)
 		case reflect.Int64:
 			flag.Int64Var(f.Addr().Interface().(*int64), fqFieldName, int64(f.Int()), docString)
-		case reflect.Float64:
-			flag.Float64Var(f.Addr().Interface().(*float64), fqFieldName, f.Float(), docString)
 		case reflect.Slice:
 			if f.Type().Elem().Kind() == reflect.String {
 				if slice, ok := f.Interface().([]string); ok {
