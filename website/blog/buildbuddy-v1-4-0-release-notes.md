@@ -2,7 +2,7 @@
 slug: buildbuddy-v1-4-0-release-notes
 title: BuildBuddy v1.4.0 Release Notes
 author: Siggi Simonarson
-author_title: BuildBuddy Co-founder
+author_title: Co-founder @ BuildBuddy
 date: 2020-11-12:12:00:00
 author_url: https://www.linkedin.com/in/siggisim/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
@@ -59,10 +59,6 @@ New to Cloud & Enterprise BuildBuddy
 
 -   **Remote build execution performance and reliability improvements** - we've made a whole host of changes to our remote build execution executors and schedulers to make them more fault tolerant, easier to scale, and faster. We've also exposed support for executor pools on BuildBuddy Enterprise which allow you to route remote execution traffic based on OS, CPU architecture, GPU requirements, CPU/memory requirements, and more. Routing can be configured at both the platform and individual target level. Finally, we've added improved documentation to help get up and running with RBE more quickly.
 
-‍
-
 That's it for this release. Stay tuned for more updates coming soon!
 
 As always, we love your feedback - join our [Slack channel](https://slack.buildbuddy.io) or email us at <hello@buildbuddy.io> with any questions, comments, or thoughts.
-
-‍

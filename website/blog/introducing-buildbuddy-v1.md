@@ -2,7 +2,7 @@
 slug: introducing-buildbuddy-v1
 title: Introducing BuildBuddy Version 1.0
 author: Siggi Simonarson
-author_title: BuildBuddy Co-founder
+author_title: Co-founder @ BuildBuddy
 date: 2020-04-24:12:00:00
 author_url: https://www.linkedin.com/in/siggisim/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4

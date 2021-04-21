@@ -2,7 +2,7 @@
 slug: buildbuddy-v1-1-0-release-notes
 title: BuildBuddy v1.1.0 Release Notes
 author: Siggi Simonarson
-author_title: BuildBuddy Co-founder
+author_title: Co-founder @ BuildBuddy
 date: 2020-09-03:12:00:00
 author_url: https://www.linkedin.com/in/siggisim/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
