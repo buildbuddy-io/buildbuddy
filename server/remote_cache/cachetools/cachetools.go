@@ -317,9 +317,66 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 		uploads:          make(map[digest.Key]struct{}),
 	}, nil
 }
-func (ul *BatchCASUploader) Upload(absFilePath string) (*repb.Digest, error) {
-	f, err := os.Open(absFilePath)
-	defer f.Close()
+
+// Upload adds the given content to the current batch or begins a streaming
+// upload if it exceeds the maximum batch size. It closes r when it is no
+// longer needed.
+func (ul *BatchCASUploader) Upload(d *repb.Digest, r io.ReadSeekCloser) error {
+	// De-dupe uploads by digest.
+	dk := digest.NewKey(d)
+	if _, ok := ul.uploads[dk]; ok {
+		return r.Close()
+	}
+	ul.uploads[dk] = struct{}{}
+
+	r.Seek(0, 0)
+
+	if d.GetSizeBytes() > gRPCMaxSize {
+		ul.eg.Go(func() error {
+			_, err := UploadFromReader(ul.ctx, ul.bsClient, digest.NewInstanceNameDigest(d, ul.instanceName), r)
+			if err != nil {
+				return err
+			}
+			return r.Close()
+		})
+		return nil
+	}
+
+	if ul.currentBatchSize+d.GetSizeBytes() > gRPCMaxSize {
+		ul.flushCurrentBatch()
+	}
+	b, err := ioutil.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	if err := r.Close(); err != nil {
+		return err
+	}
+	ul.req.Requests = append(ul.req.Requests, &repb.BatchUpdateBlobsRequest_Request{
+		Digest: d,
+		Data:   b,
+	})
+	ul.currentBatchSize += d.GetSizeBytes()
+	return nil
+}
+
+func (ul *BatchCASUploader) UploadProto(in proto.Message) (*repb.Digest, error) {
+	data, err := proto.Marshal(in)
+	if err != nil {
+		return nil, err
+	}
+	d, err := digest.Compute(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	if err := ul.Upload(d, NewBytesReadSeekCloser(data)); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
@@ -327,43 +384,21 @@ func (ul *BatchCASUploader) Upload(absFilePath string) (*repb.Digest, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// De-dupe uploads by digest
-	dk := digest.NewKey(d)
-	if _, ok := ul.uploads[dk]; ok {
+	// Note: uploader.Upload will close the file.
+	if err := ul.Upload(d, f); err != nil {
 		return nil, err
 	}
-	ul.uploads[dk] = struct{}{}
-
-	if d.GetSizeBytes() > gRPCMaxSize {
-		ul.eg.Go(func() error {
-			f, err := os.Open(absFilePath)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-			_, err = UploadFromReader(ul.ctx, ul.bsClient, digest.NewInstanceNameDigest(d, ul.instanceName), f)
-			return err
-		})
-		return d, nil
-	}
-
-	if ul.currentBatchSize+d.GetSizeBytes() > gRPCMaxSize {
-		ul.flushCurrentBatch()
-	}
-	// digest.Compute above exhausts the reader, so need to seek back to the beginning.
-	f.Seek(0, 0)
-	b, err := ioutil.ReadAll(f)
-	if err != nil {
-		return nil, err
-	}
-	ul.req.Requests = append(ul.req.Requests, &repb.BatchUpdateBlobsRequest_Request{
-		Digest: d,
-		Data:   b,
-	})
-	ul.currentBatchSize += d.GetSizeBytes()
 	return d, nil
 }
+
+type bytesReadSeekCloser struct {
+	io.ReadSeeker
+}
+
+func NewBytesReadSeekCloser(b []byte) io.ReadSeekCloser {
+	return &bytesReadSeekCloser{bytes.NewReader(b)}
+}
+func (*bytesReadSeekCloser) Close() error { return nil }
 
 func (ul *BatchCASUploader) flushCurrentBatch() {
 	req := ul.req
@@ -394,64 +429,55 @@ func (ul *BatchCASUploader) Wait() error {
 // as well as the directory structure, and returns the digest of the root
 // Directory proto that can be used to fetch the uploaded contents.
 func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName, rootDirPath string) (*repb.Digest, error) {
-	cache := env.GetCache()
-	if cache == nil {
-		return nil, status.FailedPreconditionError("cache is required")
-	}
 	ul, err := NewBatchCASUploader(ctx, env, instanceName)
 	if err != nil {
 		return nil, err
 	}
 
 	dirs := []*repb.Directory{}
-	if _, err := uploadDir(ul, rootDirPath, &dirs); err != nil {
+	// Recursively find and upload all descendent dirs.
+	var rootDirectoryDigest *repb.Digest
+	if rootDirectoryDigest, _, err = uploadDir(ul, rootDirPath, &dirs); err != nil {
 		return nil, err
 	}
+	// Upload the tree, which consists of the root dir as well as all descendant
+	// dirs.
 	rootTree := &repb.Tree{Root: dirs[0], Children: dirs[1:]}
-	ul.eg.Go(func() error {
-		_, err := UploadProtoToCAS(ctx, cache, instanceName, rootTree)
-		return err
-	})
-	var rootDirectoryDigest *repb.Digest
-	ul.eg.Go(func() error {
-		var err error
-		rootDirectoryDigest, err = UploadProtoToCAS(ctx, cache, instanceName, rootTree.Root)
-		return err
-	})
+	if _, err := ul.UploadProto(rootTree); err != nil {
+		return nil, err
+	}
 	if err := ul.Wait(); err != nil {
 		return nil, err
 	}
 	return rootDirectoryDigest, nil
 }
 
-func uploadDir(uploader *BatchCASUploader, dirPath string, acc *[]*repb.Directory) (*repb.Directory, error) {
+func uploadDir(ul *BatchCASUploader, dirPath string, acc *[]*repb.Directory) (*repb.Digest, *repb.Directory, error) {
 	dir := &repb.Directory{}
+	// Append the directory before doing any other work, so that the root
+	// directory is located at acc[0] at the end of recursion.
 	*acc = append(*acc, dir)
 	infos, err := ioutil.ReadDir(dirPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, info := range infos {
 		name := info.Name()
 		path := filepath.Join(dirPath, name)
 
 		if info.IsDir() {
-			childDir, err := uploadDir(uploader, path, acc)
+			d, _, err := uploadDir(ul, path, acc)
 			if err != nil {
-				return nil, err
-			}
-			d, err := digest.ComputeForMessage(childDir)
-			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			dir.Directories = append(dir.Directories, &repb.DirectoryNode{
 				Name:   name,
 				Digest: d,
 			})
 		} else if info.Mode().IsRegular() {
-			d, err := uploader.Upload(path)
+			d, err := ul.UploadFile(path)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			dir.Files = append(dir.Files, &repb.FileNode{
 				Name:         name,
@@ -461,7 +487,7 @@ func uploadDir(uploader *BatchCASUploader, dirPath string, acc *[]*repb.Director
 		} else if info.Mode()&os.ModeSymlink == os.ModeSymlink {
 			target, err := os.Readlink(path)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			dir.Symlinks = append(dir.Symlinks, &repb.SymlinkNode{
 				Name:   name,
@@ -469,11 +495,11 @@ func uploadDir(uploader *BatchCASUploader, dirPath string, acc *[]*repb.Director
 			})
 		}
 	}
-	uploader.eg.Go(func() error {
-		_, err := UploadProtoToCAS(uploader.ctx, uploader.cache, uploader.instanceName, dir)
-		return err
-	})
-	return dir, nil
+	digest, err := ul.UploadProto(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	return digest, dir, nil
 }
 
 func UploadProtoToAC(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
