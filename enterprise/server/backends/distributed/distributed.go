@@ -94,7 +94,9 @@ func (c *Cache) StartListening() {
 		if c.heartbeatChannel != nil {
 			c.heartbeatChannel.StartAdvertising()
 		}
-		c.cacheProxy.StartListening()
+		if err := c.cacheProxy.StartListening(); err != nil {
+			log.Warningf("Unable to start cacheproxy: %s", err)
+		}
 	}()
 }
 
@@ -214,6 +216,7 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	for i, peer := range peers {
 		b, err := c.remoteContains(ctx, peer, c.prefix, d)
 		if err == nil && b {
+			log.Debugf("Distributed(%s) Contains(%q) found on peer %q", c.config.ListenAddr, d, peer)
 			if i != 0 {
 				if err := c.backfillReplica(ctx, d, peer, peers[i-1]); err != nil {
 					log.Debugf("Error backfilling %q => %q: %s", peer, peers[i-1], err)
@@ -221,6 +224,7 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 			}
 			return b, err
 		}
+		log.Debugf("Distributed(%s) Contains(%q) not found on peer %q (err: %+v)", c.config.ListenAddr, d, peer, err)
 		continue
 	}
 	return false, nil
@@ -235,22 +239,6 @@ type backfillOrder struct {
 type peerSet struct {
 	peers []string
 	index int
-}
-
-func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) error {
-	if len(backfills) == 0 {
-		return nil
-	}
-	eg, gCtx := errgroup.WithContext(ctx)
-	for _, bf := range backfills {
-		eg.Go(func() error {
-			if err := c.backfillReplica(gCtx, bf.d, bf.source, bf.dest); err != nil {
-				log.Debugf("Error backfilling %q => %q: %s", bf.source, bf.dest, err)
-			}
-			return nil
-		})
-	}
-	return eg.Wait()
 }
 
 func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
@@ -281,7 +269,6 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 	return foundMap, nil
 }
 
-
 // The first reader with a non-empty value will be returned. If all potential
 // peers for the digest are exhausted, then return a NotFoundError.
 //
@@ -293,6 +280,7 @@ func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset in
 	for i, peer := range peers {
 		r, err := c.remoteReader(ctx, peer, c.prefix, d, offset)
 		if err == nil {
+			log.Debugf("Distributed(%s) Reader(%q) found on peer %s", c.config.ListenAddr, d, peer)
 			if i != 0 {
 				if err := c.backfillReplica(ctx, d, peer, peers[i-1]); err != nil {
 					log.Debugf("Error backfilling %q => %q: %s", peer, peers[i-1], err)
@@ -300,6 +288,7 @@ func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset in
 			}
 			return r, err
 		}
+		log.Debugf("Distributed(%s) Reader(%q) not found on peer %s", c.config.ListenAddr, d, peer)
 		continue
 	}
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q, peers: %s", d.GetHash(), peers)
@@ -342,20 +331,20 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 	return foundMap, nil
 }
 
-
 type multiWriteCloser struct {
 	ctx           context.Context
 	peerClosers   map[string]io.WriteCloser
 	totalNumPeers int
 	mu            *sync.Mutex
 	d             *repb.Digest
+	listenAddr    string
 }
 
 func (mc *multiWriteCloser) failCloserWithError(peer string, err error) error {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 	delete(mc.peerClosers, peer)
-	log.Debugf("Peer %q failed mid-write with error: %s. Removing from active-write set.", peer, err)
+	log.Debugf("Peer %q failed mid-write of %q with error: %s. Removing from active-write set.", peer, mc.d.GetHash(), err)
 	writersRemaining := len(mc.peerClosers)
 	var allPeers []string
 	for peer, _ := range mc.peerClosers {
@@ -398,7 +387,15 @@ func (mc *multiWriteCloser) Close() error {
 			return nil
 		})
 	}
-	return eg.Wait()
+	err := eg.Wait()
+	if err == nil {
+		peers := make([]string, len(mc.peerClosers))
+		for peer, _ := range mc.peerClosers {
+			peers = append(peers, peer)
+		}
+		log.Debugf("Distributed(%s) Writer(%q) successfully wrote to peers %s", mc.listenAddr, mc.d, peers)
+	}
+	return err
 }
 
 // Attempt to write digest to N peers (where N == replicationFactor).
@@ -414,20 +411,25 @@ func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser
 		peerClosers:   make(map[string]io.WriteCloser, 0),
 		totalNumPeers: len(peers),
 		mu:            &sync.Mutex{},
+		listenAddr:    c.config.ListenAddr,
 	}
 
 	for _, peer := range peers {
 		rwc, err := c.remoteWriter(ctx, peer, c.prefix, d)
-		if err == nil {
-			mwc.peerClosers[peer] = rwc
+		if err != nil {
+			log.Debugf("Error getting remote writer to peer %q: %s", peer, err)
+			continue
 		}
+		mwc.peerClosers[peer] = rwc
 	}
-	if len(mwc.peerClosers) < len(peers)/2 {
-		log.Debugf("Could not open enough remoteWriters to satisfy quorum for digest %s/%d", d.GetHash(), d.GetSizeBytes())
-		log.Debugf("All peers: %s, opened: %s", peers, mwc.peerClosers)
-		return nil, status.UnavailableErrorf("Exhausted all peers attempting to write %q, peers: %s", d.GetHash(), peers)
+	if len(mwc.peerClosers) > len(peers)/2 {
+		return mwc, nil
 	}
-	return mwc, nil
+
+	log.Debugf("Could not open enough remoteWriters to satisfy quorum for digest %s/%d", d.GetHash(), d.GetSizeBytes())
+	log.Debugf("All peers: %s, opened: %s", peers, mwc.peerClosers)
+	return nil, status.UnavailableErrorf("Exhausted all peers attempting to write %q, peers: %s", d.GetHash(), peers)
+
 }
 
 func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {

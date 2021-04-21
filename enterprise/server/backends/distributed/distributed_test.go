@@ -1,32 +1,26 @@
 package distributed
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
-	"sync"
+	"net"
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/heartbeat"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/stretchr/testify/assert"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
-
-const heartbeatGroupName = "testGroup"
 
 var (
 	emptyUserMap = testauth.TestUsers()
@@ -48,330 +42,328 @@ func getAnonContext(t *testing.T) context.Context {
 	return ctx
 }
 
-func lowerTimeoutsForTesting(hbc *heartbeat.Channel) {
-	hbc.Period = 100 * time.Millisecond
-	hbc.Timeout = 3 * hbc.Period
-	hbc.CheckPeriod = 10 * time.Millisecond
-}
-
-func newDistributedCache(t *testing.T, te environment.Env, ps interfaces.PubSub, peer string, replicationFactor int, maxSizeBytes int64) *Cache {
+func newMemoryCache(t *testing.T, maxSizeBytes int64) interfaces.Cache {
 	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dcc := CacheConfig{
-		ListenAddr:        peer,
-		GroupName:         heartbeatGroupName,
-		ReplicationFactor: replicationFactor,
-		PubSub:            ps,
+	return mc
+}
+
+func waitForReady(t *testing.T, addr string, maxWait time.Duration) {
+	log.Printf("Waiting for peer %q to become ready!", addr)
+	for {
+		select {
+		case <-time.After(maxWait):
+			t.Fatalf("%q did not become ready in %s", addr, maxWait)
+			return
+		default:
+			conn, err := net.Dial("tcp", addr)
+			if conn != nil {
+				conn.Close()
+				return
+			}
+			log.Printf("Got err: %s", err)
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
-	c, err := NewDistributedCache(te, mc, dcc, te.GetHealthChecker())
+}
+
+func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCache interfaces.Cache) *Cache {
+	c, err := NewDistributedCache(te, baseCache, config, te.GetHealthChecker())
 	if err != nil {
 		t.Fatal(err)
 	}
-	lowerTimeoutsForTesting(c.heartbeatChannel)
 	c.StartListening()
+	waitForReady(t, config.ListenAddr, 100*time.Millisecond)
+	//	t.Cleanup(func() {
+	//		shutdownCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	//		c.Shutdown(shutdownCtx)
+	//		cancel()
+	//	})
 	return c
 }
 
-func TestDroppedNode(t *testing.T) {
+func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *repb.Digest) {
+	reader, err := c.Reader(ctx, d, 0)
+	if err != nil {
+		assert.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
+	}
+	d1 := testdigest.ReadDigestAndClose(t, reader)
+	assert.Equal(t, d.GetHash(), d1.GetHash())
+}
+
+func TestBasicReadWrite(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
-	ps := pubsub.NewTestPubSub()
 	ctx := getAnonContext(t)
-
-	var liveNodes map[string]struct{}
-	liveNodesLock := sync.RWMutex{}
-	hbc := heartbeat.NewHeartbeatChannel(ps, &heartbeat.Config{
-		MyPublicAddr:     "",
-		GroupName:        heartbeatGroupName,
-		EnablePeerExpiry: true,
-		UpdateFn: func(nodes ...string) {
-			liveNodesLock.Lock()
-			liveNodes = make(map[string]struct{}, 0)
-			for _, n := range nodes {
-				liveNodes[n] = struct{}{}
-			}
-			liveNodesLock.Unlock()
-		},
-	})
-	lowerTimeoutsForTesting(hbc)
-
-	waitForNodes := func(peers []string) {
-		for {
-			liveNodesLock.RLock()
-			numAlive := len(liveNodes)
-			anyMissing := false
-			for _, p := range peers {
-				if _, ok := liveNodes[p]; !ok {
-					anyMissing = true
-					break
-				}
-			}
-			liveNodesLock.RUnlock()
-
-			if len(peers) == numAlive && !anyMissing {
-				// Hack: wait a little longer for all nodes to catch up.
-				time.Sleep(100 * time.Millisecond)
-				log.Printf("Finished waiting for nodes: %s", peers)
-				return
-			}
-			log.Printf("Waiting for nodes %s, %s", peers, liveNodes)
-			time.Sleep(10 * time.Millisecond)
-		}
+	singleCacheSizeBytes := int64(1024)
+	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
 	}
 
-	tests := []struct {
-		replicas          int
-		replicationFactor int
-		replicasToFail    int
-	}{
-		{1, 1, 0},
-		{2, 2, 1},
-		{3, 2, 1},
-		{5, 3, 2},
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, te, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, te, config2, memoryCache2)
+	_ = dc2
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, te, config3, memoryCache3)
+	_ = dc3
+
+	baseCaches := []interfaces.Cache{
+		memoryCache1,
+		memoryCache2,
+		memoryCache3,
 	}
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	for _, testStruct := range tests {
-		maxSizeBytes := int64(10000000) // 10MB
-		peers := make([]string, 0, testStruct.replicas)
-		caches := make(map[string]*Cache, testStruct.replicas)
-
-		log.Printf("TestStruct; %+v", testStruct)
-		for i := 0; i < testStruct.replicas; i++ {
-			peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
-			peers = append(peers, peer)
-			caches[peer] = newDistributedCache(t, te, ps, peer, testStruct.replicationFactor, maxSizeBytes)
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure it was written to all nodes.
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+			t.Fatal(err)
 		}
-
-		waitForNodes(peers)
-
-		digests := make([]*repb.Digest, 0, 100)
-		for i := 0; i < 10; i += 1 {
-			d, buf := testdigest.NewRandomDigestBuf(t, 1500)
-			digests = append(digests, d)
-
-			randomPeer := peers[rand.Intn(len(peers))]
-			c := caches[randomPeer]
-			err := c.Set(ctx, d, buf)
-			if err != nil {
-				t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
-			}
-
-			randomPeer = peers[rand.Intn(len(peers))]
-			c = caches[randomPeer]
-			rbuf, err := c.Get(ctx, d)
-			if err != nil {
-				t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
-			}
-
-			// Compute a digest for the bytes returned.
-			d2, err := digest.Compute(bytes.NewReader(rbuf))
-			if err != nil {
-				t.Fatalf("Error computing digest: %s", err.Error())
-			}
-			if d.GetHash() != d2.GetHash() {
-				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
-			}
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, d)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, baseCache, d)
 		}
-
-		// Now shutdown the requested number of nodes.
-		for i := 0; i < testStruct.replicasToFail; i++ {
-			randPeerIdx := rand.Intn(len(peers))
-			randomPeer := peers[randPeerIdx]
-			caches[randomPeer].Shutdown(ctx)
-			delete(caches, randomPeer)
-			peers = append(peers[:randPeerIdx], peers[randPeerIdx+1:]...)
-		}
-
-		waitForNodes(peers)
-		log.Printf("Reduced peer set %s running.", peers)
-
-		for _, d := range digests {
-			randomPeer := peers[rand.Intn(len(peers))]
-			c := caches[randomPeer]
-			rbuf, err := c.Get(ctx, d)
-			if err != nil {
-				t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
-			}
-
-			// Compute a digest for the bytes returned.
-			d2, err := digest.Compute(bytes.NewReader(rbuf))
-			if err != nil {
-				t.Fatalf("Error computing digest: %s", err.Error())
-			}
-			if d.GetHash() != d2.GetHash() {
-				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
-			}
-		}
-
-		log.Printf("Shutting down caches")
-		for _, cache := range caches {
-			cache.Shutdown(ctx)
-		}
-
-		waitForNodes([]string{})
 	}
 }
 
-func TestEventualConsistency(t *testing.T) {
+func TestReadWriteWithFailedNode(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
-	ps := pubsub.NewTestPubSub()
 	ctx := getAnonContext(t)
+	singleCacheSizeBytes := int64(1024)
+	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
 
-	var liveNodes map[string]struct{}
-	liveNodesLock := sync.RWMutex{}
-	hbc := heartbeat.NewHeartbeatChannel(ps, &heartbeat.Config{
-		MyPublicAddr:     "",
-		GroupName:        heartbeatGroupName,
-		EnablePeerExpiry: true,
-		UpdateFn: func(nodes ...string) {
-			liveNodesLock.Lock()
-			liveNodes = make(map[string]struct{}, 0)
-			for _, n := range nodes {
-				liveNodes[n] = struct{}{}
-			}
-			liveNodesLock.Unlock()
-		},
-	})
-	lowerTimeoutsForTesting(hbc)
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, te, config1, memoryCache1)
 
-	waitForNodes := func(peers []string) {
-		for {
-			liveNodesLock.RLock()
-			numAlive := len(liveNodes)
-			anyMissing := false
-			for _, p := range peers {
-				if _, ok := liveNodes[p]; !ok {
-					anyMissing = true
-					break
-				}
-			}
-			liveNodesLock.RUnlock()
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, te, config2, memoryCache2)
+	_ = dc2
 
-			if len(peers) == numAlive && !anyMissing {
-				// Hack: wait a little longer for everyone else to catch up.
-				time.Sleep(100 * time.Millisecond)
-				log.Printf("Finished waiting for nodes: %s", peers)
-				return
-			}
-			log.Printf("Waiting for nodes %s, %s", peers, liveNodes)
-			time.Sleep(10 * time.Millisecond)
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, te, config3, memoryCache3)
+	_ = dc3
+
+	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2}
+	distributedCaches := []interfaces.Cache{dc1, dc2}
+
+	// "Fail" a a node by shutting it down.
+	// The basecache and distributed cache are not in baseCaches
+	// or distributedCaches so they should not be referenced
+	// below when reading / writing, although the running nodes
+	// still have reference to them via the Nodes list.
+	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	err := dc3.Shutdown(shutdownCtx)
+	cancel()
+	assert.Nil(t, err)
+
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure it was written to all nodes.
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		if err := distributedCaches[i%2].Set(ctx, d, buf); err != nil {
+			t.Fatal(err)
+		}
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, d)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, baseCache, d)
+		}
+	}
+}
+
+func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t)
+	singleCacheSizeBytes := int64(100000)
+	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, te, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, te, config2, memoryCache2)
+	_ = dc2
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, te, config3, memoryCache3)
+	_ = dc3
+
+	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2}
+	distributedCaches := []*Cache{dc1, dc2}
+
+	// "Fail" a a node by shutting it down.
+	// The basecache and distributed cache are not in baseCaches
+	// or distributedCaches so they should not be referenced
+	// below when reading / writing, although the running nodes
+	// still have reference to them via the Nodes list.
+	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	err := dc3.Shutdown(shutdownCtx)
+	cancel()
+	assert.Nil(t, err)
+
+	digestsWritten := make([]*repb.Digest, 0)
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure it was written to all nodes.
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		log.Printf("About to set value in cache!")
+		if err := distributedCaches[i%2].Set(ctx, d, buf); err != nil {
+			t.Fatal(err)
+		}
+		log.Printf("set value in cache!")
+		digestsWritten = append(digestsWritten, d)
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, d)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, baseCache, d)
 		}
 	}
 
-	tests := []struct {
-		replicas          int
-		replicationFactor int
-		numFailures       int
-	}{
-		{2, 2, 1},
-		{3, 2, 1},
-		{5, 3, 1},
+	baseCaches = append(baseCaches, memoryCache3)
+	distributedCaches = append(distributedCaches, dc3)
+	dc3.StartListening()
+
+	for _, d := range digestsWritten {
+		for _, distributedCache := range distributedCaches {
+			exists, err := distributedCache.Contains(ctx, d)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, distributedCache, d)
+		}
+	}
+}
+
+func TestBackfill(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t)
+	singleCacheSizeBytes := int64(100000)
+	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
 	}
 
-	for _, testStruct := range tests {
-		maxSizeBytes := int64(10000000) // 10MB
-		peers := make([]string, 0, testStruct.replicas)
-		caches := make(map[string]*Cache, testStruct.replicas)
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, te, config1, memoryCache1)
 
-		mu := sync.Mutex{}
-		randomPeer := func() (int, string) {
-			i := rand.Intn(len(peers))
-			return i, peers[i]
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, te, config2, memoryCache2)
+	_ = dc2
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, te, config3, memoryCache3)
+	_ = dc3
+
+	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2}
+	distributedCaches := []*Cache{dc1, dc2}
+
+	// "Fail" a a node by shutting it down.
+	// The basecache and distributed cache are not in baseCaches
+	// or distributedCaches so they should not be referenced
+	// below when reading / writing, although the running nodes
+	// still have reference to them via the Nodes list.
+	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	err := dc3.Shutdown(shutdownCtx)
+	cancel()
+	assert.Nil(t, err)
+
+	digestsWritten := make([]*repb.Digest, 0)
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure it was written to all nodes.
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		log.Printf("About to set value in cache!")
+		if err := distributedCaches[i%2].Set(ctx, d, buf); err != nil {
+			t.Fatal(err)
 		}
-		useRandomCache := func(fn func(c *Cache)) {
-			mu.Lock()
-			defer mu.Unlock()
-			_, p := randomPeer()
-			fn(caches[p])
+		log.Printf("set value in cache!")
+		digestsWritten = append(digestsWritten, d)
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, d)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, baseCache, d)
 		}
-		shutdownRandomCache := func() string {
-			i, p := randomPeer()
-			log.Printf("Shutting down %q...", p)
-			mu.Lock()
-			defer mu.Unlock()
-			c := caches[p]
-			delete(caches, p)
-			peers = append(peers[:i], peers[i+1:]...)
-			c.Shutdown(ctx)
-			waitForNodes(peers)
-			log.Printf("Finished shutting down %q", p)
-			return p
+	}
+
+	// Restore the node.
+	baseCaches = append(baseCaches, memoryCache3)
+	distributedCaches = append(distributedCaches, dc3)
+	dc3.StartListening()
+	waitForReady(t, peer3, 100*time.Millisecond)
+
+	// Read our digests, and ensure that after each read, the digest
+	// is *also* present in the base cache of the shutdown node,
+	// because it has been backfilled.
+	for _, d := range digestsWritten {
+		for _, distributedCache := range distributedCaches {
+			exists, err := distributedCache.Contains(ctx, d)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, distributedCache, d)
 		}
-		restartCache := func(peer string) {
-			log.Printf("Restarting %q...", peer)
-			mu.Lock()
-			defer mu.Unlock()
-			peers = append(peers, peer)
-			caches[peer] = newDistributedCache(t, te, ps, peer, testStruct.replicationFactor, maxSizeBytes)
-			waitForNodes(peers)
-			log.Printf("Finished restarting %q", peer)
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, d)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, baseCache, d)
 		}
-
-		log.Printf("TestStruct; %+v", testStruct)
-		for i := 0; i < testStruct.replicas; i++ {
-			peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
-			peers = append(peers, peer)
-			caches[peer] = newDistributedCache(t, te, ps, peer, testStruct.replicationFactor, maxSizeBytes)
-		}
-
-		// wait until all nodes have advertised.
-		waitForNodes(peers)
-
-		written := make([]*repb.Digest, 0)
-
-		quit := make(chan struct{}, 0)
-		done := make(chan bool, 1)
-		go func() {
-			numReads := 0
-			defer func() {
-				log.Printf("Writing true to done!")
-				done <- true
-			}()
-			for {
-				select {
-				case <-quit:
-					log.Printf("watcher succesfully ran %d reads and %d writes.", numReads, len(written))
-					return
-				default:
-					useRandomCache(func(c *Cache) {
-						d, buf := testdigest.NewRandomDigestBuf(t, 1500)
-						if err := c.Set(ctx, d, buf); err != nil {
-							t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
-						}
-						written = append(written, d)
-					})
-
-					useRandomCache(func(c *Cache) {
-						d := written[rand.Intn(len(written))]
-						_, err := c.Get(ctx, d)
-						if err != nil {
-							t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
-						}
-						numReads += 1
-					})
-				}
-			}
-		}()
-
-		for i := 0; i < testStruct.numFailures; i += 1 {
-			p := shutdownRandomCache()
-			time.Sleep(10 * time.Millisecond)
-			restartCache(p)
-			time.Sleep(10 * time.Millisecond)
-		}
-
-		// Close our background goroutine & wait for it.
-		log.Printf("Closing quit channel!")
-		close(quit)
-		log.Printf("Waiting for done...")
-		<-done
-		log.Printf("Got done signal!")
-
-		// Cleanup.
-		for _, cache := range caches {
-			cache.Shutdown(ctx)
-		}
-		waitForNodes([]string{})
 	}
 }
