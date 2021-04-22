@@ -22,12 +22,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/oauth2"
 	"gorm.io/gorm"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
+	githubapi "github.com/google/go-github/github"
 	guuid "github.com/google/uuid"
 )
 
@@ -237,7 +239,56 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 }
 
 func (ws *workflowService) GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error) {
-	return nil, status.UnimplementedError("Not implemented")
+	if g.GetGitProvider() == wfpb.GitProvider_UNKNOWN_GIT_PROVIDER {
+		return nil, status.FailedPreconditionError("Unknown git provider")
+	}
+	u, err := perms.AuthenticatedUser(ctx, ws.env)
+	if err != nil {
+		return nil, err
+	}
+	d := ws.env.GetUserDB()
+	if d == nil {
+		return nil, status.FailedPreconditionError("Missing UserDB")
+	}
+	groupID := req.GetRequestContext().GetGroupID()
+	if err := perms.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
+		return nil, err
+	}
+	g, err := d.GetGroupByID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if g.GithubToken == "" {
+		return nil, status.FailedPreconditionError("The selected group does not have a GitHub account linked")
+	}
+	urls, err := listGitHubRepoURLs(ctx, g.GithubToken)
+	if err != nil {
+		return nil, status.UnknownErrorf("Failed to list GitHub repo URLs: %s", err)
+	}
+	res := &wfpb.GetReposResponse{}
+	for _, url := range urls {
+		res.Repo = append(res.Repo, &wfpb.Repo{URL: url})
+	}
+	return res, nil
+}
+
+func listGitHubRepoURLs(ctx context.Context, accessToken string) ([]string, error) {
+	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
+	tc := oauth2.NewClient(ctx, ts)
+	client := githubapi.NewClient(tc)
+	repos, _, err := client.Repositories.List(ctx, "", nil)
+	if err != nil {
+		// TODO: transform GH HTTP response to proper gRPC status code
+		return nil, err
+	}
+	urls := []string{}
+	for _, repo := range repos {
+		if repo.URL == nil {
+			continue
+		}
+		urls = append(urls, *repo.URL)
+	}
+	return urls, nil
 }
 
 func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID string) (*tables.Workflow, error) {
