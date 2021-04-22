@@ -13,7 +13,8 @@ message RequestContext {
   // that matches the following list of criteria (in order):
   //
   // 1. Any group with an owned domain.
-  // 2. The default group, unless `no_app_default_user_group` is set in the config.
+  // 2. The default group, unless `no_app_default_user_group` is set in the
+  // config.
   // 3. The user's self-owned group, if it exists.
   // 4. Any group with a write token.
   string group_id = 2;

@@ -42,9 +42,7 @@ message JoinGroupRequest {
   string id = 1;
 }
 
-message JoinGroupResponse {
-  context.ResponseContext response_context = 1;
-}
+message JoinGroupResponse { context.ResponseContext response_context = 1; }
 
 message GetGroupRequest {
   context.RequestContext request_context = 2;
@@ -111,7 +109,8 @@ message UpdateGroupUsersRequest {
       UNKNOWN_MEMBERSHIP_ACTION = 0;
       // Add the user to the group.
       ADD = 1;
-      // Remove the user from the group as well as any pending membership requests.
+      // Remove the user from the group as well as any pending membership
+      // requests.
       REMOVE = 2;
     }
 
@@ -188,9 +187,7 @@ message UpdateGroupRequest {
   bool sharing_enabled = 6;
 }
 
-message UpdateGroupResponse {
-  context.ResponseContext response_context = 1;
-}
+message UpdateGroupResponse { context.ResponseContext response_context = 1; }
 
 enum GroupMembershipStatus {
   UNKNOWN_MEMBERSHIP_STATUS = 0;
