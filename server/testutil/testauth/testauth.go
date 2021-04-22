@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	"github.com/dgrijalva/jwt-go"
 	"google.golang.org/grpc/metadata"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -34,6 +35,7 @@ const (
 
 	TestApiKeyHeader = "test-buildbuddy-api-key"
 	jwtHeader        = "x-buildbuddy-jwt"
+	jwtTestKey       = "testKey"
 )
 
 var (
@@ -120,7 +122,7 @@ func (a *TestAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.U
 		return u, nil
 	}
 	if jwt, ok := ctx.Value(jwtHeader).(string); ok {
-		if u := a.testUsers[jwt]; u != nil {
+		if u := a.testUsers[TestUserIDForJWT(jwt)]; u != nil {
 			return u, nil
 		}
 	}
@@ -167,4 +169,16 @@ func RequestContext(userID string, groupID string) *ctxpb.RequestContext {
 // WithAuthenticatedUser sets the authenticated user to the given user.
 func WithAuthenticatedUser(ctx context.Context, userInfo interfaces.UserInfo) context.Context {
 	return context.WithValue(ctx, testAuthenticationHeader, userInfo)
+}
+
+func TestJWTForUserID(userID string) (string, error) {
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, &jwt.StandardClaims{Subject: userID}).SignedString(jwtTestKey)
+}
+
+func TestUserIDForJWT(token string) string {
+	claims := &jwt.StandardClaims{}
+	jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
+		return jwtTestKey, nil
+	})
+	return claims.Subject
 }
