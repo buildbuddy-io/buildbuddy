@@ -223,7 +223,7 @@ export default class InvocationModel {
     return this.getIsRBEEnabled() ? "Remote execution on" : "Remote execution off";
   }
 
-  getFetches() {
+  getFetchURLs() {
     return this.fetchEventURLs;
   }
 
