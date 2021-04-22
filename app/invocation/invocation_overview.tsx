@@ -48,7 +48,7 @@ export default class InvocationOverviewComponent extends React.Component {
   }
 
   handleFetchesClicked() {
-    if (this.props.model.getFetches().length > 0) {
+    if (this.props.model.getFetchURLs().length > 0) {
       window.location.hash = "#fetches";
       return;
     }
@@ -151,7 +151,7 @@ export default class InvocationOverviewComponent extends React.Component {
           {isBazelInvocation && (
             <div className="detail" onClick={this.handleFetchesClicked.bind(this)}>
               <img className="icon" src="/image/box-regular.svg" />
-              {this.props.model.fetchEvents.length} fetches
+              {this.props.model.getFetchURLs().length} fetches
             </div>
           )}
           {isBazelInvocation && (
