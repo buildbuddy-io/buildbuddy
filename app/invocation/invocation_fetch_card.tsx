@@ -23,14 +23,14 @@ export default class FetchCardComponent extends React.Component {
       <div className="card">
         <img className="icon" src="/image/log-circle.svg" />
         <div className="content">
-            <div className="title">Fetches</div>
-            {this.props.model.fetchEvents.length > 0 && (
-                <div className="executor-cards">
-                    {this.props.model.fetchEvents.map((fetch) => (
-                    <div>{fetch}</div>
-                ))}
-                </div>
-            )}
+          <div className="title">Fetches</div>
+          {this.props.model.getFetches().length > 0 && (
+            <div className="executor-cards">
+              {this.props.model.getFetches().map((fetch) => (
+                <div>{fetch}</div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     );
