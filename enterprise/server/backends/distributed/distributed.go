@@ -417,7 +417,7 @@ func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser
 	for _, peer := range peers {
 		rwc, err := c.remoteWriter(ctx, peer, c.prefix, d)
 		if err != nil {
-			log.Debugf("Error getting remote writer to peer %q: %s", peer, err)
+			log.Debugf("Error opening remote writer for %q to peer %q: %s", d.GetHash(), peer, err)
 			continue
 		}
 		mwc.peerClosers[peer] = rwc
@@ -426,8 +426,11 @@ func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser
 		return mwc, nil
 	}
 
-	log.Debugf("Could not open enough remoteWriters to satisfy quorum for digest %s/%d", d.GetHash(), d.GetSizeBytes())
-	log.Debugf("All peers: %s, opened: %s", peers, mwc.peerClosers)
+	openPeers := make([]string, len(mwc.peerClosers))
+	for peer, _ := range mwc.peerClosers {
+		openPeers = append(openPeers, peer)
+	}
+	log.Debugf("Could not open enough remoteWriters to satisfy quorum for digest %s. All peers: %s, opened: %s", d.GetHash(), peers, openPeers)
 	return nil, status.UnavailableErrorf("Exhausted all peers attempting to write %q, peers: %s", d.GetHash(), peers)
 
 }
