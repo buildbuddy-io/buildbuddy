@@ -149,8 +149,8 @@ export default class InvocationOverviewComponent extends React.Component {
             </div>
           )}
           {isBazelInvocation && (
-            <div className="detail" onClick={this.handleFetchesClicked.bind(this)}>
-              <img className="icon" src="/image/box-regular.svg" />
+            <div className="detail clickable" onClick={this.handleFetchesClicked.bind(this)}>
+              <img className="icon" src="/image/link.svg" />
               {this.props.model.getFetchURLs().length} fetches
             </div>
           )}
