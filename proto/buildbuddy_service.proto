@@ -56,15 +56,18 @@ service BuildBuddyService {
   // Execution API
   rpc GetExecution(execution_stats.GetExecutionRequest)
       returns (execution_stats.GetExecutionResponse);
-  rpc GetExecutionNodes(scheduler.GetExecutionNodesRequest) 
+  rpc GetExecutionNodes(scheduler.GetExecutionNodesRequest)
       returns (scheduler.GetExecutionNodesResponse);
 
   // Target API
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);
 
   // Workflow API
-  rpc CreateWorkflow(workflow.CreateWorkflowRequest) returns (workflow.CreateWorkflowResponse);
-  rpc DeleteWorkflow(workflow.DeleteWorkflowRequest) returns (workflow.DeleteWorkflowResponse);
-  rpc GetWorkflows(workflow.GetWorkflowsRequest) returns (workflow.GetWorkflowsResponse);
+  rpc CreateWorkflow(workflow.CreateWorkflowRequest)
+      returns (workflow.CreateWorkflowResponse);
+  rpc DeleteWorkflow(workflow.DeleteWorkflowRequest)
+      returns (workflow.DeleteWorkflowResponse);
+  rpc GetWorkflows(workflow.GetWorkflowsRequest)
+      returns (workflow.GetWorkflowsResponse);
   rpc GetRepos(repo.GetReposRequest) returns (repo.GetReposResponse);
 }
