@@ -832,3 +832,19 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, redirURL, http.StatusTemporaryRedirect)
 }
+
+// Parses the JWT's UserInfo from the context without verifying the JWT.
+// Only use this if you know what you're doing and the JWT is coming from a trusted source
+// that has already verified its authenticity.
+func UserFromTrustedJWT(ctx context.Context) (interfaces.UserInfo, error) {
+	if tokenString, ok := ctx.Value(contextTokenStringKey).(string); ok && tokenString != "" {
+		claims := &Claims{}
+		parser := jwt.Parser{}
+		_, _, err := parser.ParseUnverified(tokenString, claims)
+		if err != nil {
+			return nil, err
+		}
+		return claims, nil
+	}
+	return nil, status.PermissionDeniedError("User not found")
+}
