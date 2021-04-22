@@ -183,9 +183,9 @@ type ExecutorConfig struct {
 }
 
 type RunnerPoolConfig struct {
-	MaxRunnerCount            int `yaml:"max_runner_count" usage:"Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory."`
-	MaxRunnerDiskSizeBytes    int `yaml:"max_runner_disk_size_bytes" usage:"Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB."`
-	MaxRunnerMemoryUsageBytes int `yaml:"max_runner_memory_usage_bytes" usage:"Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors)."`
+	MaxRunnerCount            int   `yaml:"max_runner_count" usage:"Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory."`
+	MaxRunnerDiskSizeBytes    int64 `yaml:"max_runner_disk_size_bytes" usage:"Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB."`
+	MaxRunnerMemoryUsageBytes int64 `yaml:"max_runner_memory_usage_bytes" usage:"Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors)."`
 }
 
 type APIConfig struct {
