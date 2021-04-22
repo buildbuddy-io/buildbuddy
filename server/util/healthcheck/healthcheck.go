@@ -122,6 +122,7 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	for name, ck := range h.checkers {
+		name := name
 		checkFn := ck
 		eg.Go(func() error {
 			if err := checkFn.Check(ctx); err != nil {
