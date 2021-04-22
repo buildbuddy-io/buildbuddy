@@ -35,11 +35,11 @@ const (
 
 	TestApiKeyHeader = "test-buildbuddy-api-key"
 	jwtHeader        = "x-buildbuddy-jwt"
-	jwtTestKey       = "testKey"
 )
 
 var (
 	testApiKeyRegex = regexp.MustCompile(TestApiKeyHeader + "=([a-zA-Z0-9]+)")
+	jwtTestKey      = []byte("testKey")
 )
 
 type TestUser struct {
