@@ -47,6 +47,7 @@ type TestUser struct {
 	GroupID       string                   `json:"group_id"`
 	AllowedGroups []string                 `json:"allowed_groups"`
 	Capabilities  []akpb.ApiKey_Capability `json:"capabilities"`
+	jwt.StandardClaims
 }
 
 func (c *TestUser) GetUserID() string          { return c.UserID }
@@ -172,13 +173,13 @@ func WithAuthenticatedUser(ctx context.Context, userInfo interfaces.UserInfo) co
 }
 
 func TestJWTForUserID(userID string) (string, error) {
-	return jwt.NewWithClaims(jwt.SigningMethodHS256, &jwt.StandardClaims{Subject: userID}).SignedString(jwtTestKey)
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, &TestUser{UserID: userID}).SignedString(jwtTestKey)
 }
 
 func TestUserIDForJWT(token string) string {
-	claims := &jwt.StandardClaims{}
+	claims := &TestUser{}
 	jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
 		return jwtTestKey, nil
 	})
-	return claims.Subject
+	return claims.UserID
 }
