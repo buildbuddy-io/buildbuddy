@@ -15,6 +15,7 @@ go_library(
         "//enterprise/server/webhooks/bitbucket",
         "//enterprise/server/webhooks/github",
         "//enterprise/server/webhooks/webhook_data",
+        "//proto:context_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",
@@ -25,9 +26,11 @@ go_library(
         "//server/util/prefix",
         "//server/util/query_builder",
         "//server/util/status",
+        "@com_github_google_go_github//github",
         "@com_github_google_uuid//:uuid",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
         "@io_gorm_gorm//:gorm",
+        "@org_golang_x_oauth2//:oauth2",
     ],
 )
 

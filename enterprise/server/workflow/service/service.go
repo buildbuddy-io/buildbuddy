@@ -26,6 +26,7 @@ import (
 	"gorm.io/gorm"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
@@ -239,37 +240,42 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 }
 
 func (ws *workflowService) GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error) {
-	if g.GetGitProvider() == wfpb.GitProvider_UNKNOWN_GIT_PROVIDER {
+	if req.GetGitProvider() == wfpb.GitProvider_UNKNOWN_GIT_PROVIDER {
 		return nil, status.FailedPreconditionError("Unknown git provider")
 	}
-	u, err := perms.AuthenticatedUser(ctx, ws.env)
-	if err != nil {
-		return nil, err
-	}
-	d := ws.env.GetUserDB()
-	if d == nil {
-		return nil, status.FailedPreconditionError("Missing UserDB")
-	}
-	groupID := req.GetRequestContext().GetGroupID()
-	if err := perms.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
-		return nil, err
-	}
-	g, err := d.GetGroupByID(ctx, groupID)
-	if err != nil {
-		return nil, err
-	}
-	if g.GithubToken == "" {
-		return nil, status.FailedPreconditionError("The selected group does not have a GitHub account linked")
-	}
-	urls, err := listGitHubRepoURLs(ctx, g.GithubToken)
+	token, err := ws.gitHubTokenForAuthorizedGroup(ctx, req.GetRequestContext())
+	urls, err := listGitHubRepoURLs(ctx, token)
 	if err != nil {
 		return nil, status.UnknownErrorf("Failed to list GitHub repo URLs: %s", err)
 	}
 	res := &wfpb.GetReposResponse{}
 	for _, url := range urls {
-		res.Repo = append(res.Repo, &wfpb.Repo{URL: url})
+		res.Repo = append(res.Repo, &wfpb.Repo{Url: url})
 	}
 	return res, nil
+}
+
+func (ws *workflowService) gitHubTokenForAuthorizedGroup(ctx context.Context, reqCtx *ctxpb.RequestContext) (string, error) {
+	_, err := perms.AuthenticatedUser(ctx, ws.env)
+	if err != nil {
+		return "", err
+	}
+	d := ws.env.GetUserDB()
+	if d == nil {
+		return "", status.FailedPreconditionError("Missing UserDB")
+	}
+	groupID := reqCtx.GetGroupId()
+	if err := perms.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
+		return "", err
+	}
+	g, err := d.GetGroupByID(ctx, groupID)
+	if err != nil {
+		return "", err
+	}
+	if g.GithubToken == "" {
+		return "", status.FailedPreconditionError("The selected group does not have a GitHub account linked")
+	}
+	return g.GithubToken, nil
 }
 
 func listGitHubRepoURLs(ctx context.Context, accessToken string) ([]string, error) {
