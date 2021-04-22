@@ -10,6 +10,7 @@ import DenseInvocationOverviewComponent from "./dense/dense_invocation_overview"
 import ArtifactsCardComponent from "./invocation_artifacts_card";
 import BuildLogsCardComponent from "./invocation_build_logs_card";
 import CacheCardComponent from "./invocation_cache_card";
+import FetchCardComponent from "./invocation_fetch_card";
 import InvocationDetailsCardComponent from "./invocation_details_card";
 import ErrorCardComponent from "./invocation_error_card";
 import SuggestionCardComponent from "./invocation_suggestion_card";
@@ -243,6 +244,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
           {activeTab == "execution" && (
             <ExecutionCardComponent model={this.state.model} inProgress={this.state.inProgress} />
+          )}
+
+          {activeTab == "fetches" && (
+            <FetchCardComponent model={this.state.model} inProgress={this.state.inProgress} />
           )}
 
           {activeTab == "raw" && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}

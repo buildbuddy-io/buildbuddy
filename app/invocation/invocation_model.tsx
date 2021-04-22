@@ -18,6 +18,7 @@ export default class InvocationModel {
   targets: build_event_stream.BuildEvent[] = [];
   succeeded: build_event_stream.BuildEvent[] = [];
   failed: build_event_stream.BuildEvent[] = [];
+  fetchEvents: string[] = [];
   succeededTest: build_event_stream.BuildEvent[] = [];
   failedTest: build_event_stream.BuildEvent[] = [];
   brokenTest: build_event_stream.BuildEvent[] = [];
@@ -70,6 +71,9 @@ export default class InvocationModel {
         }
         if (buildEvent.completed) {
           model.completedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
+        }
+        if (buildEvent.fetch) {
+          model.fetchEvents.push(buildEvent.id.fetch.url);
         }
         if (buildEvent.testResult) {
           let results = model.testResultMap.get(buildEvent.id.testResult.label) || [];
@@ -217,6 +221,10 @@ export default class InvocationModel {
 
   getRBE() {
     return this.getIsRBEEnabled() ? "Remote execution on" : "Remote execution off";
+  }
+
+  getFetches() {
+    return this.fetchEvents;
   }
 
   getRepo() {
