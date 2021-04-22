@@ -236,6 +236,10 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	return rsp, nil
 }
 
+func (ws *workflowService) GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error) {
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID string) (*tables.Workflow, error) {
 	if ws.env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")

@@ -66,4 +66,5 @@ service BuildBuddyService {
   rpc CreateWorkflow(workflow.CreateWorkflowRequest) returns (workflow.CreateWorkflowResponse);
   rpc DeleteWorkflow(workflow.DeleteWorkflowRequest) returns (workflow.DeleteWorkflowResponse);
   rpc GetWorkflows(workflow.GetWorkflowsRequest) returns (workflow.GetWorkflowsResponse);
+  rpc GetRepos(repo.GetReposRequest) returns (repo.GetReposResponse);
 }
