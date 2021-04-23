@@ -98,3 +98,28 @@ message GetWorkflowsResponse {
 
   repeated Workflow workflow = 2;
 }
+
+enum GitProvider {
+  UNKNOWN_GIT_PROVIDER = 0;
+  GITHUB = 1;
+}
+
+message Repo {
+  // Repo URL.
+  // ex: https://github.com/acme-inc/acme
+  string url = 1;
+}
+
+message GetReposRequest {
+  context.RequestContext request_context = 1;
+
+  // The provider to fetch repos for (required).
+  GitProvider git_provider = 2;
+}
+
+message GetReposResponse {
+  context.ResponseContext response_context = 1;
+
+  // Repos fetched from the provider.
+  repeated Repo repo = 2;
+}

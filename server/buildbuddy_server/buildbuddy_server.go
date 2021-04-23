@@ -696,6 +696,12 @@ func (s *BuildBuddyServer) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
+func (s *BuildBuddyServer) GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error) {
+	if wfs := s.env.GetWorkflowService(); wfs != nil {
+		return wfs.GetRepos(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
 
 type bsLookup struct {
 	URL      *url.URL
