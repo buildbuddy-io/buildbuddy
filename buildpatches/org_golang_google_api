@@ -1,6 +1,6 @@
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ abusiveexperiencereport/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -17,9 +17,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":abusiveexperiencereport",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ acceleratedmobilepageurl/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -36,9 +42,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":acceleratedmobilepageurl",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ accessapproval/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -55,9 +67,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":accessapproval",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ accessapproval/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -74,9 +92,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ accesscontextmanager/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -93,9 +117,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":accesscontextmanager",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ accesscontextmanager/v1beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -112,9 +142,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ adexchangebuyer/v1.2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -131,9 +167,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1_2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ adexchangebuyer/v1.3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -150,9 +192,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1_3",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ adexchangebuyer/v1.4/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -169,9 +217,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1_4",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ adexchangebuyer2/v2beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -188,9 +242,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ adexchangeseller/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -206,9 +266,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":adexchangeseller",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ adexchangeseller/v1.1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -224,9 +290,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1_1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ adexchangeseller/v2.0/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -242,9 +314,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2_0",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ adexperiencereport/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -261,9 +339,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":adexperiencereport",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ admin/datatransfer/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -280,9 +364,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":datatransfer",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ admin/directory/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -299,9 +389,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":directory",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ admin/reports/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -318,9 +414,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":reports",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ admob/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -337,9 +439,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":admob",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ adsense/v1.3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -355,9 +463,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1_3",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ adsense/v1.4/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -374,9 +488,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1_4",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ adsensehost/v4.1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -393,9 +513,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v4_1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ alertcenter/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -412,9 +538,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ analytics/v2.4/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -430,9 +562,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2_4",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ analytics/v3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -450,9 +588,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":analytics",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ analyticsdata/v1alpha/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -469,9 +613,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ analyticsreporting/v4/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -489,9 +639,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":analyticsreporting",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ androiddeviceprovisioning/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -508,9 +664,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":androiddeviceprovisioning",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ androidenterprise/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -527,9 +689,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":androidenterprise",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ androidmanagement/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -546,9 +714,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":androidmanagement",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ androidpublisher/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -565,9 +739,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":androidpublisher",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ androidpublisher/v1.1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -584,9 +764,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1_1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ androidpublisher/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -604,9 +790,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":androidpublisher",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ androidpublisher/v3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -624,9 +816,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":androidpublisher",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ apigateway/v1alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -643,9 +841,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ apigateway/v1beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -662,9 +866,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ apigee/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -681,9 +891,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":apigee",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ appengine/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -700,9 +916,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":appengine",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ appengine/v1alpha/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -719,9 +941,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ appengine/v1beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -738,9 +966,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ appengine/v1beta4/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -756,9 +990,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta4",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ appengine/v1beta5/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -774,9 +1014,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta5",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ appsactivity/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -793,9 +1039,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":appsactivity",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ appstate/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -811,9 +1063,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":appstate",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ artifactregistry/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -830,9 +1088,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ bigquery/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -850,9 +1114,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":bigquery",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ bigqueryconnection/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -869,9 +1139,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ bigquerydatatransfer/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -888,9 +1164,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":bigquerydatatransfer",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ bigqueryreservation/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -907,9 +1189,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":bigqueryreservation",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ bigqueryreservation/v1alpha2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -926,9 +1214,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ bigqueryreservation/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -945,9 +1239,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ bigtableadmin/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -964,9 +1264,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":bigtableadmin",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ bigtableadmin/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -984,9 +1290,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":bigtableadmin",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ billingbudgets/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1003,9 +1315,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ binaryauthorization/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1022,9 +1340,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":binaryauthorization",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ binaryauthorization/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1041,9 +1365,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ blogger/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1061,9 +1391,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":blogger",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ blogger/v3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1081,9 +1417,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":blogger",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ books/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1100,9 +1442,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":books",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ calendar/v3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1120,9 +1468,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":calendar",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ chat/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1139,9 +1493,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":chat",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ chromeuxreport/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1158,9 +1518,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":chromeuxreport",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ civicinfo/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1178,9 +1544,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":civicinfo",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ classroom/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1197,9 +1569,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":classroom",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudasset/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1216,9 +1594,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudasset",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudasset/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1235,9 +1619,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudasset/v1p1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1254,9 +1644,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1p1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudasset/v1p4beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1273,9 +1669,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1p4beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudasset/v1p5beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1292,9 +1694,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1p5beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudbilling/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1311,9 +1719,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudbilling",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudbuild/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1330,9 +1744,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudbuild",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudbuild/v1alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1349,9 +1769,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudbuild/v1alpha2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1368,9 +1794,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudcommerceprocurement/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1387,9 +1819,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudcommerceprocurement",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ clouddebugger/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1407,9 +1845,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":clouddebugger",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ clouderrorreporting/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1426,9 +1870,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudfunctions/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1445,9 +1895,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudfunctions",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudfunctions/v1beta2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1464,9 +1920,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudidentity/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1483,9 +1945,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudidentity",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudidentity/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1502,9 +1970,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudiot/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1521,9 +1995,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudiot",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudkms/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1540,9 +2020,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudkms",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudprivatecatalog/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1559,9 +2045,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudprivatecatalogproducer/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1578,9 +2070,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudprofiler/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1598,9 +2096,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudprofiler",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudresourcemanager/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1617,9 +2121,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudresourcemanager",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudresourcemanager/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1636,9 +2146,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudresourcemanager/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1656,9 +2172,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudresourcemanager",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudresourcemanager/v2beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1675,9 +2197,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudscheduler/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1694,9 +2222,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudscheduler",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudscheduler/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1713,9 +2247,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudsearch/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1732,9 +2272,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudsearch",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudshell/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1751,9 +2297,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudshell",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudshell/v1alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1770,9 +2322,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudtasks/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1790,9 +2348,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudtasks",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudtasks/v2beta2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1809,9 +2373,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2beta2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudtasks/v2beta3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1828,9 +2398,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2beta3",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudtrace/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1847,9 +2423,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudtrace",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudtrace/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1867,9 +2449,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":cloudtrace",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ cloudtrace/v2beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1886,9 +2474,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ commentanalyzer/v1alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1905,9 +2499,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ composer/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1924,9 +2524,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":composer",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ composer/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1943,9 +2549,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ compute/v0.alpha/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1962,9 +2574,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v0_alpha",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ compute/v0.beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -1981,9 +2599,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v0_beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ compute/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2000,9 +2624,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":compute",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ consumersurveys/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2019,9 +2649,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":consumersurveys",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ container/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2038,9 +2674,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":container",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ container/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2057,9 +2699,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ containeranalysis/v1alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2076,9 +2724,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ containeranalysis/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2095,9 +2749,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ content/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2115,9 +2775,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":content",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ content/v2.1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2134,9 +2800,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2_1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ content/v2sandbox/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2152,9 +2824,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2sandbox",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ customsearch/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2171,9 +2849,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":customsearch",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ datacatalog/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2190,9 +2874,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dataflow/v1b3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2209,9 +2899,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1b3",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ datafusion/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2228,9 +2924,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":datafusion",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ datafusion/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2247,9 +2949,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dataproc/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2266,9 +2974,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":dataproc",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dataproc/v1beta2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2285,9 +2999,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ datastore/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2304,9 +3024,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":datastore",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ datastore/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2323,9 +3049,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ datastore/v1beta3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2342,9 +3074,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta3",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ deploymentmanager/v0.alpha/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2361,9 +3099,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v0_alpha",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ deploymentmanager/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2381,9 +3125,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":deploymentmanager",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ deploymentmanager/v2beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2400,9 +3150,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dfareporting/v2.7/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2418,9 +3174,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2_7",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dfareporting/v3.0/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2436,9 +3198,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v3_0",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dfareporting/v3.1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2454,9 +3222,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v3_1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dfareporting/v3.2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2472,9 +3246,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v3_2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dfareporting/v3.3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2491,9 +3271,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v3_3",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dfareporting/v3.4/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2510,9 +3296,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v3_4",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dialogflow/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2530,9 +3322,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":dialogflow",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dialogflow/v2beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2549,9 +3347,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dialogflow/v3alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2568,9 +3372,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v3alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dialogflow/v3beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2587,9 +3397,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v3beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ digitalassetlinks/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2606,9 +3422,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":digitalassetlinks",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ discovery/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2625,9 +3447,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":discovery",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ displayvideo/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2644,9 +3472,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":displayvideo",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ displayvideo/v1beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2663,9 +3497,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ displayvideo/v1beta2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2682,9 +3522,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ displayvideo/v1dev/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2701,9 +3547,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1dev",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dlp/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2721,9 +3573,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":dlp",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dns/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2740,9 +3598,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":dns",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dns/v1beta2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2759,9 +3623,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ dns/v2beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2778,9 +3648,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ docs/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2797,9 +3673,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":docs",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ documentai/v1beta2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2816,9 +3698,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ domainsrdap/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2835,9 +3723,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":domainsrdap",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ doubleclickbidmanager/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2854,9 +3748,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":doubleclickbidmanager",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ doubleclickbidmanager/v1.1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2873,9 +3773,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1_1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ doubleclicksearch/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2893,9 +3799,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":doubleclicksearch",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ drive/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2913,9 +3825,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":drive",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ drive/v3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2933,9 +3851,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":drive",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ driveactivity/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -2951,6 +3875,12 @@
 +        "//option/internaloption",
 +        "//transport/http",
 +    ],
++)
++
++alias(
++    name = "go_default_library",
++    actual = ":driveactivity",
++    visibility = ["//visibility:public"],
 +)
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
@@ -3005,7 +3935,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ factchecktools/v1alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3022,9 +3952,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ fcm/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3041,9 +3977,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":fcm",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ file/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3060,9 +4002,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":file",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ file/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3079,9 +4027,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ firebase/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3098,9 +4052,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ firebasedynamiclinks/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3117,9 +4077,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":firebasedynamiclinks",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ firebasehosting/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3136,9 +4102,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":firebasehosting",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ firebasehosting/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3155,9 +4127,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ firebaseml/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3174,9 +4152,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":firebaseml",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ firebaseml/v1beta2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3193,9 +4177,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ firebaseremoteconfig/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3211,9 +4201,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":firebaseremoteconfig",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ firebaserules/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3230,9 +4226,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":firebaserules",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ firestore/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3249,9 +4251,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":firestore",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ firestore/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3268,9 +4276,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ firestore/v1beta2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3287,9 +4301,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ fitness/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3306,9 +4326,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":fitness",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ fusiontables/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3324,9 +4350,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":fusiontables",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ fusiontables/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3343,9 +4375,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":fusiontables",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ games/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3362,9 +4400,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":games",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ gamesconfiguration/v1configuration/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3381,9 +4425,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1configuration",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ gameservices/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3400,9 +4450,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":gameservices",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ gameservices/v1beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3419,9 +4475,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ gamesmanagement/v1management/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3438,9 +4500,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1management",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ genomics/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3457,9 +4525,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":genomics",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ genomics/v1alpha2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3476,9 +4550,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ genomics/v2alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3495,9 +4575,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ gmail/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3514,9 +4600,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":gmail",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ gmailpostmastertools/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3533,15 +4625,27 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ google-api-go-generator/internal/disco/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
 +    name = "disco",
 +    srcs = ["disco.go"],
 +    importpath = "google.golang.org/api/google-api-go-generator/internal/disco",
++    visibility = ["//google-api-go-generator:__subpackages__"],
++)
++
++alias(
++    name = "go_default_library",
++    actual = ":disco",
 +    visibility = ["//google-api-go-generator:__subpackages__"],
 +)
 +
@@ -3599,7 +4703,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ googleapi/transport/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,15 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3609,9 +4713,15 @@
 +    visibility = ["//visibility:public"],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":transport",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ googleapi/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,28 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
@@ -3625,6 +4735,12 @@
 +    deps = ["//internal/third_party/uritemplates"],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":googleapi",
++    visibility = ["//visibility:public"],
++)
++
 +go_test(
 +    name = "googleapi_test",
 +    srcs = [
@@ -3636,7 +4752,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ groupsmigration/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3653,9 +4769,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":groupsmigration",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ groupssettings/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3672,9 +4794,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":groupssettings",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ healthcare/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3691,9 +4819,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":healthcare",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ healthcare/v1alpha/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3709,9 +4843,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ healthcare/v1alpha2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3727,9 +4867,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ healthcare/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3746,9 +4892,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ homegraph/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3765,9 +4917,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":homegraph",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ iam/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3784,9 +4942,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":iam",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ iamcredentials/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3803,9 +4967,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":iamcredentials",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ iap/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3822,9 +4992,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":iap",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ iap/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3841,9 +5017,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ identitytoolkit/v3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3861,9 +5043,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":identitytoolkit",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ idtoken/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,40 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
@@ -3888,6 +5076,12 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":idtoken",
++    visibility = ["//visibility:public"],
++)
++
 +go_test(
 +    name = "idtoken_test",
 +    srcs = [
@@ -3900,7 +5094,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ indexing/v3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3918,9 +5112,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":indexing",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ internal/gensupport/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,40 @@
+@@ -0,0 +1,46 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
@@ -3945,6 +5145,12 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":gensupport",
++    visibility = ["//:__subpackages__"],
++)
++
 +go_test(
 +    name = "gensupport_test",
 +    srcs = [
@@ -3963,7 +5169,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ internal/impersonate/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,10 @@
+@@ -0,0 +1,16 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -3974,9 +5180,15 @@
 +    deps = ["@org_golang_x_oauth2//:go_default_library"],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":impersonate",
++    visibility = ["//:__subpackages__"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ internal/third_party/uritemplates/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,24 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
@@ -3989,6 +5201,12 @@
 +    visibility = ["//:__subpackages__"],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":uritemplates",
++    visibility = ["//:__subpackages__"],
++)
++
 +go_test(
 +    name = "uritemplates_test",
 +    srcs = ["uritemplates_test.go"],
@@ -3997,7 +5215,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ internal/version/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,15 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4007,9 +5225,15 @@
 +    visibility = ["//:__subpackages__"],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":version",
++    visibility = ["//:__subpackages__"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ internal/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,41 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
@@ -4027,6 +5251,12 @@
 +        "@org_golang_x_oauth2//:go_default_library",
 +        "@org_golang_x_oauth2//google:go_default_library",
 +    ],
++)
++
++alias(
++    name = "go_default_library",
++    actual = ":internal",
++    visibility = ["//:__subpackages__"],
 +)
 +
 +go_test(
@@ -4047,7 +5277,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ iterator/testing/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
@@ -4058,6 +5288,12 @@
 +    deps = ["//iterator"],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":testing",
++    visibility = ["//visibility:public"],
++)
++
 +go_test(
 +    name = "testing_test",
 +    srcs = ["testing_test.go"],
@@ -4066,13 +5302,19 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ iterator/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,27 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
 +    name = "iterator",
 +    srcs = ["iterator.go"],
 +    importpath = "google.golang.org/api/iterator",
++    visibility = ["//visibility:public"],
++)
++
++alias(
++    name = "go_default_library",
++    actual = ":iterator",
 +    visibility = ["//visibility:public"],
 +)
 +
@@ -4090,7 +5332,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ jobs/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4108,9 +5350,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":jobs",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ jobs/v3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4128,9 +5376,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":jobs",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ jobs/v3p1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4147,9 +5401,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v3p1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ kgsearch/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4166,9 +5426,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":kgsearch",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ language/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4185,9 +5451,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":language",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ language/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4204,9 +5476,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ language/v1beta2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4223,9 +5501,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ libraryagent/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4242,9 +5526,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":libraryagent",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ licensing/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4261,9 +5551,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":licensing",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ lifesciences/v2beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4280,9 +5576,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ localservices/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4299,9 +5601,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":localservices",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ logging/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4319,9 +5627,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":logging",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ logging/v2beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4337,9 +5651,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ managedidentities/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4356,9 +5676,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":managedidentities",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ managedidentities/v1alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4375,9 +5701,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ managedidentities/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4394,9 +5726,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ manufacturers/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4413,9 +5751,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":manufacturers",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ memcache/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4432,9 +5776,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":memcache",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ memcache/v1beta2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4451,9 +5801,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ mirror/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4470,9 +5826,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":mirror",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ ml/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4489,9 +5851,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":ml",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ monitoring/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4508,9 +5876,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":monitoring",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ monitoring/v3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4528,9 +5902,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":monitoring",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ networkmanagement/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4547,9 +5927,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":networkmanagement",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ networkmanagement/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4566,9 +5952,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ oauth2/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4585,9 +5977,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":oauth2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ oauth2/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4605,9 +6003,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":oauth2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ option/internaloption/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,13 @@
+@@ -0,0 +1,19 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4621,9 +6025,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":internaloption",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ option/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,39 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
@@ -4644,6 +6054,12 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":option",
++    visibility = ["//visibility:public"],
++)
++
 +go_test(
 +    name = "option_test",
 +    srcs = ["option_test.go"],
@@ -4659,7 +6075,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ osconfig/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4676,9 +6092,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":osconfig",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ osconfig/v1beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4695,9 +6117,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ oslogin/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4714,9 +6142,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":oslogin",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ oslogin/v1alpha/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4733,9 +6167,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ oslogin/v1beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4752,9 +6192,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ pagespeedonline/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4771,9 +6217,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":pagespeedonline",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ pagespeedonline/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4791,9 +6243,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":pagespeedonline",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ pagespeedonline/v4/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4811,9 +6269,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":pagespeedonline",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ pagespeedonline/v5/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4831,9 +6295,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":pagespeedonline",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ partners/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4850,9 +6320,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":partners",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ people/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4869,9 +6345,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":people",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ playablelocations/v3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4889,9 +6371,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":playablelocations",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ playcustomapp/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4908,9 +6396,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":playcustomapp",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ playmoviespartner/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4926,9 +6420,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":playmoviespartner",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ plus/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4945,9 +6445,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":plus",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ plusdomains/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4963,9 +6469,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":plusdomains",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ policytroubleshooter/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -4982,9 +6494,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":policytroubleshooter",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ policytroubleshooter/v1beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5001,9 +6519,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ poly/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5020,9 +6544,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":poly",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ prod_tt_sasportal/v1alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5039,9 +6569,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ proximitybeacon/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5058,9 +6594,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ pubsub/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5077,9 +6619,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":pubsub",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ pubsub/v1beta1a/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5096,9 +6644,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1a",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ pubsub/v1beta2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5115,9 +6669,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ pubsublite/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5134,9 +6694,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":pubsublite",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ qpxexpress/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5152,9 +6718,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":qpxexpress",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ realtimebidding/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5171,9 +6743,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":realtimebidding",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ recommendationengine/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5190,9 +6768,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ recommender/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5209,9 +6793,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":recommender",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ recommender/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5228,9 +6818,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ redis/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5247,9 +6843,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":redis",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ redis/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5266,9 +6868,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ remotebuildexecution/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5285,9 +6893,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":remotebuildexecution",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ remotebuildexecution/v1alpha/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5304,9 +6918,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ remotebuildexecution/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5324,9 +6944,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":remotebuildexecution",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ replicapool/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5342,9 +6968,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ replicapoolupdater/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5360,9 +6992,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ reseller/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5379,9 +7017,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":reseller",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ run/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5398,9 +7042,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":run",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ run/v1alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5417,9 +7067,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ run/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5436,9 +7092,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ runtimeconfig/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5455,9 +7117,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":runtimeconfig",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ runtimeconfig/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5474,9 +7142,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ safebrowsing/v4/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5494,9 +7168,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":safebrowsing",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ sasportal/v1alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5513,9 +7193,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ script/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5532,9 +7218,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":script",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ searchconsole/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5551,9 +7243,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":searchconsole",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ secretmanager/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5570,9 +7268,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":secretmanager",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ secretmanager/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5589,9 +7293,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ securitycenter/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5608,9 +7318,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":securitycenter",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ securitycenter/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5627,9 +7343,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ securitycenter/v1beta2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5646,9 +7368,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ securitycenter/v1p1alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5665,9 +7393,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1p1alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ securitycenter/v1p1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5684,9 +7418,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1p1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ servicebroker/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5702,9 +7442,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":servicebroker",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ servicebroker/v1alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5720,9 +7466,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ servicebroker/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5738,9 +7490,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ serviceconsumermanagement/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5757,9 +7515,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":serviceconsumermanagement",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ serviceconsumermanagement/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5776,9 +7540,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ servicecontrol/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5795,9 +7565,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":servicecontrol",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ servicecontrol/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5815,9 +7591,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":servicecontrol",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ servicedirectory/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5834,9 +7616,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ servicemanagement/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5853,9 +7641,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":servicemanagement",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ servicenetworking/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5872,9 +7666,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":servicenetworking",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ servicenetworking/v1beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5891,9 +7691,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ serviceusage/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5910,9 +7716,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":serviceusage",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ serviceusage/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5929,9 +7741,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ serviceuser/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5947,9 +7765,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":serviceuser",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ sheets/v4/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5967,9 +7791,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":sheets",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ siteverification/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -5986,9 +7816,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":siteverification",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ slides/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6005,9 +7841,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":slides",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ sourcerepo/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6024,9 +7866,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":sourcerepo",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ spanner/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6043,9 +7891,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":spanner",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ spectrum/v1explorer/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6061,9 +7915,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1explorer",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ speech/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6080,9 +7940,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":speech",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ speech/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6098,9 +7964,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ speech/v1p1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6117,9 +7989,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1p1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ speech/v2beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6135,9 +8013,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ speech/v2beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6154,9 +8038,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v2beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ sql/v1beta4/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6173,9 +8063,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta4",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ sqladmin/v1beta4/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6192,9 +8088,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta4",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ storage/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6211,9 +8113,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":storage",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ storage/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6229,9 +8137,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ storage/v1beta2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6248,9 +8162,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ storagetransfer/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6267,9 +8187,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":storagetransfer",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ streetviewpublish/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6286,9 +8212,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":streetviewpublish",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ sts/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6305,9 +8237,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":sts",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ sts/v1beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6324,9 +8262,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ support/bundler/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
@@ -6337,6 +8281,12 @@
 +    deps = ["@org_golang_x_sync//semaphore:go_default_library"],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":bundler",
++    visibility = ["//visibility:public"],
++)
++
 +go_test(
 +    name = "bundler_test",
 +    srcs = ["bundler_test.go"],
@@ -6345,7 +8295,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ surveys/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6362,9 +8312,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":surveys",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ tagmanager/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6381,9 +8337,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":tagmanager",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ tagmanager/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6401,9 +8363,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":tagmanager",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ tasks/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6420,9 +8388,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":tasks",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ testing/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6439,9 +8413,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":testing",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ texttospeech/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6458,9 +8438,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":texttospeech",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ texttospeech/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6477,9 +8463,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ toolresults/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6496,9 +8488,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":toolresults",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ toolresults/v1beta3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6515,9 +8513,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta3",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ tpu/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6534,9 +8538,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":tpu",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ tpu/v1alpha1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6553,9 +8563,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ tracing/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6572,9 +8588,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":tracing",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ trafficdirector/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6592,9 +8614,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":trafficdirector",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ translate/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6612,9 +8640,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":translate",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ translate/v3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6632,9 +8666,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":translate",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ translate/v3beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6651,9 +8691,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v3beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ transport/bytestream/internal/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,34 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
@@ -6666,6 +8712,12 @@
 +        "@org_golang_google_grpc//:go_default_library",
 +        "@org_golang_google_grpc//codes:go_default_library",
 +    ],
++)
++
++alias(
++    name = "go_default_library",
++    actual = ":internal",
++    visibility = ["//transport/bytestream:__subpackages__"],
 +)
 +
 +go_test(
@@ -6684,7 +8736,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ transport/bytestream/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,34 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
@@ -6696,6 +8748,12 @@
 +        "@go_googleapis//google/bytestream:bytestream_go_proto",
 +        "@org_golang_google_grpc//:go_default_library",
 +    ],
++)
++
++alias(
++    name = "go_default_library",
++    actual = ":bytestream",
++    visibility = ["//visibility:public"],
 +)
 +
 +go_test(
@@ -6715,13 +8773,19 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ transport/cert/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
 +    name = "cert",
 +    srcs = ["default_cert.go"],
 +    importpath = "google.golang.org/api/transport/cert",
++    visibility = ["//visibility:public"],
++)
++
++alias(
++    name = "go_default_library",
++    actual = ":cert",
 +    visibility = ["//visibility:public"],
 +)
 +
@@ -6734,7 +8798,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ transport/grpc/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,61 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
@@ -6767,6 +8831,12 @@
 +    }),
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":grpc",
++    visibility = ["//visibility:public"],
++)
++
 +go_test(
 +    name = "grpc_test",
 +    srcs = [
@@ -6792,7 +8862,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ transport/http/internal/propagation/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,26 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
@@ -6806,6 +8876,12 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":propagation",
++    visibility = ["//transport/http:__subpackages__"],
++)
++
 +go_test(
 +    name = "propagation_test",
 +    srcs = ["http_test.go"],
@@ -6815,7 +8891,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ transport/http/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,35 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
@@ -6838,6 +8914,12 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":http",
++    visibility = ["//visibility:public"],
++)
++
 +go_test(
 +    name = "http_test",
 +    srcs = ["dial_test.go"],
@@ -6847,7 +8929,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ transport/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,37 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
@@ -6870,6 +8952,12 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":transport",
++    visibility = ["//visibility:public"],
++)
++
 +go_test(
 +    name = "transport_test",
 +    srcs = ["examples_test.go"],
@@ -6881,7 +8969,7 @@
 +
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ urlshortener/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6897,9 +8985,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":urlshortener",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ vault/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6916,9 +9010,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":vault",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ vectortile/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6935,9 +9035,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":vectortile",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ verifiedaccess/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6954,9 +9060,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":verifiedaccess",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ videointelligence/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6973,9 +9085,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":videointelligence",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ videointelligence/v1beta2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -6992,9 +9110,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta2",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ videointelligence/v1p1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7011,9 +9135,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1p1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ videointelligence/v1p2beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7030,9 +9160,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1p2beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ videointelligence/v1p3beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7049,9 +9185,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1p3beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ vision/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7068,9 +9210,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":vision",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ vision/v1p1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7087,9 +9235,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1p1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ vision/v1p2beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7106,9 +9260,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1p2beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ webfonts/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7125,9 +9285,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":webfonts",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ webmasters/v3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7145,9 +9311,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":webmasters",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ websecurityscanner/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7164,9 +9336,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":websecurityscanner",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ websecurityscanner/v1alpha/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7183,9 +9361,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1alpha",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ websecurityscanner/v1beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7202,9 +9386,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ workflowexecutions/v1beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7221,9 +9411,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ workflows/v1beta/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7240,9 +9436,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ youtube/v3/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7260,9 +9462,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":youtube",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ youtubeanalytics/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7279,9 +9487,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":youtubeanalytics",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ youtubeanalytics/v1beta1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7297,9 +9511,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":v1beta1",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ youtubeanalytics/v2/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7317,9 +9537,15 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":youtubeanalytics",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ youtubereporting/v1/BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library")
 +
 +go_library(
@@ -7336,15 +9562,27 @@
 +    ],
 +)
 +
++alias(
++    name = "go_default_library",
++    actual = ":youtubereporting",
++    visibility = ["//visibility:public"],
++)
++
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
 +++ BUILD.bazel	1970-01-01 00:00:00.000000000 +0000
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 +
 +go_library(
 +    name = "api",
 +    srcs = ["doc.go"],
 +    importpath = "google.golang.org/api",
++    visibility = ["//visibility:public"],
++)
++
++alias(
++    name = "go_default_library",
++    actual = ":api",
 +    visibility = ["//visibility:public"],
 +)
 +

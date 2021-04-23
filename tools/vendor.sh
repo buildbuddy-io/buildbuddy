@@ -26,7 +26,7 @@ reponame=$(basename "$1" .git)
 archive_url="https://github.com/$1/archive/$2.zip"
 
 # Download the archive
-curl -fsSL --progress-​bar -o $reponame.zip $archive_url
+curl -fsSL -o $reponame.zip $archive_url
 
 # Calculate the sha256
 sha256=$(openssl dgst -sha256 $reponame.zip | awk '{print $2}')
@@ -47,7 +47,7 @@ github_name="com_github_${1/\//_}"
 custom_name=${4-$github_name}
 
 # Run gazelle to generate the build file patch
-$(go env GOPATH)/bin/gazelle -go_repository_mode -go_prefix $custom_prefix -mode diff -repo_root . -go_repository_module_mode > $pwd/buildpatches/$custom_name || true # diff prints error code base on diffs, not failure
+$(go env GOPATH)/bin/gazelle -go_repository_mode -go_prefix $custom_prefix -mode diff -repo_root . -go_repository_module_mode -go_naming_convention import_alias > $pwd/buildpatches/$custom_name || true # diff prints error code base on diffs, not failure
 
 # Print out the git_repository for deps.bzl
 echo """
