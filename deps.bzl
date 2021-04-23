@@ -3,7 +3,7 @@ load("@bazel_gazelle//:deps.bzl", "go_repository")
 load("@io_bazel_rules_go//extras:embed_data_deps.bzl", "go_embed_data_dependencies")
 
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_buildbuddy_dependencies
-def install_buildbuddy_dependencies():
+def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     # Bazel releases used for integration tests.
 
     http_file(
@@ -469,11 +469,14 @@ def install_buildbuddy_dependencies():
         version = "v0.2.0",
     )
 
-    go_repository(
+    # Generated with ./tools/vendor.sh googleapis/google-api-go-client c0067489eddd6a0c8aad7c6f9ac0ebd946c0f3d8 google.golang.org/api org_golang_google_api
+    http_archive(
         name = "org_golang_google_api",
-        importpath = "google.golang.org/api",
-        sum = "h1:Le77IccnTqEa8ryp9wIpX5W3zYm7Gf9LhOp9PHcwFts=",
-        version = "v0.32.0",
+        sha256 = "0d54a64322e02492ecbf40723b2392cea959069185a7736019f74b20de752fa5",
+        strip_prefix = "google-api-go-client-c0067489eddd6a0c8aad7c6f9ac0ebd946c0f3d8",
+        urls = ["https://github.com/googleapis/google-api-go-client/archive/c0067489eddd6a0c8aad7c6f9ac0ebd946c0f3d8.zip"],
+        patches = ["@%s//buildpatches:org_golang_google_api" % workspace_name],
+        patch_args = ["-s", "-p0"],
     )
 
     go_repository(
@@ -2872,11 +2875,15 @@ def install_buildbuddy_dependencies():
         sum = "h1:a5mlkVzth6W5A4fOsS3D2EO5BUmsJpcB+cRlLU7cSug=",
         version = "v2.7.1+incompatible",
     )
-    go_repository(
+
+    # Generated with ./tools/vendor.sh docker/docker 363e9a88a11be517d9e8c65c998ff56f774eb4dc
+    http_archive(
         name = "com_github_docker_docker",
-        importpath = "github.com/docker/docker",
-        sum = "h1:o5WL5onN4awYGwrW7+oTn5x9AF2prw7V0Ox8ZEkoCdg=",
-        version = "v20.10.5+incompatible",
+        sha256 = "358b4cdf0e2f11b7a99087e349b41d0f5a0a5b9da83b0ef0609ad08160bcd5f0",
+        strip_prefix = "moby-363e9a88a11be517d9e8c65c998ff56f774eb4dc",
+        urls = ["https://github.com/docker/docker/archive/363e9a88a11be517d9e8c65c998ff56f774eb4dc.zip"],
+        patches = ["@%s//buildpatches:com_github_docker_docker" % workspace_name],
+        patch_args = ["-s", "-p0"],
     )
     go_repository(
         name = "com_github_docker_go_connections",
