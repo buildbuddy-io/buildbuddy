@@ -26,12 +26,13 @@ const (
 )
 
 type CacheProxy struct {
-	env        environment.Env
-	cache      interfaces.Cache
-	listenAddr string
-	mu         *sync.Mutex
-	server     *grpc.Server
-	clients    map[string]dcpb.DistributedCacheClient
+	env               environment.Env
+	cache             interfaces.Cache
+	listenAddr        string
+	mu                *sync.Mutex
+	server            *grpc.Server
+	clients           map[string]dcpb.DistributedCacheClient
+	heartbeatCallback func(peer string)
 }
 
 func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *CacheProxy {
@@ -81,6 +82,10 @@ func (c *CacheProxy) Shutdown(ctx context.Context) error {
 	err := grpc_server.GRPCShutdown(ctx, c.server)
 	c.server = nil
 	return err
+}
+
+func (c *CacheProxy) SetHeartbeatCallbackFunc(fn func(peer string)) {
+	c.heartbeatCallback = fn
 }
 
 func digestFromKey(k *dcpb.Key) *repb.Digest {
@@ -236,6 +241,16 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		}
 	}
 	return nil
+}
+
+func (c *CacheProxy) Heartbeat(ctx context.Context, req *dcpb.HeartbeatRequest) (*dcpb.HeartbeatResponse, error) {
+	if req.GetSource() == "" {
+		return nil, status.InvalidArgumentError("A source is required.")
+	}
+	if c.heartbeatCallback != nil {
+		c.heartbeatCallback(req.GetSource())
+	}
+	return &dcpb.HeartbeatResponse{}, nil
 }
 
 func (c *CacheProxy) RemoteContains(ctx context.Context, peer, prefix string, d *repb.Digest) (bool, error) {
@@ -394,4 +409,16 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, prefix string, d *r
 		bytesUploaded: 0,
 		stream:        stream,
 	}, nil
+}
+
+func (c *CacheProxy) SendHeartbeat(ctx context.Context, peer string) error {
+	client, err := c.getClient(ctx, peer)
+	if err != nil {
+		return err
+	}
+	req := &dcpb.HeartbeatRequest{
+		Source: c.listenAddr,
+	}
+	_, err = client.Heartbeat(ctx, req)
+	return err
 }

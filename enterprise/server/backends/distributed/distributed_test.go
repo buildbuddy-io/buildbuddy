@@ -96,7 +96,7 @@ func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache,
 func TestBasicReadWrite(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t)
-	singleCacheSizeBytes := int64(1024)
+	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
@@ -149,7 +149,7 @@ func TestBasicReadWrite(t *testing.T) {
 func TestReadWriteWithFailedNode(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t)
-	singleCacheSizeBytes := int64(1024)
+	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
@@ -208,7 +208,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t)
-	singleCacheSizeBytes := int64(100000)
+	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
@@ -284,7 +284,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 func TestBackfill(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t)
-	singleCacheSizeBytes := int64(100000)
+	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
@@ -364,6 +364,144 @@ func TestBackfill(t *testing.T) {
 			assert.Nil(t, err)
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, baseCache, d)
+		}
+	}
+}
+
+func TestContainsMulti(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, te, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, te, config2, memoryCache2)
+	_ = dc2
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, te, config3, memoryCache3)
+	_ = dc3
+
+	baseCaches := []interfaces.Cache{
+		memoryCache1,
+		memoryCache2,
+		memoryCache3,
+	}
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+
+	digestsWritten := make([]*repb.Digest, 0)
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure it was written to all nodes.
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+			t.Fatal(err)
+		}
+		digestsWritten = append(digestsWritten, d)
+	}
+
+	for _, baseCache := range baseCaches {
+		foundMap, err := baseCache.ContainsMulti(ctx, digestsWritten)
+		assert.Nil(t, err)
+		for _, d := range digestsWritten {
+			exists, ok := foundMap[d]
+			assert.True(t, ok)
+			assert.True(t, exists)
+		}
+	}
+
+	for _, distributedCache := range distributedCaches {
+		foundMap, err := distributedCache.ContainsMulti(ctx, digestsWritten)
+		assert.Nil(t, err)
+		for _, d := range digestsWritten {
+			exists, ok := foundMap[d]
+			assert.True(t, ok)
+			assert.True(t, exists)
+		}
+	}
+}
+
+func TestGetMulti(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, te, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, te, config2, memoryCache2)
+	_ = dc2
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, te, config3, memoryCache3)
+	_ = dc3
+
+	baseCaches := []interfaces.Cache{
+		memoryCache1,
+		memoryCache2,
+		memoryCache3,
+	}
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+
+	digestsWritten := make([]*repb.Digest, 0)
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure it was written to all nodes.
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+			t.Fatal(err)
+		}
+		digestsWritten = append(digestsWritten, d)
+	}
+
+	for _, baseCache := range baseCaches {
+		gotMap, err := baseCache.GetMulti(ctx, digestsWritten)
+		assert.Nil(t, err)
+		for _, d := range digestsWritten {
+			buf, ok := gotMap[d]
+			assert.True(t, ok)
+			assert.Equal(t, d.GetSizeBytes(), int64(len(buf)))
+		}
+	}
+
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, digestsWritten)
+		assert.Nil(t, err)
+		for _, d := range digestsWritten {
+			buf, ok := gotMap[d]
+			assert.True(t, ok)
+			assert.Equal(t, d.GetSizeBytes(), int64(len(buf)))
 		}
 	}
 }
