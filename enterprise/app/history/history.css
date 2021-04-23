@@ -1,0 +1,11 @@
+.history-invocation-card {
+  position: relative;
+}
+
+.history-invocation-card .comparison-buffer-illustration {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 16px;
+  margin-right: 0;
+}

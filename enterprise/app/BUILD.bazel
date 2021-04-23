@@ -1,0 +1,68 @@
+load("@npm//@bazel/typescript:index.bzl", "ts_library")
+load("@npm//@bazel/esbuild:index.bzl", "esbuild")
+
+package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "fastbuild",
+    values = {"compilation_mode": "fastbuild"},
+)
+
+esbuild(
+    name = "app_bundle",
+    args = [
+        "--resolve-extensions=.mjs,.js",
+    ],
+    define = ["process.env.NODE_ENV=\"production\""],
+    entry_point = "app.tsx",
+    minify = select({
+        ":fastbuild": False,
+        "//conditions:default": True,
+    }),
+    tool = select({
+        "@bazel_tools//src/conditions:darwin": "@esbuild_darwin//:bin/esbuild",
+        "@bazel_tools//src/conditions:linux_x86_64": "@esbuild_linux//:bin/esbuild",
+    }),
+    deps = [
+        ":enterprise_app",
+    ],
+)
+
+ts_library(
+    name = "enterprise_app",
+    srcs = glob(["*.tsx"]),
+    deps = [
+        "//enterprise/app/root",
+        "@npm//@types/react",
+        "@npm//@types/react-dom",
+        "@npm//react",
+        "@npm//react-dom",
+    ],
+)
+
+genrule(
+    name = "style",
+    srcs = [
+        "//enterprise/app/api_keys:api_keys.css",
+        "//enterprise/app/history:history.css",
+        "//enterprise/app/org:org.css",
+        "//enterprise/app/settings:settings.css",
+        "//enterprise/app/workflows:workflows.css",
+        "//enterprise/app/sidebar:sidebar.css",
+        "//enterprise/app/tap:tap.css",
+        "//enterprise/app/trends:trends.css",
+        "//enterprise/app/root:root.css",
+        "//enterprise/app/executors:executors.css",
+        "//app:style.css",
+    ],
+    outs = ["style.css"],
+    cmd_bash = """
+        touch out;
+        for f in $(SRCS); do
+            if [[ ! -d $$f ]]; then
+            (cat $$f; echo) >> out;
+            fi;
+        done;
+        cat out > $@;
+    """,
+)

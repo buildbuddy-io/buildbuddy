@@ -47,6 +47,13 @@ export default class InvocationOverviewComponent extends React.Component {
     router.navigateToSetup();
   }
 
+  handleFetchesClicked() {
+    if (this.props.model.getFetchURLs().length > 0) {
+      window.location.hash = "#fetches";
+      return;
+    }
+  }
+
   handleBuildkiteClicked() {
     window.open(this.props.model.getBuildkiteUrl(), "_blank");
   }
@@ -139,6 +146,12 @@ export default class InvocationOverviewComponent extends React.Component {
             <div className="detail">
               <img className="icon" src="/image/box-regular.svg" />
               {this.props.model.buildMetrics?.packageMetrics.packagesLoaded} packages
+            </div>
+          )}
+          {isBazelInvocation && (
+            <div className="detail clickable" onClick={this.handleFetchesClicked.bind(this)}>
+              <img className="icon" src="/image/link.svg" />
+              {this.props.model.getFetchURLs().length} fetches
             </div>
           )}
           {isBazelInvocation && (

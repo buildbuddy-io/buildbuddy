@@ -1,0 +1,251 @@
+.organization-page {
+  margin-top: 32px;
+}
+
+.organization-page-title {
+  font-size: 32px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid #eee;
+  font-weight: 700;
+}
+
+.organization-form {
+  padding-top: 32px;
+  max-width: 720px;
+}
+
+.organization-form .bold {
+  font-weight: 600;
+}
+
+.organization-form .form-row {
+  margin-bottom: 16px;
+  display: flex;
+}
+
+.organization-form .form-row.stacked {
+  flex-direction: column;
+}
+
+.organization-form .form-row.stacked > :not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.organization-form .form-row:not(.stacked) {
+  align-items: center;
+}
+
+.organization-form .form-row:not(.stacked) > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.organization-form input[type="text"] {
+  display: block;
+  width: 400px;
+  max-width: 100%;
+  height: 40px;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 16px;
+  box-sizing: border-box;
+  appearance: none;
+  border: 1px solid gray;
+  border-radius: 2px;
+}
+
+.organization-form .url-input-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.organization-form .url-input-row > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.organization-form .url-input-row input {
+  width: 240px;
+}
+
+.organization-form input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  align-self: start;
+  user-select: none;
+}
+
+.base-button.organization-form-submit-button,
+.organization-join-page .yes-no-button,
+.organization-join-page .already-joined .button {
+  padding: 16px 32px;
+}
+
+.organization-form .form-error {
+  margin-top: 16px;
+  color: #f44336;
+}
+
+.organization-form .form-success-message {
+  margin-top: 16px;
+  color: #388e3c;
+}
+
+.organization-form .input-help-text,
+.organization-form .url-preview {
+  font-size: 14px;
+  color: #333;
+  margin-top: -8px;
+}
+
+.organization-details-title {
+  margin-bottom: 16px;
+}
+
+.organization-edit-form {
+  padding: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+.organization-edit-form .organization-form-submit-button {
+  margin-bottom: 0;
+}
+
+.organization-invite-link-container {
+  background: #eee;
+  border-radius: 8px;
+  padding: 16px;
+  display: inline-flex;
+  align-items: center;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.organization-invite-link-container > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.organization-invite-link-container img {
+  width: 16px;
+  height: 16px;
+  margin-right: 16px;
+}
+
+.organization-invite-link-container .invite-link {
+  color: #263238;
+  font-weight: 600;
+}
+
+.organization-form .warning {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-top: 8px;
+  background: #ffcdd2;
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.organization-form .warning img {
+  width: 16px;
+  height: 16px;
+  margin-right: 16px;
+  padding-top: 2px;
+}
+
+.organization-join-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+}
+
+.organization-join-page .title {
+  font-weight: 500;
+  font-size: 36px;
+  margin: 32px 0;
+  text-align: center;
+}
+
+.organization-join-page .org-name {
+  font-weight: 700;
+}
+
+.organization-join-page .yes-no-buttons {
+  display: flex;
+  align-items: center;
+}
+
+.organization-join-page .yes-no-buttons > :not(:last-child) {
+  margin-right: 16px;
+}
+
+.organization-join-page .illustration {
+  width: 128px;
+  /* Trim off whitespace for optical alignment. */
+  margin-bottom: -24px;
+}
+
+.organization-join-page .submit-result,
+.organization-join-page .submit-result {
+  margin-top: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 640px;
+}
+
+.organization-join-page .submit-result :not(:last-child) {
+  margin-bottom: 32px;
+}
+
+.org-join-requests .org-join-requests-header {
+  font-weight: 700;
+  margin-bottom: 16px;
+  font-size: 18px;
+}
+
+.org-join-requests {
+  background: #e3f2fd;
+  padding: 32px 0 38px 0;
+  margin: 16px;
+  border-radius: 8px;
+}
+
+.org-join-requests .org-join-requests-grid {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 32px;
+  overflow-x: auto;
+  align-items: center;
+}
+
+.org-join-requests .email {
+  font-weight: 600;
+}
+
+.org-join-requests .name {
+  opacity: 0.7;
+  font-size: 14px;
+}
+
+.org-join-requests .approve-reject-buttons {
+  display: flex;
+  flex-wrap: nowrap;
+}
+
+.org-join-requests .approve-reject-buttons > :not(:last-child) {
+  margin-right: 16px;
+}
+
+.org-join-requests .org-join-request-outcome {
+  display: flex;
+  align-items: center;
+}
+
+.org-join-requests .org-join-request-outcome > :not(:last-child) {
+  margin-right: 8px;
+}
