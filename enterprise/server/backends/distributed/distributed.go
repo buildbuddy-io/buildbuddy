@@ -271,22 +271,22 @@ func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, des
 //
 // Values found on a non-primary replica will be backfilled to the primary.
 func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-        peers := c.readPeers(d)
-        for i, peer := range peers {
-                b, err := c.remoteContains(ctx, peer, c.prefix, d)
-                if err == nil && b {
-                        log.Debugf("Distributed(%s) Contains(%q) found on peer %q", c.config.ListenAddr, d, peer)
-                        if i != 0 {
-                                if err := c.backfillReplica(ctx, d, peer, peers[i-1]); err != nil {
-                                        log.Debugf("Error backfilling %q => %q: %s", peer, peers[i-1], err)
-                                }
-                        }
-                        return b, err
-                }
-                log.Debugf("Distributed(%s) Contains(%q) not found on peer %q (err: %+v)", c.config.ListenAddr, d, peer, err)
-                continue
-        }
-        return false, nil
+	peers := c.readPeers(d)
+	for i, peer := range peers {
+		b, err := c.remoteContains(ctx, peer, c.prefix, d)
+		if err == nil && b {
+			log.Debugf("Distributed(%s) Contains(%q) found on peer %q", c.config.ListenAddr, d, peer)
+			if i != 0 {
+				if err := c.backfillReplica(ctx, d, peer, peers[i-1]); err != nil {
+					log.Debugf("Error backfilling %q => %q: %s", peer, peers[i-1], err)
+				}
+			}
+			return b, err
+		}
+		log.Debugf("Distributed(%s) Contains(%q) not found on peer %q (err: %+v)", c.config.ListenAddr, d, peer, err)
+		continue
+	}
+	return false, nil
 }
 
 type backfillOrder struct {
@@ -318,10 +318,13 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) e
 
 func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
-	foundMap := make(map[*repb.Digest]bool, len(digests))
-	peerMap := make(map[*repb.Digest]*peerSet, len(digests))
+	hashDigests := make(map[string][]*repb.Digest, 0)
+	foundMap := make(map[string]bool, len(digests))
+	peerMap := make(map[string]*peerSet, len(digests))
 	for _, d := range digests {
-		peerMap[d] = &peerSet{
+		hash := d.GetHash()
+		hashDigests[hash] = append(hashDigests[hash], d)
+		peerMap[hash] = &peerSet{
 			peers: c.readPeers(d),
 			index: 0,
 		}
@@ -332,22 +335,29 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 		// parallel, until all digests have been found or we have exhausted all
 		// peers.
 		peerRequests := make(map[string][]*repb.Digest, 0)
-		for _, d := range digests {
+		for h, perHashDigests := range hashDigests {
 			// If a previous request has already found this digest, skip it.
-			if _, ok := foundMap[d]; ok {
+			if _, ok := foundMap[h]; ok {
 				continue
 			}
 			// If no peers remain, skip this digest, we can't do anything more.
-			ps := peerMap[d]
+			ps := peerMap[h]
 			if len(ps.peers) == ps.index {
-				log.Debugf("Exhausted all peers for %q. Peerset: %s", d.GetHash(), ps.peers)
+				log.Debugf("Exhausted all peers for %q. Peerset: %s", h, ps.peers)
 				continue
 			}
 			peer := ps.peers[ps.index]
 			ps.index += 1
-			peerRequests[peer] = append(peerRequests[peer], d)
+			peerRequests[peer] = append(peerRequests[peer], perHashDigests[0])
 		}
 		if len(peerRequests) == 0 {
+			stillMissing := make([]string, 0)
+			for h, _ := range hashDigests {
+				if _, ok := foundMap[h]; !ok {
+					stillMissing = append(stillMissing, h)
+				}
+			}
+			log.Debugf("ContainsMulti: digests not found: %+v", stillMissing)
 			// If we aren't able to plan any more batch requests, that means
 			// we're out of peers and should exit, returning what we have.
 			break
@@ -359,12 +369,13 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 			eg.Go(func() error {
 				peerRsp, err := c.remoteContainsMulti(gCtx, peer, c.prefix, digests)
 				if err != nil {
-					return err
+					log.Debugf("ContainsMulti: peer %q returned err: %s", peer, err)
+					return nil
 				}
 				lock.Lock()
 				for d, exists := range peerRsp {
 					if exists {
-						foundMap[d] = exists
+						foundMap[d.GetHash()] = exists
 					}
 				}
 				lock.Unlock()
@@ -375,11 +386,11 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 			if err != context.Canceled {
 				// Don't log context cancelled errors, they are common and expected when
 				// clients cancel a request.
-				log.Warningf("Error checking contains batch; will retry: %s", err)
+				log.Debugf("Error checking contains batch; will retry: %s", err)
 			}
 			continue
 		}
-		if len(foundMap) == len(digests) {
+		if len(foundMap) == len(hashDigests) {
 			// If we've found everything, we can exit now.
 			break
 		}
@@ -388,22 +399,29 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 	// For every digest we found, if we did not find it
 	// on the first peer in our list, we want to backfill it.
 	backfills := make([]*backfillOrder, 0)
-	for d, exists := range foundMap {
+	for h, exists := range foundMap {
 		if exists {
-			ps := peerMap[d]
+			ps := peerMap[h]
 			if ps.index > 1 {
-				backfills = append(backfills, &backfillOrder{
+				bo := backfillOrder{
 					source: ps.peers[ps.index-1],
 					dest:   ps.peers[ps.index-2],
-					d:      d,
-				})
+					d:      hashDigests[h][0],
+				}
+				log.Printf("backfill order %d is: %+v", len(backfills), bo)
+				backfills = append(backfills, &bo)
 			}
 		}
 	}
 	if err := c.backfillPeers(ctx, backfills); err != nil {
 		log.Debugf("Error backfilling peers: %s", err)
 	}
-	return foundMap, nil
+
+	rsp := make(map[*repb.Digest]bool, len(digests))
+	for _, d := range digests {
+		rsp[d] = foundMap[d.GetHash()]
+	}
+	return rsp, nil
 }
 
 // The first reader with a non-empty value will be returned. If all potential
@@ -442,10 +460,13 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 
 func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(gotMap)
-	gotMap := make(map[*repb.Digest][]byte, len(digests))
-	peerMap := make(map[*repb.Digest]*peerSet, len(digests))
+	hashDigests := make(map[string][]*repb.Digest, 0)
+	gotMap := make(map[string][]byte, len(digests))
+	peerMap := make(map[string]*peerSet, len(digests))
 	for _, d := range digests {
-		peerMap[d] = &peerSet{
+		hash := d.GetHash()
+		hashDigests[hash] = append(hashDigests[hash], d)
+		peerMap[hash] = &peerSet{
 			peers: c.readPeers(d),
 			index: 0,
 		}
@@ -456,22 +477,29 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 		// parallel, until all digests have been found or we have exhausted all
 		// peers.
 		peerRequests := make(map[string][]*repb.Digest, 0)
-		for _, d := range digests {
+		for h, perHashDigests := range hashDigests {
 			// If a previous request has already found this digest, skip it.
-			if _, ok := gotMap[d]; ok {
+			if _, ok := gotMap[h]; ok {
 				continue
 			}
 			// If no peers remain, skip this digest, we can't do anything more.
-			ps := peerMap[d]
+			ps := peerMap[h]
 			if len(ps.peers) == ps.index {
-				log.Debugf("Exhausted all peers for %q. Peerset: %s", d.GetHash(), ps.peers)
+				log.Debugf("Exhausted all peers for %q. Peerset: %s", h, ps.peers)
 				continue
 			}
 			peer := ps.peers[ps.index]
 			ps.index += 1
-			peerRequests[peer] = append(peerRequests[peer], d)
+			peerRequests[peer] = append(peerRequests[peer], perHashDigests[0])
 		}
 		if len(peerRequests) == 0 {
+			stillMissing := make([]string, 0)
+			for h, _ := range hashDigests {
+				if _, ok := gotMap[h]; !ok {
+					stillMissing = append(stillMissing, h)
+				}
+			}
+			log.Debugf("ContainsMulti: digests not found: %+v", stillMissing)
 			// If we aren't able to plan any more batch requests, that means
 			// we're out of peers and should exit, returning what we have.
 			break
@@ -483,14 +511,15 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 			eg.Go(func() error {
 				peerRsp, err := c.remoteGetMulti(gCtx, peer, c.prefix, digests)
 				if err != nil {
-					return err
+					log.Debugf("GetMulti: peer %q returned err: %s", peer, err)
+					return nil
 				}
 				lock.Lock()
 				for d, data := range peerRsp {
 					if len(data) == 0 {
-						log.Warningf("Peer %q (prefix: %q) returned a zero-length response for %s", peer, c.prefix, d.GetHash())
+						log.Debugf("Peer %q (prefix: %q) returned a zero-length response for %s", peer, c.prefix, d.GetHash())
 					}
-					gotMap[d] = data
+					gotMap[d.GetHash()] = data
 				}
 				lock.Unlock()
 				return nil
@@ -500,11 +529,11 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 			if err != context.Canceled {
 				// Don't log context cancelled errors, they are common and expected when
 				// clients cancel a request.
-				log.Warningf("Error checking contains batch; will retry: %s", err)
+				log.Debugf("Error checking contains batch; will retry: %s", err)
 			}
 			continue
 		}
-		if len(gotMap) == len(digests) {
+		if len(gotMap) == len(hashDigests) {
 			// If we've found everything, we can exit now.
 			break
 		}
@@ -513,20 +542,29 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 	// For every digest we found, if we did not find it
 	// on the first peer in our list, we want to backfill it.
 	backfills := make([]*backfillOrder, 0)
-	for d, _ := range gotMap {
-		ps := peerMap[d]
-		if ps.index > 1 {
-			backfills = append(backfills, &backfillOrder{
-				source: ps.peers[ps.index-1],
-				dest:   ps.peers[ps.index-2],
-				d:      d,
-			})
+	for h, buf := range gotMap {
+		if len(buf) > 0 {
+			ps := peerMap[h]
+			if ps.index > 1 {
+				bo := backfillOrder{
+					source: ps.peers[ps.index-1],
+					dest:   ps.peers[ps.index-2],
+					d:      hashDigests[h][0],
+				}
+				log.Printf("backfill order %d is: %+v", len(backfills), bo)
+				backfills = append(backfills, &bo)
+			}
 		}
 	}
 	if err := c.backfillPeers(ctx, backfills); err != nil {
 		log.Debugf("Error backfilling peers: %s", err)
 	}
-	return gotMap, nil
+
+	rsp := make(map[*repb.Digest][]byte, len(digests))
+	for _, d := range digests {
+		rsp[d] = gotMap[d.GetHash()]
+	}
+	return rsp, nil
 }
 
 type multiWriteCloser struct {
@@ -578,10 +616,12 @@ func (mc *multiWriteCloser) Close() error {
 	eg, _ := errgroup.WithContext(mc.ctx)
 	for peer, wc := range mc.peerClosers {
 		wc := wc
+		peer := peer
 		eg.Go(func() error {
 			if err := wc.Close(); err != nil {
 				return mc.failCloserWithError(peer, err)
 			}
+			log.Printf("Succesfully wrote %s to %q", mc.d, peer)
 			return nil
 		})
 	}
