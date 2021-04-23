@@ -1,0 +1,44 @@
+.trends {
+  margin-top: 32px;
+}
+
+.trends-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.trends-title {
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.trends .tabs {
+  margin-bottom: 32px;
+}
+
+.trend-chart {
+  margin-bottom: 32px;
+  padding-top: 32px;
+  border-top: 1px solid #eee;
+}
+
+.trend-chart-title {
+  font-weight: 600;
+  font-size: 20px;
+  margin-bottom: 16px;
+}
+
+.trend-chart-hover {
+  background-color: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.trend-chart-hover-label {
+  font-weight: 600;
+}

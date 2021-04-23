@@ -1,0 +1,266 @@
+.tap {
+  margin-top: 32px;
+}
+
+.tap-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.tap-title {
+  font-size: 32px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.tap .tabs {
+  margin-bottom: 32px;
+}
+
+.tap .filter {
+  margin-top: 0;
+  margin-bottom: 18px;
+}
+
+.tap .tap-grid {
+}
+
+.tap .tap-grid-container {
+  display: flex;
+}
+
+.tap .tap-row {
+  display: flex;
+  align-items: center;
+}
+
+.tap-target-label {
+  font-size: 0.8em;
+  color: #444;
+  margin-top: 8px;
+  margin-bottom: 2px;
+}
+
+.tap-target-path {
+  color: #888;
+}
+
+.tap-target-name {
+  font-weight: 600;
+}
+
+.tap-target-type {
+  color: #aaa;
+}
+
+.tap-target-stats {
+  margin-left: 8px;
+  color: #aaa;
+}
+
+.tap .tap-block {
+  display: block;
+  width: 32px;
+  height: 32px;
+  margin: 1px;
+  border-radius: 2px;
+  box-sizing: border-box;
+  font-size: 8px;
+  padding: 2px;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.tap .tap-block:hover,
+.tap .tap-block:first-of-type {
+  opacity: 1;
+}
+
+.tap .tap-block:nth-of-type(2) {
+  opacity: 0.9;
+}
+
+.tap .tap-block:nth-of-type(3) {
+  opacity: 0.8;
+}
+
+.tap .tap-block:nth-of-type(4) {
+  opacity: 0.7;
+}
+
+.tap .tap-block.timing {
+  background-color: #0d47a1;
+}
+
+/* 
+STATUS_UNSPECIFIED = 0;
+BUILDING = 1;
+BUILT = 2;
+FAILED_TO_BUILD = 3;
+TESTING = 4;
+PASSED = 5;
+FAILED = 6;
+TIMED_OUT = 7;
+CANCELLED = 8;
+TOOL_FAILED = 9;
+INCOMPLETE = 10;
+FLAKY = 11;
+UNKNOWN = 12;
+SKIPPED = 13; 
+*/
+
+.tap .tap-block-header {
+  border: 1px solid #ccc;
+  color: #888;
+}
+
+.tap .tap-block-header:first-of-type {
+  border: 1px solid #888;
+  color: #444;
+}
+
+.tap .tap-block.status-0 {
+  background-color: #eeeeee;
+}
+
+.tap .tap-block.status-1 {
+  background-color: #2196f3;
+}
+
+.tap .tap-block.status-2 {
+  background-color: #0d47a1;
+}
+
+.tap .tap-block.status-3 {
+  background-color: #212121;
+}
+
+.tap .tap-block.status-4 {
+  background-color: #1976d2;
+}
+
+.tap .tap-block.status-5 {
+  background-color: #4caf50;
+}
+
+.tap .tap-block.status-6 {
+  background-color: #f44336;
+}
+
+.tap .tap-block.status-7 {
+  background-color: #616161;
+}
+
+.tap .tap-block.status-8 {
+  background-color: #757575;
+}
+
+.tap .tap-block.status-9 {
+  background-color: #212121;
+}
+
+.tap .tap-block.status-10 {
+  background-color: #e0e0e0;
+}
+
+.tap .tap-block.status-11 {
+  background-color: #ff9800;
+}
+
+.tap .tap-block.status-12 {
+  background-color: #bdbdbd;
+}
+
+.tap .tap-block.status-13 {
+  background-color: #b0bec5;
+}
+
+.tap input {
+  vertical-align: middle;
+  margin-left: 16px;
+}
+
+.tap label {
+  padding-left: 8px;
+  vertical-align: middle;
+  user-select: none;
+}
+
+.tap input,
+.tap label {
+  cursor: pointer;
+}
+
+.tap .group {
+  display: flex;
+  align-items: baseline;
+}
+
+.tap .group-container {
+  background-color: #fafafa;
+  border: 1px solid #eee;
+  padding: 4px 16px 4px 0;
+  min-height: 40px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  flex-grow: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.more-targets-button {
+  width: 100%;
+  padding: 24px 0;
+  margin-top: 24px;
+  background-color: #263238;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: inherit;
+  border: 0;
+  border-radius: 8px;
+  margin-bottom: 32px;
+  cursor: pointer;
+}
+
+.more-invocations-button {
+  width: 100px;
+  flex-shrink: 0;
+  padding: 24px 0;
+  margin-left: 24px;
+  margin-top: 24px;
+  background-color: #263238;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: inherit;
+  border: 0;
+  border-radius: 8px;
+  margin-bottom: 32px;
+  cursor: pointer;
+}
+
+.tap-sort-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  grid-gap: 8px;
+}
+
+.tap-sort-title {
+  margin-right: 8px;
+}
+
+.tap-sort-control {
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+}
