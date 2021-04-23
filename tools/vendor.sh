@@ -17,11 +17,19 @@ fi
 
 pwd=$(pwd)
 
-# Make sure directories exist
+# Make sure directory exists
 mkdir -p buildpatches
-mkdir -p .buildbuddy-vendor-tmp
-cd .buildbuddy-vendor-tmp
 
+# Create temp directory
+tmpdir=$(mktemp -d)
+mkdir -p $tmpdir
+cd $tmpdir
+cleanup() { 
+    rm -rf "$tmpdir" 
+}
+trap cleanup EXIT
+
+# Figure out repo name and url
 reponame=$(basename "$1" .git)
 archive_url="https://github.com/$1/archive/$2.zip"
 
@@ -43,7 +51,7 @@ github_prefix="github.com/$1"
 custom_prefix=${3-$github_prefix}
 
 # Fallback to github repo as name
-github_name="com_github_${1/\//_}"
+github_name="com_github_${1//[^[:alnum:]]/_}"
 custom_name=${4-$github_name}
 
 # Run gazelle to generate the build file patch
@@ -63,7 +71,3 @@ Add this to your deps.bzl:
         patch_args = [\"-s\", \"-p0\"],
     )
 """
-
-# Remove our temporary directory
-cd $pwd
-rm -rf .buildbuddy-vendor-tmp
