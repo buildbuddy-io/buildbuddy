@@ -26,8 +26,8 @@ export default class FetchCardComponent extends React.Component {
           <div className="title">Fetches</div>
           {this.props.model.getFetchURLs().length > 0 && (
             <div className="fetch-list">
-              {this.props.model.getFetchURLs().map((fetch) => (
-                <div className="fetch-url">{fetch}</div>
+              {this.props.model.getFetchURLs().map((fetchURL) => (
+                <div className="fetch-url">{fetchURL}</div>
               ))}
             </div>
           )}
