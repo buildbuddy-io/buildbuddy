@@ -120,7 +120,7 @@ func (c *Cache) Check(ctx context.Context) error {
 	c.heartbeatMu.Unlock()
 
 	if nodesInNetwork < c.config.ClusterSize {
-		return status.UnavailableErrorf("WOULD RETURN %d nodes in network but cluster size is %d.", nodesInNetwork, c.config.ClusterSize)
+		return status.UnavailableErrorf("%d nodes in network but cluster size is %d.", nodesInNetwork, c.config.ClusterSize)
 	}
 
 	return nil
