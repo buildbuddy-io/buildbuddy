@@ -1,5 +1,11 @@
 set -e
 
+# Vendors go repository build files and outputs a replacement http_archive.
+#
+# usage ./tools/vendor.sh <org/repo> <commit> [custom-import-path] [custom-name]
+# example: ./tools/vendor.sh docker/docker 363e9a88a11be517d9e8c65c998ff56f774eb4dc
+# example: ./tools/vendor_git.sh googleapis/google-api-go-client c0067489eddd6a0c8aad7c6f9ac0ebd946c0f3d8 google.golang.org/api org_golang_google_api
+
 if [[ $# -eq 0 ]]; then
     echo """
     usage ./tools/vendor.sh <org/repo> <commit> [custom-import-path] [custom-name]
