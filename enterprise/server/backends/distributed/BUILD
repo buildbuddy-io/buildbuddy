@@ -15,8 +15,10 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/util/consistent_hash",
+        "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/status",
+        "@org_golang_google_grpc//connectivity",
         "@org_golang_x_sync//errgroup",
     ],
 )

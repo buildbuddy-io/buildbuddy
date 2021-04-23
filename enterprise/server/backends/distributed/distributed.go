@@ -4,9 +4,11 @@ import (
 	"context"
 	"io"
 	"io/ioutil"
+	"math"
 	"math/rand"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cacheproxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/heartbeat"
@@ -20,16 +22,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-type Cache struct {
-	local  interfaces.Cache
-	config CacheConfig
-
-	prefix           string
-	cacheProxy       *cacheproxy.CacheProxy
-	consistentHash   *consistent_hash.ConsistentHash
-	heartbeatChannel *heartbeat.Channel
-}
-
 type CacheConfig struct {
 	ListenAddr         string
 	GroupName          string
@@ -39,6 +31,20 @@ type CacheConfig struct {
 	PubSub      interfaces.PubSub
 	Nodes       []string
 	ClusterSize int
+}
+
+type Cache struct {
+	local  interfaces.Cache
+	config CacheConfig
+
+	prefix           string
+	cacheProxy       *cacheproxy.CacheProxy
+	consistentHash   *consistent_hash.ConsistentHash
+	heartbeatChannel *heartbeat.Channel
+
+	heartbeatMu     *sync.Mutex
+	doneHeartbeat   chan bool
+	lastContactedBy map[string]time.Time
 }
 
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
@@ -57,7 +63,16 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		config:         config,
 		cacheProxy:     cacheproxy.NewCacheProxy(env, c, config.ListenAddr),
 		consistentHash: chash,
+
+		heartbeatMu:     &sync.Mutex{},
+		doneHeartbeat:   make(chan bool, 0),
+		lastContactedBy: make(map[string]time.Time, 0),
 	}
+	dc.cacheProxy.SetHeartbeatCallbackFunc(func(peer string) {
+		dc.heartbeatMu.Lock()
+		dc.lastContactedBy[peer] = time.Now()
+		dc.heartbeatMu.Unlock()
+	})
 	if len(config.Nodes) > 0 {
 		// Nodes are hardcoded. Set them once and be done with it.
 		chash.Set(config.Nodes...)
@@ -80,15 +95,58 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	return dc, nil
 }
 
-func (c *Cache) Check(ctx context.Context) error {
-	nodesAvailable := len(c.consistentHash.GetItems())
-	if nodesAvailable == c.config.ClusterSize {
-		return nil
+func (c *Cache) quorum() int {
+	half := float64(c.config.ReplicationFactor) / 2.0
+	quorum := math.Ceil(half)
+	if half == quorum {
+		quorum += 1
 	}
-	return status.UnavailableErrorf("%d nodes available but cluster size is %d.", nodesAvailable, c.config.ClusterSize)
+	return int(quorum)
+}
+
+func (c *Cache) Check(ctx context.Context) error {
+	// First check that the number of nodes in our chash
+	// matches the cluster size. If not, we can return early.
+	nodesAvailable := len(c.consistentHash.GetItems())
+	if nodesAvailable < c.config.ClusterSize {
+		return status.UnavailableErrorf("%d nodes available but cluster size is %d.", nodesAvailable, c.config.ClusterSize)
+	}
+
+	// Next check that we're participating in the network:
+	// basically, that enough configured peers have *ever* contacted us.
+	// TODO(tylerw): Should we have some recency threshold here?
+	c.heartbeatMu.Lock()
+	nodesInNetwork := len(c.lastContactedBy)
+	c.heartbeatMu.Unlock()
+
+	if nodesInNetwork < c.config.ClusterSize {
+		return status.UnavailableErrorf("WOULD RETURN %d nodes in network but cluster size is %d.", nodesInNetwork, c.config.ClusterSize)
+	}
+
+	return nil
+}
+
+func (c *Cache) heartbeatPeers() {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.doneHeartbeat:
+			break
+		case <-ticker.C:
+			for _, peer := range c.consistentHash.GetItems() {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				if err := c.cacheProxy.SendHeartbeat(ctx, peer); err != nil {
+					log.Debugf("%q: unable to reach peer: %q", c.config.ListenAddr, peer)
+				}
+				cancel()
+			}
+		}
+	}
 }
 
 func (c *Cache) StartListening() {
+	go c.heartbeatPeers()
 	go func() {
 		log.Printf("Distributed cache listening on %q", c.config.ListenAddr)
 		if c.heartbeatChannel != nil {
@@ -105,6 +163,7 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StopAdvertising()
 	}
+	c.doneHeartbeat <- true
 	return c.cacheProxy.Shutdown(ctx)
 }
 
@@ -212,22 +271,22 @@ func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, des
 //
 // Values found on a non-primary replica will be backfilled to the primary.
 func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	peers := c.readPeers(d)
-	for i, peer := range peers {
-		b, err := c.remoteContains(ctx, peer, c.prefix, d)
-		if err == nil && b {
-			log.Debugf("Distributed(%s) Contains(%q) found on peer %q", c.config.ListenAddr, d, peer)
-			if i != 0 {
-				if err := c.backfillReplica(ctx, d, peer, peers[i-1]); err != nil {
-					log.Debugf("Error backfilling %q => %q: %s", peer, peers[i-1], err)
-				}
-			}
-			return b, err
-		}
-		log.Debugf("Distributed(%s) Contains(%q) not found on peer %q (err: %+v)", c.config.ListenAddr, d, peer, err)
-		continue
-	}
-	return false, nil
+        peers := c.readPeers(d)
+        for i, peer := range peers {
+                b, err := c.remoteContains(ctx, peer, c.prefix, d)
+                if err == nil && b {
+                        log.Debugf("Distributed(%s) Contains(%q) found on peer %q", c.config.ListenAddr, d, peer)
+                        if i != 0 {
+                                if err := c.backfillReplica(ctx, d, peer, peers[i-1]); err != nil {
+                                        log.Debugf("Error backfilling %q => %q: %s", peer, peers[i-1], err)
+                                }
+                        }
+                        return b, err
+                }
+                log.Debugf("Distributed(%s) Contains(%q) not found on peer %q (err: %+v)", c.config.ListenAddr, d, peer, err)
+                continue
+        }
+        return false, nil
 }
 
 type backfillOrder struct {
@@ -241,31 +300,109 @@ type peerSet struct {
 	index int
 }
 
+func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) error {
+	if len(backfills) == 0 {
+		return nil
+	}
+	eg, gCtx := errgroup.WithContext(ctx)
+	for _, bf := range backfills {
+		eg.Go(func() error {
+			if err := c.backfillReplica(gCtx, bf.d, bf.source, bf.dest); err != nil {
+				log.Debugf("Error backfilling %q => %q: %s", bf.source, bf.dest, err)
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
+}
+
 func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest]bool, len(digests))
-	eg, ctx := errgroup.WithContext(ctx)
-
+	peerMap := make(map[*repb.Digest]*peerSet, len(digests))
 	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
+		peerMap[d] = &peerSet{
+			peers: c.readPeers(d),
+			index: 0,
+		}
+	}
+
+	for {
+		// Each iteration through this outer loop sends a "batch" of requests in
+		// parallel, until all digests have been found or we have exhausted all
+		// peers.
+		peerRequests := make(map[string][]*repb.Digest, 0)
+		for _, d := range digests {
+			// If a previous request has already found this digest, skip it.
+			if _, ok := foundMap[d]; ok {
+				continue
+			}
+			// If no peers remain, skip this digest, we can't do anything more.
+			ps := peerMap[d]
+			if len(ps.peers) == ps.index {
+				log.Debugf("Exhausted all peers for %q. Peerset: %s", d.GetHash(), ps.peers)
+				continue
+			}
+			peer := ps.peers[ps.index]
+			ps.index += 1
+			peerRequests[peer] = append(peerRequests[peer], d)
+		}
+		if len(peerRequests) == 0 {
+			// If we aren't able to plan any more batch requests, that means
+			// we're out of peers and should exit, returning what we have.
+			break
+		}
+		eg, gCtx := errgroup.WithContext(ctx)
+		for peer, digests := range peerRequests {
+			peer := peer
+			digests := digests
 			eg.Go(func() error {
-				exists, err := c.Contains(ctx, d)
+				peerRsp, err := c.remoteContainsMulti(gCtx, peer, c.prefix, digests)
 				if err != nil {
 					return err
 				}
 				lock.Lock()
-				defer lock.Unlock()
-				foundMap[d] = exists
+				for d, exists := range peerRsp {
+					if exists {
+						foundMap[d] = exists
+					}
+				}
+				lock.Unlock()
 				return nil
 			})
 		}
-		fetchFn(d)
+		if err := eg.Wait(); err != nil {
+			if err != context.Canceled {
+				// Don't log context cancelled errors, they are common and expected when
+				// clients cancel a request.
+				log.Warningf("Error checking contains batch; will retry: %s", err)
+			}
+			continue
+		}
+		if len(foundMap) == len(digests) {
+			// If we've found everything, we can exit now.
+			break
+		}
 	}
 
-	if err := eg.Wait(); err != nil {
-		return nil, err
+	// For every digest we found, if we did not find it
+	// on the first peer in our list, we want to backfill it.
+	backfills := make([]*backfillOrder, 0)
+	for d, exists := range foundMap {
+		if exists {
+			ps := peerMap[d]
+			if ps.index > 1 {
+				backfills = append(backfills, &backfillOrder{
+					source: ps.peers[ps.index-1],
+					dest:   ps.peers[ps.index-2],
+					d:      d,
+				})
+			}
+		}
 	}
-
+	if err := c.backfillPeers(ctx, backfills); err != nil {
+		log.Debugf("Error backfilling peers: %s", err)
+	}
 	return foundMap, nil
 }
 
@@ -304,31 +441,92 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 }
 
 func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	lock := sync.RWMutex{} // protects(foundMap)
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
-	eg, ctx := errgroup.WithContext(ctx)
-
+	lock := sync.RWMutex{} // protects(gotMap)
+	gotMap := make(map[*repb.Digest][]byte, len(digests))
+	peerMap := make(map[*repb.Digest]*peerSet, len(digests))
 	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
+		peerMap[d] = &peerSet{
+			peers: c.readPeers(d),
+			index: 0,
+		}
+	}
+
+	for {
+		// Each iteration through this outer loop sends a "batch" of requests in
+		// parallel, until all digests have been found or we have exhausted all
+		// peers.
+		peerRequests := make(map[string][]*repb.Digest, 0)
+		for _, d := range digests {
+			// If a previous request has already found this digest, skip it.
+			if _, ok := gotMap[d]; ok {
+				continue
+			}
+			// If no peers remain, skip this digest, we can't do anything more.
+			ps := peerMap[d]
+			if len(ps.peers) == ps.index {
+				log.Debugf("Exhausted all peers for %q. Peerset: %s", d.GetHash(), ps.peers)
+				continue
+			}
+			peer := ps.peers[ps.index]
+			ps.index += 1
+			peerRequests[peer] = append(peerRequests[peer], d)
+		}
+		if len(peerRequests) == 0 {
+			// If we aren't able to plan any more batch requests, that means
+			// we're out of peers and should exit, returning what we have.
+			break
+		}
+		eg, gCtx := errgroup.WithContext(ctx)
+		for peer, digests := range peerRequests {
+			peer := peer
+			digests := digests
 			eg.Go(func() error {
-				data, err := c.Get(ctx, d)
+				peerRsp, err := c.remoteGetMulti(gCtx, peer, c.prefix, digests)
 				if err != nil {
 					return err
 				}
 				lock.Lock()
-				defer lock.Unlock()
-				foundMap[d] = data
+				for d, data := range peerRsp {
+					if len(data) == 0 {
+						log.Warningf("Peer %q (prefix: %q) returned a zero-length response for %s", peer, c.prefix, d.GetHash())
+					}
+					gotMap[d] = data
+				}
+				lock.Unlock()
 				return nil
 			})
 		}
-		fetchFn(d)
+		if err := eg.Wait(); err != nil {
+			if err != context.Canceled {
+				// Don't log context cancelled errors, they are common and expected when
+				// clients cancel a request.
+				log.Warningf("Error checking contains batch; will retry: %s", err)
+			}
+			continue
+		}
+		if len(gotMap) == len(digests) {
+			// If we've found everything, we can exit now.
+			break
+		}
 	}
 
-	if err := eg.Wait(); err != nil {
-		return nil, err
+	// For every digest we found, if we did not find it
+	// on the first peer in our list, we want to backfill it.
+	backfills := make([]*backfillOrder, 0)
+	for d, _ := range gotMap {
+		ps := peerMap[d]
+		if ps.index > 1 {
+			backfills = append(backfills, &backfillOrder{
+				source: ps.peers[ps.index-1],
+				dest:   ps.peers[ps.index-2],
+				d:      d,
+			})
+		}
 	}
-
-	return foundMap, nil
+	if err := c.backfillPeers(ctx, backfills); err != nil {
+		log.Debugf("Error backfilling peers: %s", err)
+	}
+	return gotMap, nil
 }
 
 type multiWriteCloser struct {
