@@ -1,3 +1,4 @@
+#!/bin/bash
 set -e
 
 # Vendors go repository build files and outputs a replacement http_archive.
