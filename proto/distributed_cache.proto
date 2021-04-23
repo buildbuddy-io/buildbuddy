@@ -55,9 +55,17 @@ message GetMultiResponse {
   repeated KV key_value = 1;
 }
 
+message HeartbeatRequest {
+  string source = 1;
+}
+
+message HeartbeatResponse {
+}
+
 service DistributedCache {
   rpc Read(ReadRequest) returns (stream ReadResponse);
   rpc Write(stream WriteRequest) returns (WriteResponse);
   rpc ContainsMulti(ContainsMultiRequest) returns (ContainsMultiResponse);
   rpc GetMulti(GetMultiRequest) returns (GetMultiResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 }
