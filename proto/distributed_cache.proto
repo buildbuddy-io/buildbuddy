@@ -49,12 +49,9 @@ message GetMultiRequest {
 
 message GetMultiResponse { repeated KV key_value = 1; }
 
-message HeartbeatRequest {
-  string source = 1;
-}
+message HeartbeatRequest { string source = 1; }
 
-message HeartbeatResponse {
-}
+message HeartbeatResponse {}
 
 service DistributedCache {
   rpc Read(ReadRequest) returns (stream ReadResponse);
