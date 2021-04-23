@@ -89,6 +89,12 @@
   font-size: 16px;
 }
 
+.fetch-url {
+  font-weight: 300;
+  text-decoration: italic;
+  margin-top: 8px;
+}
+
 .dense-invocation {
   display: flex;
   justify-content: space-between;
