@@ -1,0 +1,61 @@
+.settings {
+  margin-top: 32px;
+}
+
+.settings-title {
+  font-size: 32px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.settings-section {
+  margin-top: 32px;
+  border-top: 1px solid #eee;
+  padding-top: 32px;
+}
+
+.settings-section-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.settings-section-subtitle {
+  margin-bottom: 16px;
+}
+
+.settings-option-title {
+  font-weight: 600;
+  font-size: 18px;
+  margin-top: 48px;
+}
+
+.settings-option-description {
+  margin-bottom: 16px;
+}
+
+.settings .settings-button,
+.settings .settings-link-button a {
+  padding: 16px 32px;
+}
+
+.settings .settings-link-button {
+  padding: 0;
+}
+
+.settings .settings-button.success {
+  background-color: #4caf50;
+  cursor: inherit;
+}
+
+.settings .organization-form {
+  margin-top: 16px;
+}
+
+.settings .organization-form .settings-option-title {
+  margin-top: 0;
+}
+
+.settings .api-keys-section {
+  margin-top: 16px;
+}

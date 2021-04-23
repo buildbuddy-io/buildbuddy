@@ -1,0 +1,159 @@
+.api-keys > :not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.api-keys .api-keys .loading {
+  width: 32px;
+  height: 32px;
+  flex-grow: 0;
+  align-self: center;
+}
+
+.api-keys .error-container {
+  background: #ffcdd2;
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.api-keys .create-new-button {
+  padding: 16px 32px;
+}
+
+.api-keys .api-keys-list {
+  padding: 8px 0;
+}
+
+.api-keys .api-keys-list > :not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.api-keys .api-key-list-item {
+  display: flex;
+  align-items: baseline;
+}
+
+.api-keys .api-key-label,
+.api-keys .api-key-capabilities {
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+}
+
+.api-keys .api-key-label {
+  font-weight: 600;
+}
+
+.api-keys .api-key-capabilities {
+  white-space: nowrap;
+  overflow-x: hidden;
+  width: 0;
+  max-width: 96px;
+  flex-basis: 96px;
+  flex-shrink: 0;
+}
+
+.api-keys .untitled-key {
+  color: #444;
+}
+
+.api-keys .api-key-label,
+.api-keys .api-key-value {
+  width: 0;
+  max-width: 224px;
+  flex-basis: 224px;
+  flex-grow: 1;
+  flex-shrink: 1;
+
+  display: flex;
+}
+
+.api-keys .api-key-label > span,
+.api-keys .api-key-value > span {
+  flex-grow: 1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-x: hidden;
+  text-align: left;
+}
+
+.api-keys .api-key-value > span {
+  font-size: 14px;
+}
+
+.api-keys .api-key-value {
+  font-family: monospace;
+  font-size: 16px;
+  background: #eee;
+  border-radius: 8px;
+  padding: 0 16px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-x: hidden;
+}
+
+.api-keys .api-key-label img,
+.api-keys .api-key-value img {
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  opacity: 0.7;
+}
+
+.api-keys .api-key-list-item {
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+  max-width: 720px;
+}
+
+.api-keys .api-key-list-item > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.api-keys-form .field-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.api-keys-form .field-container:not(:last-child) {
+  margin-bottom: 16px;
+}
+
+.api-keys-form .field-container > :not(:last-child) {
+  margin-bottom: 4px;
+}
+
+.api-keys-form .checkbox-row {
+  display: flex;
+  align-items: center;
+}
+
+.api-keys-form .field-description {
+  color: #444;
+}
+
+.api-keys-form label {
+  user-select: none;
+}
+
+.api-keys-form input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  user-select: none;
+  margin-right: 8px;
+}
+
+.api-keys-delete-modal .delete-modal-key-label {
+  font-weight: 700;
+}
+
+.api-keys-delete-modal .delete-modal-key-value {
+  font-family: monospace;
+  font-size: 15px;
+  background: #eee;
+  padding: 4px 8px;
+  border-radius: 4px;
+}

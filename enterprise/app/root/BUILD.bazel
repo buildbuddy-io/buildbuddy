@@ -1,0 +1,36 @@
+load("@npm//@bazel/typescript:index.bzl", "ts_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["root.css"])
+
+ts_library(
+    name = "root",
+    srcs = glob(["*.tsx"]),
+    deps = [
+        "//app/auth",
+        "//app/capabilities",
+        "//app/compare",
+        "//app/docs",
+        "//app/errors",
+        "//app/favicon",
+        "//app/footer",
+        "//app/invocation",
+        "//app/menu",
+        "//app/router",
+        "//app/service",
+        "//enterprise/app/executors",
+        "//enterprise/app/history",
+        "//enterprise/app/login",
+        "//enterprise/app/org",
+        "//enterprise/app/settings",
+        "//enterprise/app/sidebar",
+        "//enterprise/app/tap",
+        "//enterprise/app/trends",
+        "//enterprise/app/workflows",
+        "//proto:user_ts_proto",
+        "@npm//@types/react",
+        "@npm//protobufjs",
+        "@npm//react",
+    ],
+)
