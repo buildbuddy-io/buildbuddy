@@ -72,7 +72,7 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 		fmt.Sprintf("--cache.disk.root_directory=%s", filepath.Join(dataDir, "cache")),
 	}
 	args = append(args, commandArgs...)
-	cmd := exec.Command(runfile(t, commandPath), args...)
+	cmd := exec.Command(runfile(t, commandPath), args...) // #nosec G204
 	// TODO: Write server logs to files so they can be used to debug failed tests
 	cmd.Stdout = &app.stdout
 	cmd.Stderr = &app.stderr

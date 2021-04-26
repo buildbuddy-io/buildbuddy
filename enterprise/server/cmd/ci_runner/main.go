@@ -718,7 +718,7 @@ func matchesAnyBranch(branches []string, branch string) bool {
 }
 
 func runCommand(ctx context.Context, executable string, args []string, env map[string]string, outputSink io.Writer) error {
-	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd := exec.CommandContext(ctx, executable, args...) // #nosec G204
 	cmd.Stdout = outputSink
 	cmd.Stderr = outputSink
 	for k, v := range env {

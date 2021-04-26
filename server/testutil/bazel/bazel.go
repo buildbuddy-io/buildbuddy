@@ -45,7 +45,7 @@ func Invoke(ctx context.Context, t *testing.T, workspaceDir string, subCommand s
 	bazelArgs := []string{"--max_idle_secs=5", subCommand}
 	bazelArgs = append(bazelArgs, args...)
 	var stderr, stdout bytes.Buffer
-	cmd := exec.CommandContext(ctx, bazelBinaryPath, bazelArgs...)
+	cmd := exec.CommandContext(ctx, bazelBinaryPath, bazelArgs...) // #nosec G204
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	cmd.Dir = workspaceDir
