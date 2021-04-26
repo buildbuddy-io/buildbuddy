@@ -439,6 +439,9 @@ func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName
 	if err != nil {
 		return nil, err
 	}
+	if len(visited) == 0 {
+		return nil, status.InternalError("empty directory list after uploading directory tree; this should never happen")
+	}
 	// Upload the tree, which consists of the root dir as well as all descendant
 	// dirs.
 	rootTree := &repb.Tree{Root: visited[0], Children: visited[1:]}
