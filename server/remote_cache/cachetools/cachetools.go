@@ -290,6 +290,8 @@ type BatchCASUploader struct {
 	uploads          map[digest.Key]struct{}
 }
 
+// NewBatchCASUploader returns an uploader to be used only for the given request
+// context (it should not be used outside the lifecycle of the request).
 func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string) (*BatchCASUploader, error) {
 	bsClient := env.GetByteStreamClient()
 	if bsClient == nil {
@@ -333,11 +335,9 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, r io.ReadSeekCloser) error {
 
 	if d.GetSizeBytes() > gRPCMaxSize {
 		ul.eg.Go(func() error {
+			defer r.Close()
 			_, err := UploadFromReader(ul.ctx, ul.bsClient, digest.NewInstanceNameDigest(d, ul.instanceName), r)
-			if err != nil {
-				return err
-			}
-			return r.Close()
+			return err
 		})
 		return nil
 	}
@@ -434,15 +434,14 @@ func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName
 		return nil, err
 	}
 
-	dirs := []*repb.Directory{}
-	// Recursively find and upload all descendent dirs.
-	var rootDirectoryDigest *repb.Digest
-	if rootDirectoryDigest, _, err = uploadDir(ul, rootDirPath, &dirs); err != nil {
+	// Recursively find and upload all descendant dirs.
+	visited, rootDirectoryDigest, err := uploadDir(ul, rootDirPath, nil /*=visited*/)
+	if err != nil {
 		return nil, err
 	}
 	// Upload the tree, which consists of the root dir as well as all descendant
 	// dirs.
-	rootTree := &repb.Tree{Root: dirs[0], Children: dirs[1:]}
+	rootTree := &repb.Tree{Root: visited[0], Children: visited[1:]}
 	if _, err := ul.UploadProto(rootTree); err != nil {
 		return nil, err
 	}
@@ -452,11 +451,11 @@ func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName
 	return rootDirectoryDigest, nil
 }
 
-func uploadDir(ul *BatchCASUploader, dirPath string, acc *[]*repb.Directory) (*repb.Digest, *repb.Directory, error) {
+func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) ([]*repb.Directory, *repb.Digest, error) {
 	dir := &repb.Directory{}
 	// Append the directory before doing any other work, so that the root
-	// directory is located at acc[0] at the end of recursion.
-	*acc = append(*acc, dir)
+	// directory is located at visited[0] at the end of recursion.
+	visited = append(visited, dir)
 	infos, err := ioutil.ReadDir(dirPath)
 	if err != nil {
 		return nil, nil, err
@@ -466,7 +465,8 @@ func uploadDir(ul *BatchCASUploader, dirPath string, acc *[]*repb.Directory) (*r
 		path := filepath.Join(dirPath, name)
 
 		if info.IsDir() {
-			d, _, err := uploadDir(ul, path, acc)
+			var d *repb.Digest
+			visited, d, err = uploadDir(ul, path, visited)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -499,7 +499,7 @@ func uploadDir(ul *BatchCASUploader, dirPath string, acc *[]*repb.Directory) (*r
 	if err != nil {
 		return nil, nil, err
 	}
-	return digest, dir, nil
+	return visited, digest, nil
 }
 
 func UploadProtoToAC(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
