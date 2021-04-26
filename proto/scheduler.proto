@@ -96,8 +96,8 @@ message ReEnqueueTaskResponse {
 
 message EnqueueTaskReservationRequest {
   string task_id = 1;
-
   TaskSize task_size = 2;
+  SchedulingMetadata scheduling_metadata = 3;
 }
 
 message EnqueueTaskReservationResponse { string task_id = 1; }
@@ -137,6 +137,10 @@ service Scheduler {
   rpc ScheduleTask(ScheduleTaskRequest) returns (ScheduleTaskResponse) {}
 
   rpc ReEnqueueTask(ReEnqueueTaskRequest) returns (ReEnqueueTaskResponse) {}
+
+  // Request to enqueue a task reservation for an existing task to a locally chosen executor.
+  rpc EnqueueTaskReservation(EnqueueTaskReservationRequest)
+      returns (EnqueueTaskReservationResponse) {}
 }
 
 service QueueExecutor {
