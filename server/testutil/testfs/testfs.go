@@ -1,7 +1,6 @@
 package testfs
 
 import (
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
