@@ -1406,8 +1406,9 @@ message GetTreeRequest {
 
   // An optional list of pre-existing digests already known to the client. By
   // setting these, the client indicates that the response will be a truncated
-  // tree omitting any directories and their children that matched a pre-
-  // existing digest.
+  // tree omitting any children of directories that matched a pre-existing
+  // digest. The parent directories themselves may be returned in the response,
+  // but will not be traversed.
   repeated Digest pre_existing_digests = 5;
 }
 

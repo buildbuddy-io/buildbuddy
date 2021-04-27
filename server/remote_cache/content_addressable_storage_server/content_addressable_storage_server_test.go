@@ -162,6 +162,7 @@ func TestTreeTruncation(t *testing.T) {
 	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, rootDir)
 	assert.Nil(t, err)
 
+	// Fetch the tree, and request skipping of dir2's contents.
 	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
 		InstanceName: instanceName,
 		RootDigest:   rootDigest,
@@ -170,6 +171,9 @@ func TestTreeTruncation(t *testing.T) {
 		},
 	})
 	assert.Nil(t, err)
+
+	// Traverse the tree response and ensure that the contents of dir2 are
+	// not present.
 	for {
 		rsp, err := stream.Recv()
 		if err == io.EOF {
