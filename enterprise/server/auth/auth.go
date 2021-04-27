@@ -45,7 +45,7 @@ const (
 	// NB: This value must match the value in
 	// bb/server/rpc/filters/filters.go which copies/reads this value
 	// to/from the outgoing/incoming request contexts.
-	contextTokenStringKey = "x-buildbuddy-jwt"
+	contextTokenStringKey = "x-buildbuddy-jwt" // #nosec G101
 
 	// The key that the basicAuth object is stored under in the
 	// context.
