@@ -6,7 +6,9 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -288,5 +290,67 @@ func TestFileAtomicity(t *testing.T) {
 	}
 	if err := eg.Wait(); err != nil {
 		t.Fatalf("Error reading/writing digest %q from goroutine: %s", d.GetHash(), err.Error())
+	}
+}
+
+func TestAsyncLoading(t *testing.T) {
+	maxSizeBytes := int64(100000000) // 100MB
+	rootDir := getTmpDir(t)
+	ctx := getAnonContext(t)
+	anonPath := filepath.Join(rootDir, "ANON")
+	if err := disk.EnsureDirectoryExists(anonPath); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write some pre-existing data.
+	digests := make([]*repb.Digest, 0)
+	for i := 0; i < 10000; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+		dest := filepath.Join(anonPath, d.GetHash())
+		err := os.WriteFile(dest, buf, 0644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		digests = append(digests, d)
+	}
+	// Create a new disk cache (this will start async processing of
+	// the data we just wrote above ^)
+	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ensure that files on disk exist *immediately*, even though
+	// they may not have been async processed yet.
+	for _, d := range digests {
+		exists, err := dc.Contains(ctx, d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !exists {
+			t.Fatalf("%q was not found in cache.", d.GetHash())
+		}
+	}
+	// Write some more files, just to ensure the LRU is appended to.
+	for i := 0; i < 1000; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
+		if err := dc.Set(ctx, d, buf); err != nil {
+			t.Fatal(err)
+		}
+		digests = append(digests, d)
+	}
+
+	// Wait for loading to async loading to finish.
+	// Yeah yeah a sleep is lame.
+	time.Sleep(100 * time.Millisecond)
+
+	// Check that everything still exists.
+	for _, d := range digests {
+		exists, err := dc.Contains(ctx, d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !exists {
+			t.Fatalf("%q was not found in cache.", d.GetHash())
+		}
 	}
 }

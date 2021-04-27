@@ -1,0 +1,12 @@
+.blogPostTitle {
+  font-size: 3rem;
+}
+
+.blogPostDate {
+  font-size: 0.9rem;
+  color: #888;
+}
+
+.blogAuthorTitle {
+  margin-top: 2rem;
+}

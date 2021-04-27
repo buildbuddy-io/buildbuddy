@@ -70,18 +70,24 @@ func getInvocationIDFromMD(ctx context.Context) string {
 }
 
 func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, err error) {
+	if log.Logger.GetLevel() > zerolog.InfoLevel {
+		return
+	}
 	reqID, _ := uuid.GetFromContext(ctx) // Ignore error, we're logging anyway.
 	shortPath := "/" + path.Base(fullMethod)
 	if iid := getInvocationIDFromMD(ctx); iid != "" {
-		Printf("%s %s %s %s %s [%s]", "gRPC", reqID, iid, shortPath, fmtErr(err), formatDuration(dur))
+		Infof("%s %s %s %s %s [%s]", "gRPC", reqID, iid, shortPath, fmtErr(err), formatDuration(dur))
 	} else {
-		Printf("%s %s %s %s [%s]", "gRPC", reqID, shortPath, fmtErr(err), formatDuration(dur))
+		Infof("%s %s %s %s [%s]", "gRPC", reqID, shortPath, fmtErr(err), formatDuration(dur))
 	}
 }
 
 func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCode int) {
+	if log.Logger.GetLevel() > zerolog.InfoLevel {
+		return
+	}
 	reqID, _ := uuid.GetFromContext(ctx) // Ignore error, we're logging anyway.
-	Printf("HTTP %s %q %d %s [%s]", reqID, url, statusCode, http.StatusText(statusCode), formatDuration(dur))
+	Infof("HTTP %s %q %d %s [%s]", reqID, url, statusCode, http.StatusText(statusCode), formatDuration(dur))
 }
 
 func init() {

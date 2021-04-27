@@ -88,9 +88,7 @@ message UpdateApiKeyRequest {
   repeated ApiKey.Capability capability = 4;
 }
 
-message UpdateApiKeyResponse {
-  context.ResponseContext response_context = 1;
-}
+message UpdateApiKeyResponse { context.ResponseContext response_context = 1; }
 
 message DeleteApiKeyRequest {
   context.RequestContext request_context = 1;
@@ -100,6 +98,4 @@ message DeleteApiKeyRequest {
   string id = 2;
 }
 
-message DeleteApiKeyResponse {
-  context.ResponseContext response_context = 1;
-}
+message DeleteApiKeyResponse { context.ResponseContext response_context = 1; }

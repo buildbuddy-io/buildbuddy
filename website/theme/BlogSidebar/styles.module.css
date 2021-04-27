@@ -1,0 +1,39 @@
+.sidebar {
+  display: inherit;
+  max-height: calc(100vh - (var(--ifm-navbar-height) + 2rem));
+  overflow-y: auto;
+  position: sticky;
+  top: calc(var(--ifm-navbar-height) + 2rem);
+}
+
+.sidebarItemTitle {
+  margin-bottom: 0.5rem;
+}
+
+.sidebarItemList {
+  overflow-y: auto;
+  font-size: 0.9rem;
+  padding-left: 0;
+}
+
+.sidebarItem {
+  list-style-type: none;
+  margin: 0.8rem 0;
+}
+
+.sidebarItemLink {
+  color: var(--ifm-font-color-base);
+}
+.sidebarItemLink:hover {
+  color: var(--ifm-color-primary);
+  text-decoration: none;
+}
+.sidebarItemLinkActive {
+  color: var(--ifm-color-primary);
+}
+
+@media only screen and (max-width: 996px) {
+  .sidebar {
+    display: none;
+  }
+}

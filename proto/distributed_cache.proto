@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package distributed_cache;
+
+message Key {
+  string key = 1;
+  int64 size_bytes = 2;
+}
+
+message ReadRequest {
+  string prefix = 1;
+  Key key = 2;
+  int64 offset = 3;
+}
+
+message ReadResponse { bytes data = 1; }
+
+message WriteRequest {
+  string prefix = 1;
+  Key key = 2;
+  bool finish_write = 3;
+  bytes data = 4;
+}
+
+message WriteResponse { int64 committed_size = 1; }
+
+message ContainsMultiRequest {
+  string prefix = 1;
+  repeated Key key = 2;
+}
+
+message ContainsMultiResponse {
+  message KeysFound {
+    Key key = 1;
+    bool exists = 2;
+  }
+  repeated KeysFound keys_found = 1;
+}
+
+message KV {
+  Key key = 1;
+  bytes value = 2;
+}
+
+message GetMultiRequest {
+  string prefix = 1;
+  repeated Key key = 2;
+}
+
+message GetMultiResponse { repeated KV key_value = 1; }
+
+message HeartbeatRequest { string source = 1; }
+
+message HeartbeatResponse {}
+
+service DistributedCache {
+  rpc Read(ReadRequest) returns (stream ReadResponse);
+  rpc Write(stream WriteRequest) returns (WriteResponse);
+  rpc ContainsMulti(ContainsMultiRequest) returns (ContainsMultiResponse);
+  rpc GetMulti(GetMultiRequest) returns (GetMultiResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}

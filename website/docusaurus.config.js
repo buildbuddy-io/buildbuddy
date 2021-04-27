@@ -1,9 +1,8 @@
-const baseUrl = "/";
 module.exports = {
   title: 'BuildBuddy',
   tagline: 'BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to build and test software 10x faster.',
-  url: 'https://buildbuddy.io',
-  baseUrl: baseUrl,
+  url: process.env.BLOG ? 'https://blog.buildbuddy.io' : 'https://docs.buildbuddy.io',
+  baseUrl: '/',
   favicon: 'img/favicon_black.svg',
   organizationName: 'buildbuddy-io',
   projectName: 'buildbuddy',
@@ -27,7 +26,7 @@ module.exports = {
       },
       items: [
         {
-          to: '/docs/introduction',
+          href: 'https://docs.buildbuddy.io/docs/introduction/',
           activeBasePath: '/docs/',
           label: 'Docs',
           position: 'left',
@@ -72,7 +71,7 @@ module.exports = {
         {
           items: [
             {
-              html: `<a href="https://www.buildbuddy.io/"><img src="${baseUrl}img/logo_white.svg" class="footer-logo" /></a>`,
+              html: `<a href="https://www.buildbuddy.io/"><img src="/img/logo_white.svg" class="footer-logo" /></a>`,
             }
 
           ],
@@ -87,7 +86,7 @@ module.exports = {
             },
             {
               label: 'Documentation',
-              href: 'https://www.buildbuddy.io/docs/',
+              href: 'https://docs.buildbuddy.io/docs/introduction/',
               target: '_self',
             },
             {
@@ -117,7 +116,7 @@ module.exports = {
           items: [
             {
               label: 'Blog',
-              href: 'https://www.buildbuddy.io/blog',
+              href: 'https://blog.buildbuddy.io/blog/',
               target: '_self',
             },
             {
@@ -191,21 +190,27 @@ module.exports = {
     [
       '@docusaurus/preset-classic',
       {
-        docs: {
+        docs: (process.env.PROD && process.env.BLOG) ? { path: 'empty'} : {
           path: '../docs',
           sidebarPath: require.resolve('./sidebars.js'),
           editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/docs/',
         },
-        blog: {
+        blog: (process.env.PROD && !process.env.BLOG) ? { path: 'empty'} : {
+          path: 'blog',
           showReadingTime: true,
-          editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/blog/',
+          blogSidebarCount: 5,
+          editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/website/',
+          blogPostComponent: '../theme/BlogPostPage',
+          blogListComponent: '../theme/BlogListPage',
+          blogTagsListComponent: '../theme/BlogTagsListPage',
+          blogTagsPostsComponent: '../theme/BlogTagsPostsPage',  
         },
         theme: {
           customCss: [
             require.resolve('./src/css/footer.css'),
             require.resolve('./src/css/general.css'),
             require.resolve('./src/css/markdown.css'),
-            require.resolve('./src/css/navbar.css'),
+            require.resolve('./src/css/nav.css'),
           ],
         },
       },
@@ -215,11 +220,20 @@ module.exports = {
     [
       '@docusaurus/plugin-client-redirects',
       {
-        redirects: [
+        redirects: process.env.BLOG ? [
+          {
+            to: '/blog',
+            from: ['/'],
+          },
+        ] : [
           {
             to: '/docs/introduction',
-            from: ['/', '/docs'],
+            from: ['/'],
           },
+          {
+            to: '/docs/introduction',
+            from: ['/docs'],
+          }
         ],
       },
     ],

@@ -9,6 +9,8 @@
   --ifm-color-success: #607d8b;
 
   --ifm-font-weight-semibold: 600;
+  
+  --ifm-hr-border-color: transparent;
 
   --ifm-code-font-size: 95%;
 
@@ -44,4 +46,8 @@ html[data-theme="dark"] .footer--dark {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.markdown figure {
+  text-align: center;
 }

@@ -89,6 +89,9 @@ var (
 	triggerBranch = flag.String("trigger_branch", "", "Branch to check action triggers against.")
 	workflowID    = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 
+	// Test-only flags
+	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
+
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 )
 
@@ -99,7 +102,10 @@ func main() {
 	ctx := context.Background()
 
 	if err := setupGitRepo(ctx); err != nil {
-		fatal(status.WrapError(err, "failed to clone repo"))
+		fatal(status.WrapError(err, "failed to set up git repo"))
+	}
+	if err := os.Chdir(repoDirName); err != nil {
+		fatal(status.WrapErrorf(err, "cd %q", repoDirName))
 	}
 	cfg, err := readConfig()
 	if err != nil {
@@ -571,14 +577,47 @@ func bazelCommand() string {
 }
 
 func setupGitRepo(ctx context.Context) error {
+	repoDirInfo, err := os.Stat(repoDirName)
+	if err != nil && !os.IsNotExist(err) {
+		return status.WrapErrorf(err, "stat %q", repoDirName)
+	}
+	if repoDirInfo != nil {
+		err := syncExistingRepo(ctx, repoDirName)
+		if err == nil {
+			return nil
+		}
+		if !*fallbackToCleanCheckout {
+			return err
+		}
+		log.Printf(
+			"Failed to sync existing repo (maybe due to destructive '.git' dir edit or incompatible remote update). "+
+				"Deleting and initializing from scratch. Error: %s",
+			err,
+		)
+		if err := os.RemoveAll(repoDirName); err != nil {
+			return status.WrapErrorf(err, "rm -r %q", repoDirName)
+		}
+	}
+
 	if err := os.Mkdir(repoDirName, 0o775); err != nil {
 		return status.WrapErrorf(err, "mkdir %q", repoDirName)
 	}
-	if err := os.Chdir(repoDirName); err != nil {
-		return status.WrapErrorf(err, "cd %q", repoDirName)
-	}
 
-	repo, err := git.PlainInit("." /*isBare=*/, false)
+	return setupNewGitRepo(ctx, repoDirName)
+}
+
+func fetchOrigin(ctx context.Context, remote *git.Remote) error {
+	fetchOpts := &git.FetchOptions{
+		RefSpecs: []gitcfg.RefSpec{gitcfg.RefSpec(fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", *branch, *branch))},
+	}
+	if err := remote.FetchContext(ctx, fetchOpts); err != nil && err != git.NoErrAlreadyUpToDate {
+		return status.WrapErrorf(err, "fetch remote %q", git.DefaultRemoteName)
+	}
+	return nil
+}
+
+func setupNewGitRepo(ctx context.Context, path string) error {
+	repo, err := git.PlainInit(path, false /*=isBare*/)
 	if err != nil {
 		return err
 	}
@@ -587,25 +626,50 @@ func setupGitRepo(ctx context.Context) error {
 		return err
 	}
 	remote, err := repo.CreateRemote(&gitcfg.RemoteConfig{
-		Name: "origin",
+		Name: git.DefaultRemoteName,
 		URLs: []string{authURL},
 	})
 	if err != nil {
 		return err
 	}
-
-	fetchOpts := &git.FetchOptions{
-		RefSpecs: []gitcfg.RefSpec{gitcfg.RefSpec(fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", *branch, *branch))},
-	}
-	if err := remote.FetchContext(ctx, fetchOpts); err != nil {
+	if err := fetchOrigin(ctx, remote); err != nil {
 		return err
 	}
 	tree, err := repo.Worktree()
 	if err != nil {
-		return err
+		return status.WrapErrorf(err, "get tree")
 	}
 	if err := tree.Checkout(&git.CheckoutOptions{Hash: gitplumbing.NewHash(*commitSHA)}); err != nil {
+		return status.WrapErrorf(err, "checkout %s", *commitSHA)
+	}
+	return nil
+}
+
+func syncExistingRepo(ctx context.Context, path string) error {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
 		return err
+	}
+	tree, err := repo.Worktree()
+	if err != nil {
+		return status.WrapErrorf(err, "get worktree")
+	}
+	if err := tree.Clean(&git.CleanOptions{Dir: true}); err != nil {
+		return status.WrapErrorf(err, "clean")
+	}
+	remote, err := repo.Remote(git.DefaultRemoteName)
+	if err != nil {
+		return status.WrapErrorf(err, "get existing remote %q", git.DefaultRemoteName)
+	}
+	if err := fetchOrigin(ctx, remote); err != nil {
+		return err
+	}
+	checkoutOpts := &git.CheckoutOptions{
+		Hash:  gitplumbing.NewHash(*commitSHA),
+		Force: true, // remove local changes
+	}
+	if err := tree.Checkout(checkoutOpts); err != nil {
+		return status.WrapErrorf(err, "checkout %s", *commitSHA)
 	}
 	return nil
 }

@@ -22,12 +22,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/oauth2"
 	"gorm.io/gorm"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
+	githubapi "github.com/google/go-github/github"
 	guuid "github.com/google/uuid"
 )
 
@@ -236,6 +239,64 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	return rsp, nil
 }
 
+func (ws *workflowService) GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error) {
+	if req.GetGitProvider() == wfpb.GitProvider_UNKNOWN_GIT_PROVIDER {
+		return nil, status.FailedPreconditionError("Unknown git provider")
+	}
+	token, err := ws.gitHubTokenForAuthorizedGroup(ctx, req.GetRequestContext())
+	urls, err := listGitHubRepoURLs(ctx, token)
+	if err != nil {
+		return nil, status.UnknownErrorf("Failed to list GitHub repo URLs: %s", err)
+	}
+	res := &wfpb.GetReposResponse{}
+	for _, url := range urls {
+		res.Repo = append(res.Repo, &wfpb.Repo{Url: url})
+	}
+	return res, nil
+}
+
+func (ws *workflowService) gitHubTokenForAuthorizedGroup(ctx context.Context, reqCtx *ctxpb.RequestContext) (string, error) {
+	_, err := perms.AuthenticatedUser(ctx, ws.env)
+	if err != nil {
+		return "", err
+	}
+	d := ws.env.GetUserDB()
+	if d == nil {
+		return "", status.FailedPreconditionError("Missing UserDB")
+	}
+	groupID := reqCtx.GetGroupId()
+	if err := perms.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
+		return "", err
+	}
+	g, err := d.GetGroupByID(ctx, groupID)
+	if err != nil {
+		return "", err
+	}
+	if g.GithubToken == "" {
+		return "", status.FailedPreconditionError("The selected group does not have a GitHub account linked")
+	}
+	return g.GithubToken, nil
+}
+
+func listGitHubRepoURLs(ctx context.Context, accessToken string) ([]string, error) {
+	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
+	tc := oauth2.NewClient(ctx, ts)
+	client := githubapi.NewClient(tc)
+	repos, _, err := client.Repositories.List(ctx, "", nil)
+	if err != nil {
+		// TODO: transform GH HTTP response to proper gRPC status code
+		return nil, err
+	}
+	urls := []string{}
+	for _, repo := range repos {
+		if repo.URL == nil {
+			continue
+		}
+		urls = append(urls, *repo.URL)
+	}
+	return urls, nil
+}
+
 func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID string) (*tables.Workflow, error) {
 	if ws.env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
@@ -303,6 +364,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "container-image", Value: "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1"},
+				// Reuse the docker container for the CI runner across executions if
+				// possible, and also keep the git repo around so it doesn't need to be
+				// re-cloned each time.
+				{Name: "recycle-runner", Value: "true"},
+				{Name: "preserve-workspace", Value: "true"},
 			},
 		},
 	}

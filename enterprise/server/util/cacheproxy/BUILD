@@ -9,27 +9,23 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//proto:distributed_cache_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/util/grpc_client",
+        "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
-        "@org_golang_x_net//http2",
-        "@org_golang_x_net//http2/h2c",
-        "@org_golang_x_sync//errgroup",
+        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//reflection",
     ],
 )
 
 go_test(
     name = "cacheproxy_test",
     srcs = ["cacheproxy_test.go"],
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
     deps = [
         ":cacheproxy",
         "//proto:remote_execution_go_proto",

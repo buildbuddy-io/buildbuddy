@@ -1,0 +1,53 @@
+/* EXECUTORS PAGE */
+
+.executors-page .title {
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.executors-page .card {
+  box-shadow: 0px 1px 4px rgba(0, 0, 0, 0.1), 0px 1px 6px rgba(0, 0, 0, 0.05);
+  margin-left: 32px;
+  margin-right: 32px;
+  padding: 32px;
+  border-radius: 8px;
+  font-size: 14px;
+  overflow: hidden;
+  background-color: rgb(255, 255, 255);
+}
+
+.executors-page .card .icon {
+  margin-right: 16px;
+  padding-top: 2px;
+}
+
+.executors-page .card .title {
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.executors-page .card .details {
+  line-height: 1.6em;
+  margin-top: 4px;
+  word-break: break-all;
+  white-space: pre-wrap;
+  flex-grow: 1;
+  width: 1px;
+}
+
+.executors-page .executor-section {
+  display: flex;
+}
+
+.executors-page .executor-section div {
+  flex-grow: 1;
+}
+
+.executor-section div.executor-section-title {
+  width: 30%;
+  flex-grow: 0;
+  flex-shrink: 0;
+  text-align: left;
+  margin-right: 16px;
+  font-weight: 700;
+}

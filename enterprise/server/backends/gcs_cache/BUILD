@@ -16,8 +16,8 @@ go_library(
         "//server/util/prefix",
         "//server/util/status",
         "@com_google_cloud_go_storage//:storage",
-        "@org_golang_google_api//googleapi",
-        "@org_golang_google_api//option",
+        "@org_golang_google_api//googleapi:go_default_library",
+        "@org_golang_google_api//option:go_default_library",
         "@org_golang_x_sync//errgroup",
     ],
 )

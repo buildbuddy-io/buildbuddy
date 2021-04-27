@@ -1,0 +1,271 @@
+/* WORKFLOWS PAGE */
+
+.workflows-page .shelf .container {
+  display: flex;
+  align-items: center;
+}
+
+.workflows-page .shelf .title {
+  margin-right: 16px;
+}
+
+.workflows-page .create-new-container {
+  margin-left: auto;
+}
+
+.workflows-page .no-workflows-container {
+  margin: 32px;
+  display: flex;
+}
+
+.workflows-page .no-workflows-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  border-radius: 8px;
+  padding: 32px;
+  max-width: 100%;
+  width: 440px;
+}
+
+.workflows-page .zero-state-animation {
+  max-width: 400px;
+}
+
+.workflows-page .no-workflows-card .details {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.workflows-page .no-workflows-card > :not(:last-child) {
+  margin-bottom: 32px;
+}
+
+.workflows-page .no-workflows-card .details > :not(:last-child) {
+  margin-bottom: 16px;
+}
+
+.workflows-page .workflow-item.container {
+  display: flex;
+  flex-direction: row;
+  padding-top: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.workflows-page .workflow-item > :not(:last-child) {
+  margin-right: 16px;
+}
+
+.workflows-page .workflow-name {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.workflows-page .workflow-description {
+  font-size: 14px;
+  color: #aaa;
+}
+
+.workflows-page .workflow-dropdown-menu {
+  min-width: 180px;
+}
+
+.workflows-page .repo-url {
+  background: #f8f8f8;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+.workflows-page .workflow-item-row {
+  display: flex;
+  align-items: baseline;
+}
+
+.workflows-page .workflow-item-row > :not(:last-child) {
+  margin-right: 16px;
+}
+
+.workflows-page .workflow-item-column {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.workflows-page .workflow-item-column > :not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.workflows-page .workflow-dropdown-container {
+  margin-left: auto;
+  position: relative;
+  align-self: start;
+}
+
+.workflows-page .copied-to-clipboard {
+  color: #aaa;
+}
+
+.workflows-page .workflow-dropdown-button {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.workflows-page .workflow-item-row .git-merge-icon {
+  width: 16px;
+  height: 16px;
+  align-self: center;
+  margin-right: 8px;
+}
+
+.delete-workflow-dialog .dialog-body > :not(:last-child) {
+  margin-bottom: 16px;
+}
+
+.delete-workflow-dialog .error {
+  color: #f44336;
+}
+
+/* CREATE WORKFLOW PAGE */
+
+.create-workflow-page .content {
+  padding: 16px 0;
+  max-width: 600px;
+}
+
+.create-workflow-page .workflow-form > :not(:last-child) {
+  margin-bottom: 16px;
+}
+
+.create-workflow-page .form-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.create-workflow-page .explanation {
+  color: #555;
+  font-size: 13px;
+}
+
+.create-workflow-page .error {
+  color: #f44336;
+}
+
+.workflow-created-dialog .dialog-body > :not(:last-child) {
+  margin-bottom: 16px;
+}
+
+.workflow-created-dialog input {
+  width: 100%;
+}
+
+/* ANIMATION STUFF BELOW */
+
+.workflows-page .no-workflows-card {
+  animation-name: card-enter;
+  animation-delay: 750ms;
+  animation-duration: 1000ms;
+  animation-fill-mode: forwards;
+}
+
+.workflows-page .zero-state-animation .wave {
+  animation-name: anim-wave-stroke;
+  animation-delay: 500ms;
+  animation-duration: 2000ms;
+  animation-timing-function: cubic-bezier(0.08, 0.14, 0.23, 0.97);
+  animation-fill-mode: forwards;
+
+  stroke-dashoffset: 1000;
+  stroke-dasharray: 1000;
+}
+
+.workflows-page .zero-state-animation .character {
+  animation-name: anim-pop-in, anim-blob-floaty;
+  animation-delay: 500ms, 1000ms;
+  animation-duration: 500ms, 2000ms;
+  animation-timing-function: cubic-bezier(0.08, 0.14, 0.23, 0.97), ease-in-out;
+  animation-fill-mode: forwards, forwards;
+  animation-iteration-count: 1, infinite;
+  animation-direction: normal, alternate;
+
+  opacity: 0;
+}
+
+.workflows-page .zero-state-animation .code-icon {
+  animation-duration: 500ms, 1900ms;
+}
+
+.workflows-page .zero-state-animation .git-blob,
+.workflows-page .zero-state-animation .git-icon {
+  animation-delay: 750ms, 1250ms;
+  animation-duration: 500ms, 1800ms;
+}
+.workflows-page .zero-state-animation .git-icon {
+  animation-duration: 500ms, 1700ms;
+}
+
+.workflows-page .zero-state-animation .bb-blob {
+  animation-delay: 1000ms, 1500ms;
+  animation-duration: 500ms, 2200ms;
+}
+.workflows-page .zero-state-animation .bb-icon {
+  animation-duration: 500ms, 2100ms;
+}
+
+.workflows-page .no-workflows-card .details {
+  animation-name: details-enter;
+  animation-duration: 500ms;
+  animation-delay: 1000ms;
+  animation-fill-mode: forwards;
+
+  opacity: 0;
+}
+
+@keyframes card-enter {
+  from {
+    box-shadow: none;
+  }
+  to {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27), 0 3px 12px rgba(0, 0, 0, 0.05);
+  }
+}
+
+@keyframes anim-wave-stroke {
+  to {
+    stroke-dashoffset: 487;
+  }
+}
+
+@keyframes anim-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes anim-blob-floaty {
+  from {
+    transform: translateY(0px);
+  }
+  to {
+    transform: translateY(4px);
+  }
+}
+
+@keyframes details-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
