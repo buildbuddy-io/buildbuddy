@@ -26,7 +26,6 @@ http_archive(
 )
 
 load("@bazel_gazelle//:deps.bzl", "go_repository")
-
 load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
 
 go_rules_dependencies()
