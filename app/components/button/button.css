@@ -46,6 +46,7 @@
 /* Extra specificity here so the [disabled] style takes precedence. */
 .filled-button.filled-button.filled-button[disabled],
 .filled-button.filled-button.filled-button[disabled]:hover {
+  transition: 100ms ease;
   background: #bbb;
   cursor: not-allowed;
   box-shadow: none;

@@ -15,6 +15,7 @@ ts_library(
         "//app/components/menu",
         "//app/components/modal",
         "//app/components/popup",
+        "//app/errors",
         "//app/router",
         "//app/service",
         "//app/util:clipboard",

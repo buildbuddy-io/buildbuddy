@@ -1,17 +1,7 @@
 import React from "react";
 import { from, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
-import Button, {
-  OutlinedButton,
-} from "../../../app/components/button/button";
-import router from "../../../app/router/router";
-import rpcService from "../../../app/service/rpc_service";
-import { BuildBuddyError } from "../../../app/util/errors";
-import { workflow } from "../../../proto/workflow_ts_proto";
-import CreateWorkflowComponent from "./create_workflow";
-import WorkflowsZeroStateAnimation from "./zero_state";
-import Popup from "../../../app/components/popup/popup";
-import Menu, { MenuItem } from "../../../app/components/menu/menu";
+import Button, { OutlinedButton } from "../../../app/components/button/button";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -19,8 +9,17 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
+import Menu, { MenuItem } from "../../../app/components/menu/menu";
 import Modal from "../../../app/components/modal/modal";
+import Popup from "../../../app/components/popup/popup";
+import router from "../../../app/router/router";
+import rpcService from "../../../app/service/rpc_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
+import { BuildBuddyError } from "../../../app/util/errors";
+import { workflow } from "../../../proto/workflow_ts_proto";
+import CreateWorkflowComponent from "./create_workflow";
+import GitHubImport from "./github_import";
+import WorkflowsZeroStateAnimation from "./zero_state";
 
 type Workflow = workflow.GetWorkflowsResponse.IWorkflow;
 
@@ -33,7 +32,17 @@ export default class WorkflowsComponent extends React.Component<WorkflowsProps> 
   render() {
     const { path, user } = this.props;
 
-    if (path.startsWith("/workflows/new")) {
+    if (path === "/workflows/new") {
+      if (user.selectedGroup.githubLinked) {
+        return <GitHubImport />;
+      } else {
+        return <CreateWorkflowComponent user={user} />;
+      }
+    }
+    if (path === "/workflows/new/github") {
+      return <GitHubImport />;
+    }
+    if (path === "/workflows/new/custom") {
       return <CreateWorkflowComponent user={user} />;
     }
 
