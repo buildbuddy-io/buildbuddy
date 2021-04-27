@@ -114,7 +114,7 @@ func writeTmpConfigFile(testRootDir string) (string, error) {
 		return "", err
 	}
 	configPath := filepath.Join(testRootDir, "config.yaml")
-	if err := ioutil.WriteFile(configPath, buf.Bytes(), 0644); err != nil {
+	if err := ioutil.WriteFile(configPath, buf.Bytes(), 0600); err != nil {
 		return "", err
 	}
 	return configPath, nil

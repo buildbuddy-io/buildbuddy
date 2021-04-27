@@ -97,10 +97,10 @@ func MakeTempWorkspace(t *testing.T, contents map[string]string) string {
 	})
 	for path, fileContents := range contents {
 		fullPath := filepath.Join(workspaceDir, path)
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0777); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0750); err != nil {
 			t.Fatal(err)
 		}
-		if err := ioutil.WriteFile(fullPath, []byte(fileContents), 0777); err != nil {
+		if err := ioutil.WriteFile(fullPath, []byte(fileContents), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}

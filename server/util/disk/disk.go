@@ -15,7 +15,7 @@ import (
 
 func EnsureDirectoryExists(dir string) error {
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return os.MkdirAll(dir, 0755)
+		return os.MkdirAll(dir, 0750)
 	}
 	return nil
 }
@@ -43,7 +43,7 @@ func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
 	// still remove the tmp file.
 	defer DeleteLocalFileIfExists(tmpFileName)
 
-	if err := ioutil.WriteFile(tmpFileName, data, 0644); err != nil {
+	if err := ioutil.WriteFile(tmpFileName, data, 0600); err != nil {
 		return 0, err
 	}
 	return len(data), os.Rename(tmpFileName, fullPath)

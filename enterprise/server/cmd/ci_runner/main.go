@@ -599,7 +599,7 @@ func setupGitRepo(ctx context.Context) error {
 		}
 	}
 
-	if err := os.Mkdir(repoDirName, 0o775); err != nil {
+	if err := os.Mkdir(repoDirName, 0750); err != nil {
 		return status.WrapErrorf(err, "mkdir %q", repoDirName)
 	}
 
