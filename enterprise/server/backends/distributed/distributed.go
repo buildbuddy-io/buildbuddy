@@ -317,16 +317,18 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) e
 }
 
 func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
-	lock := sync.RWMutex{} // protects(foundMap)
+	mu := sync.RWMutex{} // protects(foundMap)
 	hashDigests := make(map[string][]*repb.Digest, 0)
 	foundMap := make(map[string]bool, len(digests))
 	peerMap := make(map[string]*peerSet, len(digests))
 	for _, d := range digests {
 		hash := d.GetHash()
 		hashDigests[hash] = append(hashDigests[hash], d)
-		peerMap[hash] = &peerSet{
-			peers: c.readPeers(d),
-			index: 0,
+		if _, ok := peerMap[hash]; !ok {
+			peerMap[hash] = &peerSet{
+				peers: c.readPeers(d),
+				index: 0,
+			}
 		}
 	}
 
@@ -369,16 +371,15 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 			eg.Go(func() error {
 				peerRsp, err := c.remoteContainsMulti(gCtx, peer, c.prefix, digests)
 				if err != nil {
-					log.Debugf("ContainsMulti: peer %q returned err: %s", peer, err)
 					return nil
 				}
-				lock.Lock()
+				mu.Lock()
 				for d, exists := range peerRsp {
 					if exists {
 						foundMap[d.GetHash()] = exists
 					}
 				}
-				lock.Unlock()
+				mu.Unlock()
 				return nil
 			})
 		}
@@ -459,16 +460,18 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 }
 
 func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	lock := sync.RWMutex{} // protects(gotMap)
+	mu := sync.RWMutex{} // protects(gotMap)
 	hashDigests := make(map[string][]*repb.Digest, 0)
 	gotMap := make(map[string][]byte, len(digests))
 	peerMap := make(map[string]*peerSet, len(digests))
 	for _, d := range digests {
 		hash := d.GetHash()
 		hashDigests[hash] = append(hashDigests[hash], d)
-		peerMap[hash] = &peerSet{
-			peers: c.readPeers(d),
-			index: 0,
+		if _, ok := peerMap[hash]; !ok {
+			peerMap[hash] = &peerSet{
+				peers: c.readPeers(d),
+				index: 0,
+			}
 		}
 	}
 
@@ -499,7 +502,6 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 					stillMissing = append(stillMissing, h)
 				}
 			}
-			log.Debugf("ContainsMulti: digests not found: %+v", stillMissing)
 			// If we aren't able to plan any more batch requests, that means
 			// we're out of peers and should exit, returning what we have.
 			break
@@ -514,14 +516,11 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 					log.Debugf("GetMulti: peer %q returned err: %s", peer, err)
 					return nil
 				}
-				lock.Lock()
+				mu.Lock()
 				for d, data := range peerRsp {
-					if len(data) == 0 {
-						log.Debugf("Peer %q (prefix: %q) returned a zero-length response for %s", peer, c.prefix, d.GetHash())
-					}
 					gotMap[d.GetHash()] = data
 				}
-				lock.Unlock()
+				mu.Unlock()
 				return nil
 			})
 		}
