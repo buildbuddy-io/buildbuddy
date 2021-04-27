@@ -164,6 +164,95 @@
   width: 100%;
 }
 
+/* GITHUB IMPORT */
+
+.workflows-github-import .content-container {
+  width: 480px;
+  max-width: 100%;
+}
+
+.workflows-github-import .content-container > :not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.workflows-github-import .repo-list {
+  margin-top: 16px;
+}
+
+.workflows-github-import .repo-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.workflows-github-import .repo-item > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.workflows-github-import .repo-owner-separator {
+  color: #777;
+  padding: 0 2px;
+}
+
+.workflows-github-import .repo-name {
+  font-weight: 600;
+}
+
+.workflows-github-import .imported-indicator,
+.workflows-github-import .import-loading {
+  text-align: center;
+  flex-grow: initial;
+
+  /* Match button sizing. */
+  width: 85px;
+  height: 40px;
+  padding: 8px 0;
+  box-sizing: border-box;
+}
+
+.workflows-github-import .show-more-button-container {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.workflows-github-import .show-more-button > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.workflows-github-import .show-more-icon {
+  opacity: 0.7;
+}
+
+.workflows-github-import .import-other-container {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.workflows-github-import .import-other {
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
+  font-weight: 600;
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.workflows-github-import .import-other img {
+  width: 16px;
+  height: 16px;
+}
+
+.workflows-github-import .import-other > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.workflows-github-import .import-other:hover {
+  opacity: 1;
+}
+
 /* ANIMATION STUFF BELOW */
 
 .workflows-page .no-workflows-card {
