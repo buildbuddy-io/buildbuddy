@@ -379,7 +379,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return status.InvalidArgumentErrorf("Unparseable tree token: %s", err)
 	}
 
-	maxPageSize := int32(500)
+	maxPageSize := int32(10000)
 	if req.GetPageSize() < maxPageSize && req.GetPageSize() > 0 {
 		maxPageSize = req.GetPageSize()
 	}
@@ -418,16 +418,29 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		}
 		rspSizeBytes += sizeBytes
 		rsp.Directories = append(rsp.Directories, dir)
+
+		subdirDigests := make([]*repb.Digest, 0, len(dir.Directories))
 		for _, dirNode := range dir.Directories {
-			dig := dirNode.GetDigest()
-			if dig.GetHash() == digest.EmptySha256 {
+			d := dirNode.GetDigest()
+			if d.GetHash() == digest.EmptySha256 {
 				continue
 			}
-			subDir, err := s.fetchDir(ctx, cache, dig)
-			if err != nil {
+			subdirDigests = append(subdirDigests, d)
+		}
+		rspMap, err := cache.GetMulti(ctx, subdirDigests)
+		if err != nil {
+			return err
+		}
+		for _, d := range subdirDigests {
+			blob, ok := rspMap[d]
+			if !ok {
+				return status.NotFoundErrorf("Digest %s not found in cache.", d.GetHash())
+			}
+			subDir := &repb.Directory{}
+			if err := proto.Unmarshal(blob, subDir); err != nil {
 				return err
 			}
-			dirStack.Push(subDir, dig.GetSizeBytes())
+			dirStack.Push(subDir, d.GetSizeBytes())
 		}
 		if int32(len(rsp.Directories)) == maxPageSize {
 			return finishPage(dirStack.Empty())
