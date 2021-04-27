@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -282,10 +281,10 @@ type BatchCASUploader struct {
 	ctx              context.Context
 	eg               *errgroup.Group
 	cache            interfaces.Cache
-	bsClient         bspb.ByteStreamClient
+	byteStreamClient bspb.ByteStreamClient
 	casClient        repb.ContentAddressableStorageClient
-	req              *repb.BatchUpdateBlobsRequest
-	currentBatchSize int64
+	unsentBatchReq   *repb.BatchUpdateBlobsRequest
+	unsentBatchSize  int64
 	instanceName     string
 	uploads          map[digest.Key]struct{}
 }
@@ -311,10 +310,10 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 		ctx:              ctx,
 		eg:               eg,
 		cache:            cache,
-		bsClient:         bsClient,
+		byteStreamClient: bsClient,
 		casClient:        casClient,
-		req:              &repb.BatchUpdateBlobsRequest{InstanceName: instanceName},
-		currentBatchSize: 0,
+		unsentBatchReq:   &repb.BatchUpdateBlobsRequest{InstanceName: instanceName},
+		unsentBatchSize:  0,
 		instanceName:     instanceName,
 		uploads:          make(map[digest.Key]struct{}),
 	}, nil
@@ -336,27 +335,27 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, r io.ReadSeekCloser) error {
 	if d.GetSizeBytes() > gRPCMaxSize {
 		ul.eg.Go(func() error {
 			defer r.Close()
-			_, err := UploadFromReader(ul.ctx, ul.bsClient, digest.NewInstanceNameDigest(d, ul.instanceName), r)
+			_, err := UploadFromReader(ul.ctx, ul.byteStreamClient, digest.NewInstanceNameDigest(d, ul.instanceName), r)
 			return err
 		})
 		return nil
 	}
 
-	if ul.currentBatchSize+d.GetSizeBytes() > gRPCMaxSize {
+	if ul.unsentBatchSize+d.GetSizeBytes() > gRPCMaxSize {
 		ul.flushCurrentBatch()
 	}
-	b, err := ioutil.ReadAll(r)
+	b, err := io.ReadAll(r)
 	if err != nil {
 		return err
 	}
 	if err := r.Close(); err != nil {
 		return err
 	}
-	ul.req.Requests = append(ul.req.Requests, &repb.BatchUpdateBlobsRequest_Request{
+	ul.unsentBatchReq.Requests = append(ul.unsentBatchReq.Requests, &repb.BatchUpdateBlobsRequest_Request{
 		Digest: d,
 		Data:   b,
 	})
-	ul.currentBatchSize += d.GetSizeBytes()
+	ul.unsentBatchSize += d.GetSizeBytes()
 	return nil
 }
 
@@ -391,19 +390,10 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 	return d, nil
 }
 
-type bytesReadSeekCloser struct {
-	io.ReadSeeker
-}
-
-func NewBytesReadSeekCloser(b []byte) io.ReadSeekCloser {
-	return &bytesReadSeekCloser{bytes.NewReader(b)}
-}
-func (*bytesReadSeekCloser) Close() error { return nil }
-
 func (ul *BatchCASUploader) flushCurrentBatch() {
-	req := ul.req
-	ul.req = &repb.BatchUpdateBlobsRequest{InstanceName: ul.instanceName}
-	ul.currentBatchSize = 0
+	req := ul.unsentBatchReq
+	ul.unsentBatchReq = &repb.BatchUpdateBlobsRequest{InstanceName: ul.instanceName}
+	ul.unsentBatchSize = 0
 	ul.eg.Go(func() error {
 		rsp, err := ul.casClient.BatchUpdateBlobs(ul.ctx, req)
 		if err != nil {
@@ -419,11 +409,20 @@ func (ul *BatchCASUploader) flushCurrentBatch() {
 }
 
 func (ul *BatchCASUploader) Wait() error {
-	if len(ul.req.GetRequests()) > 0 {
+	if len(ul.unsentBatchReq.GetRequests()) > 0 {
 		ul.flushCurrentBatch()
 	}
 	return ul.eg.Wait()
 }
+
+type bytesReadSeekCloser struct {
+	io.ReadSeeker
+}
+
+func NewBytesReadSeekCloser(b []byte) io.ReadSeekCloser {
+	return &bytesReadSeekCloser{bytes.NewReader(b)}
+}
+func (*bytesReadSeekCloser) Close() error { return nil }
 
 // UploadDirectoryToCAS uploads all the files in a given directory to the CAS
 // as well as the directory structure, and returns the digest of the root
@@ -459,7 +458,7 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 	// Append the directory before doing any other work, so that the root
 	// directory is located at visited[0] at the end of recursion.
 	visited = append(visited, dir)
-	infos, err := ioutil.ReadDir(dirPath)
+	infos, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil, nil, err
 	}

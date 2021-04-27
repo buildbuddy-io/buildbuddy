@@ -1,8 +1,8 @@
 package testfs
 
 import (
+	"io"
 	"io/fs"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +16,7 @@ import (
 // MakeTempDir creates and returns an empty directory that exists for the scope
 // of a test.
 func MakeTempDir(t testing.TB) string {
-	tmpDir, err := ioutil.TempDir("", "buildbuddy-test-*")
+	tmpDir, err := os.MkdirTemp("", "buildbuddy-test-*")
 	if err != nil {
 		assert.FailNow(t, "failed to create temp dir", err)
 	}
@@ -33,11 +33,11 @@ func CopyFile(t testing.TB, src, destRootDir, destPath string) {
 	if err != nil {
 		assert.FailNow(t, "stat failed", err)
 	}
-	b, err := ioutil.ReadFile(src)
+	b, err := os.ReadFile(src)
 	if err != nil {
 		assert.FailNow(t, "read failed", err)
 	}
-	if err := ioutil.WriteFile(filepath.Join(destRootDir, destPath), b, info.Mode()); err != nil {
+	if err := os.WriteFile(filepath.Join(destRootDir, destPath), b, info.Mode()); err != nil {
 		assert.FailNow(t, "write failed", err)
 	}
 }
@@ -48,7 +48,7 @@ func WriteAllFileContents(t testing.TB, rootDir string, contents map[string]stri
 		if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
 			assert.FailNow(t, "failed to create parent dir for file", err)
 		}
-		if err := ioutil.WriteFile(path, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			assert.FailNow(t, "write failed", err)
 		}
 	}
@@ -59,14 +59,14 @@ func WriteRandomString(t testing.TB, rootDir, path string, n int) string {
 	if err != nil {
 		assert.FailNow(t, "failed to generate random string", err)
 	}
-	if err := ioutil.WriteFile(filepath.Join(rootDir, path), []byte(s), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(rootDir, path), []byte(s), 0644); err != nil {
 		assert.FailNow(t, "write failed", err)
 	}
 	return s
 }
 
 func ReadFileAsString(t testing.TB, rootDir, path string) string {
-	b, err := ioutil.ReadFile(filepath.Join(rootDir, path))
+	b, err := os.ReadFile(filepath.Join(rootDir, path))
 	if err != nil {
 		assert.FailNow(t, "read failed", err)
 	}
@@ -102,7 +102,7 @@ func AssertExactFileContents(t testing.TB, rootDir string, contents map[string]s
 		relPath := strings.TrimPrefix(path, rootDir+string(os.PathSeparator))
 		actualFilePaths = append(actualFilePaths, relPath)
 		if content, ok := contents[relPath]; ok {
-			actualContent, err := ioutil.ReadFile(path)
+			actualContent, err := os.ReadFile(path)
 			require.NoError(t, err)
 			assert.Equalf(t, content, string(actualContent), "unexpected contents in %s", relPath)
 		}
