@@ -1,0 +1,1 @@
+package bazel_config
