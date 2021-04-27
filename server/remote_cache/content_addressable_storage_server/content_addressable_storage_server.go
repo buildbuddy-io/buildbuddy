@@ -384,6 +384,11 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		maxPageSize = req.GetPageSize()
 	}
 
+	skipHashes := make(map[string]struct{}, len(req.GetPreExistingDigests()))
+	for _, d := range req.GetPreExistingDigests() {
+		skipHashes[d.GetHash()] = struct{}{}
+	}
+
 	if dirStack.Empty() {
 		rootDir, err := s.fetchDir(ctx, cache, req.GetRootDigest())
 		if err != nil {
@@ -421,6 +426,9 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		for _, dirNode := range dir.Directories {
 			dig := dirNode.GetDigest()
 			if dig.GetHash() == digest.EmptySha256 {
+				continue
+			}
+			if _, ok := skipHashes[dig.GetHash()]; ok {
 				continue
 			}
 			subDir, err := s.fetchDir(ctx, cache, dig)
