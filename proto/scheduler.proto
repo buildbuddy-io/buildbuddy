@@ -138,7 +138,8 @@ service Scheduler {
 
   rpc ReEnqueueTask(ReEnqueueTaskRequest) returns (ReEnqueueTaskResponse) {}
 
-  // Request to enqueue a task reservation for an existing task to a locally chosen executor.
+  // Request to enqueue a task reservation for an existing task to a locally
+  // chosen executor.
   rpc EnqueueTaskReservation(EnqueueTaskReservationRequest)
       returns (EnqueueTaskReservationResponse) {}
 }
