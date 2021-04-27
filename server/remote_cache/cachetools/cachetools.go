@@ -476,7 +476,7 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 				Name:   name,
 				Digest: d,
 			})
-		} else if info.Mode().IsRegular() {
+		} else if info.Type().IsRegular() {
 			d, err := ul.UploadFile(path)
 			if err != nil {
 				return nil, nil, err
@@ -484,9 +484,9 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 			dir.Files = append(dir.Files, &repb.FileNode{
 				Name:         name,
 				Digest:       d,
-				IsExecutable: info.Mode()&0100 != 0,
+				IsExecutable: info.Type()&0100 != 0,
 			})
-		} else if info.Mode()&os.ModeSymlink == os.ModeSymlink {
+		} else if info.Type()&os.ModeSymlink == os.ModeSymlink {
 			target, err := os.Readlink(path)
 			if err != nil {
 				return nil, nil, err
