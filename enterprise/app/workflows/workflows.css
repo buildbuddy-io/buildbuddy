@@ -231,8 +231,7 @@
   margin-top: 16px;
 }
 
-.workflows-github-import .import-other,
-.workflows-github-import-dialog .do-later {
+.workflows-github-import .import-other {
   display: flex;
   align-items: center;
   padding: 8px 0;
@@ -241,52 +240,17 @@
   opacity: 0.7;
 }
 
-.workflows-github-import .import-other img,
-.workflows-github-import-dialog .do-later img {
+.workflows-github-import .import-other img {
   width: 16px;
   height: 16px;
 }
 
-.workflows-github-import .import-other > :not(:last-child),
-.workflows-github-import-dialog .do-later > :not(:last-child) {
+.workflows-github-import .import-other > :not(:last-child) {
   margin-right: 8px;
 }
 
-.workflows-github-import .import-other:hover,
-.workflows-github-import-dialog .do-later:hover {
+.workflows-github-import .import-other:hover {
   opacity: 1;
-}
-
-.workflows-github-import-dialog .inline-code {
-  font-family: "Source Code Pro", monospace;
-  background: #fafafa;
-  border-radius: 2px;
-  border: 1px solid #eee;
-  padding: 2px 4px;
-}
-
-.workflows-github-import-dialog .import-dialog-buttons {
-  margin-top: 16px;
-  display: flex;
-  justify-content: space-between;
-}
-
-.workflows-github-import-dialog .import-dialog-buttons > :not(:last-child) {
-  margin-right: 8px;
-}
-
-.workflows-github-import-dialog .import-dialog-link-button a {
-  display: flex;
-  align-items: center;
-}
-
-.workflows-github-import-dialog .import-dialog-link-button a > :not(:last-child) {
-  margin-right: 8px;
-}
-
-.workflows-github-import-dialog .import-dialog-link-button img {
-  width: 22px;
-  height: 22px;
 }
 
 /* ANIMATION STUFF BELOW */

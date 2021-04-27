@@ -1,8 +1,5 @@
 import React from "react";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
-import FilledLinkButton from "../../../app/components/button/link_button";
-import Dialog, { DialogBody, DialogHeader, DialogTitle } from "../../../app/components/dialog/dialog";
-import Modal from "../../../app/components/modal/modal";
 import errorService from "../../../app/errors/error_service";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
@@ -151,22 +148,4 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
 
 function parseOwnerRepo(url: string): [string, string] {
   return new URL(url).pathname.split("/").slice(1, 3) as [string, string];
-}
-
-/* Returns a GitHub URL that pre-fills buildbuddy.yaml */
-function generateBuildBuddyYamlSetupUrl(repoUrl: string, branchName: string) {
-  const params = new URLSearchParams({
-    filename: "buildbuddy.yaml",
-    value: `name: Build and test
-triggers:
-  push:
-    branches: [ "${branchName}" ]
-  pull_request:
-    branches: [ "${branchName}" ]
-bazel_commands:
-  # See https://docs.buildbuddy.io/docs/workflow-guide
-  - test //... --build_metadata=ROLE=CI
-`,
-  });
-  return `${repoUrl}/new/${branchName}?${params}`;
 }
