@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
@@ -22,8 +23,10 @@ func EnsureDirectoryExists(dir string) error {
 
 func DeleteLocalFileIfExists(filename string) {
 	_, err := os.Stat(filename)
-	if os.IsExist(err) {
-		os.Remove(filename)
+	if err == nil {
+		if err := os.Remove(filename); err != nil {
+			log.Warningf("Error deleting file %q: %s", filename, err)
+		}
 	}
 }
 
