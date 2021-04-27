@@ -186,12 +186,12 @@ func (c *DiskCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 
 // Adds a single file, using the provided path, to the LRU.
 // NB: Callers are responsible for locking the LRU before calling this function.
-func (c *DiskCache) addSingleFileToLRU(k string) bool {
-	if !c.diskIsMapped {
+func (c *DiskCache) addFileToLRUIfExists(k string) bool {
+	if c.diskIsMapped {
 		return false
 	}
 	info, err := os.Stat(k)
-	if os.IsExist(err) {
+	if err == nil {
 		record := makeRecord(k, info)
 		c.fileChannel <- record
 		c.l.Add(record.key, record)
@@ -226,7 +226,7 @@ func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) 
 		// OK if we're here it means the disk contents are still being loaded
 		// into the LRU. But we still need to return an answer! So we'll go
 		// check the FS, and if the file is there we'll add it to the LRU.
-		ok = c.addSingleFileToLRU(k)
+		ok = c.addFileToLRUIfExists(k)
 	}
 	return ok, nil
 }
@@ -277,7 +277,7 @@ func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	if c.l.Contains(k) {
 		c.l.Get(k) // mark the file as used.
 	} else if !c.diskIsMapped {
-		c.addSingleFileToLRU(k)
+		c.addFileToLRUIfExists(k)
 	}
 	return buf, nil
 }
