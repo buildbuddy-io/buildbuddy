@@ -128,6 +128,17 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	repoURL := repoReq.GetRepoUrl()
 	username := repoReq.GetUsername()
 	accessToken := repoReq.GetAccessToken()
+
+	// If no access token is provided explicitly, try getting the token from the
+	// group.
+	if accessToken == "" && isGitHubURL(repoURL) {
+		token, err := ws.gitHubTokenForAuthorizedGroup(ctx, req.GetRequestContext())
+		if err != nil {
+			return nil, err
+		}
+		accessToken = token
+	}
+
 	if err := ws.testRepo(ctx, repoURL, username, accessToken); err != nil {
 		return nil, status.UnavailableErrorf("Repo %q is unavailable: %s", repoURL, err.Error())
 	}
@@ -142,6 +153,15 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	}
 
 	rsp := &wfpb.CreateWorkflowResponse{}
+
+	gitHubWebhookID := int64(0)
+	if isGitHubURL(repoURL) {
+		if gitHubWebhookID, err = github.RegisterWebhook(ctx, accessToken, repoURL, webhookURL); err != nil {
+			return nil, status.WrapError(err, "Failed to register webhook to GitHub")
+		}
+		rsp.WebhookRegistered = true
+	}
+
 	err = ws.env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
 		workflowID, err := tables.PrimaryKeyForTable("Workflows")
 		if err != nil {
@@ -150,15 +170,16 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 		rsp.Id = workflowID
 		rsp.WebhookUrl = webhookURL
 		wf := &tables.Workflow{
-			WorkflowID:  workflowID,
-			UserID:      permissions.UserID,
-			GroupID:     permissions.GroupID,
-			Perms:       permissions.Perms,
-			Name:        req.GetName(),
-			RepoURL:     repoURL,
-			Username:    username,
-			AccessToken: accessToken,
-			WebhookID:   webhookID,
+			WorkflowID:      workflowID,
+			UserID:          permissions.UserID,
+			GroupID:         permissions.GroupID,
+			Perms:           permissions.Perms,
+			Name:            req.GetName(),
+			RepoURL:         repoURL,
+			Username:        username,
+			AccessToken:     accessToken,
+			WebhookID:       webhookID,
+			GitHubWebhookID: gitHubWebhookID,
 		}
 		return tx.Create(wf).Error
 	})
@@ -180,18 +201,26 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 	if err != nil {
 		return nil, err
 	}
+	var wf tables.Workflow
 	err = ws.env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
-		var in tables.Workflow
-		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Workflows WHERE workflow_id = ?`, workflowID).Take(&in).Error; err != nil {
+		if err := tx.Raw(`SELECT user_id, group_id, perms, access_token, repo_url, github_webhook_id FROM Workflows WHERE workflow_id = ?`, workflowID).Take(&wf).Error; err != nil {
 			return err
 		}
-		acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
+		acl := perms.ToACLProto(&uidpb.UserId{Id: wf.UserID}, wf.GroupID, wf.Perms)
 		if err := perms.AuthorizeWrite(&authenticatedUser, acl); err != nil {
 			return err
 		}
 		return tx.Exec(`DELETE FROM Workflows WHERE workflow_id = ?`, req.GetId()).Error
 	})
-	return &wfpb.DeleteWorkflowResponse{}, err
+	if err != nil {
+		return nil, err
+	}
+	if wf.GitHubWebhookID != 0 {
+		if err := github.UnregisterWebhook(ctx, wf.AccessToken, wf.RepoURL, wf.GitHubWebhookID); err != nil {
+			return nil, status.WrapError(err, "Failed to unregister the webhook from GitHub. The hook may need to be removed manually via the repo settings.")
+		}
+	}
+	return &wfpb.DeleteWorkflowResponse{}, nil
 }
 
 func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
@@ -282,17 +311,19 @@ func listGitHubRepoURLs(ctx context.Context, accessToken string) ([]string, erro
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
 	tc := oauth2.NewClient(ctx, ts)
 	client := githubapi.NewClient(tc)
-	repos, _, err := client.Repositories.List(ctx, "", nil)
+	repos, _, err := client.Repositories.List(ctx, "", &githubapi.RepositoryListOptions{
+		Sort: "updated",
+	})
 	if err != nil {
 		// TODO: transform GH HTTP response to proper gRPC status code
 		return nil, err
 	}
 	urls := []string{}
 	for _, repo := range repos {
-		if repo.URL == nil {
+		if repo.HTMLURL == nil {
 			continue
 		}
-		urls = append(urls, *repo.URL)
+		urls = append(urls, *repo.HTMLURL)
 	}
 	return urls, nil
 }
@@ -490,6 +521,14 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	}
 	log.Printf("Started workflow execution (ID: %q)", executionID)
 	return nil
+}
+
+func isGitHubURL(s string) bool {
+	u, err := url.Parse(s)
+	if err != nil {
+		return false
+	}
+	return u.Host == "github.com"
 }
 
 func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
