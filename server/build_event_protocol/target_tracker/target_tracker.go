@@ -2,8 +2,6 @@ package target_tracker
 
 import (
 	"context"
-	"crypto/md5"
-	"encoding/binary"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/id"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -54,11 +53,6 @@ type target struct {
 	totalDurationMillis int64
 
 	state targetState
-}
-
-func md5Int64(text string) int64 {
-	hash := md5.Sum([]byte(text))
-	return int64(binary.BigEndian.Uint64(hash[:8]))
 }
 
 func newTarget(label string) *target {
@@ -190,7 +184,7 @@ func (t *TargetTracker) writeTestTargets(ctx context.Context) error {
 		}
 		tableTarget := &tables.Target{
 			RepoURL:  repoURL,
-			TargetID: md5Int64(repoURL + target.label),
+			TargetID: id.TargetIDFromTargetPath(repoURL + target.label),
 			UserID:   permissions.UserID,
 			GroupID:  permissions.GroupID,
 			Perms:    permissions.Perms,
@@ -233,14 +227,14 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context) error {
 		return status.FailedPreconditionError("Permissions were nil -- not writing target data.")
 	}
 	repoURL := t.buildEventAccumulator.RepoURL()
-	invocationPK := md5Int64(t.buildEventAccumulator.InvocationID())
+	invocationPK := id.InvocationPKFromID(t.buildEventAccumulator.InvocationID())
 	newTargetStatuses := make([]*tables.TargetStatus, 0)
 	for _, target := range t.targets {
 		if !isTest(target) {
 			continue
 		}
 		newTargetStatuses = append(newTargetStatuses, &tables.TargetStatus{
-			TargetID:      md5Int64(repoURL + target.label),
+			TargetID:      id.TargetIDFromTargetPath(repoURL + target.label),
 			InvocationPK:  invocationPK,
 			TargetType:    int32(target.targetType),
 			TestSize:      int32(target.testSize),

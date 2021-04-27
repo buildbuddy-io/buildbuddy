@@ -2,8 +2,6 @@ package build_event_handler
 
 import (
 	"context"
-	"crypto/md5"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"strings"
@@ -18,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/id"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
@@ -202,11 +201,6 @@ func recordInvocationMetrics(ti *tables.Invocation) {
 	}).Observe(float64(ti.DurationUsec))
 }
 
-func md5Int64(text string) int64 {
-	hash := md5.Sum([]byte(text))
-	return int64(binary.BigEndian.Uint64(hash[:8]))
-}
-
 func (e *EventChannel) FinalizeInvocation(iid string) error {
 	if err := e.pw.Flush(e.ctx); err != nil {
 		return err
@@ -288,7 +282,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		log.Debugf("Started event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
 		ti := &tables.Invocation{
 			InvocationID:     iid,
-			InvocationPK:     md5Int64(iid),
+			InvocationPK:     id.InvocationPKFromID(iid),
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
 		}
 
@@ -440,7 +434,7 @@ func truncatedJoin(list []string, maxItems int) string {
 func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocation {
 	i := &tables.Invocation{}
 	i.InvocationID = p.InvocationId // Required.
-	i.InvocationPK = md5Int64(p.InvocationId)
+	i.InvocationPK = id.InvocationPKFromID(p.InvocationId)
 	i.Success = p.Success
 	i.User = p.User
 	i.DurationUsec = p.DurationUsec
