@@ -180,6 +180,7 @@ type ExecutorConfig struct {
 	ContainerdSocket        string           `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
 	DockerMountMode         string           `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/"`
 	RunnerPool              RunnerPoolConfig `yaml:"runner_pool"`
+	EnableWorkStreaming     bool             `yaml:"enable_work_streaming" usage:"Enables executor work streaming (WIP)."`
 }
 
 type RunnerPoolConfig struct {
