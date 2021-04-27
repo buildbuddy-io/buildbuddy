@@ -264,8 +264,8 @@ export default class ExecutionCardComponent extends React.Component {
             </div>
           </div>
           <div className="invocation-execution-table">
-            {this.state.executions.sort(this.sort.bind(this)).map((execution) => (
-              <div key={execution?.actionDigest?.hash} className="invocation-execution-row">
+            {this.state.executions.sort(this.sort.bind(this)).map((execution, index) => (
+              <div key={index} className="invocation-execution-row">
                 <div className="invocation-execution-row-image">
                   <img
                     className={stages[execution.stage].class}
