@@ -138,6 +138,9 @@ func update(old, new map[string]bool) {
 }
 
 func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
+	if len(digests) == 0 {
+		return nil, nil
+	}
 	keys := make([]string, 0, len(digests))
 	digestsByKey := make(map[string]*repb.Digest, len(digests))
 	for _, d := range digests {
@@ -180,6 +183,9 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 }
 
 func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	if len(digests) == 0 {
+		return nil, nil
+	}
 	keys := make([]string, 0, len(digests))
 	digestsByKey := make(map[string]*repb.Digest, len(digests))
 	for _, d := range digests {
@@ -235,6 +241,9 @@ func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 }
 
 func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	if len(kvs) == 0 {
+		return nil
+	}
 	setMap := make(map[string][]byte, len(kvs))
 	for d, v := range kvs {
 		k, err := c.key(ctx, d)
