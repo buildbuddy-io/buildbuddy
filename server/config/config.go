@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 
@@ -283,7 +284,7 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 		return nil, fmt.Errorf("Config file %s not found", fullConfigPath)
 	}
 
-	fileBytes, err := ioutil.ReadFile(fullConfigPath)
+	fileBytes, err := ioutil.ReadFile(filepath.Clean(fullConfigPath))
 	if err != nil {
 		return nil, fmt.Errorf("Error reading config file: %s", err)
 	}

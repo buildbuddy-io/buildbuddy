@@ -145,7 +145,7 @@ func getAppVersion() string {
 		log.Debugf("Error reading getting version file path: %s", err)
 		return unknownFieldValue
 	}
-	versionBytes, err := ioutil.ReadFile(filepath.Join(rfp, versionFilename))
+	versionBytes, err := ioutil.ReadFile(filepath.Clean(filepath.Join(rfp, versionFilename)))
 	if err != nil {
 		log.Debugf("Error reading version file: %s", err)
 		return unknownFieldValue

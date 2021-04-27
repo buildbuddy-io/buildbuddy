@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -261,12 +262,12 @@ func (s *SSLService) GenerateCerts(apiKey string) (string, string, error) {
 }
 
 func loadX509KeyPair(certFile, keyFile string) (*x509.Certificate, *rsa.PrivateKey, error) {
-	cf, err := ioutil.ReadFile(certFile)
+	cf, err := ioutil.ReadFile(filepath.Clean(certFile))
 	if err != nil {
 		return nil, nil, err
 	}
 
-	kf, err := ioutil.ReadFile(keyFile)
+	kf, err := ioutil.ReadFile(filepath.Clean(keyFile))
 	if err != nil {
 		return nil, nil, err
 	}

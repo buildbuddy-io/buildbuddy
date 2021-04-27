@@ -390,7 +390,7 @@ func runnerBinaryFile() (*os.File, error) {
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not find runner binary runfile: %s", err)
 	}
-	return os.Open(path)
+	return os.Open(filepath.Clean(path))
 }
 
 func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Workflow) (*tables.APIKey, error) {

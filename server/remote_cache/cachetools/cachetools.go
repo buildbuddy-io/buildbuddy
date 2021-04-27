@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -67,7 +68,7 @@ func ComputeDigest(in io.ReadSeeker, instanceName string) (*digest.InstanceNameD
 }
 
 func ComputeFileDigest(fullFilePath, instanceName string) (d *digest.InstanceNameDigest, err error) {
-	f, err := os.Open(fullFilePath)
+	f, err := os.Open(filepath.Clean(fullFilePath))
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +187,7 @@ func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 }
 
 func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName, fullFilePath string) (d *repb.Digest, err error) {
-	f, err := os.Open(fullFilePath)
+	f, err := os.Open(filepath.Clean(fullFilePath))
 	if err != nil {
 		return
 	}

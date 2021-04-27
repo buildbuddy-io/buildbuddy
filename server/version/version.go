@@ -36,7 +36,7 @@ func AppVersion(in ...[]byte) string {
 		versionBytes = in[0]
 	} else if rfp, err := bazel.RunfilesPath(); err == nil {
 		versionFile := filepath.Join(rfp, versionFilename)
-		if b, err := ioutil.ReadFile(versionFile); err == nil {
+		if b, err := ioutil.ReadFile(filepath.Clean(versionFile)); err == nil {
 			versionBytes = b
 		}
 	}

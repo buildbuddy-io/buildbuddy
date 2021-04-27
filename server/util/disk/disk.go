@@ -50,7 +50,7 @@ func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
 }
 
 func ReadFile(ctx context.Context, fullPath string) ([]byte, error) {
-	data, err := ioutil.ReadFile(fullPath)
+	data, err := ioutil.ReadFile(filepath.Clean(fullPath))
 	if os.IsNotExist(err) {
 		return nil, status.NotFoundError(err.Error())
 	}
@@ -81,7 +81,7 @@ type SectionReaderCloser struct {
 }
 
 func FileReader(ctx context.Context, fullPath string, offset, length int64) (*SectionReaderCloser, error) {
-	f, err := os.Open(fullPath)
+	f, err := os.Open(filepath.Clean(fullPath))
 	if err != nil {
 		return nil, err
 	}
