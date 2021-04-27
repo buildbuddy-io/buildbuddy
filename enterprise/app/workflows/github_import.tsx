@@ -9,21 +9,20 @@ import { workflow } from "../../../proto/workflow_ts_proto";
 type GitHubRepoPickerProps = {};
 
 type State = {
-  limit: number;
-
   reposResponse?: workflow.IGetReposResponse;
+  repoListLimit: number;
   workflowsResponse?: workflow.IGetWorkflowsResponse;
   error?: BuildBuddyError;
 
   importRequest?: workflow.ICreateWorkflowRequest;
 };
 
-const DEFAULT_REPO_LIMIT = 6;
-const SHOW_MORE_INCREMENT = 10;
+const REPO_LIST_DEFAULT_LIMIT = 6;
+const REPO_LIST_SHOW_MORE_INCREMENT = 10;
 
 export default class GitHubImport extends React.Component<GitHubRepoPickerProps, State> {
   state: State = {
-    limit: DEFAULT_REPO_LIMIT,
+    repoListLimit: REPO_LIST_DEFAULT_LIMIT,
   };
 
   componentDidMount() {
@@ -57,7 +56,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
   }
 
   private onClickShowMore() {
-    this.setState({ limit: this.state.limit + SHOW_MORE_INCREMENT });
+    this.setState({ repoListLimit: this.state.repoListLimit + REPO_LIST_SHOW_MORE_INCREMENT });
   }
 
   private onClickWorkflowBreadcrumb(e: React.MouseEvent) {
@@ -100,7 +99,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
         </div>
         <div className="container content-container">
           <div className="repo-list">
-            {this.state.reposResponse.repo.slice(0, this.state.limit).map((repo) => {
+            {this.state.reposResponse.repo.slice(0, this.state.repoListLimit).map((repo) => {
               const [owner, repoName] = parseOwnerRepo(repo.url);
               return (
                 <div className="repo-item">
@@ -124,7 +123,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
               );
             })}
           </div>
-          {this.state.limit < this.state.reposResponse.repo.length && (
+          {this.state.repoListLimit < this.state.reposResponse.repo.length && (
             <div className="show-more-button-container">
               <OutlinedButton className="show-more-button" onClick={this.onClickShowMore.bind(this)}>
                 <span>Show more repos</span>
