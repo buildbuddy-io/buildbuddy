@@ -40,12 +40,12 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
   }
 
   private onClickAdd(url: string) {
-    const importRequest = new workflow.CreateWorkflowRequest({
+    const createRequest = new workflow.CreateWorkflowRequest({
       gitRepo: new workflow.CreateWorkflowRequest.GitRepo({ repoUrl: url }),
     });
-    this.setState({ createRequest: importRequest });
+    this.setState({ createRequest });
     rpcService.service
-      .createWorkflow(importRequest)
+      .createWorkflow(createRequest)
       .then(() => {
         alertService.show({ message: "Workflow created successfully!", type: "success" });
         router.navigateToWorkflows();
