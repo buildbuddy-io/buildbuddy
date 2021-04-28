@@ -82,15 +82,15 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		state_string := strconv.FormatUint(state, 10)
-		setCookie(w, stateCookieName, state_string)
+		stateString := strconv.FormatUint(state, 10)
+		setCookie(w, stateCookieName, stateString)
 		setCookie(w, redirectCookieName, r.FormValue("redirect_url"))
 
 		appURL := c.env.GetConfigurator().GetAppBuildBuddyURL()
 		url := fmt.Sprintf(
 			"https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
 			githubConfig.ClientID,
-			state_string,
+			stateString,
 			appURL+"/auth/github/link/",
 			"repo")
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
