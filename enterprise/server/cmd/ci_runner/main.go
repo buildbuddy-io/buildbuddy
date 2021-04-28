@@ -714,9 +714,9 @@ func getDefaultConfig() *config.BuildBuddyConfig {
 					fmt.Sprintf(
 						"test //... "+
 							"--build_metadata=ROLE=CI "+
-							"--build_metadata=BUILDBUDDY_WORKFLOW_ID=%s "+
 							"--bes_backend=%s --bes_results_url=%s "+
-							*workflowID, *besBackend, *besResultsURL,
+							"--remote_header=x-buildbuddy-api-key=%s",
+						*besBackend, *besResultsURL,
 						os.Getenv(buildbuddyAPIKeyEnvVarName),
 					),
 				},
