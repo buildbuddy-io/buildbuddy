@@ -1,6 +1,7 @@
 import React from "react";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import errorService from "../../../app/errors/error_service";
+import alertService from "../../../app/alert/alert_service";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
@@ -14,10 +15,10 @@ type State = {
   workflowsResponse?: workflow.IGetWorkflowsResponse;
   error?: BuildBuddyError;
 
-  importRequest?: workflow.ICreateWorkflowRequest;
+  createRequest?: workflow.ICreateWorkflowRequest;
 };
 
-const REPO_LIST_DEFAULT_LIMIT = 6;
+const REPO_LIST_DEFAULT_LIMIT = 10;
 const REPO_LIST_SHOW_MORE_INCREMENT = 10;
 
 export default class GitHubImport extends React.Component<GitHubRepoPickerProps, State> {
@@ -38,19 +39,19 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
       .catch((error) => this.setState({ error: BuildBuddyError.parse(error) }));
   }
 
-  private onClickImport(url: string) {
+  private onClickAdd(url: string) {
     const importRequest = new workflow.CreateWorkflowRequest({
       gitRepo: new workflow.CreateWorkflowRequest.GitRepo({ repoUrl: url }),
     });
-    this.setState({ importRequest });
+    this.setState({ createRequest: importRequest });
     rpcService.service
       .createWorkflow(importRequest)
       .then(() => {
-        // TODO: Show "Import succeeded" banner.
+        alertService.show({ message: "Workflow created successfully!", type: "success" });
         router.navigateToWorkflows();
       })
       .catch((error) => {
-        this.setState({ importRequest: null });
+        this.setState({ createRequest: null });
         errorService.handleError(error);
       });
   }
@@ -64,7 +65,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
     router.navigateToWorkflows();
   }
 
-  private onClickImportOther(e: React.MouseEvent) {
+  private onClickAddOther(e: React.MouseEvent) {
     e.preventDefault();
     router.navigateTo("/workflows/new/custom");
   }
@@ -80,8 +81,8 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
     if (!this.state.reposResponse || !this.state.workflowsResponse) {
       return <div className="loading"></div>;
     }
-    const alreadyImportedUrls = this.getImportedRepoUrls();
-    const isImporting = Boolean(this.state.importRequest);
+    const alreadyCreatedUrls = this.getImportedRepoUrls();
+    const isCreating = Boolean(this.state.createRequest);
     return (
       <div className="workflows-github-import">
         <div className="shelf">
@@ -92,9 +93,9 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
                   Workflows
                 </a>
               </span>
-              <span>Import GitHub repo</span>
+              <span>Add GitHub repo</span>
             </div>
-            <div className="title">Import GitHub repo</div>
+            <div className="title">Add GitHub repo</div>
           </div>
         </div>
         <div className="container content-container">
@@ -108,15 +109,15 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
                     <span className="repo-owner-separator">/</span>
                     <span className="repo-name">{repoName}</span>
                   </div>
-                  {alreadyImportedUrls.has(repo.url) ? (
-                    <div className="imported-indicator">
-                      <img src="/image/check.svg" title="Already imported" alt="" />
+                  {alreadyCreatedUrls.has(repo.url) ? (
+                    <div className="created-indicator">
+                      <img src="/image/check.svg" title="Already added" alt="" />
                     </div>
-                  ) : isImporting && this.state.importRequest?.gitRepo?.repoUrl === repo.url ? (
-                    <div className="loading import-loading" />
+                  ) : isCreating && this.state.createRequest?.gitRepo?.repoUrl === repo.url ? (
+                    <div className="loading create-loading" />
                   ) : (
-                    <FilledButton disabled={isImporting} onClick={this.onClickImport.bind(this, repo.url)}>
-                      Import
+                    <FilledButton disabled={isCreating} onClick={this.onClickAdd.bind(this, repo.url)}>
+                      Add
                     </FilledButton>
                   )}
                 </div>
@@ -131,12 +132,12 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
               </OutlinedButton>
             </div>
           )}
-          <div className="import-other-container">
+          <div className="create-other-container">
             <a
-              className="import-other clickable"
+              className="create-other clickable"
               href="/workflows/new/custom"
-              onClick={this.onClickImportOther.bind(this)}>
-              Import from another Git provider <img src="/image/arrow-right.svg" alt=""></img>
+              onClick={this.onClickAddOther.bind(this)}>
+              Add from another Git provider <img src="/image/arrow-right.svg" alt=""></img>
             </a>
           </div>
         </div>

@@ -3,13 +3,16 @@ load("@npm//@bazel/typescript:index.bzl", "ts_library")
 package(default_visibility = ["//visibility:public"])
 
 ts_library(
-    name = "errors",
+    name = "alert",
     srcs = glob([
         "*.tsx",
         "*.ts",
     ]),
     deps = [
-        "//app/alert",
-        "//app/util:errors",
+        "@npm//@types/react",
+        "@npm//react",
+        "@npm//rxjs",
     ],
 )
+
+exports_files(srcs = glob(["*.css"]))

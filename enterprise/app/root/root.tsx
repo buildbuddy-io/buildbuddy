@@ -3,7 +3,7 @@ import authService, { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import CompareInvocationsComponent from "../../../app/compare/compare_invocations";
 import SetupComponent from "../../../app/docs/setup";
-import ErrorBannerComponent from "../../../app/errors/error_banner";
+import AlertComponent from "../../../app/alert/alert";
 import faviconService from "../../../app/favicon/favicon";
 import FooterComponent from "../../../app/footer/footer";
 import WorkflowsComponent from "../workflows/workflows";
@@ -185,7 +185,9 @@ export default class EnterpriseRootComponent extends React.Component {
                 {orgJoinAuthenticated && <JoinOrgComponent user={this.state.user} />}
                 {tests && <TapComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />}
                 {trends && <TrendsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />}
-                {executors && <ExecutorsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />}
+                {executors && (
+                  <ExecutorsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
+                )}
                 {home && <HistoryComponent user={this.state.user} hash={this.state.hash} />}
                 {workflows && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                 {setup && (
@@ -208,7 +210,7 @@ export default class EnterpriseRootComponent extends React.Component {
             {this.state.loading && <div className="loading loading-dark"></div>}
           </div>
         </div>
-        <ErrorBannerComponent />
+        <AlertComponent />
       </div>
     );
   }

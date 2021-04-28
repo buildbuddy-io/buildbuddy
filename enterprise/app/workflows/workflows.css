@@ -167,7 +167,7 @@
 /* GITHUB IMPORT */
 
 .workflows-github-import .content-container {
-  width: 480px;
+  width: 600px;
   max-width: 100%;
 }
 
@@ -200,13 +200,13 @@
   font-weight: 600;
 }
 
-.workflows-github-import .imported-indicator,
-.workflows-github-import .import-loading {
+.workflows-github-import .created-indicator,
+.workflows-github-import .create-loading {
   text-align: center;
   flex-grow: initial;
 
   /* Match button sizing. */
-  width: 85px;
+  width: 62px;
   height: 40px;
   padding: 8px 0;
   box-sizing: border-box;
@@ -225,13 +225,13 @@
   opacity: 0.7;
 }
 
-.workflows-github-import .import-other-container {
+.workflows-github-import .create-other-container {
   display: flex;
   justify-content: flex-end;
   margin-top: 16px;
 }
 
-.workflows-github-import .import-other {
+.workflows-github-import .create-other {
   display: flex;
   align-items: center;
   padding: 8px 0;
@@ -240,16 +240,16 @@
   opacity: 0.7;
 }
 
-.workflows-github-import .import-other img {
+.workflows-github-import .create-other img {
   width: 16px;
   height: 16px;
 }
 
-.workflows-github-import .import-other > :not(:last-child) {
+.workflows-github-import .create-other > :not(:last-child) {
   margin-right: 8px;
 }
 
-.workflows-github-import .import-other:hover {
+.workflows-github-import .create-other:hover {
   opacity: 1;
 }
 
