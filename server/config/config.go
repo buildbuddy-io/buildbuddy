@@ -45,7 +45,7 @@ type appConfig struct {
 	EnableTargetTracking      bool   `yaml:"enable_target_tracking" usage:"Cloud-Only"`
 	EnableStructuredLogging   bool   `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
 	LogIncludeShortFileName   bool   `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
-	LogLevel                  string `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {"fatal", "error", "warn", "info", "debug"}`
+	LogLevel                  string `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}"`
 	LogEnableGCPLoggingFormat bool   `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
 }
 
@@ -61,7 +61,7 @@ type DatabaseConfig struct {
 	MaxIdleConns           int    `yaml:"max_idle_conns" usage:"The maximum number of idle connections to maintain to the db"`
 	ConnMaxLifetimeSeconds int    `yaml:"conn_max_lifetime_seconds" usage:"The maximum lifetime of a connection to the db"`
 	LogQueries             bool   `yaml:"log_queries" usage:"If true, log all queries"`
-	StatsPollInterval      string `yaml:"stats_poll_interval" usage:"How often to poll the DB client for connection stats (default: "5s")."`
+	StatsPollInterval      string `yaml:"stats_poll_interval" usage:"How often to poll the DB client for connection stats (default: '5s')."`
 }
 
 type storageConfig struct {
@@ -116,7 +116,7 @@ type DistributedCacheConfig struct {
 	GroupName         string   `yaml:"group_name" usage:"A unique name for this distributed cache group. ** Enterprise only **"`
 	ReplicationFactor int      `yaml:"replication_factor" usage:"How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **"`
 	Nodes             []string `yaml:"nodes" usage:"The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **"`
-	ClusterSize       int      `yaml:"cluster_size" usage:"The total number of nodes in this cluster. Required for health checking. ** Enterprise only **`
+	ClusterSize       int      `yaml:"cluster_size" usage:"The total number of nodes in this cluster. Required for health checking. ** Enterprise only **"`
 }
 
 type RedisCacheConfig struct {
@@ -146,7 +146,7 @@ type authConfig struct {
 type OauthProvider struct {
 	IssuerURL    string `yaml:"issuer_url" usage:"The issuer URL of this OIDC Provider."`
 	ClientID     string `yaml:"client_id" usage:"The oauth client ID."`
-	ClientSecret string `yaml:"client_secret" usage:""The oauth client secret.`
+	ClientSecret string `yaml:"client_secret" usage:"The oauth client secret."`
 }
 
 type SSLConfig struct {
