@@ -685,6 +685,9 @@ func invocationURL(invocationID string) string {
 func readConfig() (*config.BuildBuddyConfig, error) {
 	f, err := os.Open(actionsConfigPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return getDefaultConfig(), nil
+		}
 		return nil, status.FailedPreconditionErrorf("open %q: %s", actionsConfigPath, err)
 	}
 	c, err := config.NewConfig(f)
@@ -692,6 +695,34 @@ func readConfig() (*config.BuildBuddyConfig, error) {
 		return nil, status.FailedPreconditionErrorf("read %q: %s", actionsConfigPath, err)
 	}
 	return c, nil
+}
+
+func getDefaultConfig() *config.BuildBuddyConfig {
+	// By default, test all targets when any branch is pushed.
+	// TODO: Consider running a bazel query to find only the targets that are
+	// affected by the changed files.
+	return &config.BuildBuddyConfig{
+		Actions: []*config.Action{
+			{
+				Name: "Test all targets",
+				Triggers: &config.Triggers{
+					Push: &config.PushTrigger{Branches: []string{*triggerBranch}},
+				},
+				BazelCommands: []string{
+					// TOOD: Consider enabling remote_cache and remote_executor along with
+					// recommended RBE flags.
+					fmt.Sprintf(
+						"test //... "+
+							"--build_metadata=ROLE=CI "+
+							"--bes_backend=%s --bes_results_url=%s "+
+							"--remote_header=x-buildbuddy-api-key=%s",
+						*besBackend, *besResultsURL,
+						os.Getenv(buildbuddyAPIKeyEnvVarName),
+					),
+				},
+			},
+		},
+	}
 }
 
 func matchesAnyTrigger(action *config.Action, event, branch string) bool {

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/bazel"
@@ -23,15 +24,24 @@ import (
 )
 
 var (
-	testWorkspaceContents = map[string]string{
-		"WORKSPACE":     `workspace(name = "test")`,
-		".bazelversion": "3.7.0",
+	workspaceContentsWithBazelVersionAction = map[string]string{
+		"WORKSPACE": `workspace(name = "test")`,
 		"buildbuddy.yaml": `
 actions:
   - name: "Show bazel version"
     triggers: { push: { branches: [ master ] } }
     bazel_commands: [ version ]
 `,
+	}
+
+	workspaceContentsWithNoBuildBuddyYAML = map[string]string{
+		"WORKSPACE": `workspace(name = "test")`,
+		"BUILD": `
+sh_test(name = "pass", srcs = ["pass.sh"])
+sh_test(name = "fail", srcs = ["fail.sh"])
+`,
+		"pass.sh": `exit 0`,
+		"fail.sh": `exit 1`,
 	}
 
 	invocationIDPattern = regexp.MustCompile(`Invocation URL:\s+.*?/invocation/([a-f0-9-]+)`)
@@ -56,6 +66,33 @@ func makeRunnerWorkspace(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return wsDir
+}
+
+// TODO: Replace with testfs.MakeTempDir once #361 is merged.
+func makeTempDir(t testing.TB) string {
+	tmpDir, err := os.MkdirTemp("", "buildbuddy-test-*")
+	if err != nil {
+		assert.FailNow(t, "failed to create temp dir", err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			assert.FailNow(t, "failed to clean up temp dir", err)
+		}
+	})
+	return tmpDir
+}
+
+// TODO: Replace with testfs.WriteAllFileContents once #361 is merged.
+func writeAllFileContents(t testing.TB, rootDir string, contents map[string]string) {
+	for relPath, content := range contents {
+		path := filepath.Join(rootDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			assert.FailNow(t, "failed to create parent dir for file", err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			assert.FailNow(t, "write failed", err)
+		}
+	}
 }
 
 func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
@@ -103,6 +140,15 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	}
 }
 
+func checkRunnerResult(t *testing.T, res *result) {
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, 1, len(res.InvocationIDs))
+	if res.ExitCode != 0 || len(res.InvocationIDs) != 1 {
+		t.Logf("runner output:\n===\n%s\n===\n", res.Output)
+		t.FailNow()
+	}
+}
+
 func newUUID(t *testing.T) string {
 	id, err := uuid.NewRandom()
 	if err != nil {
@@ -111,8 +157,21 @@ func newUUID(t *testing.T) string {
 	return id.String()
 }
 
-func makeGitRepo(t *testing.T) (path, commitSHA string) {
-	path = bazel.MakeTempWorkspace(t, testWorkspaceContents)
+func makeGitRepo(t *testing.T, contents map[string]string) (path, commitSHA string) {
+	// NOTE: Not using bazel.MakeTempWorkspace here since this repo itself does
+	// not need `bazel shutdown` run inside it (only the clone of this repo made
+	// by the runner needs `bazel shutdown` to be run).
+	path = makeTempDir(t)
+	writeAllFileContents(t, path, contents)
+	for fileRelPath := range contents {
+		filePath := filepath.Join(path, fileRelPath)
+		// Make shell scripts executable.
+		if strings.HasSuffix(filePath, ".sh") {
+			if err := os.Chmod(filePath, 0750); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	// Make the repo contents globally unique so that this makeGitRepo func can be
 	// called more than once to create unique repos with incompatible commit
 	// history.
@@ -143,9 +202,9 @@ func makeGitRepo(t *testing.T) (path, commitSHA string) {
 	return path, hash.String()
 }
 
-func TestCIRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *testing.T) {
+func TestCIRunner_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testing.T) {
 	wsPath := makeRunnerWorkspace(t)
-	repoPath, headCommitSHA := makeGitRepo(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
 		"--repo_url=file://" + repoPath,
 		"--commit_sha=" + headCommitSHA,
@@ -159,12 +218,8 @@ func TestCIRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *testi
 
 	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 
-	assert.Equal(t, 0, result.ExitCode)
-	assert.Equal(t, 1, len(result.InvocationIDs))
-	if result.ExitCode != 0 || len(result.InvocationIDs) != 1 {
-		t.Logf("runner output:\n===\n%s\n===\n", result.Output)
-		t.FailNow()
-	}
+	checkRunnerResult(t, result)
+
 	bbService := app.BuildBuddyServiceClient(t)
 	res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
 		Lookup: &inpb.InvocationLookup{
@@ -179,9 +234,43 @@ func TestCIRunner_WorkspaceWithTestAllAction_RunsAndUploadsResultsToBES(t *testi
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7.0")
 }
 
+func TestCIRunner_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsToBES(t *testing.T) {
+	wsPath := makeRunnerWorkspace(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithNoBuildBuddyYAML)
+	runnerFlags := []string{
+		"--repo_url=file://" + repoPath,
+		"--commit_sha=" + headCommitSHA,
+		"--branch=master",
+		"--trigger_event=push",
+		"--trigger_branch=master",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	checkRunnerResult(t, result)
+
+	bbService := app.BuildBuddyServiceClient(t)
+	res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
+		Lookup: &inpb.InvocationLookup{
+			InvocationId: result.InvocationIDs[0],
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(res.Invocation), "couldn't find runner invocation in DB")
+	runnerInvocation := res.Invocation[0]
+	assert.Contains(
+		t, runnerInvocation.ConsoleBuffer,
+		"Executed 2 out of 2 tests: 1 test passes and 1 fails locally.",
+		"pass.sh test should have passed and fail.sh should have failed.",
+	)
+}
+
 func TestCIRunner_ReusedWorkspaceWithTestAllAction_CanReuseWorkspace(t *testing.T) {
 	wsPath := makeRunnerWorkspace(t)
-	repoPath, headCommitSHA := makeGitRepo(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
 		"--repo_url=file://" + repoPath,
 		"--commit_sha=" + headCommitSHA,
@@ -198,22 +287,12 @@ func TestCIRunner_ReusedWorkspaceWithTestAllAction_CanReuseWorkspace(t *testing.
 
 	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 
-	assert.Equal(t, 0, result.ExitCode)
-	assert.Equal(t, 1, len(result.InvocationIDs))
-	if result.ExitCode != 0 || len(result.InvocationIDs) != 1 {
-		t.Logf("runner output (first run):\n===\n%s\n===\n", result.Output)
-		t.FailNow()
-	}
+	checkRunnerResult(t, result)
 
 	// Invoke the runner a second time in the same workspace.
 	result = invokeRunner(t, runnerFlags, []string{}, wsPath)
 
-	assert.Equal(t, 0, result.ExitCode)
-	assert.Equal(t, 1, len(result.InvocationIDs))
-	if result.ExitCode != 0 || len(result.InvocationIDs) != 1 {
-		t.Logf("runner output (second run in reused workspace):\n===\n%s\n===\n", result.Output)
-		t.FailNow()
-	}
+	checkRunnerResult(t, result)
 
 	bbService := app.BuildBuddyServiceClient(t)
 	res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
@@ -237,7 +316,7 @@ func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 	app := buildbuddy.Run(t)
 	bbService := app.BuildBuddyServiceClient(t)
 
-	repoPath, headCommitSHA := makeGitRepo(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
 		"--repo_url=file://" + repoPath,
 		"--commit_sha=" + headCommitSHA,
@@ -250,12 +329,8 @@ func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 	run := func() {
 		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 
-		assert.Equal(t, 0, result.ExitCode)
-		assert.Equal(t, 1, len(result.InvocationIDs))
-		if result.ExitCode != 0 || len(result.InvocationIDs) != 1 {
-			t.Logf("runner output:\n===\n%s\n===\n", result.Output)
-			t.FailNow()
-		}
+		checkRunnerResult(t, result)
+
 		res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
 			Lookup: &inpb.InvocationLookup{
 				InvocationId: result.InvocationIDs[0],
