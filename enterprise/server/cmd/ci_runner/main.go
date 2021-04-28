@@ -701,13 +701,12 @@ func getDefaultConfig() *config.BuildBuddyConfig {
 	// By default, test all targets when any branch is pushed.
 	// TODO: Consider running a bazel query to find only the targets that are
 	// affected by the changed files.
-	triggerBranches := []string{*triggerBranch}
 	return &config.BuildBuddyConfig{
 		Actions: []*config.Action{
 			{
 				Name: "Test all targets",
 				Triggers: &config.Triggers{
-					Push: &config.PushTrigger{Branches: triggerBranches},
+					Push: &config.PushTrigger{Branches: []string{*triggerBranch}},
 				},
 				BazelCommands: []string{
 					// TOOD: Consider enabling remote_cache and remote_executor along with
