@@ -1,0 +1,58 @@
+{
+  "assign": {
+    "exclude_files": {
+      "external/*": "Third party code"
+    }
+  },
+  "cgocall": {
+    "exclude_files": {
+      "external/*": "Third party code"
+    }
+  },
+  "composites": {
+    "exclude_files": {
+      "external/*": "Third party code"
+    }
+  },
+  "copylocks": {
+    "exclude_files": {
+      "external/*": "Third party code"
+    }
+  },
+  "lostcancel": {
+    "exclude_files": {
+      "external/*": "Third party code"
+    }
+  },
+  "nilness": {
+    "exclude_files": {
+      "tmp/*": "Temp generated files",
+      "external/*": "Third party code"
+    }
+  },
+  "stdmethods": {
+    "exclude_files": {
+      "external/*": "Third party code"
+    }
+  },
+  "stringintconv": {
+    "exclude_files": {
+      "external/*": "Third party code"
+    }
+  },
+  "structtag": {
+    "exclude_files": {
+      "external/*": "Third party code"
+    }
+  },
+  "unreachable": {
+    "exclude_files": {
+      "external/*": "Unreachable third party code"
+    }
+  },
+  "unsafeptr": {
+    "exclude_files": {
+      "external/*": "Unsafe third party code"
+    }
+  }
+}
