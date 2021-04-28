@@ -1,11 +1,10 @@
-.error-banner {
+.alert-banner {
   position: absolute;
   z-index: 9000;
 
   left: 50%;
   margin-top: 32px;
 
-  background: #ffcdd2;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27), 0 3px 5px rgba(0, 0, 0, 0.12);
   border-radius: 8px;
   padding: 16px;
@@ -14,19 +13,27 @@
   align-items: start;
 }
 
-.error-banner.hidden {
+.alert-banner.alert-type-error {
+  background: #ffcdd2;
+}
+
+.alert-banner.alert-type-success {
+  background: #c8e6c9;
+}
+
+.alert-banner.hidden {
   pointer-events: none;
   opacity: 0;
   transform: translateX(-50%) translateY(-16px);
   transition: 128ms ease-in;
 }
 
-.error-banner.visible {
+.alert-banner.visible {
   opacity: 1;
   transform: translateX(-50%);
   transition: 128ms ease-out;
 }
 
-.error-banner > :not(:last-child) {
+.alert-banner > :not(:last-child) {
   margin-right: 8px;
 }
