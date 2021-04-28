@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -361,7 +363,45 @@ func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, cache in
 // Errors:
 //
 // * `NOT_FOUND`: The requested tree root is not present in the CAS.
+
+type DirectoryWithDigest struct {
+	Directory *repb.Directory
+	Digest    *repb.Digest
+}
+
+func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, cache interfaces.Cache, dir *repb.Directory) ([]*DirectoryWithDigest, error) {
+	if len(dir.Directories) == 0 {
+		return nil, nil
+	}
+	subdirDigests := make([]*repb.Digest, 0, len(dir.Directories))
+	for _, dirNode := range dir.Directories {
+		d := dirNode.GetDigest()
+		if d.GetHash() == digest.EmptySha256 {
+			continue
+		}
+		subdirDigests = append(subdirDigests, d)
+	}
+	rspMap, err := cache.GetMulti(ctx, subdirDigests)
+	if err != nil {
+		return nil, err
+	}
+	children := make([]*DirectoryWithDigest, 0, len(subdirDigests))
+	for _, d := range subdirDigests {
+		blob, ok := rspMap[d]
+		if !ok {
+			return nil, status.NotFoundErrorf("Digest %s not found in cache.", d.GetHash())
+		}
+		subDir := &repb.Directory{}
+		if err := proto.Unmarshal(blob, subDir); err != nil {
+			return nil, err
+		}
+		children = append(children, &DirectoryWithDigest{Directory: subDir, Digest: d})
+	}
+	return children, nil
+}
+
 func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
+	rpcStart := time.Now()
 	if req.RootDigest == nil {
 		return fmt.Errorf("RootDigest is required to GetTree")
 	}
@@ -374,77 +414,79 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return err
 	}
 	cache := s.getCache(req.GetInstanceName())
-	dirStack, err := NewDirStack(req.GetPageToken())
+	rootDir, err := s.fetchDir(ctx, cache, req.GetRootDigest())
 	if err != nil {
-		return status.InvalidArgumentErrorf("Unparseable tree token: %s", err)
+		return err
 	}
 
-	maxPageSize := int32(10000)
-	if req.GetPageSize() < maxPageSize && req.GetPageSize() > 0 {
-		maxPageSize = req.GetPageSize()
-	}
-
-	if dirStack.Empty() {
-		rootDir, err := s.fetchDir(ctx, cache, req.GetRootDigest())
-		if err != nil {
-			return err
-		}
-		dirStack.Push(rootDir, req.GetRootDigest().GetSizeBytes())
-	}
-
+	mu := &sync.Mutex{}
 	rsp := &repb.GetTreeResponse{}
 	rspSizeBytes := int64(0)
-	finishPage := func(lastResponse bool) error {
-		if !lastResponse {
-			token, err := dirStack.SerializeToToken()
-			if err != nil {
+	dirCount := 0
+	fetchCount := 0
+	fetchDuration := time.Duration(0)
+
+	finishDir := func(dirWithDigest *DirectoryWithDigest) error {
+		mu.Lock()
+		defer mu.Unlock()
+
+		dir := dirWithDigest.Directory
+		d := dirWithDigest.Digest
+
+		if rspSizeBytes+d.GetSizeBytes() > gRPCMaxSize {
+			if err := stream.Send(rsp); err != nil {
 				return err
 			}
-			rsp.NextPageToken = token
+			rsp = &repb.GetTreeResponse{}
+			rspSizeBytes = 0
 		}
-		return stream.Send(rsp)
+		rspSizeBytes += d.GetSizeBytes()
+		rsp.Directories = append(rsp.Directories, dir)
+		dirCount += 1
+		return nil
 	}
 
-	for dir, sizeBytes := dirStack.Pop(); dir != nil; dir, sizeBytes = dirStack.Pop() {
-		if sizeBytes > gRPCMaxSize {
-			return status.InternalError("Directory size exceeds RPC max. Get out!")
+	eg, gCtx := errgroup.WithContext(ctx)
+	var fetch func(dirWithDigest *DirectoryWithDigest) error
+	fetch = func(dirWithDigest *DirectoryWithDigest) error {
+		if err := finishDir(dirWithDigest); err != nil {
+			return err
 		}
-		if rspSizeBytes+sizeBytes > gRPCMaxSize {
-			// Response is *already* full, so put this dir back on
-			// the stack for the next call to GetTree and finish
-			// this page.
-			dirStack.Push(dir, sizeBytes)
-			return finishPage(dirStack.Empty())
+		if len(dirWithDigest.Directory.Directories) == 0 {
+			return nil
 		}
-		rspSizeBytes += sizeBytes
-		rsp.Directories = append(rsp.Directories, dir)
 
-		subdirDigests := make([]*repb.Digest, 0, len(dir.Directories))
-		for _, dirNode := range dir.Directories {
-			d := dirNode.GetDigest()
-			if d.GetHash() == digest.EmptySha256 {
-				continue
-			}
-			subdirDigests = append(subdirDigests, d)
-		}
-		rspMap, err := cache.GetMulti(ctx, subdirDigests)
+		start := time.Now()
+		children, err := s.fetchDirectory(gCtx, cache, dirWithDigest.Directory)
 		if err != nil {
 			return err
 		}
-		for _, d := range subdirDigests {
-			blob, ok := rspMap[d]
-			if !ok {
-				return status.NotFoundErrorf("Digest %s not found in cache.", d.GetHash())
-			}
-			subDir := &repb.Directory{}
-			if err := proto.Unmarshal(blob, subDir); err != nil {
-				return err
-			}
-			dirStack.Push(subDir, d.GetSizeBytes())
+		mu.Lock()
+		fetchDuration += time.Since(start)
+		fetchCount += 1
+		mu.Unlock()
+		for _, childDirWithDigest := range children {
+			childDirWithDigest := childDirWithDigest
+			eg.Go(func() error {
+				return fetch(childDirWithDigest)
+			})
 		}
-		if int32(len(rsp.Directories)) == maxPageSize {
-			return finishPage(dirStack.Empty())
-		}
+		return nil
 	}
-	return finishPage(true)
+
+	eg.Go(func() error {
+		return fetch(&DirectoryWithDigest{
+			Directory: rootDir,
+			Digest:    req.GetRootDigest(),
+		})
+	})
+
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	log.Printf("GetTree fetched %d dirs from cache across %d calls in cumulative %s (total time: %s)", dirCount, fetchCount, fetchDuration, time.Since(rpcStart))
+	if rspSizeBytes > 0 {
+		return stream.Send(rsp)
+	}
+	return nil
 }
