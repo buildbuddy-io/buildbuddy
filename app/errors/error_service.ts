@@ -6,7 +6,7 @@ export class ErrorService {
     console.error(e);
 
     const message = String(e instanceof BuildBuddyError ? e : BuildBuddyError.parse(e));
-    alertService.show({ message, type: "error" });
+    alertService.error(message);
   }
 }
 

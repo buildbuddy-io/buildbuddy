@@ -47,7 +47,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
     rpcService.service
       .createWorkflow(createRequest)
       .then(() => {
-        alertService.show({ message: "Workflow created successfully!", type: "success" });
+        alertService.success("Workflow created successfully!");
         router.navigateToWorkflows();
       })
       .catch((error) => {

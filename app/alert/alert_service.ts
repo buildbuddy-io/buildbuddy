@@ -13,6 +13,16 @@ export class AlertService {
   show(alert: Alert) {
     this.alerts.next(alert);
   }
+
+  // Convenience methods for different alert types:
+
+  success(message: string) {
+    this.show({ message, type: "success" });
+  }
+
+  error(message: string) {
+    this.show({ message, type: "error" });
+  }
 }
 
 export default new AlertService();
