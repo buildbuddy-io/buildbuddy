@@ -71,8 +71,11 @@ type PushTrigger struct {
 /// Defines whether an action should execute when a pull request (PR) branch is
 /// pushed.
 type PullRequestTrigger struct {
-	/// The _target_ branches of a pull request that must match push events
+	/// The _target_ branches of a pull request.
 	///
+	/// For example, if this is set to `[ "v1", "v2" ]`, then the
+	/// associated action is only run when a PR wants to merge a branch _into_
+	/// the `v1` branch or the `v2` branch.
 	Branches []string `yaml:"branches"`
 }
 
