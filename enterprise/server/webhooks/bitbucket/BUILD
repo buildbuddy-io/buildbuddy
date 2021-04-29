@@ -1,5 +1,4 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("@io_bazel_rules_go//extras:embed_data.bzl", "go_embed_data")
 
 go_library(
     name = "bitbucket",
@@ -16,23 +15,12 @@ go_library(
     ],
 )
 
-go_embed_data(
-    name = "data",
-    testonly = 1,
-    srcs = glob(["test_data/**/*"]),
-    package = "bitbucket_test",
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
-)
-
 go_test(
     name = "bitbucket_test",
     srcs = ["bitbucket_test.go"],
-    embed = [":data"],  # keep
     deps = [
         ":bitbucket",
+        "//enterprise/server/webhooks/bitbucket/test_data",
         "//enterprise/server/webhooks/webhook_data",
         "@com_github_stretchr_testify//assert",
     ],
