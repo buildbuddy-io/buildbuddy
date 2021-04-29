@@ -114,7 +114,7 @@ func (t *TelemetryClient) logTelemetryData() {
 
 	// Fill user related stats.
 	if userDB := t.env.GetUserDB(); userDB != nil {
-		if userDB.FillCounts(ctx, telemetryLog.TelemetryStat); err != nil {
+		if err := userDB.FillCounts(ctx, telemetryLog.TelemetryStat); err != nil {
 			log.Debugf("Error getting telemetry invocation counts: %s", err)
 		}
 	}
