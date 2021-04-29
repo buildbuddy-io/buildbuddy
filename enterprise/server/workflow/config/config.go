@@ -26,6 +26,8 @@ import (
 type BuildBuddyConfig struct {
 	/// List of actions that can be triggered by BuildBuddy.
 	///
+	/// Each action corresponds to a separate check on GitHub.
+	///
 	/// If multiple actions are matched for a given event, the actions are run in
 	/// order. If an action fails, subsequent actions will still be executed.
 	Actions []*Action `yaml:"actions"`
@@ -33,12 +35,15 @@ type BuildBuddyConfig struct {
 
 /// A named group of Bazel commands that run when triggered.
 type Action struct {
-	/// A name unique to this config, which shows up in reported GitHub statuses.
+	/// A name unique to this config, which shows up as the name of the check
+	/// in GitHub.
 	Name string `yaml:"name"`
-	/// The triggers for this action.
+	/// The triggers that should cause this action to be run.
 	Triggers *Triggers `yaml:"triggers"`
-	/// Bazel commands to be run in order. If a command fails, subsequent ones
-	/// are not run, and the action fails. Otherwise, the action succeeds.
+	/// Bazel commands to be run in order.
+	///
+	/// If a command fails, subsequent ones are not run, and the action is
+	/// reported as failed. Otherwise, the action is reported as succeeded.
 	BazelCommands []string `yaml:"bazel_commands"`
 }
 
