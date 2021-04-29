@@ -294,7 +294,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 
 		if auth := e.env.GetAuthenticator(); auth != nil {
-			options, err := extractOptionsFromStartedBuildEvent(bazelBuildEvent)
+			options, err := extractOptionsFromStartedBuildEvent(&bazelBuildEvent)
 			if err != nil {
 				return err
 			}
@@ -386,7 +386,7 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 	return nil
 }
 
-func extractOptionsFromStartedBuildEvent(event build_event_stream.BuildEvent) (string, error) {
+func extractOptionsFromStartedBuildEvent(event *build_event_stream.BuildEvent) (string, error) {
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
 		return p.Started.OptionsDescription, nil
