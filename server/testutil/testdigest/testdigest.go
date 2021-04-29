@@ -37,8 +37,6 @@ func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 			val >>= 8
 		}
 	}
-
-	panic("unreachable")
 }
 
 func NewRandomDigestReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.ReadSeeker) {
