@@ -80,7 +80,11 @@ func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ..
 			return
 		}
 		asp.PublishBuildEvent_PublishBuildToolEventStreamClient = stream
-		for req := range asp.events {
+		for {
+			req, ok := <-asp.events
+			if !ok {
+				break
+			}
 			err := stream.Send(&req)
 			if err != nil {
 				log.Warningf("Error sending req on stream: %s", err.Error())
