@@ -204,40 +204,40 @@ func TestFillInvocation(t *testing.T) {
 	assert.Equal(t, "test-invocation", invocation.InvocationId)
 	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
 
-	assert.Equal(t, "", progress.Stderr)
-	assert.Equal(t, "", progress.Stdout)
+	assert.Equal(t, "", invocation.Event[0].BuildEvent.GetProgress().Stderr)
+	assert.Equal(t, "", invocation.Event[0].BuildEvent.GetProgress().Stdout)
 	assert.Equal(t, "stderrstdout", invocation.ConsoleBuffer)
 
 	assert.Equal(t, "test", invocation.Command)
-	assert.Equal(t, "foo", buildStarted.OptionsDescription)
+	assert.Equal(t, "foo", invocation.Event[1].BuildEvent.GetStarted().OptionsDescription)
 
-	assert.Equal(t, []string{"foo"}, optionsParsed.CmdLine)
-	assert.Equal(t, []string{"explicit"}, optionsParsed.ExplicitCmdLine)
+	assert.Equal(t, []string{"foo"}, invocation.Event[4].BuildEvent.GetOptionsParsed().CmdLine)
+	assert.Equal(t, []string{"explicit"}, invocation.Event[4].BuildEvent.GetOptionsParsed().ExplicitCmdLine)
 
-	assert.Equal(t, "uri", actionExecuted.Stdout.GetUri())
-	assert.Equal(t, "uri", actionExecuted.Stderr.GetUri())
-	assert.Equal(t, "uri", actionExecuted.PrimaryOutput.GetUri())
-	assert.Equal(t, 1, len(actionExecuted.ActionMetadataLogs))
-	assert.Equal(t, "uri", actionExecuted.ActionMetadataLogs[0].GetUri())
+	assert.Equal(t, "uri", invocation.Event[6].BuildEvent.GetAction().Stdout.GetUri())
+	assert.Equal(t, "uri", invocation.Event[6].BuildEvent.GetAction().Stderr.GetUri())
+	assert.Equal(t, "uri", invocation.Event[6].BuildEvent.GetAction().PrimaryOutput.GetUri())
+	assert.Equal(t, 1, len(invocation.Event[6].BuildEvent.GetAction().ActionMetadataLogs))
+	assert.Equal(t, "uri", invocation.Event[6].BuildEvent.GetAction().ActionMetadataLogs[0].GetUri())
 
-	assert.Equal(t, 1, len(namedSetOfFiles.Files))
-	assert.Equal(t, "uri", namedSetOfFiles.Files[0].GetUri())
+	assert.Equal(t, 1, len(invocation.Event[7].BuildEvent.GetNamedSetOfFiles().Files))
+	assert.Equal(t, "uri", invocation.Event[7].BuildEvent.GetNamedSetOfFiles().Files[0].GetUri())
 
-	assert.Equal(t, 1, len(targetComplete.ImportantOutput))
-	assert.Equal(t, "uri", targetComplete.ImportantOutput[0].GetUri())
+	assert.Equal(t, 1, len(invocation.Event[8].BuildEvent.GetCompleted().ImportantOutput))
+	assert.Equal(t, "uri", invocation.Event[8].BuildEvent.GetCompleted().ImportantOutput[0].GetUri())
 
-	assert.Equal(t, 1, len(testResult.TestActionOutput))
-	assert.Equal(t, "uri", testResult.TestActionOutput[0].GetUri())
+	assert.Equal(t, 1, len(invocation.Event[9].BuildEvent.GetTestResult().TestActionOutput))
+	assert.Equal(t, "uri", invocation.Event[9].BuildEvent.GetTestResult().TestActionOutput[0].GetUri())
 
-	assert.Equal(t, 1, len(testSummary.Passed))
-	assert.Equal(t, 1, len(testSummary.Failed))
-	assert.Equal(t, "uri", testSummary.Passed[0].GetUri())
-	assert.Equal(t, "uri", testSummary.Failed[0].GetUri())
+	assert.Equal(t, 1, len(invocation.Event[10].BuildEvent.GetTestSummary().Passed))
+	assert.Equal(t, 1, len(invocation.Event[10].BuildEvent.GetTestSummary().Failed))
+	assert.Equal(t, "uri", invocation.Event[10].BuildEvent.GetTestSummary().Passed[0].GetUri())
+	assert.Equal(t, "uri", invocation.Event[10].BuildEvent.GetTestSummary().Failed[0].GetUri())
 
 	assert.Equal(t, int64(1000), invocation.DurationUsec)
 
-	assert.Equal(t, "SHELL=/bin/bash", shellOption.OptionValue)
-	assert.Equal(t, "SECRET=<REDACTED>", secretOption.OptionValue)
+	assert.Equal(t, "SHELL=/bin/bash", invocation.StructuredCommandLine[0].Sections[0].GetOptionList().Option[0].OptionValue)
+	assert.Equal(t, "SECRET=<REDACTED>", invocation.StructuredCommandLine[0].Sections[0].GetOptionList().Option[1].OptionValue)
 
 	assert.Equal(t, "WORKSPACE_STATUS_BUILD_USER", invocation.User)
 	assert.Equal(t, "METADATA_CI", invocation.Role)
