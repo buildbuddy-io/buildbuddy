@@ -90,14 +90,14 @@ func TestMultiGetSet(t *testing.T) {
 		t.Fatalf("Error multi-setting digests: %s", err.Error())
 	}
 	digestKeys := make([]*repb.Digest, 0, len(digests))
-	for d, _ := range digests {
+	for d := range digests {
 		digestKeys = append(digestKeys, d)
 	}
 	m, err := mc.GetMulti(ctx, digestKeys)
 	if err != nil {
 		t.Fatalf("Error multi-getting digests: %s", err.Error())
 	}
-	for d, _ := range digests {
+	for d := range digests {
 		rbuf, ok := m[d]
 		if !ok {
 			t.Fatalf("Multi-get failed to return expected digest: %q", d.GetHash())

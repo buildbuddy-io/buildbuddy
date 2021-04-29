@@ -42,7 +42,7 @@ type evilCache struct {
 
 func (e *evilCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	rsp, err := e.Cache.GetMulti(ctx, digests)
-	for d, _ := range rsp {
+	for d := range rsp {
 		rsp[d] = []byte{}
 	}
 	return rsp, err

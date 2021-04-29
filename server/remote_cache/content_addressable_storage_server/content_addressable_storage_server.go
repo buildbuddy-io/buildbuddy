@@ -161,7 +161,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 	if err := cache.SetMulti(ctx, kvs); err != nil {
 		return nil, err
 	}
-	for uploadDigest, _ := range kvs {
+	for uploadDigest := range kvs {
 		rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 			Digest: uploadDigest,
 			Status: &statuspb.Status{Code: int32(codes.OK)},

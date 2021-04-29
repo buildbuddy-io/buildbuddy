@@ -355,7 +355,7 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 		}
 		if len(peerRequests) == 0 {
 			stillMissing := make([]string, 0)
-			for h, _ := range hashDigests {
+			for h := range hashDigests {
 				if _, ok := foundMap[h]; !ok {
 					stillMissing = append(stillMissing, h)
 				}
@@ -498,7 +498,7 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 		}
 		if len(peerRequests) == 0 {
 			stillMissing := make([]string, 0)
-			for h, _ := range hashDigests {
+			for h := range hashDigests {
 				if _, ok := gotMap[h]; !ok {
 					stillMissing = append(stillMissing, h)
 				}
@@ -583,7 +583,7 @@ func (mc *multiWriteCloser) failCloserWithError(peer string, err error) error {
 	log.Debugf("Peer %q failed mid-write of %q with error: %s. Removing from active-write set.", peer, mc.d.GetHash(), err)
 	writersRemaining := len(mc.peerClosers)
 	var allPeers []string
-	for peer, _ := range mc.peerClosers {
+	for peer := range mc.peerClosers {
 		allPeers = append(allPeers, peer)
 	}
 	if writersRemaining < mc.totalNumPeers/2 {
@@ -628,7 +628,7 @@ func (mc *multiWriteCloser) Close() error {
 	err := eg.Wait()
 	if err == nil {
 		peers := make([]string, len(mc.peerClosers))
-		for peer, _ := range mc.peerClosers {
+		for peer := range mc.peerClosers {
 			peers = append(peers, peer)
 		}
 		log.Debugf("Distributed(%s) Writer(%q) successfully wrote to peers %s", mc.listenAddr, mc.d, peers)
@@ -665,7 +665,7 @@ func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser
 	}
 
 	openPeers := make([]string, len(mwc.peerClosers))
-	for peer, _ := range mwc.peerClosers {
+	for peer := range mwc.peerClosers {
 		openPeers = append(openPeers, peer)
 	}
 	log.Debugf("Could not open enough remoteWriters to satisfy quorum for digest %s. All peers: %s, opened: %s", d.GetHash(), peers, openPeers)
