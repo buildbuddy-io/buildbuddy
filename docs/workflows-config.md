@@ -54,6 +54,7 @@ A few points to note:
   so that workflow builds show up in your BuildBuddy org. For security reasons,
   we only do this if your repo is private.
 - Remote cache and remote execution (RBE) require additional configuration.
+  The configuration steps are the same as when running Bazel locally.
   See the **Setup** page in the BuildBuddy UI.
 - Bazel commands are run directly in your workspace, which means that your
   `.bazelrc` is respected. If you have lots of flags, we recommend adding
