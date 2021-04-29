@@ -2,11 +2,11 @@ package bitbucket_test
 
 import (
 	"bytes"
-	"fmt"
 	"net/http"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket/test_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/stretchr/testify/assert"
 )
@@ -22,12 +22,8 @@ func webhookRequest(t *testing.T, eventType string, payload []byte) *http.Reques
 	return req
 }
 
-func testData(relativePath string) []byte {
-	return Data[fmt.Sprintf("enterprise/server/webhooks/bitbucket/%s", relativePath)]
-}
-
 func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
-	req := webhookRequest(t, "repo:push", testData("test_data/push_event.txt"))
+	req := webhookRequest(t, "repo:push", test_data.PushEvent)
 
 	data, err := bitbucket.ParseRequest(req)
 
@@ -43,7 +39,7 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 }
 
 func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
-	req := webhookRequest(t, "pullrequest:updated", testData("test_data/pull_request_event.txt"))
+	req := webhookRequest(t, "pullrequest:updated", test_data.PullRequestEvent)
 
 	data, err := bitbucket.ParseRequest(req)
 

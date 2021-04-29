@@ -1,11 +1,12 @@
-package github
+package github_test
 
 import (
 	"bytes"
-	"fmt"
 	"net/http"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github/test_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/stretchr/testify/assert"
 )
@@ -20,14 +21,10 @@ func webhookRequest(t *testing.T, eventType string, payload []byte) *http.Reques
 	return req
 }
 
-func testData(relativePath string) []byte {
-	return Data[fmt.Sprintf("enterprise/server/webhooks/github/%s", relativePath)]
-}
-
 func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
-	req := webhookRequest(t, "push", testData("test_data/push_event.txt"))
+	req := webhookRequest(t, "push", test_data.PushEvent)
 
-	data, err := ParseRequest(req)
+	data, err := github.ParseRequest(req)
 
 	assert.NoError(t, err)
 	assert.Equal(t, &webhook_data.WebhookData{
@@ -41,9 +38,9 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 }
 
 func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
-	req := webhookRequest(t, "pull_request", testData("test_data/pull_request_event.txt"))
+	req := webhookRequest(t, "pull_request", test_data.PullRequestEvent)
 
-	data, err := ParseRequest(req)
+	data, err := github.ParseRequest(req)
 
 	assert.NoError(t, err)
 	assert.Equal(t, &webhook_data.WebhookData{
@@ -59,7 +56,7 @@ func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 func TestParseRequest_InvalidEvent_Error(t *testing.T) {
 	req := webhookRequest(t, "push", []byte{})
 
-	data, err := ParseRequest(req)
+	data, err := github.ParseRequest(req)
 
 	assert.Error(t, err)
 	assert.Nil(t, data)

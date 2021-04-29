@@ -2,24 +2,16 @@ package config_test
 
 import (
 	"bytes"
-	"io"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config/test_data"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func testDataReader(t *testing.T, relPath string) io.Reader {
-	data, ok := Data["enterprise/server/workflow/config/"+relPath]
-	if !ok {
-		t.Fatalf("no such file: %q", relPath)
-	}
-	return bytes.NewReader(data)
-}
-
 func TestWorkflowConf_Parse_BasicConfig_Valid(t *testing.T) {
-	conf, err := config.NewConfig(testDataReader(t, "test_data/basic.yaml"))
+	conf, err := config.NewConfig(bytes.NewReader(test_data.BasicYaml))
 
 	assert.NoError(t, err)
 	assert.Equal(t, &config.BuildBuddyConfig{
