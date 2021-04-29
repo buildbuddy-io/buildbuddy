@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"io/ioutil"
 	"mime"
 	"net/http"
@@ -10,9 +11,72 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/oauth2"
 
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	gh "github.com/google/go-github/github"
 )
+
+var (
+	// GitHub event names to listen for on the webhook.
+	eventsToReceive = []string{"push", "pull_request"}
+)
+
+func newGitHubClient(ctx context.Context, accessToken string) *gh.Client {
+	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
+	tc := oauth2.NewClient(ctx, ts)
+	return gh.NewClient(tc)
+}
+
+// RegisterWebhook registers the given webhook to the repo and returns the ID of
+// the registered webhook.
+func RegisterWebhook(ctx context.Context, accessToken, repoURL, webhookURL string) (int64, error) {
+	owner, repo, err := parseOwnerRepo(repoURL)
+	if err != nil {
+		return 0, err
+	}
+	client := newGitHubClient(ctx, accessToken)
+	// GitHub's API documentation says this is the only allowed string for the
+	// name field. TODO: Is this actually required?
+	name := "web"
+	hook, _, err := client.Repositories.CreateHook(ctx, owner, repo, &gh.Hook{
+		Name: &name,
+		Config: map[string]interface{}{
+			"url":    webhookURL,
+			"events": eventsToReceive,
+		},
+	})
+	if err != nil {
+		return 0, err
+	}
+	if hook.ID == nil {
+		return 0, status.UnknownError("GitHub returned invalid response from hooks API (missing ID field).")
+	}
+	return *hook.ID, nil
+}
+
+// UnregisterWebhook removes the webhook from the Git repo.
+func UnregisterWebhook(ctx context.Context, accessToken, repoURL string, webhookID int64) error {
+	owner, repo, err := parseOwnerRepo(repoURL)
+	if err != nil {
+		return err
+	}
+	client := newGitHubClient(ctx, accessToken)
+	_, err = client.Repositories.DeleteHook(ctx, owner, repo, webhookID)
+	return err
+}
+
+func parseOwnerRepo(url string) (string, string, error) {
+	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(url)
+	if err != nil {
+		return "", "", status.WrapError(err, "Failed to parse owner/repo from GitHub URL")
+	}
+	parts := strings.Split(ownerRepo, "/")
+	if len(parts) < 2 {
+		return "", "", status.InvalidArgumentErrorf("Invalid owner/repo %q", ownerRepo)
+	}
+	return parts[0], parts[1], nil
+}
 
 func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 	payload, err := webhookJSONPayload(r)

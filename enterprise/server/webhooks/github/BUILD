@@ -12,8 +12,10 @@ go_library(
     deps = [
         "//enterprise/server/util/fieldgetter",
         "//enterprise/server/webhooks/webhook_data",
+        "//server/util/git",
         "//server/util/status",
         "@com_github_google_go_github//github",
+        "@org_golang_x_oauth2//:oauth2",
     ],
 )
 

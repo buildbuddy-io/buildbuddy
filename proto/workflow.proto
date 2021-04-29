@@ -19,11 +19,16 @@ message CreateWorkflowRequest {
     string repo_url = 1;
 
     // The access token to use when cloning this repository.
+    //
     // For Github, and Gitlab, this is known as a Personal Access Token.
     //
     // For Bitbucket, this is known as an App Password, which requires
     // an associated username. The app password requires the following
     // permissions: [webhooks: r+w, pull requests: r+w; repo: r+w]
+    //
+    // If omitted, this defaults to the access token for the linked
+    // GitHub account, if the repo URL is a GitHub URL. Otherwise,
+    // an error is returned.
     //
     // Ex. "ABASDBASDBASBD"
     string access_token = 2;
@@ -51,6 +56,12 @@ message CreateWorkflowResponse {
   // URL will trigger a build of this project.
   // Ex. "https://app.buildbuddy.io/webhooks/workflows/abcd123letitflow"
   string webhook_url = 3;
+
+  // Whether the server registered the webhook to a supported Git provider.
+  // This will be false for providers that do not yet have auto-registration
+  // implemented, in which case the user should be asked to manually register
+  // the webhook.
+  bool webhook_registered = 4;
 }
 
 message DeleteWorkflowRequest {

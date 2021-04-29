@@ -8,6 +8,7 @@ ts_library(
     name = "workflows",
     srcs = glob(["*.tsx"]),
     deps = [
+        "//app/alert",
         "//app/auth",
         "//app/components/button",
         "//app/components/dialog",
