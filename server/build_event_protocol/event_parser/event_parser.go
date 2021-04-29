@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/terminal"
+	"google.golang.org/protobuf/proto"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -56,8 +57,8 @@ func parseAndFilterCommandLine(in *command_line.CommandLine, allowedEnvVars []st
 	if in == nil {
 		return nil, envVarMap
 	}
-	var out command_line.CommandLine
-	out = *in
+	out := &command_line.CommandLine{}
+	proto.Merge(out, in)
 	for _, section := range out.Sections {
 		switch p := section.SectionType.(type) {
 		case *command_line.CommandLineSection_OptionList:
@@ -87,7 +88,7 @@ func parseAndFilterCommandLine(in *command_line.CommandLine, allowedEnvVars []st
 			continue
 		}
 	}
-	return &out, envVarMap
+	return out, envVarMap
 }
 
 func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
