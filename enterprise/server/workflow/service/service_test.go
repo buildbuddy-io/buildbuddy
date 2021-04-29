@@ -160,11 +160,11 @@ func TestList(t *testing.T) {
 
 	if len(rsp.GetWorkflow()) == 1 {
 		wf := rsp.GetWorkflow()[0]
-		assert.Equal(t, wfpb.GetWorkflowsResponse_Workflow{
+		assert.Equal(t, &wfpb.GetWorkflowsResponse_Workflow{
 			Id:         "WF3",
 			Name:       "Workflow to be deleted",
 			RepoUrl:    "git@github.com:someOtherRepo",
 			WebhookUrl: "http://localhost:8080/webhooks/workflow/WHID3",
-		}, *wf, "Expected fields should be returned")
+		}, wf, "Expected fields should be returned")
 	}
 }
