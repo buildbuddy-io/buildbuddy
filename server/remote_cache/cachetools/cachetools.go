@@ -482,6 +482,9 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 				return nil, nil, err
 			}
 			info, err := entry.Info()
+			if err != nil {
+				return nil, nil, err
+			}
 			dir.Files = append(dir.Files, &repb.FileNode{
 				Name:         name,
 				Digest:       d,
