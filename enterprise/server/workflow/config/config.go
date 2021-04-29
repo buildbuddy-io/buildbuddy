@@ -17,7 +17,7 @@ import (
 // python3 enterprise/server/workflow/config/generate_docs.py
 //
 // Then see website/README.md for instructions on how to view the doc site,
-// and load up the "Workflows schema" tab and make sure everything looks good.
+// and load up the "Workflows config" tab and make sure everything looks good.
 //
 // =================
 
