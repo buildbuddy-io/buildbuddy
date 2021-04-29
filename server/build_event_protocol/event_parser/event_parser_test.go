@@ -35,7 +35,7 @@ func TestFillInvocation(t *testing.T) {
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_Progress{progress},
+			Payload: &build_event_stream.BuildEvent_Progress{Progress: progress},
 		},
 	})
 
@@ -46,7 +46,7 @@ func TestFillInvocation(t *testing.T) {
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_Started{buildStarted},
+			Payload: &build_event_stream.BuildEvent_Started{Started: buildStarted},
 		},
 	})
 
@@ -55,7 +55,7 @@ func TestFillInvocation(t *testing.T) {
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_UnstructuredCommandLine{unstructuredCommandLine},
+			Payload: &build_event_stream.BuildEvent_UnstructuredCommandLine{UnstructuredCommandLine: unstructuredCommandLine},
 		},
 	})
 
@@ -72,10 +72,10 @@ func TestFillInvocation(t *testing.T) {
 	structuredCommandLine := &command_line.CommandLine{
 		CommandLineLabel: "label",
 		Sections: []*command_line.CommandLineSection{
-			&command_line.CommandLineSection{
+			{
 				SectionLabel: "command",
 				SectionType: &command_line.CommandLineSection_OptionList{
-					&command_line.OptionList{
+					OptionList: &command_line.OptionList{
 						Option: []*command_line.Option{
 							shellOption,
 							secretOption,
@@ -87,7 +87,7 @@ func TestFillInvocation(t *testing.T) {
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_StructuredCommandLine{structuredCommandLine},
+			Payload: &build_event_stream.BuildEvent_StructuredCommandLine{StructuredCommandLine: structuredCommandLine},
 		},
 	})
 
@@ -97,13 +97,13 @@ func TestFillInvocation(t *testing.T) {
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_OptionsParsed{optionsParsed},
+			Payload: &build_event_stream.BuildEvent_OptionsParsed{OptionsParsed: optionsParsed},
 		},
 	})
 
 	workspaceStatus := &build_event_stream.WorkspaceStatus{
 		Item: []*build_event_stream.WorkspaceStatus_Item{
-			&build_event_stream.WorkspaceStatus_Item{
+			{
 				Key:   "BUILD_USER",
 				Value: "WORKSPACE_STATUS_BUILD_USER",
 			},
@@ -111,7 +111,7 @@ func TestFillInvocation(t *testing.T) {
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_WorkspaceStatus{workspaceStatus},
+			Payload: &build_event_stream.BuildEvent_WorkspaceStatus{WorkspaceStatus: workspaceStatus},
 		},
 	})
 
@@ -123,7 +123,7 @@ func TestFillInvocation(t *testing.T) {
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_Action{actionExecuted},
+			Payload: &build_event_stream.BuildEvent_Action{Action: actionExecuted},
 		},
 	})
 
@@ -132,7 +132,7 @@ func TestFillInvocation(t *testing.T) {
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_NamedSetOfFiles{namedSetOfFiles},
+			Payload: &build_event_stream.BuildEvent_NamedSetOfFiles{NamedSetOfFiles: namedSetOfFiles},
 		},
 	})
 
@@ -142,7 +142,7 @@ func TestFillInvocation(t *testing.T) {
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_Completed{targetComplete},
+			Payload: &build_event_stream.BuildEvent_Completed{Completed: targetComplete},
 		},
 	})
 
@@ -152,7 +152,7 @@ func TestFillInvocation(t *testing.T) {
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_TestResult{testResult},
+			Payload: &build_event_stream.BuildEvent_TestResult{TestResult: testResult},
 		},
 	})
 
@@ -162,7 +162,7 @@ func TestFillInvocation(t *testing.T) {
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_TestSummary{testSummary},
+			Payload: &build_event_stream.BuildEvent_TestSummary{TestSummary: testSummary},
 		},
 	})
 
@@ -175,7 +175,7 @@ func TestFillInvocation(t *testing.T) {
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_Finished{buildFinished},
+			Payload: &build_event_stream.BuildEvent_Finished{Finished: buildFinished},
 		},
 	})
 
@@ -188,7 +188,7 @@ func TestFillInvocation(t *testing.T) {
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_BuildMetadata{buildMetadata},
+			Payload: &build_event_stream.BuildEvent_BuildMetadata{BuildMetadata: buildMetadata},
 		},
 	})
 	invocation := &inpb.Invocation{
