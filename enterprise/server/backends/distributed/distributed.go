@@ -306,6 +306,7 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) e
 	}
 	eg, gCtx := errgroup.WithContext(ctx)
 	for _, bf := range backfills {
+		bf := bf
 		eg.Go(func() error {
 			if err := c.backfillReplica(gCtx, bf.d, bf.source, bf.dest); err != nil {
 				log.Debugf("Error backfilling %q => %q: %s", bf.source, bf.dest, err)
