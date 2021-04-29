@@ -428,6 +428,10 @@ type Workflow struct {
 	Username    string
 	AccessToken string
 	WebhookID   string `gorm:"uniqueIndex:workflow_webhook_id_index"`
+	// GithubWebhookID is the ID returned from the GitHub API when
+	// registering the webhook. This will only be set for GitHub URLs in the
+	// case where we successfully auto-registered the webhook.
+	GitHubWebhookID int64 `gorm:"column:github_webhook_id"`
 }
 
 func (wf *Workflow) TableName() string {
