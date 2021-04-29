@@ -100,7 +100,7 @@ func (c *Channel) sendHeartbeat(ctx context.Context) {
 
 func (c *Channel) notifySetChanged() {
 	nodes := make([]string, 0, len(c.peers))
-	for peer, _ := range c.peers {
+	for peer := range c.peers {
 		nodes = append(nodes, peer)
 	}
 	sort.Strings(nodes)
