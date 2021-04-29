@@ -359,7 +359,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	dir := &repb.Directory{
 		Files: []*repb.FileNode{
-			&repb.FileNode{
+			{
 				Name:         runnerBinName,
 				Digest:       runnerBinDigest,
 				IsExecutable: true,

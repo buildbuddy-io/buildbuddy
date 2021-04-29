@@ -49,7 +49,7 @@ func workspaceStatusEvent(key, value string) *anypb.Any {
 		Payload: &build_event_stream.BuildEvent_WorkspaceStatus{
 			WorkspaceStatus: &build_event_stream.WorkspaceStatus{
 				Item: []*build_event_stream.WorkspaceStatus_Item{
-					&build_event_stream.WorkspaceStatus_Item{Key: key, Value: value},
+					{Key: key, Value: value},
 				},
 			},
 		},

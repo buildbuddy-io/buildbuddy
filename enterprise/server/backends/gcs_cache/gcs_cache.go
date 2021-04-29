@@ -83,7 +83,7 @@ func (g *GCSCache) setBucketTTL(ctx context.Context, bucketName string, ageInDay
 	}
 	lc := storage.Lifecycle{
 		Rules: []storage.LifecycleRule{
-			storage.LifecycleRule{
+			{
 				Condition: storage.LifecycleCondition{
 					AgeInDays: ageInDays,
 				},
