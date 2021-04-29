@@ -4,20 +4,6 @@ title: Workflows configuration
 sidebar_label: Workflows configuration
 ---
 
-<!--
-
-GENERATED FILE; DO NOT EDIT.
-
-Edit workflows-config-header.md to edit the header contents
-or update workflow/config/generate_docs.py to change how the
-schema documentation is displayed.
-
-Re-generate by running:
-
-python3 workflow/config/generate_docs.py
-
--->
-
 This page provides documentation for `buildbuddy.yaml`, which can be placed
 at the root of your git repo to configure BuildBuddy [workflow](workflows) execution.
 
@@ -67,7 +53,9 @@ Other points to note:
   problems caused by using conflicting versions of Bazel in different
   build environments.
 
-## `BuildBuddyConfig` {#buildbuddy-config}
+## buildbuddy.yaml schema
+
+### `BuildBuddyConfig` {#buildbuddy-config}
 
 The top-level BuildBuddy workflow config, which specifies bazel commands
 that can be run on a repo, as well as the events that trigger those commands.
@@ -79,7 +67,7 @@ that can be run on a repo, as well as the events that trigger those commands.
   If multiple actions are matched for a given event, the actions are run in
   order. If an action fails, subsequent actions will still be executed.
 
-## `Action` {#action}
+### `Action` {#action}
 
 A named group of Bazel commands that run when triggered.
 
@@ -92,7 +80,7 @@ A named group of Bazel commands that run when triggered.
   If a command fails, subsequent ones are not run, and the action is
   reported as failed. Otherwise, the action is reported as succeeded.
 
-## `Triggers` {#triggers}
+### `Triggers` {#triggers}
 
 Defines whether an action should run when a branch is pushed to the repo.
 
@@ -107,7 +95,7 @@ Defines whether an action should run when a branch is pushed to the repo.
   this action on pull requests, and optionally prevent pull requests from
   being merged if the action fails.
 
-## `PushTrigger` {#push-trigger}
+### `PushTrigger` {#push-trigger}
 
 Defines whether an action should execute when a branch is pushed.
 
@@ -115,7 +103,7 @@ Defines whether an action should execute when a branch is pushed.
 
 - **`branches`** (`string` list): The branches that, when pushed to, will trigger the action.
 
-## `PullRequestTrigger` {#pull-request-trigger}
+### `PullRequestTrigger` {#pull-request-trigger}
 
 Defines whether an action should execute when a pull request (PR) branch is
 pushed.
