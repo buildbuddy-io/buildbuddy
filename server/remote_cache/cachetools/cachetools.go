@@ -458,15 +458,15 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 	// Append the directory before doing any other work, so that the root
 	// directory is located at visited[0] at the end of recursion.
 	visited = append(visited, dir)
-	infos, err := os.ReadDir(dirPath)
+	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, info := range infos {
-		name := info.Name()
+	for _, entry := range entries {
+		name := entry.Name()
 		path := filepath.Join(dirPath, name)
 
-		if info.IsDir() {
+		if entry.IsDir() {
 			var d *repb.Digest
 			visited, d, err = uploadDir(ul, path, visited)
 			if err != nil {
@@ -476,17 +476,21 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 				Name:   name,
 				Digest: d,
 			})
-		} else if info.Type().IsRegular() {
+		} else if entry.Type().IsRegular() {
 			d, err := ul.UploadFile(path)
+			if err != nil {
+				return nil, nil, err
+			}
+			info, err := entry.Info()
 			if err != nil {
 				return nil, nil, err
 			}
 			dir.Files = append(dir.Files, &repb.FileNode{
 				Name:         name,
 				Digest:       d,
-				IsExecutable: info.Type()&0100 != 0,
+				IsExecutable: info.Mode()&0100 != 0,
 			})
-		} else if info.Type()&os.ModeSymlink == os.ModeSymlink {
+		} else if entry.Type()&os.ModeSymlink == os.ModeSymlink {
 			target, err := os.Readlink(path)
 			if err != nil {
 				return nil, nil, err
