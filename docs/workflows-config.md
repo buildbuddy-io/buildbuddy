@@ -67,7 +67,7 @@ that can be run on a repo, as well as the events that trigger those commands.
 
 | Field | Type | Description |
 | ------|------|-------------|
-| `actions` | [`Action`](#action) list | List of actions that can be triggered by BuildBuddy.<br /><br />If multiple actions are matched for a given event, the actions are run in order. If an action fails, subsequent actions will still be executed.  |
+| `actions` | [`Action`](#action) list | List of actions that can be triggered by BuildBuddy.<br /><br />Each action corresponds to a separate check on GitHub.<br /><br />If multiple actions are matched for a given event, the actions are run in order. If an action fails, subsequent actions will still be executed.  |
 
 ## `Action` {#action}
 
@@ -76,9 +76,9 @@ A named group of Bazel commands that run when triggered.
 
 | Field | Type | Description |
 | ------|------|-------------|
-| `name` | `string` | A name unique to this config, which shows up in reported GitHub statuses.  |
-| `triggers` | [`Triggers`](#triggers) | The triggers for this action.  |
-| `bazel_commands` | `string` list | Bazel commands to be run in order. If a command fails, subsequent ones are not run, and the action fails. Otherwise, the action succeeds.  |
+| `name` | `string` | A name unique to this config, which shows up as the name of the check in GitHub.  |
+| `triggers` | [`Triggers`](#triggers) | The triggers that should cause this action to be run.  |
+| `bazel_commands` | `string` list | Bazel commands to be run in order.<br /><br />If a command fails, subsequent ones are not run, and the action is reported as failed. Otherwise, the action is reported as succeeded.  |
 
 ## `Triggers` {#triggers}
 
@@ -107,5 +107,5 @@ pushed.
 
 | Field | Type | Description |
 | ------|------|-------------|
-| `branches` | `string` list | The _target_ branches of a pull request that must match push events<br /><br /> |
+| `branches` | `string` list | The _target_ branches of a pull request.<br /><br />For example, if this is set to `[ "v1", "v2" ]`, then the associated action is only run when a PR wants to merge a branch _into_ the `v1` branch or the `v2` branch.  |
 
