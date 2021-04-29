@@ -67,7 +67,7 @@ func TestMalevolentCache(t *testing.T) {
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	set, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
 		Requests: []*repb.BatchUpdateBlobsRequest_Request{
-			&repb.BatchUpdateBlobsRequest_Request{
+			{
 				Digest: d,
 				Data:   buf,
 			},

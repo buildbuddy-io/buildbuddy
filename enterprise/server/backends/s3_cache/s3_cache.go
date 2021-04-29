@@ -136,7 +136,7 @@ func (s3c *S3Cache) setBucketTTL(ctx context.Context, bucketName string, ageInDa
 		Bucket: aws.String(bucketName),
 		LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
 			Rules: []*s3.LifecycleRule{
-				&s3.LifecycleRule{
+				{
 					Expiration: &s3.LifecycleExpiration{
 						Days: aws.Int64(ageInDays),
 					},
