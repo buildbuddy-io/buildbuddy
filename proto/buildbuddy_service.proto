@@ -12,6 +12,8 @@ import "proto/scheduler.proto";
 
 package buildbuddy.service;
 
+option go_package = "buildbuddy_service";
+
 service BuildBuddyService {
   // Invocation API
   rpc GetInvocation(invocation.GetInvocationRequest)
