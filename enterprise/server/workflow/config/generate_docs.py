@@ -138,18 +138,10 @@ def main():
         lines = f.readlines()
 
     structs = parse_struct_types(lines)
-
     md_lines = render_markdown(structs)
 
     with open("docs/workflows-config-header.md", "r") as f:
         header_lines = f.readlines()
-
-    # Place generated file notice after the metadata section at the top.
-    notice_index = -1
-    for (i, line) in enumerate(header_lines):
-        if i > 0 and line.strip() == "---":
-            notice_index = i + 1
-            break
 
     with open("docs/workflows-config.md", "w") as f:
         f.writelines(METADATA_SECTION)
