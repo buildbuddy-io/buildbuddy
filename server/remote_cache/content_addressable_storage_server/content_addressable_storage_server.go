@@ -340,30 +340,6 @@ func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, cache in
 	return dir, nil
 }
 
-// Fetch the entire directory tree rooted at a node.
-//
-// This request must be targeted at a
-// [Directory][build.bazel.remote.execution.v2.Directory] stored in the
-// [ContentAddressableStorage][build.bazel.remote.execution.v2.ContentAddressableStorage]
-// (CAS). The server will enumerate the `Directory` tree recursively and
-// return every node descended from the root.
-//
-// The GetTreeRequest.page_token parameter can be used to skip ahead in
-// the stream (e.g. when retrying a partially completed and aborted request),
-// by setting it to a value taken from GetTreeResponse.next_page_token of the
-// last successfully processed GetTreeResponse).
-//
-// The exact traversal order is unspecified and, unless retrieving subsequent
-// pages from an earlier request, is not guaranteed to be stable across
-// multiple invocations of `GetTree`.
-//
-// If part of the tree is missing from the CAS, the server will return the
-// portion present and omit the rest.
-//
-// Errors:
-//
-// * `NOT_FOUND`: The requested tree root is not present in the CAS.
-
 type DirectoryWithDigest struct {
 	Directory *repb.Directory
 	Digest    *repb.Digest
@@ -400,6 +376,32 @@ func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, ca
 	return children, nil
 }
 
+// GetTree fetches the entire directory tree rooted at a node.
+//
+// This request must be targeted at a
+// [Directory][build.bazel.remote.execution.v2.Directory] stored in the
+// [ContentAddressableStorage][build.bazel.remote.execution.v2.ContentAddressableStorage]
+// (CAS). The server will enumerate the `Directory` tree recursively and
+// return every node descended from the root.
+//
+// The exact traversal order is unspecified and, unless retrieving subsequent
+// pages from an earlier request, is not guaranteed to be stable across
+// multiple invocations of `GetTree`.
+//
+// If part of the tree is missing from the CAS, the server will return the
+// portion present and omit the rest.
+//
+// GetTree is called by the remote executors to download the list of all
+// directories that are inputs to an action. For some actions with tens of
+// thousands of inputs (think of a node_modules directory at a big company),
+// this can be a significant number of directories. To do this as fast as
+// possible, GetTree recursively walks the directory tree, spawning new
+// goroutines on each branch. When downloading all of the directories within
+// a directory, GetMulti is used to make one parallel request to the cache.
+//
+// Errors:
+//
+// * `NOT_FOUND`: The requested tree root is not present in the CAS.
 func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
 	rpcStart := time.Now()
 	if req.RootDigest == nil {
@@ -446,7 +448,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return nil
 	}
 
-	eg, gCtx := errgroup.WithContext(ctx)
+	eg, egCtx := errgroup.WithContext(ctx)
 	var fetch func(dirWithDigest *DirectoryWithDigest) error
 	fetch = func(dirWithDigest *DirectoryWithDigest) error {
 		if err := finishDir(dirWithDigest); err != nil {
@@ -457,7 +459,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		}
 
 		start := time.Now()
-		children, err := s.fetchDirectory(gCtx, cache, dirWithDigest.Directory)
+		children, err := s.fetchDirectory(egCtx, cache, dirWithDigest.Directory)
 		if err != nil {
 			return err
 		}
@@ -484,7 +486,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if err := eg.Wait(); err != nil {
 		return err
 	}
-	log.Printf("GetTree fetched %d dirs from cache across %d calls in cumulative %s (total time: %s)", dirCount, fetchCount, fetchDuration, time.Since(rpcStart))
+	log.Debugf("GetTree fetched %d dirs from cache across %d calls in cumulative %s (total time: %s)", dirCount, fetchCount, fetchDuration, time.Since(rpcStart))
 	if rspSizeBytes > 0 {
 		return stream.Send(rsp)
 	}
