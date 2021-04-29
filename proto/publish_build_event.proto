@@ -23,6 +23,7 @@ import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 
 option cc_enable_arenas = true;
+option go_package = "publish_build_event";
 option java_multiple_files = true;
 option java_outer_classname = "BackendProto";
 option java_package = "com.google.devtools.build.v1";
