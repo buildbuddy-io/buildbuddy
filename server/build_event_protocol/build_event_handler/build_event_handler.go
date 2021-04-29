@@ -231,6 +231,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 
 	// Notify our webhooks, if we have any.
 	for _, hook := range e.env.GetWebhooks() {
+		hook := hook // copy loopvar to local var for closure capture
 		go func() {
 			// We use context background here because the request context will
 			// be closed soon and we don't want to block while calling webhooks.
