@@ -158,7 +158,8 @@ type Group struct {
 
 	SharingEnabled bool `gorm:"default:true"`
 
-	// If enabled, this group can use their own executors instead of the installation-wide shared executors.
+	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
+	// executors.
 	UseGroupOwnedExecutors bool
 
 	// The "owned" domain. In enterprise/cloud version, we create a
