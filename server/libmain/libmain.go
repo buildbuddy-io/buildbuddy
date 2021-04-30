@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/buildbuddy-io/buildbuddy/bundle"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -47,6 +46,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
+	bundle "github.com/buildbuddy-io/buildbuddy"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
