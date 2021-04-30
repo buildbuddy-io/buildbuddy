@@ -348,6 +348,7 @@ type ExecutionNode struct {
 	Arch                  string
 	Pool                  string
 	SchedulerHostPort     string
+	GroupID               string
 }
 
 func (n *ExecutionNode) TableName() string {
