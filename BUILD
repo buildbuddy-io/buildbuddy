@@ -112,7 +112,8 @@ go_library(
         "//app:style.css",
         "//static",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/bundle",
+    importpath = "github.com/buildbuddy-io/buildbuddy",
+    visibility = ["//server/libmain:__subpackages__"],
     deps = [
         "//server/util/log",
     ],

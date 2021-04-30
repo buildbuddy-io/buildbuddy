@@ -1,4 +1,4 @@
-package bundle
+package buildbuddy
 
 import (
 	"embed"
