@@ -280,7 +280,6 @@ func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName 
 type BatchCASUploader struct {
 	ctx              context.Context
 	eg               *errgroup.Group
-	cache            interfaces.Cache
 	byteStreamClient bspb.ByteStreamClient
 	casClient        repb.ContentAddressableStorageClient
 	unsentBatchReq   *repb.BatchUpdateBlobsRequest
@@ -300,16 +299,11 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 	if casClient == nil {
 		return nil, status.InvalidArgumentError("Missing CAS client")
 	}
-	cache := env.GetCache()
-	if cache == nil {
-		return nil, status.InvalidArgumentError("Missing cache")
-	}
 
 	eg, ctx := errgroup.WithContext(ctx)
 	return &BatchCASUploader{
 		ctx:              ctx,
 		eg:               eg,
-		cache:            cache,
 		byteStreamClient: bsClient,
 		casClient:        casClient,
 		unsentBatchReq:   &repb.BatchUpdateBlobsRequest{InstanceName: instanceName},
