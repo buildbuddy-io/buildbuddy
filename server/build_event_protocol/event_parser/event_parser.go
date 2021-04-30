@@ -8,7 +8,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/terminal"
-	"google.golang.org/protobuf/proto"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -52,14 +51,12 @@ func stripURLSecretsFromFiles(files []*build_event_stream.File) []*build_event_s
 	return files
 }
 
-func parseAndFilterCommandLine(in *command_line.CommandLine, allowedEnvVars []string) (*command_line.CommandLine, map[string]string) {
+func parseAndFilterCommandLine(in *command_line.CommandLine, allowedEnvVars []string) map[string]string {
 	envVarMap := make(map[string]string)
 	if in == nil {
-		return nil, envVarMap
+		return envVarMap
 	}
-	out := &command_line.CommandLine{}
-	proto.Merge(out, in)
-	for _, section := range out.Sections {
+	for _, section := range in.Sections {
 		switch p := section.SectionType.(type) {
 		case *command_line.CommandLineSection_OptionList:
 			{
@@ -88,7 +85,7 @@ func parseAndFilterCommandLine(in *command_line.CommandLine, allowedEnvVars []st
 			continue
 		}
 	}
-	return out, envVarMap
+	return envVarMap
 }
 
 func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
@@ -287,9 +284,9 @@ func (sep *StreamingEventParser) FillInvocation(invocation *inpb.Invocation) {
 }
 
 func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine, invocation *inpb.Invocation, allowedEnvVars []string) {
-	filteredCL, envVarMap := parseAndFilterCommandLine(commandLine, allowedEnvVars)
-	if filteredCL != nil {
-		invocation.StructuredCommandLine = append(invocation.StructuredCommandLine, filteredCL)
+	envVarMap := parseAndFilterCommandLine(commandLine, allowedEnvVars)
+	if commandLine != nil {
+		invocation.StructuredCommandLine = append(invocation.StructuredCommandLine, commandLine)
 	}
 	if user, ok := envVarMap["USER"]; ok && user != "" {
 		invocation.User = user
