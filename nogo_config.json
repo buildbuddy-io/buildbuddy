@@ -47,12 +47,12 @@
   },
   "unreachable": {
     "exclude_files": {
-      "external/*": "Unreachable third party code"
+      "external/*": "Third party code"
     }
   },
   "unsafeptr": {
     "exclude_files": {
-      "external/*": "Unsafe third party code"
+      "external/*": "Third party code"
     }
   }
 }
