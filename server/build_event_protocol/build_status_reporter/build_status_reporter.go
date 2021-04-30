@@ -19,10 +19,14 @@ type BuildStatusReporter struct {
 	env                       environment.Env
 	githubClient              *github.GithubClient
 	shouldReportStatusPerTest bool
-	buildEventAccumulator     *accumulator.BEValues
-	payloads                  []*github.GithubStatusPayload
-	groups                    map[string]*GroupStatus
-	inFlight                  map[string]bool
+	// Suffix that gets appended to all reported status names. Useful for
+	// differentiating statuses reported by BuildBuddy deployment environments.
+	// Example: "(dev)"
+	statusNameSuffix      string
+	buildEventAccumulator *accumulator.BEValues
+	payloads              []*github.GithubStatusPayload
+	groups                map[string]*GroupStatus
+	inFlight              map[string]bool
 }
 
 type GroupStatus struct {
@@ -36,14 +40,16 @@ type GroupStatus struct {
 func NewBuildStatusReporter(env environment.Env, buildEventAccumulator *accumulator.BEValues) *BuildStatusReporter {
 	githubConfig := env.GetConfigurator().GetGithubConfig()
 	shouldReportStatusPerTest := false
-
+	statusNameSuffix := ""
 	if githubConfig != nil {
 		shouldReportStatusPerTest = githubConfig.StatusPerTestTarget
+		statusNameSuffix = githubConfig.StatusNameSuffix
 	}
 
 	return &BuildStatusReporter{
 		env:                       env,
 		shouldReportStatusPerTest: shouldReportStatusPerTest,
+		statusNameSuffix:          statusNameSuffix,
 		buildEventAccumulator:     buildEventAccumulator,
 		payloads:                  make([]*github.GithubStatusPayload, 0),
 		inFlight:                  make(map[string]bool),
@@ -97,7 +103,7 @@ func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *b
 
 func (r *BuildStatusReporter) ReportDisconnect(ctx context.Context) {
 	for label := range r.inFlight {
-		r.payloads = append(r.payloads, github.NewGithubStatusPayload(label, r.invocationURL(), "Disconnected", github.ErrorState))
+		r.payloads = append(r.payloads, r.newGithubStatusPayload(label, r.invocationURL(), "Disconnected", github.ErrorState))
 	}
 	r.flushPayloadsIfWorkspaceLoaded(ctx)
 }
@@ -131,8 +137,15 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 	r.payloads = make([]*github.GithubStatusPayload, 0)
 }
 
+func (r *BuildStatusReporter) newGithubStatusPayload(name, URL, description string, state github.State) *github.GithubStatusPayload {
+	if r.statusNameSuffix != "" {
+		name = fmt.Sprintf("%s %s", name, r.statusNameSuffix)
+	}
+	return github.NewGithubStatusPayload(name, URL, description, state)
+}
+
 func (r *BuildStatusReporter) githubPayloadFromWorkspaceStatusEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
-	return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), "Running...", github.PendingState)
+	return r.newGithubStatusPayload(r.invocationLabel(), r.invocationURL(), "Running...", github.PendingState)
 }
 
 func (r *BuildStatusReporter) githubPayloadFromConfiguredEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
@@ -147,10 +160,10 @@ func (r *BuildStatusReporter) githubPayloadFromConfiguredEvent(event *build_even
 	}
 
 	if groupStatus != nil && groupStatus.numTargets == 1 {
-		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(groupStatus.name), "Running...", github.PendingState)
+		return r.newGithubStatusPayload(groupStatus.name, r.groupURL(groupStatus.name), "Running...", github.PendingState)
 	}
 
-	return github.NewGithubStatusPayload(label, r.targetURL(label), "Running...", github.PendingState)
+	return r.newGithubStatusPayload(label, r.targetURL(label), "Running...", github.PendingState)
 }
 
 func (r *BuildStatusReporter) githubPayloadFromTestSummaryEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
@@ -168,27 +181,27 @@ func (r *BuildStatusReporter) githubPayloadFromTestSummaryEvent(event *build_eve
 	description := descriptionFromOverallStatus(event.GetTestSummary().OverallStatus)
 
 	if groupStatus != nil && groupStatus.numFailed == 1 {
-		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(label), description, github.FailureState)
+		return r.newGithubStatusPayload(groupStatus.name, r.groupURL(label), description, github.FailureState)
 	}
 
 	if groupStatus != nil && groupStatus.numPassed == groupStatus.numTargets {
-		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(label), description, github.SuccessState)
+		return r.newGithubStatusPayload(groupStatus.name, r.groupURL(label), description, github.SuccessState)
 	}
 
 	if passed {
-		return github.NewGithubStatusPayload(label, r.targetURL(label), description, github.SuccessState)
+		return r.newGithubStatusPayload(label, r.targetURL(label), description, github.SuccessState)
 	}
 
-	return github.NewGithubStatusPayload(label, r.targetURL(label), description, github.FailureState)
+	return r.newGithubStatusPayload(label, r.targetURL(label), description, github.FailureState)
 }
 
 func (r *BuildStatusReporter) githubPayloadFromFinishedEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
 	description := descriptionFromExitCodeName(event.GetFinished().ExitCode.Name)
 	if event.GetFinished().OverallSuccess {
-		return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, github.SuccessState)
+		return r.newGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, github.SuccessState)
 	}
 
-	return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, github.FailureState)
+	return r.newGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, github.FailureState)
 }
 
 func (r *BuildStatusReporter) githubPayloadFromAbortedEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
@@ -203,10 +216,10 @@ func (r *BuildStatusReporter) githubPayloadFromAbortedEvent(event *build_event_s
 	}
 
 	if groupStatus != nil && groupStatus.numAborted == 1 {
-		return github.NewGithubStatusPayload(groupStatus.name, r.groupURL(groupStatus.name), "Cancelled", github.ErrorState)
+		return r.newGithubStatusPayload(groupStatus.name, r.groupURL(groupStatus.name), "Cancelled", github.ErrorState)
 	}
 
-	return github.NewGithubStatusPayload(label, r.targetURL(label), "Cancelled", github.ErrorState)
+	return r.newGithubStatusPayload(label, r.targetURL(label), "Cancelled", github.ErrorState)
 }
 
 func (r *BuildStatusReporter) invocationLabel() string {
