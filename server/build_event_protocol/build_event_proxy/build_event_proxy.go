@@ -80,6 +80,10 @@ func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ..
 			return
 		}
 		asp.PublishBuildEvent_PublishBuildToolEventStreamClient = stream
+
+		// `range` *copies* the values it returns into the loopvar, and
+		// copies of protos are not permitted, so rather than range over the
+		// channel we read from the channel inside of an outer loop.
 		for {
 			req, ok := <-asp.events
 			if !ok {
