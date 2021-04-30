@@ -181,6 +181,7 @@ type ExecutorConfig struct {
 	DockerMountMode         string           `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/"`
 	RunnerPool              RunnerPoolConfig `yaml:"runner_pool"`
 	EnableWorkStreaming     bool             `yaml:"enable_work_streaming" usage:"Enables executor work streaming (WIP)."`
+	APIKey                  string           `yaml:"api_key" usage:"API Key used to authorize the executor with the BuildBuddy app server."`
 }
 
 type RunnerPoolConfig struct {
