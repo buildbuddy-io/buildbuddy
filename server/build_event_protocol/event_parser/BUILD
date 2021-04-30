@@ -11,7 +11,6 @@ go_library(
         "//proto:invocation_go_proto",
         "//server/terminal",
         "//server/util/git",
-        "@org_golang_google_protobuf//proto:go_default_library",
     ],
 )
 
