@@ -138,7 +138,7 @@ func (r *BuildStatusReporter) newGithubStatusPayload(name, URL, description stri
 	if r.statusNameSuffix != "" {
 		name = fmt.Sprintf("%s %s", name, r.statusNameSuffix)
 	}
-	return r.newGithubStatusPayload(name, URL, description, state)
+	return github.NewGithubStatusPayload(name, URL, description, state)
 }
 
 func (r *BuildStatusReporter) githubPayloadFromWorkspaceStatusEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
