@@ -5,7 +5,6 @@ import (
 	"io"
 	"net"
 	"sync"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -22,13 +21,14 @@ import (
 )
 
 type CacheProxy struct {
-	env               environment.Env
-	cache             interfaces.Cache
-	listenAddr        string
-	mu                *sync.Mutex
-	server            *grpc.Server
-	clients           map[string]dcpb.DistributedCacheClient
-	heartbeatCallback func(peer string)
+	env                   environment.Env
+	cache                 interfaces.Cache
+	listenAddr            string
+	mu                    *sync.Mutex
+	server                *grpc.Server
+	clients               map[string]dcpb.DistributedCacheClient
+	heartbeatCallback     func(peer string)
+	hintedHandoffCallback func(peer, prefix string, d *repb.Digest)
 }
 
 func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *CacheProxy {
@@ -82,6 +82,10 @@ func (c *CacheProxy) Shutdown(ctx context.Context) error {
 
 func (c *CacheProxy) SetHeartbeatCallbackFunc(fn func(peer string)) {
 	c.heartbeatCallback = fn
+}
+
+func (c *CacheProxy) SetHintedHandoffCallbackFunc(fn func(peer, prefix string, d *repb.Digest)) {
+	c.hintedHandoffCallback = fn
 }
 
 func digestFromKey(k *dcpb.Key) *repb.Digest {
@@ -190,6 +194,12 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	return err
 }
 
+func (c *CacheProxy) callHintedHandoffCB(peer, prefix string, d *repb.Digest) {
+	if c.hintedHandoffCallback != nil {
+		c.hintedHandoffCallback(peer, prefix, d)
+	}
+}
+
 func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), c.env)
 	if err != nil {
@@ -206,11 +216,15 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			return err
 		}
 		if writeCloser == nil {
-			wc, err := c.cache.WithPrefix(req.GetPrefix()).Writer(ctx, digestFromKey(req.GetKey()))
+			d := digestFromKey(req.GetKey())
+			wc, err := c.cache.WithPrefix(req.GetPrefix()).Writer(ctx, d)
 			if err != nil {
 				return err
 			}
 			writeCloser = wc
+			if req.GetHandoffPeer() != "" {
+				c.callHintedHandoffCB(req.GetHandoffPeer(), req.GetPrefix(), d)
+			}
 		}
 		n, err := writeCloser.Write(req.Data)
 		if err != nil {
@@ -351,6 +365,7 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *r
 
 type streamWriteCloser struct {
 	prefix        string
+	handoffPeer   string
 	key           *dcpb.Key
 	bytesUploaded int64
 	stream        dcpb.DistributedCache_WriteClient
@@ -380,7 +395,7 @@ func (wc *streamWriteCloser) Close() error {
 	return err
 }
 
-func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, prefix string, d *repb.Digest) (io.WriteCloser, error) {
+func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer, prefix string, d *repb.Digest) (io.WriteCloser, error) {
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
 		return nil, err
@@ -391,6 +406,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, prefix string, d *r
 	}
 	return &streamWriteCloser{
 		prefix:        prefix,
+		handoffPeer:   handoffPeer,
 		key:           digestToKey(d),
 		bytesUploaded: 0,
 		stream:        stream,

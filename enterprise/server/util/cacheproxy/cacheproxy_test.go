@@ -23,6 +23,10 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+const (
+	noHandoff = ""
+)
+
 var (
 	emptyUserMap = testauth.TestUsers()
 )
@@ -157,7 +161,7 @@ func TestWriter(t *testing.T) {
 		readSeeker.Seek(0, 0)
 
 		// Remote-write the random bytes to the cache (with a prefix).
-		wc, err := c.RemoteWriter(ctx, peer, prefix, d)
+		wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -292,7 +296,7 @@ func TestOversizeBlobs(t *testing.T) {
 		readSeeker = bytes.NewReader(buf.Bytes())
 
 		// Remote-write the random bytes to the cache (with a prefix).
-		wc, err := c.RemoteWriter(ctx, peer, prefix, d)
+		wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, d)
 		if err != nil {
 			t.Fatal(err)
 		}
