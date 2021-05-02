@@ -21,10 +21,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-const (
-	maxDialTimeout = 10 * time.Second
-)
-
 type CacheProxy struct {
 	env               environment.Env
 	cache             interfaces.Cache
@@ -100,16 +96,6 @@ func digestToKey(d *repb.Digest) *dcpb.Key {
 		Key:       d.GetHash(),
 		SizeBytes: d.GetSizeBytes(),
 	}
-}
-
-func dialTimeout(ctx context.Context) time.Duration {
-	timeoutDuration := maxDialTimeout
-	if deadline, ok := ctx.Deadline(); ok {
-		if time.Until(deadline) < timeoutDuration {
-			timeoutDuration = deadline.Sub(time.Now())
-		}
-	}
-	return timeoutDuration
 }
 
 func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCacheClient, error) {
