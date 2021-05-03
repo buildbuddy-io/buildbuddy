@@ -168,6 +168,8 @@ type RemoteExecutionConfig struct {
 	RedisPubSubPoolSize          int    `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
 	RequireExecutorAuthorization bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
 	EnableNonLocalScheduling     bool   `yaml:"enable_non_local_scheduling" usage:"If true, schedulers can make RPCs to other schedulers to enqueue task reservations instead of always talking directly to executors."`
+	EnableUserOwnedExecutors     bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
+	SharedExecutorPoolGroupID    string `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
 }
 
 type ExecutorConfig struct {
