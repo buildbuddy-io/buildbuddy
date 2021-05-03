@@ -7,8 +7,12 @@ sidebar_label: Workflows configuration
 This page provides documentation for `buildbuddy.yaml`, which can be placed
 at the root of your git repo to configure BuildBuddy [workflow](workflows) execution.
 
-_NOTE: This file only takes effect after you
-[enable workflows for the repo](workflows-setup#enable-workflows-for-a-repo)._
+:::note
+
+The configuration in `buildbuddy.yaml` only takes effect after you
+[enable workflows for the repo](workflows-setup#enable-workflows-for-a-repo).
+
+:::
 
 ## Example config
 
@@ -55,7 +59,7 @@ Other points to note:
 
 ## buildbuddy.yaml schema
 
-### `BuildBuddyConfig` {#buildbuddy-config}
+### `BuildBuddyConfig`
 
 The top-level BuildBuddy workflow config, which specifies bazel commands
 that can be run on a repo, as well as the events that trigger those commands.
@@ -67,7 +71,7 @@ that can be run on a repo, as well as the events that trigger those commands.
   If multiple actions are matched for a given event, the actions are run in
   order. If an action fails, subsequent actions will still be executed.
 
-### `Action` {#action}
+### `Action`
 
 A named group of Bazel commands that run when triggered.
 
@@ -80,7 +84,7 @@ A named group of Bazel commands that run when triggered.
   If a command fails, subsequent ones are not run, and the action is
   reported as failed. Otherwise, the action is reported as succeeded.
 
-### `Triggers` {#triggers}
+### `Triggers`
 
 Defines whether an action should run when a branch is pushed to the repo.
 
@@ -95,7 +99,7 @@ Defines whether an action should run when a branch is pushed to the repo.
   this action on pull requests, and optionally prevent pull requests from
   being merged if the action fails.
 
-### `PushTrigger` {#push-trigger}
+### `PushTrigger`
 
 Defines whether an action should execute when a branch is pushed.
 
@@ -103,7 +107,7 @@ Defines whether an action should execute when a branch is pushed.
 
 - **`branches`** (`string` list): The branches that, when pushed to, will trigger the action.
 
-### `PullRequestTrigger` {#pull-request-trigger}
+### `PullRequestTrigger`
 
 Defines whether an action should execute when a pull request (PR) branch is
 pushed.

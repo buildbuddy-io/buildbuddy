@@ -16,13 +16,13 @@ running Bazel locally, like the results UI, remote caching, remote execution.
 
 ## Enable workflows for a repo
 
-### 1. Link GitHub account {#link-github-account}
+### 1. Link GitHub account
 
 If you use GitHub, make sure that your BuildBuddy org has a GitHub
 org linked to it, using the "Link GitHub account" button from the
 settings page.
 
-### 2. Link the repository {#link-repository}
+### 2. Link the repository
 
 Click **Workflows** in the BuildBuddy app and select a repo to
 be linked to BuildBuddy.
