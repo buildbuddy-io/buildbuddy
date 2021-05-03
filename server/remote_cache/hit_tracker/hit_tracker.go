@@ -89,9 +89,9 @@ func counterName(actionCache bool, ct counterType, iid string) string {
 }
 
 type HitTracker struct {
-	iid         string
 	c           interfaces.MetricsCollector
 	ctx         context.Context
+	iid         string
 	actionCache bool
 }
 

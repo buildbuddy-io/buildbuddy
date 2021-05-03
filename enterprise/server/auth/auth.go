@@ -96,11 +96,11 @@ func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
 }
 
 type Claims struct {
+	jwt.StandardClaims
 	UserID        string                   `json:"user_id"`
 	GroupID       string                   `json:"group_id"`
 	AllowedGroups []string                 `json:"allowed_groups"`
 	Capabilities  []akpb.ApiKey_Capability `json:"capabilities"`
-	jwt.StandardClaims
 }
 
 func (c *Claims) GetUserID() string {
@@ -134,8 +134,8 @@ func (c *Claims) HasCapability(cap akpb.ApiKey_Capability) bool {
 }
 
 type apiKeyGroup struct {
-	Capabilities int32
 	GroupID      string
+	Capabilities int32
 }
 
 func assembleJWT(ctx context.Context, userID, groupID string, allowedGroups []string, caps int32) (string, error) {
@@ -233,10 +233,10 @@ type authConfig struct {
 }
 
 type authenticator struct {
-	issuer       string
 	oauth2Config *oauth2.Config
 	oidcConfig   *oidc.Config
 	provider     *oidc.Provider
+	issuer       string
 }
 
 func extractToken(issuer string, idToken *oidc.IDToken) (*userToken, error) {
@@ -325,8 +325,8 @@ func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup interfaces.APIKeyGroup
 type OpenIDAuthenticator struct {
 	env              environment.Env
 	myURL            *url.URL
-	authenticators   []*authenticator
 	apiKeyGroupCache *apiKeyGroupCache
+	authenticators   []*authenticator
 }
 
 func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAuthenticator, error) {

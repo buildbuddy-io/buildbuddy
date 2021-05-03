@@ -129,18 +129,18 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 		defer rows.Close()
 		for rows.Next() {
 			row := struct {
-				TargetID      int64
 				Label         string
 				RuleType      string
+				CommitSHA     string
+				RepoURL       string
+				InvocationID  string
+				TargetID      int64
+				CreatedAtUsec int64
+				StartTimeUsec int64
+				DurationUsec  int64
 				TargetType    int32
 				TestSize      int32
 				Status        int32
-				StartTimeUsec int64
-				DurationUsec  int64
-				InvocationID  string
-				CommitSHA     string
-				RepoURL       string
-				CreatedAtUsec int64
 			}{}
 			if err := tx.ScanRows(rows, &row); err != nil {
 				return err

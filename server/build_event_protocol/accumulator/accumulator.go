@@ -44,8 +44,8 @@ var (
 // memory for the life of the stream, so it should not save every single event
 // in full (that data lives in blobstore).
 type BEValues struct {
-	invocationID            string
 	valuesMap               map[string]string
+	invocationID            string
 	sawWorkspaceStatusEvent bool
 }
 

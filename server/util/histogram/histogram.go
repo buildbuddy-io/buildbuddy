@@ -8,14 +8,14 @@ import (
 )
 
 type Options struct {
+	// Function to generate per-bucket label.
+	// Defaults to a function that returns "$min-$max".
+	BucketLabelFormatter func(min int64, max int64) string
 	// Defaults to 10 if not specified
 	NumBuckets int
 	// Maximum width of any bucket. Buckets are scaled linearly to fit this width if any bucket exceeds this value.
 	// Defaults to 100.
 	MaxWidth int
-	// Function to generate per-bucket label.
-	// Defaults to a function that returns "$min-$max".
-	BucketLabelFormatter func(min int64, max int64) string
 }
 
 type Histogram struct {
@@ -92,9 +92,10 @@ func (h *Histogram) String() string {
 	}
 
 	type bucket struct {
-		count    int
-		min, max int64
-		label    string
+		label string
+		count int
+		min   int64
+		max   int64
 	}
 
 	maxLabelWidth := 0

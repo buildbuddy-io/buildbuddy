@@ -101,12 +101,12 @@ type PushedChange struct {
 	New *RefState `json:"new"`
 }
 type RefState struct {
+	// Target contains the details of the most recent commit after the push.
+	Target *CommitDetails `json:"target"`
 	// Type contains the type of change.
 	// NOTE: We're only interested in "branch".
 	Type string `json:"type"`
 	Name string `json:"name"`
-	// Target contains the details of the most recent commit after the push.
-	Target *CommitDetails `json:"target"`
 }
 
 // PullRequestEventPayload represents a subset of Bitbucket's Pull Request event schema.

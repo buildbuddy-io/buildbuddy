@@ -18,12 +18,12 @@ const (
 
 // Stateful ANSI parser
 type parser struct {
-	mode                 int
 	screen               *screen
 	ansi                 []byte
+	instructions         []string
+	mode                 int
 	cursor               int
 	escapeStartedAt      int
-	instructions         []string
 	instructionStartedAt int
 }
 

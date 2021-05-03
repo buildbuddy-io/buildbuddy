@@ -14,11 +14,11 @@ import (
 )
 
 type BuildEventProxyClient struct {
-	target          string
-	clientMux       sync.Mutex // PROTECTS(client)
 	client          pepb.PublishBuildEventClient
 	rootCtx         context.Context
+	target          string
 	eventBufferSize int
+	clientMux       sync.Mutex // PROTECTS(client)
 }
 
 func (c *BuildEventProxyClient) reconnectIfNecessary() {

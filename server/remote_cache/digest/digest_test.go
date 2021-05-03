@@ -16,11 +16,11 @@ import (
 // under test across those cases.
 func TestExtractDigest(t *testing.T) {
 	cases := []struct {
-		resourceName     string
-		matcher          *regexp.Regexp
-		wantInstanceName string
-		wantDigest       *repb.Digest
 		wantError        error
+		matcher          *regexp.Regexp
+		wantDigest       *repb.Digest
+		resourceName     string
+		wantInstanceName string
 	}{
 		{ // download, bad hash
 			resourceName:     "my_instance_name/blobs/invalid_hash/1234",

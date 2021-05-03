@@ -23,28 +23,25 @@ import (
 )
 
 type CacheConfig struct {
+	PubSub             interfaces.PubSub
 	ListenAddr         string
 	GroupName          string
+	Nodes              []string
 	ReplicationFactor  int
+	ClusterSize        int
 	DisableLocalLookup bool
-
-	PubSub      interfaces.PubSub
-	Nodes       []string
-	ClusterSize int
 }
 
 type Cache struct {
-	local  interfaces.Cache
-	config CacheConfig
-
-	prefix           string
+	local            interfaces.Cache
+	doneHeartbeat    chan bool
+	lastContactedBy  map[string]time.Time
 	cacheProxy       *cacheproxy.CacheProxy
 	consistentHash   *consistent_hash.ConsistentHash
 	heartbeatChannel *heartbeat.Channel
-
-	heartbeatMu     *sync.Mutex
-	doneHeartbeat   chan bool
-	lastContactedBy map[string]time.Time
+	heartbeatMu      *sync.Mutex
+	prefix           string
+	config           CacheConfig
 }
 
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
@@ -290,9 +287,9 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 }
 
 type backfillOrder struct {
+	d      *repb.Digest
 	source string
 	dest   string
-	d      *repb.Digest
 }
 
 type peerSet struct {
@@ -570,10 +567,10 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 type multiWriteCloser struct {
 	ctx           context.Context
 	peerClosers   map[string]io.WriteCloser
-	totalNumPeers int
 	mu            *sync.Mutex
 	d             *repb.Digest
 	listenAddr    string
+	totalNumPeers int
 }
 
 func (mc *multiWriteCloser) failCloserWithError(peer string, err error) error {

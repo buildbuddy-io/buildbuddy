@@ -15,27 +15,26 @@ type SizeFn func(key interface{}, value interface{}) int64
 // Config specifies how the LRU cache is to be constructed.
 // MaxSize & SizeFn are required.
 type Config struct {
-	// Maximum amount of data to store in the cache.
-	// The size of each entry is determined by SizeFn.
-	MaxSize int64
 	// Function to calculate size of cache entries.
 	SizeFn SizeFn
-
 	// Optional callback for cache eviction events.
 	OnEvict EvictedCallback
 	// Optional callback for cache add events.
 	OnAdd AddedCallback
+	// Maximum amount of data to store in the cache.
+	// The size of each entry is determined by SizeFn.
+	MaxSize int64
 }
 
 // LRU implements a non-thread safe fixed size LRU cache
 type LRU struct {
-	currentSize int64
-	maxSize     int64
+	sizeFn      SizeFn
 	evictList   *list.List
 	items       map[interface{}]*list.Element
 	onEvict     EvictedCallback
 	onAdd       AddedCallback
-	sizeFn      SizeFn
+	maxSize     int64
+	currentSize int64
 }
 
 // Entry is used to hold a value in the evictList

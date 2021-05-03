@@ -20,8 +20,8 @@ func (s *TestSubscriber) Chan() <-chan string {
 }
 
 type TestPubSub struct {
-	mu     sync.RWMutex
 	subs   map[string][]chan string
+	mu     sync.RWMutex
 	closed bool
 }
 

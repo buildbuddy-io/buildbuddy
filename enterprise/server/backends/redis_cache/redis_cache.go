@@ -32,8 +32,8 @@ var (
 // Adding a WithPrefix method allows us to separate AC content from CAS
 // content.
 type Cache struct {
-	prefix          string
 	rdb             *redis.Client
+	prefix          string
 	cutoffSizeBytes int64
 }
 

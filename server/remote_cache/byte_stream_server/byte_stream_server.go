@@ -136,9 +136,9 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 // `complete` or not.
 
 type writeState struct {
-	activeResourceName string
-	d                  *repb.Digest
 	writer             io.WriteCloser
+	d                  *repb.Digest
+	activeResourceName string
 	bytesWritten       int64
 	alreadyExists      bool
 }

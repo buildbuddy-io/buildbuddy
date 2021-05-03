@@ -108,8 +108,8 @@ type EventChannel struct {
 	beValues                *accumulator.BEValues
 	statusReporter          *build_status_reporter.BuildStatusReporter
 	targetTracker           *target_tracker.TargetTracker
-	hasReceivedStartedEvent bool
 	eventsBeforeStarted     []*inpb.InvocationEvent
+	hasReceivedStartedEvent bool
 }
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string, invocation *inpb.Invocation) error {
