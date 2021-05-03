@@ -1,8 +1,6 @@
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
-import FilledButton, {
-  OutlinedButton,
-} from "../../../app/components/button/button";
+import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -325,7 +323,11 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
           {getApiKeysResponse.apiKey.map((key) => (
             <div key={key.id} className="api-key-list-item">
               <div className="api-key-label">
-                {key.label ? <span>{key.label}</span> : <span className="untitled-key">Untitled key</span>}
+                {key.label ? (
+                  <span title={key.label}>{key.label}</span>
+                ) : (
+                  <span className="untitled-key">Untitled key</span>
+                )}
               </div>
               <div className="api-key-capabilities">
                 <span>{isReadOnly(key) ? <>Read-only</> : <>Read+Write</>}</span>
