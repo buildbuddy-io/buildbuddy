@@ -58,7 +58,7 @@ func (s *Subscriber) Chan() <-chan string {
 			select {
 			case externalChannel <- m.Payload:
 			case <-s.ctx.Done():
-				break
+				return
 			}
 		}
 	}()
