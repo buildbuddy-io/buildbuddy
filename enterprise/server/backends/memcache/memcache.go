@@ -30,8 +30,8 @@ func eligibleForMc(d *repb.Digest) bool {
 // Adding a WithPrefix method allows us to separate AC content from CAS
 // content.
 type Cache struct {
-	prefix string
 	mc     *memcache.Client
+	prefix string
 }
 
 func NewCache(mcServers ...string) *Cache {

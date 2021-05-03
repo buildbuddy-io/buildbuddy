@@ -27,10 +27,10 @@ var (
 type cleanupFunc func()
 
 type InvocationResult struct {
+	Error        error
 	Stderr       string
 	Stdout       string
 	InvocationID string
-	Error        error
 }
 
 // Invoke the bazel CLI from within the given workspace dir.

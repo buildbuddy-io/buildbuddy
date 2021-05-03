@@ -221,10 +221,9 @@ func RunAllActions(ctx context.Context, cfg *config.BuildBuddyConfig, im *initMe
 }
 
 type invocationLog struct {
-	lockingbuffer.LockingBuffer
-
 	writer        io.Writer
 	writeListener func()
+	lockingbuffer.LockingBuffer
 }
 
 func newInvocationLog() *invocationLog {
@@ -248,12 +247,11 @@ func (invLog *invocationLog) Printf(format string, vals ...interface{}) {
 
 // buildEventPublisher publishes Bazel build events for a single build event stream.
 type buildEventPublisher struct {
+	err      error
 	streamID *bepb.StreamId
 	done     chan struct{}
 	events   chan *bespb.BuildEvent
-
-	mu  sync.Mutex
-	err error
+	mu       sync.Mutex
 }
 
 func newBuildEventPublisher(streamID *bepb.StreamId) *buildEventPublisher {
@@ -400,9 +398,9 @@ type actionRunner struct {
 	action        *config.Action
 	log           *invocationLog
 	bep           *buildEventPublisher
-	progressCount int32
 	username      string
 	hostname      string
+	progressCount int32
 }
 
 func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {

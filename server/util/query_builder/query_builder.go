@@ -26,14 +26,14 @@ func pad(clause string) string {
 }
 
 type Query struct {
-	baseQuery    string
-	whereClauses []string
-	arguments    []interface{}
-	orderBy      string
-	groupBy      string
-	ascending    bool
 	limit        *int64
 	offset       *int64
+	orderBy      string
+	groupBy      string
+	baseQuery    string
+	arguments    []interface{}
+	whereClauses []string
+	ascending    bool
 }
 
 func NewQuery(baseQuery string) *Query {

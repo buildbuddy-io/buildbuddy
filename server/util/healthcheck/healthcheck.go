@@ -27,15 +27,14 @@ const (
 )
 
 type HealthChecker struct {
-	serverType    string
 	done          chan bool
 	quit          chan os.Signal
+	checkers      map[string]interfaces.Checker
+	serverType    string
 	shutdownFuncs []interfaces.CheckerFunc
-
-	lock         sync.RWMutex // protects: readyToServe, shuttingDown
-	readyToServe bool
-	shuttingDown bool
-	checkers     map[string]interfaces.Checker
+	lock          sync.RWMutex // protects: readyToServe, shuttingDown
+	readyToServe  bool
+	shuttingDown  bool
 }
 
 func NewHealthChecker(serverType string) *HealthChecker {

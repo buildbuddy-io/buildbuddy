@@ -32,15 +32,15 @@ const (
 // App is a handle on a BuildBuddy server scoped to a test case, which provides
 // basic facilities for connecting to the server and running builds against it.
 type App struct {
-	httpPort       int
-	gRPCPort       int
-	monitoringPort int
-	mu             sync.Mutex
+	// err is the error returned by `cmd.Wait()`.
+	err            error
 	stdout         bytes.Buffer
 	stderr         bytes.Buffer
+	httpPort       int
+	monitoringPort int
+	gRPCPort       int
+	mu             sync.Mutex
 	exited         bool
-	// err is the error returned by `cmd.Wait()`.
-	err error
 }
 
 // Run a local BuildBuddy server for the scope of the given test case.

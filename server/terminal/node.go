@@ -3,9 +3,9 @@ package terminal
 var emptyNode = node{blob: ' ', style: &emptyStyle}
 
 type node struct {
-	blob  rune
 	style *style
 	elem  *element
+	blob  rune
 }
 
 func (n *node) hasSameStyle(o node) bool {

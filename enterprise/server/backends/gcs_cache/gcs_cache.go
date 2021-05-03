@@ -35,8 +35,8 @@ type GCSCache struct {
 	gcsClient    *storage.Client
 	bucketHandle *storage.BucketHandle
 	projectID    string
-	ttlInDays    int64
 	prefix       string
+	ttlInDays    int64
 }
 
 func NewGCSCache(bucketName, projectID string, ageInDays int64, opts ...option.ClientOption) (*GCSCache, error) {

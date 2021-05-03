@@ -50,10 +50,10 @@ type WebhookData struct {
 	// This will be different from the workflow repo if the workflow is run on a forked
 	// repo as part of a pull request.
 	RepoURL string
-	// IsRepoPrivate returns whether the repo is private.
-	IsRepoPrivate bool
 	// SHA of the commit to be checked out.
 	SHA string
+	// IsRepoPrivate returns whether the repo is private.
+	IsRepoPrivate bool
 }
 
 // IsTrusted returns whether the event came from a trusted actor.

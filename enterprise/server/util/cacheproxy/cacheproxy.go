@@ -28,11 +28,11 @@ const (
 type CacheProxy struct {
 	env               environment.Env
 	cache             interfaces.Cache
-	listenAddr        string
 	mu                *sync.Mutex
 	server            *grpc.Server
 	clients           map[string]dcpb.DistributedCacheClient
 	heartbeatCallback func(peer string)
+	listenAddr        string
 }
 
 func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *CacheProxy {
@@ -364,10 +364,10 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *r
 }
 
 type streamWriteCloser struct {
-	prefix        string
-	key           *dcpb.Key
-	bytesUploaded int64
 	stream        dcpb.DistributedCache_WriteClient
+	key           *dcpb.Key
+	prefix        string
+	bytesUploaded int64
 }
 
 func (wc *streamWriteCloser) Write(data []byte) (int, error) {
