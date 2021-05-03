@@ -29,18 +29,18 @@ import (
 // serialize this ledger, we regenerate it from scratch on startup by looking
 // at the filesystem.
 type DiskCache struct {
-	rootDir      string
-	prefix       string
 	l            *lru.LRU
 	mu           *sync.RWMutex
 	fileChannel  chan *fileRecord
+	rootDir      string
+	prefix       string
 	diskIsMapped bool
 }
 
 type fileRecord struct {
+	lastUse   time.Time
 	key       string
 	sizeBytes int64
-	lastUse   time.Time
 }
 
 func sizeFn(key interface{}, value interface{}) int64 {

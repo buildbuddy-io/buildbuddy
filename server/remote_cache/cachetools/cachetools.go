@@ -279,13 +279,13 @@ func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName 
 // uploads together and falling back to bytestream uploads for large files.
 type BatchCASUploader struct {
 	ctx              context.Context
-	eg               *errgroup.Group
 	byteStreamClient bspb.ByteStreamClient
 	casClient        repb.ContentAddressableStorageClient
+	eg               *errgroup.Group
 	unsentBatchReq   *repb.BatchUpdateBlobsRequest
-	unsentBatchSize  int64
-	instanceName     string
 	uploads          map[digest.Key]struct{}
+	instanceName     string
+	unsentBatchSize  int64
 }
 
 // NewBatchCASUploader returns an uploader to be used only for the given request

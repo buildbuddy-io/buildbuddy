@@ -22,16 +22,13 @@ import (
 // a chunk exceeds maxBufferSizeBytes size. The caller is responsible for
 // calling Flush to ensure all data is written.
 type BufferedProtoWriter struct {
-	streamID string
-	bs       interfaces.Blobstore
-
-	maxBufferSizeBytes int
-
-	// Write Variables
-	writeMutex          sync.Mutex // protects(writeBuf), protects(writeSequenceNumber), protects(lastWriteTime)
-	writeBuf            *bytes.Buffer
-	writeSequenceNumber int
 	lastWriteTime       time.Time
+	bs                  interfaces.Blobstore
+	writeBuf            *bytes.Buffer
+	streamID            string
+	maxBufferSizeBytes  int
+	writeSequenceNumber int
+	writeMutex          sync.Mutex // protects(writeBuf), protects(writeSequenceNumber), protects(lastWriteTime)
 }
 
 // BufferedProtoReader reads the chunks written by BufferedProtoWriter. Callers
@@ -40,12 +37,10 @@ type BufferedProtoWriter struct {
 // N.B. This *DOES NOT* guarantee that a caller has read all data for a
 // streamID, because it may still be written to from another goroutine.
 type BufferedProtoReader struct {
-	streamID string
 	bs       interfaces.Blobstore
 	q        *blobQueue
-
-	// Read Variables
-	readBuf *bytes.Buffer
+	readBuf  *bytes.Buffer
+	streamID string
 }
 
 func NewBufferedProtoReader(bs interfaces.Blobstore, streamID string) *BufferedProtoReader {
@@ -127,8 +122,8 @@ func (w *BufferedProtoWriter) WriteProtoToStream(ctx context.Context, msg proto.
 }
 
 type blobReadResult struct {
-	data []byte
 	err  error
+	data []byte
 }
 
 type blobFuture chan blobReadResult
@@ -136,8 +131,8 @@ type blobFuture chan blobReadResult
 type blobQueue struct {
 	blobstore      interfaces.Blobstore
 	streamID       string
-	maxConnections int
 	futures        []blobFuture
+	maxConnections int
 	numPopped      int
 	done           bool
 }

@@ -16,17 +16,17 @@ import (
 )
 
 type BuildStatusReporter struct {
-	env                       environment.Env
-	githubClient              *github.GithubClient
-	shouldReportStatusPerTest bool
+	env                   environment.Env
+	githubClient          *github.GithubClient
+	buildEventAccumulator *accumulator.BEValues
+	groups                map[string]*GroupStatus
+	inFlight              map[string]bool
 	// Suffix that gets appended to all reported status names. Useful for
 	// differentiating statuses reported by BuildBuddy deployment environments.
 	// Example: "(dev)"
-	statusNameSuffix      string
-	buildEventAccumulator *accumulator.BEValues
-	payloads              []*github.GithubStatusPayload
-	groups                map[string]*GroupStatus
-	inFlight              map[string]bool
+	statusNameSuffix          string
+	payloads                  []*github.GithubStatusPayload
+	shouldReportStatusPerTest bool
 }
 
 type GroupStatus struct {

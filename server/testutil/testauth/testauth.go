@@ -43,11 +43,11 @@ var (
 )
 
 type TestUser struct {
+	jwt.StandardClaims
 	UserID        string                   `json:"user_id"`
 	GroupID       string                   `json:"group_id"`
 	AllowedGroups []string                 `json:"allowed_groups"`
 	Capabilities  []akpb.ApiKey_Capability `json:"capabilities"`
-	jwt.StandardClaims
 }
 
 func (c *TestUser) GetUserID() string          { return c.UserID }

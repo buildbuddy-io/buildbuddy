@@ -41,19 +41,18 @@ type result struct {
 	durationMillis int64
 }
 type target struct {
-	id                  int64
 	label               string
-	targetType          cmpb.TargetType
 	ruleType            string
+	results             []*result
+	firstStartMillis    int64
+	totalDurationMillis int64
+	state               targetState
+	id                  int64
+	lastStopMillis      int64
+	overallStatus       build_event_stream.TestStatus
+	targetType          cmpb.TargetType
 	testSize            build_event_stream.TestSize
 	buildSuccess        bool
-	results             []*result
-	overallStatus       build_event_stream.TestStatus
-	firstStartMillis    int64
-	lastStopMillis      int64
-	totalDurationMillis int64
-
-	state targetState
 }
 
 func md5Int64(text string) int64 {

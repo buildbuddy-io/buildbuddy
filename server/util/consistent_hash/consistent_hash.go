@@ -12,10 +12,10 @@ import (
 const defaultNumReplicas = 100
 
 type ConsistentHash struct {
-	numReplicas int
-	keys        []int
 	ring        map[int]string
+	keys        []int
 	items       []string
+	numReplicas int
 	mu          sync.RWMutex
 }
 

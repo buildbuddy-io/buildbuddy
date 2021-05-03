@@ -24,6 +24,13 @@ const (
 type PeersUpdateFn func(peerSet ...string)
 
 type Channel struct {
+	ps        interfaces.PubSub
+	updateFn  PeersUpdateFn
+	quit      chan struct{}
+	peers     map[string]time.Time
+	myAddr    string
+	groupName string
+
 	// This node will send heartbeats every this often.
 	Period time.Duration
 
@@ -34,22 +41,16 @@ type Channel struct {
 	// How often this node will check if heartbeats are still valid.
 	CheckPeriod time.Duration
 
-	groupName        string
-	myAddr           string
-	peers            map[string]time.Time
-	ps               interfaces.PubSub
-	updateFn         PeersUpdateFn
-	enablePeerExpiry bool
-	quit             chan struct{}
+	enablePeerExpiry bool // How often this node will check if heartbeats are still valid.
 }
 
 type Config struct {
+	// A func(peerSet ...string) that will be called on peerset updates.
+	UpdateFn PeersUpdateFn
 	// The address of this node to broadcast to peers.
 	MyPublicAddr string
 	// The name of the group to broadcast in.
 	GroupName string
-	// A func(peerSet ...string) that will be called on peerset updates.
-	UpdateFn PeersUpdateFn
 	// If true, enable peers to be dropped after defaultHeartbeatTimeout.
 	EnablePeerExpiry bool
 }

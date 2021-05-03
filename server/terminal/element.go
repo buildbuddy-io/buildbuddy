@@ -16,14 +16,14 @@ const (
 )
 
 type element struct {
+	bk          map[string]string
 	url         string
-	alt         string
 	contentType string
 	content     string
 	height      string
 	width       string
+	alt         string
 	elementType int
-	bk          map[string]string
 }
 
 var errUnsupportedElementSequence = errors.New("Unsupported element sequence")

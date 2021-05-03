@@ -105,20 +105,18 @@ func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
 }
 
 type StreamingEventParser struct {
-	startTimeMillis int64
-	endTimeMillis   int64
-	screenWriter    *terminal.ScreenWriter
-	allowedEnvVars  []string
-
+	screenWriter           *terminal.ScreenWriter
+	command                string
+	buildMetadata          []map[string]string
+	events                 []*inpb.InvocationEvent
 	structuredCommandLines []*command_line.CommandLine
 	workspaceStatuses      []*build_event_stream.WorkspaceStatus
-	buildMetadata          []map[string]string
-
-	events      []*inpb.InvocationEvent
-	pattern     []string
-	command     string
-	success     bool
-	actionCount int64
+	pattern                []string
+	allowedEnvVars         []string
+	startTimeMillis        int64
+	endTimeMillis          int64
+	actionCount            int64
+	success                bool
 }
 
 func NewStreamingEventParser() *StreamingEventParser {
