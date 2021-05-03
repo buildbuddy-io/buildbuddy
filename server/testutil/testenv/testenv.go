@@ -120,6 +120,10 @@ func writeTmpConfigFile(testRootDir string) (string, error) {
 	return configPath, nil
 }
 
+// All instances of the configurator use the same config struct instance in order to support flag overrides.
+// We instantiate a single configurator per test to avoid triggering the race detector.
+var currentConfigurator *config.Configurator
+
 func GetTestEnv(t testing.TB) *TestEnv {
 	testRootDir, err := ioutil.TempDir("/tmp", "buildbuddy_test_*")
 	if err != nil {
@@ -135,26 +139,32 @@ func GetTestEnv(t testing.TB) *TestEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	configurator, err := config.NewConfigurator(tmpConfigFile)
-	if err != nil {
-		t.Fatal(err)
+	if currentConfigurator == nil {
+		configurator, err := config.NewConfigurator(tmpConfigFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		currentConfigurator = configurator
+		t.Cleanup(func() {
+			currentConfigurator = nil
+		})
 	}
 	healthChecker := healthcheck.NewTestingHealthChecker()
 	te := &TestEnv{
-		RealEnv: real_environment.NewRealEnv(configurator, healthChecker),
+		RealEnv: real_environment.NewRealEnv(currentConfigurator, healthChecker),
 	}
 	c, err := memory_cache.NewMemoryCache(1000 * 1000 * 1000 /* 1GB */)
 	if err != nil {
 		t.Fatal(err)
 	}
 	te.SetCache(c)
-	dbHandle, err := db.GetConfiguredDatabase(configurator, healthChecker)
+	dbHandle, err := db.GetConfiguredDatabase(currentConfigurator, healthChecker)
 	if err != nil {
 		t.Fatal(err)
 	}
 	te.SetDBHandle(dbHandle)
 	te.RealEnv.SetInvocationDB(invocationdb.NewInvocationDB(te, dbHandle))
-	bs, err := blobstore.GetConfiguredBlobstore(configurator)
+	bs, err := blobstore.GetConfiguredBlobstore(currentConfigurator)
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}
