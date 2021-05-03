@@ -36,13 +36,13 @@ func (p *PubSub) Publish(ctx context.Context, channelName string, message string
 //  }
 func (p *PubSub) Subscribe(ctx context.Context, channelName string) interfaces.Subscriber {
 	return &Subscriber{
-		ps: p.rdb.Subscribe(ctx, channelName),
+		ps:  p.rdb.Subscribe(ctx, channelName),
 		ctx: ctx,
 	}
 }
 
 type Subscriber struct {
-	ps *redis.PubSub
+	ps  *redis.PubSub
 	ctx context.Context
 }
 
@@ -57,7 +57,7 @@ func (s *Subscriber) Chan() <-chan string {
 		for m := range internalChannel {
 			select {
 			case externalChannel <- m.Payload:
-			case <- s.ctx.Done():
+			case <-s.ctx.Done():
 				break
 			}
 		}
