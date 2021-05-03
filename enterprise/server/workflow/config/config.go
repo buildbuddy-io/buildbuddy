@@ -7,6 +7,10 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// === IMPORTANT ===
+// If you edit this file, also update docs/workflows-config.md
+// =================
+
 type BuildBuddyConfig struct {
 	Actions []*Action `yaml:"actions"`
 }

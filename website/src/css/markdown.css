@@ -12,6 +12,16 @@
   background-image: none;
 }
 
+.markdown tbody {
+  /* Top align for table cells looks better when some cells can have long contents. */
+  vertical-align: top;
+}
+
+.markdown tr:nth-child(2n) {
+  /* Remove striped background on odd rows */
+  background-color: initial;
+}
+
 .docusaurus-highlight-code-line {
   background-color: #37474f;
   display: block;
