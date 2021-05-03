@@ -27,6 +27,8 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
   };
 
   componentDidMount() {
+    document.title = "Link GitHub repo | BuildBuddy";
+
     // Fetch workflows and GitHub repos so we know which repos already have workflows
     // created for them.
     rpcService.service
@@ -39,7 +41,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
       .catch((error) => this.setState({ error: BuildBuddyError.parse(error) }));
   }
 
-  private onClickAdd(url: string) {
+  private onClickLinkRepo(url: string) {
     const createRequest = new workflow.CreateWorkflowRequest({
       gitRepo: new workflow.CreateWorkflowRequest.GitRepo({ repoUrl: url }),
     });
@@ -47,7 +49,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
     rpcService.service
       .createWorkflow(createRequest)
       .then(() => {
-        alertService.success("Workflow created successfully!");
+        alertService.success("Repo linked successfully");
         router.navigateToWorkflows();
       })
       .catch((error) => {
@@ -93,9 +95,9 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
                   Workflows
                 </a>
               </span>
-              <span>Add GitHub repo</span>
+              <span>Link GitHub repo</span>
             </div>
-            <div className="title">Add GitHub repo</div>
+            <div className="title">Link GitHub repo</div>
           </div>
         </div>
         <div className="container content-container">
@@ -116,8 +118,8 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
                   ) : isCreating && this.state.createRequest?.gitRepo?.repoUrl === repo.url ? (
                     <div className="loading create-loading" />
                   ) : (
-                    <FilledButton disabled={isCreating} onClick={this.onClickAdd.bind(this, repo.url)}>
-                      Add
+                    <FilledButton disabled={isCreating} onClick={this.onClickLinkRepo.bind(this, repo.url)}>
+                      Link
                     </FilledButton>
                   )}
                 </div>

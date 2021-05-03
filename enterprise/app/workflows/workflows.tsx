@@ -2,6 +2,7 @@ import React from "react";
 import { from, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
 import Button, { OutlinedButton } from "../../../app/components/button/button";
+import { OutlinedLinkButton } from "../../../app/components/button/link_button";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -98,11 +99,11 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
     router.navigateTo("/workflows/new");
   }
 
-  private onClickDeleteItem(workflowToDelete: Workflow) {
+  private onClickUnlinkItem(workflowToDelete: Workflow) {
     this.setState({ workflowToDelete });
   }
 
-  private async onClickDelete() {
+  private async onClickUnlink() {
     try {
       await rpcService.service.deleteWorkflow(
         new workflow.DeleteWorkflowRequest({ id: this.state.workflowToDelete.id })
@@ -137,9 +138,14 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
           <div className="container">
             {/* TODO: Breadcrumbs */}
             <div className="title">Workflows</div>
-            <div className="create-new-container">
-              <Button onClick={this.onClickCreate.bind(this)}>Add repository</Button>
-            </div>
+            {response && Boolean(response.workflow.length) && (
+              <div className="buttons create-new-container">
+                <Button onClick={this.onClickCreate.bind(this)}>Link a repository</Button>
+                <OutlinedLinkButton href="https://docs.buildbuddy.io/docs/workflows-setup" target="_blank">
+                  Learn more
+                </OutlinedLinkButton>
+              </div>
+            )}
           </div>
         </div>
         <div className="content">
@@ -154,7 +160,12 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                     Workflows automatically build and test your code with BuildBuddy when commits are pushed to your
                     repo.
                   </div>
-                  <Button onClick={this.onClickCreate.bind(this)}>Create your first workflow</Button>
+                  <div className="buttons">
+                    <Button onClick={this.onClickCreate.bind(this)}>Link a repository</Button>
+                    <OutlinedLinkButton href="https://docs.buildbuddy.io/docs/workflows-setup" target="_blank">
+                      Learn more
+                    </OutlinedLinkButton>
+                  </div>
                 </div>
               </div>
             </div>
@@ -163,13 +174,13 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
             <>
               <div className="workflows-list">
                 {response.workflow.map((workflow) => (
-                  <WorkflowItem workflow={workflow} onClickDeleteItem={this.onClickDeleteItem.bind(this)} />
+                  <WorkflowItem workflow={workflow} onClickUnlinkItem={this.onClickUnlinkItem.bind(this)} />
                 ))}
               </div>
               <Modal isOpen={Boolean(workflowToDelete)} onRequestClose={this.onCloseDeleteDialog.bind(this)}>
                 <Dialog className="delete-workflow-dialog">
                   <DialogHeader>
-                    <DialogTitle>Delete workflow</DialogTitle>
+                    <DialogTitle>Unlink repository</DialogTitle>
                   </DialogHeader>
                   <DialogBody className="dialog-body">
                     <div>
@@ -185,8 +196,8 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                   <DialogFooter>
                     <DialogFooterButtons>
                       {this.state.isDeleting && <div className="loading" />}
-                      <Button className="destructive" onClick={this.onClickDelete.bind(this)} disabled={isDeleting}>
-                        Delete
+                      <Button className="destructive" onClick={this.onClickUnlink.bind(this)} disabled={isDeleting}>
+                        Unlink
                       </Button>
                     </DialogFooterButtons>
                   </DialogFooter>
@@ -202,7 +213,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
 
 type WorkflowItemProps = {
   workflow: Workflow;
-  onClickDeleteItem: (workflow: Workflow) => void;
+  onClickUnlinkItem: (workflow: Workflow) => void;
 };
 
 type WorkflowItemState = {
@@ -229,9 +240,9 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
     }, 1000);
   }
 
-  private onClickDeleteMenuItem() {
+  private onClickUnlinkMenuItem() {
     this.setState({ isMenuOpen: false });
-    this.props.onClickDeleteItem(this.props.workflow);
+    this.props.onClickUnlinkItem(this.props.workflow);
   }
 
   render() {
@@ -267,7 +278,7 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
                   className={copiedToClipboard ? "copied-to-clipboard" : ""}>
                   {copiedToClipboard ? <>Copied!</> : <>Copy webhook URL</>}
                 </MenuItem>
-                <MenuItem onClick={this.onClickDeleteMenuItem.bind(this)}>Delete workflow</MenuItem>
+                <MenuItem onClick={this.onClickUnlinkMenuItem.bind(this)}>Unlink repository</MenuItem>
               </Menu>
             </Popup>
           </div>
