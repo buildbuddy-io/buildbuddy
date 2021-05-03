@@ -27,10 +27,9 @@ settings page.
 Click **Workflows** in the BuildBuddy app and select a repo to
 be linked to BuildBuddy.
 
-Then, if you start pushing commits to your repo, BuildBuddy will run
-`bazel test //...` whenever a branch is pushed to your repo. It reports
-the status of the test as well as BuildBuddy links to GitHub, which you can
-see on the repo's home page or in pull request branches.
+Then, BuildBuddy will run `bazel test //...` whenever a commit is pushed to
+your repo. It reports the status of the test as well as BuildBuddy links to
+GitHub, which you can see on the repo's home page or in pull request branches.
 
 ## Configuring your workflow
 
