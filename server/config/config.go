@@ -3,7 +3,6 @@ package config
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"reflect"
 	"strings"
@@ -168,6 +167,7 @@ type RemoteExecutionConfig struct {
 	DisableRedisListPubSub       bool   `yaml:"disable_redis_list_pubsub" usage:"If true, revert to native redis PubSub."`
 	RedisPubSubPoolSize          int    `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
 	RequireExecutorAuthorization bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
+	EnableNonLocalScheduling     bool   `yaml:"enable_non_local_scheduling" usage:"If true, schedulers can make RPCs to other schedulers to enqueue task reservations instead of always talking directly to executors."`
 }
 
 type ExecutorConfig struct {
@@ -287,7 +287,7 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 		return nil, fmt.Errorf("Config file %s not found", fullConfigPath)
 	}
 
-	fileBytes, err := ioutil.ReadFile(fullConfigPath)
+	fileBytes, err := os.ReadFile(fullConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("Error reading config file: %s", err)
 	}
