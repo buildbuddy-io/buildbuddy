@@ -169,12 +169,13 @@ func makeGroups(grps []*tables.Group) []*grpb.Group {
 			urlIdentifier = *g.URLIdentifier
 		}
 		r = append(r, &grpb.Group{
-			Id:             g.GroupID,
-			Name:           g.Name,
-			OwnedDomain:    g.OwnedDomain,
-			GithubLinked:   g.GithubToken != "",
-			UrlIdentifier:  urlIdentifier,
-			SharingEnabled: g.SharingEnabled,
+			Id:                     g.GroupID,
+			Name:                   g.Name,
+			OwnedDomain:            g.OwnedDomain,
+			GithubLinked:           g.GithubToken != "",
+			UrlIdentifier:          urlIdentifier,
+			SharingEnabled:         g.SharingEnabled,
+			UseGroupOwnedExecutors: g.UseGroupOwnedExecutors,
 		})
 	}
 	return r
@@ -291,10 +292,11 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	}
 
 	group := &tables.Group{
-		UserID:         user.UserID,
-		Name:           groupName,
-		OwnedDomain:    groupOwnedDomain,
-		SharingEnabled: req.GetSharingEnabled(),
+		UserID:                 user.UserID,
+		Name:                   groupName,
+		OwnedDomain:            groupOwnedDomain,
+		SharingEnabled:         req.GetSharingEnabled(),
+		UseGroupOwnedExecutors: req.GetUseGroupOwnedExecutors(),
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 
@@ -363,6 +365,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 		group.OwnedDomain = ""
 	}
 	group.SharingEnabled = req.GetSharingEnabled()
+	group.UseGroupOwnedExecutors = req.GetUseGroupOwnedExecutors()
 	if _, err := userDB.InsertOrUpdateGroup(ctx, group); err != nil {
 		return nil, err
 	}
