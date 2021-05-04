@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gorm.io/gorm"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -12,7 +13,8 @@ import (
 )
 
 const (
-	mySQLDialect = "mysql"
+	sqliteDialect = "sqlite"
+	mySQLDialect  = "mysql"
 )
 
 type tableDescriptor struct {
@@ -345,7 +347,7 @@ type ExecutionNode struct {
 	Host              string `gorm:"primaryKey"`
 	Pool              string
 	SchedulerHostPort string
-	GroupID           string
+	GroupID           string `gorm:"primaryKey"`
 	Constraints       string
 	Arch              string
 	Model
@@ -443,6 +445,95 @@ func (wf *Workflow) TableName() string {
 	return "Workflows"
 }
 
+type sqliteColumn struct {
+	defaultValue    interface{}
+	name            string
+	colType         string
+	cid             int64
+	primaryKeyIndex int64
+	notNull         bool
+}
+
+func describeSqliteTable(db *gorm.DB, table string) ([]sqliteColumn, error) {
+	rows, err := db.Raw(fmt.Sprintf(`PRAGMA table_info(%s)`, table)).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var cols []sqliteColumn
+	for rows.Next() {
+		col := sqliteColumn{}
+		err = rows.Scan(&col.cid, &col.name, &col.colType, &col.notNull, &col.defaultValue, &col.primaryKeyIndex)
+		if err != nil {
+			return nil, err
+		}
+		cols = append(cols, col)
+	}
+	return cols, nil
+}
+
+func addGroupIDToExecutionNodePK(db *gorm.DB, m gorm.Migrator) (PostAutoMigrateLogic, error) {
+	executorsTable := (&ExecutionNode{}).TableName()
+
+	// Can't change the primary key in SQLite so we drop the entire table if the PK doesn't include group_id.
+	if db.Dialector.Name() == sqliteDialect {
+		if !m.HasTable(executorsTable) {
+			return nil, nil
+		}
+		cols, err := describeSqliteTable(db, executorsTable)
+		if err != nil {
+			return nil, err
+		}
+		groupIDPartOfPK := false
+		for _, col := range cols {
+			if col.name == "group_id" {
+				groupIDPartOfPK = col.primaryKeyIndex > 0
+				break
+			}
+		}
+		if !groupIDPartOfPK {
+			// For SQLite, drop the table and let GORM re-create it.
+			if err := m.DropTable(executorsTable); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	}
+
+	if db.Dialector.Name() == mySQLDialect {
+		if !m.HasTable(executorsTable) {
+			return nil, nil
+		}
+		sql := fmt.Sprintf(
+			`SELECT column_key = 'PRI' 
+				FROM information_schema.columns 
+				WHERE table_schema = DATABASE() 
+				  AND table_name = '%s' 
+				  AND column_name = 'group_id'`,
+			executorsTable)
+		rows, err := db.Raw(sql).Rows()
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		groupIDPartOfPK := false
+		if rows.Next() {
+			if err := rows.Scan(&groupIDPartOfPK); err != nil {
+				return nil, err
+			}
+		}
+		if !groupIDPartOfPK {
+			return func() error {
+				return db.Exec(fmt.Sprintf("ALTER TABLE %s DROP PRIMARY KEY, ADD PRIMARY KEY(group_id, host, port)", executorsTable)).Error
+			}, nil
+		}
+		return nil, nil
+	}
+
+	return nil, status.UnimplementedErrorf("unsupported dialect: %s", db.Dialector.Name())
+}
+
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.
@@ -518,6 +609,14 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			}
 			return nil
 		})
+	}
+
+	addGroupIDPostMigrate, err := addGroupIDToExecutionNodePK(db, m)
+	if err != nil {
+		return nil, err
+	}
+	if addGroupIDPostMigrate != nil {
+		postMigrate = append(postMigrate, addGroupIDPostMigrate)
 	}
 
 	return postMigrate, nil
