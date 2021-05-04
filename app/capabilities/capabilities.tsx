@@ -17,6 +17,7 @@ export class Capabilities {
   workflows: boolean;
   executors: boolean;
   userOwnedExecutors: boolean;
+  executorKeyCreation: boolean;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
@@ -38,6 +39,7 @@ export class Capabilities {
     this.workflows = localStorage["workflows_enabled"] === "true";
     this.executors = localStorage["executors_enabled"] === "true";
     this.userOwnedExecutors = window.buildbuddyConfig && window.buildbuddyConfig.user_owned_executors_enabled;
+    this.executorKeyCreation = window.buildbuddyConfig && window.buildbuddyConfig.executor_key_creation_enabled;
     this.paths = new Set(paths);
     if (window.gtag) {
       window.gtag("set", {
