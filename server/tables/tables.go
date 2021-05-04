@@ -347,7 +347,7 @@ type ExecutionNode struct {
 	Host              string `gorm:"primaryKey"`
 	Pool              string
 	SchedulerHostPort string
-	GroupID           string `gorm:"primaryKey"`
+	GroupID           string `gorm:"primaryKey;default:''"`
 	Constraints       string
 	Arch              string
 	Model
@@ -473,17 +473,17 @@ func describeSqliteTable(db *gorm.DB, table string) ([]sqliteColumn, error) {
 	return cols, nil
 }
 
-func addGroupIDToExecutionNodePK(db *gorm.DB, m gorm.Migrator) (PostAutoMigrateLogic, error) {
+func addGroupIDToExecutionNodePK(db *gorm.DB, m gorm.Migrator) error {
 	executorsTable := (&ExecutionNode{}).TableName()
 
 	// Can't change the primary key in SQLite so we drop the entire table if the PK doesn't include group_id.
 	if db.Dialector.Name() == sqliteDialect {
 		if !m.HasTable(executorsTable) {
-			return nil, nil
+			return nil
 		}
 		cols, err := describeSqliteTable(db, executorsTable)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		groupIDPartOfPK := false
 		for _, col := range cols {
@@ -495,15 +495,15 @@ func addGroupIDToExecutionNodePK(db *gorm.DB, m gorm.Migrator) (PostAutoMigrateL
 		if !groupIDPartOfPK {
 			// For SQLite, drop the table and let GORM re-create it.
 			if err := m.DropTable(executorsTable); err != nil {
-				return nil, err
+				return err
 			}
 		}
-		return nil, nil
+		return nil
 	}
 
 	if db.Dialector.Name() == mySQLDialect {
 		if !m.HasTable(executorsTable) {
-			return nil, nil
+			return nil
 		}
 		sql := fmt.Sprintf(
 			`SELECT column_key = 'PRI' 
@@ -514,24 +514,24 @@ func addGroupIDToExecutionNodePK(db *gorm.DB, m gorm.Migrator) (PostAutoMigrateL
 			executorsTable)
 		rows, err := db.Raw(sql).Rows()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		defer rows.Close()
 		groupIDPartOfPK := false
 		if rows.Next() {
 			if err := rows.Scan(&groupIDPartOfPK); err != nil {
-				return nil, err
+				return err
 			}
 		}
 		if !groupIDPartOfPK {
-			return func() error {
-				return db.Exec(fmt.Sprintf("ALTER TABLE %s DROP PRIMARY KEY, ADD PRIMARY KEY(group_id, host, port)", executorsTable)).Error
-			}, nil
+			if err := m.DropTable(executorsTable); err != nil {
+				return err
+			}
 		}
-		return nil, nil
+		return nil
 	}
 
-	return nil, status.UnimplementedErrorf("unsupported dialect: %s", db.Dialector.Name())
+	return status.UnimplementedErrorf("unsupported dialect: %s", db.Dialector.Name())
 }
 
 type PostAutoMigrateLogic func() error
