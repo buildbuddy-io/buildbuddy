@@ -32,6 +32,9 @@ message Group {
 
   // Whether sharing features are allowed by this group.
   bool sharing_enabled = 6;
+
+  // Whether builds for this group will use custom executors provided by the group.
+  bool use_group_owned_executors = 7;
 }
 
 message JoinGroupRequest {
@@ -149,6 +152,9 @@ message CreateGroupRequest {
 
   // Whether sharing features are allowed by this group.
   bool sharing_enabled = 5;
+
+  // Whether builds for this group will use custom executors provided by the group.
+  bool use_group_owned_executors = 6;
 }
 
 message CreateGroupResponse {
@@ -185,6 +191,9 @@ message UpdateGroupRequest {
 
   // Whether sharing features are allowed by this group.
   bool sharing_enabled = 6;
+
+  // Whether builds for this group will use custom executors provided by the group.
+  bool use_group_owned_executors = 7;
 }
 
 message UpdateGroupResponse { context.ResponseContext response_context = 1; }

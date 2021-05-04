@@ -28,6 +28,7 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
       urlIdentifier: group.urlIdentifier,
       autoPopulateFromOwnedDomain: Boolean(group.ownedDomain),
       sharingEnabled: group.sharingEnabled,
+      useGroupOwnedExecutors: group.useGroupOwnedExecutors,
     });
     this.setState({ request, initialRequest: this.newRequest(request) });
   }
