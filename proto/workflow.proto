@@ -134,3 +134,35 @@ message GetReposResponse {
   // Repos fetched from the provider.
   repeated Repo repo = 2;
 }
+
+// Metadata about a workflow that is sent as part of the build metadata BEP
+// event.
+message WorkflowActionMetadata {
+  // Action name as defined in `buildbuddy.yaml`.
+  //
+  // Example: "Test all targets"
+  string action_name = 1;
+  // Branch that caused the action to be executed.
+  //
+  // Example: "main"
+  string action_trigger_branch = 2;
+  // Webhook event name that triggered the action. Can be one of "push" or
+  // "pull_request".
+  string action_trigger_event = 3;
+
+  // Metadata for a Bazel invocation created by this workflow action.
+  message InvocationMetadata {
+    // Bazel invocation ID (UUIDV4). Should not be set for bazel commands that
+    // do not create invocations, such as `bazel version`.
+    //
+    // Example: "86083af6-4699-4957-a0a3-d6a806104bb3"
+    string invocation_id = 1;
+    // Bazel command as specified in `buildbuddy.yaml`.
+    //
+    // Example: "test //..."
+    string bazel_command = 2;
+  }
+
+  // Bazel commands invoked by the workflow action.
+  repeated InvocationMetadata invocation = 4;
+}
