@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gorm.io/gorm"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -445,95 +444,6 @@ func (wf *Workflow) TableName() string {
 	return "Workflows"
 }
 
-type sqliteColumn struct {
-	defaultValue    interface{}
-	name            string
-	colType         string
-	cid             int64
-	primaryKeyIndex int64
-	notNull         bool
-}
-
-func describeSqliteTable(db *gorm.DB, table string) ([]sqliteColumn, error) {
-	rows, err := db.Raw(fmt.Sprintf(`PRAGMA table_info(%s)`, table)).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var cols []sqliteColumn
-	for rows.Next() {
-		col := sqliteColumn{}
-		err = rows.Scan(&col.cid, &col.name, &col.colType, &col.notNull, &col.defaultValue, &col.primaryKeyIndex)
-		if err != nil {
-			return nil, err
-		}
-		cols = append(cols, col)
-	}
-	return cols, nil
-}
-
-func addGroupIDToExecutionNodePK(db *gorm.DB, m gorm.Migrator) error {
-	executorsTable := (&ExecutionNode{}).TableName()
-
-	// Can't change the primary key in SQLite so we drop the entire table if the PK doesn't include group_id.
-	if db.Dialector.Name() == sqliteDialect {
-		if !m.HasTable(executorsTable) {
-			return nil
-		}
-		cols, err := describeSqliteTable(db, executorsTable)
-		if err != nil {
-			return err
-		}
-		groupIDPartOfPK := false
-		for _, col := range cols {
-			if col.name == "group_id" {
-				groupIDPartOfPK = col.primaryKeyIndex > 0
-				break
-			}
-		}
-		if !groupIDPartOfPK {
-			// For SQLite, drop the table and let GORM re-create it.
-			if err := m.DropTable(executorsTable); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	if db.Dialector.Name() == mySQLDialect {
-		if !m.HasTable(executorsTable) {
-			return nil
-		}
-		sql := fmt.Sprintf(
-			`SELECT column_key = 'PRI' 
-				FROM information_schema.columns 
-				WHERE table_schema = DATABASE() 
-				  AND table_name = '%s' 
-				  AND column_name = 'group_id'`,
-			executorsTable)
-		rows, err := db.Raw(sql).Rows()
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		groupIDPartOfPK := false
-		if rows.Next() {
-			if err := rows.Scan(&groupIDPartOfPK); err != nil {
-				return err
-			}
-		}
-		if !groupIDPartOfPK {
-			if err := m.DropTable(executorsTable); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	return status.UnimplementedErrorf("unsupported dialect: %s", db.Dialector.Name())
-}
-
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.
@@ -611,12 +521,13 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		})
 	}
 
-	addGroupIDPostMigrate, err := addGroupIDToExecutionNodePK(db, m)
-	if err != nil {
-		return nil, err
-	}
-	if addGroupIDPostMigrate != nil {
-		postMigrate = append(postMigrate, addGroupIDPostMigrate)
+	executorsTable := (&ExecutionNode{}).TableName()
+	// If the table doesn't have group_id column yet, drop the whole table so that GORM re-creates it with a new
+	// primary key that includes group_id.
+	if m.HasTable(executorsTable) && !m.HasColumn(&ExecutionNode{}, "group_id") {
+		if err := m.DropTable(executorsTable); err != nil {
+			return nil, err
+		}
 	}
 
 	return postMigrate, nil
