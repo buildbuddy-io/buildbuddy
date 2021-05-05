@@ -2,12 +2,14 @@ package resources
 
 import (
 	"flag"
+	"net"
 	"os"
 	"runtime"
 	"strconv"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
 )
 
@@ -18,6 +20,7 @@ const (
 	hostnameEnvVarName = "MY_HOSTNAME"
 	portEnvVarName     = "MY_PORT"
 	poolEnvVarName     = "MY_POOL"
+	ipEnvVarName       = "MY_IP"
 )
 
 var (
@@ -114,4 +117,21 @@ func GetMyPort() (int32, error) {
 		return 0, err
 	}
 	return int32(i), nil
+}
+
+func GetMyIP() (string, error) {
+	if v := os.Getenv(ipEnvVarName); v != "" {
+		return v, nil
+	}
+
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return "", err
+	}
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			return ipnet.IP.String(), nil
+		}
+	}
+	return "", status.NotFoundErrorf("could not determine own IP, no non-loopback IPs founds")
 }
