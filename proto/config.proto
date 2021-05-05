@@ -34,4 +34,7 @@ message FrontendConfig {
 
   // Whether user owned executors feature is enabled.
   bool user_owned_executors_enabled = 7;
+
+  // Whether executor keys can be created.
+  bool executor_key_creation_enabled = 8;
 }
