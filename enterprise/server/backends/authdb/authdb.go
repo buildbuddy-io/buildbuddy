@@ -20,8 +20,8 @@ func NewAuthDB(h *db.DBHandle) *AuthDB {
 }
 
 type apiKeyGroup struct {
-	Capabilities int32
 	GroupID      string
+	Capabilities int32
 }
 
 func (akg *apiKeyGroup) GetCapabilities() int32 {
