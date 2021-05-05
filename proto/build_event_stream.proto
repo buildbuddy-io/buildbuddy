@@ -187,6 +187,19 @@ message BuildEventId {
   // Identifier of an event providing convenience symlinks information.
   message ConvenienceSymlinksIdentifiedId {}
 
+  // BUILDBUDDY-SPECIFIC EVENTS BELOW
+
+  // Identifier of an event providing a list of bazel commands that are
+  // run as part of a BuildBuddy workflow.
+  message WorkflowConfiguredId {}
+
+  // Identifier of an event providing the status of a completed invocation
+  // within a BuildBuddy workflow.
+  message WorkflowCommandCompletedId {
+    // Invocation ID of the command that was completed.
+    string invocation_id = 1;
+  }
+
   oneof id {
     UnknownBuildEventId unknown = 1;
     ProgressId progress = 2;
@@ -213,6 +226,11 @@ message BuildEventId {
     WorkspaceConfigId workspace = 23;
     BuildMetadataId build_metadata = 24;
     ConvenienceSymlinksIdentifiedId convenience_symlinks_identified = 25;
+
+    // BUILDBUDDY EVENTS BELOW
+
+    WorkflowConfiguredId workflow_configured = 1000;
+    WorkflowCommandCompletedId workflow_command_completed = 1001;
   }
 }
 
@@ -750,6 +768,50 @@ message ConvenienceSymlink {
   string target = 3;
 }
 
+// BUILDBUDDY-SPECIFIC EVENTS BELOW
+
+// Event describing a workflow invocation as well as the bazel commands to be
+// run by the workflow.
+message WorkflowConfigured {
+  // Action name as defined in `buildbuddy.yaml`.
+  // Example: "Test all targets"
+  string action_name = 1;
+
+  // Branch that caused the action to be executed.
+  // Example: "main"
+  string action_trigger_branch = 2;
+
+  // Webhook event name that triggered the action. Can be one of "push" or
+  // "pull_request".
+  string action_trigger_event = 3;
+
+  // Metadata for a Bazel invocation created by this workflow action.
+  message InvocationMetadata {
+    // Bazel invocation ID (UUIDV4). Should not be set for bazel commands that
+    // do not create invocations, such as `bazel version`.
+    // Example: "86083af6-4699-4957-a0a3-d6a806104bb3"
+    string invocation_id = 1;
+
+    // Bazel command as specified in `buildbuddy.yaml`.
+    // Example: "test //..."
+    string bazel_command = 2;
+  }
+
+  // Bazel commands invoked by the workflow action.
+  repeated InvocationMetadata invocation = 4;
+}
+
+// Event describing a workflow command that completed.
+// Note: the event ID holds the invocation ID that identifies the command.
+message WorkflowCommandCompleted {
+  // The overall status of the command. A command was successful if and only if
+  // this value is equal to 0.
+  int32 exit_code = 1;
+
+  // Time in milliseconds since the epoch.
+  int64 finish_time_millis = 2;
+}
+
 // Message describing a build event. Events will have an identifier that
 // is unique within a given build invocation; they also announce follow-up
 // events as children. More details, which are specific to the kind of event
@@ -783,5 +845,10 @@ message BuildEvent {
     WorkspaceConfig workspace_info = 25;
     BuildMetadata build_metadata = 26;
     ConvenienceSymlinksIdentified convenience_symlinks_identified = 27;
+
+    // BUILDBUDDY-SPECIFIC EVENTS BELOW
+
+    WorkflowConfigured workflow_configured = 1000;
+    WorkflowCommandCompleted workflow_command_completed = 1001;
   }
 }
