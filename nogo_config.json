@@ -23,7 +23,8 @@
     "exclude_files": {
       "tmp/*": "Temp generated files",
       "external/*": "Third party code",
-			".*\\.pb\\.go": "Auto-generated proto files"
+			".*\\.pb\\.go": "Auto-generated proto files",
+      "/var/*": "cgo generated files"
     }
   },
   "lostcancel": {
@@ -34,7 +35,8 @@
   "nilness": {
     "exclude_files": {
       "tmp/*": "Temp generated files",
-      "external/*": "Third party code"
+      "external/*": "Third party code",
+      "/var/*": "cgo generated files"
     }
   },
   "stdmethods": {
