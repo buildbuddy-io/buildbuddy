@@ -5,7 +5,7 @@ sidebar_label: Workflows configuration
 ---
 
 This page provides documentation for `buildbuddy.yaml`, which can be placed
-at the root of your git repo to configure BuildBuddy [workflow](workflows) execution.
+at the root of your git repo to configure BuildBuddy workflow execution.
 
 :::note
 
