@@ -52,12 +52,10 @@ type Cache struct {
 	cacheProxy       *cacheproxy.CacheProxy
 	consistentHash   *consistent_hash.ConsistentHash
 	heartbeatChannel *heartbeat.Channel
-
 	heartbeatMu      *sync.Mutex
 	shutDownChan    chan bool
 	prefix           string
 	config           CacheConfig
-
 }
 
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
