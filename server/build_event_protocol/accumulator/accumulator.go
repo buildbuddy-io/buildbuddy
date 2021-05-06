@@ -22,10 +22,9 @@ const (
 
 var (
 	buildMetadataFieldMapping = map[string]string{
-		"REPO_URL":               repoURLFieldName,
-		"COMMIT_SHA":             commitSHAFieldName,
-		"ROLE":                   roleFieldName,
-		"BUILDBUDDY_WORKFLOW_ID": workflowIDFieldName,
+		"REPO_URL":   repoURLFieldName,
+		"COMMIT_SHA": commitSHAFieldName,
+		"ROLE":       roleFieldName,
 	}
 )
 
@@ -177,6 +176,7 @@ func (v *BEValues) populateWorkspaceInfoFromWorkspaceStatus(workspace *build_eve
 }
 
 func (v *BEValues) handleWorkflowConfigured(wfc *build_event_stream.WorkflowConfigured) {
+	v.setStringValue(workflowIDFieldName, wfc.GetWorkflowId())
 	v.setStringValue(actionNameFieldName, wfc.GetActionName())
 }
 
