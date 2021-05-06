@@ -29,7 +29,6 @@ export default class InvocationModel {
   finished: build_event_stream.BuildFinished;
   aborted: build_event_stream.BuildEvent;
   toolLogs: build_event_stream.BuildToolLogs;
-  buildMetadata: build_event_stream.BuildMetadata;
   workflowConfigured: build_event_stream.WorkflowConfigured;
   workflowCommandCompletedByInvocationId = new Map<string, build_event_stream.IWorkflowCommandCompleted>();
   workspaceStatus: build_event_stream.WorkspaceStatus;
@@ -99,9 +98,6 @@ export default class InvocationModel {
         if (buildEvent.buildToolLogs) model.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         if (buildEvent.workspaceStatus) {
           model.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
-        }
-        if (buildEvent.buildMetadata) {
-          model.buildMetadata = buildEvent.buildMetadata as build_event_stream.BuildMetadata;
         }
         if (buildEvent.workflowConfigured) {
           model.workflowConfigured = buildEvent.workflowConfigured as build_event_stream.WorkflowConfigured;
