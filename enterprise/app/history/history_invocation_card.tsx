@@ -120,7 +120,16 @@ export default class HistoryInvocationCardComponent extends React.Component {
     return this.props.invocation.success ? "Succeeded" : "Failed";
   }
 
+  private getTitleForWorkflow() {
+    const actionName = this.props.invocation.pattern;
+    return actionName;
+  }
+
   getTitle() {
+    if (this.props.invocation.role === "CI_RUNNER") {
+      return this.getTitleForWorkflow();
+    }
+
     if (this.isInProgress()) {
       return this.props.invocation?.user
         ? format.sentenceCase(
@@ -139,12 +148,6 @@ export default class HistoryInvocationCardComponent extends React.Component {
             } ${format.truncateList(this.props.invocation.pattern)}`
           )
         : "Disconnected build";
-    }
-
-    const isWorkflow = this.props.invocation.role === "CI_RUNNER";
-    if (isWorkflow) {
-      // Pattern holds the workflow action name.
-      return this.props.invocation.pattern;
     }
 
     return `${format.sentenceCase(this.props.invocation.user || "Unknown user")}'s ${
