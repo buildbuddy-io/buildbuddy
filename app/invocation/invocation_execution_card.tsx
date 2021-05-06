@@ -78,9 +78,9 @@ export default class ExecutionCardComponent extends React.Component {
   }
 
   // fetchActions() {
-  //   let profileFile = this.props.model.buildToolLogs?.log.find((log: any) => log.uri);
+  //   let actionFile = this.props.model.buildToolLogs?.log.find((log: any) => log.uri);
 
-  //   if (!profileFile?.uri) {
+  //   if (!actionFile?.uri) {
   //     const hasBuildToolLogs = this.props.model.buildToolLogs;
   //     this.setState({
   //       ...this.state,
@@ -90,7 +90,7 @@ export default class ExecutionCardComponent extends React.Component {
   //     return;
   //   }
 
-  //   if (!profileFile?.uri.startsWith("bytestream://")) {
+  //   if (!actionFile?.uri.startsWith("bytestream://localhost:1987/blobs")) {
   //     this.setState({
   //       ...this.state,
   //       timingEnabled: false,
@@ -99,16 +99,16 @@ export default class ExecutionCardComponent extends React.Component {
   //     return;
   //   }
 
-  //   if (this.state.profile) {
+  //   if (this.state.actions) {
   //     // Already fetched
   //     return;
   //   }
 
   //   let compressionOption = this.props.model.optionsMap.get("json_trace_compression");
-  //   var isGzipped = compressionOption === undefined ? profileFile.name?.endsWith(".gz") : compressionOption == "1";
+  //   var isGzipped = compressionOption === undefined ? actionFile.name?.endsWith(".gz") : compressionOption == "1";
 
   //   rpcService
-  //     .fetchBytestreamFile(profileFile?.uri, this.props.model.getId(), isGzipped ? "arraybuffer" : "json")
+  //     .fetchBytestreamFile(actionFile?.uri, this.props.model.getId(), isGzipped ? "arraybuffer" : "json")
   //     .then((contents: any) => {
   //       if (isGzipped) {
   //         contents = JSON.parse(pako.inflate(contents, { to: "string" })) as Profile;
