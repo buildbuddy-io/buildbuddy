@@ -151,7 +151,7 @@ func (c *Cache) recvHintedHandoffCallback(peer, prefix string, d *repb.Digest) {
 	}
 	select {
 	case c.hintedHandoffsByPeer[peer] <- order:
-		log.Printf("Wrote order %+v to %q's hinted handoff channel", order, peer)
+		log.Debugf("Wrote order %+v to %q's hinted handoff channel", order, peer)
 		// write was sucessful
 	default:
 		log.Warningf("Buffer full: unable to store hinted handoff for %q", peer)
@@ -164,7 +164,7 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 		case handoffOrder := <-c.hintedHandoffsByPeer[peer]:
 			err := c.backfill(context.Background(), handoffOrder.d, c.config.ListenAddr, handoffOrder.prefix, peer)
 			if err != nil {
-				log.Printf("%q: unable to complete hinted handoff to peer: %q: %s", c.config.ListenAddr, peer, err)
+				log.Warningf("%q: unable to complete hinted handoff to peer: %q: %s", c.config.ListenAddr, peer, err)
 			}
 		default:
 			// read was unsuccessful -- no more handoffOrders to process.
@@ -681,7 +681,6 @@ func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser
 		mu:          &sync.Mutex{},
 		listenAddr:  c.config.ListenAddr,
 	}
-	log.Printf("multiWriter start")
 	for peer, hintedHandoff := ps.GetNextPeerAndHandoff(); peer != ""; peer, hintedHandoff = ps.GetNextPeerAndHandoff() {
 		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, c.prefix, d)
 		if err != nil {
@@ -690,12 +689,6 @@ func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser
 			continue
 		}
 		mwc.peerClosers[peer] = rwc
-		if hintedHandoff != "" {
-			log.Printf("Writing to fallback peer: %s, hh to %s, ps: %+v", peer, hintedHandoff, ps)
-		}
-		if len(mwc.peerClosers) == c.config.ReplicationFactor {
-			break
-		}
 	}
 	if len(mwc.peerClosers) < c.config.ReplicationFactor {
 		openPeers := make([]string, len(mwc.peerClosers))
@@ -703,7 +696,7 @@ func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser
 			openPeers = append(openPeers, peer)
 		}
 		allPeers := append(ps.PreferredPeers, ps.FallbackPeers...)
-		log.Debugf("Could not open enough remoteWriters for digest %s. All peers: %s, opened: %s", d.GetHash(), allPeers, openPeers)
+		log.Debugf("Could not open enough remoteWriters for digest %s. All peers: %s, opened: %s (peerset: %+v)", d.GetHash(), allPeers, openPeers, ps)
 		return nil, status.UnavailableErrorf("Not enough peers (%d) available to satisfy replication factor (%d).", len(mwc.peerClosers), c.config.ReplicationFactor)
 	}
 	return mwc, nil

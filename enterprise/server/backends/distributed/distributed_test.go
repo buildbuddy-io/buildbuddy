@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -27,7 +26,10 @@ var (
 	emptyUserMap = testauth.TestUsers()
 
 	// The maximum duration to wait for a server to become ready.
-	maxReadyWaitTime = 3 * time.Second
+	maxWaitForReadyDuration = 3 * time.Second
+
+	// The maximum duration to wait for a server to shut down.
+	maxShutdownDuration = 3 * time.Second
 )
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
@@ -55,12 +57,10 @@ func newMemoryCache(t *testing.T, maxSizeBytes int64) interfaces.Cache {
 }
 
 func waitForReady(t *testing.T, addr string) {
-	log.Warningf("Waiting for peer %q to become ready!", addr)
-	conn, err := grpc_client.DialTargetWithOptions("grpc://"+addr, false, grpc.WithBlock(), grpc.WithTimeout(maxReadyWaitTime))
+	conn, err := grpc_client.DialTargetWithOptions("grpc://"+addr, false, grpc.WithBlock(), grpc.WithTimeout(maxWaitForReadyDuration))
 	if err != nil {
 		t.Fatal(err)
 	}
-	log.Warningf("Peer %q became ready!", addr)
 	conn.Close()
 }
 
@@ -71,7 +71,7 @@ func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCa
 	}
 	c.StartListening()
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), maxShutdownDuration)
 		c.Shutdown(shutdownCtx)
 		cancel()
 	})
@@ -223,7 +223,6 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 		ReplicationFactor:    3,
 		Nodes:                []string{peer1, peer2, peer3, peer4},
 		DisableLocalLookup:   true,
-		RPCHeartbeatInterval: 100 * time.Millisecond,
 	}
 
 	// Setup a distributed cache, 4 nodes, R = 3.
@@ -448,7 +447,6 @@ func TestContainsMulti(t *testing.T) {
 }
 
 func TestGetMulti(t *testing.T) {
-	t.Skip()
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t)
 	singleCacheSizeBytes := int64(1000000)

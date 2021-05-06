@@ -9,7 +9,6 @@ type PeerSet struct {
 	FallbackPeers  []string
 	FailedPeers    []string
 	i              int // next peer index
-	f              int // failed peer index
 }
 
 func New(preferredPeers, fallbackPeers []string) *PeerSet {
@@ -17,8 +16,6 @@ func New(preferredPeers, fallbackPeers []string) *PeerSet {
 		i:              0,
 		PreferredPeers: preferredPeers,
 		FallbackPeers:  fallbackPeers,
-
-		f:           0,
 		FailedPeers: nil,
 	}
 }
