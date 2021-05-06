@@ -21,14 +21,14 @@ import (
 )
 
 type CacheProxy struct {
-	env               environment.Env
-	cache             interfaces.Cache
-	mu                *sync.Mutex
-	server            *grpc.Server
-	clients           map[string]dcpb.DistributedCacheClient
-	heartbeatCallback func(peer string)
+	env                   environment.Env
+	cache                 interfaces.Cache
+	mu                    *sync.Mutex
+	server                *grpc.Server
+	clients               map[string]dcpb.DistributedCacheClient
+	heartbeatCallback     func(peer string)
 	hintedHandoffCallback func(peer, prefix string, d *repb.Digest)
-	listenAddr        string
+	listenAddr            string
 }
 
 func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *CacheProxy {

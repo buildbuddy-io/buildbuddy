@@ -29,14 +29,14 @@ const (
 )
 
 type CacheConfig struct {
-	PubSub             interfaces.PubSub
-	ListenAddr         string
-	GroupName          string
-	Nodes              []string
-	ReplicationFactor  int
-	ClusterSize        int
+	PubSub               interfaces.PubSub
+	ListenAddr           string
+	GroupName            string
+	Nodes                []string
+	ReplicationFactor    int
+	ClusterSize          int
 	RPCHeartbeatInterval time.Duration
-	DisableLocalLookup bool
+	DisableLocalLookup   bool
 }
 
 type hintedHandoffOrder struct {
@@ -45,17 +45,17 @@ type hintedHandoffOrder struct {
 }
 
 type Cache struct {
-	local            interfaces.Cache
-	doneHeartbeat    chan bool
-	lastContactedBy  map[string]time.Time
+	local                interfaces.Cache
+	doneHeartbeat        chan bool
+	lastContactedBy      map[string]time.Time
 	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
-	cacheProxy       *cacheproxy.CacheProxy
-	consistentHash   *consistent_hash.ConsistentHash
-	heartbeatChannel *heartbeat.Channel
-	heartbeatMu      *sync.Mutex
-	shutDownChan    chan bool
-	prefix           string
-	config           CacheConfig
+	cacheProxy           *cacheproxy.CacheProxy
+	consistentHash       *consistent_hash.ConsistentHash
+	heartbeatChannel     *heartbeat.Channel
+	heartbeatMu          *sync.Mutex
+	shutDownChan         chan bool
+	prefix               string
+	config               CacheConfig
 }
 
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
