@@ -141,6 +141,12 @@ export default class HistoryInvocationCardComponent extends React.Component {
         : "Disconnected build";
     }
 
+    const isWorkflow = this.props.invocation.role === "CI_RUNNER";
+    if (isWorkflow) {
+      // Pattern holds the workflow action name.
+      return this.props.invocation.pattern;
+    }
+
     return `${format.sentenceCase(this.props.invocation.user || "Unknown user")}'s ${
       this.props.invocation.command
     } ${format.truncateList(this.props.invocation.pattern)}`;

@@ -295,3 +295,31 @@
   flex-wrap: wrap;
   grid-gap: 8px;
 }
+
+.workflow-details-card .details > :not(:first-child) {
+  margin-top: 16px;
+}
+
+.workflow-details-card .bazel-commands-header {
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 17px;
+}
+
+.workflow-details-card .bazel-command-list > :not(:first-child) {
+  margin-top: 8px;
+}
+
+.workflow-details-card .bazel-command-list-item {
+  font-family: "Source Code Pro", monospace;
+  display: block;
+  padding: 4px 8px;
+  border-radius: 2px;
+  border: 1px solid #eee;
+  background-color: transparent;
+  transition: background-color 100ms ease-out;
+}
+
+.workflow-details-card .bazel-command-list-item:hover {
+  background-color: #eee;
+}

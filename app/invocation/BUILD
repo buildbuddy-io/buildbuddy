@@ -34,6 +34,7 @@ ts_library(
         "//proto:group_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto:user_ts_proto",
+        "//proto:workflow_ts_proto",
         "@npm//@types/long",
         "@npm//@types/moment",
         "@npm//@types/pako",
