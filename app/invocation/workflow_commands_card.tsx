@@ -8,6 +8,7 @@ export type WorkflowCommandsCardProps = {
   results: BazelCommandResult[];
   className: string;
   iconPath: string;
+  linksDisabled?: boolean;
 };
 
 export default class WorkflowCommandsCard extends React.Component<WorkflowCommandsCardProps> {
@@ -29,11 +30,9 @@ export default class WorkflowCommandsCard extends React.Component<WorkflowComman
               <div
                 className="list-grid"
                 onClick={
-                  result.invocation.invocationId
-                    ? this.handleCommandClicked.bind(this, result.invocation.invocationId)
-                    : undefined
+                  !this.props.linksDisabled && this.handleCommandClicked.bind(this, result.invocation.invocationId)
                 }>
-                <div className={`${result.invocation.invocationId && "clickable"} target`}>
+                <div className={`${!this.props.linksDisabled && "clickable"} target`}>
                   <img className="target-status-icon" src={this.props.iconPath} /> {result.invocation.bazelCommand}
                 </div>
                 <div>{typeof result.durationMillis === "number" && format.durationMillis(result.durationMillis)}</div>

@@ -25,14 +25,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
     for (const invocation of configuredEvent.invocation) {
       const completedEvent = completedEventsById.get(invocation.invocationId);
       if (!completedEvent) {
-        notRun.push({
-          invocation: {
-            ...invocation,
-            // Clear the invocation ID so that we don't render links for
-            // commands not run.
-            invocationId: "",
-          },
-        });
+        notRun.push({ invocation });
         continue;
       }
       const curTimeMillis = Number(completedEvent.finishTimeMillis);
@@ -71,6 +64,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
             results={notRun}
             className="card-neutral"
             iconPath="/image/skipped-circle.svg"
+            linksDisabled={true}
           />
         )}
       </>
