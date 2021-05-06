@@ -3,8 +3,6 @@ package distributed
 import (
 	"context"
 	"fmt"
-	"log"
-	"net"
 	"testing"
 	"time"
 
@@ -15,15 +13,21 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
 	emptyUserMap = testauth.TestUsers()
+
+	// The maximum duration to wait for a server to become ready.
+	maxReadyWaitTime = 3 * time.Second
 )
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
@@ -50,23 +54,14 @@ func newMemoryCache(t *testing.T, maxSizeBytes int64) interfaces.Cache {
 	return mc
 }
 
-func waitForReady(t *testing.T, addr string, maxWait time.Duration) {
-	log.Printf("Waiting for peer %q to become ready!", addr)
-	for {
-		select {
-		case <-time.After(maxWait):
-			t.Fatalf("%q did not become ready in %s", addr, maxWait)
-			return
-		default:
-			conn, err := net.Dial("tcp", addr)
-			if conn != nil {
-				conn.Close()
-				return
-			}
-			log.Printf("Got err: %s", err)
-			time.Sleep(10 * time.Millisecond)
-		}
+func waitForReady(t *testing.T, addr string) {
+	log.Warningf("Waiting for peer %q to become ready!", addr)
+	conn, err := grpc_client.DialTargetWithOptions("grpc://"+addr, false, grpc.WithBlock(), grpc.WithTimeout(maxReadyWaitTime))
+	if err != nil {
+		t.Fatal(err)
 	}
+	log.Warningf("Peer %q became ready!", addr)
+	conn.Close()
 }
 
 func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCache interfaces.Cache) *Cache {
@@ -75,12 +70,11 @@ func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCa
 		t.Fatal(err)
 	}
 	c.StartListening()
-	waitForReady(t, config.ListenAddr, 100*time.Millisecond)
-	//	t.Cleanup(func() {
-	//		shutdownCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	//		c.Shutdown(shutdownCtx)
-	//		cancel()
-	//	})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		c.Shutdown(shutdownCtx)
+		cancel()
+	})
 	return c
 }
 
@@ -116,13 +110,15 @@ func TestBasicReadWrite(t *testing.T) {
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, te, config2, memoryCache2)
-	_ = dc2
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, te, config3, memoryCache3)
-	_ = dc3
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
 
 	baseCaches := []interfaces.Cache{
 		memoryCache1,
@@ -153,13 +149,14 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer4 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	baseConfig := CacheConfig{
 		ReplicationFactor:  3,
-		Nodes:              []string{peer1, peer2, peer3},
+		Nodes:              []string{peer1, peer2, peer3, peer4},
 		DisableLocalLookup: true,
 	}
 
-	// Setup a distributed cache, 3 nodes, R = 3.
+	// Setup a distributed cache, 4 nodes, R = 3.
 	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
@@ -169,16 +166,24 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, te, config2, memoryCache2)
-	_ = dc2
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, te, config3, memoryCache3)
-	_ = dc3
 
-	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2}
-	distributedCaches := []interfaces.Cache{dc1, dc2}
+	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
+	config4 := baseConfig
+	config4.ListenAddr = peer4
+	dc4 := startNewDCache(t, te, config4, memoryCache4)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+	waitForReady(t, config4.ListenAddr)
+
+	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache4}
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc4}
 
 	// "Fail" a a node by shutting it down.
 	// The basecache and distributed cache are not in baseCaches
@@ -193,7 +198,8 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		if err := distributedCaches[i%2].Set(ctx, d, buf); err != nil {
+		j := i % len(distributedCaches)
+		if err := distributedCaches[j].Set(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
 		for _, baseCache := range baseCaches {
@@ -212,13 +218,15 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer4 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	baseConfig := CacheConfig{
-		ReplicationFactor:  3,
-		Nodes:              []string{peer1, peer2, peer3},
-		DisableLocalLookup: true,
+		ReplicationFactor:    3,
+		Nodes:                []string{peer1, peer2, peer3, peer4},
+		DisableLocalLookup:   true,
+		RPCHeartbeatInterval: 100 * time.Millisecond,
 	}
 
-	// Setup a distributed cache, 3 nodes, R = 3.
+	// Setup a distributed cache, 4 nodes, R = 3.
 	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
@@ -228,16 +236,24 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, te, config2, memoryCache2)
-	_ = dc2
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, te, config3, memoryCache3)
-	_ = dc3
 
-	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2}
-	distributedCaches := []*Cache{dc1, dc2}
+	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
+	config4 := baseConfig
+	config4.ListenAddr = peer4
+	dc4 := startNewDCache(t, te, config4, memoryCache4)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+	waitForReady(t, config4.ListenAddr)
+
+	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache4}
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc4}
 
 	// "Fail" a a node by shutting it down.
 	// The basecache and distributed cache are not in baseCaches
@@ -253,11 +269,10 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		log.Printf("About to set value in cache!")
-		if err := distributedCaches[i%2].Set(ctx, d, buf); err != nil {
+		j := i % len(distributedCaches)
+		if err := distributedCaches[j].Set(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
-		log.Printf("set value in cache!")
 		digestsWritten = append(digestsWritten, d)
 		for _, baseCache := range baseCaches {
 			exists, err := baseCache.Contains(ctx, d)
@@ -270,7 +285,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	baseCaches = append(baseCaches, memoryCache3)
 	distributedCaches = append(distributedCaches, dc3)
 	dc3.StartListening()
-
+	waitForReady(t, config3.ListenAddr)
 	for _, d := range digestsWritten {
 		for _, distributedCache := range distributedCaches {
 			exists, err := distributedCache.Contains(ctx, d)
@@ -289,9 +304,10 @@ func TestBackfill(t *testing.T) {
 	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	baseConfig := CacheConfig{
-		ReplicationFactor:  3,
-		Nodes:              []string{peer1, peer2, peer3},
-		DisableLocalLookup: true,
+		ReplicationFactor:    3,
+		Nodes:                []string{peer1, peer2, peer3},
+		DisableLocalLookup:   true,
+		RPCHeartbeatInterval: 100 * time.Millisecond,
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
@@ -304,36 +320,27 @@ func TestBackfill(t *testing.T) {
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, te, config2, memoryCache2)
-	_ = dc2
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, te, config3, memoryCache3)
-	_ = dc3
 
-	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2}
-	distributedCaches := []*Cache{dc1, dc2}
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
 
-	// "Fail" a a node by shutting it down.
-	// The basecache and distributed cache are not in baseCaches
-	// or distributedCaches so they should not be referenced
-	// below when reading / writing, although the running nodes
-	// still have reference to them via the Nodes list.
-	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
-	err := dc3.Shutdown(shutdownCtx)
-	cancel()
-	assert.Nil(t, err)
+	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache3}
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	digestsWritten := make([]*repb.Digest, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		log.Printf("About to set value in cache!")
-		if err := distributedCaches[i%2].Set(ctx, d, buf); err != nil {
+		j := i % len(distributedCaches)
+		if err := distributedCaches[j].Set(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
-		log.Printf("set value in cache!")
 		digestsWritten = append(digestsWritten, d)
 		for _, baseCache := range baseCaches {
 			exists, err := baseCache.Contains(ctx, d)
@@ -343,14 +350,15 @@ func TestBackfill(t *testing.T) {
 		}
 	}
 
-	// Restore the node.
-	baseCaches = append(baseCaches, memoryCache3)
-	distributedCaches = append(distributedCaches, dc3)
-	dc3.StartListening()
-	waitForReady(t, peer3, 100*time.Millisecond)
+	// Now zero out one of the base caches.
+	for _, d := range digestsWritten {
+		if err := memoryCache3.Delete(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	// Read our digests, and ensure that after each read, the digest
-	// is *also* present in the base cache of the shutdown node,
+	// is *also* present in the base cache of the zeroed-out node,
 	// because it has been backfilled.
 	for _, d := range digestsWritten {
 		for _, distributedCache := range distributedCaches {
@@ -359,10 +367,10 @@ func TestBackfill(t *testing.T) {
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, distributedCache, d)
 		}
-		for _, baseCache := range baseCaches {
+		for i, baseCache := range baseCaches {
 			exists, err := baseCache.Contains(ctx, d)
-			assert.Nil(t, err)
-			assert.True(t, exists)
+			assert.Nil(t, err, fmt.Sprintf("basecache %dmissing digest", i))
+			assert.True(t, exists, fmt.Sprintf("basecache %dmissing digest", i))
 			readAndCompareDigest(t, ctx, baseCache, d)
 		}
 	}
@@ -391,13 +399,15 @@ func TestContainsMulti(t *testing.T) {
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, te, config2, memoryCache2)
-	_ = dc2
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, te, config3, memoryCache3)
-	_ = dc3
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
 
 	baseCaches := []interfaces.Cache{
 		memoryCache1,
@@ -438,6 +448,7 @@ func TestContainsMulti(t *testing.T) {
 }
 
 func TestGetMulti(t *testing.T) {
+	t.Skip()
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t)
 	singleCacheSizeBytes := int64(1000000)
@@ -460,13 +471,15 @@ func TestGetMulti(t *testing.T) {
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, te, config2, memoryCache2)
-	_ = dc2
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, te, config3, memoryCache3)
-	_ = dc3
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
 
 	baseCaches := []interfaces.Cache{
 		memoryCache1,
