@@ -40,8 +40,8 @@ type CacheConfig struct {
 }
 
 type hintedHandoffOrder struct {
-	prefix string
 	d      *repb.Digest
+	prefix string
 }
 
 type Cache struct {

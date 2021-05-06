@@ -27,8 +27,8 @@ type CacheProxy struct {
 	server            *grpc.Server
 	clients           map[string]dcpb.DistributedCacheClient
 	heartbeatCallback func(peer string)
-	listenAddr        string
 	hintedHandoffCallback func(peer, prefix string, d *repb.Digest)
+	listenAddr        string
 }
 
 func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *CacheProxy {
