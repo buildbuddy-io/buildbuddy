@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"flag"
 	"fmt"
 	"io"
@@ -21,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
@@ -847,12 +845,4 @@ func toShellToken(s string) string {
 func fatal(err error) {
 	log.Printf("%s", err)
 	os.Exit(int(gstatus.Code(err)))
-}
-
-func base64Proto(m proto.Message) (string, error) {
-	b, err := proto.Marshal(m)
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(b), nil
 }
