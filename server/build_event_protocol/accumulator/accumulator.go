@@ -11,26 +11,21 @@ import (
 )
 
 const (
-	repoURLFieldName             = "repoURL"
-	commitSHAFieldName           = "commitSHA"
-	roleFieldName                = "role"
-	commandFieldName             = "command"
-	patternFieldName             = "pattern"
-	workflowIDFieldName          = "workflowID"
-	actionNameFieldName          = "actionName"
-	actionTriggerEventFieldName  = "actionTriggerEvent"
-	actionTriggerBranchFieldName = "actionTriggerBranch"
+	repoURLFieldName    = "repoURL"
+	commitSHAFieldName  = "commitSHA"
+	roleFieldName       = "role"
+	commandFieldName    = "command"
+	patternFieldName    = "pattern"
+	workflowIDFieldName = "workflowID"
+	actionNameFieldName = "actionName"
 )
 
 var (
 	buildMetadataFieldMapping = map[string]string{
-		"REPO_URL":                         repoURLFieldName,
-		"COMMIT_SHA":                       commitSHAFieldName,
-		"ROLE":                             roleFieldName,
-		"BUILDBUDDY_WORKFLOW_ID":           workflowIDFieldName,
-		"BUILDBUDDY_ACTION_NAME":           actionNameFieldName,
-		"BUILDBUDDY_ACTION_TRIGGER_EVENT":  actionTriggerEventFieldName,
-		"BUILDBUDDY_ACTION_TRIGGER_BRANCH": actionTriggerBranchFieldName,
+		"REPO_URL":               repoURLFieldName,
+		"COMMIT_SHA":             commitSHAFieldName,
+		"ROLE":                   roleFieldName,
+		"BUILDBUDDY_WORKFLOW_ID": workflowIDFieldName,
 	}
 )
 
@@ -68,6 +63,8 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
 	case *build_event_stream.BuildEvent_WorkspaceStatus:
 		v.populateWorkspaceInfoFromWorkspaceStatus(p.WorkspaceStatus)
 		v.sawWorkspaceStatusEvent = true
+	case *build_event_stream.BuildEvent_WorkflowConfigured:
+		v.handleWorkflowConfigured(p.WorkflowConfigured)
 	}
 }
 func (v *BEValues) InvocationID() string {
@@ -100,14 +97,6 @@ func (v *BEValues) WorkflowID() string {
 
 func (v *BEValues) ActionName() string {
 	return v.getStringValue(actionNameFieldName)
-}
-
-func (v *BEValues) ActionTriggerEvent() string {
-	return v.getStringValue(actionTriggerEventFieldName)
-}
-
-func (v *BEValues) ActionTriggerBranch() string {
-	return v.getStringValue(actionTriggerBranchFieldName)
 }
 
 func (v *BEValues) WorkspaceIsLoaded() bool {
@@ -185,6 +174,10 @@ func (v *BEValues) populateWorkspaceInfoFromWorkspaceStatus(workspace *build_eve
 			v.setStringValue(commitSHAFieldName, item.Value)
 		}
 	}
+}
+
+func (v *BEValues) handleWorkflowConfigured(wfc *build_event_stream.WorkflowConfigured) {
+	v.setStringValue(actionNameFieldName, wfc.GetActionName())
 }
 
 // TODO(siggisim): pull this out somewhere central

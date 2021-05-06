@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"os/exec"
 	"os/user"
@@ -19,7 +19,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
@@ -128,13 +130,13 @@ type initMetrics struct {
 func RunAllActions(ctx context.Context, cfg *config.BuildBuddyConfig, im *initMetrics) {
 	hostname, err := os.Hostname()
 	if err != nil {
-		log.Printf("failed to get hostname: %s", err)
+		log.Errorf("failed to get hostname: %s", err)
 		hostname = ""
 	}
 	user, err := user.Current()
 	username := ""
 	if err != nil {
-		log.Printf("failed to get user: %s", err)
+		log.Errorf("failed to get user: %s", err)
 	} else {
 		username = user.Username
 	}
@@ -143,7 +145,7 @@ func RunAllActions(ctx context.Context, cfg *config.BuildBuddyConfig, im *initMe
 		startTime := time.Now()
 
 		if !matchesAnyTrigger(action, *triggerEvent, *triggerBranch) {
-			log.Printf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *triggerBranch, actionDebugString(action))
+			log.Debugf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *triggerBranch, actionDebugString(action))
 			continue
 		}
 
@@ -301,9 +303,9 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 				continue
 			}
 			if err == io.EOF {
-				log.Println("Received all acks from server.")
+				log.Debug("Received all acks from server.")
 			} else {
-				log.Printf("Error receiving acks from the server: %s", err)
+				log.Errorf("Error receiving acks from the server: %s", err)
 				bep.setError(err)
 			}
 			doneReceiving <- struct{}{}
@@ -329,7 +331,7 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 					},
 				},
 			})
-			log.Printf("BEP: published FINISHED event (#%d) in %s", seqNo, time.Since(start))
+			log.Debugf("BEP: published FINISHED event (#%d) in %s", seqNo, time.Since(start))
 
 			if err != nil {
 				bep.setError(err)
@@ -354,7 +356,7 @@ func (bep *buildEventPublisher) run(ctx context.Context) {
 				},
 			},
 		})
-		log.Printf("BEP: published event (#%d) in %s", seqNo, time.Since(start))
+		log.Debugf("BEP: published event (#%d) in %s", seqNo, time.Since(start))
 		if err != nil {
 			bep.setError(err)
 			return
@@ -407,7 +409,7 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 	ar.log.Printf("Running action: %s", ar.action.Name)
 
 	// Only print this to the local logs -- it's mostly useful for development purposes.
-	log.Printf("Invocation URL:  %s", invocationURL(ar.bep.streamID.InvocationId))
+	log.Infof("Invocation URL:  %s", invocationURL(ar.bep.streamID.InvocationId))
 
 	// NOTE: In this func we return immediately with an error of nil if event publishing fails,
 	// because that error is instead surfaced in the caller func when calling
@@ -419,6 +421,7 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}}},
 		Children: []*bespb.BuildEventId{
 			{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
+			{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}},
 			{Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: 0}}},
 			{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
 			{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
@@ -434,21 +437,46 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 	if err := ar.flushProgress(); err != nil {
 		return nil
 	}
+
+	wfc := &bespb.WorkflowConfigured{
+		ActionName:          ar.action.Name,
+		ActionTriggerBranch: *triggerBranch,
+		ActionTriggerEvent:  *triggerEvent,
+	}
+	configuredEvent := &bespb.BuildEvent{
+		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}},
+		Payload: &bespb.BuildEvent_WorkflowConfigured{WorkflowConfigured: wfc},
+	}
+	for _, bazelCmd := range ar.action.BazelCommands {
+		iid := newUUID()
+		wfc.Invocation = append(wfc.Invocation, &bespb.WorkflowConfigured_InvocationMetadata{
+			InvocationId: iid,
+			BazelCommand: bazelCmd,
+		})
+		eventID := &bespb.BuildEventId{
+			Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
+				InvocationId: iid,
+			}},
+		}
+		configuredEvent.Children = append(configuredEvent.Children, eventID)
+	}
+	if err := bep.Publish(configuredEvent); err != nil {
+		return nil
+	}
+
 	buildMetadataEvent := &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
 		Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: &bespb.BuildMetadata{
 			Metadata: map[string]string{
-				"ROLE":                             "CI_RUNNER",
-				"BUILDBUDDY_WORKFLOW_ID":           *workflowID,
-				"BUILDBUDDY_ACTION_NAME":           ar.action.Name,
-				"BUILDBUDDY_ACTION_TRIGGER_EVENT":  *triggerEvent,
-				"BUILDBUDDY_ACTION_TRIGGER_BRANCH": *triggerBranch,
+				"ROLE":                   "CI_RUNNER",
+				"BUILDBUDDY_WORKFLOW_ID": *workflowID,
 			},
 		}},
 	}
 	if err := bep.Publish(buildMetadataEvent); err != nil {
 		return nil
 	}
+
 	workspaceStatusEvent := &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
 		Payload: &bespb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bespb.WorkspaceStatus{
@@ -477,21 +505,48 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 	stopFlushingProgress := ar.startBackgroundProgressFlush()
 	defer stopFlushingProgress()
 
-	for _, bazelCmd := range ar.action.BazelCommands {
+	for i, bazelCmd := range ar.action.BazelCommands {
+		if i >= len(wfc.Invocation) {
+			log.Fatalf("No invocation metadata generated for the bazel_commands[%d]; this should never happen", i)
+		}
+		iid := wfc.GetInvocation()[i].GetInvocationId()
 		args, err := bazelArgs(bazelCmd)
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
 		ar.printCommandLine(args)
-		err = runCommand(ctx, bazelCommand(), args /*env=*/, nil, ar.log)
-		if exitCode := getExitCode(err); exitCode != noExitCode {
+		// Transparently set the invocation ID from the one we computed ahead of
+		// time. The UI is expecting this invocation ID so that it can render a
+		// BuildBuddy invocation URL for each bazel_command that is executed.
+		args = append(args, fmt.Sprintf("--invocation_id=%s", iid))
+		runErr := runCommand(ctx, bazelCommand(), args /*env=*/, nil, ar.log)
+		exitCode := getExitCode(runErr)
+		if exitCode != noExitCode {
 			ar.log.Printf("%s(command exited with code %d)%s", ansiGray, exitCode, ansiReset)
 		}
-		if err != nil {
+
+		// Publish the status of each command as well as the finish time.
+		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Wait()`.
+		completedEvent := &bespb.BuildEvent{
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
+				InvocationId: iid,
+			}}},
+			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
+				ExitCode:         int32(exitCode),
+				FinishTimeMillis: int64(float64(time.Now().UnixNano()) / float64(time.Millisecond)),
+			}},
+		}
+		if err := bep.Publish(completedEvent); err != nil {
+			break
+		}
+
+		if runErr != nil {
+			// Return early if the command failed.
 			// Note, even though we don't hit the `flushProgress` call below in this case,
 			// we'll still flush progress before closing the BEP stream.
-			return err
+			return runErr
 		}
+
 		// Flush progress after every command.
 		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Wait()`.
 		if err := ar.flushProgress(); err != nil {
@@ -792,4 +847,12 @@ func toShellToken(s string) string {
 func fatal(err error) {
 	log.Printf("%s", err)
 	os.Exit(int(gstatus.Code(err)))
+}
+
+func base64Proto(m proto.Message) (string, error) {
+	b, err := proto.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(b), nil
 }
