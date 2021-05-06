@@ -33,12 +33,12 @@ import (
 const (
 	testAuthenticationHeader = "test-auth-header"
 
-	TestApiKeyHeader = "test-buildbuddy-api-key"
-	jwtHeader        = "x-buildbuddy-jwt"
+	APIKeyHeader = "x-buildbuddy-api-key"
+	jwtHeader    = "x-buildbuddy-jwt"
 )
 
 var (
-	testApiKeyRegex = regexp.MustCompile(TestApiKeyHeader + "=([a-zA-Z0-9]+)")
+	testApiKeyRegex = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]+)")
 	jwtTestKey      = []byte("testKey")
 )
 
@@ -95,7 +95,7 @@ func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthent
 }
 
 func (a *TestAuthenticator) AuthenticateHTTPRequest(w http.ResponseWriter, r *http.Request) context.Context {
-	headerVal := r.Header.Get(TestApiKeyHeader)
+	headerVal := r.Header.Get(APIKeyHeader)
 	if user, ok := a.testUsers[headerVal]; ok {
 		return context.WithValue(r.Context(), testAuthenticationHeader, user)
 	}
@@ -104,7 +104,7 @@ func (a *TestAuthenticator) AuthenticateHTTPRequest(w http.ResponseWriter, r *ht
 
 func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) context.Context {
 	if grpcMD, ok := metadata.FromIncomingContext(ctx); ok {
-		for _, h := range []string{TestApiKeyHeader, jwtHeader} {
+		for _, h := range []string{APIKeyHeader, jwtHeader} {
 			headerVals := grpcMD[h]
 			for _, headerVal := range headerVals {
 				if user, ok := a.testUsers[headerVal]; ok {
