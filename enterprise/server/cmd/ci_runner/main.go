@@ -639,7 +639,7 @@ func setupGitRepo(ctx context.Context) error {
 		if !*fallbackToCleanCheckout {
 			return err
 		}
-		log.Printf(
+		log.Warningf(
 			"Failed to sync existing repo (maybe due to destructive '.git' dir edit or incompatible remote update). "+
 				"Deleting and initializing from scratch. Error: %s",
 			err,
@@ -842,6 +842,6 @@ func toShellToken(s string) string {
 }
 
 func fatal(err error) {
-	log.Printf("%s", err)
+	log.Errorf("%s", err)
 	os.Exit(int(gstatus.Code(err)))
 }
