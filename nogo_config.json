@@ -21,6 +21,7 @@
   },
   "fieldalignment": {
     "exclude_files": {
+			".*": "Disable entirely for now",
       "tmp/*": "Temp generated files",
       "external/*": "Third party code",
 			".*\\.pb\\.go": "Auto-generated proto files"
