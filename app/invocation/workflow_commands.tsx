@@ -21,7 +21,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
     const failed: BazelCommandResult[] = [];
     const notRun: BazelCommandResult[] = [];
 
-    let prevTimeMillis = Number(this.props.model.started.startTimeMillis) || 0;
+    let prevTimeMillis = Number(this.props.model.started.startTimeMillis);
     for (const invocation of configuredEvent.invocation) {
       const completedEvent = completedEventsById.get(invocation.invocationId);
       if (!completedEvent) {
@@ -29,13 +29,13 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
           invocation: {
             ...invocation,
             // Clear the invocation ID so that we don't render links for
-            // not run actions.
+            // commands not run.
             invocationId: "",
           },
         });
         continue;
       }
-      const curTimeMillis = Number(completedEvent.finishTimeMillis) || 0;
+      const curTimeMillis = Number(completedEvent.finishTimeMillis);
       const durationMillis = curTimeMillis - prevTimeMillis;
       prevTimeMillis = curTimeMillis;
 
@@ -49,7 +49,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
 
     return (
       <>
-        {Boolean(failed.length) && (
+        {failed.length > 0 && (
           <WorkflowCommandsCard
             status="failed"
             results={failed}
@@ -57,7 +57,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
             iconPath="/image/x-circle.svg"
           />
         )}
-        {Boolean(completed.length) && (
+        {completed.length > 0 && (
           <WorkflowCommandsCard
             status="succeeded"
             results={completed}
@@ -65,7 +65,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
             iconPath="/image/check-circle.svg"
           />
         )}
-        {Boolean(notRun.length) && (
+        {notRun.length > 0 && (
           <WorkflowCommandsCard
             status="not run"
             results={notRun}
