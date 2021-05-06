@@ -377,6 +377,7 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 		Key:         wc.key,
 		Data:        data,
 		FinishWrite: false,
+		HandoffPeer: wc.handoffPeer,
 	}
 	err := wc.stream.Send(req)
 	return len(data), err
