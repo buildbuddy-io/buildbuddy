@@ -773,17 +773,21 @@ message ConvenienceSymlink {
 // Event describing a workflow invocation as well as the bazel commands to be
 // run by the workflow.
 message WorkflowConfigured {
+  // ID of the BuildBuddy workflow.
+  // Example: "WF1234"
+  string workflow_id = 1;
+
   // Action name as defined in `buildbuddy.yaml`.
   // Example: "Test all targets"
-  string action_name = 1;
+  string action_name = 2;
 
   // Branch that caused the action to be executed.
   // Example: "main"
-  string action_trigger_branch = 2;
+  string action_trigger_branch = 3;
 
   // Webhook event name that triggered the action. Can be one of "push" or
   // "pull_request".
-  string action_trigger_event = 3;
+  string action_trigger_event = 4;
 
   // Metadata for a Bazel invocation created by this workflow action.
   message InvocationMetadata {
@@ -798,7 +802,7 @@ message WorkflowConfigured {
   }
 
   // Bazel commands invoked by the workflow action.
-  repeated InvocationMetadata invocation = 4;
+  repeated InvocationMetadata invocation = 5;
 }
 
 // Event describing a workflow command that completed.
