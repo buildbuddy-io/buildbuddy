@@ -288,9 +288,6 @@ export default class InvocationModel {
   }
 
   getCommand() {
-    if (this.getRole() === CI_RUNNER_ROLE) {
-      return "workflow run";
-    }
     return this.started?.command || "build";
   }
 
@@ -311,14 +308,7 @@ export default class InvocationModel {
   }
 
   getPattern() {
-    if (this.isBazelInvocation()) {
-      return this.getAllPatterns(3);
-    }
-    if (this.workflowConfigured) {
-      return `"${this.workflowConfigured.actionName}"`;
-    }
-
-    return "";
+    return this.getAllPatterns(3);
   }
 
   getAllPatterns(patternLimit?: number) {
