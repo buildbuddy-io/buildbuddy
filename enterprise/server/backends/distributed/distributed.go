@@ -29,16 +29,14 @@ const (
 )
 
 type CacheConfig struct {
+	PubSub             interfaces.PubSub
 	ListenAddr         string
 	GroupName          string
+	Nodes              []string
 	ReplicationFactor  int
-	DisableLocalLookup bool
-
-	PubSub      interfaces.PubSub
-	Nodes       []string
-	ClusterSize int
-
+	ClusterSize        int
 	RPCHeartbeatInterval time.Duration
+	DisableLocalLookup bool
 }
 
 type hintedHandoffOrder struct {
@@ -47,19 +45,19 @@ type hintedHandoffOrder struct {
 }
 
 type Cache struct {
-	local  interfaces.Cache
-	config CacheConfig
-
-	prefix           string
+	local            interfaces.Cache
+	doneHeartbeat    chan bool
+	lastContactedBy  map[string]time.Time
+	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
 	cacheProxy       *cacheproxy.CacheProxy
 	consistentHash   *consistent_hash.ConsistentHash
 	heartbeatChannel *heartbeat.Channel
 
-	heartbeatMu     *sync.Mutex
+	heartbeatMu      *sync.Mutex
 	shutDownChan    chan bool
-	lastContactedBy map[string]time.Time
+	prefix           string
+	config           CacheConfig
 
-	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
 }
 
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
@@ -306,9 +304,9 @@ func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, des
 }
 
 type backfillOrder struct {
+	d      *repb.Digest
 	source string
 	dest   string
-	d      *repb.Digest
 }
 
 func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) error {
@@ -622,10 +620,10 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 type multiWriteCloser struct {
 	ctx           context.Context
 	peerClosers   map[string]io.WriteCloser
-	totalNumPeers int
 	mu            *sync.Mutex
 	d             *repb.Digest
 	listenAddr    string
+	totalNumPeers int
 }
 
 func (mc *multiWriteCloser) Write(data []byte) (int, error) {

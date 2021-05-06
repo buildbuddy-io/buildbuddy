@@ -47,8 +47,8 @@
   white-space: nowrap;
   overflow-x: hidden;
   width: 0;
-  max-width: 96px;
-  flex-basis: 96px;
+  max-width: 192px;
+  flex-basis: 192px;
   flex-shrink: 0;
 }
 
@@ -105,7 +105,7 @@
 .api-keys .api-key-list-item {
   padding-bottom: 8px;
   border-bottom: 1px solid #eee;
-  max-width: 720px;
+  max-width: 816px;
 }
 
 .api-keys .api-key-list-item > :not(:last-child) {

@@ -88,22 +88,22 @@ func (m *Model) BeforeUpdate(tx *gorm.DB) (err error) {
 }
 
 type Invocation struct {
+	Role         string `gorm:"index:role_index"`
+	InvocationID string `gorm:"primaryKey;"`
+	UserID       string `gorm:"index:user_id"`
+	GroupID      string `gorm:"index:group_id"`
+	BlobID       string
+	Pattern      string `gorm:"type:text;"`
+	User         string `gorm:"index:user_index"`
+	Command      string
+	Host         string `gorm:"index:host_index"`
+	RepoURL      string `gorm:"index:repo_url_index"`
+	CommitSHA    string `gorm:"index:commit_sha_index"`
 	Model
-	InvocationID                     string `gorm:"primaryKey;"`
-	UserID                           string `gorm:"index:user_id"`
-	GroupID                          string `gorm:"index:group_id"`
-	Perms                            int    `gorm:"index:perms"`
-	Success                          bool
-	User                             string `gorm:"index:user_index"`
 	DurationUsec                     int64
-	Host                             string `gorm:"index:host_index"`
-	RepoURL                          string `gorm:"index:repo_url_index"`
-	CommitSHA                        string `gorm:"index:commit_sha_index"`
-	Role                             string `gorm:"index:role_index"`
-	Command                          string
-	Pattern                          string `gorm:"type:text;"`
+	UploadThroughputBytesPerSecond   int64
 	ActionCount                      int64
-	BlobID                           string
+	Perms                            int   `gorm:"index:perms"`
 	InvocationStatus                 int64 `gorm:"index:invocation_status_idx"`
 	ActionCacheHits                  int64
 	ActionCacheMisses                int64
@@ -117,8 +117,8 @@ type Invocation struct {
 	TotalUploadUsec                  int64
 	TotalCachedActionExecUsec        int64
 	DownloadThroughputBytesPerSecond int64
-	UploadThroughputBytesPerSecond   int64
 	InvocationPK                     int64 `gorm:"uniqueIndex:invocation_invocation_pk"`
+	Success                          bool
 }
 
 func (i *Invocation) TableName() string {
@@ -126,8 +126,8 @@ func (i *Invocation) TableName() string {
 }
 
 type CacheEntry struct {
+	EntryID string `gorm:"primaryKey;"`
 	Model
-	EntryID            string `gorm:"primaryKey;"`
 	ExpirationTimeUsec int64
 	SizeBytes          int64
 	ReadCount          int64
@@ -141,26 +141,19 @@ func (c *CacheEntry) TableName() string {
 // It is removed as part of a migration.
 
 type Group struct {
-	Model
-	// The group ID -- a unique ID.
-
-	GroupID string `gorm:"primaryKey;"`
-	// The user that OWNS this group. Only this user may modify it.
-	UserID string
-
-	// The group name. This may be displayed to users.
-	Name string
-
 	// A unique URL segment that is displayed in group-related URLs.
 	// e.g. "example-org" in app.buildbuddy.com/join/example-org or
 	// "example-org.buildbuddy.com" if we support subdomains in the future.
 	URLIdentifier *string `gorm:"uniqueIndex:url_identifier_unique_index"`
 
-	SharingEnabled bool `gorm:"default:true"`
+	// The group ID -- a unique ID.
+	GroupID string `gorm:"primaryKey;"`
 
-	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
-	// executors.
-	UseGroupOwnedExecutors bool
+	// The user that OWNS this group. Only this user may modify it.
+	UserID string
+
+	// The group name. This may be displayed to users.
+	Name string
 
 	// The "owned" domain. In enterprise/cloud version, we create a
 	// group for a customer's domain, and new users that sign up with an
@@ -177,6 +170,13 @@ type Group struct {
 
 	// The group's Github API token.
 	GithubToken string
+	Model
+
+	SharingEnabled bool `gorm:"default:true"`
+
+	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
+	// executors.
+	UseGroupOwnedExecutors bool
 }
 
 func (g *Group) TableName() string {
@@ -197,8 +197,6 @@ func (ug *UserGroup) TableName() string {
 }
 
 type User struct {
-	Model
-
 	// The buildbuddy user ID.
 	UserID string `gorm:"primaryKey;"`
 
@@ -206,15 +204,16 @@ type User struct {
 	// auth Issuer ID and the subcriber ID string.
 	SubID string `gorm:"index:sub_id_index"`
 
-	// Groups are used to determine read/write permissions
-	// for everything.
-	Groups []*Group `gorm:"-"` // gorm ignore
-
 	// Profile information etc.
 	FirstName string
 	LastName  string
 	Email     string
 	ImageURL  string
+
+	// Groups are used to determine read/write permissions
+	// for everything.
+	Groups []*Group `gorm:"-"`
+	Model
 }
 
 func (u *User) TableName() string {
@@ -237,13 +236,13 @@ func (u *User) ToProto() *uspb.DisplayUser {
 }
 
 type Token struct {
-	Model
 	// The subscriber ID, a concatenated string of the
 	// auth Issuer ID and the subcriber ID string.
 	SubID        string `gorm:"primaryKey"`
 	AccessToken  string
 	RefreshToken string
-	ExpiryUsec   int64
+	Model
+	ExpiryUsec int64
 }
 
 func (t *Token) TableName() string {
@@ -251,17 +250,16 @@ func (t *Token) TableName() string {
 }
 
 type APIKey struct {
-	Model
-
+	// The user-specified description of the API key that helps them
+	// remember what it's for.
+	Label    string
 	APIKeyID string `gorm:"primaryKey"`
 	UserID   string
 	GroupID  string `gorm:"index:api_key_group_id_index"`
-	Perms    int
 	// The API key token used for authentication.
 	Value string `gorm:"uniqueIndex:api_key_value_index"`
-	// The user-specified description of the API key that helps them
-	// remember what it's for.
-	Label string
+	Model
+	Perms int
 	// Capabilities that are enabled for this key. Defaults to CACHE_WRITE.
 	//
 	// NOTE: If the default is changed, a DB migration may be required to
@@ -274,21 +272,22 @@ func (k *APIKey) TableName() string {
 }
 
 type Execution struct {
-	Model
 	// The subscriber ID, a concatenated string of the
 	// auth Issuer ID and the subcriber ID string.
 	ExecutionID string `gorm:"primaryKey"`
 	UserID      string `gorm:"index:executions_user_id"`
 	GroupID     string `gorm:"index:executions_group_id"`
-	Perms       int    `gorm:"index:executions_perms"`
-
-	Stage                   int64
-	SerializedOperation     []byte `gorm:"size:max"` // deprecated.
-	StatusCode              int32
+	Worker      string
+	// Command Snippet
+	CommandSnippet          string
+	InvocationID            string `gorm:"index:execution_invocation_id"`
 	StatusMessage           string
 	SerializedStatusDetails []byte `gorm:"size:max"`
-	CachedResult            bool
-	InvocationID            string `gorm:"index:execution_invocation_id"`
+
+	SerializedOperation []byte `gorm:"size:max"` // deprecated
+	Model
+
+	Stage int64
 
 	// IOStats
 	FileDownloadCount        int64
@@ -298,8 +297,8 @@ type Execution struct {
 	FileUploadSizeBytes      int64
 	FileUploadDurationUsec   int64
 
-	// ExecutedActionMetadata
-	Worker                             string
+	// ExecutedActionMetadata (in addition to Worker above)
+	Perms                              int `gorm:"index:executions_perms"`
 	QueuedTimestampUsec                int64
 	WorkerStartTimestampUsec           int64
 	WorkerCompletedTimestampUsec       int64
@@ -310,8 +309,8 @@ type Execution struct {
 	OutputUploadStartTimestampUsec     int64
 	OutputUploadCompletedTimestampUsec int64
 
-	// Command Snippet
-	CommandSnippet string
+	StatusCode   int32
+	CachedResult bool
 }
 
 func (t *Execution) TableName() string {
@@ -319,15 +318,15 @@ func (t *Execution) TableName() string {
 }
 
 type TelemetryLog struct {
+	Hostname         string
+	InstallationUUID string `gorm:"primaryKey"`
+	InstanceUUID     string `gorm:"primaryKey"`
+	TelemetryLogUUID string `gorm:"primaryKey"`
+	AppVersion       string
+	AppURL           string
 	Model
-	InstallationUUID    string `gorm:"primaryKey"`
-	InstanceUUID        string `gorm:"primaryKey"`
-	TelemetryLogUUID    string `gorm:"primaryKey"`
-	RecordedAtUsec      int64
-	AppVersion          string
-	AppURL              string
-	Hostname            string
 	InvocationCount     int64
+	RecordedAtUsec      int64
 	RegisteredUserCount int64
 	BazelUserCount      int64
 	BazelHostCount      int64
@@ -342,16 +341,17 @@ func (t *TelemetryLog) TableName() string {
 }
 
 type ExecutionNode struct {
+	OS                string
+	Host              string `gorm:"primaryKey"`
+	Pool              string
+	SchedulerHostPort string
+	GroupID           string
+	Constraints       string
+	Arch              string
 	Model
-	Host                  string `gorm:"primaryKey"`
-	Port                  int32  `gorm:"primaryKey;autoIncrement:false"`
 	AssignableMemoryBytes int64
 	AssignableMilliCPU    int64
-	Constraints           string
-	OS                    string
-	Arch                  string
-	Pool                  string
-	SchedulerHostPort     string
+	Port                  int32 `gorm:"primaryKey;autoIncrement:false"`
 }
 
 func (n *ExecutionNode) TableName() string {
@@ -359,16 +359,16 @@ func (n *ExecutionNode) TableName() string {
 }
 
 type ExecutionTask struct {
+	TaskID         string `gorm:"primaryKey"`
+	Arch           string
+	Pool           string
+	OS             string
+	SerializedTask []byte `gorm:"size:max"`
 	Model
-	TaskID               string `gorm:"primaryKey"`
-	SerializedTask       []byte `gorm:"size:max"`
-	EstimatedMemoryBytes int64
 	EstimatedMilliCPU    int64
 	ClaimedAtUsec        int64
 	AttemptCount         int64
-	OS                   string
-	Arch                 string
-	Pool                 string
+	EstimatedMemoryBytes int64
 }
 
 func (n *ExecutionTask) TableName() string {
@@ -376,12 +376,12 @@ func (n *ExecutionTask) TableName() string {
 }
 
 type CacheLog struct {
-	Model
 	InvocationID       string `gorm:"primaryKey"`
 	JoinKey            string `gorm:"primaryKey"`
 	DigestHash         string
 	RemoteInstanceName string
 	SerializedProto    []byte `gorm:"size:max"`
+	Model
 }
 
 func (c *CacheLog) TableName() string {
@@ -389,15 +389,15 @@ func (c *CacheLog) TableName() string {
 }
 
 type Target struct {
-	Model
-	// TargetID is made up of repoURL + label.
-	TargetID int64  `gorm:"uniqueIndex:target_target_id"`
+	RuleType string
 	UserID   string `gorm:"index:target_user_id"`
 	GroupID  string `gorm:"index:target_group_id"`
 	RepoURL  string
 	Label    string
-	Perms    int `gorm:"index:target_perms"`
-	RuleType string
+	Model
+	Perms int `gorm:"index:target_perms"`
+	// TargetID is made up of repoURL + label.
+	TargetID int64 `gorm:"uniqueIndex:target_target_id"`
 }
 
 func (t *Target) TableName() string {
@@ -423,16 +423,16 @@ func (ts *TargetStatus) TableName() string {
 // Workflow represents a set of BuildBuddy actions to be run in response to
 // events published to a Git webhook.
 type Workflow struct {
-	Model
+	RepoURL     string
 	WorkflowID  string `gorm:"primaryKey"`
 	UserID      string `gorm:"index:workflow_user_id"`
 	GroupID     string `gorm:"index:workflow_group_id"`
-	Perms       int    `gorm:"index:workflow_perms"`
 	Name        string
-	RepoURL     string
 	Username    string
 	AccessToken string
 	WebhookID   string `gorm:"uniqueIndex:workflow_webhook_id_index"`
+	Model
+	Perms int `gorm:"index:workflow_perms"`
 	// GithubWebhookID is the ID returned from the GitHub API when
 	// registering the webhook. This will only be set for GitHub URLs in the
 	// case where we successfully auto-registered the webhook.

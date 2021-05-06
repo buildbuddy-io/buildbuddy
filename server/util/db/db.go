@@ -46,9 +46,8 @@ var (
 
 type DBHandle struct {
 	*gorm.DB
-	dialect string
-
 	readReplicaDB *gorm.DB
+	dialect       string
 }
 
 type Options interface {

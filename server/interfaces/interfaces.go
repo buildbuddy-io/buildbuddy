@@ -255,12 +255,6 @@ type CommandContainer interface {
 
 // CommandResult captures the output and details of an executed command.
 type CommandResult struct {
-	// ExitCode is one of the following:
-	// * The exit code returned by the executed command
-	// * -1 if the process was killed or did not exit
-	// * -2 (NoExitCode) if the exit code could not be determined because it returned
-	//   an error other than exec.ExitError. This case typically means it failed to start.
-	ExitCode int
 	// Error is populated only if the command was unable to be started, or if it was
 	// started but never completed.
 	//
@@ -280,12 +274,19 @@ type CommandResult struct {
 	// there is a transient error that can be retried), or RESOURCE_EXHAUSTED (if the
 	// command ran out of memory while executing).
 	Error error
+	// CommandDebugString indicates the command that was run, for debugging purposes only.
+	CommandDebugString string
 	// Stdout from the command. This may contain data even if there was an Error.
 	Stdout []byte
 	// Stderr from the command. This may contain data even if there was an Error.
 	Stderr []byte
-	// CommandDebugString indicates the command that was run, for debugging purposes only.
-	CommandDebugString string
+
+	// ExitCode is one of the following:
+	// * The exit code returned by the executed command
+	// * -1 if the process was killed or did not exit
+	// * -2 (NoExitCode) if the exit code could not be determined because it returned
+	//   an error other than exec.ExitError. This case typically means it failed to start.
+	ExitCode int
 }
 
 type Subscriber interface {

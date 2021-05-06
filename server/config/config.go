@@ -3,7 +3,6 @@ package config
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"reflect"
 	"strings"
@@ -16,19 +15,19 @@ import (
 // When adding new storage fields, always be explicit about their yaml field
 // name.
 type generalConfig struct {
-	App             appConfig             `yaml:"app"`
-	BuildEventProxy buildEventProxy       `yaml:"build_event_proxy"`
-	Database        DatabaseConfig        `yaml:"database"`
-	Storage         storageConfig         `yaml:"storage"`
-	Integrations    integrationsConfig    `yaml:"integrations"`
-	Cache           cacheConfig           `yaml:"cache"`
-	Auth            authConfig            `yaml:"auth"`
-	SSL             SSLConfig             `yaml:"ssl"`
-	RemoteExecution RemoteExecutionConfig `yaml:"remote_execution"`
-	Executor        ExecutorConfig        `yaml:"executor"`
-	API             APIConfig             `yaml:"api"`
-	Github          GithubConfig          `yaml:"github"`
 	Org             OrgConfig             `yaml:"org"`
+	Integrations    integrationsConfig    `yaml:"integrations"`
+	Github          GithubConfig          `yaml:"github"`
+	API             APIConfig             `yaml:"api"`
+	Storage         storageConfig         `yaml:"storage"`
+	SSL             SSLConfig             `yaml:"ssl"`
+	Auth            authConfig            `yaml:"auth"`
+	RemoteExecution RemoteExecutionConfig `yaml:"remote_execution"`
+	BuildEventProxy buildEventProxy       `yaml:"build_event_proxy"`
+	App             appConfig             `yaml:"app"`
+	Database        DatabaseConfig        `yaml:"database"`
+	Cache           cacheConfig           `yaml:"cache"`
+	Executor        ExecutorConfig        `yaml:"executor"`
 }
 
 type appConfig struct {
@@ -36,16 +35,16 @@ type appConfig struct {
 	EventsAPIURL              string `yaml:"events_api_url" usage:"Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen."`
 	CacheAPIURL               string `yaml:"cache_api_url" usage:"Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen."`
 	RemoteExecutionAPIURL     string `yaml:"remote_execution_api_url" usage:"Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	NoDefaultUserGroup        bool   `yaml:"no_default_user_group" usage:"Cloud-Only"`
-	CreateGroupPerUser        bool   `yaml:"create_group_per_user" usage:"Cloud-Only"`
-	AddUserToDomainGroup      bool   `yaml:"add_user_to_domain_group" usage:"Cloud-Only"`
-	GRPCOverHTTPPortEnabled   bool   `yaml:"grpc_over_http_port_enabled" usage:"Cloud-Only"`
-	DefaultToDenseMode        bool   `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
+	LogLevel                  string `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}"`
 	GRPCMaxRecvMsgSizeBytes   int    `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
+	GRPCOverHTTPPortEnabled   bool   `yaml:"grpc_over_http_port_enabled" usage:"Cloud-Only"`
+	AddUserToDomainGroup      bool   `yaml:"add_user_to_domain_group" usage:"Cloud-Only"`
+	DefaultToDenseMode        bool   `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
+	CreateGroupPerUser        bool   `yaml:"create_group_per_user" usage:"Cloud-Only"`
 	EnableTargetTracking      bool   `yaml:"enable_target_tracking" usage:"Cloud-Only"`
 	EnableStructuredLogging   bool   `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
 	LogIncludeShortFileName   bool   `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
-	LogLevel                  string `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}"`
+	NoDefaultUserGroup        bool   `yaml:"no_default_user_group" usage:"Cloud-Only"`
 	LogEnableGCPLoggingFormat bool   `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
 }
 
@@ -57,11 +56,11 @@ type buildEventProxy struct {
 type DatabaseConfig struct {
 	DataSource             string `yaml:"data_source" usage:"The SQL database to connect to, specified as a connection string."`
 	ReadReplica            string `yaml:"read_replica" usage:"A secondary, read-only SQL database to connect to, specified as a connection string."`
+	StatsPollInterval      string `yaml:"stats_poll_interval" usage:"How often to poll the DB client for connection stats (default: '5s')."`
 	MaxOpenConns           int    `yaml:"max_open_conns" usage:"The maximum number of open connections to maintain to the db"`
 	MaxIdleConns           int    `yaml:"max_idle_conns" usage:"The maximum number of idle connections to maintain to the db"`
 	ConnMaxLifetimeSeconds int    `yaml:"conn_max_lifetime_seconds" usage:"The maximum lifetime of a connection to the db"`
 	LogQueries             bool   `yaml:"log_queries" usage:"If true, log all queries"`
-	StatsPollInterval      string `yaml:"stats_poll_interval" usage:"How often to poll the DB client for connection stats (default: '5s')."`
 }
 
 type storageConfig struct {
@@ -114,8 +113,8 @@ type DistributedCacheConfig struct {
 	ListenAddr        string   `yaml:"listen_addr" usage:"The address to listen for local BuildBuddy distributed cache traffic on."`
 	RedisTarget       string   `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
 	GroupName         string   `yaml:"group_name" usage:"A unique name for this distributed cache group. ** Enterprise only **"`
-	ReplicationFactor int      `yaml:"replication_factor" usage:"How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **"`
 	Nodes             []string `yaml:"nodes" usage:"The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **"`
+	ReplicationFactor int      `yaml:"replication_factor" usage:"How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **"`
 	ClusterSize       int      `yaml:"cluster_size" usage:"The total number of nodes in this cluster. Required for health checking. ** Enterprise only **"`
 }
 
@@ -126,21 +125,21 @@ type RedisCacheConfig struct {
 
 type cacheConfig struct {
 	Disk             DiskConfig             `yaml:"disk"`
-	GCS              GCSCacheConfig         `yaml:"gcs"`
-	S3               S3CacheConfig          `yaml:"s3"`
-	DistributedCache DistributedCacheConfig `yaml:"distributed_cache"`
-	InMemory         bool                   `yaml:"in_memory" usage:"Whether or not to use the in_memory cache."`
-	MaxSizeBytes     int64                  `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
-	MemcacheTargets  []string               `yaml:"memcache_targets" usage:"Deprecated. Use Redis Target instead."`
 	RedisTarget      string                 `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
+	S3               S3CacheConfig          `yaml:"s3"`
+	GCS              GCSCacheConfig         `yaml:"gcs"`
+	MemcacheTargets  []string               `yaml:"memcache_targets" usage:"Deprecated. Use Redis Target instead."`
 	Redis            RedisCacheConfig       `yaml:"redis"`
+	DistributedCache DistributedCacheConfig `yaml:"distributed_cache"`
+	MaxSizeBytes     int64                  `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
+	InMemory         bool                   `yaml:"in_memory" usage:"Whether or not to use the in_memory cache."`
 }
 
 type authConfig struct {
-	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
-	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
 	JWTKey               string          `yaml:"jwt_key" usage:"The key to use when signing JWT tokens."`
 	APIKeyGroupCacheTTL  string          `yaml:"api_key_group_cache_ttl" usage:"Override for the TTL for API Key to Group caching. Set to '0' to disable cache."`
+	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
+	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
 }
 
 type OauthProvider struct {
@@ -150,39 +149,43 @@ type OauthProvider struct {
 }
 
 type SSLConfig struct {
-	EnableSSL        bool     `yaml:"enable_ssl" usage:"Whether or not to enable SSL/TLS on gRPC connections (gRPCS)."`
-	UseACME          bool     `yaml:"use_acme" usage:"Whether or not to automatically configure SSL certs using ACME. If ACME is enabled, cert_file and key_file should not be set."`
 	CertFile         string   `yaml:"cert_file" usage:"Path to a PEM encoded certificate file to use for TLS if not using ACME."`
 	KeyFile          string   `yaml:"key_file" usage:"Path to a PEM encoded key file to use for TLS if not using ACME."`
 	ClientCACertFile string   `yaml:"client_ca_cert_file" usage:"Path to a PEM encoded certificate authority file used to issue client certificates for mTLS auth."`
 	ClientCAKeyFile  string   `yaml:"client_ca_key_file" usage:"Path to a PEM encoded certificate authority key file used to issue client certificates for mTLS auth."`
-	UpgradeInsecure  bool     `yaml:"upgrade_insecure" usage:"True if http requests should be redirected to https"`
 	HostWhitelist    []string `yaml:"host_whitelist" usage:"Cloud-Only"`
+	EnableSSL        bool     `yaml:"enable_ssl" usage:"Whether or not to enable SSL/TLS on gRPC connections (gRPCS)."`
+	UpgradeInsecure  bool     `yaml:"upgrade_insecure" usage:"True if http requests should be redirected to https"`
+	UseACME          bool     `yaml:"use_acme" usage:"Whether or not to automatically configure SSL certs using ACME. If ACME is enabled, cert_file and key_file should not be set."`
 }
 
 type RemoteExecutionConfig struct {
-	EnableRemoteExec             bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
 	DefaultPoolName              string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
 	RedisTarget                  string `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Required for remote execution. To ease migration, the redis target from the cache config will be used if this value is not specified."`
 	TaskPersistence              string `yaml:"task_persistence" usage:"One of redis|db|dualwrite. Specifies where inflight task information is stored."`
-	DisableRedisListPubSub       bool   `yaml:"disable_redis_list_pubsub" usage:"If true, revert to native redis PubSub."`
+	SharedExecutorPoolGroupID    string `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
 	RedisPubSubPoolSize          int    `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
+	EnableRemoteExec             bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
+	DisableRedisListPubSub       bool   `yaml:"disable_redis_list_pubsub" usage:"If true, revert to native redis PubSub."`
 	RequireExecutorAuthorization bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
+	EnableNonLocalScheduling     bool   `yaml:"enable_non_local_scheduling" usage:"If true, schedulers can make RPCs to other schedulers to enqueue task reservations instead of always talking directly to executors."`
+	EnableUserOwnedExecutors     bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
+	EnableExecutorKeyCreation    bool   `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
 }
 
 type ExecutorConfig struct {
 	AppTarget               string           `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
 	RootDirectory           string           `yaml:"root_directory" usage:"The root directory to use for build files."`
 	LocalCacheDirectory     string           `yaml:"local_cache_directory" usage:"A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result."`
-	LocalCacheSizeBytes     int64            `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
 	DockerSocket            string           `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
-	DockerSiblingContainers bool             `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
-	DockerNetHost           bool             `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
+	APIKey                  string           `yaml:"api_key" usage:"API Key used to authorize the executor with the BuildBuddy app server."`
 	ContainerdSocket        string           `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
 	DockerMountMode         string           `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/"`
 	RunnerPool              RunnerPoolConfig `yaml:"runner_pool"`
+	LocalCacheSizeBytes     int64            `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
+	DockerNetHost           bool             `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
 	EnableWorkStreaming     bool             `yaml:"enable_work_streaming" usage:"Enables executor work streaming (WIP)."`
-	APIKey                  string           `yaml:"api_key" usage:"API Key used to authorize the executor with the BuildBuddy app server."`
+	DockerSiblingContainers bool             `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
 }
 
 type RunnerPoolConfig struct {
@@ -192,16 +195,16 @@ type RunnerPoolConfig struct {
 }
 
 type APIConfig struct {
-	EnableAPI bool   `yaml:"enable_api" usage:"Whether or not to enable the BuildBuddy API."`
 	APIKey    string `yaml:"api_key" usage:"The default API key to use for on-prem enterprise deploys with a single organization/group."`
+	EnableAPI bool   `yaml:"enable_api" usage:"Whether or not to enable the BuildBuddy API."`
 }
 
 type GithubConfig struct {
 	ClientID            string `yaml:"client_id" usage:"The client ID of your GitHub Oauth App. ** Enterprise only **"`
 	ClientSecret        string `yaml:"client_secret" usage:"The client secret of your GitHub Oauth App. ** Enterprise only **"`
 	AccessToken         string `yaml:"access_token" usage:"The GitHub access token used to post GitHub commit statuses. ** Enterprise only **"`
-	StatusPerTestTarget bool   `yaml:"status_per_test_target" usage:"If true, report status per test target. ** Enterprise only **"`
 	StatusNameSuffix    string `yaml:"status_name_suffix" usage:"Suffix to be appended to all reported GitHub status names. Useful for differentiating BuildBuddy deployments. For example: '(dev)' ** Enterprise only **"`
+	StatusPerTestTarget bool   `yaml:"status_per_test_target" usage:"If true, report status per test target. ** Enterprise only **"`
 }
 
 type OrgConfig struct {
@@ -287,7 +290,7 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 		return nil, fmt.Errorf("Config file %s not found", fullConfigPath)
 	}
 
-	fileBytes, err := ioutil.ReadFile(fullConfigPath)
+	fileBytes, err := os.ReadFile(fullConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("Error reading config file: %s", err)
 	}
@@ -306,8 +309,8 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 }
 
 type Configurator struct {
-	fullConfigPath string
 	gc             *generalConfig
+	fullConfigPath string
 }
 
 func NewConfigurator(configFilePath string) (*Configurator, error) {

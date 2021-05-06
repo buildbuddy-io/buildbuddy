@@ -8,10 +8,10 @@ import (
 
 // A terminal 'screen'. Current cursor position, cursor style, and characters
 type screen struct {
+	style    *style
+	screen   [][]node
 	x        int
 	y        int
-	screen   [][]node
-	style    *style
 	maxLines int
 }
 

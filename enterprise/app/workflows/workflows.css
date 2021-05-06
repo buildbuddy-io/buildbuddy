@@ -47,6 +47,14 @@
   margin-bottom: 16px;
 }
 
+.workflows-page .buttons {
+  display: flex;
+}
+
+.workflows-page .buttons > :not(:last-child) {
+  margin-right: 8px;
+}
+
 .workflows-page .workflow-item.container {
   display: flex;
   flex-direction: row;
@@ -206,7 +214,7 @@
   flex-grow: initial;
 
   /* Match button sizing. */
-  width: 62px;
+  width: 64px;
   height: 40px;
   padding: 8px 0;
   box-sizing: border-box;

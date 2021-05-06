@@ -21,13 +21,13 @@ import (
 )
 
 type CacheProxy struct {
-	env                   environment.Env
-	cache                 interfaces.Cache
-	listenAddr            string
-	mu                    *sync.Mutex
-	server                *grpc.Server
-	clients               map[string]dcpb.DistributedCacheClient
-	heartbeatCallback     func(peer string)
+	env               environment.Env
+	cache             interfaces.Cache
+	mu                *sync.Mutex
+	server            *grpc.Server
+	clients           map[string]dcpb.DistributedCacheClient
+	heartbeatCallback func(peer string)
+	listenAddr        string
 	hintedHandoffCallback func(peer, prefix string, d *repb.Digest)
 }
 
@@ -364,11 +364,11 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *r
 }
 
 type streamWriteCloser struct {
+	stream        dcpb.DistributedCache_WriteClient
+	key           *dcpb.Key
 	prefix        string
 	handoffPeer   string
-	key           *dcpb.Key
 	bytesUploaded int64
-	stream        dcpb.DistributedCache_WriteClient
 }
 
 func (wc *streamWriteCloser) Write(data []byte) (int, error) {

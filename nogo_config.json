@@ -19,6 +19,13 @@
       "external/*": "Third party code"
     }
   },
+  "fieldalignment": {
+    "exclude_files": {
+      "tmp/*": "Temp generated files",
+      "external/*": "Third party code",
+			".*\\.pb\\.go": "Auto-generated proto files"
+    }
+  },
   "lostcancel": {
     "exclude_files": {
       "external/*": "Third party code"

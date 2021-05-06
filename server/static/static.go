@@ -86,13 +86,23 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 	for _, provider := range env.GetConfigurator().GetAuthOauthProviders() {
 		issuers = append(issuers, provider.IssuerURL)
 	}
+
+	userOwnedExecutorsEnabled := false
+	executorKeyCreationEnabled := false
+	if reConf := env.GetConfigurator().GetRemoteExecutionConfig(); reConf != nil {
+		userOwnedExecutorsEnabled = reConf.EnableUserOwnedExecutors
+		executorKeyCreationEnabled = reConf.EnableExecutorKeyCreation
+	}
+
 	config := cfgpb.FrontendConfig{
-		Version:               version,
-		ConfiguredIssuers:     issuers,
-		DefaultToDenseMode:    env.GetConfigurator().GetDefaultToDenseMode(),
-		GithubEnabled:         env.GetConfigurator().GetGithubConfig() != nil,
-		AnonymousUsageEnabled: env.GetConfigurator().GetAnonymousUsageEnabled(),
-		TestDashboardEnabled:  env.GetConfigurator().EnableTargetTracking(),
+		Version:                    version,
+		ConfiguredIssuers:          issuers,
+		DefaultToDenseMode:         env.GetConfigurator().GetDefaultToDenseMode(),
+		GithubEnabled:              env.GetConfigurator().GetGithubConfig() != nil,
+		AnonymousUsageEnabled:      env.GetConfigurator().GetAnonymousUsageEnabled(),
+		TestDashboardEnabled:       env.GetConfigurator().EnableTargetTracking(),
+		UserOwnedExecutorsEnabled:  userOwnedExecutorsEnabled,
+		ExecutorKeyCreationEnabled: executorKeyCreationEnabled,
 	}
 	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendTemplateData{
 		Config:           &config,

@@ -35,14 +35,14 @@ type Attachment struct {
 	TitleLink    *string   `json:"title_link"`
 	Text         *string   `json:"text"`
 	ImageUrl     *string   `json:"image_url"`
-	Fields       []*Field  `json:"fields"`
+	CallbackID   *string   `json:"callback_id"`
 	Footer       *string   `json:"footer"`
 	FooterIcon   *string   `json:"footer_icon"`
 	Timestamp    *int64    `json:"ts"`
 	MarkdownIn   *[]string `json:"mrkdwn_in"`
-	Actions      []*Action `json:"actions"`
-	CallbackID   *string   `json:"callback_id"`
 	ThumbnailUrl *string   `json:"thumb_url"`
+	Actions      []*Action `json:"actions"`
+	Fields       []*Field  `json:"fields"`
 }
 
 type Payload struct {
@@ -70,9 +70,9 @@ func (attachment *Attachment) AddAction(action Action) *Attachment {
 }
 
 type SlackWebhook struct {
+	client        *http.Client
 	callbackURL   string
 	buildBuddyURL string
-	client        *http.Client
 }
 
 func NewSlackWebhook(callbackURL string, bbURL string) *SlackWebhook {

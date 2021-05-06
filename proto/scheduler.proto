@@ -76,6 +76,7 @@ message SchedulingMetadata {
   string os = 2;
   string arch = 3;
   string pool = 4;
+  string group_id = 5;
 }
 
 message ScheduleTaskRequest {

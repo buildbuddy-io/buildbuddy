@@ -244,9 +244,9 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 }
 
 type dirStack struct {
-	lock     sync.Mutex
-	dirs     []*repb.Directory
 	dirSizes map[*repb.Directory]int64
+	dirs     []*repb.Directory
+	lock     sync.Mutex
 }
 
 func NewDirStack(token string) (*dirStack, error) {

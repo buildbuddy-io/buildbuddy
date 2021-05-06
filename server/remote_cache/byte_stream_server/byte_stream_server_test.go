@@ -75,9 +75,9 @@ func TestRPCRead(t *testing.T) {
 		return rstr
 	}
 	cases := []struct {
+		wantError          error
 		instanceNameDigest *digest.InstanceNameDigest
 		wantData           string
-		wantError          error
 	}{
 		{ // Simple Read
 			instanceNameDigest: digest.NewInstanceNameDigest(&repb.Digest{

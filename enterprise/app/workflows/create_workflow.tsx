@@ -1,11 +1,7 @@
 import React from "react";
-import { from, Subscription } from "rxjs";
+import alertService from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/auth_service";
 import Button from "../../../app/components/button/button";
-import Input from "../../../app/components/input/input";
-import router from "../../../app/router/router";
-import rpcService from "../../../app/service/rpc_service";
-import { BuildBuddyError } from "../../../app/util/errors";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -13,7 +9,11 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
+import Input from "../../../app/components/input/input";
 import Modal from "../../../app/components/modal/modal";
+import errorService from "../../../app/errors/error_service";
+import router from "../../../app/router/router";
+import rpcService from "../../../app/service/rpc_service";
 import { workflow } from "../../../proto/workflow_ts_proto";
 
 export type CreateWorkflowComponentProps = {
@@ -25,7 +25,6 @@ type State = {
   submitting: boolean;
   submitted: boolean;
   response?: workflow.CreateWorkflowResponse;
-  error?: BuildBuddyError | null;
 };
 
 export default class CreateWorkflowComponent extends React.Component<CreateWorkflowComponentProps, State> {
@@ -35,22 +34,29 @@ export default class CreateWorkflowComponent extends React.Component<CreateWorkf
     request: new workflow.CreateWorkflowRequest({ gitRepo: new workflow.CreateWorkflowRequest.GitRepo() }),
   };
 
-  private createWorkflowSubscription?: Subscription;
-
   private onChange(object: Record<string, any>, key: string, e: React.ChangeEvent<HTMLInputElement>) {
     object[key] = e.target.value;
-    this.setState({ request: new workflow.CreateWorkflowRequest({ ...this.state.request }), error: null });
+    this.setState({ request: new workflow.CreateWorkflowRequest({ ...this.state.request }) });
   }
 
   private onSubmit(e: React.FormEvent) {
     e.preventDefault();
     this.setState({ submitting: true });
-    this.createWorkflowSubscription = from<Promise<workflow.CreateWorkflowResponse>>(
-      rpcService.service.createWorkflow(this.state.request)
-    ).subscribe(
-      (response) => this.setState({ submitted: true, submitting: false, response }),
-      (error) => this.setState({ submitted: false, submitting: false, error: BuildBuddyError.parse(error) })
-    );
+    rpcService.service
+      .createWorkflow(this.state.request)
+      .then((response) => {
+        if (!response.webhookRegistered) {
+          // Show the "copy webhook URL" modal if we didn't auto-register it.
+          this.setState({ submitted: true, submitting: false, response });
+          return;
+        }
+        alertService.success("Repo linked successfully");
+        router.navigateToWorkflows();
+      })
+      .catch((error) => {
+        errorService.handleError(error);
+        this.setState({ submitted: false, submitting: false });
+      });
   }
 
   private onDialogClosed() {
@@ -58,17 +64,7 @@ export default class CreateWorkflowComponent extends React.Component<CreateWorkf
   }
 
   componentDidMount() {
-    document.title = "New workflow | BuildBuddy";
-  }
-
-  componentDidUpdate(prevProps: CreateWorkflowComponentProps) {
-    if (this.props.user !== prevProps.user) {
-      this.createWorkflowSubscription?.unsubscribe();
-    }
-  }
-
-  componentWillUnmount() {
-    this.createWorkflowSubscription?.unsubscribe();
+    document.title = "Link repository | BuildBuddy";
   }
 
   private onClickWorkflowBreadcrumb(e: React.MouseEvent) {
@@ -77,7 +73,7 @@ export default class CreateWorkflowComponent extends React.Component<CreateWorkf
   }
 
   render() {
-    const { response, error, submitted, submitting } = this.state;
+    const { response, submitted, submitting } = this.state;
 
     return (
       <div className="create-workflow-page">
@@ -89,9 +85,9 @@ export default class CreateWorkflowComponent extends React.Component<CreateWorkf
                   Workflows
                 </a>
               </span>
-              <span>Add repository</span>
+              <span>Link repository</span>
             </div>
-            <div className="title">Add repository</div>
+            <div className="title">Link repository</div>
           </div>
         </div>
         <div className="content">
@@ -105,7 +101,7 @@ export default class CreateWorkflowComponent extends React.Component<CreateWorkf
                   onChange={this.onChange.bind(this, this.state.request.gitRepo, "repoUrl")}
                   placeholder="https://github.com/acme-inc/app"
                 />
-                <div className="explanation">GitHub, Bitbucket, and GitLab are supported.</div>
+                <div className="explanation">GitHub and Bitbucket are supported.</div>
               </div>
               <div className="form-row">
                 <label htmlFor="gitRepo.accessToken">Repository access token</label>
@@ -124,7 +120,6 @@ export default class CreateWorkflowComponent extends React.Component<CreateWorkf
               <Button type="submit" disabled={submitting || submitted}>
                 Create
               </Button>
-              {error && <div className="error">{error.message}</div>}
             </form>
           </div>
         </div>

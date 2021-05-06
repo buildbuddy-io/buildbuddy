@@ -34,17 +34,16 @@ func (cc *executionClientConfig) DisableStreaming() bool {
 }
 
 type RealEnv struct {
-	configurator  *config.Configurator
-	healthChecker interfaces.HealthChecker
-
-	dbHandle                         *db.DBHandle
+	schedulerService                 interfaces.SchedulerService
+	healthChecker                    interfaces.HealthChecker
+	workflowService                  interfaces.WorkflowService
 	staticFilesystem                 fs.FS
 	appFilesystem                    fs.FS
 	blobstore                        interfaces.Blobstore
 	invocationDB                     interfaces.InvocationDB
 	authenticator                    interfaces.Authenticator
-	webhooks                         []interfaces.Webhook
-	buildEventProxyClients           []pepb.PublishBuildEventClient
+	repoDownloader                   interfaces.RepoDownloader
+	executionService                 interfaces.ExecutionService
 	cache                            interfaces.Cache
 	userDB                           interfaces.UserDB
 	authDB                           interfaces.AuthDB
@@ -57,18 +56,18 @@ type RealEnv struct {
 	schedulerClient                  scpb.SchedulerClient
 	remoteExecutionClient            repb.ExecutionClient
 	contentAddressableStorageClient  repb.ContentAddressableStorageClient
-	executionClients                 map[string]*executionClientConfig
+	metricsCollector                 interfaces.MetricsCollector
 	APIService                       interfaces.ApiService
 	fileCache                        interfaces.FileCache
 	remoteExecutionService           interfaces.RemoteExecutionService
-	schedulerService                 interfaces.SchedulerService
-	metricsCollector                 interfaces.MetricsCollector
-	executionService                 interfaces.ExecutionService
-	repoDownloader                   interfaces.RepoDownloader
-	workflowService                  interfaces.WorkflowService
+	configurator                     *config.Configurator
+	executionClients                 map[string]*executionClientConfig
 	cacheRedisClient                 *redis.Client
 	remoteExecutionRedisClient       *redis.Client
+	dbHandle                         *db.DBHandle
 	remoteExecutionRedisPubSubClient *redis.Client
+	buildEventProxyClients           []pepb.PublishBuildEventClient
+	webhooks                         []interfaces.Webhook
 }
 
 func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {

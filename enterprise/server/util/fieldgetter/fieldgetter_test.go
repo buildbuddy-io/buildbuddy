@@ -8,11 +8,11 @@ import (
 )
 
 type Parent struct {
-	Str       string
-	Bool      bool
 	Child     *Child
+	Str       string
 	StrList   []string
 	ChildList []*Child
+	Bool      bool
 }
 
 type Child struct {

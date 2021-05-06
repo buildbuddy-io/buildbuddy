@@ -38,8 +38,8 @@ type S3Cache struct {
 	bucket     *string
 	downloader *s3manager.Downloader
 	uploader   *s3manager.Uploader
-	ttlInDays  int64
 	prefix     string
+	ttlInDays  int64
 }
 
 func NewS3Cache(awsConfig *config.S3CacheConfig) (*S3Cache, error) {
