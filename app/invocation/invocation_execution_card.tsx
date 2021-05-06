@@ -77,54 +77,6 @@ export default class ExecutionCardComponent extends React.Component {
     }, 3000);
   }
 
-  // fetchActions() {
-  //   let profileFile = this.props.model.buildToolLogs?.log.find((log: any) => log.uri);
-
-  //   if (!profileFile?.uri) {
-  //     const hasBuildToolLogs = this.props.model.buildToolLogs;
-  //     this.setState({
-  //       ...this.state,
-  //       buildInProgress: !hasBuildToolLogs,
-  //       isMissingProfile: hasBuildToolLogs,
-  //     });
-  //     return;
-  //   }
-
-  //   if (!profileFile?.uri.startsWith("bytestream://")) {
-  //     this.setState({
-  //       ...this.state,
-  //       timingEnabled: false,
-  //       buildInProgress: false,
-  //     });
-  //     return;
-  //   }
-
-  //   if (this.state.profile) {
-  //     // Already fetched
-  //     return;
-  //   }
-
-  //   let compressionOption = this.props.model.optionsMap.get("json_trace_compression");
-  //   var isGzipped = compressionOption === undefined ? profileFile.name?.endsWith(".gz") : compressionOption == "1";
-
-  //   rpcService
-  //     .fetchBytestreamFile(profileFile?.uri, this.props.model.getId(), isGzipped ? "arraybuffer" : "json")
-  //     .then((contents: any) => {
-  //       if (isGzipped) {
-  //         contents = JSON.parse(pako.inflate(contents, { to: "string" })) as Profile;
-  //       }
-  //       this.updateProfile(contents);
-  //     })
-  //     .catch(() => {
-  //       console.error("Error loading bytestream timing profile!");
-  //       this.setState({
-  //         ...this.state,
-  //         timingLoaded: false,
-  //         error: "Error loading timing profile. Make sure your cache is correctly configured.",
-  //       });
-  //     });
-  // }
-
   subtractTimestamp(
     timestampA: { nanos?: number | Long; seconds?: number | Long },
     timestampB: { nanos?: number | Long; seconds?: number | Long }

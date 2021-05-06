@@ -24,7 +24,8 @@ export type TabId =
   | "cache"
   | "raw"
   | "execution"
-  | "fetches";
+  | "fetches"
+  | "action";
 
 export function getTabId(hash: string): TabId {
   return (hash.substring(1) as TabId) || "all";
