@@ -23,6 +23,7 @@ import RawLogsCardComponent from "./invocation_raw_logs_card";
 import InvocationTabsComponent, { getActiveTab } from "./invocation_tabs";
 import TimingCardComponent from "./invocation_timing_card";
 import ExecutionCardComponent from "./invocation_execution_card";
+import ActionCardComponent from "./invocation_action_card";
 import TargetsComponent from "./invocation_targets";
 import { BuildBuddyError } from "../util/errors";
 
