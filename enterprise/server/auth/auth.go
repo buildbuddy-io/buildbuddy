@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -17,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -97,10 +97,11 @@ func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
 
 type Claims struct {
 	jwt.StandardClaims
-	UserID        string                   `json:"user_id"`
-	GroupID       string                   `json:"group_id"`
-	AllowedGroups []string                 `json:"allowed_groups"`
-	Capabilities  []akpb.ApiKey_Capability `json:"capabilities"`
+	UserID                 string                   `json:"user_id"`
+	GroupID                string                   `json:"group_id"`
+	AllowedGroups          []string                 `json:"allowed_groups"`
+	Capabilities           []akpb.ApiKey_Capability `json:"capabilities"`
+	UseGroupOwnedExecutors bool                     `json:"use_group_owned_executors,omitempty"`
 }
 
 func (c *Claims) GetUserID() string {
@@ -133,26 +134,17 @@ func (c *Claims) HasCapability(cap akpb.ApiKey_Capability) bool {
 	return false
 }
 
-type apiKeyGroup struct {
-	GroupID      string
-	Capabilities int32
+func (c *Claims) GetUseGroupOwnedExecutors() bool {
+	return c.UseGroupOwnedExecutors
 }
 
-func assembleJWT(ctx context.Context, userID, groupID string, allowedGroups []string, caps int32) (string, error) {
+func assembleJWT(ctx context.Context, claims *Claims) (string, error) {
 	expirationTime := time.Now().Add(defaultBuildBuddyJWTDuration)
 	deadline, ok := ctx.Deadline()
 	if ok {
 		expirationTime = deadline
 	}
-	claims := &Claims{
-		UserID:        userID,
-		GroupID:       groupID,
-		AllowedGroups: allowedGroups,
-		Capabilities:  capabilities.FromInt(caps),
-		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: expirationTime.Unix(),
-		},
-	}
+	claims.StandardClaims = jwt.StandardClaims{ExpiresAt: expirationTime.Unix()}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(jwtKey)
 	return tokenString, err
@@ -307,7 +299,7 @@ func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bo
 	entry, ok := v.(*apiKeyGroupCacheEntry)
 	if !ok {
 		// Should never happen.
-		log.Printf("Data in cache was of wrong type, got type %T", v)
+		log.Errorf("Data in cache was of wrong type, got type %T", v)
 		return nil, false
 	}
 	if time.Now().After(entry.expiresAfter) {
@@ -467,25 +459,27 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(apiKey string) (interf
 }
 
 func authenticatedUserTokenString(ctx context.Context, u *tables.User, akg interfaces.APIKeyGroup) (string, error) {
-	userID := ""
-	groupID := ""
-	allowedGroups := make([]string, 0)
-	capabilities := int32(0)
-
 	if u != nil {
-		userID = u.UserID
+		var allowedGroups []string
 		for _, g := range u.Groups {
 			allowedGroups = append(allowedGroups, g.GroupID)
 		}
+		claims := &Claims{
+			UserID:        u.UserID,
+			AllowedGroups: allowedGroups,
+		}
+		return assembleJWT(ctx, claims)
 	} else if akg != nil {
-		groupID = akg.GetGroupID()
-		allowedGroups = append(allowedGroups, akg.GetGroupID())
-		capabilities = akg.GetCapabilities()
-	} else {
-		return "", status.FailedPreconditionErrorf("No user/group to generate JWT for")
+		claims := &Claims{
+			GroupID:                akg.GetGroupID(),
+			AllowedGroups:          []string{akg.GetGroupID()},
+			Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
+			UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
+		}
+		return assembleJWT(ctx, claims)
 	}
 
-	return assembleJWT(ctx, userID, groupID, allowedGroups, capabilities)
+	return "", status.FailedPreconditionErrorf("No user/group to generate JWT for")
 }
 
 func authContextWithError(ctx context.Context, err error) context.Context {

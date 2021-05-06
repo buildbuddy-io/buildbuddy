@@ -44,10 +44,11 @@ var (
 
 type TestUser struct {
 	jwt.StandardClaims
-	UserID        string                   `json:"user_id"`
-	GroupID       string                   `json:"group_id"`
-	AllowedGroups []string                 `json:"allowed_groups"`
-	Capabilities  []akpb.ApiKey_Capability `json:"capabilities"`
+	UserID                 string                   `json:"user_id"`
+	GroupID                string                   `json:"group_id"`
+	AllowedGroups          []string                 `json:"allowed_groups"`
+	Capabilities           []akpb.ApiKey_Capability `json:"capabilities"`
+	UseGroupOwnedExecutors bool                     `json:"use_group_owned_executors,omitempty"`
 }
 
 func (c *TestUser) GetUserID() string          { return c.UserID }
@@ -61,6 +62,9 @@ func (c *TestUser) HasCapability(cap akpb.ApiKey_Capability) bool {
 		}
 	}
 	return false
+}
+func (c *TestUser) GetUseGroupOwnedExecutors() bool {
+	return c.UseGroupOwnedExecutors
 }
 
 // TestUsers creates a map of test users from arguments of the form:
