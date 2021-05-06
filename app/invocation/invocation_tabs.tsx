@@ -35,7 +35,7 @@ export function getActiveTab({ hash, role, denseMode }: TabsContext): TabId {
 
   if (!denseMode) return "all";
 
-  return role === CI_RUNNER_ROLE ? "all" : "targets";
+  return role === CI_RUNNER_ROLE ? "commands" : "targets";
 }
 
 export default class InvocationTabsComponent extends React.Component<InvocationTabsProps> {
@@ -52,7 +52,7 @@ export default class InvocationTabsComponent extends React.Component<InvocationT
 
     return (
       <div className="tabs">
-        {(!this.props.denseMode || !isBazelInvocation) && this.renderTab("all", { href: "#", label: "All" })}
+        {!this.props.denseMode && this.renderTab("all", { href: "#", label: "All" })}
         {isBazelInvocation && this.renderTab("targets", { label: "Targets" })}
         {!isBazelInvocation && this.renderTab("commands", { label: "Commands" })}
         {this.renderTab("log", { label: "Logs" })}
