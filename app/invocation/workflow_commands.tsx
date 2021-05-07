@@ -21,16 +21,13 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
     const failed: BazelCommandResult[] = [];
     const notRun: BazelCommandResult[] = [];
 
-    let prevTimeMillis = Number(this.props.model.started.startTimeMillis);
     for (const invocation of configuredEvent.invocation) {
       const completedEvent = completedEventsById.get(invocation.invocationId);
       if (!completedEvent) {
         notRun.push({ invocation });
         continue;
       }
-      const curTimeMillis = Number(completedEvent.finishTimeMillis);
-      const durationMillis = curTimeMillis - prevTimeMillis;
-      prevTimeMillis = curTimeMillis;
+      const durationMillis = Number(completedEvent.durationMillis);
 
       const result = { invocation, durationMillis };
       if (completedEvent.exitCode === 0) {
