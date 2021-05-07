@@ -533,7 +533,7 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
 				ExitCode:        int32(exitCode),
 				StartTimeMillis: int64(float64(cmdStartTime.UnixNano()) / float64(time.Millisecond)),
-				DurationMillis:  int64(float64(time.Now().UnixNano()) / float64(time.Millisecond)),
+				DurationMillis:  int64(float64(time.Since(cmdStartTime)) / float64(time.Millisecond)),
 			}},
 		}
 		if err := bep.Publish(completedEvent); err != nil {
