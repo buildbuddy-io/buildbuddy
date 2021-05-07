@@ -8,6 +8,7 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
+import capabilities from "../../../app/capabilities/capabilities";
 import TextInput from "../../../app/components/input/input";
 import Modal from "../../../app/components/modal/modal";
 import errorService from "../../../app/errors/error_service";
@@ -140,7 +141,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
         request: new api_key.UpdateApiKeyRequest({
           id: apiKey.id,
           label: apiKey.label,
-          capability: apiKey.capability,
+          capability: [...apiKey.capability],
         }),
       },
     });
@@ -210,8 +211,25 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange(e.target.name, e.target.value);
   }
 
-  private onChangeReadOnly(onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>) {
-    onChange("capability", e.target.checked ? [] : [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY]);
+  private onChangeCapability<T extends ApiKeyFields>(
+      request: T,
+      capability: api_key.ApiKey.Capability,
+      enabled: boolean,
+      onChange: (name: string, value: any) => any) {
+    if (enabled) {
+      request.capability.push(capability)
+    } else {
+      request.capability = request.capability.filter(cap =>  cap !== capability)
+    }
+    onChange("capability", request.capability)
+  }
+
+  private onChangeReadOnly<T extends ApiKeyFields>(request: T, onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>) {
+    this.onChangeCapability(request, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY, !e.target.checked, onChange)
+  }
+
+  private onChangeRegisterExecutor<T extends ApiKeyFields>(request: T, onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>) {
+      this.onChangeCapability(request, api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY, e.target.checked, onChange)
   }
 
   private renderModal<T extends ApiKeyFields>({
@@ -249,7 +267,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 <label className="checkbox-row">
                   <input
                     type="checkbox"
-                    onChange={this.onChangeReadOnly.bind(this, onChange)}
+                    onChange={this.onChangeReadOnly.bind(this, request, onChange)}
                     checked={isReadOnly(request)}
                   />
                   <span>
@@ -257,6 +275,20 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   </span>
                 </label>
               </div>
+              {capabilities.executorKeyCreation && (
+              <div className="field-container">
+                <label className="checkbox-row">
+                  <input
+                      type="checkbox"
+                      onChange={this.onChangeRegisterExecutor.bind(this, request, onChange)}
+                      checked={hasCapability(request, api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY)}
+                  />
+                  <span>
+                    Executor key <span className="field-description">(for self-hosted executors)</span>
+                  </span>
+                </label>
+              </div>
+              )}
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
@@ -330,7 +362,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 )}
               </div>
               <div className="api-key-capabilities">
-                <span>{isReadOnly(key) ? <>Read-only</> : <>Read+Write</>}</span>
+                <span>{describeCapabilities(key)}</span>
               </div>
               <div className="api-key-value">
                 <img src="/image/key.svg" />
@@ -390,8 +422,18 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   }
 }
 
-function isReadOnly<T extends ApiKeyFields>(apiKey?: T | null) {
-  return apiKey?.capability
-    ? !apiKey.capability.some((capability) => capability === api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY)
-    : false;
+function hasCapability<T extends ApiKeyFields>(apiKey: T | null, capability: api_key.ApiKey.Capability) {
+  return Boolean(apiKey?.capability?.some((existingCapability) => existingCapability === capability))
+}
+
+function isReadOnly<T extends ApiKeyFields>(apiKey: T | null) {
+  return !hasCapability(apiKey, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY)
+}
+
+function describeCapabilities<T extends ApiKeyFields>(apiKey: T | null) {
+  let capabilities = isReadOnly(apiKey) ? "Read-only" : "Read+Write"
+  if (hasCapability(apiKey, api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY)) {
+     capabilities += "+Executor"
+  }
+  return capabilities
 }

@@ -88,18 +88,21 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 	}
 
 	userOwnedExecutorsEnabled := false
+	executorKeyCreationEnabled := false
 	if reConf := env.GetConfigurator().GetRemoteExecutionConfig(); reConf != nil {
 		userOwnedExecutorsEnabled = reConf.EnableUserOwnedExecutors
+		executorKeyCreationEnabled = reConf.EnableExecutorKeyCreation
 	}
 
 	config := cfgpb.FrontendConfig{
-		Version:                   version,
-		ConfiguredIssuers:         issuers,
-		DefaultToDenseMode:        env.GetConfigurator().GetDefaultToDenseMode(),
-		GithubEnabled:             env.GetConfigurator().GetGithubConfig() != nil,
-		AnonymousUsageEnabled:     env.GetConfigurator().GetAnonymousUsageEnabled(),
-		TestDashboardEnabled:      env.GetConfigurator().EnableTargetTracking(),
-		UserOwnedExecutorsEnabled: userOwnedExecutorsEnabled,
+		Version:                    version,
+		ConfiguredIssuers:          issuers,
+		DefaultToDenseMode:         env.GetConfigurator().GetDefaultToDenseMode(),
+		GithubEnabled:              env.GetConfigurator().GetGithubConfig() != nil,
+		AnonymousUsageEnabled:      env.GetConfigurator().GetAnonymousUsageEnabled(),
+		TestDashboardEnabled:       env.GetConfigurator().EnableTargetTracking(),
+		UserOwnedExecutorsEnabled:  userOwnedExecutorsEnabled,
+		ExecutorKeyCreationEnabled: executorKeyCreationEnabled,
 	}
 	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendTemplateData{
 		Config:           &config,

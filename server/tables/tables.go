@@ -11,10 +11,6 @@ import (
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
-const (
-	mySQLDialect = "mysql"
-)
-
 type tableDescriptor struct {
 	table interface{}
 	// 2-letter table prefix
@@ -345,7 +341,7 @@ type ExecutionNode struct {
 	Host              string `gorm:"primaryKey"`
 	Pool              string
 	SchedulerHostPort string
-	GroupID           string
+	GroupID           string `gorm:"primaryKey;default:''"`
 	Constraints       string
 	Arch              string
 	Model
@@ -518,6 +514,15 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			}
 			return nil
 		})
+	}
+
+	executorsTable := (&ExecutionNode{}).TableName()
+	// If the table doesn't have group_id column yet, drop the whole table so that GORM re-creates it with a new
+	// primary key that includes group_id.
+	if m.HasTable(executorsTable) && !m.HasColumn(&ExecutionNode{}, "group_id") {
+		if err := m.DropTable(executorsTable); err != nil {
+			return nil, err
+		}
 	}
 
 	return postMigrate, nil
