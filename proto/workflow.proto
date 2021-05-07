@@ -139,6 +139,9 @@ message ExecuteWorkflowRequest {
 message ExecuteWorkflowResponse {
   // The response context.
   context.ResponseContext response_context = 1;
+
+  // The invocation ID of the workflow execution.
+  string invocation_id = 2;
 }
 
 enum GitProvider {
