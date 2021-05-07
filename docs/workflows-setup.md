@@ -33,7 +33,7 @@ GitHub, which you can see on the repo's home page or in pull request branches.
 
 ## Configuring your workflow
 
-To learn how to change the default configuration, see [workflows configuration](workflows-configuration).
+To learn how to change the default configuration, see [workflows configuration](workflows-config.md).
 
 ## Setting up branch protection rules
 

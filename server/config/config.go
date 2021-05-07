@@ -170,6 +170,7 @@ type RemoteExecutionConfig struct {
 	RequireExecutorAuthorization bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
 	EnableNonLocalScheduling     bool   `yaml:"enable_non_local_scheduling" usage:"If true, schedulers can make RPCs to other schedulers to enqueue task reservations instead of always talking directly to executors."`
 	EnableUserOwnedExecutors     bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
+	EnableExecutorKeyCreation    bool   `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
 }
 
 type ExecutorConfig struct {
