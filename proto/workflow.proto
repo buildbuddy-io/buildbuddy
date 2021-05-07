@@ -140,7 +140,9 @@ message ExecuteWorkflowResponse {
   // The response context.
   context.ResponseContext response_context = 1;
 
-  // The invocation ID of the workflow execution.
+  // The invocation ID of the workflow execution. This invocation will not exist
+  // in the DB until the CI runner executes and kicks off the invocation, so
+  // clients may need to poll the API to check for existence.
   string invocation_id = 2;
 }
 
