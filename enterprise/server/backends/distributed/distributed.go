@@ -349,17 +349,18 @@ func (c *Cache) getBackfillOrders(d *repb.Digest, ps *peerset.PeerSet) []*backfi
 // Values found on a non-primary replica will be backfilled to the primary.
 func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	ps := c.readPeers(d)
-	defer func() {
+	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(d, ps)); err != nil {
 			log.Debugf("Error backfilling peers: %s", err)
 		}
-	}()
+	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		exists, err := c.remoteContains(ctx, peer, c.prefix, d)
 		if err == nil {
 			if exists {
 				log.Debugf("Distributed(%s) Contains(%q) found on peer %q", c.config.ListenAddr, d, peer)
+				backfill()
 				return exists, err
 			}
 			log.Debugf("Distributed(%s) Contains(%q) not found on peer %q (err: %+v)", c.config.ListenAddr, d, peer, err)
@@ -482,16 +483,17 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 // Values found on a non-primary replica will be backfilled to the primary.
 func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	ps := c.readPeers(d)
-	defer func() {
+	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(d, ps)); err != nil {
 			log.Debugf("Error backfilling peers: %s", err)
 		}
-	}()
+	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		r, err := c.remoteReader(ctx, peer, c.prefix, d, offset)
 		if err == nil {
 			log.Debugf("Distributed(%s) Reader(%q) found on peer %s", c.config.ListenAddr, d, peer)
+			backfill()
 			return r, err
 		}
 		if status.IsNotFoundError(err) {
