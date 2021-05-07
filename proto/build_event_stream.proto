@@ -228,6 +228,8 @@ message BuildEventId {
     ConvenienceSymlinksIdentifiedId convenience_symlinks_identified = 25;
 
     // BUILDBUDDY EVENTS BELOW
+    // Starting at field #1000 to avoid conflicting with potential future
+    // additions to Bazel's build event protocol.
 
     WorkflowConfiguredId workflow_configured = 1000;
     WorkflowCommandCompletedId workflow_command_completed = 1001;
@@ -812,8 +814,11 @@ message WorkflowCommandCompleted {
   // this value is equal to 0.
   int32 exit_code = 1;
 
-  // Time in milliseconds since the epoch.
-  int64 finish_time_millis = 2;
+  // Start time of the workflow command, in milliseconds since epoch.
+  int64 start_time_millis = 2;
+
+  // How long it took for the workflow to complete, in milliseconds.
+  int64 duration_millis = 3;
 }
 
 // Message describing a build event. Events will have an identifier that
@@ -850,7 +855,9 @@ message BuildEvent {
     BuildMetadata build_metadata = 26;
     ConvenienceSymlinksIdentified convenience_symlinks_identified = 27;
 
-    // BUILDBUDDY-SPECIFIC EVENTS BELOW
+    // BUILDBUDDY-SPECIFIC EVENTS BELOW.
+    // Starting at field #1000 to avoid conflicting with potential future
+    // additions to the Bazel's build event protocol.
 
     WorkflowConfigured workflow_configured = 1000;
     WorkflowCommandCompleted workflow_command_completed = 1001;
