@@ -11,11 +11,6 @@ import (
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
-const (
-	sqliteDialect = "sqlite"
-	mySQLDialect  = "mysql"
-)
-
 type tableDescriptor struct {
 	table interface{}
 	// 2-letter table prefix
