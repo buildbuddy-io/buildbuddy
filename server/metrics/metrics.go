@@ -84,7 +84,7 @@ const (
 
 	/// Status of the recycle runner request: `hit` if the executor assigned a
 	/// recycled runner to the action; `miss` otherwise.
-	RecycleRunnerRequestStatus = "status"
+	RecycleRunnerRequestStatusLabel = "status"
 )
 
 const (
@@ -414,7 +414,7 @@ var (
 		Name:      "recycle_runner_requests",
 		Help:      "Number of execution requests with runner recycling enabled (via the platform property `recycle-runner=true`).",
 	}, []string{
-		RecycleRunnerRequestStatus,
+		RecycleRunnerRequestStatusLabel,
 	})
 
 	RunnerPoolCount = promauto.NewGauge(prometheus.GaugeOpts{
