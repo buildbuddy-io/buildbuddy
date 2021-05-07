@@ -503,8 +503,10 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 	defer stopFlushingProgress()
 
 	for i, bazelCmd := range ar.action.BazelCommands {
-		if i >= len(wfc.Invocation) {
-			log.Fatalf("No invocation metadata generated for the bazel_commands[%d]; this should never happen", i)
+		cmdStartTime := time.Now()
+
+		if i >= len(wfc.GetInvocation()) {
+			return status.InternalErrorf("No invocation metadata generated for bazel_commands[%d]; this should never happen", i)
 		}
 		iid := wfc.GetInvocation()[i].GetInvocationId()
 		args, err := bazelArgs(bazelCmd)
@@ -529,8 +531,9 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 				InvocationId: iid,
 			}}},
 			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
-				ExitCode:         int32(exitCode),
-				FinishTimeMillis: int64(float64(time.Now().UnixNano()) / float64(time.Millisecond)),
+				ExitCode:        int32(exitCode),
+				StartTimeMillis: int64(float64(cmdStartTime.UnixNano()) / float64(time.Millisecond)),
+				DurationMillis:  int64(float64(time.Now().UnixNano()) / float64(time.Millisecond)),
 			}},
 		}
 		if err := bep.Publish(completedEvent); err != nil {
