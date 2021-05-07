@@ -32,7 +32,6 @@ import (
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	githubapi "github.com/google/go-github/github"
-	"github.com/google/uuid"
 	guuid "github.com/google/uuid"
 )
 
@@ -445,7 +444,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			{Name: "REPO_TOKEN", Value: wf.AccessToken},
 		}...)
 	}
-	invocationID, err := uuid.NewRandom()
+	invocationID, err := guuid.NewRandom()
 	if err != nil {
 		return nil, "", status.UnknownErrorf("Failed to generate invocation ID: %s", err.Error())
 	}
