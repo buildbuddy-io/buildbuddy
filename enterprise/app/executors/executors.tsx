@@ -45,8 +45,11 @@ export default class ExecutorsComponent extends React.Component<Props> {
   }
 
   fetch() {
+    if (!this.props.user || !this.props.user.selectedGroup) return
+
     try {
       let request = new scheduler.GetExecutionNodesRequest();
+      request.groupId = this.props.user.selectedGroup.id
 
       this.setState({ ...this.state, loading: true });
       rpcService.service.getExecutionNodes(request).then((response) => {
