@@ -40,6 +40,7 @@ type CacheConfig struct {
 }
 
 type hintedHandoffOrder struct {
+	ctx    context.Context
 	d      *repb.Digest
 	prefix string
 }
@@ -139,13 +140,14 @@ func (c *Cache) recvHeartbeatCallback(peer string) {
 	go c.handleHintedHandoffs(peer)
 }
 
-func (c *Cache) recvHintedHandoffCallback(peer, prefix string, d *repb.Digest) {
+func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer, prefix string, d *repb.Digest) {
 	if _, ok := c.hintedHandoffsByPeer[peer]; !ok {
 		// If this is the first hinted handoff for this peer we've
 		// received, then initialize the channel.
 		c.hintedHandoffsByPeer[peer] = make(chan *hintedHandoffOrder, maxHintedHandoffsPerPeer)
 	}
 	order := &hintedHandoffOrder{
+		ctx:    ctx,
 		prefix: prefix,
 		d:      d,
 	}
@@ -162,10 +164,11 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 	for {
 		select {
 		case handoffOrder := <-c.hintedHandoffsByPeer[peer]:
-			err := c.backfill(context.Background(), handoffOrder.d, c.config.ListenAddr, handoffOrder.prefix, peer)
+			err := c.copyFile(handoffOrder.ctx, handoffOrder.d, c.config.ListenAddr, handoffOrder.prefix, peer)
 			if err != nil {
 				log.Warningf("%q: unable to complete hinted handoff to peer: %q: %s", c.config.ListenAddr, peer, err)
 			}
+			log.Debugf("%q: completed hinted handoff to peer: %q: %s", c.config.ListenAddr, peer, err)
 		default:
 			// read was unsuccessful -- no more handoffOrders to process.
 			return
@@ -277,11 +280,10 @@ func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer, prefix stri
 	return c.cacheProxy.RemoteWriter(ctx, peer, handoffPeer, prefix, d)
 }
 
-func (c *Cache) backfill(ctx context.Context, d *repb.Digest, source, prefix, dest string) error {
+func (c *Cache) copyFile(ctx context.Context, d *repb.Digest, source, prefix, dest string) error {
 	if exists, err := c.remoteContains(ctx, dest, prefix, d); err == nil && exists {
 		return nil
 	}
-	log.Debugf("Backfilling (%s) from source %q to dest %q.", d.GetHash(), source, dest)
 	r, err := c.remoteReader(ctx, source, prefix, d, 0)
 	if err != nil {
 		return err
@@ -295,10 +297,6 @@ func (c *Cache) backfill(ctx context.Context, d *repb.Digest, source, prefix, de
 		return err
 	}
 	return rwc.Close()
-}
-
-func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, dest string) error {
-	return c.backfill(ctx, d, source, c.prefix, dest)
 }
 
 type backfillOrder struct {
@@ -315,8 +313,10 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) e
 	for _, bf := range backfills {
 		bf := bf
 		eg.Go(func() error {
-			if err := c.backfillReplica(gCtx, bf.d, bf.source, bf.dest); err != nil {
+			if err := c.copyFile(gCtx, bf.d, bf.source, c.prefix, bf.dest); err != nil {
 				log.Debugf("Error backfilling %q => %q: %s", bf.source, bf.dest, err)
+			} else {
+				log.Debugf("Backfilled (%s) from source %q to dest %q.", bf.d.GetHash(), bf.source, bf.dest)
 			}
 			return nil
 		})

@@ -115,32 +115,48 @@ func TestNewRead(t *testing.T) {
 func TestGetBackfillTargets(t *testing.T) {
 	tests := []struct {
 		p                     *peerset.PeerSet
-		lastPeer              string
+		peersToFail           []string
+		expectedPeers         []string
 		expectedBackfillHosts []string
 	}{
 		{
 			peerset.New([]string{"a"}, []string{"b", "c"}),
-			"a",
-			[]string{},
+			[]string{"a"},
+			[]string{"a", "b"},
+			[]string{"a"},
 		},
 		{
 			peerset.New([]string{"a", "b", "c"}, []string{}),
-			"c",
+			[]string{"b"},
+			[]string{"a", "b", "c"},
 			[]string{"a", "b"},
 		},
 		{
 			peerset.New([]string{"a", "b", "c"}, []string{"d", "e", "f", "g"}),
-			"f",
+			[]string{"a", "b"},
+			[]string{"a", "b", "c", "d", "e"},
 			[]string{"a", "b", "c"},
+		},
+		{
+			peerset.New([]string{"a", "b", "c"}, []string{"d", "e", "f"}),
+			[]string{},
+			[]string{"a", "b", "c"},
+			[]string{"a", "b"},
 		},
 	}
 
 	for _, test := range tests {
-		for peer, _ := test.p.GetNextPeerAndHandoff(); peer != test.lastPeer && peer != ""; peer, _ = test.p.GetNextPeerAndHandoff() {
-			test.p.MarkPeerAsFailed(peer)
+		for i := 0; i < len(test.expectedPeers); i++ {
+			peer := test.p.GetNextPeer()
+			assert.Equal(t, test.expectedPeers[i], peer)
+			if contains(peer, test.peersToFail) {
+				test.p.MarkPeerAsFailed(peer)
+			}
 		}
-		source, backfillHosts := test.p.GetBackfillTargets()
-		assert.Equal(t, test.lastPeer, source)
+		last := test.p.GetNextPeer()
+		assert.Equal(t, "", last)
+
+		_, backfillHosts := test.p.GetBackfillTargets()
 		assert.Equal(t, test.expectedBackfillHosts, backfillHosts)
 	}
 }

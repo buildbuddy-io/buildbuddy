@@ -220,9 +220,9 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer4 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	baseConfig := CacheConfig{
-		ReplicationFactor:    3,
-		Nodes:                []string{peer1, peer2, peer3, peer4},
-		DisableLocalLookup:   true,
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3, peer4},
+		DisableLocalLookup: true,
 	}
 
 	// Setup a distributed cache, 4 nodes, R = 3.

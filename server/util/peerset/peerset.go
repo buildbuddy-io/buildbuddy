@@ -16,7 +16,7 @@ func New(preferredPeers, fallbackPeers []string) *PeerSet {
 		i:              0,
 		PreferredPeers: preferredPeers,
 		FallbackPeers:  fallbackPeers,
-		FailedPeers: nil,
+		FailedPeers:    nil,
 	}
 }
 
@@ -58,21 +58,23 @@ func (p *PeerSet) MarkPeerAsFailed(failedPeer string) {
 // that can be specified as the "hinted handoff peer". When all peers have been
 // exhausted, the empty string will be returned.
 func (p *PeerSet) GetNextPeerAndHandoff() (string, string) {
-	// Defer a function to increment our peer counter.
-	defer func() {
+	// A function we can defer to increment our peer counter.
+	increment := func() {
 		p.i += 1
-	}()
+	}
 
 	i := p.i
 	numPreferred := len(p.PreferredPeers)
 	if i < numPreferred {
 		// Return preferred peers if they haven't yet been exhausted.
 		// There are no hinted handoffs to return yet.
+		defer increment()
 		return p.PreferredPeers[i], ""
 	}
 	i -= numPreferred
 
 	if i < len(p.FallbackPeers) && i < len(p.FailedPeers) {
+		defer increment()
 		return p.FallbackPeers[i], p.FailedPeers[i]
 	}
 	return "", ""
@@ -88,11 +90,21 @@ func (p *PeerSet) GetNextPeer() string {
 // GetBackfillTargets returns the last used peer (which we assume was the one
 // that successfully returned a value) and a list of the skipped peers before
 // it, if they were preferred peers.
+//
+// N.B. Backfill is NOT based on errors encountered. It assumes that the last
+// peer a caller read from GetNextPeer was the one containing the item, and all
+// previous peers lacked it. Therefore, the last peer is returned as a source
+// and all previous peers are returned as destinations for the backfill.
+// Secondary hosts can never be backfilled, but they can be used as sources for
+// a backfill.
 func (p *PeerSet) GetBackfillTargets() (string, []string) {
 	lastUsedIndex := p.i - 1
 	if lastUsedIndex < len(p.PreferredPeers) {
 		return p.PreferredPeers[lastUsedIndex], p.PreferredPeers[:lastUsedIndex]
 	}
 	lastUsedIndex -= len(p.PreferredPeers)
-	return p.FallbackPeers[lastUsedIndex], p.PreferredPeers
+	if lastUsedIndex < len(p.FallbackPeers) {
+		return p.FallbackPeers[lastUsedIndex], p.PreferredPeers
+	}
+	return "", []string{}
 }

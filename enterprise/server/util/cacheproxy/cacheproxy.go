@@ -27,7 +27,7 @@ type CacheProxy struct {
 	server                *grpc.Server
 	clients               map[string]dcpb.DistributedCacheClient
 	heartbeatCallback     func(peer string)
-	hintedHandoffCallback func(peer, prefix string, d *repb.Digest)
+	hintedHandoffCallback func(ctx context.Context, peer, prefix string, d *repb.Digest)
 	listenAddr            string
 }
 
@@ -84,7 +84,7 @@ func (c *CacheProxy) SetHeartbeatCallbackFunc(fn func(peer string)) {
 	c.heartbeatCallback = fn
 }
 
-func (c *CacheProxy) SetHintedHandoffCallbackFunc(fn func(peer, prefix string, d *repb.Digest)) {
+func (c *CacheProxy) SetHintedHandoffCallbackFunc(fn func(ctx context.Context, peer, prefix string, d *repb.Digest)) {
 	c.hintedHandoffCallback = fn
 }
 
@@ -194,9 +194,9 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	return err
 }
 
-func (c *CacheProxy) callHintedHandoffCB(peer, prefix string, d *repb.Digest) {
+func (c *CacheProxy) callHintedHandoffCB(ctx context.Context, peer, prefix string, d *repb.Digest) {
 	if c.hintedHandoffCallback != nil {
-		c.hintedHandoffCallback(peer, prefix, d)
+		c.hintedHandoffCallback(ctx, peer, prefix, d)
 	}
 }
 
@@ -223,7 +223,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			}
 			writeCloser = wc
 			if req.GetHandoffPeer() != "" {
-				c.callHintedHandoffCB(req.GetHandoffPeer(), req.GetPrefix(), d)
+				c.callHintedHandoffCB(ctx, req.GetHandoffPeer(), req.GetPrefix(), d)
 			}
 		}
 		n, err := writeCloser.Write(req.Data)
