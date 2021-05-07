@@ -858,7 +858,7 @@ message BuildEvent {
 
     // BUILDBUDDY-SPECIFIC EVENTS BELOW.
     // Starting at field #1000 to avoid conflicting with potential future
-    // additions to the Bazel's build event protocol.
+    // additions to Bazel's build event protocol.
 
     WorkflowConfigured workflow_configured = 1000;
     WorkflowCommandCompleted workflow_command_completed = 1001;
