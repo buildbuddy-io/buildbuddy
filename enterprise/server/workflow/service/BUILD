@@ -22,6 +22,7 @@ go_library(
         "//server/environment",
         "//server/remote_cache/cachetools",
         "//server/tables",
+        "//server/util/log",
         "//server/util/perms",
         "//server/util/prefix",
         "//server/util/query_builder",

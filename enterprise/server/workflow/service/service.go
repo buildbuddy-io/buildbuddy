@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -31,6 +32,7 @@ import (
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	githubapi "github.com/google/go-github/github"
+	"github.com/google/uuid"
 	guuid "github.com/google/uuid"
 )
 
@@ -268,6 +270,68 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	return rsp, nil
 }
 
+func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error) {
+	// Validate req
+	if req.GetWorkflowId() == "" {
+		return nil, status.InvalidArgumentError("Missing workflow_id")
+	}
+	if req.GetCommitSha() == "" {
+		return nil, status.InvalidArgumentError("Missing commit_sha")
+	}
+	if req.GetBranch() == "" {
+		return nil, status.InvalidArgumentError("Missing branch")
+	}
+	if req.GetActionName() == "" {
+		return nil, status.InvalidArgumentError("Missing action_name")
+	}
+
+	// Authenticate
+	user, err := perms.AuthenticatedUser(ctx, ws.env)
+	if err != nil {
+		return nil, err
+	}
+
+	// Lookup workflow
+	wf := &tables.Workflow{}
+	db := ws.env.GetDBHandle()
+	err = db.Raw(`SELECT group_id, repo_url, access_token, perms FROM Workflows WHERE workflow_id = ?`).Take(wf).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, status.NotFoundError("Workflow not found")
+		}
+		return nil, status.InternalError(err.Error())
+	}
+
+	// Authorize workflow access
+	wfACL := perms.ToACLProto(&uidpb.UserId{Id: wf.GroupID}, wf.GroupID, wf.Perms)
+	if err := perms.AuthorizeRead(&user, wfACL); err != nil {
+		return nil, err
+	}
+
+	// Execute
+	isRepoPrivate := false
+	// TODO: Support other Git providers. We default to false on those for now,
+	// which means that we don't pass auth credentials in this case.
+	if isGitHubURL(wf.RepoURL) {
+		isRepoPrivate, err = github.IsRepoPrivate(ctx, wf.AccessToken, wf.RepoURL)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "failed to determine whether repo is private")
+		}
+	}
+	// TODO: Refactor to avoid using this WebhookData struct in the case of manual
+	// workflow execution, since there are no webhooks involved.
+	wd := &webhook_data.WebhookData{
+		PushedBranch:  req.GetBranch(),
+		TargetBranch:  req.GetBranch(),
+		RepoURL:       wf.RepoURL,
+		SHA:           req.GetCommitSha(),
+		IsRepoPrivate: isRepoPrivate,
+	}
+	invocationID, err := ws.executeWorkflow(ctx, wf, wd, req.GetActionName())
+
+	return &wfpb.ExecuteWorkflowResponse{InvocationId: invocationID}, nil
+}
+
 func (ws *workflowService) GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error) {
 	if req.GetGitProvider() == wfpb.GitProvider_UNKNOWN_GIT_PROVIDER {
 		return nil, status.FailedPreconditionError("Unknown git provider")
@@ -342,20 +406,23 @@ func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID
 	return tw, nil
 }
 
-func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *webhook_data.WebhookData, ak *tables.APIKey, instanceName string) (*repb.Digest, error) {
+// Creates an action that executes the CI runner for the given workflow and params.
+// Returns the digest of the action as well as the invocation ID that the CI runner
+// will assign to the workflow invocation.
+func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *webhook_data.WebhookData, ak *tables.APIKey, instanceName, actionName string) (*repb.Digest, string, error) {
 	cache := ws.env.GetCache()
 	if cache == nil {
-		return nil, status.UnavailableError("No cache configured.")
+		return nil, "", status.UnavailableError("No cache configured.")
 	}
 
 	runnerBinName := "buildbuddy_ci_runner"
 	runnerBinFile, err := runnerBinaryFile()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	runnerBinDigest, err := cachetools.UploadBytesToCAS(ctx, cache, instanceName, runnerBinFile)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	dir := &repb.Directory{
 		Files: []*repb.FileNode{
@@ -368,7 +435,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, dir)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	envVars := []*repb.Command_EnvironmentVariable{}
 	if wd.IsTrusted() {
@@ -377,6 +444,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			{Name: "REPO_USER", Value: wf.Username},
 			{Name: "REPO_TOKEN", Value: wf.AccessToken},
 		}...)
+	}
+	invocationID, err := uuid.NewRandom()
+	if err != nil {
+		return nil, "", status.UnknownErrorf("Failed to generate invocation ID: %s", err.Error())
 	}
 	conf := ws.env.GetConfigurator()
 	cmd := &repb.Command{
@@ -391,6 +462,8 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--workflow_id=" + wf.WorkflowID,
 			"--trigger_event=" + wd.EventName,
 			"--trigger_branch=" + wd.TargetBranch,
+			"--action_name=" + actionName,
+			"--invocation_id=" + invocationID.String(),
 		},
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
@@ -405,7 +478,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, cmd)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	action := &repb.Action{
 		CommandDigest:   cmdDigest,
@@ -413,7 +486,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		DoNotCache:      true,
 	}
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, action)
-	return actionDigest, err
+	if err != nil {
+		return nil, "", err
+	}
+	return actionDigest, invocationID.String(), err
 }
 
 func runnerBinaryFile() (*os.File, error) {
@@ -496,19 +572,26 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err != nil {
 		return err
 	}
+	actionName := "" // Run all actions that match.
+	_, err = ws.executeWorkflow(ctx, wf, webhookData, actionName)
+	return err
+}
 
+// starts a workflow execution and returns the invocation ID for the workflow
+// invocation to be spawned by the CI runner.
+func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workflow, wd *webhook_data.WebhookData, actionName string) (string, error) {
 	key, err := ws.apiKeyForWorkflow(ctx, wf)
 	if err != nil {
-		return err
+		return "", err
 	}
 	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, ws.env); err != nil {
-		return err
+		return "", err
 	}
-	in := instanceName(webhookData)
-	ad, err := ws.createActionForWorkflow(ctx, wf, webhookData, key, in)
+	in := instanceName(wd)
+	ad, invocationID, err := ws.createActionForWorkflow(ctx, wf, wd, key, in, actionName)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	executionID, err := ws.env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{
@@ -517,10 +600,10 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 		ActionDigest:    ad,
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
-	log.Printf("Started workflow execution (ID: %q)", executionID)
-	return nil
+	log.Infof("Started workflow execution %s", executionID)
+	return invocationID, nil
 }
 
 func isGitHubURL(s string) bool {

@@ -1,0 +1,16 @@
+// GetDefaultBranchName returns the default branch for the repo.
+func GetDefaultBranchName(ctx context.Context, accessToken, repoURL string) (string, error) {
+	owner, repo, err := parseOwnerRepo(repoURL)
+	if err != nil {
+		return "", err
+	}
+	client := newGitHubClient(ctx, accessToken)
+	r, _, err := client.Repositories.Get(ctx, owner, repo)
+	if err != nil {
+		return "", err
+	}
+	if r.DefaultBranch == nil {
+		return "", status.UnknownError("GitHub returned invalid response from repo API (missing default branch).")
+	}
+	return *r.DefaultBranch, nil
+}

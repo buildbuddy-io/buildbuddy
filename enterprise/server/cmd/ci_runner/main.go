@@ -88,6 +88,8 @@ var (
 	triggerEvent  = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	triggerBranch = flag.String("trigger_branch", "", "Branch to check action triggers against.")
 	workflowID    = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
+	actionName    = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
+	invocationID  = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow.")
 
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
@@ -142,13 +144,21 @@ func RunAllActions(ctx context.Context, cfg *config.BuildBuddyConfig, im *initMe
 	for _, action := range cfg.Actions {
 		startTime := time.Now()
 
-		if !matchesAnyTrigger(action, *triggerEvent, *triggerBranch) {
+		if *actionName != "" {
+			if action.Name != *actionName {
+				continue
+			}
+		} else if !matchesAnyTrigger(action, *triggerEvent, *triggerBranch) {
 			log.Printf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *triggerBranch, actionDebugString(action))
 			continue
 		}
 
+		iid := *invocationID
+		if iid == "" {
+			iid = newUUID()
+		}
 		bep := newBuildEventPublisher(&bepb.StreamId{
-			InvocationId: newUUID(),
+			InvocationId: iid,
 			BuildId:      newUUID(),
 		})
 		bep.Start(ctx)
