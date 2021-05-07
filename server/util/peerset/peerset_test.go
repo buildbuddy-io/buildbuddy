@@ -122,25 +122,25 @@ func TestGetBackfillTargets(t *testing.T) {
 		{
 			peerset.New([]string{"a"}, []string{"b", "c"}),
 			[]string{"a"},
-			[]string{"a", "b"},
+			[]string{"a", "b", ""},
 			[]string{"a"},
 		},
 		{
 			peerset.New([]string{"a", "b", "c"}, []string{}),
 			[]string{"b"},
-			[]string{"a", "b", "c"},
+			[]string{"a", "b", "c", ""},
 			[]string{"a", "b"},
 		},
 		{
 			peerset.New([]string{"a", "b", "c"}, []string{"d", "e", "f", "g"}),
 			[]string{"a", "b"},
-			[]string{"a", "b", "c", "d", "e"},
+			[]string{"a", "b", "c", "d", "e", ""},
 			[]string{"a", "b", "c"},
 		},
 		{
 			peerset.New([]string{"a", "b", "c"}, []string{"d", "e", "f"}),
 			[]string{},
-			[]string{"a", "b", "c"},
+			[]string{"a", "b", "c", ""},
 			[]string{"a", "b"},
 		},
 	}
@@ -153,9 +153,6 @@ func TestGetBackfillTargets(t *testing.T) {
 				test.p.MarkPeerAsFailed(peer)
 			}
 		}
-		last := test.p.GetNextPeer()
-		assert.Equal(t, "", last)
-
 		_, backfillHosts := test.p.GetBackfillTargets()
 		assert.Equal(t, test.expectedBackfillHosts, backfillHosts)
 	}
