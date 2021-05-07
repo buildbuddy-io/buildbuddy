@@ -16,6 +16,7 @@ go_library(
         "//server/tables",
         "//server/util/capabilities",
         "//server/util/db",
+        "//server/util/log",
         "//server/util/lru",
         "//server/util/random",
         "//server/util/request_context",

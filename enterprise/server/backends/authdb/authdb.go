@@ -20,16 +20,21 @@ func NewAuthDB(h *db.DBHandle) *AuthDB {
 }
 
 type apiKeyGroup struct {
-	GroupID      string
-	Capabilities int32
+	GroupID                string
+	Capabilities           int32
+	UseGroupOwnedExecutors bool
 }
 
-func (akg *apiKeyGroup) GetCapabilities() int32 {
-	return akg.Capabilities
+func (g *apiKeyGroup) GetGroupID() string {
+	return g.GroupID
 }
 
-func (akg *apiKeyGroup) GetGroupID() string {
-	return akg.GroupID
+func (g *apiKeyGroup) GetCapabilities() int32 {
+	return g.Capabilities
+}
+
+func (g *apiKeyGroup) GetUseGroupOwnedExecutors() bool {
+	return g.UseGroupOwnedExecutors
 }
 
 func (d *AuthDB) InsertOrUpdateUserToken(ctx context.Context, subID string, token *tables.Token) error {
@@ -60,7 +65,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(apiKey string) (interfaces.APIKeyGroup
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
 		existingRow := tx.Raw(`
-			SELECT ak.capabilities, g.group_id
+			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
 			FROM `+"`Groups`"+` AS g, APIKeys AS ak
 			WHERE g.group_id = ak.group_id AND ak.value = ?`,
 			apiKey)
@@ -79,7 +84,7 @@ func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(login, pass string) (interfaces.API
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
 		existingRow := tx.Raw(`
-			SELECT ak.capabilities, g.group_id
+			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
 			FROM `+"`Groups`"+` AS g, APIKeys AS ak
 			WHERE g.group_id = ? AND g.write_token = ? AND g.group_id = ak.group_id`,
 			login, pass)

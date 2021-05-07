@@ -43,6 +43,7 @@ type UserInfo interface {
 	GetAllowedGroups() []string
 	IsAdmin() bool
 	HasCapability(akpb.ApiKey_Capability) bool
+	GetUseGroupOwnedExecutors() bool
 }
 
 // Authenticator constants
@@ -145,6 +146,7 @@ type InvocationDB interface {
 type APIKeyGroup interface {
 	GetCapabilities() int32
 	GetGroupID() string
+	GetUseGroupOwnedExecutors() bool
 }
 
 type AuthDB interface {
