@@ -1,66 +1,78 @@
 {
   "assign": {
-    "exclude_files": {
-      "external/*": "Third party code"
+    "only_files": {
+      "/server/": "Server code",
+      "/enterprise/server/": "Enterprise server code"
     }
   },
   "cgocall": {
-    "exclude_files": {
-      "external/*": "Third party code"
+    "only_files": {
+      "/server/": "Server code",
+      "/enterprise/server/": "Enterprise server code"
     }
   },
   "composites": {
-    "exclude_files": {
-      "external/*": "Third party code"
+    "only_files": {
+      "/server/": "Server code",
+      "/enterprise/server/": "Enterprise server code"
     }
   },
   "copylocks": {
-    "exclude_files": {
-      "external/*": "Third party code"
+    "only_files": {
+      "/server/": "Server code",
+      "/enterprise/server/": "Enterprise server code"
     }
   },
   "fieldalignment": {
+    "only_files": {
+      "/server/": "Server code",
+      "/enterprise/server/": "Enterprise server code"
+    },
     "exclude_files": {
-			".*": "Disable entirely for now",
-      "tmp/*": "Temp generated files",
-      "external/*": "Third party code",
-			".*\\.pb\\.go": "Auto-generated proto files"
+      ".*": "Disable entirely for now",
+      ".*\\.pb\\.go": "Auto-generated proto files"
     }
   },
   "lostcancel": {
-    "exclude_files": {
-      "external/*": "Third party code"
+    "only_files": {
+      "/server/": "Server code",
+      "/enterprise/server/": "Enterprise server code"
     }
   },
   "nilness": {
-    "exclude_files": {
-      "tmp/*": "Temp generated files",
-      "external/*": "Third party code"
+    "only_files": {
+      "/server/": "Server code",
+      "/enterprise/server/": "Enterprise server code"
     }
   },
   "stdmethods": {
-    "exclude_files": {
-      "external/*": "Third party code"
+    "only_files": {
+      "/server/": "Server code",
+      "/enterprise/server/": "Enterprise server code"
     }
   },
   "stringintconv": {
-    "exclude_files": {
-      "external/*": "Third party code"
+    "only_files": {
+      "/server/": "Server code",
+      "/enterprise/server/": "Enterprise server code"
     }
   },
   "structtag": {
-    "exclude_files": {
-      "external/*": "Third party code"
+    "only_files": {
+      "/server/": "Server code",
+      "/enterprise/server/": "Enterprise server code"
     }
   },
   "unreachable": {
-    "exclude_files": {
-      "external/*": "Third party code"
+    "only_files": {
+      "/server/": "Server code",
+      "/enterprise/server/": "Enterprise server code"
     }
   },
   "unsafeptr": {
-    "exclude_files": {
-      "external/*": "Third party code"
+    "only_files": {
+      "/server/": "Server code",
+      "/enterprise/server/": "Enterprise server code"
     }
   }
 }
