@@ -182,6 +182,8 @@ message ExecutionNode {
 
 message GetExecutionNodesRequest {
   context.ResponseContext response_context = 1;
+
+  string group_id = 2;
 }
 
 message GetExecutionNodesResponse {
