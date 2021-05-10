@@ -608,3 +608,8 @@ ts_proto_library(
     name = "buildbuddy_service_ts_proto",
     proto = ":buildbuddy_service_proto",
 )
+
+ts_proto_library(
+    name = "remote_execution_ts_proto",
+    proto = ":remote_execution_proto",
+)
