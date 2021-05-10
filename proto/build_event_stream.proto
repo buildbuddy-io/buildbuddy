@@ -195,6 +195,11 @@ message BuildEventId {
 
   // Identifier of an event providing the status of a completed invocation
   // within a BuildBuddy workflow.
+  //
+  // A workflow action can specify multiple bazel commands, creating a
+  // "sub-invocation" for each one. There will be one of these events generated
+  // for each of those Bazel commands, where the invocation ID here refers to
+  // the invocation ID of the Bazel command that was completed.
   message WorkflowCommandCompletedId {
     // Invocation ID of the command that was completed.
     string invocation_id = 1;
@@ -792,10 +797,14 @@ message WorkflowConfigured {
   // "pull_request".
   string action_trigger_event = 4;
 
-  // Metadata for a Bazel invocation created by this workflow action.
+  // Metadata for a Bazel invocation created by this workflow action. Each
+  // workflow action creates one invocation for the top-level workflow, and
+  // multiple "sub-invocations," one for each Bazel command in the workflow.
+  // Each of these represents one of the sub-invocations.
   message InvocationMetadata {
-    // Bazel invocation ID (UUIDV4). Should not be set for bazel commands that
-    // do not create invocations, such as `bazel version`.
+    // Bazel invocation ID (UUIDV4) for a sub-invocation created by a workflow
+    // action. Should not be set for bazel commands that do not create
+    // invocations, such as `bazel version`.
     // Example: "86083af6-4699-4957-a0a3-d6a806104bb3"
     string invocation_id = 1;
 
