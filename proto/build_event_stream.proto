@@ -792,7 +792,10 @@ message WorkflowConfigured {
   // "pull_request".
   string action_trigger_event = 4;
 
-  // Metadata for a Bazel invocation created by this workflow action.
+  // Metadata for a Bazel invocation created by this workflow action. Each
+  // workflow action creates one invocation for the top-level workflow, and
+  // multiple "sub-invocations," one for each Bazel command in the workflow.
+  // Each of these represents one of the sub-invocations.
   message InvocationMetadata {
     // Bazel invocation ID (UUIDV4). Should not be set for bazel commands that
     // do not create invocations, such as `bazel version`.
