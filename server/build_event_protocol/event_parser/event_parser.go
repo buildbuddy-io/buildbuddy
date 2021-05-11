@@ -111,6 +111,7 @@ type StreamingEventParser struct {
 	events                 []*inpb.InvocationEvent
 	structuredCommandLines []*command_line.CommandLine
 	workspaceStatuses      []*build_event_stream.WorkspaceStatus
+	workflowConfigurations []*build_event_stream.WorkflowConfigured
 	pattern                []string
 	allowedEnvVars         []string
 	startTimeMillis        int64
@@ -127,6 +128,7 @@ func NewStreamingEventParser() *StreamingEventParser {
 		allowedEnvVars:         []string{"USER", "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID", "BUILDKITE_BUILD_URL"},
 		structuredCommandLines: make([]*command_line.CommandLine, 0),
 		workspaceStatuses:      make([]*build_event_stream.WorkspaceStatus, 0),
+		workflowConfigurations: make([]*build_event_stream.WorkflowConfigured, 0),
 		buildMetadata:          make([]map[string]string, 0),
 		events:                 make([]*inpb.InvocationEvent, 0),
 	}
@@ -247,6 +249,14 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 	case *build_event_stream.BuildEvent_ConvenienceSymlinksIdentified:
 		{
 		}
+	case *build_event_stream.BuildEvent_WorkflowConfigured:
+		{
+			wfc := p.WorkflowConfigured
+			if wfc == nil {
+				return
+			}
+			sep.workflowConfigurations = append(sep.workflowConfigurations, wfc)
+		}
 	}
 }
 
@@ -270,6 +280,9 @@ func (sep *StreamingEventParser) FillInvocation(invocation *inpb.Invocation) {
 	}
 	for _, buildMetadatum := range sep.buildMetadata {
 		fillInvocationFromBuildMetadata(buildMetadatum, invocation)
+	}
+	for _, workflowConfigured := range sep.workflowConfigurations {
+		fillInvocationFromWorkflowConfigured(workflowConfigured, invocation)
 	}
 
 	buildDuration := time.Duration(int64(0))
@@ -379,8 +392,9 @@ func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inp
 	if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
 		invocation.ReadPermission = inpb.InvocationPermission_PUBLIC
 	}
-	if actionName, ok := metadata["BUILDBUDDY_ACTION_NAME"]; ok && actionName != "" {
-		invocation.Command = "workflow run"
-		invocation.Pattern = []string{actionName}
-	}
+}
+
+func fillInvocationFromWorkflowConfigured(workflowConfigured *build_event_stream.WorkflowConfigured, invocation *inpb.Invocation) {
+	invocation.Command = "workflow run"
+	invocation.Pattern = []string{workflowConfigured.ActionName}
 }

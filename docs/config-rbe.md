@@ -49,7 +49,7 @@ executor:
   root_directory: "/buildbuddy/remotebuilds/"
   local_cache_directory: "/buildbuddy/filecache/"
   local_cache_size_bytes: 5000000000 # 5GB
-  docker_sock: /var/run/docker.sock
+  docker_socket: /var/run/docker.sock
 auth:
   enable_anonymous_usage: true
   oauth_providers:

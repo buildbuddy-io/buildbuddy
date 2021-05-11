@@ -99,7 +99,7 @@ func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
 
 	// Send authenticated started event with api key
-	request := streamRequest(startedEvent("--remote_upload_local_results --remote_header='"+testauth.TestApiKeyHeader+"=USER1' --remote_instance_name=foo"), "test-invocation-id", 1)
+	request := streamRequest(startedEvent("--remote_upload_local_results --remote_header='"+testauth.APIKeyHeader+"=USER1' --remote_instance_name=foo"), "test-invocation-id", 1)
 	err := channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -128,7 +128,7 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	assert.Error(t, err)
 
 	// Send started event with api key
-	request = streamRequest(startedEvent("--remote_header='"+testauth.TestApiKeyHeader+"=USER1'"), "test-invocation-id", 2)
+	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), "test-invocation-id", 2)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -188,7 +188,7 @@ func TestHandleEventOver100ProgressEventsBeforeStarted(t *testing.T) {
 	assert.Error(t, err)
 
 	// Send started event with api key
-	request := streamRequest(startedEvent("--remote_header='"+testauth.TestApiKeyHeader+"=USER1'"), "test-invocation-id", 105)
+	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), "test-invocation-id", 105)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -222,7 +222,7 @@ func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 	assert.Error(t, err)
 
 	// Send started event with api key
-	request = streamRequest(startedEvent("--remote_header='"+testauth.TestApiKeyHeader+"=USER1'"), "test-invocation-id", 3)
+	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), "test-invocation-id", 3)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 

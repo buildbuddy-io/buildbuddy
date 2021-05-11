@@ -151,6 +151,7 @@ export default class EnterpriseRootComponent extends React.Component {
                   <InvocationComponent
                     user={this.state.user}
                     invocationId={invocationId}
+                    key={invocationId}
                     hash={this.state.hash}
                     search={this.state.search}
                     denseMode={this.state.denseMode}

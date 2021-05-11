@@ -1,0 +1,11 @@
+actions:
+  - name: Test
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "master"
+    bazel_commands:
+      - test //... --config=workflows
