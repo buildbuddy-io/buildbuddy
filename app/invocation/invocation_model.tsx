@@ -28,6 +28,8 @@ export default class InvocationModel {
   finished: build_event_stream.BuildFinished;
   aborted: build_event_stream.BuildEvent;
   toolLogs: build_event_stream.BuildToolLogs;
+  workflowConfigured: build_event_stream.WorkflowConfigured;
+  workflowCommandCompletedByInvocationId = new Map<string, build_event_stream.IWorkflowCommandCompleted>();
   workspaceStatus: build_event_stream.WorkspaceStatus;
   configuration: build_event_stream.Configuration;
   workspaceConfig: build_event_stream.WorkspaceConfig;
@@ -93,19 +95,36 @@ export default class InvocationModel {
         if (buildEvent.finished) model.finished = buildEvent.finished as build_event_stream.BuildFinished;
         if (buildEvent.aborted) model.aborted = buildEvent as build_event_stream.BuildEvent;
         if (buildEvent.buildToolLogs) model.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
-        if (buildEvent.workspaceStatus)
+        if (buildEvent.workspaceStatus) {
           model.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
-        if (buildEvent.configuration && buildEvent?.id?.configuration?.id != "none")
+        }
+        if (buildEvent.workflowConfigured) {
+          model.workflowConfigured = buildEvent.workflowConfigured as build_event_stream.WorkflowConfigured;
+        }
+        if (buildEvent.workflowCommandCompleted) {
+          model.workflowCommandCompletedByInvocationId.set(
+            buildEvent.id.workflowCommandCompleted.invocationId,
+            buildEvent.workflowCommandCompleted
+          );
+        }
+        if (buildEvent.configuration && buildEvent?.id?.configuration?.id != "none") {
           model.configuration = buildEvent.configuration as build_event_stream.Configuration;
-        if (buildEvent.workspaceInfo)
+        }
+        if (buildEvent.workspaceInfo) {
           model.workspaceConfig = buildEvent.workspaceInfo as build_event_stream.WorkspaceConfig;
-        if (buildEvent.optionsParsed)
+        }
+        if (buildEvent.optionsParsed) {
           model.optionsParsed = buildEvent.optionsParsed as build_event_stream.OptionsParsed;
-        if (buildEvent.buildMetrics) model.buildMetrics = buildEvent.buildMetrics as build_event_stream.BuildMetrics;
-        if (buildEvent.buildToolLogs)
+        }
+        if (buildEvent.buildMetrics) {
+          model.buildMetrics = buildEvent.buildMetrics as build_event_stream.BuildMetrics;
+        }
+        if (buildEvent.buildToolLogs) {
           model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
-        if (buildEvent.unstructuredCommandLine)
+        }
+        if (buildEvent.unstructuredCommandLine) {
           model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+        }
       }
     }
 
