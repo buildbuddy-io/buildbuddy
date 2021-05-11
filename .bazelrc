@@ -35,7 +35,7 @@ build:remote --experimental_repo_remote_exec
 build:remote --jobs=100
 build:remote --verbose_failures
 
-# Configuration used for CI
+# Configuration used for GitHub actions-based CI
 build:ci --config=remote
 build:ci --build_metadata=ROLE=CI
 build:ci --build_metadata=VISIBILITY=PUBLIC
@@ -46,11 +46,19 @@ build:ci --repository_cache=/home/runner/repo-cache/
 build:ci --color=yes
 build:ci --disk_cache=
 
-# Configuration used for untrusted CI
+# Configuration used for untrusted GitHub actions-based CI
 build:untrusted-ci --config=remote
 build:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
 build:untrusted-ci --repository_cache=/home/runner/repo-cache/untrusted/
 build:untrusted-ci --disk_cache=
+
+# Configuration used for BuildBuddy workflows
+build:workflows --config=remote
+build:workflows --build_metadata=ROLE=CI
+build:workflows --build_metadata=VISIBILITY=PUBLIC
+build:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
+build:workflows --color=yes
+build:workflows --disk_cache=
 
 # By default, build logs get sent to the production server
 build --bes_results_url=https://app.buildbuddy.io/invocation/

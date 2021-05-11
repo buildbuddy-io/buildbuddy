@@ -178,10 +178,13 @@ message ExecutionNode {
   // Remote execution pool that this node is assigned to.
   // Ex. "buildbuddy-executors-us-west1-b"
   string pool = 7;
+
+  // Version of the executor binary.
+  string version = 8;
 }
 
 message GetExecutionNodesRequest {
-  context.ResponseContext response_context = 1;
+  context.RequestContext request_context = 1;
 }
 
 message GetExecutionNodesResponse {
