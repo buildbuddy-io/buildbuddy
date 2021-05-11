@@ -5,7 +5,6 @@ import { cache } from "../../proto/cache_ts_proto";
 import { command_line } from "../../proto/command_line_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
-import { workflow } from "../../proto/workflow_ts_proto";
 import { IconType } from "../favicon/favicon";
 import format from "../format/format";
 
