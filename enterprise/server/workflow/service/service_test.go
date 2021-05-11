@@ -55,7 +55,7 @@ func TestCreate(t *testing.T) {
 			RepoUrl: "git@github.com:buildbuddy-io/buildbuddy.git",
 		},
 	}
-	ctx = metadata.AppendToOutgoingContext(ctx, testauth.TestApiKeyHeader, "USER1")
+	ctx = metadata.AppendToOutgoingContext(ctx, testauth.APIKeyHeader, "USER1")
 	rsp, err := bbClient.CreateWorkflow(ctx, req)
 	assert.Nil(t, err)
 	assert.Regexp(t, "^WF.*", rsp.GetId(), "workflow ID should exist and match WF.*")
@@ -92,7 +92,7 @@ func TestDelete(t *testing.T) {
 	assert.Nil(t, err)
 
 	req := &wfpb.DeleteWorkflowRequest{Id: "WF1"}
-	ctx = metadata.AppendToOutgoingContext(ctx, testauth.TestApiKeyHeader, "USER1")
+	ctx = metadata.AppendToOutgoingContext(ctx, testauth.APIKeyHeader, "USER1")
 	_, err = bbClient.DeleteWorkflow(ctx, req)
 	assert.Nil(t, err)
 
@@ -148,12 +148,12 @@ func TestList(t *testing.T) {
 	assert.Nil(t, err)
 
 	req := &wfpb.GetWorkflowsRequest{}
-	ctx1 := metadata.AppendToOutgoingContext(ctx, testauth.TestApiKeyHeader, "USER1")
+	ctx1 := metadata.AppendToOutgoingContext(ctx, testauth.APIKeyHeader, "USER1")
 	rsp, err := bbClient.GetWorkflows(ctx1, req)
 	assert.Nil(t, err)
 	assert.Equal(t, 2, len(rsp.GetWorkflow()), "Two workflows owned by USER1 should be returned")
 
-	ctx2 := metadata.AppendToOutgoingContext(ctx, testauth.TestApiKeyHeader, "USER2")
+	ctx2 := metadata.AppendToOutgoingContext(ctx, testauth.APIKeyHeader, "USER2")
 	rsp, err = bbClient.GetWorkflows(ctx2, req)
 	assert.Nil(t, err)
 	assert.Equal(t, 1, len(rsp.GetWorkflow()), "One workflow owned by USER2 should be returned")
