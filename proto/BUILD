@@ -258,6 +258,11 @@ proto_library(
     ],
 )
 
+proto_library(
+    name = "worker_proto",
+    srcs = ["worker.proto"],
+)
+
 # Go proto rules below here
 
 go_proto_library(
@@ -513,6 +518,13 @@ go_proto_library(
     deps = [
         ":context_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "worker_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/worker",
+    proto = ":worker_proto",
 )
 
 # TypeScript proto rules below here

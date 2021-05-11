@@ -81,6 +81,10 @@ const (
 	/// Type of event sent to BuildBuddy's webhook handler: `push` or
 	/// `pull_request`.
 	WebhookEventName = "event"
+
+	/// Status of the recycle runner request: `hit` if the executor assigned a
+	/// recycled runner to the action; `miss` otherwise.
+	RecycleRunnerRequestStatusLabel = "status"
 )
 
 const (
@@ -402,6 +406,43 @@ var (
 		Name:      "file_upload_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Per-file upload duration during remote execution, in **microseconds**.",
+	})
+
+	RecycleRunnerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "recycle_runner_requests",
+		Help:      "Number of execution requests with runner recycling enabled (via the platform property `recycle-runner=true`).",
+	}, []string{
+		RecycleRunnerRequestStatusLabel,
+	})
+
+	RunnerPoolCount = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "runner_pool_count",
+		Help:      "Number of command runners that are currently pooled (and available for recycling).",
+	})
+
+	RunnerPoolEvictions = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "runner_pool_evictions",
+		Help:      "Number of command runners removed from the pool to make room for other runners.",
+	})
+
+	RunnerPoolMemoryUsageBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "runner_pool_memory_usage_bytes",
+		Help:      "Total memory usage of pooled command runners, in **bytes**. Currently only supported for Docker-based executors.",
+	})
+
+	RunnerPoolDiskUsageBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "runner_pool_disk_usage_bytes",
+		Help:      "Total disk usage of pooled command runners, in **bytes**.",
 	})
 
 	/// ## Blobstore metrics

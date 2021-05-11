@@ -348,6 +348,7 @@ type ExecutionNode struct {
 	AssignableMemoryBytes int64
 	AssignableMilliCPU    int64
 	Port                  int32 `gorm:"primaryKey;autoIncrement:false"`
+	Version               string
 }
 
 func (n *ExecutionNode) TableName() string {
