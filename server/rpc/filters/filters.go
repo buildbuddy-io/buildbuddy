@@ -162,13 +162,13 @@ func copyHeadersUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return contextReplacingUnaryServerInterceptor(copyHeadersToContext)
 }
 
-// setHeadersUnaryClientInterceptor is a server interceptor that copies certain
+// setHeadersUnaryClientInterceptor is a client interceptor that copies certain
 // headers present in the context into the outgoing grpc metadata.
 func setHeadersUnaryClientInterceptor() grpc.UnaryClientInterceptor {
 	return contextReplacingUnaryClientInterceptor(setHeadersFromContext)
 }
 
-// setHeadersStreamClientInterceptor is a server interceptor that copies certain
+// setHeadersStreamClientInterceptor is a client interceptor that copies certain
 // headers present in the context into the outgoing grpc metadata.
 func setHeadersStreamClientInterceptor() grpc.StreamClientInterceptor {
 	return contextReplacingStreamClientInterceptor(setHeadersFromContext)
