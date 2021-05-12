@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -63,7 +64,6 @@ func waitForReady(t *testing.T, addr string) {
 	}
 	conn.Close()
 }
-
 func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCache interfaces.Cache) *Cache {
 	c, err := NewDistributedCache(te, baseCache, config, te.GetHealthChecker())
 	if err != nil {
@@ -514,5 +514,116 @@ func TestGetMulti(t *testing.T) {
 			assert.True(t, ok)
 			assert.Equal(t, d.GetSizeBytes(), int64(len(buf)))
 		}
+	}
+}
+
+func TestHintedHandoff(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer4 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3, peer4},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 4 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, te, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, te, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, te, config3, memoryCache3)
+
+	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
+	config4 := baseConfig
+	config4.ListenAddr = peer4
+	dc4 := startNewDCache(t, te, config4, memoryCache4)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+	waitForReady(t, config4.ListenAddr)
+
+	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache4}
+	distributedCaches := []*Cache{dc1, dc2, dc4}
+
+	// "Fail" a a node by shutting it down.
+	// The basecache and distributed cache are not in baseCaches
+	// or distributedCaches so they should not be referenced
+	// below when reading / writing, although the running nodes
+	// still have reference to them via the Nodes list.
+	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	err := dc3.Shutdown(shutdownCtx)
+	cancel()
+	assert.Nil(t, err)
+
+	digestsWritten := make([]*repb.Digest, 0)
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure it was written to all nodes.
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		j := i % len(distributedCaches)
+		if err := distributedCaches[j].Set(ctx, d, buf); err != nil {
+			t.Fatal(err)
+		}
+		digestsWritten = append(digestsWritten, d)
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, d)
+			assert.Nil(t, err)
+			assert.True(t, exists)
+			readAndCompareDigest(t, ctx, baseCache, d)
+		}
+	}
+
+	// Restart the downed node -- as soon as it's back up, it should
+	// receive hinted handoffs from the other peers.
+	baseCaches = append(baseCaches, memoryCache3)
+	distributedCaches = append(distributedCaches, dc3)
+	dc3.StartListening()
+	waitForReady(t, config3.ListenAddr)
+
+	// Wait for all peers to finish their backfill requests.
+	for _, distributedCache := range distributedCaches {
+		for _, backfillChannel := range distributedCache.hintedHandoffsByPeer {
+			if backfillChannel == nil {
+				continue
+			}
+			for len(backfillChannel) > 0 {
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+	}
+
+	// Figure out the set of digests that were hinted-handoffs. We'll verify
+	// that these were successfully handed off below.
+	hintedHandoffs := make([]*repb.Digest, 0)
+	for _, d := range digestsWritten {
+		ps := dc3.readPeers(d)
+		for _, p := range ps.PreferredPeers {
+			if p == peer3 {
+				hintedHandoffs = append(hintedHandoffs, d)
+				break
+			}
+		}
+	}
+
+	// Ensure that dc3 successfully received all the hinted handoffs.
+	for _, d := range hintedHandoffs {
+		exists, err := memoryCache3.Contains(ctx, d)
+		assert.Nil(t, err)
+		assert.True(t, exists)
+		readAndCompareDigest(t, ctx, dc3, d)
 	}
 }
