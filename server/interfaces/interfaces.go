@@ -249,6 +249,16 @@ type ExecutionService interface {
 	GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error)
 }
 
+type ExecutionNode interface {
+	// GetID returns the UUID of the executor instance.
+	GetID() string
+}
+
+type TaskRouter interface {
+	RankNodes(ctx context.Context, p *scpb.TaskRoutingProperties, nodes []ExecutionNode) ([]ExecutionNode, error)
+	MarkComplete(ctx context.Context, p *scpb.TaskRoutingProperties, node ExecutionNode) error
+}
+
 // CommandContainer provides an execution environment for commands.
 type CommandContainer interface {
 	// Run the given command within the container.

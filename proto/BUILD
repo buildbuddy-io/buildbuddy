@@ -255,6 +255,7 @@ proto_library(
     srcs = ["scheduler.proto"],
     deps = [
         ":context_proto",
+        ":remote_execution_proto",
     ],
 )
 
@@ -517,6 +518,7 @@ go_proto_library(
     proto = ":scheduler_proto",
     deps = [
         ":context_go_proto",
+        ":remote_execution_go_proto",
     ],
 )
 

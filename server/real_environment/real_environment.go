@@ -60,6 +60,7 @@ type RealEnv struct {
 	APIService                       interfaces.ApiService
 	fileCache                        interfaces.FileCache
 	remoteExecutionService           interfaces.RemoteExecutionService
+	taskRouter                       interfaces.TaskRouter
 	configurator                     *config.Configurator
 	executionClients                 map[string]*executionClientConfig
 	cacheRedisClient                 *redis.Client
@@ -164,6 +165,13 @@ func (r *RealEnv) GetAuthenticator() interfaces.Authenticator {
 }
 func (r *RealEnv) SetAuthenticator(a interfaces.Authenticator) {
 	r.authenticator = a
+}
+
+func (r *RealEnv) GetTaskRouter() interfaces.TaskRouter {
+	return r.taskRouter
+}
+func (r *RealEnv) SetTaskRouter(tr interfaces.TaskRouter) {
+	r.taskRouter = tr
 }
 
 func (r *RealEnv) GetUserDB() interfaces.UserDB {
