@@ -83,7 +83,8 @@ message SchedulingMetadata {
   string pool = 4;
   string group_id = 5;
 
-  // Whether to compute routing properties for the task and route it to the
+  // Whether to route this task to a node which previously executed a similar
+  // task.
   bool task_routing_enabled = 6;
 }
 
