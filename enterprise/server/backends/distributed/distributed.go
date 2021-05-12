@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/heartbeat"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
@@ -136,8 +137,6 @@ func (c *Cache) recvHeartbeatCallback(peer string) {
 	c.heartbeatMu.Lock()
 	c.lastContactedBy[peer] = time.Now()
 	c.heartbeatMu.Unlock()
-
-	go c.handleHintedHandoffs(peer)
 }
 
 func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer, prefix string, d *repb.Digest) {
@@ -164,11 +163,13 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 	for {
 		select {
 		case handoffOrder := <-c.hintedHandoffsByPeer[peer]:
-			err := c.copyFile(handoffOrder.ctx, handoffOrder.d, c.config.ListenAddr, handoffOrder.prefix, peer)
+			ctx, cancel := background.ExtendContextForFinalization(handoffOrder.ctx, 10*time.Second)
+			err := c.copyFile(ctx, handoffOrder.d, c.config.ListenAddr, handoffOrder.prefix, peer)
 			if err != nil {
 				log.Warningf("%q: unable to complete hinted handoff to peer: %q: %s", c.config.ListenAddr, peer, err)
 			}
 			log.Debugf("%q: completed hinted handoff to peer: %q: %s", c.config.ListenAddr, peer, err)
+			cancel()
 		default:
 			// read was unsuccessful -- no more handoffOrders to process.
 			return
@@ -186,8 +187,9 @@ func (c *Cache) heartbeatPeers() {
 		case <-ticker.C:
 			for _, peer := range c.consistentHash.GetItems() {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-				if err := c.cacheProxy.SendHeartbeat(ctx, peer); err != nil {
-					//log.Debugf("%q: unable to reach peer: %q", c.config.ListenAddr, peer)
+				if err := c.cacheProxy.SendHeartbeat(ctx, peer); err == nil {
+					// Trigger handoffs if we were able to ping this peer.
+					go c.handleHintedHandoffs(peer)
 				}
 				cancel()
 			}
