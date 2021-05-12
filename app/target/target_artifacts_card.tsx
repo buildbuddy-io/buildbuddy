@@ -11,14 +11,16 @@ interface Props {
 export default class TargetArtifactsCardComponent extends React.Component {
   props: Props;
 
-  handleArtifactClicked(outputUri: string, outputFilename: string) {
-    if (!outputUri) return;
+  handleArtifactClicked(outputUri: string, outputFilename: string, event: MouseEvent) {
+    event.preventDefault();
+    if (!outputUri) return false;
 
     if (outputUri.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", outputUri);
     } else if (outputUri.startsWith("bytestream://")) {
       rpcService.downloadBytestreamFile(outputFilename, outputUri, this.props.invocationId);
     }
+    return false;
   }
 
   render() {
@@ -29,9 +31,12 @@ export default class TargetArtifactsCardComponent extends React.Component {
           <div className="title">Artifacts</div>
           <div className="details">
             {this.props.files.map((file) => (
-              <div className="artifact-name" onClick={this.handleArtifactClicked.bind(this, file.uri, file.name)}>
+              <a
+                href={rpcService.getBytestreamFileUrl(file.name, file.uri, this.props.invocationId)}
+                className="artifact-name"
+                onClick={this.handleArtifactClicked.bind(this, file.uri, file.name)}>
                 {file.name}
-              </div>
+              </a>
             ))}
           </div>
           {this.props.files.length == 0 && <span>No artifacts</span>}
