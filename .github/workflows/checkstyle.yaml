@@ -1,0 +1,62 @@
+name: Check Style
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  checkstyle:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'style skip')"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: gofmt
+        run: |
+          gofmt -d . > gofmt-diff.txt || true
+          echo "gofmt diff:"
+          cat gofmt-diff.txt
+
+      - name: buildifier
+        run: |
+          go get -u github.com/bazelbuild/buildtools/buildifier
+          "$(go env GOPATH)/bin/buildifier" -d -r . > buildifier-diff.txt || true
+          echo "buildifier diff:"
+          cat buildifier-diff.txt
+
+      - name: gazelle
+        run: |
+          go get github.com/bazelbuild/bazel-gazelle/cmd/gazelle
+          "$(go env GOPATH)/bin/gazelle" -mode diff > gazelle-diff.txt || true
+          echo "gazelle diff:"
+          cat gazelle-diff.txt
+
+      - name: clang-format
+        run: |
+          git ls-files | grep '\.proto$' | xargs -d'\n' clang-format -i --dry-run > clang-format-errors.txt || true
+          echo "clang format errors:"
+          cat clang-format-errors.txt
+
+      - name: Summary
+        run: |
+          echo "===== gofmt diff ====="
+          cat gofmt-diff.txt
+          echo "===== buildifier diff ====="
+          cat buildifier-diff.txt
+          echo "===== gazelle diff ====="
+          cat gazelle-diff.txt
+          echo "===== clang-format errors ====="
+          cat clang-format-errors.txt
+
+      - name: Check
+        run: |
+          if [ -s gazelle-diff.txt ]; then exit 1; fi
+          if [ -s gofmt-diff.txt ]; then exit 1; fi
+          if [ -s buildifier-diff.txt ]; then exit 1; fi
+          if [ -s clang-format-errors.txt ]; then exit 1; fi
