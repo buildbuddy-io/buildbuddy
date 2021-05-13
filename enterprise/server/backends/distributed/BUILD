@@ -42,7 +42,6 @@ go_test(
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/util/grpc_client",
-        "//server/util/log",
         "//server/util/prefix",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",

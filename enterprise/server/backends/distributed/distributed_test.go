@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -24,7 +23,7 @@ import (
 )
 
 var (
-	emptyUserMap = testauth.TestUsers()
+	userMap = testauth.TestUsers("user1", "group1", "user2", "group2")
 
 	// The maximum duration to wait for a server to become ready.
 	maxWaitForReadyDuration = 3 * time.Second
@@ -33,20 +32,16 @@ var (
 	maxShutdownDuration = 3 * time.Second
 )
 
-func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
-	return te
-}
-
-func getAnonContext(t *testing.T) context.Context {
+func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticator, context.Context) {
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
+	te := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(userMap)
+	te.SetAuthenticator(ta)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
-	return ctx
+	return te, ta, ctx
 }
 
 func newMemoryCache(t *testing.T, maxSizeBytes int64) interfaces.Cache {
@@ -88,8 +83,7 @@ func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache,
 }
 
 func TestBasicReadWrite(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	ctx := getAnonContext(t)
+	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
@@ -104,17 +98,17 @@ func TestBasicReadWrite(t *testing.T) {
 	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
-	dc1 := startNewDCache(t, te, config1, memoryCache1)
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	dc2 := startNewDCache(t, te, config2, memoryCache2)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
-	dc3 := startNewDCache(t, te, config3, memoryCache3)
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
@@ -143,8 +137,7 @@ func TestBasicReadWrite(t *testing.T) {
 }
 
 func TestReadWriteWithFailedNode(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	ctx := getAnonContext(t)
+	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
@@ -160,22 +153,22 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
-	dc1 := startNewDCache(t, te, config1, memoryCache1)
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	dc2 := startNewDCache(t, te, config2, memoryCache2)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
-	dc3 := startNewDCache(t, te, config3, memoryCache3)
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
 	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
 	config4 := baseConfig
 	config4.ListenAddr = peer4
-	dc4 := startNewDCache(t, te, config4, memoryCache4)
+	dc4 := startNewDCache(t, env, config4, memoryCache4)
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
@@ -212,8 +205,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 }
 
 func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	ctx := getAnonContext(t)
+	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
@@ -229,22 +221,22 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
-	dc1 := startNewDCache(t, te, config1, memoryCache1)
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	dc2 := startNewDCache(t, te, config2, memoryCache2)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
-	dc3 := startNewDCache(t, te, config3, memoryCache3)
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
 	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
 	config4 := baseConfig
 	config4.ListenAddr = peer4
-	dc4 := startNewDCache(t, te, config4, memoryCache4)
+	dc4 := startNewDCache(t, env, config4, memoryCache4)
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
@@ -296,8 +288,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 }
 
 func TestBackfill(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	ctx := getAnonContext(t)
+	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
@@ -313,17 +304,17 @@ func TestBackfill(t *testing.T) {
 	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
-	dc1 := startNewDCache(t, te, config1, memoryCache1)
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	dc2 := startNewDCache(t, te, config2, memoryCache2)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
-	dc3 := startNewDCache(t, te, config3, memoryCache3)
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
@@ -376,8 +367,7 @@ func TestBackfill(t *testing.T) {
 }
 
 func TestContainsMulti(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	ctx := getAnonContext(t)
+	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
@@ -392,17 +382,17 @@ func TestContainsMulti(t *testing.T) {
 	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
-	dc1 := startNewDCache(t, te, config1, memoryCache1)
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	dc2 := startNewDCache(t, te, config2, memoryCache2)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
-	dc3 := startNewDCache(t, te, config3, memoryCache3)
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
@@ -447,8 +437,7 @@ func TestContainsMulti(t *testing.T) {
 }
 
 func TestGetMulti(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	ctx := getAnonContext(t)
+	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
@@ -463,17 +452,17 @@ func TestGetMulti(t *testing.T) {
 	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
-	dc1 := startNewDCache(t, te, config1, memoryCache1)
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	dc2 := startNewDCache(t, te, config2, memoryCache2)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
-	dc3 := startNewDCache(t, te, config3, memoryCache3)
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
@@ -518,8 +507,18 @@ func TestGetMulti(t *testing.T) {
 }
 
 func TestHintedHandoff(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	ctx := getAnonContext(t)
+	env, authenticator, ctx := getEnvAuthAndCtx(t)
+
+	// Authenticate as user1.
+	ctx, err := authenticator.WithAuthenticatedUser(ctx, "user1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
@@ -535,22 +534,22 @@ func TestHintedHandoff(t *testing.T) {
 	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
 	config1 := baseConfig
 	config1.ListenAddr = peer1
-	dc1 := startNewDCache(t, te, config1, memoryCache1)
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
-	dc2 := startNewDCache(t, te, config2, memoryCache2)
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
-	dc3 := startNewDCache(t, te, config3, memoryCache3)
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
 
 	memoryCache4 := newMemoryCache(t, singleCacheSizeBytes)
 	config4 := baseConfig
 	config4.ListenAddr = peer4
-	dc4 := startNewDCache(t, te, config4, memoryCache4)
+	dc4 := startNewDCache(t, env, config4, memoryCache4)
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
@@ -566,7 +565,7 @@ func TestHintedHandoff(t *testing.T) {
 	// below when reading / writing, although the running nodes
 	// still have reference to them via the Nodes list.
 	shutdownCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
-	err := dc3.Shutdown(shutdownCtx)
+	err = dc3.Shutdown(shutdownCtx)
 	cancel()
 	assert.Nil(t, err)
 
