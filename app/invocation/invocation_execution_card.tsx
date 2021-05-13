@@ -1,6 +1,7 @@
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
+import router from "../router/router";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import Select, { Option } from "../components/select/select";
 
@@ -184,6 +185,15 @@ export default class ExecutionCardComponent extends React.Component {
     });
   }
 
+  handleSearch(execution: execution_stats.Execution) {
+    if (this.props.model.getIsRBEEnabled()) {
+      window.location.search = "?" + execution.actionDigest?.hash + "/" + execution.actionDigest?.sizeBytes;
+      window.location.hash = "#action";
+      return;
+    }
+    router.navigateToSetup();
+  }
+
   render() {
     if (this.state.loading) {
       return <div className="loading" />;
@@ -274,7 +284,7 @@ export default class ExecutionCardComponent extends React.Component {
                   />
                 </div>
                 <div>
-                  <div className="invocation-execution-row-digest">
+                  <div className="invocation-execution-row-digest" onClick={this.handleSearch.bind(this, execution)}>
                     {stages[execution.stage].name} {execution?.actionDigest?.hash}/{execution?.actionDigest?.sizeBytes}
                   </div>
                   <div>{execution.commandSnippet}</div>
