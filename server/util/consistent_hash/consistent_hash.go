@@ -72,10 +72,7 @@ func (c *ConsistentHash) Get(key string) string {
 	return c.ring[c.keys[idx]]
 }
 
-// GetNReplicas returns the N "items" responsible for the specified key, in
-// order. It does this by walking the consistent hash ring, in order,
-// until N unique replicas have been found.
-func (c *ConsistentHash) GetNReplicas(key string, n int) []string {
+func (c *ConsistentHash) GetAllReplicas(key string) []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if len(c.keys) == 0 {
@@ -88,7 +85,7 @@ func (c *ConsistentHash) GetNReplicas(key string, n int) []string {
 	if idx == len(c.keys) {
 		idx = 0
 	}
-	replicas := make([]string, 0, n)
+	replicas := make([]string, 0, len(c.keys))
 	seen := make(map[string]struct{}, 0)
 
 	original := c.ring[c.keys[idx]]
@@ -102,12 +99,18 @@ func (c *ConsistentHash) GetNReplicas(key string, n int) []string {
 			replicas = append(replicas, v)
 			seen[v] = struct{}{}
 		}
-		if len(replicas) == n {
-			break
-		}
 	}
+
+	return replicas
+}
+
+// GetNReplicas returns the N "items" responsible for the specified key, in
+// order. It does this by walking the consistent hash ring, in order,
+// until N unique replicas have been found.
+func (c *ConsistentHash) GetNReplicas(key string, n int) []string {
+	replicas := c.GetAllReplicas(key)
 	if len(replicas) < n {
 		log.Warningf("Warning: client requested %d replicas but only %d were available.", n, len(replicas))
 	}
-	return replicas
+	return replicas[:n]
 }
