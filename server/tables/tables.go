@@ -337,18 +337,20 @@ func (t *TelemetryLog) TableName() string {
 }
 
 type ExecutionNode struct {
-	OS                string
-	Host              string `gorm:"primaryKey"`
-	Pool              string
-	SchedulerHostPort string
-	GroupID           string `gorm:"primaryKey;default:''"`
-	Constraints       string
-	Arch              string
 	Model
+	GroupID               string `gorm:"primaryKey;default:''"`
+	Host                  string `gorm:"primaryKey"`
+	Port                  int32  `gorm:"primaryKey;autoIncrement:false"`
+	OS                    string
+	Arch                  string
+	Pool                  string
+	Version               string
+	Constraints           string
 	AssignableMemoryBytes int64
 	AssignableMilliCPU    int64
-	Port                  int32 `gorm:"primaryKey;autoIncrement:false"`
-	Version               string
+	SchedulerHostPort     string
+	UserID                string
+	Perms                 int
 	ExecutionNodeID       string
 }
 
