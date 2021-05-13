@@ -12,9 +12,11 @@ go_library(
 
 go_test(
     name = "chunkstore_test",
+    size = "small",
     srcs = ["chunkstore_test.go"],
+    embed = [":chunkstore"],
     deps = [
-        ":chunkstore",
-        "//server/interfaces",
+        "//server/testutil/mockstore",
+        "@com_github_google_go_cmp//cmp",
     ],
 )
