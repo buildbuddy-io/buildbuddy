@@ -248,7 +248,7 @@ func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, des
 	if err != nil {
 		return err
 	}
-	buf := make([]byte, 0, 1000*1000) // Use 1MB buffer
+	buf := make([]byte, 1000*1000) // Use 1MB buffer
 	if _, err := io.CopyBuffer(rwc, r, buf); err != nil {
 		return err
 	}
