@@ -31,7 +31,7 @@ remote_execution:
 
 BuildBuddy RBE executors take their own configuration file that is pulled from `/config.yaml` on the executor docker image. Using BuildBuddy's [Enterprise Helm chart](enterprise-helm.md) will take care of most of this configuration for you.
 
-Here is a minimal example (recommended):
+Here is an example:
 
 ```
 executor:
@@ -39,30 +39,7 @@ executor:
   root_directory: "/buildbuddy/remotebuilds/"
   local_cache_directory: "/buildbuddy/filecache/"
   local_cache_size_bytes: 5000000000 # 5GB
-```
-
-And a fully loaded example:
-
-```
-executor:
-  app_target: "grpcs://your.buildbuddy.install:443"
-  root_directory: "/buildbuddy/remotebuilds/"
-  local_cache_directory: "/buildbuddy/filecache/"
-  local_cache_size_bytes: 5000000000 # 5GB
-  docker_sock: /var/run/docker.sock
-auth:
-  enable_anonymous_usage: true
-  oauth_providers:
-    - issuer_url: "https://accounts.google.com"
-      client_id: "myclient.apps.googleusercontent.com"
-      client_secret: "mysecret"
-cache:
-  redis_target: "my-release-redis-master:6379"
-  gcs:
-    bucket: "buildbuddy_cache_bucket"
-    project_id: "myprojectid"
-    credentials_file: "mycredentials.json"
-    ttl_days: 30
+  docker_socket: /var/run/docker.sock
 ```
 
 ## Executor environment variables.
