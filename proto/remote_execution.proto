@@ -828,15 +828,10 @@ message ExecutedActionMetadata {
   // BUILDBUDDY-SPECIFIC FIELDS BELOW.
   // Started at field #1000 to avoid conflicts with Bazel.
 
-  // If set, the ID of the executor which sent this operation.
-  // Only sent when stage == COMPLETED.
-  // DO NOT MERGE: OK to replace `name` with this instead?
+  // If set, the ID of the executor that ran this action.
+  // DO NOT MERGE: Can we populate the `name` field with this
+  // value instead?
   string executor_id = 1000;
-
-  // If set, the group ID executing this action.
-  // Only sent when stage == COMPLETED.
-  // DO NOT MERGE: Can we get this from ctx or some other way?
-  string group_id = 1001;
 }
 
 // An ActionResult represents the result of an
