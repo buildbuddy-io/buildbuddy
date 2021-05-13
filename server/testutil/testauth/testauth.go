@@ -162,6 +162,20 @@ func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey st
 	return context.WithValue(ctx, testAuthenticationHeader, a.testUsers[apiKey])
 }
 
+func (a *TestAuthenticator) WithAuthenticatedUser(ctx context.Context, userID string) (context.Context, error) {
+	userInfo, ok := a.testUsers[userID]
+	if !ok {
+		return nil, status.FailedPreconditionErrorf("User %q unknown to test authenticator.", userID)
+	}
+	ctx = context.WithValue(ctx, testAuthenticationHeader, userInfo)
+	jwt, err := TestJWTForUserID(userInfo.GetUserID())
+	if err != nil {
+		return nil, err
+	}
+	ctx = context.WithValue(ctx, jwtHeader, jwt)
+	return ctx, nil
+}
+
 func RequestContext(userID string, groupID string) *ctxpb.RequestContext {
 	return &ctxpb.RequestContext{
 		UserId: &uidpb.UserId{
@@ -171,8 +185,8 @@ func RequestContext(userID string, groupID string) *ctxpb.RequestContext {
 	}
 }
 
-// WithAuthenticatedUser sets the authenticated user to the given user.
-func WithAuthenticatedUser(ctx context.Context, userInfo interfaces.UserInfo) context.Context {
+// WithAuthenticatedUserInfo sets the authenticated user to the given user.
+func WithAuthenticatedUserInfo(ctx context.Context, userInfo interfaces.UserInfo) context.Context {
 	return context.WithValue(ctx, testAuthenticationHeader, userInfo)
 }
 
