@@ -250,13 +250,15 @@ type ExecutionService interface {
 }
 
 type ExecutionNode interface {
-	// GetID returns the UUID of the executor instance.
+	// GetID returns an ID for this execution node that uniquely identifies it
+	// within the global set of executors that are registered to the scheduler
+	// service for a particular BuildBuddy deployment.
 	GetID() string
 }
 
 type TaskRouter interface {
 	RankNodes(ctx context.Context, p *scpb.TaskRoutingProperties, nodes []ExecutionNode) ([]ExecutionNode, error)
-	MarkComplete(ctx context.Context, p *scpb.TaskRoutingProperties, node ExecutionNode) error
+	MarkComplete(ctx context.Context, p *scpb.TaskRoutingProperties, nodeID string) error
 }
 
 // CommandContainer provides an execution environment for commands.
