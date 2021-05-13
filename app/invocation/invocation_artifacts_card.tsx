@@ -19,8 +19,9 @@ export default class ArtifactsCardComponent extends React.Component {
     numPages: 1,
   };
 
-  handleArtifactClicked(outputUri: string, outputFilename: string, invocationId: string) {
-    if (!outputUri) return;
+  handleArtifactClicked(outputUri: string, outputFilename: string, invocationId: string, event: MouseEvent) {
+    event.preventDefault();
+    if (!outputUri) return false;
 
     if (outputUri.startsWith("file://")) {
       window.prompt("Copy artifact path to clipboard: Cmd+C, Enter", outputUri);
@@ -64,11 +65,12 @@ export default class ArtifactsCardComponent extends React.Component {
                         output.name.toLowerCase().includes(this.props.filter.toLowerCase())
                     )
                     .map((output) => (
-                      <div
+                      <a
+                        href={rpcService.getBytestreamFileUrl(output.name, output.uri, this.props.model.getId())}
                         className="artifact-name"
                         onClick={this.handleArtifactClicked.bind(this, output.uri, output.name)}>
                         {output.name}
-                      </div>
+                      </a>
                     ))}
                 </div>
               ))}

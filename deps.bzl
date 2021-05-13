@@ -1896,6 +1896,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/opencontainers/selinux",
         sum = "h1:+77ba4ar4jsCbL1GLbFL8fFM57w6suPfSS9PDLDY7KM=",
         version = "v1.8.0",
+        build_directives = [
+            "gazelle:resolve go github.com/willf/bitset @com_github_willf_bitset//:bitset",
+        ],
     )
 
     go_repository(

@@ -126,7 +126,8 @@ func StructuredLogger() zerolog.Logger {
 type gcpLoggingCallerHook struct{}
 
 func (h gcpLoggingCallerHook) Run(e *zerolog.Event, level zerolog.Level, msg string) {
-	_, file, line, ok := runtime.Caller(callerSkipFrameCount)
+	// +1 to skip the hook frame.
+	_, file, line, ok := runtime.Caller(callerSkipFrameCount + 1)
 	if !ok {
 		return
 	}
