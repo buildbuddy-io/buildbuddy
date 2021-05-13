@@ -24,9 +24,9 @@ import (
 
 const (
 	// Each hinted handoff is a digest (~64 bytes), prefix, and peer
-	// (40 bytes). So keeping around 10000 of these means an extra 1MB
+	// (40 bytes). So keeping around 100000 of these means an extra 10MB
 	// per peer.
-	maxHintedHandoffsPerPeer = 10000
+	maxHintedHandoffsPerPeer = 100000
 )
 
 type CacheConfig struct {
@@ -88,7 +88,6 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	}
 	dc.cacheProxy.SetHeartbeatCallbackFunc(dc.recvHeartbeatCallback)
 	dc.cacheProxy.SetHintedHandoffCallbackFunc(dc.recvHintedHandoffCallback)
-
 	if len(config.Nodes) > 0 {
 		// Nodes are hardcoded. Set them once and be done with it.
 		chash.Set(config.Nodes...)
@@ -166,7 +165,8 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 			ctx, cancel := background.ExtendContextForFinalization(handoffOrder.ctx, 10*time.Second)
 			err := c.copyFile(ctx, handoffOrder.d, c.config.ListenAddr, handoffOrder.prefix, peer)
 			if err != nil {
-				log.Warningf("%q: unable to complete hinted handoff to peer: %q: %s", c.config.ListenAddr, peer, err)
+				log.Warningf("%q: unable to complete hinted handoff to peer: %q: %s (order %+v)", c.config.ListenAddr, peer, err, handoffOrder)
+				return
 			}
 			log.Debugf("%q: completed hinted handoff to peer: %q: %s", c.config.ListenAddr, peer, err)
 			cancel()
@@ -253,25 +253,25 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 
 func (c *Cache) remoteContains(ctx context.Context, peer, prefix string, d *repb.Digest) (bool, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		return c.local.Contains(ctx, d)
+		return c.local.WithPrefix(prefix).Contains(ctx, d)
 	}
 	return c.cacheProxy.RemoteContains(ctx, peer, prefix, d)
 }
 func (c *Cache) remoteContainsMulti(ctx context.Context, peer, prefix string, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		return c.local.ContainsMulti(ctx, digests)
+		return c.local.WithPrefix(prefix).ContainsMulti(ctx, digests)
 	}
 	return c.cacheProxy.RemoteContainsMulti(ctx, peer, prefix, digests)
 }
 func (c *Cache) remoteGetMulti(ctx context.Context, peer, prefix string, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		return c.local.GetMulti(ctx, digests)
+		return c.local.WithPrefix(prefix).GetMulti(ctx, digests)
 	}
 	return c.cacheProxy.RemoteGetMulti(ctx, peer, prefix, digests)
 }
 func (c *Cache) remoteReader(ctx context.Context, peer, prefix string, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		return c.local.Reader(ctx, d, offset)
+		return c.local.WithPrefix(prefix).Reader(ctx, d, offset)
 	}
 	return c.cacheProxy.RemoteReader(ctx, peer, prefix, d, offset)
 }
