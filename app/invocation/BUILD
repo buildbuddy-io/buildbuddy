@@ -33,6 +33,7 @@ ts_library(
         "//proto:execution_stats_ts_proto",
         "//proto:group_ts_proto",
         "//proto:invocation_ts_proto",
+        "//proto:remote_execution_ts_proto",
         "//proto:user_ts_proto",
         "@npm//@types/long",
         "@npm//@types/moment",
