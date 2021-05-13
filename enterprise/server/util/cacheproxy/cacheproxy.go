@@ -200,7 +200,8 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	}
 	defer reader.Close()
 
-	_, err = io.Copy(&streamWriter{stream}, reader)
+	buf := make([]byte, 0, 1000*1000) // Use 1MB buffer
+	_, err = io.CopyBuffer(&streamWriter{stream}, reader, buf)
 	return err
 }
 
