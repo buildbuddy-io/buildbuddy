@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -397,6 +398,16 @@ func (wc *streamWriteCloser) Close() error {
 }
 
 func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer, prefix string, d *repb.Digest) (io.WriteCloser, error) {
+	// Stopping a write mid-stream is difficult because Write streams are
+	// unidirectional. The server can close the stream early, but this does
+	// not necessarily save the client any work. So, to attempt to reduce
+	// duplicate writes, we call Contains before writing a new digest, and
+	// if it already exists, we'll return a devnull writecloser so no bytes
+	// are transmitted over the network.
+	if alreadyExists, err := c.RemoteContains(ctx, peer, prefix, d); err == nil && alreadyExists {
+		log.Debugf("Skipping duplicate write of %q", d.GetHash())
+		return devnull.NewWriteCloser(), nil
+	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
 		return nil, err
@@ -405,13 +416,14 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer, prefix
 	if err != nil {
 		return nil, err
 	}
-	return &streamWriteCloser{
+	wc := &streamWriteCloser{
 		prefix:        prefix,
 		handoffPeer:   handoffPeer,
 		key:           digestToKey(d),
 		bytesUploaded: 0,
 		stream:        stream,
-	}, nil
+	}
+	return wc, nil
 }
 
 func (c *CacheProxy) SendHeartbeat(ctx context.Context, peer string) error {
