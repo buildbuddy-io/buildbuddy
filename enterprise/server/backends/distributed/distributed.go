@@ -44,6 +44,11 @@ type Cache struct {
 	config           CacheConfig
 }
 
+const (
+	// Keep under the limit of ~4MB (1024 * 1024 * 4).
+	backfillBufSizeBytes = (1024 * 1024 * 4) - 100
+)
+
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",
 // in a HTTP API and announcing its presence over redis to other distributed
 // cache nodes. Together, these distributed caches each maintain a consistent
@@ -248,7 +253,7 @@ func (c *Cache) backfillReplica(ctx context.Context, d *repb.Digest, source, des
 	if err != nil {
 		return err
 	}
-	buf := make([]byte, 1000*1000) // Use 1MB buffer
+	buf := make([]byte, backfillBufSizeBytes)
 	if _, err := io.CopyBuffer(rwc, r, buf); err != nil {
 		return err
 	}

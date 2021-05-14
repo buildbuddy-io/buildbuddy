@@ -23,6 +23,8 @@ import (
 
 const (
 	maxDialTimeout = 10 * time.Second
+	// Keep under the limit of ~4MB (1024 * 1024 * 4).
+	readBufSizeBytes = (1024 * 1024 * 4) - 100
 )
 
 type CacheProxy struct {
@@ -200,7 +202,7 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	}
 	defer reader.Close()
 
-	buf := make([]byte, 1000*1000) // Use 1MB buffer
+	buf := make([]byte, readBufSizeBytes)
 	_, err = io.CopyBuffer(&streamWriter{stream}, reader, buf)
 	return err
 }
