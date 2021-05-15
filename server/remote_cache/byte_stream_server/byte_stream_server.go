@@ -105,7 +105,12 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	defer reader.Close()
 
 	downloadTracker := ht.TrackDownload(d)
-	copyBuf := make([]byte, readBufSizeBytes)
+
+	bufSize := int64(readBufSizeBytes)
+	if d.GetSizeBytes() < bufSize {
+		bufSize = d.GetSizeBytes()
+	}
+	copyBuf := make([]byte, bufSize)
 	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf)
 	if err == nil {
 		downloadTracker.Close()
