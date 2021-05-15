@@ -20,6 +20,8 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+const readBufSizeBytes = 1000000 // 1MB
+
 type CacheProxy struct {
 	env                   environment.Env
 	cache                 interfaces.Cache
@@ -190,7 +192,13 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	}
 	defer reader.Close()
 
-	_, err = io.Copy(&streamWriter{stream}, reader)
+	bufSize := int64(readBufSizeBytes)
+	if d.GetSizeBytes() < bufSize {
+		bufSize = d.GetSizeBytes()
+	}
+	copyBuf := make([]byte, bufSize)
+	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf)
+
 	return err
 }
 
