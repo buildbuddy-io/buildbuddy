@@ -11,7 +11,7 @@ This error means the `bes_timeout` [flag](https://docs.bazel.build/versions/mast
 We recommend using the following flag to increase this upload timeout:
 
 ```
---bes_timeout=600
+--bes_timeout=600s
 ```
 
 These slow uploads should only happen once when artifacts are initially written to the cache, and shouldn't happen on subsequent builds.
