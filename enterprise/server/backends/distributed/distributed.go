@@ -253,30 +253,35 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 
 func (c *Cache) remoteContains(ctx context.Context, peer, prefix string, d *repb.Digest) (bool, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		return c.local.WithPrefix(prefix).Contains(ctx, d)
+		// No prefix necessary -- it's already set on the local cache.
+		return c.local.Contains(ctx, d)
 	}
 	return c.cacheProxy.RemoteContains(ctx, peer, prefix, d)
 }
 func (c *Cache) remoteContainsMulti(ctx context.Context, peer, prefix string, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		return c.local.WithPrefix(prefix).ContainsMulti(ctx, digests)
+		// No prefix necessary -- it's already set on the local cache.
+		return c.local.ContainsMulti(ctx, digests)
 	}
 	return c.cacheProxy.RemoteContainsMulti(ctx, peer, prefix, digests)
 }
 func (c *Cache) remoteGetMulti(ctx context.Context, peer, prefix string, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		return c.local.WithPrefix(prefix).GetMulti(ctx, digests)
+		// No prefix necessary -- it's already set on the local cache.
+		return c.local.GetMulti(ctx, digests)
 	}
 	return c.cacheProxy.RemoteGetMulti(ctx, peer, prefix, digests)
 }
 func (c *Cache) remoteReader(ctx context.Context, peer, prefix string, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		return c.local.WithPrefix(prefix).Reader(ctx, d, offset)
+		// No prefix necessary -- it's already set on the local cache.
+		return c.local.Reader(ctx, d, offset)
 	}
 	return c.cacheProxy.RemoteReader(ctx, peer, prefix, d, offset)
 }
 func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer, prefix string, d *repb.Digest) (io.WriteCloser, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+		// No prefix necessary -- it's already set on the local cache.
 		return c.local.Writer(ctx, d)
 	}
 	return c.cacheProxy.RemoteWriter(ctx, peer, handoffPeer, prefix, d)
@@ -307,20 +312,29 @@ type backfillOrder struct {
 	dest   string
 }
 
+func dedupeBackfills(backfills []*backfillOrder) []*backfillOrder {
+	deduped := make([]*backfillOrder, 0, len(backfills))
+	seen := make(map[string]struct{}, len(backfills))
+	for _, bf := range backfills {
+		if _, ok := seen[bf.d.GetHash()]; ok {
+			continue
+		}
+		seen[bf.d.GetHash()] = struct{}{}
+		deduped = append(deduped, bf)
+	}
+	return deduped
+}
+
 func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) error {
 	if len(backfills) == 0 {
 		return nil
 	}
+	backfills = dedupeBackfills(backfills)
 	eg, gCtx := errgroup.WithContext(ctx)
 	for _, bf := range backfills {
 		bf := bf
 		eg.Go(func() error {
-			if err := c.copyFile(gCtx, bf.d, bf.source, c.prefix, bf.dest); err != nil {
-				log.Debugf("Error backfilling %q => %q: %s", bf.source, bf.dest, err)
-			} else {
-				log.Debugf("Backfilled (%s) from source %q to dest %q.", bf.d.GetHash(), bf.source, bf.dest)
-			}
-			return nil
+			return c.copyFile(gCtx, bf.d, bf.source, c.prefix, bf.dest)
 		})
 	}
 	return eg.Wait()
