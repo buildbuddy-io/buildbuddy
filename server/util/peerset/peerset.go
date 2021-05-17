@@ -21,28 +21,19 @@ func New(preferredPeers, fallbackPeers []string) *PeerSet {
 }
 
 func NewRead(localhost string, preferredPeers, fallbackPeers []string) *PeerSet {
-	// we'll reorder preferredPeers into this new slice.
-	reordered := make([]string, 0, len(preferredPeers))
-
-	// If localhost is present in the preferredPeers list, move it to the
-	// front. (Skip a network lookup if we can)
-	for i := len(preferredPeers) - 1; i >= 0; i-- {
-		p := preferredPeers[i]
+	rest := make([]string, 0, len(preferredPeers))
+	first := make([]string, 0, 1)
+	for _, p := range preferredPeers {
 		if p == localhost {
-			preferredPeers = append(preferredPeers, preferredPeers[i+1:]...)
-			reordered = append(reordered, localhost)
-			break
+			first = append(first, p)
+		} else {
+			rest = append(rest, p)
 		}
 	}
-
-	// Shuffle the rest of the preferredPeers, to try to distribute
-	// load more evenly and avoid "hot-keys" becoming a problem.
-	rand.Shuffle(len(preferredPeers), func(i, j int) {
-		preferredPeers[i], preferredPeers[j] = preferredPeers[j], preferredPeers[i]
+	rand.Shuffle(len(rest), func(i, j int) {
+		rest[i], rest[j] = rest[j], rest[i]
 	})
-	reordered = append(reordered, preferredPeers...)
-
-	return New(reordered, fallbackPeers)
+	return New(append(first, rest...), fallbackPeers)
 }
 
 func (p *PeerSet) MarkPeerAsFailed(failedPeer string) {
