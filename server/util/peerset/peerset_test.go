@@ -123,19 +123,19 @@ func TestGetBackfillTargets(t *testing.T) {
 			peerset.New([]string{"a"}, []string{"b", "c"}),
 			[]string{"a"},
 			[]string{"a", "b", ""},
-			[]string{"a"},
+			[]string{},
 		},
 		{
 			peerset.New([]string{"a", "b", "c"}, []string{}),
 			[]string{"b"},
 			[]string{"a", "b", "c", ""},
-			[]string{"a", "b"},
+			[]string{"a"},
 		},
 		{
 			peerset.New([]string{"a", "b", "c"}, []string{"d", "e", "f", "g"}),
 			[]string{"a", "b"},
 			[]string{"a", "b", "c", "d", "e", ""},
-			[]string{"a", "b", "c"},
+			[]string{"c"},
 		},
 		{
 			peerset.New([]string{"a", "b", "c"}, []string{"d", "e", "f"}),

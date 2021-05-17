@@ -82,20 +82,46 @@ func (p *PeerSet) GetNextPeer() string {
 // that successfully returned a value) and a list of the skipped peers before
 // it, if they were preferred peers.
 //
-// N.B. Backfill is NOT based on errors encountered. It assumes that the last
-// peer a caller read from GetNextPeer was the one containing the item, and all
-// previous peers lacked it. Therefore, the last peer is returned as a source
-// and all previous peers are returned as destinations for the backfill.
+// N.B. Backfill assumes that the last peer a caller read from GetNextPeer
+// contained the item, and all previous peers, which did not fail, lacked it.
+// Therefore, the last peer is returned as a source and all previous peers are
+// returned as destinations for the backfill.
+//
 // Secondary hosts can never be backfilled, but they can be used as sources for
 // a backfill.
 func (p *PeerSet) GetBackfillTargets() (string, []string) {
 	lastUsedIndex := p.i - 1
+
+	source := ""
+	targets := make([]string, 0)
+
 	if lastUsedIndex < len(p.PreferredPeers) {
-		return p.PreferredPeers[lastUsedIndex], p.PreferredPeers[:lastUsedIndex]
+		source, targets = p.PreferredPeers[lastUsedIndex], p.PreferredPeers[:lastUsedIndex]
+	} else {
+		lastUsedIndex -= len(p.PreferredPeers)
+		if lastUsedIndex < len(p.FallbackPeers) {
+			source, targets = p.FallbackPeers[lastUsedIndex], p.PreferredPeers
+		}
 	}
-	lastUsedIndex -= len(p.PreferredPeers)
-	if lastUsedIndex < len(p.FallbackPeers) {
-		return p.FallbackPeers[lastUsedIndex], p.PreferredPeers
+	// Ensure no failed peers are returned.
+	for _, f := range p.FailedPeers {
+		if f == source {
+			return "", []string{}
+		}
 	}
-	return "", []string{}
+
+	filteredTargets := make([]string, 0, len(targets))
+	for _, t := range targets {
+		isFailed := false
+		for _, f := range p.FailedPeers {
+			if t == f {
+				isFailed = true
+				break
+			}
+		}
+		if !isFailed {
+			filteredTargets = append(filteredTargets, t)
+		}
+	}
+	return source, filteredTargets
 }
