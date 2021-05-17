@@ -1011,6 +1011,7 @@ code .comment {
   margin-left: 32px;
   margin-top: 4px;
   cursor: pointer;
+  display: block;
 }
 
 .artifact-section-title {
