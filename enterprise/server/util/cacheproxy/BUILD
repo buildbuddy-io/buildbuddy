@@ -13,6 +13,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/util/devnull",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/log",

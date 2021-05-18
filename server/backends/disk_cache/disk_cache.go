@@ -98,6 +98,8 @@ func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
 }
 
 func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	newPrefix := filepath.Join(append(filepath.SplitList(c.prefix), prefix)...)
 	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
 		newPrefix += "/"
