@@ -7,6 +7,7 @@ import ExecutorCardComponent from "./executor_card";
 import { Subscription } from "rxjs";
 import capabilities from "../../../app/capabilities/capabilities";
 import { api_key } from "../../../proto/api_key_ts_proto";
+import { bazel_config } from "../../../proto/bazel_config_ts_proto";
 import { FilledButton } from "../../../app/components/button/button";
 import router from "../../../app/router/router";
 import Select, { Option } from "../../../app/components/select/select";
@@ -60,9 +61,9 @@ class ExecutorDeploy extends React.Component<ExecutorDeployProps, ExecutorDeploy
         <code>
           <pre>
             {`docker run gcr.io/flame-public/buildbuddy-executor-enterprise:latest \\
-    --executor.app_target ${this.props.schedulerUri} \\
+    --executor.app_target=${this.props.schedulerUri} \\
     --executor.enable_work_streaming \\
-    --executor.api_key ${this.props.executorKeys[this.state.selectedExecutorKeyIdx]?.value}`}
+    --executor.api_key=${this.props.executorKeys[this.state.selectedExecutorKeyIdx]?.value}`}
           </pre>
         </code>
       </>
@@ -82,11 +83,12 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
   render() {
     return (
       <>
-        <h3>1. Create API key for executor registration</h3>
+        <hr />
+        <h2>1. Create an API key for executor registration</h2>
         {this.props.executorKeys.length == 0 && (
           <div>
-            <p>There are no API keys with executor capability configured for your organization.</p>
-            <p>API keys are used to authorize executors that wish to register to process work.</p>
+            <p>There are no API keys with the executor capability configured for your organization.</p>
+            <p>API keys are used to authorize self-hosted executors.</p>
             <FilledButton className="manage-keys-button">
               <a href="/settings/" onClick={onClickLink.bind("/settings")}>
                 Manage keys
@@ -103,11 +105,11 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
               )}
               <p>These API keys can be used to deploy your executors.</p>
             </div>
-            <h3>2. Deploy executors</h3>
+            <h2>2. Deploy executors</h2>
             <ExecutorDeploy executorKeys={this.props.executorKeys} schedulerUri={this.props.schedulerUri} />
-            {this.props.executors.length == 1 && <p>There is 1 connected executor.</p>}
-            {this.props.executors.length != 1 && <p>There are {this.props.executors.length} connected executors.</p>}
-            <h3>3. Switch to self-hosted executors in organization settings</h3>
+            {this.props.executors.length == 1 && <p>There is 1 executor connected.</p>}
+            {this.props.executors.length != 1 && <p>There are {this.props.executors.length} executors connected.</p>}
+            <h2>3. Switch to self-hosted executors in organization settings</h2>
             <p>Enable "Use self-hosted executors" on the Organization Settings page.</p>
             <FilledButton className="organization-settings-button">
               <a href="/settings/" onClick={onClickLink.bind("/settings")}>
@@ -129,10 +131,10 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
   render() {
     return (
       <>
-        {this.props.executors.length == 1 && <p>There is 1 connected executor.</p>}
-        {this.props.executors.length > 1 && <p>There are {this.props.executors.length} connected executors.</p>}
+        {this.props.executors.length == 1 && <p>There is 1 executor connected.</p>}
+        {this.props.executors.length > 1 && <p>There are {this.props.executors.length} executors connected.</p>}
         {this.props.executors.length < 3 && (
-          <p>For best performance and reliability we suggest running a minimum of 3 executors.</p>
+          <p>For better performance and reliability, we suggest running a minimum of 3 executors.</p>
         )}
         <div className="executor-cards">
           {this.props.executors.map((node) => (
@@ -235,7 +237,10 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     }));
 
     try {
-      const response = await rpcService.service.getBazelConfig({});
+      let request = new bazel_config.GetBazelConfigRequest();
+      request.host = window.location.host;
+      request.protocol = window.location.protocol;
+      const response = await rpcService.service.getBazelConfig(request);
       const schedulerUri = response.configOption.find((opt) => opt.flagName == "remote_executor");
       this.setState({ schedulerUri: schedulerUri?.flagValue });
     } catch (e) {
@@ -261,7 +266,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
       if (this.state.nodes.length == 0) {
         return (
           <div className="empty-state">
-            <h2>No self-hosted executors connected.</h2>
+            <h1>No self-hosted executors connected.</h1>
             <p>Self-hosted executors are enabled, but there are no executors connected.</p>
             <p>Follow the instructions below to deploy your executors.</p>
             <ExecutorSetup
@@ -275,16 +280,15 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
       return (
         <>
           <ExecutorsList executors={this.state.nodes} />
-          <h2>Deploying additional executors</h2>
+          <h1>Deploying additional executors</h1>
           <ExecutorDeploy executorKeys={this.state.executorKeys} schedulerUri={this.state.schedulerUri} />
         </>
       );
     } else {
       return (
         <div className="empty-state">
-          <h2>You're all set to use BuildBuddy Cloud executors.</h2>
+          <h1>You're currently using BuildBuddy Cloud executors.</h1>
           <p>See the instructions below if you'd like to use self-hosted executors.</p>
-          <h2>Using self-hosted executors</h2>
           <ExecutorSetup
             executorKeys={this.state.executorKeys}
             executors={this.state.nodes}
@@ -300,7 +304,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     if (this.state.nodes.length == 0) {
       return (
         <div className="empty-state">
-          <h2>No remote execution nodes found!</h2>
+          <h1>No remote execution nodes found!</h1>
           <p>
             Check out our documentation on deploying remote executors:
             <br />
@@ -321,13 +325,17 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
       <div className="executors-page">
         <div className="shelf">
           <div className="container">
+            <div className="breadcrumbs">
+              {this.props.user && <span>{this.props.user?.selectedGroupName()}</span>}
+              <span>Executors</span>
+            </div>
             <div className="title">Executors</div>
           </div>
         </div>
         {this.state.error && <div className="error-message">{this.state.error.message}</div>}
         {this.state.loading.length > 0 && <div className="loading"></div>}
         {this.state.loading.length == 0 && this.state.error == null && (
-          <div className="container narrow">
+          <div className="container">
             {capabilities.userOwnedExecutors && this.renderWithGroupOwnedExecutorsEnabled()}
             {!capabilities.userOwnedExecutors && this.renderWithoutGroupOwnedExecutorsEnabled()}
           </div>

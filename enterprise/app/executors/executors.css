@@ -28,7 +28,7 @@
 
 .executors-page .card .details {
   line-height: 1.6em;
-  margin-top: 4px;
+  margin-top: 0px;
   word-break: break-all;
   white-space: pre-wrap;
   flex-grow: 1;
@@ -50,4 +50,31 @@
   text-align: left;
   margin-right: 16px;
   font-weight: 700;
+}
+
+.executors-page .manage-keys-button {
+  margin-top: 16px;
+}
+
+.executors-page hr {
+  margin-top: 32px;
+  border: 0;
+  background-color: #eee;
+  height: 1px;
+}
+
+.executors-page h1 {
+  margin-top: 32px;
+}
+
+.executors-page h2 {
+  margin-top: 32px;
+}
+
+.executors-page .credential-picker {
+  margin-left: 16px;
+}
+
+.executors-page .organization-settings-button {
+  margin-top: 16px;
 }
