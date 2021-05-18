@@ -61,7 +61,7 @@ class ExecutorDeploy extends React.Component<ExecutorDeployProps, ExecutorDeploy
           <pre>
             {`docker run gcr.io/flame-public/buildbuddy-executor-enterprise:latest \\
     --executor.app_target ${this.props.schedulerUri} \\
-    --executor.enable_work_streaming true \\
+    --executor.enable_work_streaming \\
     --executor.api_key ${this.props.executorKeys[this.state.selectedExecutorKeyIdx]?.value}`}
           </pre>
         </code>
