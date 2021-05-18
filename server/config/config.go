@@ -187,6 +187,7 @@ type ExecutorConfig struct {
 	DockerNetHost           bool             `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
 	EnableWorkStreaming     bool             `yaml:"enable_work_streaming" usage:"Enables executor work streaming (WIP)."`
 	DockerSiblingContainers bool             `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
+	DefaultXCodeVersion     string           `yaml:"default_xcode_version" usage:"Sets the default XCode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
 }
 
 type RunnerPoolConfig struct {
