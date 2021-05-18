@@ -163,7 +163,7 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 		select {
 		case handoffOrder := <-c.hintedHandoffsByPeer[peer]:
 			ctx, cancel := background.ExtendContextForFinalization(handoffOrder.ctx, 10*time.Second)
-			err := c.copyFile(ctx, handoffOrder.d, c.config.ListenAddr, handoffOrder.prefix, peer)
+			err := c.sendFile(ctx, handoffOrder.d, handoffOrder.prefix, peer)
 			if err != nil {
 				log.Warningf("%q: unable to complete hinted handoff to peer: %q: %s (order %+v)", c.config.ListenAddr, peer, err, handoffOrder)
 				return
@@ -285,6 +285,25 @@ func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer, prefix stri
 		return c.local.Writer(ctx, d)
 	}
 	return c.cacheProxy.RemoteWriter(ctx, peer, handoffPeer, prefix, d)
+}
+
+func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, prefix, dest string) error {
+	if exists, err := c.cacheProxy.RemoteContains(ctx, dest, prefix, d); err == nil && exists {
+		return nil
+	}
+	r, err := c.local.WithPrefix(prefix).Reader(ctx, d, 0)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	rwc, err := c.cacheProxy.RemoteWriter(ctx, dest, "", prefix, d)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(rwc, r); err != nil {
+		return err
+	}
+	return rwc.Close()
 }
 
 func (c *Cache) copyFile(ctx context.Context, d *repb.Digest, source, prefix, dest string) error {
