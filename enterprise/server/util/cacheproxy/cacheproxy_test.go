@@ -186,6 +186,88 @@ func TestWriter(t *testing.T) {
 	}
 }
 
+type snitchCache struct {
+	interfaces.Cache
+	writeCount map[string]int
+}
+
+func (s *snitchCache) WithPrefix(prefix string) interfaces.Cache {
+	return &snitchCache{
+		s.Cache.WithPrefix(prefix),
+		s.writeCount,
+	}
+}
+
+func (s *snitchCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+	wc, err := s.Cache.Writer(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	s.writeCount[d.GetHash()] += 1
+	return wc, nil
+}
+
+func TestWriteAlreadyExists(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "auth.enable_anonymous_usage", "true")
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	writeCounts := make(map[string]int, 0)
+	sc := snitchCache{te.GetCache(), writeCounts}
+
+	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	c := cacheproxy.NewCacheProxy(te, &sc, peer)
+	if err := c.StartListening(); err != nil {
+		t.Fatalf("Error setting up cacheproxy: %s", err)
+	}
+
+	waitUntilServerIsAlive(peer)
+
+	testSize := int64(10000000)
+	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
+	prefix := ""
+
+	// Remote-write the random bytes to the cache (with a prefix).
+	wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.Copy(wc, readSeeker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if writeCounts[d.GetHash()] != 1 {
+		t.Fatalf("Snitch cache was not written to. It should have been.")
+	}
+
+	// Reset readSeeker.
+	readSeeker.Seek(0, 0)
+	wc, err = c.RemoteWriter(ctx, peer, noHandoff, prefix, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.Copy(wc, readSeeker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wc.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if writeCounts[d.GetHash()] != 1 {
+		t.Fatalf("Snitch cache was written to, but digest already existed.")
+	}
+}
+
 func TestContains(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
