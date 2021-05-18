@@ -134,7 +134,7 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
         {this.props.executors.length == 1 && <p>There is 1 executor connected.</p>}
         {this.props.executors.length > 1 && <p>There are {this.props.executors.length} executors connected.</p>}
         {this.props.executors.length < 3 && (
-          <p>For performance and reliability, we suggest running a minimum of 3 executors.</p>
+          <p>For better performance and reliability, we suggest running a minimum of 3 executors.</p>
         )}
         <div className="executor-cards">
           {this.props.executors.map((node) => (
