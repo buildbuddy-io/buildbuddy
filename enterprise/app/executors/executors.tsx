@@ -41,8 +41,8 @@ class ExecutorDeploy extends React.Component<ExecutorDeployProps, ExecutorDeploy
   render() {
     return (
       <>
-        <p>The executor is available as a Docker image that you can deploy using your preferred mechanism.</p>
-        <p>Example running an executor manually using the Docker CLI is shown below.</p>
+        <p>Self-hosted executors can be deployed by running a simple Docker image on any machine.</p>
+        <p>The example below shows how to run an executor manually using the Docker CLI.</p>
         API key:
         <Select
           title="Select API key"
@@ -107,8 +107,10 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
             </div>
             <h2>2. Deploy executors</h2>
             <ExecutorDeploy executorKeys={this.props.executorKeys} schedulerUri={this.props.schedulerUri} />
-            {this.props.executors.length == 1 && <p>There is 1 executor connected.</p>}
-            {this.props.executors.length != 1 && <p>There are {this.props.executors.length} executors connected.</p>}
+            {this.props.executors.length == 1 && <p>You have 1 self-hosted executor connected.</p>}
+            {this.props.executors.length != 1 && (
+              <p>You have {this.props.executors.length} self-hosted executors connected.</p>
+            )}
             <h2>3. Switch to self-hosted executors in organization settings</h2>
             <p>Enable "Use self-hosted executors" on the Organization Settings page.</p>
             <FilledButton className="organization-settings-button">
@@ -279,7 +281,9 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
       }
       return (
         <>
+          <h1>Self-hosted executors</h1>
           <ExecutorsList executors={this.state.nodes} />
+          <hr />
           <h1>Deploying additional executors</h1>
           <ExecutorDeploy executorKeys={this.state.executorKeys} schedulerUri={this.state.schedulerUri} />
         </>
