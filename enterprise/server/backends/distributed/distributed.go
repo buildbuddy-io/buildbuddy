@@ -50,6 +50,7 @@ type Cache struct {
 	local                interfaces.Cache
 	doneHeartbeat        chan bool
 	lastContactedBy      map[string]time.Time
+	hintedHandoffsMu     *sync.Mutex
 	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
 	cacheProxy           *cacheproxy.CacheProxy
 	consistentHash       *consistent_hash.ConsistentHash
@@ -84,6 +85,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		shutDownChan:    make(chan bool, 0),
 		lastContactedBy: make(map[string]time.Time, 0),
 
+		hintedHandoffsMu: &sync.Mutex{},
 		hintedHandoffsByPeer: make(map[string]chan *hintedHandoffOrder, 0),
 	}
 	dc.cacheProxy.SetHeartbeatCallbackFunc(dc.recvHeartbeatCallback)
@@ -142,7 +144,9 @@ func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer, prefix stri
 	if _, ok := c.hintedHandoffsByPeer[peer]; !ok {
 		// If this is the first hinted handoff for this peer we've
 		// received, then initialize the channel.
+		c.hintedHandoffsMu.Lock()
 		c.hintedHandoffsByPeer[peer] = make(chan *hintedHandoffOrder, maxHintedHandoffsPerPeer)
+		c.hintedHandoffsMu.Unlock()
 	}
 	order := &hintedHandoffOrder{
 		ctx:    ctx,
