@@ -133,8 +133,10 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
   render() {
     return (
       <>
-        {this.props.executors.length == 1 && <p>There is 1 executor connected.</p>}
-        {this.props.executors.length > 1 && <p>There are {this.props.executors.length} executors connected.</p>}
+        {this.props.executors.length == 1 && <p>You have 1 self-hosted executor connected.</p>}
+        {this.props.executors.length > 1 && (
+          <p>You have {this.props.executors.length} self-hosted executors connected.</p>
+        )}
         {this.props.executors.length < 3 && (
           <p>For better performance and reliability, we suggest running a minimum of 3 executors.</p>
         )}
