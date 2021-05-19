@@ -85,7 +85,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		shutDownChan:    make(chan bool, 0),
 		lastContactedBy: make(map[string]time.Time, 0),
 
-		hintedHandoffsMu: &sync.Mutex{},
+		hintedHandoffsMu:     &sync.Mutex{},
 		hintedHandoffsByPeer: make(map[string]chan *hintedHandoffOrder, 0),
 	}
 	dc.cacheProxy.SetHeartbeatCallbackFunc(dc.recvHeartbeatCallback)
