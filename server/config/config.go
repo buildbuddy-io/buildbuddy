@@ -167,6 +167,7 @@ type RemoteExecutionConfig struct {
 	RedisPubSubPoolSize          int    `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
 	EnableRemoteExec             bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
 	DisableRedisListPubSub       bool   `yaml:"disable_redis_list_pubsub" usage:"If true, revert to native redis PubSub."`
+	DisableRedisNativePubSub     bool   `yaml:"disable_redis_native_pubsub" usage:"If true, disable use of native redis PubSub in favor of list-based PubSub."`
 	RequireExecutorAuthorization bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
 	EnableNonLocalScheduling     bool   `yaml:"enable_non_local_scheduling" usage:"If true, schedulers can make RPCs to other schedulers to enqueue task reservations instead of always talking directly to executors."`
 	EnableUserOwnedExecutors     bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
@@ -186,6 +187,7 @@ type ExecutorConfig struct {
 	DockerNetHost           bool             `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
 	EnableWorkStreaming     bool             `yaml:"enable_work_streaming" usage:"Enables executor work streaming (WIP)."`
 	DockerSiblingContainers bool             `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
+	DefaultXCodeVersion     string           `yaml:"default_xcode_version" usage:"Sets the default XCode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
 }
 
 type RunnerPoolConfig struct {

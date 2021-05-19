@@ -33,7 +33,8 @@ message Group {
   // Whether sharing features are allowed by this group.
   bool sharing_enabled = 6;
 
-  // Whether builds for this group will use custom executors provided by the group.
+  // Whether builds for this group will use custom executors provided by the
+  // group.
   bool use_group_owned_executors = 7;
 }
 
@@ -45,7 +46,9 @@ message JoinGroupRequest {
   string id = 1;
 }
 
-message JoinGroupResponse { context.ResponseContext response_context = 1; }
+message JoinGroupResponse {
+  context.ResponseContext response_context = 1;
+}
 
 message GetGroupRequest {
   context.RequestContext request_context = 2;
@@ -153,7 +156,8 @@ message CreateGroupRequest {
   // Whether sharing features are allowed by this group.
   bool sharing_enabled = 5;
 
-  // Whether builds for this group will use custom executors provided by the group.
+  // Whether builds for this group will use custom executors provided by the
+  // group.
   bool use_group_owned_executors = 6;
 }
 
@@ -192,11 +196,14 @@ message UpdateGroupRequest {
   // Whether sharing features are allowed by this group.
   bool sharing_enabled = 6;
 
-  // Whether builds for this group will use custom executors provided by the group.
+  // Whether builds for this group will use custom executors provided by the
+  // group.
   bool use_group_owned_executors = 7;
 }
 
-message UpdateGroupResponse { context.ResponseContext response_context = 1; }
+message UpdateGroupResponse {
+  context.ResponseContext response_context = 1;
+}
 
 enum GroupMembershipStatus {
   UNKNOWN_MEMBERSHIP_STATUS = 0;

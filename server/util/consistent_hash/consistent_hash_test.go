@@ -43,3 +43,25 @@ func TestNodesetOrderIndependence(t *testing.T) {
 		log.Debugf("d %q => host %q", d, host)
 	}
 }
+
+func TestGetAllReplicas(t *testing.T) {
+	rand.Seed(time.Now().UnixNano())
+	assert := assert.New(t)
+	ch := consistent_hash.NewConsistentHash()
+
+	hosts := make([]string, 0)
+	for i := 0; i < 10; i++ {
+		r, err := random.RandomString(5)
+		assert.Nil(err)
+		hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
+	}
+
+	ch.Set(hosts...)
+
+	for i := 0; i < 100; i++ {
+		k, err := random.RandomString(64)
+		assert.Nil(err)
+		replicas := ch.GetAllReplicas(k)
+		assert.Equal(10, len(replicas))
+	}
+}

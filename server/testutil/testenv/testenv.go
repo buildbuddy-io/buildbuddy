@@ -15,9 +15,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 
 	"google.golang.org/grpc"
@@ -149,7 +149,7 @@ func GetTestEnv(t testing.TB) *TestEnv {
 			currentConfigurator = nil
 		})
 	}
-	healthChecker := healthcheck.NewTestingHealthChecker()
+	healthChecker := healthcheck.NewHealthChecker("test")
 	te := &TestEnv{
 		RealEnv: real_environment.NewRealEnv(currentConfigurator, healthChecker),
 	}

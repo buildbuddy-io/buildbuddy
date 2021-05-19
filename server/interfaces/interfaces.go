@@ -249,12 +249,6 @@ type ExecutionService interface {
 	GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error)
 }
 
-// CommandContainer provides an execution environment for commands.
-type CommandContainer interface {
-	// Run the given command within the container.
-	Run(ctx context.Context, command *repb.Command, workingDir string) *CommandResult
-}
-
 // CommandResult captures the output and details of an executed command.
 type CommandResult struct {
 	// Error is populated only if the command was unable to be started, or if it was
@@ -332,7 +326,7 @@ func (f CheckerFunc) Check(ctx context.Context) error {
 }
 
 type HealthChecker interface {
-	// Adds a healthcheck -- the server's readiness is dependend on all
+	// AddHealthCheck adds a healthcheck -- the server's readiness is dependent on all
 	// registered heathchecks passing.
 	AddHealthCheck(name string, hc Checker)
 
@@ -344,7 +338,7 @@ type HealthChecker interface {
 	RegisterShutdownFunction(hc CheckerFunc)
 
 	// WaitForGracefulShutdown should be called as the last thing in a
-	// main function -- it will block forever until a server recieves a
+	// main function -- it will block forever until a server receives a
 	// shutdown signal.
 	WaitForGracefulShutdown()
 
@@ -355,4 +349,9 @@ type HealthChecker interface {
 	// If a HealthCheck returns failure for some reason, the server will
 	// stop returning OK and will instead return Service Unavailable error.
 	ReadinessHandler() http.Handler
+
+	// Shutdown initiates a shutdown of the server.
+	// This is intended to be used by tests as normally shutdown is automatically initiated upon receipt of a SIGTERM
+	// signal.
+	Shutdown()
 }

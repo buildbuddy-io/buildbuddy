@@ -53,10 +53,14 @@ message CommandLineSection {
 }
 
 // Wrapper to allow a list of strings in the "oneof" section_type.
-message ChunkList { repeated string chunk = 1; }
+message ChunkList {
+  repeated string chunk = 1;
+}
 
 // Wrapper to allow a list of options in the "oneof" section_type.
-message OptionList { repeated Option option = 1; }
+message OptionList {
+  repeated Option option = 1;
+}
 
 // A single command line option.
 //

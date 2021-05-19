@@ -13,16 +13,24 @@ message ReadRequest {
   int64 offset = 3;
 }
 
-message ReadResponse { bytes data = 1; }
+message ReadResponse {
+  bytes data = 1;
+}
 
 message WriteRequest {
   string prefix = 1;
   Key key = 2;
   bool finish_write = 3;
   bytes data = 4;
+
+  // A node that this data should eventually be handed off to.
+  // Clients should attempt to replicate this data when possible.
+  string handoff_peer = 5;
 }
 
-message WriteResponse { int64 committed_size = 1; }
+message WriteResponse {
+  int64 committed_size = 1;
+}
 
 message ContainsMultiRequest {
   string prefix = 1;
@@ -47,9 +55,13 @@ message GetMultiRequest {
   repeated Key key = 2;
 }
 
-message GetMultiResponse { repeated KV key_value = 1; }
+message GetMultiResponse {
+  repeated KV key_value = 1;
+}
 
-message HeartbeatRequest { string source = 1; }
+message HeartbeatRequest {
+  string source = 1;
+}
 
 message HeartbeatResponse {}
 

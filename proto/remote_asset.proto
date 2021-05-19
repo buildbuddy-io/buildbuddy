@@ -146,14 +146,14 @@ service Fetch {
   // indicating the name of the unsupported qualifier.
   rpc FetchBlob(FetchBlobRequest) returns (FetchBlobResponse) {
     option (google.api.http) = {
-      post : "/v1/{instance_name=**}/assets:fetchBlob"
-      body : "*"
+      post: "/v1/{instance_name=**}/assets:fetchBlob"
+      body: "*"
     };
   }
   rpc FetchDirectory(FetchDirectoryRequest) returns (FetchDirectoryResponse) {
     option (google.api.http) = {
-      post : "/v1/{instance_name=**}/assets:fetchDirectory"
-      body : "*"
+      post: "/v1/{instance_name=**}/assets:fetchDirectory"
+      body: "*"
     };
   }
 }
@@ -368,15 +368,15 @@ service Push {
   //   The client should retry.
   rpc PushBlob(PushBlobRequest) returns (PushBlobResponse) {
     option (google.api.http) = {
-      post : "/v1/{instance_name=**}/assets:pushBlob"
-      body : "*"
+      post: "/v1/{instance_name=**}/assets:pushBlob"
+      body: "*"
     };
   }
 
   rpc PushDirectory(PushDirectoryRequest) returns (PushDirectoryResponse) {
     option (google.api.http) = {
-      post : "/v1/{instance_name=**}/assets:pushDirectory"
-      body : "*"
+      post: "/v1/{instance_name=**}/assets:pushDirectory"
+      body: "*"
     };
   }
 }

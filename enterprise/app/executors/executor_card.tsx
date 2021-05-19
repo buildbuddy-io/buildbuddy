@@ -3,7 +3,7 @@ import { scheduler } from "../../../proto/scheduler_ts_proto";
 import format from "../../../app/format/format";
 
 interface Props {
-  node: scheduler.ExecutionNode;
+  node: scheduler.IExecutionNode;
 }
 
 export default class ExecutorCardComponent extends React.Component<Props> {
