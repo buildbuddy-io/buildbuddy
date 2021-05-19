@@ -36,10 +36,10 @@ message RegisterNodeRequest {
 
   // Unique ID that identifies this executor instance within a node pool. It is
   // set once when the executor binary starts and preserved for the lifetime of
-  // the executor. Each executor generates its own instance ID on startup.
+  // the executor. Each executor generates its own ID on startup.
   //
   // Ex. "34c5cf7e-b3b1-4e20-b43c-3e196b30d983"
-  string instance_id = 8;
+  string executor_id = 8;
 }
 
 message RegisterNodeResponse {
@@ -116,7 +116,7 @@ message EnqueueTaskReservationRequest {
   // connected executor suitable for running the task.
   //
   // Ex. "610a4cd4-3c0f-41bb-ad72-abe933837d58"
-  string executor_instance_id = 4;
+  string executor_id = 4;
 }
 
 message EnqueueTaskReservationResponse {
@@ -206,10 +206,10 @@ message ExecutionNode {
 
   // Unique ID that identifies this executor instance within a node pool. It is
   // set once when the executor binary starts and preserved for the lifetime of
-  // the executor. Each executor generates its own instance ID on startup.
+  // the executor. Each executor generates its own ID on startup.
   //
   // Ex. "34c5cf7e-b3b1-4e20-b43c-3e196b30d983"
-  string instance_id = 9;
+  string executor_id = 9;
 }
 
 message GetExecutionNodesRequest {

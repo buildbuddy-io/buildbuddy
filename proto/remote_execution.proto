@@ -829,7 +829,7 @@ message ExecutedActionMetadata {
   // Started at field #1000 to avoid conflicts with Bazel.
 
   // The unique ID of the executor instance that ran this action.
-  string executor_instance_id = 1000;
+  string executor_id = 1000;
 }
 
 // An ActionResult represents the result of an
