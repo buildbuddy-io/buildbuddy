@@ -263,18 +263,17 @@ type ExecutionNode interface {
 // It is the caller's responsibility to check whether any execution nodes
 // passed via parameters are accessible by the authenticated group in the context.
 type TaskRouter interface {
-	// RankNodes returns a slice of the given nodes sorted by their suitability for
-	// executing a task with the given properties. Nodes with equal suitability are
-	// returned in random order.
+	// RankNodes returns a slice of the given nodes sorted in decreasing order of
+	// their suitability for executing the given command. Nodes with equal
+	// suitability are returned in random order (for load balancing purposes).
 	//
 	// If an error occurs, the nodes are returned in random order. The returned
 	// error can be logged, but should not be treated as fatal.
 	RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) ([]ExecutionNode, error)
 
-	// MarkComplete notifies the router that a task with the given properties has
-	// been completed by the given executor instance. Subsequent calls to RankNodes
-	// may assign a higher rank to nodes with the given instance ID, given similar
-	// routing properties.
+	// MarkComplete notifies the router that the commands has been completed by the
+	// given executor instance. Subsequent calls to RankNodes may assign a higher
+	// rank to nodes with the given instance ID, given similar commands.
 	//
 	// Callers should not treat the returned error as fatal, since task routing is
 	// intended to be best-effort.
