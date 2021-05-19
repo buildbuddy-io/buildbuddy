@@ -34,7 +34,9 @@ message BuildEventId {
   // Generic identifier for a build event. This is the default type of
   // BuildEventId, but should not be used outside testing; nevertheless,
   // tools should handle build events with this kind of id gracefully.
-  message UnknownBuildEventId { string details = 1; }
+  message UnknownBuildEventId {
+    string details = 1;
+  }
 
   // Identifier of an event reporting progress. Those events are also used to
   // chain in events that come early.
@@ -82,7 +84,9 @@ message BuildEventId {
   // have been skipped for some reason, if the actual expansion was still
   // carried out (e.g., if keep_going is set). In this case, the
   // pattern_skipped choice in the id field is to be made.
-  message PatternExpandedId { repeated string pattern = 1; }
+  message PatternExpandedId {
+    repeated string pattern = 1;
+  }
 
   message WorkspaceConfigId {}
 
@@ -143,7 +147,9 @@ message BuildEventId {
   // any case, it will report some form of error (i.e., the payload will be an
   // Aborted event); there are no regular events using this identifier. The
   // purpose of those events is to serve as the root cause of a failed target.
-  message UnconfiguredLabelId { string label = 1; }
+  message UnconfiguredLabelId {
+    string label = 1;
+  }
 
   // Identifier of an event reporting an event associated with a configured
   // label, usually a visibility error. In any case, an event with such an
@@ -345,7 +351,9 @@ message WorkspaceConfig {
 // like name and relevant entries of rc-files and client environment variables.
 // However, it does contain enough information to reproduce the build
 // invocation.
-message UnstructuredCommandLine { repeated string args = 1; }
+message UnstructuredCommandLine {
+  repeated string args = 1;
+}
 
 // Payload of an event reporting on the parsed options, grouped in various ways.
 message OptionsParsed {
@@ -360,7 +368,9 @@ message OptionsParsed {
 // Payload of an event indicating that an external resource was fetched. This
 // event will only occur in streams where an actual fetch happened, not in ones
 // where a cached copy of the entity to be fetched was used.
-message Fetch { bool success = 1; }
+message Fetch {
+  bool success = 1;
+}
 
 // Payload of an event reporting the workspace status. Key-value pairs can be
 // provided by specifying the workspace_status_command to an executable that
@@ -475,10 +485,10 @@ message ActionExecuted {
   File stderr = 4;
 
   // Deprecated. This field is now present on ActionCompletedId.
-  string label = 5 [ deprecated = true ];
+  string label = 5 [deprecated = true];
 
   // Deprecated. This field is now present on ActionCompletedId.
-  BuildEventId.ConfigurationId configuration = 7 [ deprecated = true ];
+  BuildEventId.ConfigurationId configuration = 7 [deprecated = true];
 
   // Primary output; only provided for successful actions.
   File primary_output = 6;
@@ -511,11 +521,11 @@ message TargetComplete {
   // The kind of target (e.g.,  e.g. "cc_library rule", "source file",
   // "generated file") where the completion is reported.
   // Deprecated: use the target_kind field in TargetConfigured instead.
-  string target_kind = 5 [ deprecated = true ];
+  string target_kind = 5 [deprecated = true];
 
   // The size of the test, if the target is a test target. Unset otherwise.
   // Deprecated: use the test_size field in TargetConfigured instead.
-  TestSize test_size = 6 [ deprecated = true ];
+  TestSize test_size = 6 [deprecated = true];
 
   // The output files are arranged by their output group. If an output file
   // is part of multiple output groups, it appears once in each output
@@ -525,7 +535,7 @@ message TargetComplete {
   // Temporarily, also report the important outputs directly. This is only to
   // allow existing clients help transition to the deduplicated representation;
   // new clients should not use it.
-  repeated File important_output = 4 [ deprecated = true ];
+  repeated File important_output = 4 [deprecated = true];
 
   // List of tags associated with this configured target.
   repeated string tag = 3;
@@ -580,7 +590,7 @@ message TestResult {
   // if available.
   message ExecutionInfo {
     // Deprecated, use TargetComplete.test_timeout_seconds instead.
-    int32 timeout_seconds = 1 [ deprecated = true ];
+    int32 timeout_seconds = 1 [deprecated = true];
 
     // Name of the strategy to execute this test action (e.g., "local",
     // "remote")
@@ -669,7 +679,7 @@ message BuildFinished {
   }
 
   // If the build succeeded or failed.
-  bool overall_success = 1 [ deprecated = true ];
+  bool overall_success = 1 [deprecated = true];
 
   // The overall status of the build. A build was successful iff
   // ExitCode.code equals 0.
@@ -732,7 +742,9 @@ message BuildMetrics {
 }
 
 // Event providing additional statistics/logs after completion of the build.
-message BuildToolLogs { repeated File log = 1; }
+message BuildToolLogs {
+  repeated File log = 1;
+}
 
 // Event describing all convenience symlinks (i.e., workspace symlinks) to be
 // created or deleted once the execution phase has begun. Note that this event
