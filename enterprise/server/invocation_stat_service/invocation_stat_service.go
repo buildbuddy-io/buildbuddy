@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -50,6 +51,10 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	groupID := req.GetRequestContext().GetGroupId()
 	if err := perms.AuthorizeGroupAccess(ctx, i.env, groupID); err != nil {
 		return nil, err
+	}
+
+	if blocklist.IsBlockedForStatsQuery(groupID) {
+		return nil, status.ResourceExhaustedErrorf("Too many rows.")
 	}
 
 	limit := int32(100)
