@@ -46,7 +46,9 @@ message JoinGroupRequest {
   string id = 1;
 }
 
-message JoinGroupResponse { context.ResponseContext response_context = 1; }
+message JoinGroupResponse {
+  context.ResponseContext response_context = 1;
+}
 
 message GetGroupRequest {
   context.RequestContext request_context = 2;
@@ -199,7 +201,9 @@ message UpdateGroupRequest {
   bool use_group_owned_executors = 7;
 }
 
-message UpdateGroupResponse { context.ResponseContext response_context = 1; }
+message UpdateGroupResponse {
+  context.ResponseContext response_context = 1;
+}
 
 enum GroupMembershipStatus {
   UNKNOWN_MEMBERSHIP_STATUS = 0;
