@@ -164,8 +164,7 @@ func (c *DiskCache) initializeCache() error {
 		for _, record := range inFlightRecords {
 			c.l.Add(record.key, record)
 		}
-		mappedBool := true
-		c.diskIsMapped = &mappedBool
+		*c.diskIsMapped = true
 		c.mu.Unlock()
 
 		log.Debugf("DiskCache: statd %d files in %s", len(records), time.Since(start))
