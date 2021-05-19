@@ -34,7 +34,7 @@ type DiskCache struct {
 	fileChannel  chan *fileRecord
 	rootDir      string
 	prefix       string
-	diskIsMapped bool
+	diskIsMapped *bool
 }
 
 type fileRecord struct {
@@ -85,11 +85,13 @@ func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
 	if err != nil {
 		return nil, err
 	}
+	notMappedBool := false
 	c := &DiskCache{
-		l:           l,
-		rootDir:     rootDir,
-		mu:          &sync.RWMutex{},
-		fileChannel: make(chan *fileRecord),
+		l:            l,
+		rootDir:      rootDir,
+		mu:           &sync.RWMutex{},
+		fileChannel:  make(chan *fileRecord),
+		diskIsMapped: &notMappedBool,
 	}
 	if err := c.initializeCache(); err != nil {
 		return nil, err
@@ -100,6 +102,7 @@ func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
 func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	newPrefix := filepath.Join(append(filepath.SplitList(c.prefix), prefix)...)
 	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
 		newPrefix += "/"
@@ -119,9 +122,6 @@ func (c *DiskCache) initializeCache() error {
 	if err := disk.EnsureDirectoryExists(c.rootDir); err != nil {
 		return err
 	}
-	c.mu.Lock()
-	c.diskIsMapped = false
-	c.mu.Unlock()
 
 	go func() {
 		start := time.Now()
@@ -164,7 +164,7 @@ func (c *DiskCache) initializeCache() error {
 		for _, record := range inFlightRecords {
 			c.l.Add(record.key, record)
 		}
-		c.diskIsMapped = true
+		*c.diskIsMapped = true
 		c.mu.Unlock()
 
 		log.Debugf("DiskCache: statd %d files in %s", len(records), time.Since(start))
@@ -189,7 +189,7 @@ func (c *DiskCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 // Adds a single file, using the provided path, to the LRU.
 // NB: Callers are responsible for locking the LRU before calling this function.
 func (c *DiskCache) addFileToLRUIfExists(k string) bool {
-	if c.diskIsMapped {
+	if *c.diskIsMapped {
 		return false
 	}
 	info, err := os.Stat(k)
@@ -224,7 +224,7 @@ func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) 
 	defer c.mu.Unlock()
 	_, ok := c.l.Get(k)
 
-	if !ok && !c.diskIsMapped {
+	if !ok && !*c.diskIsMapped {
 		// OK if we're here it means the disk contents are still being loaded
 		// into the LRU. But we still need to return an answer! So we'll go
 		// check the FS, and if the file is there we'll add it to the LRU.
@@ -278,7 +278,7 @@ func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 
 	if c.l.Contains(k) {
 		c.l.Get(k) // mark the file as used.
-	} else if !c.diskIsMapped {
+	} else if !*c.diskIsMapped {
 		c.addFileToLRUIfExists(k)
 	}
 	return buf, nil
