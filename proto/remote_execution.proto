@@ -104,8 +104,8 @@ service Execution {
   // `"blobs/{hash}/{size}"` indicating the digest of the missing blob.
   rpc Execute(ExecuteRequest) returns (stream google.longrunning.Operation) {
     option (google.api.http) = {
-      post : "/v2/{instance_name=**}/actions:execute"
-      body : "*"
+      post: "/v2/{instance_name=**}/actions:execute"
+      body: "*"
     };
   }
 
@@ -118,8 +118,8 @@ service Execution {
   rpc WaitExecution(WaitExecutionRequest)
       returns (stream google.longrunning.Operation) {
     option (google.api.http) = {
-      post : "/v2/{name=operations/**}:waitExecution"
-      body : "*"
+      post: "/v2/{name=operations/**}:waitExecution"
+      body: "*"
     };
   }
 
@@ -127,8 +127,8 @@ service Execution {
   rpc PublishOperation(stream google.longrunning.Operation)
       returns (PublishOperationResponse) {
     option (google.api.http) = {
-      post : "/v2/{name=operations/**}:publishOperation"
-      body : "*"
+      post: "/v2/{name=operations/**}:publishOperation"
+      body: "*"
     };
   }
 }
@@ -166,8 +166,8 @@ service ActionCache {
   // * `NOT_FOUND`: The requested `ActionResult` is not in the cache.
   rpc GetActionResult(GetActionResultRequest) returns (ActionResult) {
     option (google.api.http) = {
-      get : "/v2/{instance_name=**}/actionResults/{action_digest.hash}/"
-            "{action_digest.size_bytes}"
+      get: "/v2/{instance_name=**}/actionResults/{action_digest.hash}/"
+           "{action_digest.size_bytes}"
     };
   }
 
@@ -189,9 +189,9 @@ service ActionCache {
   //   entry to the cache.
   rpc UpdateActionResult(UpdateActionResultRequest) returns (ActionResult) {
     option (google.api.http) = {
-      put : "/v2/{instance_name=**}/actionResults/{action_digest.hash}/"
-            "{action_digest.size_bytes}"
-      body : "action_result"
+      put: "/v2/{instance_name=**}/actionResults/{action_digest.hash}/"
+           "{action_digest.size_bytes}"
+      body: "action_result"
     };
   }
 }
@@ -274,8 +274,8 @@ service ContentAddressableStorage {
   rpc FindMissingBlobs(FindMissingBlobsRequest)
       returns (FindMissingBlobsResponse) {
     option (google.api.http) = {
-      post : "/v2/{instance_name=**}/blobs:findMissing"
-      body : "*"
+      post: "/v2/{instance_name=**}/blobs:findMissing"
+      body: "*"
     };
   }
 
@@ -306,8 +306,8 @@ service ContentAddressableStorage {
   rpc BatchUpdateBlobs(BatchUpdateBlobsRequest)
       returns (BatchUpdateBlobsResponse) {
     option (google.api.http) = {
-      post : "/v2/{instance_name=**}/blobs:batchUpdate"
-      body : "*"
+      post: "/v2/{instance_name=**}/blobs:batchUpdate"
+      body: "*"
     };
   }
 
@@ -333,8 +333,8 @@ service ContentAddressableStorage {
   // status.
   rpc BatchReadBlobs(BatchReadBlobsRequest) returns (BatchReadBlobsResponse) {
     option (google.api.http) = {
-      post : "/v2/{instance_name=**}/blobs:batchRead"
-      body : "*"
+      post: "/v2/{instance_name=**}/blobs:batchRead"
+      body: "*"
     };
   }
 
@@ -363,8 +363,8 @@ service ContentAddressableStorage {
   // * `NOT_FOUND`: The requested tree root is not present in the CAS.
   rpc GetTree(GetTreeRequest) returns (stream GetTreeResponse) {
     option (google.api.http) = {
-      get : "/v2/{instance_name=**}/blobs/{root_digest.hash}/"
-            "{root_digest.size_bytes}:getTree"
+      get: "/v2/{instance_name=**}/blobs/{root_digest.hash}/"
+           "{root_digest.size_bytes}:getTree"
     };
   }
 }
@@ -386,7 +386,7 @@ service Capabilities {
   // * CAS + Action Cache only endpoints should return CacheCapabilities.
   rpc GetCapabilities(GetCapabilitiesRequest) returns (ServerCapabilities) {
     option (google.api.http) = {
-      get : "/v2/{instance_name=**}/capabilities"
+      get: "/v2/{instance_name=**}/capabilities"
     };
   }
 }
@@ -427,8 +427,8 @@ message Action {
   // [ContentAddressableStorage][build.bazel.remote.execution.v2.ContentAddressableStorage].
   Digest input_root_digest = 2;
 
-  reserved 3 to 5; // Used for fields moved to
-                   // [Command][build.bazel.remote.execution.v2.Command].
+  reserved 3 to 5;  // Used for fields moved to
+                    // [Command][build.bazel.remote.execution.v2.Command].
 
   // A timeout after which the execution should be killed. If the timeout is
   // absent, then the client is specifying that the execution should continue
@@ -712,7 +712,7 @@ message FileNode {
   // The digest of the file's content.
   Digest digest = 2;
 
-  reserved 3; // Reserved to ensure wire-compatibility with `OutputFile`.
+  reserved 3;  // Reserved to ensure wire-compatibility with `OutputFile`.
 
   // True if file is executable, false otherwise.
   bool is_executable = 4;
@@ -824,12 +824,18 @@ message ExecutedActionMetadata {
 
   // When the worker finished uploading action outputs.
   google.protobuf.Timestamp output_upload_completed_timestamp = 10;
+
+  // BUILDBUDDY-SPECIFIC FIELDS BELOW.
+  // Started at field #1000 to avoid conflicts with Bazel.
+
+  // The unique ID of the executor instance that ran this action.
+  string executor_instance_id = 1000;
 }
 
 // An ActionResult represents the result of an
 // [Action][build.bazel.remote.execution.v2.Action] being run.
 message ActionResult {
-  reserved 1; // Reserved for use as the resource name.
+  reserved 1;  // Reserved for use as the resource name.
 
   // The output files of the action. For each output file requested in the
   // `output_files` field of the Action, if the corresponding file existed after
@@ -984,7 +990,7 @@ message OutputFile {
   // The digest of the file's content.
   Digest digest = 2;
 
-  reserved 3; // Used for a removed field in an earlier version of the API.
+  reserved 3;  // Used for a removed field in an earlier version of the API.
 
   // True if file is executable, false otherwise.
   bool is_executable = 4;
@@ -1024,7 +1030,7 @@ message OutputDirectory {
   // and it denotes the entire working directory.
   string path = 1;
 
-  reserved 2; // Used for a removed field in an earlier version of the API.
+  reserved 2;  // Used for a removed field in an earlier version of the API.
 
   // The digest of the encoded
   // [Tree][build.bazel.remote.execution.v2.Tree] proto containing the
@@ -1110,7 +1116,8 @@ message ExecuteRequest {
   // If false, the result may be served from the action cache.
   bool skip_cache_lookup = 3;
 
-  reserved 2, 4, 5; // Used for removed fields in an earlier version of the API.
+  reserved 2, 4,
+      5;  // Used for removed fields in an earlier version of the API.
 
   // The digest of the [Action][build.bazel.remote.execution.v2.Action] to
   // execute.
@@ -1479,7 +1486,9 @@ message DigestFunction {
 }
 
 // Describes the server/instance capabilities for updating the action cache.
-message ActionCacheUpdateCapabilities { bool update_enabled = 1; }
+message ActionCacheUpdateCapabilities {
+  bool update_enabled = 1;
+}
 
 // Allowed values for priority in
 // [ResultsCachePolicy][google.devtools.remoteexecution.v2.ResultsCachePolicy]
@@ -1593,7 +1602,9 @@ message SizedDirectory {
   int64 size_bytes = 2;
 }
 
-message TreeToken { repeated SizedDirectory sized_directories = 1; }
+message TreeToken {
+  repeated SizedDirectory sized_directories = 1;
+}
 
 // Next tag: 8
 message ExecutionTask {
