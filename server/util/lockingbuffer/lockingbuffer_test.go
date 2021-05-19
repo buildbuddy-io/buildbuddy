@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLockingBuffer_ReadWrite(t *testing.T) {
@@ -84,6 +85,24 @@ func TestLockingBuffer_ReadWrite(t *testing.T) {
 	assert.Equal(t, strACount, len(regexp.MustCompile(strA).FindAllStringSubmatch(acc, -1)))
 	assert.Equal(t, strBCount, len(regexp.MustCompile(strB).FindAllStringSubmatch(acc, -1)))
 	assert.Equal(t, strACount*len(strA)+strBCount*len(strB), len(acc))
+}
+
+func TestLockingBuffer_ReadAll_DrainsBuffer(t *testing.T) {
+	buf := lockingbuffer.New()
+
+	_, err := buf.Write([]byte("ABC"))
+
+	require.NoError(t, err)
+
+	b, err := buf.ReadAll()
+
+	require.NoError(t, err)
+	require.Equal(t, []byte("ABC"), b)
+
+	b, err = buf.ReadAll()
+
+	require.NoError(t, err)
+	require.Empty(t, b)
 }
 
 func randDelay() {

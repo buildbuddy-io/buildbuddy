@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/user"
@@ -605,7 +604,7 @@ func (ar *actionRunner) nextProgressEvent() (*bespb.BuildEvent, error) {
 	ar.mu.Lock()
 	defer ar.mu.Unlock()
 
-	buf, err := ioutil.ReadAll(ar.log)
+	buf, err := ar.log.ReadAll()
 	if err != nil {
 		return nil, status.WrapError(err, "failed to read action logs")
 	}
