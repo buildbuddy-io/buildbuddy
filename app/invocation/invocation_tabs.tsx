@@ -13,7 +13,7 @@ export type TabsContext = {
   role: string;
 };
 
-export type TabId = "all" | "targets" | "log" | "details" | "artifacts" | "timing" | "cache" | "raw" | "execution" | "fetches" | "commands" | "action";
+export type TabId = "all" | "targets" | "log" | "details" | "artifacts" | "timing" | "cache" | "raw" | "execution" | "fetches" | "action";
 
 export function getTabId(hash: string): TabId {
   return (hash.substring(1) as TabId) || "all";
