@@ -28,7 +28,7 @@ const (
 
 type HealthChecker struct {
 	done          chan bool
-	quit          chan os.Signal
+	quit          chan struct{}
 	checkers      map[string]interfaces.Checker
 	serverType    string
 	shutdownFuncs []interfaces.CheckerFunc
@@ -41,12 +41,17 @@ func NewHealthChecker(serverType string) *HealthChecker {
 	hc := HealthChecker{
 		serverType:    serverType,
 		done:          make(chan bool),
-		quit:          make(chan os.Signal, 1),
+		quit:          make(chan struct{}),
 		shutdownFuncs: make([]interfaces.CheckerFunc, 0),
 		readyToServe:  true,
 		checkers:      make(map[string]interfaces.Checker, 0),
 	}
-	signal.Notify(hc.quit, os.Interrupt, syscall.SIGTERM)
+	sigTerm := make(chan os.Signal)
+	go func() {
+		<-sigTerm
+		close(hc.quit)
+	}()
+	signal.Notify(sigTerm, os.Interrupt, syscall.SIGTERM)
 	go hc.handleShutdownFuncs()
 	go func() {
 		for {
@@ -106,6 +111,10 @@ func (h *HealthChecker) AddHealthCheck(name string, f interfaces.Checker) {
 func (h *HealthChecker) WaitForGracefulShutdown() {
 	h.runHealthChecks(context.Background())
 	<-h.done
+}
+
+func (h *HealthChecker) Shutdown() {
+	close(h.quit)
 }
 
 func (h *HealthChecker) runHealthChecks(ctx context.Context) {

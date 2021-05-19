@@ -14,12 +14,14 @@ class RpcService {
     (window as any)._rpcService = this;
   }
 
+  getBytestreamFileUrl(filename: string, bytestreamURL: string, invocationId: string): string {
+    return `/file/download?filename=${encodeURI(filename)}&bytestream_url=${encodeURIComponent(
+      bytestreamURL
+    )}&invocation_id=${invocationId}`;
+  }
+
   downloadBytestreamFile(filename: string, bytestreamURL: string, invocationId: string) {
-    window.open(
-      `/file/download?filename=${encodeURI(filename)}&bytestream_url=${encodeURIComponent(
-        bytestreamURL
-      )}&invocation_id=${invocationId}`
-    );
+    window.open(this.getBytestreamFileUrl(filename, bytestreamURL, invocationId));
   }
 
   fetchBytestreamFile(

@@ -42,10 +42,14 @@ func formatDuration(dur time.Duration) string {
 
 func fmtErr(err error) string {
 	code := status.Code(err)
-	if code == codes.Unknown {
+	switch code {
+	case codes.OK, codes.NotFound, codes.AlreadyExists, codes.Canceled, codes.Unavailable, codes.ResourceExhausted:
+		// Common codes we see in normal operation. Just show the code.
+		return code.String()
+	default:
+		// Less common codes: show the full error.
 		return err.Error()
 	}
-	return code.String()
 }
 
 func getRequestMetadata(ctx context.Context) *repb.RequestMetadata {
@@ -126,7 +130,8 @@ func StructuredLogger() zerolog.Logger {
 type gcpLoggingCallerHook struct{}
 
 func (h gcpLoggingCallerHook) Run(e *zerolog.Event, level zerolog.Level, msg string) {
-	_, file, line, ok := runtime.Caller(callerSkipFrameCount)
+	// +1 to skip the hook frame.
+	_, file, line, ok := runtime.Caller(callerSkipFrameCount + 1)
 	if !ok {
 		return
 	}

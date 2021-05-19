@@ -20,6 +20,10 @@ message WriteRequest {
   Key key = 2;
   bool finish_write = 3;
   bytes data = 4;
+
+  // A node that this data should eventually be handed off to.
+  // Clients should attempt to replicate this data when possible.
+  string handoff_peer = 5;
 }
 
 message WriteResponse { int64 committed_size = 1; }

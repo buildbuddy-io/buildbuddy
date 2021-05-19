@@ -89,7 +89,9 @@ message ScheduleTaskResponse {
   // Intentionally left blank.
 }
 
-message ReEnqueueTaskRequest { string task_id = 1; }
+message ReEnqueueTaskRequest {
+  string task_id = 1;
+}
 
 message ReEnqueueTaskResponse {
   // Intentionally left blank.
@@ -110,9 +112,13 @@ message EnqueueTaskReservationRequest {
   string executor_instance_id = 4;
 }
 
-message EnqueueTaskReservationResponse { string task_id = 1; }
+message EnqueueTaskReservationResponse {
+  string task_id = 1;
+}
 
-message RegisterExecutorRequest { ExecutionNode node = 1; }
+message RegisterExecutorRequest {
+  ExecutionNode node = 1;
+}
 
 message RegisterAndStreamWorkRequest {
   // Only one of the fields should be sent. oneofs not used due to awkward Go
@@ -199,7 +205,9 @@ message ExecutionNode {
   string executor_instance_id = 9;
 }
 
-message GetExecutionNodesRequest { context.RequestContext request_context = 1; }
+message GetExecutionNodesRequest {
+  context.RequestContext request_context = 1;
+}
 
 message GetExecutionNodesResponse {
   context.ResponseContext response_context = 1;

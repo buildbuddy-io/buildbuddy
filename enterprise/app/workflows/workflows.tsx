@@ -136,8 +136,13 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       <div className="workflows-page">
         <div className="shelf">
           <div className="container">
-            {/* TODO: Breadcrumbs */}
+          <div>
+            <div className="breadcrumbs">
+              {this.props.user && <span>{this.props.user?.selectedGroupName()}</span>}
+              <span>Workflows</span>
+            </div>
             <div className="title">Workflows</div>
+            </div>
             {response && Boolean(response.workflow.length) && (
               <div className="buttons create-new-container">
                 <Button onClick={this.onClickCreate.bind(this)}>Link a repository</Button>

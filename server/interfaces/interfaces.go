@@ -332,7 +332,7 @@ func (f CheckerFunc) Check(ctx context.Context) error {
 }
 
 type HealthChecker interface {
-	// Adds a healthcheck -- the server's readiness is dependend on all
+	// AddHealthCheck adds a healthcheck -- the server's readiness is dependent on all
 	// registered heathchecks passing.
 	AddHealthCheck(name string, hc Checker)
 
@@ -344,7 +344,7 @@ type HealthChecker interface {
 	RegisterShutdownFunction(hc CheckerFunc)
 
 	// WaitForGracefulShutdown should be called as the last thing in a
-	// main function -- it will block forever until a server recieves a
+	// main function -- it will block forever until a server receives a
 	// shutdown signal.
 	WaitForGracefulShutdown()
 
@@ -355,4 +355,9 @@ type HealthChecker interface {
 	// If a HealthCheck returns failure for some reason, the server will
 	// stop returning OK and will instead return Service Unavailable error.
 	ReadinessHandler() http.Handler
+
+	// Shutdown initiates a shutdown of the server.
+	// This is intended to be used by tests as normally shutdown is automatically initiated upon receipt of a SIGTERM
+	// signal.
+	Shutdown()
 }
