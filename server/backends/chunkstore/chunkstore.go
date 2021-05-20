@@ -93,6 +93,8 @@ type chunkstoreReader struct {
 	off        int64
 	chunkOff   int
 	chunkIndex uint16
+	startIndex uint16
+	reverse    bool
 }
 
 func (r *chunkstoreReader) advanceOffset(adv int64) {
@@ -100,26 +102,51 @@ func (r *chunkstoreReader) advanceOffset(adv int64) {
 	r.off += adv
 }
 
-func (r *chunkstoreReader) copyToReadBuffer(p []byte) int {
-	if r.chunkOff >= len(r.chunk) {
-		return 0
+func (r *chunkstoreReader) nextChunkIndex() uint16 {
+	if r.reverse {
+		return r.chunkIndex - 1
+	} else {
+		return r.chunkIndex + 1
 	}
-	bytesRead := copy(p, r.chunk[r.chunkOff:])
+}
+
+func (r *chunkstoreReader) noChunksRead() bool {
+	return r.chunkIndex == r.startIndex
+}
+
+func (r *chunkstoreReader) copyAndAdvanceOffset(dst, src []byte) int {
+	bytesRead := copy(dst, src)
 	r.advanceOffset(int64(bytesRead))
 	return bytesRead
 }
 
+func (r *chunkstoreReader) copyToReadBuffer(p []byte) int {
+	if r.chunkOff >= len(r.chunk) {
+		return 0
+	}
+	if r.reverse {
+		remainingBytesInChunk := len(r.chunk) - r.chunkOff
+		if len(p) <= remainingBytesInChunk {
+			return r.copyAndAdvanceOffset(p, r.chunk[(remainingBytesInChunk-len(p)):])
+		} else {
+			return r.copyAndAdvanceOffset(p[(len(p)-remainingBytesInChunk):], r.chunk[:remainingBytesInChunk])
+		}
+	} else {
+		return r.copyAndAdvanceOffset(p, r.chunk[r.chunkOff:])
+	}
+}
+
 func (r *chunkstoreReader) nextChunkExists() (bool, error) {
-	return r.chunkstore.chunkExists(r.ctx, r.blobName, r.chunkIndex+1)
+	return r.chunkstore.chunkExists(r.ctx, r.blobName, r.nextChunkIndex())
 }
 
 func (r *chunkstoreReader) getNextChunk() error {
 	if exists, err := r.nextChunkExists(); err != nil {
 		return err
 	} else if !exists {
-		return fmt.Errorf("Opening %v: %w", chunkName(r.blobName, r.chunkIndex+1), os.ErrNotExist)
+		return fmt.Errorf("Opening %v: %w", chunkName(r.blobName, r.nextChunkIndex()), os.ErrNotExist)
 	}
-	r.chunkIndex++
+	r.chunkIndex = r.nextChunkIndex()
 	r.advanceOffset(int64(len(r.chunk) - r.chunkOff))
 	r.chunkOff -= len(r.chunk)
 	var err error
@@ -135,13 +162,29 @@ func (r *chunkstoreReader) eof() (bool, error) {
 	return !exists, err
 }
 
+func (r *chunkstoreReader) shiftToFront(p []byte, bytesRead *int) {
+	if *bytesRead < len(p) {
+		copy(p, p[(len(p)-*bytesRead):])
+		for i := *bytesRead; i < len(p); i++ {
+			p[i] = 0
+		}
+	}
+}
+
 func (r *chunkstoreReader) Read(p []byte) (int, error) {
 	bytesRead := r.copyToReadBuffer(p)
+	if r.reverse {
+		defer r.shiftToFront(p, &bytesRead)
+	}
 	for bytesRead < len(p) {
 		err := r.getNextChunk()
-		bytesRead += r.copyToReadBuffer(p[bytesRead:])
+		if r.reverse {
+			bytesRead += r.copyToReadBuffer(p[:(len(p) - bytesRead)])
+		} else {
+			bytesRead += r.copyToReadBuffer(p[bytesRead:])
+		}
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) && r.chunkIndex != math.MaxUint16 {
+			if errors.Is(err, os.ErrNotExist) && !r.noChunksRead() {
 				return bytesRead, io.EOF
 			}
 			return bytesRead, err
@@ -187,7 +230,7 @@ func (r *chunkstoreReader) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	if offset < r.off {
-		r.chunkIndex = math.MaxUint16
+		r.chunkIndex = r.startIndex
 		r.chunk = []byte{}
 		r.off = 0
 		r.chunkOff = 0
@@ -205,7 +248,35 @@ func (r *chunkstoreReader) Close() error {
 }
 
 func (c *Chunkstore) Reader(ctx context.Context, blobName string) *chunkstoreReader {
-	return &chunkstoreReader{chunkstore: c, chunkIndex: math.MaxUint16, chunk: []byte{}, blobName: blobName, ctx: ctx}
+	return &chunkstoreReader{
+		chunkstore: c,
+		chunkIndex: math.MaxUint16,
+		startIndex: math.MaxUint16,
+		chunk:      []byte{},
+		blobName:   blobName,
+		ctx:        ctx,
+	}
+}
+
+func (c *Chunkstore) ReverseReader(ctx context.Context, blobName string) (*chunkstoreReader, error) {
+	chunkIndex := uint16(0)
+	for {
+		if exists, err := c.chunkExists(ctx, blobName, chunkIndex); err != nil {
+			return nil, err
+		} else if !exists {
+			break
+		}
+		chunkIndex++
+	}
+	return &chunkstoreReader{
+		chunkstore: c,
+		chunkIndex: chunkIndex,
+		startIndex: chunkIndex,
+		chunk:      []byte{},
+		blobName:   blobName,
+		ctx:        ctx,
+		reverse:    true,
+	}, nil
 }
 
 type writeResult struct {
