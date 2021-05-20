@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -105,6 +106,14 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	if err != nil {
 		// Searching invocations *requires* that you are logged in.
 		return nil, err
+	}
+
+	groupID := req.GetRequestContext().GetGroupId()
+	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
+		return nil, err
+	}
+	if blocklist.IsBlockedForStatsQuery(groupID) {
+		return nil, status.ResourceExhaustedErrorf("Too many rows.")
 	}
 
 	q := query_builder.NewQuery(`SELECT * FROM Invocations as i`)

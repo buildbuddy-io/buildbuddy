@@ -280,12 +280,6 @@ type TaskRouter interface {
 	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string) error
 }
 
-// CommandContainer provides an execution environment for commands.
-type CommandContainer interface {
-	// Run the given command within the container.
-	Run(ctx context.Context, command *repb.Command, workingDir string) *CommandResult
-}
-
 // CommandResult captures the output and details of an executed command.
 type CommandResult struct {
 	// Error is populated only if the command was unable to be started, or if it was
