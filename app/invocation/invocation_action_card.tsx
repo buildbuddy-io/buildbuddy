@@ -11,17 +11,17 @@ interface Props {
 }
 
 interface State {
-  contents: ArrayBuffer;
-  action_array: Uint8Array;
-  action: build.bazel.remote.execution.v2.Action;
-  command: build.bazel.remote.execution.v2.Command;
-  error: string;
+  contents?: ArrayBuffer;
+  action_array?: Uint8Array;
+  action?: build.bazel.remote.execution.v2.Action;
+  command?: build.bazel.remote.execution.v2.Command;
+  error?: string;
 }
 
 export default class ActionCardComponent extends React.Component<Props, State> {
+  state: State = {};
   componentDidMount() {
     this.fetchAction();
-    //this.fetchCommand();
   }
 
   fetchAction() {
@@ -34,12 +34,15 @@ export default class ActionCardComponent extends React.Component<Props, State> {
         console.log(action_buff);
         let temp_array = new Uint8Array(action_buff);
         console.log(temp_array);
+        let temp_action = build.bazel.remote.execution.v2.Action.decode(temp_array);
         this.setState({
           ...this.state,
           contents: action_buff,
           action_array: temp_array,
-          action: build.bazel.remote.execution.v2.Action.decode(temp_array),
+          action: temp_action,
         });
+        console.log(JSON.stringify(this.state.action, null, 2));
+        this.fetchCommand(temp_action);
       })
       .catch(() => {
         console.error("Error loading bytestream action profile!");
@@ -50,17 +53,14 @@ export default class ActionCardComponent extends React.Component<Props, State> {
       });
   }
 
-  fetchCommand() {
+  fetchCommand(action: build.bazel.remote.execution.v2.Action) {
     let commandFile =
-      "bytestream://localhost:1987/blobs/" +
-      this.state.action.commandDigest.hash +
-      "/" +
-      this.state.action.commandDigest.sizeBytes;
+      "bytestream://localhost:1987/blobs/" + action.commandDigest.hash + "/" + action.commandDigest.sizeBytes;
     console.log(commandFile);
     rpcService
       .fetchBytestreamFile(commandFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {
-        let temp_array = Uint8Array.from(action_buff);
+        let temp_array = new Uint8Array(action_buff);
         this.setState({
           ...this.state,
           command: build.bazel.remote.execution.v2.Command.decode(temp_array),
