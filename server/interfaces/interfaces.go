@@ -271,7 +271,7 @@ type TaskRouter interface {
 	// error can be logged, but should not be treated as fatal.
 	RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) ([]ExecutionNode, error)
 
-	// MarkComplete notifies the router that the commands has been completed by the
+	// MarkComplete notifies the router that the command has been completed by the
 	// given executor instance. Subsequent calls to RankNodes may assign a higher
 	// rank to nodes with the given instance ID, given similar commands.
 	//
