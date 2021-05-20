@@ -11,11 +11,10 @@ interface Props {
 }
 
 interface State {
-  loading: boolean;
   contents: ArrayBuffer;
   action_array: Uint8Array;
-  action_obj: build.bazel.remote.execution.v2.Action;
-  command_obj: build.bazel.remote.execution.v2.Command;
+  action: build.bazel.remote.execution.v2.Action;
+  command: build.bazel.remote.execution.v2.Command;
   error: string;
 }
 
@@ -23,17 +22,16 @@ export default class ActionCardComponent extends React.Component {
   props: Props;
 
   state: State = {
-    loading: false,
     contents: new ArrayBuffer(8),
     action_array: new Uint8Array(),
-    action_obj: null,
-    command_obj: null,
+    action: null,
+    command: null,
     error: "",
   };
 
   componentDidMount() {
     this.fetchAction();
-    this.fetchCommand();
+    //this.fetchCommand();
   }
 
   fetchAction() {
@@ -43,13 +41,14 @@ export default class ActionCardComponent extends React.Component {
     rpcService
       .fetchBytestreamFile(actionFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {
-        let temp_array = Uint8Array.from(action_buff);
+        console.log(action_buff);
+        let temp_array = new Uint8Array(action_buff);
         console.log(temp_array);
         this.setState({
           ...this.state,
           contents: action_buff,
           action_array: temp_array,
-          action_obj: build.bazel.remote.execution.v2.Action.decode(temp_array),
+          action: build.bazel.remote.execution.v2.Action.decode(temp_array),
           loading: true,
         });
       })
@@ -64,7 +63,7 @@ export default class ActionCardComponent extends React.Component {
   
 
   fetchCommand() {
-    let commandFile = "bytestream://localhost:1987/blobs/" + this.state.action_obj.commandDigest.hash + "/" + this.state.action_obj.commandDigest.sizeBytes;
+    let commandFile = "bytestream://localhost:1987/blobs/" + this.state.action.commandDigest.hash + "/" + this.state.action.commandDigest.sizeBytes;
     console.log(commandFile);
     rpcService
       .fetchBytestreamFile(commandFile, this.props.model.getId(), "arraybuffer")
@@ -72,7 +71,7 @@ export default class ActionCardComponent extends React.Component {
         let temp_array = Uint8Array.from(action_buff);
         this.setState({
           ...this.state,
-          command_obj: build.bazel.remote.execution.v2.Command.decode(temp_array),
+          command: build.bazel.remote.execution.v2.Command.decode(temp_array),
           loading: true,
         });
       })
@@ -93,16 +92,39 @@ export default class ActionCardComponent extends React.Component {
           <div className="title">
             {"bytestream://localhost:1987/blobs/" + this.props.search}
           </div>
-          {this.state.action_obj && (
+          {this.state.action && (
             <div>
-              <div>{build.bazel.remote.execution.v2.Action.verify(this.state.action_obj)}</div>
-              <div>{this.state.action_obj.outputNodeProperties.map((outputNodeProperty) => (
+              <div>{build.bazel.remote.execution.v2.Action.verify(this.state.action)}</div>
+              <pre><code>{JSON.stringify(this.state.action, null, 2)}</code></pre>
+              <div>{this.state.action.outputNodeProperties.map((outputNodeProperty) => (
                   <div className="output-node">{outputNodeProperty}</div>
                 ))}
               </div>
-              <div>{this.state.action_obj.toJSON()}</div>
-              <div>{this.state.action_obj.timeout}</div>
-              <div>{this.state.action_obj.commandDigest}</div>
+              <div>Timeout:</div>
+              <div>Command Digest Hash/Size</div>
+            </div>
+          )}
+          
+          {this.state.command && (
+            <div>
+              <div>{build.bazel.remote.execution.v2.Command.verify(this.state.command)}</div>
+              <pre><code>{JSON.stringify(this.state.command, null, 2)}</code></pre>
+              <div>{this.state.command.arguments.map((argument) => (
+                  <div className="command-argument">{argument}</div>
+                ))}
+              </div>
+              <div>{this.state.command.environmentVariables.map((variable) => (
+                  <div className="command-variable">{variable.name}</div>
+                ))}
+              </div>
+              <div>{this.state.command.outputDirectories.map((directory) => (
+                  <div className="command-output-dir">{directory}</div>
+                ))}
+              </div>
+              <div>{this.state.command.outputFiles.map((file) => (
+                  <div className="command-output-file">{file}</div>
+                ))}
+              </div>
               <div>
               </div>
             </div>
