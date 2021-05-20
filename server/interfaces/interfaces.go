@@ -250,9 +250,9 @@ type ExecutionService interface {
 }
 
 type ExecutionNode interface {
-	// GetInstanceID returns an ID for this execution node that uniquely identifies
+	// GetExecutorID returns the ID for this execution node that uniquely identifies
 	// it within a node pool.
-	GetInstanceID() string
+	GetExecutorID() string
 }
 
 // TaskRouter decides which execution nodes should execute a task.
