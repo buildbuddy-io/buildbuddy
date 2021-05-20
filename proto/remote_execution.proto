@@ -824,6 +824,12 @@ message ExecutedActionMetadata {
 
   // When the worker finished uploading action outputs.
   google.protobuf.Timestamp output_upload_completed_timestamp = 10;
+
+  // BUILDBUDDY-SPECIFIC FIELDS BELOW.
+  // Started at field #1000 to avoid conflicts with Bazel.
+
+  // The unique ID of the executor instance that ran this action.
+  string executor_id = 1000;
 }
 
 // An ActionResult represents the result of an

@@ -351,6 +351,7 @@ type ExecutionNode struct {
 	SchedulerHostPort     string
 	UserID                string
 	Perms                 int
+	ExecutorID            string
 }
 
 func (n *ExecutionNode) TableName() string {
