@@ -18,17 +18,7 @@ interface State {
   error: string;
 }
 
-export default class ActionCardComponent extends React.Component {
-  props: Props;
-
-  state: State = {
-    contents: new ArrayBuffer(8),
-    action_array: new Uint8Array(),
-    action: null,
-    command: null,
-    error: "",
-  };
-
+export default class ActionCardComponent extends React.Component<Props, State> {
   componentDidMount() {
     this.fetchAction();
     //this.fetchCommand();
@@ -49,7 +39,6 @@ export default class ActionCardComponent extends React.Component {
           contents: action_buff,
           action_array: temp_array,
           action: build.bazel.remote.execution.v2.Action.decode(temp_array),
-          loading: true,
         });
       })
       .catch(() => {
@@ -60,10 +49,13 @@ export default class ActionCardComponent extends React.Component {
         });
       });
   }
-  
 
   fetchCommand() {
-    let commandFile = "bytestream://localhost:1987/blobs/" + this.state.action.commandDigest.hash + "/" + this.state.action.commandDigest.sizeBytes;
+    let commandFile =
+      "bytestream://localhost:1987/blobs/" +
+      this.state.action.commandDigest.hash +
+      "/" +
+      this.state.action.commandDigest.sizeBytes;
     console.log(commandFile);
     rpcService
       .fetchBytestreamFile(commandFile, this.props.model.getId(), "arraybuffer")
@@ -72,7 +64,6 @@ export default class ActionCardComponent extends React.Component {
         this.setState({
           ...this.state,
           command: build.bazel.remote.execution.v2.Command.decode(temp_array),
-          loading: true,
         });
       })
       .catch(() => {
@@ -87,16 +78,17 @@ export default class ActionCardComponent extends React.Component {
   render() {
     return (
       <div className="card">
-        <img className="icon" src="/image/filter.svg"/>
+        <img className="icon" src="/image/filter.svg" />
         <div className="content">
-          <div className="title">
-            {"bytestream://localhost:1987/blobs/" + this.props.search}
-          </div>
+          <div className="title">{"bytestream://localhost:1987/blobs/" + this.props.search}</div>
           {this.state.action && (
             <div>
               <div>{build.bazel.remote.execution.v2.Action.verify(this.state.action)}</div>
-              <pre><code>{JSON.stringify(this.state.action, null, 2)}</code></pre>
-              <div>{this.state.action.outputNodeProperties.map((outputNodeProperty) => (
+              <pre>
+                <code>{JSON.stringify(this.state.action, null, 2)}</code>
+              </pre>
+              <div>
+                {this.state.action.outputNodeProperties.map((outputNodeProperty) => (
                   <div className="output-node">{outputNodeProperty}</div>
                 ))}
               </div>
@@ -104,32 +96,36 @@ export default class ActionCardComponent extends React.Component {
               <div>Command Digest Hash/Size</div>
             </div>
           )}
-          
+
           {this.state.command && (
             <div>
               <div>{build.bazel.remote.execution.v2.Command.verify(this.state.command)}</div>
-              <pre><code>{JSON.stringify(this.state.command, null, 2)}</code></pre>
-              <div>{this.state.command.arguments.map((argument) => (
+              <pre>
+                <code>{JSON.stringify(this.state.command, null, 2)}</code>
+              </pre>
+              <div>
+                {this.state.command.arguments.map((argument) => (
                   <div className="command-argument">{argument}</div>
                 ))}
               </div>
-              <div>{this.state.command.environmentVariables.map((variable) => (
+              <div>
+                {this.state.command.environmentVariables.map((variable) => (
                   <div className="command-variable">{variable.name}</div>
                 ))}
               </div>
-              <div>{this.state.command.outputDirectories.map((directory) => (
+              <div>
+                {this.state.command.outputDirectories.map((directory) => (
                   <div className="command-output-dir">{directory}</div>
                 ))}
               </div>
-              <div>{this.state.command.outputFiles.map((file) => (
+              <div>
+                {this.state.command.outputFiles.map((file) => (
                   <div className="command-output-file">{file}</div>
                 ))}
               </div>
-              <div>
-              </div>
+              <div></div>
             </div>
           )}
-          
         </div>
       </div>
     );
