@@ -255,7 +255,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {activeTab == "action" && (
             <ActionCardComponent
               model={this.state.model}
-              inProgress={this.state.inProgress}
               search={window.location.search}
             />
           )}

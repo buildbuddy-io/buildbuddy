@@ -185,13 +185,8 @@ export default class ExecutionCardComponent extends React.Component {
     });
   }
 
-  handleSearch(execution: execution_stats.Execution) {
-    if (this.props.model.getIsRBEEnabled()) {
-      window.location.search = "?" + execution.actionDigest?.hash + "/" + execution.actionDigest?.sizeBytes;
-      window.location.hash = "#action";
-      return;
-    }
-    router.navigateToSetup();
+  handleActionDigestClick(execution: execution_stats.Execution) {
+    router.navigateTo("/invocation/" + this.props.model.getId() + "?actionDigest=" + execution.actionDigest.hash + "/" + execution.actionDigest.sizeBytes + "#action")
   }
 
   render() {
@@ -284,7 +279,7 @@ export default class ExecutionCardComponent extends React.Component {
                   />
                 </div>
                 <div>
-                  <div className="invocation-execution-row-digest" onClick={this.handleSearch.bind(this, execution)}>
+                  <div className="invocation-execution-row-digest" onClick={this.handleActionDigestClick.bind(this, execution)}>
                     {stages[execution.stage].name} {execution?.actionDigest?.hash}/{execution?.actionDigest?.sizeBytes}
                   </div>
                   <div>{execution.commandSnippet}</div>
