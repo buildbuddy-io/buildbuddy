@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/user"
@@ -395,11 +394,13 @@ func (bep *buildEventPublisher) setError(err error) {
 
 // actionRunner runs a single action in the BuildBuddy config.
 type actionRunner struct {
-	action        *config.Action
-	log           *invocationLog
-	bep           *buildEventPublisher
-	username      string
-	hostname      string
+	action   *config.Action
+	log      *invocationLog
+	bep      *buildEventPublisher
+	username string
+	hostname string
+
+	mu            sync.Mutex // protects(progressCount)
 	progressCount int32
 }
 
@@ -587,18 +588,35 @@ func (ar *actionRunner) printCommandLine(bazelArgs []string) {
 }
 
 func (ar *actionRunner) flushProgress() error {
-	buf, err := ioutil.ReadAll(ar.log)
+	event, err := ar.nextProgressEvent()
 	if err != nil {
-		return status.WrapError(err, "failed to read action logs")
+		return err
+	}
+	if event == nil {
+		// No progress to flush.
+		return nil
+	}
+
+	return ar.bep.Publish(event)
+}
+
+func (ar *actionRunner) nextProgressEvent() (*bespb.BuildEvent, error) {
+	ar.mu.Lock()
+	defer ar.mu.Unlock()
+
+	buf, err := ar.log.ReadAll()
+	if err != nil {
+		return nil, status.WrapError(err, "failed to read action logs")
 	}
 	if len(buf) == 0 {
-		return nil
+		return nil, nil
 	}
 	count := ar.progressCount
 	ar.progressCount++
+
 	output := string(buf)
 
-	return ar.bep.Publish(&bespb.BuildEvent{
+	return &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: count}}},
 		Children: []*bespb.BuildEventId{
 			{Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: count + 1}}},
@@ -607,7 +625,7 @@ func (ar *actionRunner) flushProgress() error {
 			// Only outputting to stderr for now, like Bazel does.
 			Stderr: output,
 		}},
-	})
+	}, nil
 }
 
 // TODO: Handle shell variable expansion. Probably want to run this with sh -c

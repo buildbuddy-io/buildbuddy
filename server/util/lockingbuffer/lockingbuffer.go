@@ -2,6 +2,7 @@ package lockingbuffer
 
 import (
 	"bytes"
+	"io"
 	"sync"
 )
 
@@ -33,4 +34,13 @@ func (lb *LockingBuffer) Read(p []byte) (int, error) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 	return lb.buffer.Read(p)
+}
+
+// ReadAll provides a thread-safe alternative to io.ReadAll for lockingbuffer.
+func (lb *LockingBuffer) ReadAll() ([]byte, error) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	b, err := io.ReadAll(bytes.NewReader(lb.buffer.Bytes()))
+	lb.buffer.Reset()
+	return b, err
 }
