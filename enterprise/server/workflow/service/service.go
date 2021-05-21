@@ -400,12 +400,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				// re-cloned each time.
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "preserve-workspace", Value: "true"},
-				// Pass the repo URL to the executor so that it can try to assign this
-				// task to a runner which has already checked out the repo, as opposed
-				// to another repo owned by the org. This also allows the scheduler
-				// to route tasks with different repos independently, resulting in better
-				// load balancing and more efficient runner reuse.
-				{Name: "workflow-repo-url", Value: wd.RepoURL},
+				// Pass the workflow ID to the executor so that it can try to assign
+				// this task to a runner which has previously executed the workflow.
+				{Name: "workflow-id", Value: wf.WorkflowID},
 			},
 		},
 	}
