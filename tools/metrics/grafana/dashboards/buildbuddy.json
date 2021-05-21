@@ -16,7 +16,7 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1621462759023,
+  "iteration": 1621622318691,
   "links": [],
   "panels": [
     {
@@ -158,7 +158,7 @@
         "y": 1
       },
       "hiddenSeries": false,
-      "id": 255,
+      "id": 251,
       "legend": {
         "avg": false,
         "current": false,
@@ -191,24 +191,36 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(rate(grpc_server_msg_sent_total{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}]))",
+          "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
           "interval": "",
-          "legendFormat": "Read",
+          "legendFormat": "P99",
           "queryType": "randomWalk",
           "refId": "A"
         },
         {
-          "expr": "sum(rate(grpc_server_msg_sent_total{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}]))",
+          "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
           "interval": "",
-          "legendFormat": "Write",
+          "legendFormat": "P95",
           "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
+          "interval": "",
+          "legendFormat": "P50",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(grpc_server_handled_total{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (grpc_service)",
+          "interval": "",
+          "legendFormat": "QPS",
+          "refId": "D"
         }
       ],
       "thresholds": [],
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Transfer Size",
+      "title": "/GetMulti",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -224,7 +236,7 @@
       },
       "yaxes": [
         {
-          "format": "decbytes",
+          "format": "s",
           "label": null,
           "logBase": 1,
           "max": null,
@@ -387,7 +399,7 @@
         "y": 9
       },
       "hiddenSeries": false,
-      "id": 251,
+      "id": 252,
       "legend": {
         "avg": false,
         "current": false,
@@ -420,26 +432,26 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
+          "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
           "interval": "",
           "legendFormat": "P99",
           "queryType": "randomWalk",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
+          "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
           "interval": "",
           "legendFormat": "P95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
+          "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
           "interval": "",
           "legendFormat": "P50",
           "refId": "C"
         },
         {
-          "expr": "sum(rate(grpc_server_handled_total{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (grpc_service)",
+          "expr": "sum(rate(grpc_server_handled_total{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
           "interval": "",
           "legendFormat": "QPS",
           "refId": "D"
@@ -449,7 +461,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "/GetMulti",
+      "title": "/Write",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -571,127 +583,6 @@
       "timeRegions": [],
       "timeShift": null,
       "title": "/Read",
-      "tooltip": {
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "buckets": null,
-        "mode": "time",
-        "name": null,
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "s",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        },
-        {
-          "format": "reqps",
-          "label": null,
-          "logBase": 1,
-          "max": null,
-          "min": null,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false,
-        "alignLevel": null
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": "Prometheus",
-      "description": "",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {}
-        },
-        "overrides": []
-      },
-      "fill": 1,
-      "fillGradient": 0,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 17
-      },
-      "hiddenSeries": false,
-      "id": 252,
-      "legend": {
-        "avg": false,
-        "current": false,
-        "max": false,
-        "min": false,
-        "rightSide": true,
-        "show": true,
-        "total": false,
-        "values": false
-      },
-      "lines": true,
-      "linewidth": 1,
-      "nullPointMode": "null",
-      "options": {
-        "alertThreshold": true
-      },
-      "percentage": false,
-      "pluginVersion": "7.3.5",
-      "pointradius": 2,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [
-        {
-          "alias": "QPS",
-          "yaxis": 2
-        }
-      ],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
-          "interval": "",
-          "legendFormat": "P99",
-          "queryType": "randomWalk",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
-          "interval": "",
-          "legendFormat": "P95",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
-          "interval": "",
-          "legendFormat": "P50",
-          "refId": "C"
-        },
-        {
-          "expr": "sum(rate(grpc_server_handled_total{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
-          "interval": "",
-          "legendFormat": "QPS",
-          "refId": "D"
-        }
-      ],
-      "thresholds": [],
-      "timeFrom": null,
-      "timeRegions": [],
-      "timeShift": null,
-      "title": "/Write",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -5052,7 +4943,7 @@
         "x": 0,
         "y": 34
       },
-      "id": 241,
+      "id": 256,
       "panels": [
         {
           "aliasColors": {},
@@ -5076,7 +4967,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 242,
+          "id": 257,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5101,7 +4992,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1621462759023,
+          "repeatIteration": 1621622318691,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5189,7 +5080,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 243,
+          "id": 258,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5213,7 +5104,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1621462759023,
+          "repeatIteration": 1621622318691,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5299,7 +5190,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 244,
+          "id": 259,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5323,7 +5214,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1621462759023,
+          "repeatIteration": 1621622318691,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5409,7 +5300,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 245,
+          "id": 260,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5433,7 +5324,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1621462759023,
+          "repeatIteration": 1621622318691,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5498,7 +5389,7 @@
           }
         }
       ],
-      "repeatIteration": 1621462759023,
+      "repeatIteration": 1621622318691,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -5773,7 +5664,7 @@
         "x": 0,
         "y": 36
       },
-      "id": 246,
+      "id": 261,
       "panels": [
         {
           "aliasColors": {
@@ -5813,7 +5704,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 247,
+          "id": 262,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5838,7 +5729,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1621462759023,
+          "repeatIteration": 1621622318691,
           "repeatPanelId": 73,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5923,7 +5814,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 248,
+          "id": 263,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5948,7 +5839,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1621462759023,
+          "repeatIteration": 1621622318691,
           "repeatPanelId": 79,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6013,7 +5904,7 @@
           }
         }
       ],
-      "repeatIteration": 1621462759023,
+      "repeatIteration": 1621622318691,
       "repeatPanelId": 71,
       "scopedVars": {
         "job": {
@@ -6326,5 +6217,5 @@
   "timezone": "",
   "title": "BuildBuddy Metrics",
   "uid": "1rsE5yoGz",
-  "version": 7
+  "version": 9
 }
