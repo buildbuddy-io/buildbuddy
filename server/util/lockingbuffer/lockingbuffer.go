@@ -40,6 +40,7 @@ func (lb *LockingBuffer) Read(p []byte) (int, error) {
 func (lb *LockingBuffer) ReadAll() ([]byte, error) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
-	defer lb.buffer.Reset()
-	return io.ReadAll(bytes.NewReader(lb.buffer.Bytes()))
+	b, err := io.ReadAll(bytes.NewReader(lb.buffer.Bytes()))
+	lb.buffer.Reset()
+	return b, err
 }
