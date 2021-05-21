@@ -395,6 +395,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "container-image", Value: "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1"},
+				// Hint to the task router that this is a workflow action and should try
+				// extra hard to route this action to an executor that has the repo
+				// already checked out.
+				{Name: "workflow-action", Value: "true"},
 				// Reuse the docker container for the CI runner across executions if
 				// possible, and also keep the git repo around so it doesn't need to be
 				// re-cloned each time.
@@ -406,10 +410,6 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				// to route tasks with different repos independently, resulting in better
 				// load balancing and more efficient runner reuse.
 				{Name: "workflow-repo-url", Value: wd.RepoURL},
-				// Hint to BuildBuddy's task router that it should favor reusing nodes
-				// that previously executed the workflow, since hitting a "cold" node
-				// that has not yet executed the workflow can be very expensive.
-				{Name: "task-router-preferred-node-limit", Value: "max"},
 			},
 		},
 	}
