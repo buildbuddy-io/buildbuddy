@@ -400,6 +400,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				// re-cloned each time.
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "preserve-workspace", Value: "true"},
+				// Pass the workflow ID to the executor so that it can try to assign
+				// this task to a runner which has previously executed the workflow.
+				{Name: "workflow-id", Value: wf.WorkflowID},
 			},
 		},
 	}
