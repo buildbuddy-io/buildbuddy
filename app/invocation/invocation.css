@@ -1,12 +1,27 @@
+.action-list {
+  display: block;
+  color: #222;
+}
+
+.action-list .env-name {
+  color: #222;
+  font-weight: bold;
+}
+
+.action-list .env-value {
+  color: #444;
+}
+
 .action-section {
   display: flex;
+  margin-bottom: 16px;
 }
 
 .action-section div {
   flex-grow: 1;
 }
 
-.action-section div.action-property {
+.action-section div.action-property-title {
   width: 20%;
   flex-grow: 0;
   flex-shrink: 0;

@@ -25,6 +25,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   }
 
   fetchAction() {
+    // TODO: Replace localhost:1987 with the remote cache address and prefix the path with the instance name
     let actionFile = "bytestream://localhost:1987/blobs/" + this.props.search.substring(14);
     rpcService
       .fetchBytestreamFile(actionFile, this.props.model.getId(), "arraybuffer")
@@ -63,6 +64,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   }
 
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
+    // TODO: Replace localhost:1987 with the remote cache address and prefix the path with the instance name
     let commandFile =
       "bytestream://localhost:1987/blobs/" + action.commandDigest.hash + "/" + action.commandDigest.sizeBytes;
     rpcService
@@ -83,26 +85,34 @@ export default class ActionCardComponent extends React.Component<Props, State> {
       });
   }
 
+  displayList(list: string[]) {
+    if (list.length > 0) {
+      return <div className="action-list">{list.map((argument) => <div>{argument}</div> || [])}</div>;
+    } else {
+      return <div>None found.</div>;
+    }
+  }
+
   render() {
     return (
       <div>
         <div className="card">
           <img className="icon" src="/image/info.svg" />
           <div className="content">
-            <div className="title">Action Info </div>
+            <div className="title">Action details </div>
             <div className="details">
               {this.state.action && (
                 <div>
                   <div className="action-section">
-                    <div className="action-property">Hash/Size: </div>
+                    <div className="action-property-title">Hash/Size: </div>
                     <div>{this.props.search.substring(14)}</div>
                   </div>
                   <div className="action-section">
-                    <div className="action-property">Output Node Properties: </div>
-                    <div>{this.displayOutputNodeProps()}</div>
+                    <div className="action-property-title">Output Node Properties: </div>
+                    {this.displayOutputNodeProps()}
                   </div>
                   <div className="action-section">
-                    <div className="action-property">Do Not Cache: </div>
+                    <div className="action-property-title">Do Not Cache: </div>
                     <div>{this.state.action.doNotCache ? "True" : "False"}</div>
                   </div>
                 </div>
@@ -113,31 +123,35 @@ export default class ActionCardComponent extends React.Component<Props, State> {
         <div className="card">
           <img className="icon" src="/image/info.svg" />
           <div className="content">
-            <div className="title">Command Info</div>
+            <div className="title">Command details</div>
             <div className="details">
               {this.state.command && (
                 <div>
                   <div className="action-section">
-                    <div className="action-property">Arguments:</div>
-                    {this.state.command.arguments.map(
-                      (argument) => <div className="action-list-item">{argument}</div> || []
-                    )}
+                    <div className="action-property-title">Arguments:</div>
+                    {this.displayList(this.state.command.arguments)}
                   </div>
                   <div className="action-section">
-                    <div className="action-property">Environment Variables:</div>
-                    {this.state.command.environmentVariables.map(
-                      (variable) => <div className="action-list-item">{variable.name}</div> || []
-                    )}
+                    <div className="action-property-title">Environment Variables:</div>
+                    <div className="action-list">
+                      {this.state.command.environmentVariables.map(
+                        (variable) =>
+                          (
+                            <div>
+                              <span className="env-name">{variable.name}</span>
+                              <span className="env-value">={variable.value}</span>
+                            </div>
+                          ) || []
+                      )}
+                    </div>
                   </div>
                   <div className="action-section">
-                    <div className="action-property">Output Directories:</div>
-                    {this.state.command.outputDirectories.map(
-                      (directory) => <div className="action-list-item">{directory}</div> || []
-                    )}
+                    <div className="action-property-title">Output Directories:</div>
+                    {this.displayList(this.state.command.outputDirectories)}
                   </div>
                   <div className="action-section">
-                    <div className="action-property">Output Files:</div>
-                    {this.state.command.outputFiles.map((file) => <div className="action-list-item">{file}</div> || [])}
+                    <div className="action-property-title">Output Files:</div>
+                    {this.displayList(this.state.command.outputFiles)}
                   </div>
                   <div></div>
                 </div>
