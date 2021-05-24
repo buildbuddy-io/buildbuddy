@@ -38,7 +38,7 @@ func NewInvocationSearchService(env environment.Env, h *db.DBHandle) *Invocation
 
 func defaultSortParams() *inpb.InvocationSort {
 	return &inpb.InvocationSort{
-		SortField: inpb.InvocationSort_CREATED_AT_USEC_SORT_FIELD,
+		SortField: inpb.InvocationSort_UPDATED_AT_USEC_SORT_FIELD,
 		Ascending: false,
 	}
 }
@@ -147,6 +147,8 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	switch sort.SortField {
 	case inpb.InvocationSort_CREATED_AT_USEC_SORT_FIELD:
 		q.SetOrderBy("created_at_usec", sort.Ascending)
+	case inpb.InvocationSort_UPDATED_AT_USEC_SORT_FIELD:
+		q.SetOrderBy("updated_at_usec", sort.Ascending)
 	}
 
 	limitSize := defaultLimitSize

@@ -168,6 +168,7 @@ message InvocationSort {
   enum SortField {
     UNKNOWN_SORT_FIELD = 0;
     CREATED_AT_USEC_SORT_FIELD = 1;
+    UPDATED_AT_USEC_SORT_FIELD = 2;
   }
 
   // The field to sort results by.
