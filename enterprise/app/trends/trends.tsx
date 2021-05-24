@@ -15,9 +15,9 @@ interface Props {
 }
 
 interface State {
-  stats: invocation.InvocationStat[];
+  stats: invocation.TrendStat[];
   loading: boolean;
-  dateToStatMap: Map<string, invocation.InvocationStat>;
+  dateToStatMap: Map<string, invocation.TrendStat>;
   lastNDates: string[];
   filterOnlyCI: boolean;
 }
@@ -28,7 +28,7 @@ export default class TrendsComponent extends React.Component {
   state: State = {
     stats: [],
     loading: true,
-    dateToStatMap: new Map<string, invocation.InvocationStat>(),
+    dateToStatMap: new Map<string, invocation.TrendStat>(),
     lastNDates: [],
     filterOnlyCI: false,
   };
@@ -63,10 +63,9 @@ export default class TrendsComponent extends React.Component {
   }
 
   fetchStats() {
-    let request = new invocation.GetInvocationStatRequest();
-    request.aggregationType = invocation.AggType.DATE_AGGREGATION_TYPE;
-    request.limit = this.getLimit();
-    request.query = new invocation.InvocationStatQuery();
+    let request = new invocation.GetTrendRequest();
+    request.lookbackWindowDays = this.getLimit();
+    request.query = new invocation.TrendQuery();
 
     if (this.state.filterOnlyCI) {
       request.query.role = "CI";
@@ -89,16 +88,16 @@ export default class TrendsComponent extends React.Component {
     }
 
     this.setState({ ...this.state, loading: true });
-    rpcService.service.getInvocationStat(request).then((response) => {
+    rpcService.service.getTrend(request).then((response) => {
       console.log(response);
-      const lastNDates = this.getLastNDates(request.limit);
-      let dateToStatMap = new Map<string, invocation.InvocationStat>();
-      for (let stat of response.invocationStat) {
-        dateToStatMap.set(stat.name, stat as invocation.InvocationStat);
+      const lastNDates = this.getLastNDates(request.lookbackWindowDays);
+      let dateToStatMap = new Map<string, invocation.TrendStat>();
+      for (let stat of response.trendStat) {
+        dateToStatMap.set(stat.name, stat as invocation.TrendStat);
       }
       this.setState({
         ...this.state,
-        stats: response.invocationStat,
+        stats: response.trendStat,
         lastNDates: lastNDates,
         dateToStatMap: dateToStatMap,
         loading: false,

@@ -12,5 +12,5 @@ func hashGroupID(groupID string) string {
 }
 
 func IsBlockedForStatsQuery(groupID string) bool {
-	return hashGroupID(groupID) == "143c576ef9982fe57150273eef88726a3bb37abdd427082b3a05a9460c955181"
+	return false
 }
