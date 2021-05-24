@@ -93,19 +93,18 @@ export default class ActionCardComponent extends React.Component<Props, State> {
             <div>
               <div className="action-section">
                 <div className="action-property"> Hash/Size: </div>
-                <div className="action-info">{this.props.search.substring(14)}</div>
+                <div>{this.props.search.substring(14)}</div>
               </div>
               <div className="action-section">
                 <div className="action-property">Output Node Properties: </div>
-                <div className="action-info">{this.displayOutputNodeProps()}</div>
+                <div>{this.displayOutputNodeProps()}</div>
               </div>
               <div className="action-section">
                 <div className="action-property"> Do Not Cache: </div>
-                <div className="action-info">
+                <div>
                   <b>{this.state.action.doNotCache ? "True" : "False"}</b>
                 </div>
               </div>
-              <div>Command Digest Hash/Size</div>
             </div>
           )}
 
