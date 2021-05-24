@@ -106,7 +106,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 		q.AddWhereClause("role = ?", role)
 	}
 
-	q.AddWhereClause(`created_at_usec > ?`, lookbackWindowDays.Microseconds())
+	q.AddWhereClause(`updated_at_usec > ?`, time.Now().Add(-lookbackWindowDays).UnixNano()/1000)
 	q.AddWhereClause(`group_id = ?`, groupID)
 	q.SetGroupBy("name")
 	q.SetOrderBy("MAX(updated_at_usec)" /*ascending=*/, false)

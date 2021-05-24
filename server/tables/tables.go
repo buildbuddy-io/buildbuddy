@@ -536,12 +536,12 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 // Manual migration called after auto-migration.
 func PostAutoMigrate(db *gorm.DB) error {
 	indexes := map[string]string{
-		"invocations_group_id_created_at_index": "(`group_id`, `created_at_usec`)",
-		"invocations_group_id_index":            "(`group_id`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_user_index":                "(`group_id`, `user`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_host_index":                "(`group_id`, `host`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_repo_index":                "(`group_id`, `repo_url`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_commit_index":              "(`group_id`, `commit_sha`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+		"invocations_trends_query_index":   "(`group_id`, `updated_at_usec`)",
+		"invocations_stats_group_id_index": "(`group_id`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+		"invocations_stats_user_index":     "(`group_id`, `user`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+		"invocations_stats_host_index":     "(`group_id`, `host`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+		"invocations_stats_repo_index":     "(`group_id`, `repo_url`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+		"invocations_stats_commit_index":   "(`group_id`, `commit_sha`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
 	}
 	m := db.Migrator()
 	if m.HasTable("Invocations") {
