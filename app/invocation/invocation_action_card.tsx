@@ -26,14 +26,10 @@ export default class ActionCardComponent extends React.Component<Props, State> {
 
   fetchAction() {
     let actionFile = "bytestream://localhost:1987/blobs/" + this.props.search.substring(14);
-    console.log(this.props.search);
-    console.log(actionFile);
     rpcService
       .fetchBytestreamFile(actionFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {
-        console.log(action_buff);
         let temp_array = new Uint8Array(action_buff);
-        console.log(temp_array);
         let temp_action = build.bazel.remote.execution.v2.Action.decode(temp_array);
         this.setState({
           ...this.state,
@@ -41,7 +37,6 @@ export default class ActionCardComponent extends React.Component<Props, State> {
           action_array: temp_array,
           action: temp_action,
         });
-        console.log(JSON.stringify(this.state.action, null, 2));
         this.fetchCommand(temp_action);
       })
       .catch(() => {
@@ -53,10 +48,23 @@ export default class ActionCardComponent extends React.Component<Props, State> {
       });
   }
 
+  displayOutputNodeProps() {
+    if (this.state.action.outputNodeProperties.length != 0) {
+      return (
+        <div>
+          {this.state.action.outputNodeProperties.map((outputNodeProperty) => (
+            <div className="output-node">{outputNodeProperty}</div>
+          ))}
+        </div>
+      );
+    } else {
+      return <div>None found.</div>;
+    }
+  }
+
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
     let commandFile =
       "bytestream://localhost:1987/blobs/" + action.commandDigest.hash + "/" + action.commandDigest.sizeBytes;
-    console.log(commandFile);
     rpcService
       .fetchBytestreamFile(commandFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {
@@ -78,31 +86,32 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   render() {
     return (
       <div className="card">
-        <img className="icon" src="/image/filter.svg" />
+        <img className="icon" src="/image/info.svg" />
         <div className="content">
-          <div className="title">{"bytestream://localhost:1987/blobs/" + this.props.search}</div>
+          <div className="title"> Action Info </div>
           {this.state.action && (
             <div>
-              <div>{build.bazel.remote.execution.v2.Action.verify(this.state.action)}</div>
-              <pre>
-                <code>{JSON.stringify(this.state.action, null, 2)}</code>
-              </pre>
-              <div>
-                {this.state.action.outputNodeProperties.map((outputNodeProperty) => (
-                  <div className="output-node">{outputNodeProperty}</div>
-                ))}
+              <div className="action-section">
+                <div className="action-property"> Hash/Size: </div>
+                <div className="action-info">{this.props.search.substring(14)}</div>
               </div>
-              <div>Timeout:</div>
+              <div className="action-section">
+                <div className="action-property">Output Node Properties: </div>
+                <div className="action-info">{this.displayOutputNodeProps()}</div>
+              </div>
+              <div className="action-section">
+                <div className="action-property"> Do Not Cache: </div>
+                <div className="action-info">
+                  <b>{this.state.action.doNotCache ? "True" : "False"}</b>
+                </div>
+              </div>
               <div>Command Digest Hash/Size</div>
             </div>
           )}
 
           {this.state.command && (
             <div>
-              <div>{build.bazel.remote.execution.v2.Command.verify(this.state.command)}</div>
-              <pre>
-                <code>{JSON.stringify(this.state.command, null, 2)}</code>
-              </pre>
+              <div className="title"> Action Info</div>
               <div>
                 {this.state.command.arguments.map((argument) => (
                   <div className="command-argument">{argument}</div>
