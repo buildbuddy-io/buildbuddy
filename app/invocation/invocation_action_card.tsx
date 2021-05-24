@@ -85,55 +85,65 @@ export default class ActionCardComponent extends React.Component<Props, State> {
 
   render() {
     return (
-      <div className="card">
-        <img className="icon" src="/image/info.svg" />
-        <div className="content">
-          <div className="title"> Action Info </div>
-          {this.state.action && (
-            <div>
-              <div className="action-section">
-                <div className="action-property"> Hash/Size: </div>
-                <div>{this.props.search.substring(14)}</div>
-              </div>
-              <div className="action-section">
-                <div className="action-property">Output Node Properties: </div>
-                <div>{this.displayOutputNodeProps()}</div>
-              </div>
-              <div className="action-section">
-                <div className="action-property"> Do Not Cache: </div>
+      <div>
+        <div className="card">
+          <img className="icon" src="/image/info.svg" />
+          <div className="content">
+            <div className="title">Action Info </div>
+            <div className="details">
+              {this.state.action && (
                 <div>
-                  <b>{this.state.action.doNotCache ? "True" : "False"}</b>
+                  <div className="action-section">
+                    <div className="action-property">Hash/Size: </div>
+                    <div>{this.props.search.substring(14)}</div>
+                  </div>
+                  <div className="action-section">
+                    <div className="action-property">Output Node Properties: </div>
+                    <div>{this.displayOutputNodeProps()}</div>
+                  </div>
+                  <div className="action-section">
+                    <div className="action-property">Do Not Cache: </div>
+                    <div>{this.state.action.doNotCache ? "True" : "False"}</div>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
-          )}
-
-          {this.state.command && (
-            <div>
-              <div className="title"> Action Info</div>
-              <div>
-                {this.state.command.arguments.map((argument) => (
-                  <div className="command-argument">{argument}</div>
-                ))}
-              </div>
-              <div>
-                {this.state.command.environmentVariables.map((variable) => (
-                  <div className="command-variable">{variable.name}</div>
-                ))}
-              </div>
-              <div>
-                {this.state.command.outputDirectories.map((directory) => (
-                  <div className="command-output-dir">{directory}</div>
-                ))}
-              </div>
-              <div>
-                {this.state.command.outputFiles.map((file) => (
-                  <div className="command-output-file">{file}</div>
-                ))}
-              </div>
-              <div></div>
+          </div>
+        </div>
+        <div className="card">
+          <img className="icon" src="/image/info.svg" />
+          <div className="content">
+            <div className="title">Command Info</div>
+            <div className="details">
+              {this.state.command && (
+                <div>
+                  <div className="action-section">
+                    <div className="action-property">Arguments:</div>
+                    {this.state.command.arguments.map(
+                      (argument) => <div className="action-list-item">{argument}</div> || []
+                    )}
+                  </div>
+                  <div className="action-section">
+                    <div className="action-property">Environment Variables:</div>
+                    {this.state.command.environmentVariables.map(
+                      (variable) => <div className="action-list-item">{variable.name}</div> || []
+                    )}
+                  </div>
+                  <div className="action-section">
+                    <div className="action-property">Output Directories:</div>
+                    {this.state.command.outputDirectories.map(
+                      (directory) => <div className="action-list-item">{directory}</div> || []
+                    )}
+                  </div>
+                  <div className="action-section">
+                    <div className="action-property">Output Files:</div>
+                    {this.state.command.outputFiles.map((file) => <div className="action-list-item">{file}</div> || [])}
+                  </div>
+                  <div></div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     );
