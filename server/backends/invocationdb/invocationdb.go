@@ -55,7 +55,7 @@ func (d *InvocationDB) createInvocation(tx *db.DB, ctx context.Context, ti *tabl
 }
 
 func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.Invocation) error {
-	return d.h.Transaction(func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx *db.DB) error {
 		var existing tables.Invocation
 		if err := tx.Where("invocation_id = ?", ti.InvocationID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
@@ -77,7 +77,7 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 	if err != nil {
 		return err
 	}
-	return d.h.Transaction(func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx *db.DB) error {
 		var in tables.Invocation
 		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?`, invocationID).Take(&in).Error; err != nil {
 			return err
@@ -182,7 +182,7 @@ func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string
 }
 
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
-	return d.h.Transaction(func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx *db.DB) error {
 		var in tables.Invocation
 		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?`, invocationID).Take(&in).Error; err != nil {
 			return err

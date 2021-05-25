@@ -37,7 +37,7 @@ func (g *apiKeyGroup) GetUseGroupOwnedExecutors() bool {
 
 func (d *AuthDB) InsertOrUpdateUserToken(ctx context.Context, subID string, token *tables.Token) error {
 	token.SubID = subID
-	return d.h.Transaction(func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx *db.DB) error {
 		var existing tables.Token
 		if err := tx.Where("sub_id = ?", subID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
@@ -59,9 +59,9 @@ func (d *AuthDB) ReadToken(ctx context.Context, subID string) (*tables.Token, er
 	return ti, nil
 }
 
-func (d *AuthDB) GetAPIKeyGroupFromAPIKey(apiKey string) (interfaces.APIKeyGroup, error) {
+func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(db.StaleReadOptions(), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, db.StaleReadOptions(), func(tx *db.DB) error {
 		existingRow := tx.Raw(`
 			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
 			FROM `+"`Groups`"+` AS g, APIKeys AS ak
@@ -78,9 +78,9 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(apiKey string) (interfaces.APIKeyGroup
 	return akg, nil
 }
 
-func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(login, pass string) (interfaces.APIKeyGroup, error) {
+func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(db.StaleReadOptions(), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, db.StaleReadOptions(), func(tx *db.DB) error {
 		existingRow := tx.Raw(`
 			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
 			FROM `+"`Groups`"+` AS g, APIKeys AS ak
