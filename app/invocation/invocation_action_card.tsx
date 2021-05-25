@@ -7,12 +7,11 @@ import rpcService from "../service/rpc_service";
 
 interface Props {
   model: InvocationModel;
-  search: string;
+  search: URLSearchParams;
 }
 
 interface State {
   contents?: ArrayBuffer;
-  action_array?: Uint8Array;
   action?: build.bazel.remote.execution.v2.Action;
   command?: build.bazel.remote.execution.v2.Command;
   error?: string;
@@ -26,19 +25,17 @@ export default class ActionCardComponent extends React.Component<Props, State> {
 
   fetchAction() {
     // TODO: Replace localhost:1987 with the remote cache address and prefix the path with the instance name
-    let actionFile = "bytestream://localhost:1987/blobs/" + this.props.search.substring(14);
+    let actionFile = "bytestream://localhost:1987/blobs/" + this.props.search.get("actionDigest");
     rpcService
       .fetchBytestreamFile(actionFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {
-        let temp_array = new Uint8Array(action_buff);
-        let temp_action = build.bazel.remote.execution.v2.Action.decode(temp_array);
+        let tempAction = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(action_buff));
         this.setState({
           ...this.state,
           contents: action_buff,
-          action_array: temp_array,
-          action: temp_action,
+          action: tempAction,
         });
-        this.fetchCommand(temp_action);
+        this.fetchCommand(tempAction);
       })
       .catch(() => {
         console.error("Error loading bytestream action profile!");
@@ -47,20 +44,6 @@ export default class ActionCardComponent extends React.Component<Props, State> {
           error: "Error loading action profile. Make sure your cache is correctly configured.",
         });
       });
-  }
-
-  displayOutputNodeProps() {
-    if (this.state.action.outputNodeProperties.length != 0) {
-      return (
-        <div>
-          {this.state.action.outputNodeProperties.map((outputNodeProperty) => (
-            <div className="output-node">{outputNodeProperty}</div>
-          ))}
-        </div>
-      );
-    } else {
-      return <div>None found.</div>;
-    }
   }
 
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
@@ -86,11 +69,8 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   }
 
   displayList(list: string[]) {
-    if (list.length > 0) {
-      return <div className="action-list">{list.map((argument) => <div>{argument}</div> || [])}</div>;
-    } else {
-      return <div>None found.</div>;
-    }
+    if (list.length == 0) return <div>None found.</div>;
+    return <div className="action-list">{list.map((argument) => <div>{argument}</div> || [])}</div>;
   }
 
   render() {
@@ -105,11 +85,19 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                 <div>
                   <div className="action-section">
                     <div className="action-property-title">Hash/Size: </div>
-                    <div>{this.props.search.substring(14)}</div>
+                    <div>{this.props.search.get("actionDigest")}</div>
                   </div>
                   <div className="action-section">
                     <div className="action-property-title">Output Node Properties: </div>
-                    {this.displayOutputNodeProps()}
+                    {this.state.action.outputNodeProperties.length ? (
+                      <div>
+                        {this.state.action.outputNodeProperties.map((outputNodeProperty) => (
+                          <div className="output-node">{outputNodeProperty}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div>None found.</div>
+                    )}
                   </div>
                   <div className="action-section">
                     <div className="action-property-title">Do Not Cache: </div>
