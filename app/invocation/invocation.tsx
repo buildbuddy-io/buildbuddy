@@ -24,6 +24,7 @@ import RawLogsCardComponent from "./invocation_raw_logs_card";
 import InvocationTabsComponent, { getActiveTab } from "./invocation_tabs";
 import TimingCardComponent from "./invocation_timing_card";
 import ExecutionCardComponent from "./invocation_execution_card";
+import ActionCardComponent from "./invocation_action_card";
 import TargetsComponent from "./invocation_targets";
 import { BuildBuddyError } from "../util/errors";
 
@@ -250,6 +251,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {activeTab == "execution" && (
             <ExecutionCardComponent model={this.state.model} inProgress={this.state.inProgress} />
           )}
+
+          {activeTab == "action" && <ActionCardComponent model={this.state.model} search={this.props.search} />}
 
           {activeTab == "fetches" && <FetchCardComponent model={this.state.model} inProgress={this.state.inProgress} />}
 

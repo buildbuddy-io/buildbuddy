@@ -1,3 +1,35 @@
+.action-list {
+  display: block;
+  color: #222;
+}
+
+.action-list .env-name {
+  color: #222;
+  font-weight: 600;
+}
+
+.action-list .env-value {
+  color: #444;
+}
+
+.action-section {
+  display: flex;
+  margin-bottom: 16px;
+}
+
+.action-section div {
+  flex-grow: 1;
+}
+
+.action-section div.action-property-title {
+  width: 20%;
+  flex-grow: 0;
+  flex-shrink: 0;
+  text-align: right;
+  margin-right: 16px;
+  font-weight: 700;
+}
+
 .cache-sections {
   display: flex;
   flex-wrap: wrap;
