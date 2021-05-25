@@ -29,6 +29,8 @@ class RpcService {
     invocationId: string,
     responseType?: "arraybuffer" | "json" | "text" | undefined
   ) {
+    console.log("Accessed fetchBytestreamFile");
+    console.log(`/file/download?bytestream_url=${encodeURIComponent(bytestreamURL)}&invocation_id=${invocationId}`);
     return this.fetchFile(
       `/file/download?bytestream_url=${encodeURIComponent(bytestreamURL)}&invocation_id=${invocationId}`,
       responseType || ""
@@ -36,20 +38,25 @@ class RpcService {
   }
 
   fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | "") {
+    console.log("Accessed fetchFile");
     return new Promise((resolve, reject) => {
       var request = new XMLHttpRequest();
       request.responseType = responseType;
       request.open("GET", fileURL, true);
+      console.log("got past open");
       request.onload = function () {
         if (this.status >= 200 && this.status < 400) {
           resolve(this.response);
+          console.log("no error");
         } else {
+          console.log("error");
           reject("Error loading file");
         }
       };
       request.onerror = function () {
         reject("Error loading file");
       };
+      console.log("before request.send");
       request.send();
     });
   }

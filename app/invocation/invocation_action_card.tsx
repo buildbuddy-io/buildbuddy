@@ -13,6 +13,7 @@ interface Props {
 interface State {
   contents?: ArrayBuffer;
   action?: build.bazel.remote.execution.v2.Action;
+  actionResult?: build.bazel.remote.execution.v2.ActionResult;
   command?: build.bazel.remote.execution.v2.Command;
   error?: string;
 }
@@ -26,6 +27,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   fetchAction() {
     // TODO: Replace localhost:1987 with the remote cache address and prefix the path with the instance name
     let actionFile = "bytestream://localhost:1987/blobs/" + this.props.search.get("actionDigest");
+    console.log("actionFile: " + actionFile);
     rpcService
       .fetchBytestreamFile(actionFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {
@@ -42,6 +44,26 @@ export default class ActionCardComponent extends React.Component<Props, State> {
         this.setState({
           ...this.state,
           error: "Error loading action profile. Make sure your cache is correctly configured.",
+        });
+      });
+  }
+
+  fetchActionResult() {
+    let actionResultFile = "bytestream://localhost:1987/blobs/ac/" + this.props.search.get("actionDigest");
+    rpcService
+      .fetchBytestreamFile(actionResultFile, this.props.model.getId(), "arraybuffer")
+      .then((action_buff: any) => {
+        let temp_array = new Uint8Array(action_buff);
+        this.setState({
+          ...this.state,
+          actionResult: build.bazel.remote.execution.v2.ActionResult.decode(temp_array),
+        });
+      })
+      .catch(() => {
+        console.error("Error loading action result!");
+        this.setState({
+          ...this.state,
+          error: "Error loading command profile. Make sure your cache is correctly configured.",
         });
       });
   }
@@ -106,7 +128,9 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                     )}
                   </div>
                   <div className="action-section">
-                    <div className="action-property-title">Do Not Cache: </div>
+                    <div className="action-property-title" onClick={this.fetchActionResult.bind(this)}>
+                      Do Not Cache:{" "}
+                    </div>
                     <div>{this.state.action.doNotCache ? "True" : "False"}</div>
                   </div>
                 </div>
@@ -146,6 +170,11 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                   </div>
                   <div></div>
                 </div>
+              )}
+              {this.state.actionResult && (
+                <pre>
+                  <code>{JSON.stringify(this.state.actionResult, null, 2)}</code>
+                </pre>
               )}
             </div>
           </div>
