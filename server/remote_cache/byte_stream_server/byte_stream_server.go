@@ -3,6 +3,7 @@ package byte_stream_server
 import (
 	"context"
 	"io"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -43,6 +44,10 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 //replicate for actioncache
 func (s *ByteStreamServer) getCache(instanceName string) interfaces.Cache {
 	return namespace.CASCache(s.cache, instanceName)
+}
+
+func (s *ByteStreamServer) getActionCache(instanceName string) interfaces.Cache {
+	return namespace.ActionCache(s.cache, instanceName)
 }
 
 func minInt64(a, b int64) int64 {
@@ -95,7 +100,13 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-	cache := s.getCache(instanceName)
+	var cache interfaces.Cache
+	if strings.Contains(instanceName, "/blobs/ac/") {
+		cache = s.getActionCache(instanceName)
+	} else {
+		cache = s.getCache(instanceName)
+	}
+
 	if d.GetHash() == digest.EmptySha256 {
 		ht.TrackEmptyHit()
 		return nil
