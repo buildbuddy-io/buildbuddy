@@ -372,10 +372,11 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAu
 
 	// Initialize API Key -> Group cache unless it's disabled by config.
 	if env.GetConfigurator().GetAuthAPIKeyGroupCacheTTL() != "0" {
-		oia.apiKeyGroupCache, err = newAPIKeyGroupCache(env.GetConfigurator())
+		akgCache, err := newAPIKeyGroupCache(env.GetConfigurator())
 		if err != nil {
 			return nil, err
 		}
+		oia.apiKeyGroupCache = akgCache
 	}
 
 	return oia, nil
