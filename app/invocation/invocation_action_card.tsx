@@ -70,7 +70,13 @@ export default class ActionCardComponent extends React.Component<Props, State> {
 
   displayList(list: string[]) {
     if (list.length == 0) return <div>None found.</div>;
-    return <div className="action-list">{list.map((argument) => <div>{argument}</div> || [])}</div>;
+    return (
+      <div className="action-list">
+        {list.map((argument) => (
+          <div>{argument}</div>
+        ))}
+      </div>
+    );
   }
 
   render() {
@@ -122,15 +128,12 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                   <div className="action-section">
                     <div className="action-property-title">Environment Variables:</div>
                     <div className="action-list">
-                      {this.state.command.environmentVariables.map(
-                        (variable) =>
-                          (
-                            <div>
-                              <span className="env-name">{variable.name}</span>
-                              <span className="env-value">={variable.value}</span>
-                            </div>
-                          ) || []
-                      )}
+                      {this.state.command.environmentVariables.map((variable) => (
+                        <div>
+                          <span className="env-name">{variable.name}</span>
+                          <span className="env-value">={variable.value}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                   <div className="action-section">
