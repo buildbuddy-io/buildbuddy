@@ -10,6 +10,5 @@ go_library(
         "//server/tables",
         "//server/util/db",
         "//server/util/status",
-        "@io_gorm_gorm//:gorm",
     ],
 )

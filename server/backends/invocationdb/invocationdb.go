@@ -2,7 +2,6 @@ package invocationdb
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -13,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"gorm.io/gorm"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
@@ -36,7 +34,7 @@ func getACL(i *tables.Invocation) *aclpb.ACL {
 	return perms.ToACLProto(&uidpb.UserId{Id: i.UserID}, i.GroupID, i.Perms)
 }
 
-func (d *InvocationDB) createInvocation(tx *gorm.DB, ctx context.Context, ti *tables.Invocation) error {
+func (d *InvocationDB) createInvocation(tx *db.DB, ctx context.Context, ti *tables.Invocation) error {
 	var permissions *perms.UserGroupPerm
 	if auth := d.env.GetAuthenticator(); auth != nil {
 		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
@@ -57,10 +55,10 @@ func (d *InvocationDB) createInvocation(tx *gorm.DB, ctx context.Context, ti *ta
 }
 
 func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.Invocation) error {
-	return d.h.Transaction(func(tx *gorm.DB) error {
+	return d.h.Transaction(func(tx *db.DB) error {
 		var existing tables.Invocation
 		if err := tx.Where("invocation_id = ?", ti.InvocationID).First(&existing).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			if db.IsRecordNotFound(err) {
 				return d.createInvocation(tx, ctx, ti)
 			}
 		} else {
@@ -79,7 +77,7 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 	if err != nil {
 		return err
 	}
-	return d.h.Transaction(func(tx *gorm.DB) error {
+	return d.h.Transaction(func(tx *db.DB) error {
 		var in tables.Invocation
 		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?`, invocationID).Take(&in).Error; err != nil {
 			return err
@@ -184,7 +182,7 @@ func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string
 }
 
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
-	return d.h.Transaction(func(tx *gorm.DB) error {
+	return d.h.Transaction(func(tx *db.DB) error {
 		var in tables.Invocation
 		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?`, invocationID).Take(&in).Error; err != nil {
 			return err

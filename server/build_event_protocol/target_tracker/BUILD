@@ -11,12 +11,12 @@ go_library(
         "//server/build_event_protocol/accumulator",
         "//server/environment",
         "//server/tables",
+        "//server/util/db",
         "//server/util/log",
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",
-        "@io_gorm_gorm//:gorm",
         "@org_golang_x_sync//errgroup",
     ],
 )

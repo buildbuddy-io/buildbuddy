@@ -6,11 +6,11 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/ptypes"
-	"gorm.io/gorm"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -121,7 +121,7 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 	targets := make([]*trpb.Target, 0)
 	statuses := make(map[string][]*trpb.TargetStatus, 0)
 
-	err := env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+	err := env.GetDBHandle().Transaction(func(tx *db.DB) error {
 		rows, err := tx.Raw(queryStr, args...).Rows()
 		if err != nil {
 			return err

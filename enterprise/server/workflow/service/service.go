@@ -18,12 +18,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/oauth2"
-	"gorm.io/gorm"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -162,7 +162,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 		rsp.WebhookRegistered = true
 	}
 
-	err = ws.env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+	err = ws.env.GetDBHandle().Transaction(func(tx *db.DB) error {
 		workflowID, err := tables.PrimaryKeyForTable("Workflows")
 		if err != nil {
 			return status.InternalError(err.Error())
@@ -202,7 +202,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 		return nil, err
 	}
 	var wf tables.Workflow
-	err = ws.env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+	err = ws.env.GetDBHandle().Transaction(func(tx *db.DB) error {
 		if err := tx.Raw(`SELECT user_id, group_id, perms, access_token, repo_url, github_webhook_id FROM Workflows WHERE workflow_id = ?`, workflowID).Take(&wf).Error; err != nil {
 			return err
 		}
@@ -236,7 +236,7 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	}
 	q.SetOrderBy("created_at_usec" /*ascending=*/, true)
 	qStr, qArgs := q.Build()
-	err := ws.env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+	err := ws.env.GetDBHandle().Transaction(func(tx *db.DB) error {
 		rows, err := tx.Raw(qStr, qArgs...).Rows()
 		if err != nil {
 			return err

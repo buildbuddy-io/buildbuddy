@@ -10,10 +10,10 @@ go_library(
         "//proto:target_go_proto",
         "//proto/api/v1:common_go_proto",
         "//server/environment",
+        "//server/util/db",
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
-        "@io_gorm_gorm//:gorm",
     ],
 )

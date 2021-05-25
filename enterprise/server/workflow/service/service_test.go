@@ -8,10 +8,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	"gorm.io/gorm"
 
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -97,7 +97,7 @@ func TestDelete(t *testing.T) {
 	assert.Nil(t, err)
 
 	err = te.GetDBHandle().First(&row).Error
-	assert.ErrorIs(t, gorm.ErrRecordNotFound, err)
+	assert.True(t, db.IsRecordNotFound(err))
 }
 
 func TestList(t *testing.T) {

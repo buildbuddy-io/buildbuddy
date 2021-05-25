@@ -26,7 +26,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
-	"gorm.io/gorm"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
@@ -416,7 +415,7 @@ func (a *OpenIDAuthenticator) lookupUserFromSubID(subID string) (*tables.User, e
 		return nil, status.FailedPreconditionErrorf("No handle to query database")
 	}
 	user := &tables.User{}
-	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
+	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *db.DB) error {
 		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC`, subID)
 		if err := userRow.Take(user).Error; err != nil {
 			return err

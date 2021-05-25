@@ -63,7 +63,9 @@ type optionsImpl struct {
 func (oi *optionsImpl) ReadOnly() bool        { return oi.readOnly }
 func (oi *optionsImpl) AllowStaleReads() bool { return oi.allowStaleReads }
 
-type txRunner func(tx *gorm.DB) error
+type DB = gorm.DB
+
+type txRunner func(tx *DB) error
 
 func StaleReadOptions() Options {
 	return &optionsImpl{
@@ -90,6 +92,10 @@ func (dbh *DBHandle) TransactionWithOptions(opts Options, txn txRunner) error {
 
 func (dbh *DBHandle) Transaction(txn txRunner) error {
 	return dbh.DB.Transaction(txn)
+}
+
+func IsRecordNotFound(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
 func (dbh *DBHandle) ReadRow(out interface{}, where ...interface{}) error {
