@@ -178,16 +178,51 @@ type ExecutorConfig struct {
 	AppTarget               string           `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
 	RootDirectory           string           `yaml:"root_directory" usage:"The root directory to use for build files."`
 	LocalCacheDirectory     string           `yaml:"local_cache_directory" usage:"A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result."`
+	LocalCacheSizeBytes     int64            `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
+	DisableLocalCache       bool             `yaml:"disable_local_cache" usage:"If true, a local file cache will not be used."`
 	DockerSocket            string           `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
 	APIKey                  string           `yaml:"api_key" usage:"API Key used to authorize the executor with the BuildBuddy app server."`
 	ContainerdSocket        string           `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
 	DockerMountMode         string           `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/"`
 	RunnerPool              RunnerPoolConfig `yaml:"runner_pool"`
-	LocalCacheSizeBytes     int64            `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
 	DockerNetHost           bool             `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
 	EnableWorkStreaming     bool             `yaml:"enable_work_streaming" usage:"Enables executor work streaming (WIP)."`
 	DockerSiblingContainers bool             `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
 	DefaultXCodeVersion     string           `yaml:"default_xcode_version" usage:"Sets the default XCode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
+}
+
+func (c *ExecutorConfig) GetAppTarget() string {
+	if c.AppTarget == "" {
+		return "grpcs://cloud.buildbuddy.io"
+	}
+	return c.AppTarget
+}
+
+func (c *ExecutorConfig) GetRootDirectory() string {
+	if c.RootDirectory == "" {
+		return "/tmp/buildbuddy/remote_build"
+	}
+	return c.RootDirectory
+}
+
+func (c *ExecutorConfig) GetLocalCacheDirectory() string {
+	if c.DisableLocalCache {
+		return ""
+	}
+	if c.LocalCacheDirectory == "" {
+		return "/tmp/buildbuddy/filecache"
+	}
+	return c.LocalCacheDirectory
+}
+
+func (c *ExecutorConfig) GetLocalCacheSizeBytes() int64 {
+	if c.DisableLocalCache {
+		return 0
+	}
+	if c.LocalCacheSizeBytes == 0 {
+		return 1_000_000_000 // 1 GB
+	}
+	return c.LocalCacheSizeBytes
 }
 
 type RunnerPoolConfig struct {
@@ -536,10 +571,7 @@ func (c *Configurator) GetRemoteExecutionRedisTarget() string {
 }
 
 func (c *Configurator) GetExecutorConfig() *ExecutorConfig {
-	if c.gc.Executor.RootDirectory != "" {
-		return &c.gc.Executor
-	}
-	return nil
+	return &c.gc.Executor
 }
 
 func (c *Configurator) GetAPIConfig() *APIConfig {
