@@ -252,9 +252,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <ExecutionCardComponent model={this.state.model} inProgress={this.state.inProgress} />
           )}
 
-          {activeTab == "action" && (
-            <ActionCardComponent model={this.state.model} search={new URLSearchParams(window.location.search)} />
-          )}
+          {activeTab == "action" && <ActionCardComponent model={this.state.model} search={this.props.search} />}
 
           {activeTab == "fetches" && <FetchCardComponent model={this.state.model} inProgress={this.state.inProgress} />}
 
