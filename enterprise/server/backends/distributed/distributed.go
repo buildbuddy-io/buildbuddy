@@ -2,6 +2,7 @@ package distributed
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"path/filepath"
@@ -48,6 +49,7 @@ type hintedHandoffOrder struct {
 
 type Cache struct {
 	local                interfaces.Cache
+	log                  log.Logger
 	doneHeartbeat        chan bool
 	lastContactedBy      map[string]time.Time
 	hintedHandoffsMu     *sync.RWMutex
@@ -77,6 +79,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	}
 	dc := &Cache{
 		local:          c,
+		log:            log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", config.ListenAddr)),
 		config:         config,
 		cacheProxy:     cacheproxy.NewCacheProxy(env, c, config.ListenAddr),
 		consistentHash: chash,
@@ -171,10 +174,10 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 			ctx, cancel := background.ExtendContextForFinalization(handoffOrder.ctx, 10*time.Second)
 			err := c.sendFile(ctx, handoffOrder.d, handoffOrder.prefix, peer)
 			if err != nil {
-				log.Warningf("%q: unable to complete hinted handoff to peer: %q: %s (order %+v)", c.config.ListenAddr, peer, err, handoffOrder)
+				c.log.Warningf("unable to complete hinted handoff to peer: %q: %s (order %+v)", peer, err, handoffOrder)
 				return
 			}
-			log.Debugf("%q: completed hinted handoff to peer: %q: %s", c.config.ListenAddr, peer, err)
+			c.log.Debugf("completed hinted handoff to peer: %q", peer)
 			cancel()
 		default:
 			// read was unsuccessful -- no more handoffOrders to process.
@@ -209,7 +212,7 @@ func (c *Cache) StartListening() {
 	}
 	go c.heartbeatPeers()
 	go func() {
-		log.Printf("Distributed cache listening on %q", c.config.ListenAddr)
+		log.Infof("Distributed cache listening on %q", c.config.ListenAddr)
 		if c.heartbeatChannel != nil {
 			c.heartbeatChannel.StartAdvertising()
 		}
@@ -220,7 +223,7 @@ func (c *Cache) StartListening() {
 }
 
 func (c *Cache) Shutdown(ctx context.Context) error {
-	log.Printf("Distributed cache shutting down %q", c.config.ListenAddr)
+	log.Infof("Distributed cache shutting down %q", c.config.ListenAddr)
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StopAdvertising()
 	}
@@ -392,7 +395,7 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	ps := c.readPeers(d)
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(d, ps)); err != nil {
-			log.Debugf("Error backfilling peers: %s", err)
+			c.log.Debugf("Error backfilling peers: %s", err)
 		}
 	}
 
@@ -400,11 +403,11 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 		exists, err := c.remoteContains(ctx, peer, c.prefix, d)
 		if err == nil {
 			if exists {
-				log.Debugf("Distributed(%s) Contains(%q) found on peer %q", c.config.ListenAddr, d, peer)
+				c.log.Debugf("Contains(%q) found on peer %q", d, peer)
 				backfill()
 				return exists, err
 			}
-			log.Debugf("Distributed(%s) Contains(%q) not found on peer %q (err: %+v)", c.config.ListenAddr, d, peer, err)
+			c.log.Debugf("Contains(%q) not found on peer %q (err: %+v)", d, peer, err)
 			continue
 		}
 
@@ -442,7 +445,7 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 			peer := ps.GetNextPeer()
 			// If no peers remain, skip this digest, we can't do anything more.
 			if peer == "" {
-				log.Debugf("Exhausted all peers for %q. Peerset: %+v", h, ps)
+				c.log.Debugf("Exhausted all peers for %q. Peerset: %+v", h, ps)
 				continue
 			}
 			peerRequests[peer] = append(peerRequests[peer], perHashDigests[0])
@@ -454,7 +457,7 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 					stillMissing = append(stillMissing, h)
 				}
 			}
-			log.Debugf("ContainsMulti: digests not found: %+v", stillMissing)
+			c.log.Debugf("ContainsMulti: digests not found: %+v", stillMissing)
 			// If we aren't able to plan any more batch requests, that means
 			// we're out of peers and should exit, returning what we have.
 			break
@@ -485,7 +488,7 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 			if err != context.Canceled {
 				// Don't log context cancelled errors, they are common and expected when
 				// clients cancel a request.
-				log.Debugf("Error checking contains batch; will retry: %s", err)
+				c.log.Debugf("Error checking contains batch; will retry: %s", err)
 			}
 			continue
 		}
@@ -506,7 +509,7 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 		}
 	}
 	if err := c.backfillPeers(ctx, backfills); err != nil {
-		log.Debugf("Error backfilling peers: %s", err)
+		c.log.Debugf("Error backfilling peers: %s", err)
 	}
 
 	rsp := make(map[*repb.Digest]bool, len(digests))
@@ -526,19 +529,19 @@ func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset in
 	ps := c.readPeers(d)
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(d, ps)); err != nil {
-			log.Debugf("Error backfilling peers: %s", err)
+			c.log.Debugf("Error backfilling peers: %s", err)
 		}
 	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		r, err := c.remoteReader(ctx, peer, c.prefix, d, offset)
 		if err == nil {
-			log.Debugf("Distributed(%s) Reader(%q) found on peer %s", c.config.ListenAddr, d, peer)
+			c.log.Debugf("Reader(%q) found on peer %s", c.prefix+d.GetHash(), peer)
 			backfill()
 			return r, err
 		}
 		if status.IsNotFoundError(err) {
-			log.Debugf("Distributed(%s) Reader(%q) not found on peer %s", c.config.ListenAddr, d, peer)
+			c.log.Debugf("Reader(%q) not found on peer %s", c.prefix+d.GetHash(), peer)
 			continue
 		}
 
@@ -586,7 +589,7 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 			peer := ps.GetNextPeer()
 			// If no peers remain, skip this digest, we can't do anything more.
 			if peer == "" {
-				log.Debugf("Exhausted all peers for %q. Peerset: %+v", h, ps)
+				c.log.Debugf("Exhausted all peers for %q. Peerset: %+v", h, ps)
 				continue
 			}
 			peerRequests[peer] = append(peerRequests[peer], perHashDigests[0])
@@ -611,7 +614,7 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
-					log.Debugf("GetMulti: peer %q returned err: %s", peer, err)
+					c.log.Debugf("GetMulti: peer %q returned err: %s", peer, err)
 					for _, d := range digests {
 						peerMap[d.GetHash()].MarkPeerAsFailed(peer)
 					}
@@ -627,7 +630,7 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 			if err != context.Canceled {
 				// Don't log context cancelled errors, they are common and expected when
 				// clients cancel a request.
-				log.Debugf("Error checking contains batch; will retry: %s", err)
+				c.log.Debugf("Error checking contains batch; will retry: %s", err)
 			}
 			continue
 		}
@@ -648,7 +651,7 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 		}
 	}
 	if err := c.backfillPeers(ctx, backfills); err != nil {
-		log.Debugf("Error backfilling peers: %s", err)
+		c.log.Debugf("Error backfilling peers: %s", err)
 	}
 
 	rsp := make(map[*repb.Digest][]byte, len(digests))
@@ -660,6 +663,8 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 
 type multiWriteCloser struct {
 	ctx           context.Context
+	log           log.Logger
+	prefix        string
 	peerClosers   map[string]io.WriteCloser
 	mu            *sync.Mutex
 	d             *repb.Digest
@@ -695,7 +700,7 @@ func (mc *multiWriteCloser) Close() error {
 			if err := wc.Close(); err != nil {
 				return err
 			}
-			log.Printf("Succesfully wrote %s to %q", mc.d, peer)
+			mc.log.Debugf("Succesfully wrote %s to %q", mc.prefix+mc.d.GetHash(), peer)
 			return nil
 		})
 	}
@@ -705,7 +710,7 @@ func (mc *multiWriteCloser) Close() error {
 		for peer := range mc.peerClosers {
 			peers = append(peers, peer)
 		}
-		log.Debugf("Distributed(%s) Writer(%q) successfully wrote to peers %s", mc.listenAddr, mc.d, peers)
+		mc.log.Debugf("Writer(%q) successfully wrote to peers %s", mc.prefix+mc.d.GetHash(), peers)
 	}
 	return err
 }
@@ -719,6 +724,8 @@ func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser
 	ps := c.peers(d)
 	mwc := &multiWriteCloser{
 		ctx:         ctx,
+		log:         c.log,
+		prefix:      c.prefix,
 		d:           d,
 		peerClosers: make(map[string]io.WriteCloser, 0),
 		mu:          &sync.Mutex{},
