@@ -10,13 +10,13 @@ image: /img/tensorflow.png
 tags: [product, release-notes]
 ---
 
-Our mission at BuildBuddy is to make developers more productive. When we released the [first version](https://blog.buildbuddy.io/blog/meet-buildbuddy) of BuildBuddy a little over a year ago, we were blown away with the demand for tools and techniques for speeding up common developer workflows like building, testing, and debugging code. We've been working hard ever since - using our own tools to build the next generation of developer tooling for all.
+Our mission at BuildBuddy is to make developers more productive. When we released the [first version](https://blog.buildbuddy.io/blog/meet-buildbuddy) of BuildBuddy a little over a year ago, we were blown away by the demand for tools and techniques for speeding up common developer workflows like building, testing, and debugging code. We've been working hard ever since - using our own tools to build the next generation of developer tooling for all.
 
 Today we're excited to announce v2 of BuildBuddy! We've completely revamped our caching and remote build execution infrastructure to give our users and customers the one thing they care about above all else: **speed**.
 
 ![](images/tensorflow.svg)
 
-When optimizing the performance of a remote build execution system, there are 3 critical bottlenecks: Caching, Sandboxing, and Execution. We've made order of magnitude improvements in each of these areas, bringing clean, uncached, build times for [TensorFlow](https://github.com/tensorflow/tensorflow) (7,000+ actions) on BuildBuddy RBE from 28 minutes last August down to just **3.47 minutes** with BuildBuddy v2. This build takes over **4 hours** (250 min) on a 3.3GHz i7 Macbook Pro.
+When optimizing the performance of a remote build execution system, there are 3 critical bottlenecks: Caching, Sandboxing, and Execution. We've made order of magnitude improvements in each of these areas, bringing clean, uncached build times for [TensorFlow](https://github.com/tensorflow/tensorflow) (7,000+ actions) on BuildBuddy RBE down from 28 minutes last August to just **3.47 minutes** with BuildBuddy v2. This build takes over **4 hours** (250 min) on a 3.3GHz i7 Macbook Pro.
 
 
 
@@ -39,9 +39,9 @@ All of these improvements, when taken together, have driven a colossal improveme
 Sandboxing
 ----------
 
-Once we've got all of the inputs we need to execute an action on a remote executor - the next step is to set up the execution root. One of Bazel's core features is the ability to perform [hermetic builds](https://georgi.hristozov.net/2020/11/01/the-power-of-hermetic-builds). In order to achieve this, we spin up a clean Docker container for each action to execute in. This is similar to Bazel's `docker` [spawn strategy](https://docs.bazel.build/versions/master/remote-execution-sandbox.html).
+Once we've got all of the inputs we need to execute an action on a remote executor, the next step is to set up the execution root. One of Bazel's core features is the ability to perform [hermetic builds](https://georgi.hristozov.net/2020/11/01/the-power-of-hermetic-builds). In order to achieve this, we spin up a clean Docker container for each action to execute in. This is similar to Bazel's `docker` [spawn strategy](https://docs.bazel.build/versions/master/remote-execution-sandbox.html).
 
-While this helps ensure that remotely executed actions are hermetic, there is often a trade-off between hermeticity and performance. You can make this tradeoff locally using Bazel's different spawn strategies: `sandboxed`, `local`, and `worker`.
+While this helps ensure that remotely executed actions are hermetic, there is often a trade-off between hermeticity and performance. You can make this trade-off locally using Bazel's different spawn strategies: `sandboxed`, `local`, and `worker`.
 
 When using remote build execution, you typically don't have the ability to make these trade-offs. That's why we've introduced 3 new features that give users back some of that control. By default, actions will still be executed in clean Docker images - but if you specify one of the following execution properties, you can alter that behavior:
 - `recycle-runner`: actions will still be executed in a clean execution root - but the executor will re-use an existing docker image from a pool of re-usable containers. This is similar in behavior to Bazel's `sandboxed` execution strategy.
@@ -52,11 +52,11 @@ When using remote build execution, you typically don't have the ability to make 
 Execution
 ---------
 
-Now that we've got our inputs on the executor, and our execution root set up - our final step is that actual execution.
+Now that we've got our inputs on the executor, and our execution root set up, our final step is the actual execution.
 
 We've made significant improvements here as well:
 - We've upgraded our default executor cluster to run on compute-optimized Intel Cascade Lake machines with up to 3.8 GHz sustained all-core turbo.
-- Our Mac executors now run on bare-metal Mac minis, which show huge improvements over the pervious [Orka](https://www.macstadium.com/orka) machines we used for I/O intensive workloads.
+- Our Mac executors now run on bare-metal Mac minis, which show huge improvements over the previous [Orka](https://www.macstadium.com/orka) machines we used for I/O intensive workloads.
 - Our new caching and auto-scaling infrastructure supports scaling up and down from just a few executors to hundreds of machines depending on load while still supporting the `--remote_download_minimal` flag.
 - The groundwork has been laid for what we call **Bring Your Own Executors**. This will allow users to take advantage of BuildBuddy's UI and global caching infrastructure while running their own executor pools.
 
