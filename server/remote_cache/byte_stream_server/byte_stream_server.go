@@ -2,9 +2,7 @@ package byte_stream_server
 
 import (
 	"context"
-	"fmt"
 	"io"
-	// "strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
