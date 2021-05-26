@@ -6,7 +6,6 @@ author_title: Co-founder @ BuildBuddy
 date: 2021-05-26:12:00:00
 author_url: https://www.linkedin.com/in/siggisim/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
-image: /assets/images/tensorflow.svg
 tags: [product, release-notes]
 ---
 
