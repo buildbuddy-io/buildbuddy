@@ -127,9 +127,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                     )}
                   </div>
                   <div className="action-section">
-                    <div className="action-property-title" onClick={this.fetchActionResult.bind(this)}>
-                      Do Not Cache:{" "}
-                    </div>
+                    <div className="action-property-title">Do Not Cache: </div>
                     <div>{this.state.action.doNotCache ? "True" : "False"}</div>
                   </div>
                 </div>
@@ -170,19 +168,73 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                   <div></div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+        <div className="card">
+          <img className="icon" src="/image/info.svg" />
+          <div className="content">
+            <div className="title">Result details</div>
+            <div className="details">
               {this.state.actionResult && (
                 <div>
-                  <pre>
-                    <code>{JSON.stringify(this.state.actionResult, null, 2)}</code>
-                  </pre>
-                  <div>
-                    {this.state.actionResult.outputDirectories.map((dir) => (
-                      <div>
-                        <div>{dir.path}</div>
-                        <div>{dir.treeDigest.hash}</div>
-                        <div>{dir.treeDigest.hash}</div>
+                  <div className="action-section">
+                    <div className="action-property-title">Execution Metadata:</div>
+                    {this.state.actionResult.executionMetadata ? (
+                      <div className="action-list">
+                        <div>Worker: {this.state.actionResult.executionMetadata.worker} </div>
+                        <div>Executor ID: {this.state.actionResult.executionMetadata.executorId}</div>
+                        <div>Queued @ {this.state.actionResult.executionMetadata.queuedTimestamp.seconds}</div>
+                        <div>
+                          Worker Started @ {this.state.actionResult.executionMetadata.workerStartTimestamp.seconds}
+                        </div>
+                        <div>
+                          Input Fetching Started @{" "}
+                          {this.state.actionResult.executionMetadata.inputFetchStartTimestamp.seconds}
+                        </div>
+                        <div>
+                          Input Fetching Completed @{" "}
+                          {this.state.actionResult.executionMetadata.inputFetchCompletedTimestamp.seconds}
+                        </div>
+                        <div>
+                          Execution Started @{" "}
+                          {this.state.actionResult.executionMetadata.executionStartTimestamp.seconds}
+                        </div>
+                        <div>
+                          Execution Completed @{" "}
+                          {this.state.actionResult.executionMetadata.executionCompletedTimestamp.seconds}
+                        </div>
+                        <div>
+                          Output Upload Started @{" "}
+                          {this.state.actionResult.executionMetadata.outputUploadStartTimestamp.seconds}
+                        </div>
+                        <div>
+                          Output Upload Completed @{" "}
+                          {this.state.actionResult.executionMetadata.outputUploadCompletedTimestamp.seconds}
+                        </div>
+                        <div>
+                          Worker Completed @{" "}
+                          {this.state.actionResult.executionMetadata.workerCompletedTimestamp.seconds}
+                        </div>
                       </div>
-                    ))}
+                    ) : (
+                      <div>None found.</div>
+                    )}
+                  </div>
+                  <div className="action-section">
+                    <div className="action-property-title">Output Files:</div>
+                    {this.state.actionResult ? (
+                      <div className="action-list">
+                        {this.state.actionResult.outputFiles.map((file) => (
+                          <div>
+                            <div>PATH={file.path}</div>
+                            <div>Executable? {file.isExecutable.toString()}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div>None found.</div>
+                    )}
                   </div>
                 </div>
               )}
