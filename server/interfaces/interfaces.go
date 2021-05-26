@@ -152,8 +152,8 @@ type APIKeyGroup interface {
 type AuthDB interface {
 	InsertOrUpdateUserToken(ctx context.Context, subID string, token *tables.Token) error
 	ReadToken(ctx context.Context, subID string) (*tables.Token, error)
-	GetAPIKeyGroupFromAPIKey(apiKey string) (APIKeyGroup, error)
-	GetAPIKeyGroupFromBasicAuth(login, pass string) (APIKeyGroup, error)
+	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
+	GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (APIKeyGroup, error)
 }
 
 type UserDB interface {

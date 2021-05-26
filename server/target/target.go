@@ -121,7 +121,7 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 	targets := make([]*trpb.Target, 0)
 	statuses := make(map[string][]*trpb.TargetStatus, 0)
 
-	err := env.GetDBHandle().Transaction(func(tx *db.DB) error {
+	err := env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 		rows, err := tx.Raw(queryStr, args...).Rows()
 		if err != nil {
 			return err

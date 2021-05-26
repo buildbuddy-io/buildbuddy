@@ -410,13 +410,13 @@ func (a *OpenIDAuthenticator) getAuthConfig(issuer string) *authenticator {
 	return nil
 }
 
-func (a *OpenIDAuthenticator) lookupUserFromSubID(subID string) (*tables.User, error) {
+func (a *OpenIDAuthenticator) lookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
 	dbHandle := a.env.GetDBHandle()
 	if dbHandle == nil {
 		return nil, status.FailedPreconditionErrorf("No handle to query database")
 	}
 	user := &tables.User{}
-	err := dbHandle.TransactionWithOptions(db.StaleReadOptions(), func(tx *db.DB) error {
+	err := dbHandle.TransactionWithOptions(ctx, db.StaleReadOptions(), func(tx *db.DB) error {
 		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC`, subID)
 		if err := userRow.Take(user).Error; err != nil {
 			return err
@@ -440,7 +440,7 @@ func (a *OpenIDAuthenticator) lookupUserFromSubID(subID string) (*tables.User, e
 	return user, err
 }
 
-func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(apiKey string) (interfaces.APIKeyGroup, error) {
+func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	if a.apiKeyGroupCache != nil {
 		d, ok := a.apiKeyGroupCache.Get(apiKey)
 		if ok {
@@ -451,7 +451,7 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(apiKey string) (interf
 	if authDB == nil {
 		return nil, status.FailedPreconditionError("AuthDB not configured")
 	}
-	apkg, err := authDB.GetAPIKeyGroupFromAPIKey(apiKey)
+	apkg, err := authDB.GetAPIKeyGroupFromAPIKey(ctx, apiKey)
 	if err == nil && a.apiKeyGroupCache != nil {
 		a.apiKeyGroupCache.Add(apiKey, apkg)
 	}
@@ -513,7 +513,7 @@ func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey 
 }
 
 func (a *OpenIDAuthenticator) authContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
-	akg, err := a.lookupAPIKeyGroupFromAPIKey(apiKey)
+	akg, err := a.lookupAPIKeyGroupFromAPIKey(ctx, apiKey)
 	if err != nil {
 		return authContextWithError(ctx, err)
 	}
@@ -525,7 +525,7 @@ func (a *OpenIDAuthenticator) authContextFromBasicAuth(ctx context.Context, logi
 	if authDB == nil {
 		return authContextWithError(ctx, status.FailedPreconditionError("AuthDB not configured"))
 	}
-	akg, err := authDB.GetAPIKeyGroupFromBasicAuth(login, pass)
+	akg, err := authDB.GetAPIKeyGroupFromBasicAuth(ctx, login, pass)
 	if err != nil {
 		return authContextWithError(ctx, err)
 	}
@@ -533,7 +533,7 @@ func (a *OpenIDAuthenticator) authContextFromBasicAuth(ctx context.Context, logi
 }
 
 func (a *OpenIDAuthenticator) authContextFromSubID(ctx context.Context, subID string) context.Context {
-	u, err := a.lookupUserFromSubID(subID)
+	u, err := a.lookupUserFromSubID(ctx, subID)
 	if err != nil {
 		return authContextWithError(ctx, err)
 	}
