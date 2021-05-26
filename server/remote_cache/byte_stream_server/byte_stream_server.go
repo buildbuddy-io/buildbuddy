@@ -46,10 +46,6 @@ func (s *ByteStreamServer) getCache(instanceName string) interfaces.Cache {
 	return namespace.CASCache(s.cache, instanceName)
 }
 
-func (s *ByteStreamServer) getActionCache(instanceName string) interfaces.Cache {
-	return namespace.ActionCache(s.cache, instanceName)
-}
-
 func minInt64(a, b int64) int64 {
 	if a < b {
 		return a
@@ -84,7 +80,6 @@ func (w *streamWriter) Write(buf []byte) (int, error) {
 // `Read()` is used to retrieve the contents of a resource as a sequence
 // of bytes. The bytes are returned in a sequence of responses, and the
 // responses are delivered as the results of a server-side streaming FUNC (S *BYTESTREAMSERVER).
-
 func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
 	if err := checkReadPreconditions(req); err != nil {
 		return err
@@ -100,7 +95,6 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 	cache := s.getCache(instanceName)
-
 	if d.GetHash() == digest.EmptySha256 {
 		ht.TrackEmptyHit()
 		return nil
