@@ -3,13 +3,12 @@ package bytestream
 import (
 	"context"
 	"flag"
-	"fmt"
 	"io"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -61,20 +60,15 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 
 	if strings.Contains(url.String(), "/blobs/ac/") {
 		acClient := repb.NewActionCacheClient(conn)
+		instanceName, d, err := digest.ExtractDigestFromDownloadResourceName(strings.TrimPrefix(url.RequestURI(), "/"))
 
-		parts := strings.Split(url.String(), "/")
-		hash := parts[len(parts)-2]
-		size, err := strconv.ParseInt(parts[len(parts)-1], 10, 64)
 		if err != nil {
 			return err
 		}
-		dig := &repb.Digest{
-			Hash:      hash,
-			SizeBytes: size,
-		}
+		// Request the ActionResult
 		req := &repb.GetActionResultRequest{
-			InstanceName:      "",
-			ActionDigest:      dig,
+			InstanceName:      instanceName,
+			ActionDigest:      d,
 			InlineStdout:      true,
 			InlineStderr:      false,
 			InlineOutputFiles: []string{},
@@ -83,6 +77,8 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 		if err != nil {
 			return err
 		}
+
+		// Turn ActionResult into []byte
 		buf, err := proto.Marshal(actionResult)
 		if err != nil {
 			return err

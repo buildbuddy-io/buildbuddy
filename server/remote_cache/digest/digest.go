@@ -174,6 +174,9 @@ func ExtractDigestFromUploadResourceName(resourceName string) (string, *repb.Dig
 }
 
 func ExtractDigestFromDownloadResourceName(resourceName string) (string, *repb.Digest, error) {
+	if strings.Contains(resourceName, "/ac/") {
+		return extractDigest(strings.Replace(resourceName, "ac/", "", 1), downloadRegex)
+	}
 	return extractDigest(resourceName, downloadRegex)
 }
 
