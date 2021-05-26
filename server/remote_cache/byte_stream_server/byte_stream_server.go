@@ -44,12 +44,10 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 
 //replicate for actioncache
 func (s *ByteStreamServer) getCache(instanceName string) interfaces.Cache {
-	fmt.Println("Accessed getCache")
 	return namespace.CASCache(s.cache, instanceName)
 }
 
 func (s *ByteStreamServer) getActionCache(instanceName string) interfaces.Cache {
-	fmt.Println("Accessed getActionCache")
 	return namespace.ActionCache(s.cache, instanceName)
 }
 
@@ -90,12 +88,10 @@ func (w *streamWriter) Write(buf []byte) (int, error) {
 // put a if statement to check ac within uri and if present then call the getActionCache, /ac/ has to be right after /blobs/
 
 func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
-	fmt.Println("Accessed Read in byte_stream_server")
 	if err := checkReadPreconditions(req); err != nil {
 		return err
 	}
 	instanceName, d, err := digest.ExtractDigestFromDownloadResourceName(req.GetResourceName())
-	fmt.Println("Instance name:" + instanceName)
 	if err != nil {
 		return err
 	}

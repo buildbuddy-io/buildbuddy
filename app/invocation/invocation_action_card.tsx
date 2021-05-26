@@ -27,7 +27,6 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   fetchAction() {
     // TODO: Replace localhost:1987 with the remote cache address and prefix the path with the instance name
     let actionFile = "bytestream://localhost:1987/blobs/" + this.props.search.get("actionDigest");
-    console.log("actionFile: " + actionFile);
     rpcService
       .fetchBytestreamFile(actionFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {
@@ -172,9 +171,20 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                 </div>
               )}
               {this.state.actionResult && (
-                <pre>
-                  <code>{JSON.stringify(this.state.actionResult, null, 2)}</code>
-                </pre>
+                <div>
+                  <pre>
+                    <code>{JSON.stringify(this.state.actionResult, null, 2)}</code>
+                  </pre>
+                  <div>
+                    {this.state.actionResult.outputDirectories.map((dir) => (
+                      <div>
+                        <div>{dir.path}</div>
+                        <div>{dir.treeDigest.hash}</div>
+                        <div>{dir.treeDigest.hash}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           </div>
