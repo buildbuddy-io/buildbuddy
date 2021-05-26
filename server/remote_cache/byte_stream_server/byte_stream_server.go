@@ -42,7 +42,6 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	}, nil
 }
 
-//replicate for actioncache
 func (s *ByteStreamServer) getCache(instanceName string) interfaces.Cache {
 	return namespace.CASCache(s.cache, instanceName)
 }
@@ -85,7 +84,6 @@ func (w *streamWriter) Write(buf []byte) (int, error) {
 // `Read()` is used to retrieve the contents of a resource as a sequence
 // of bytes. The bytes are returned in a sequence of responses, and the
 // responses are delivered as the results of a server-side streaming FUNC (S *BYTESTREAMSERVER).
-// put a if statement to check ac within uri and if present then call the getActionCache, /ac/ has to be right after /blobs/
 
 func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
 	if err := checkReadPreconditions(req); err != nil {
