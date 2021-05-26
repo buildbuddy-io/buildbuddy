@@ -3,14 +3,19 @@ package bytestream
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/golang/protobuf/proto"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -23,6 +28,7 @@ func StreamBytestreamFile(ctx context.Context, env environment.Env, url *url.URL
 
 	// If we have a cache enabled, try connecting to that first
 	if env.GetCache() != nil {
+		fmt.Println("GetCache not nil")
 		localURL, _ := url.Parse(url.String())
 		localURL.Host = "localhost:" + getIntFlag("grpc_port", "1985")
 		err = streamFromUrl(ctx, localURL, false, callback)
@@ -30,6 +36,7 @@ func StreamBytestreamFile(ctx context.Context, env environment.Env, url *url.URL
 
 	// If that fails, try to connect over grpcs
 	if err != nil || env.GetCache() == nil {
+		fmt.Println("GetCache nil")
 		err = streamFromUrl(ctx, url, true, callback)
 	}
 
@@ -42,6 +49,9 @@ func StreamBytestreamFile(ctx context.Context, env environment.Env, url *url.URL
 }
 
 func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func([]byte)) error {
+	fmt.Println(url.String())
+	fmt.Println(url.RequestURI())
+	fmt.Println("Accessed streamFromUrl in bystream.go")
 	if url.Port() == "" && grpcs {
 		url.Host = url.Hostname() + ":443"
 	} else if url.Port() == "" {
@@ -50,31 +60,65 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 
 	conn, err := grpc_client.DialTargetWithOptions(url.String(), grpcs)
 	if err != nil {
+		fmt.Println("Err in conn")
 		return err
 	}
 	defer conn.Close()
-	client := bspb.NewByteStreamClient(conn)
 
-	// Request the file bytestream
-	req := &bspb.ReadRequest{
-		ResourceName: strings.TrimPrefix(url.RequestURI(), "/"), // trim leading "/"
-		ReadOffset:   0,                                         // started from the bottom now we here
-		ReadLimit:    0,                                         // no limit
-	}
-	readClient, err := client.Read(ctx, req)
-	if err != nil {
-		return err
-	}
+	if strings.Contains(url.String(), "/blobs/ac/") {
+		acClient := repb.NewActionCacheClient(conn)
 
-	for {
-		rsp, err := readClient.Recv()
-		if err == io.EOF {
-			break
-		}
+		parts := strings.Split(url.String(), "/")
+		hash := parts[len(parts)-2]
+		size, err := strconv.ParseInt(parts[len(parts)-1], 10, 64)
 		if err != nil {
 			return err
 		}
-		callback(rsp.Data)
+		dig := &repb.Digest{
+			Hash:      hash,
+			SizeBytes: size,
+		}
+		req := &repb.GetActionResultRequest{
+			InstanceName:      "",
+			ActionDigest:      dig,
+			InlineStdout:      true,
+			InlineStderr:      false,
+			InlineOutputFiles: []string{},
+		}
+		actionResult, err := acClient.GetActionResult(ctx, req)
+		if err != nil {
+			return err
+		}
+		buf, err := proto.Marshal(actionResult)
+		if err != nil {
+			return err
+		}
+		callback(buf)
+
+	} else {
+		client := bspb.NewByteStreamClient(conn)
+
+		// Request the file bytestream
+		req := &bspb.ReadRequest{
+			ResourceName: strings.TrimPrefix(url.RequestURI(), "/"), // trim leading "/"
+			ReadOffset:   0,                                         // started from the bottom now we here
+			ReadLimit:    0,                                         // no limit
+		}
+		readClient, err := client.Read(ctx, req)
+		if err != nil {
+			return err
+		}
+
+		for {
+			rsp, err := readClient.Recv()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			callback(rsp.Data)
+		}
 	}
 	return nil
 }
