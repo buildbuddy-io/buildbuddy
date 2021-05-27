@@ -22,11 +22,30 @@ const (
 // This implements a chunking reader/writer interface on top of an arbitrary
 // blobstore, averting the need to access blobs all at once.
 type Chunkstore struct {
-	internalBlobstore interfaces.Blobstore
+	internalBlobstore    interfaces.Blobstore
+	writeBlockSize       int
+	writeTimeoutDuration time.Duration
 }
 
-func New(blobstore interfaces.Blobstore) *Chunkstore {
-	return &Chunkstore{internalBlobstore: blobstore}
+type ChunkstoreOptions struct {
+	WriteBlockSize       int
+	WriteTimeoutDuration time.Duration
+}
+
+func New(blobstore interfaces.Blobstore, co *ChunkstoreOptions) *Chunkstore {
+	writeBlockSize := co.WriteBlockSize
+	if writeBlockSize == 0 {
+		writeBlockSize = 1 * mb
+	}
+	writeTimeoutDuration := co.WriteTimeoutDuration
+	if writeTimeoutDuration == 0 {
+		writeTimeoutDuration = 5 * time.Second
+	}
+	return &Chunkstore{
+		internalBlobstore:    blobstore,
+		writeBlockSize:       writeBlockSize,
+		writeTimeoutDuration: writeTimeoutDuration,
+	}
 }
 
 func (c *Chunkstore) BlobExists(ctx context.Context, blobName string) (bool, error) {
@@ -42,12 +61,8 @@ func (c *Chunkstore) ReadBlob(ctx context.Context, blobName string) ([]byte, err
 }
 
 func (c *Chunkstore) WriteBlob(ctx context.Context, blobName string, data []byte) error {
-	return c.WriteBlobWithBlockSize(ctx, blobName, data, 1*mb)
-}
-
-func (c *Chunkstore) WriteBlobWithBlockSize(ctx context.Context, blobName string, data []byte, blockSize int) error {
 	c.DeleteBlob(ctx, blobName)
-	w := c.Writer(ctx, blobName, blockSize, 5*time.Second)
+	w := c.Writer(ctx, blobName)
 	if _, err := w.Write(data); err != nil {
 		return err
 	}
@@ -291,8 +306,6 @@ type chunkstoreWriter struct {
 	writeChannel       chan []byte
 	writeResultChannel chan writeResult
 	blobName           string
-	blockSize          int
-	timeoutDuration    time.Duration
 }
 
 func (w *chunkstoreWriter) Write(p []byte) (int, error) {
@@ -329,7 +342,7 @@ func (w *chunkstoreWriter) Close() error {
 			return fmt.Errorf("Error closing %v: %w", w.blobName, os.ErrClosed)
 		}
 		return result.err
-	case <-time.After(w.timeoutDuration):
+	case <-time.After(w.chunkstore.writeTimeoutDuration):
 		return os.ErrDeadlineExceeded
 	}
 }
@@ -359,8 +372,8 @@ func (w *chunkstoreWriter) writeLoop() {
 		case <-w.ctx.Done():
 			closed = true
 		}
-		for len(chunk) >= w.blockSize {
-			bytesWritten, err := w.chunkstore.writeChunk(w.ctx, w.blobName, chunkIndex, chunk[:w.blockSize])
+		for len(chunk) >= w.chunkstore.writeBlockSize {
+			bytesWritten, err := w.chunkstore.writeChunk(w.ctx, w.blobName, chunkIndex, chunk[:w.chunkstore.writeBlockSize])
 			bytesFlushed += bytesWritten
 			chunk = chunk[bytesWritten:]
 			if bytesWritten > 0 {
@@ -385,8 +398,8 @@ func (w *chunkstoreWriter) writeLoop() {
 		}
 		if len(chunk) == 0 {
 			flushTime = maxTime
-		} else if time.Until(flushTime) > (w.timeoutDuration) {
-			flushTime = time.Now().Add(w.timeoutDuration)
+		} else if time.Until(flushTime) > (w.chunkstore.writeTimeoutDuration) {
+			flushTime = time.Now().Add(w.chunkstore.writeTimeoutDuration)
 		}
 		if timeout {
 			continue
@@ -398,13 +411,11 @@ func (w *chunkstoreWriter) writeLoop() {
 	close(w.writeResultChannel)
 }
 
-func (c *Chunkstore) Writer(ctx context.Context, blobName string, blockSize int, timeoutDuration time.Duration) *chunkstoreWriter {
+func (c *Chunkstore) Writer(ctx context.Context, blobName string) *chunkstoreWriter {
 	writer := &chunkstoreWriter{
 		chunkstore:         c,
 		ctx:                ctx,
 		blobName:           blobName,
-		blockSize:          blockSize,
-		timeoutDuration:    timeoutDuration,
 		writeChannel:       make(chan []byte),
 		writeResultChannel: make(chan writeResult),
 	}

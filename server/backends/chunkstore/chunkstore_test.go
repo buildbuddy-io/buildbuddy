@@ -29,7 +29,7 @@ func TestChunkName(t *testing.T) {
 
 func TestBlobExists(t *testing.T) {
 	m := mockstore.New()
-	c := New(m)
+	c := New(m, &ChunkstoreOptions{})
 	mtx := &mockstore.Context{}
 
 	if exists, err := c.BlobExists(mtx, "foo"); err != nil {
@@ -48,7 +48,7 @@ func TestBlobExists(t *testing.T) {
 
 func TestDeleteBlob(t *testing.T) {
 	m := mockstore.New()
-	c := New(m)
+	c := New(m, &ChunkstoreOptions{})
 	mtx := &mockstore.Context{}
 
 	if err := c.DeleteBlob(mtx, "foo"); err != nil {
@@ -77,7 +77,7 @@ func TestDeleteBlob(t *testing.T) {
 
 func TestReadBlob(t *testing.T) {
 	m := mockstore.New()
-	c := New(m)
+	c := New(m, &ChunkstoreOptions{})
 	mtx := &mockstore.Context{}
 
 	if _, err := c.ReadBlob(mtx, "foo"); !errors.Is(err, os.ErrNotExist) {
@@ -121,7 +121,7 @@ func TestReadBlob(t *testing.T) {
 
 func TestWriteBlob(t *testing.T) {
 	m := mockstore.New()
-	c := New(m)
+	c := New(m, &ChunkstoreOptions{})
 	mtx := &mockstore.Context{}
 
 	test_map := make(map[string][]byte)
@@ -167,7 +167,8 @@ func TestWriteBlob(t *testing.T) {
 	test_map["foobar_0011"] = test_string[85:90]
 	test_map["foobar_0012"] = test_string[90:]
 
-	if err := c.WriteBlobWithBlockSize(mtx, "foobar", test_string, 5); err != nil {
+	c = New(m, &ChunkstoreOptions{WriteBlockSize: 5})
+	if err := c.WriteBlob(mtx, "foobar", test_string); err != nil {
 		t.Fatalf("Encountered error writing multi-chunk file: %v", err)
 	}
 
@@ -197,7 +198,8 @@ func TestWriteBlob(t *testing.T) {
 	delete(test_map, "foobar_0011")
 	delete(test_map, "foobar_0012")
 
-	if err := c.WriteBlobWithBlockSize(mtx, "foobar", test_string, 6); err != nil {
+	c = New(m, &ChunkstoreOptions{WriteBlockSize: 6})
+	if err := c.WriteBlob(mtx, "foobar", test_string); err != nil {
 		t.Fatalf("Encountered error overwriting multi-chunk file: %v", err)
 	}
 
@@ -209,7 +211,7 @@ func TestWriteBlob(t *testing.T) {
 
 func TestReaders(t *testing.T) {
 	m := mockstore.New()
-	c := New(m)
+	c := New(m, &ChunkstoreOptions{})
 	mtx := &mockstore.Context{}
 
 	r := c.Reader(mtx, "foo")
@@ -366,12 +368,13 @@ func TestReaders(t *testing.T) {
 
 func TestWriter(t *testing.T) {
 	m := mockstore.New()
-	c := New(m)
+	flushTime := 50 * time.Millisecond
+	c := New(m, &ChunkstoreOptions{WriteBlockSize: 5, WriteTimeoutDuration: flushTime})
 	mtx := &mockstore.Context{}
 
 	test_map := make(map[string][]byte)
 
-	w := c.Writer(mtx, "foo", 5, 50*time.Millisecond)
+	w := c.Writer(mtx, "foo")
 
 	if !cmp.Equal(m.BlobMap, test_map) {
 		t.Fatalf("Map contents are incorrect for open empty file:\n\n%v\n\nshould be:\n\n%v", m.BlobMap, test_map)
@@ -398,7 +401,7 @@ func TestWriter(t *testing.T) {
 
 	test_string := []byte("asdfjkl;")
 
-	w = c.Writer(mtx, "bar", 5, 50*time.Millisecond)
+	w = c.Writer(mtx, "bar")
 	w.Write(test_string)
 	test_map["bar_0000"] = test_string[0:5]
 
