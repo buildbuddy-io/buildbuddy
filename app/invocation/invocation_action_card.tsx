@@ -132,112 +132,121 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                   </div>
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-        <div className="card">
-          <img className="icon" src="/image/info.svg" />
-          <div className="content">
-            <div className="title">Command details</div>
-            <div className="details">
-              {this.state.command && (
-                <div>
-                  <div className="action-section">
-                    <div className="action-property-title">Arguments:</div>
-                    {this.displayList(this.state.command.arguments)}
-                  </div>
-                  <div className="action-section">
-                    <div className="action-property-title">Environment Variables:</div>
-                    <div className="action-list">
-                      {this.state.command.environmentVariables.map((variable) => (
-                        <div>
-                          <span className="env-name">{variable.name}</span>
-                          <span className="env-value">={variable.value}</span>
-                        </div>
-                      ))}
+              <div className="action-line">
+                <div className="action-title">Command details</div>
+                {this.state.command && (
+                  <div>
+                    <div className="action-section">
+                      <div className="action-property-title">Arguments:</div>
+                      {this.displayList(this.state.command.arguments)}
                     </div>
-                  </div>
-                  <div className="action-section">
-                    <div className="action-property-title">Output Directories:</div>
-                    {this.displayList(this.state.command.outputDirectories)}
-                  </div>
-                  <div className="action-section">
-                    <div className="action-property-title">Output Files:</div>
-                    {this.displayList(this.state.command.outputFiles)}
-                  </div>
-                  <div></div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="card">
-          <img className="icon" src="/image/info.svg" />
-          <div className="content">
-            <div className="title">Result details</div>
-            <div className="details">
-              {this.state.actionResult && (
-                <div>
-                  <div className="action-section">
-                    <div className="action-property-title">Execution Metadata:</div>
-                    {this.state.actionResult.executionMetadata ? (
+                    <div className="action-section">
+                      <div className="action-property-title">Environment Variables:</div>
                       <div className="action-list">
-                        <div>Worker: {this.state.actionResult.executionMetadata.worker} </div>
-                        <div>Executor ID: {this.state.actionResult.executionMetadata.executorId}</div>
-                        <div>Queued @ {this.state.actionResult.executionMetadata.queuedTimestamp.seconds}</div>
-                        <div>
-                          Worker Started @ {this.state.actionResult.executionMetadata.workerStartTimestamp.seconds}
-                        </div>
-                        <div>
-                          Input Fetching Started @{" "}
-                          {this.state.actionResult.executionMetadata.inputFetchStartTimestamp.seconds}
-                        </div>
-                        <div>
-                          Input Fetching Completed @{" "}
-                          {this.state.actionResult.executionMetadata.inputFetchCompletedTimestamp.seconds}
-                        </div>
-                        <div>
-                          Execution Started @{" "}
-                          {this.state.actionResult.executionMetadata.executionStartTimestamp.seconds}
-                        </div>
-                        <div>
-                          Execution Completed @{" "}
-                          {this.state.actionResult.executionMetadata.executionCompletedTimestamp.seconds}
-                        </div>
-                        <div>
-                          Output Upload Started @{" "}
-                          {this.state.actionResult.executionMetadata.outputUploadStartTimestamp.seconds}
-                        </div>
-                        <div>
-                          Output Upload Completed @{" "}
-                          {this.state.actionResult.executionMetadata.outputUploadCompletedTimestamp.seconds}
-                        </div>
-                        <div>
-                          Worker Completed @{" "}
-                          {this.state.actionResult.executionMetadata.workerCompletedTimestamp.seconds}
-                        </div>
-                      </div>
-                    ) : (
-                      <div>None found.</div>
-                    )}
-                  </div>
-                  <div className="action-section">
-                    <div className="action-property-title">Output Files:</div>
-                    {this.state.actionResult ? (
-                      <div className="action-list">
-                        {this.state.actionResult.outputFiles.map((file) => (
+                        {this.state.command.environmentVariables.map((variable) => (
                           <div>
-                            <div>PATH={file.path}</div>
-                            <div>Executable? {file.isExecutable.toString()}</div>
+                            <span className="prop-name">{variable.name}</span>
+                            <span className="prop-value">={variable.value}</span>
                           </div>
                         ))}
                       </div>
-                    ) : (
-                      <div>None found.</div>
-                    )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+              <div className="action-line">
+                <div className="action-title">Result details</div>
+                {this.state.actionResult && (
+                  <div>
+                    <div className="action-section">
+                      <div className="action-property-title">Exit Code: </div>
+                      <div>{this.state.actionResult.exitCode}</div>
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Execution Metadata:</div>
+                      {this.state.actionResult.executionMetadata ? (
+                        <div className="action-list">
+                          <div className="metadata-title">Worker</div>
+                          <div className="metadata-detail">{this.state.actionResult.executionMetadata.worker} </div>
+                          <div className="metadata-title">Executor ID</div>
+                          <div className="metadata-detail">{this.state.actionResult.executionMetadata.executorId}</div>
+                          <div className="metadata-title">Timeline</div>
+                          <div className="metadata-detail">
+                            Queued @ {this.state.actionResult.executionMetadata.queuedTimestamp.nanos}
+                          </div>
+                          <div className="metadata-detail">
+                            Worker Started @ {this.state.actionResult.executionMetadata.workerStartTimestamp.nanos}
+                          </div>
+                          <div className="metadata-detail">
+                            Input Fetching Started @{" "}
+                            {this.state.actionResult.executionMetadata.inputFetchStartTimestamp.nanos}
+                          </div>
+                          <div className="metadata-detail">
+                            Input Fetching Completed @{" "}
+                            {this.state.actionResult.executionMetadata.inputFetchCompletedTimestamp.nanos}
+                          </div>
+                          <div className="metadata-detail">
+                            Execution Started @{" "}
+                            {this.state.actionResult.executionMetadata.executionStartTimestamp.nanos}
+                          </div>
+                          <div className="metadata-detail">
+                            Execution Completed @{" "}
+                            {this.state.actionResult.executionMetadata.executionCompletedTimestamp.nanos}
+                          </div>
+                          <div className="metadata-detail">
+                            Output Upload Started @{" "}
+                            {this.state.actionResult.executionMetadata.outputUploadStartTimestamp.nanos}
+                          </div>
+                          <div className="metadata-detail">
+                            Output Upload Completed @{" "}
+                            {this.state.actionResult.executionMetadata.outputUploadCompletedTimestamp.nanos}
+                          </div>
+                          <div className="metadata-info">
+                            Worker Completed @{" "}
+                            {this.state.actionResult.executionMetadata.workerCompletedTimestamp.nanos}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>None found.</div>
+                      )}
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Output Files:</div>
+                      {this.state.actionResult.outputFiles ? (
+                        <div className="action-list">
+                          {this.state.actionResult.outputFiles.map((file) => (
+                            <div>
+                              <span className="prop-name">PATH=</span>
+                              <span className="prop-value">{file.path}</span>
+                              <div>
+                                <span className="prop-name">Executable? </span>
+                                <span className="prop-value">{file.isExecutable.toString().toUpperCase()}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div>None found.</div>
+                      )}
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Output Directories:</div>
+                      {this.state.actionResult.outputDirectories.length ? (
+                        <div className="action-list">
+                          {this.state.actionResult.outputDirectories.map((file) => (
+                            <div>
+                              <span className="prop-name">PATH=</span>
+                              <span className="prop-value">{file.path}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div>None found.</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
