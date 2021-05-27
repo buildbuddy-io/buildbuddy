@@ -7,21 +7,21 @@ import (
 	"time"
 )
 
-type Mocktext struct{}
+type Context struct{}
 
-func (m *Mocktext) Deadline() (time.Time, bool) {
+func (m *Context) Deadline() (time.Time, bool) {
 	return time.Unix(0, 0), false
 }
 
-func (m *Mocktext) Done() <-chan struct{} {
+func (m *Context) Done() <-chan struct{} {
 	return nil
 }
 
-func (m *Mocktext) Err() error {
+func (m *Context) Err() error {
 	return nil
 }
 
-func (m *Mocktext) Value(key interface{}) interface{} {
+func (m *Context) Value(key interface{}) interface{} {
 	return nil
 }
 

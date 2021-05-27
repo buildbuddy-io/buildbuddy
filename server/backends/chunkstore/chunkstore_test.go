@@ -30,7 +30,7 @@ func TestChunkName(t *testing.T) {
 func TestBlobExists(t *testing.T) {
 	m := mockstore.New()
 	c := New(m)
-	mtx := &mockstore.Mocktext{}
+	mtx := &mockstore.Context{}
 
 	if exists, err := c.BlobExists(mtx, "foo"); err != nil {
 		t.Fatalf("Encountered error calling BlobExists: %v", err)
@@ -49,7 +49,7 @@ func TestBlobExists(t *testing.T) {
 func TestDeleteBlob(t *testing.T) {
 	m := mockstore.New()
 	c := New(m)
-	mtx := &mockstore.Mocktext{}
+	mtx := &mockstore.Context{}
 
 	if err := c.DeleteBlob(mtx, "foo"); err != nil {
 		t.Errorf("Delete Blob returned error for non-existent blob")
@@ -78,7 +78,7 @@ func TestDeleteBlob(t *testing.T) {
 func TestReadBlob(t *testing.T) {
 	m := mockstore.New()
 	c := New(m)
-	mtx := &mockstore.Mocktext{}
+	mtx := &mockstore.Context{}
 
 	if _, err := c.ReadBlob(mtx, "foo"); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("Read did not return os.ErrNotExist for a non-existent blob")
@@ -122,7 +122,7 @@ func TestReadBlob(t *testing.T) {
 func TestWriteBlob(t *testing.T) {
 	m := mockstore.New()
 	c := New(m)
-	mtx := &mockstore.Mocktext{}
+	mtx := &mockstore.Context{}
 
 	test_map := make(map[string][]byte)
 	test_map["foo_0000"] = []byte{}
@@ -210,7 +210,7 @@ func TestWriteBlob(t *testing.T) {
 func TestReaders(t *testing.T) {
 	m := mockstore.New()
 	c := New(m)
-	mtx := &mockstore.Mocktext{}
+	mtx := &mockstore.Context{}
 
 	r := c.Reader(mtx, "foo")
 	rr, err := c.ReverseReader(mtx, "foo")
@@ -367,7 +367,7 @@ func TestReaders(t *testing.T) {
 func TestWriter(t *testing.T) {
 	m := mockstore.New()
 	c := New(m)
-	mtx := &mockstore.Mocktext{}
+	mtx := &mockstore.Context{}
 
 	test_map := make(map[string][]byte)
 
