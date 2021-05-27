@@ -34,11 +34,11 @@ func (c *Chunkstore) BlobExists(ctx context.Context, blobName string) (bool, err
 }
 
 func (c *Chunkstore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
-	if data, err := io.ReadAll(c.Reader(ctx, blobName)); err != nil {
+	data, err := io.ReadAll(c.Reader(ctx, blobName))
+	if err != nil {
 		return []byte{}, err
-	} else {
-		return data, nil
 	}
+	return data, nil
 }
 
 func (c *Chunkstore) WriteBlob(ctx context.Context, blobName string, data []byte) error {
@@ -109,9 +109,8 @@ func (r *chunkstoreReader) advanceOffset(adv int64) {
 func (r *chunkstoreReader) nextChunkIndex() uint16 {
 	if r.reverse {
 		return r.chunkIndex - 1
-	} else {
-		return r.chunkIndex + 1
 	}
+	return r.chunkIndex + 1
 }
 
 func (r *chunkstoreReader) noChunksRead() bool {
@@ -132,12 +131,10 @@ func (r *chunkstoreReader) copyToReadBuffer(p []byte) int {
 		remainingBytesInChunk := len(r.chunk) - r.chunkOff
 		if len(p) <= remainingBytesInChunk {
 			return r.copyAndAdvanceOffset(p, r.chunk[(remainingBytesInChunk-len(p)):])
-		} else {
-			return r.copyAndAdvanceOffset(p[(len(p)-remainingBytesInChunk):], r.chunk[:remainingBytesInChunk])
 		}
-	} else {
-		return r.copyAndAdvanceOffset(p, r.chunk[r.chunkOff:])
+		return r.copyAndAdvanceOffset(p[(len(p)-remainingBytesInChunk):], r.chunk[:remainingBytesInChunk])
 	}
+	return r.copyAndAdvanceOffset(p, r.chunk[r.chunkOff:])
 }
 
 func (r *chunkstoreReader) nextChunkExists() (bool, error) {
