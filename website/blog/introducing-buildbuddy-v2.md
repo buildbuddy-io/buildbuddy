@@ -73,7 +73,7 @@ While our focus for v2 has been on RBE performance, we've made plenty of other i
 - Timing tab improvements
 - Right click to copy downloadable artifact URLs 
 - Lots and lots of reliability improvements
-- Default XCode version configuration options
+- Default Xcode version configuration options
 
 We have several big announcements coming in the next few weeks, so stay tuned for more!
 
