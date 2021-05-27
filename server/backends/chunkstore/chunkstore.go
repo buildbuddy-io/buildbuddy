@@ -17,6 +17,8 @@ const (
 	mb = 1 << 20
 )
 
+// This implements a chunking reader/writer interface on top of an arbitrary
+// blobstore, averting the need to access blobs all at once.
 type Chunkstore struct {
 	internalBlobstore interfaces.Blobstore
 }
