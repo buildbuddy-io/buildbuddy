@@ -199,10 +199,10 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	defer reader.Close()
 
 	bufSize := int64(readBufSizeBytes)
-	if d.GetSizeBytes() < bufSize {
+	if d.GetSizeBytes() > 0 && d.GetSizeBytes() < bufSize {
 		bufSize = d.GetSizeBytes()
 	}
-	copyBuf := make([]byte, bufSize)
+	copyBuf := make([]byte, 0, bufSize)
 	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf)
 	c.log.Debugf("Read(%q) succeeded (user prefix: %s)", req.GetPrefix()+d.GetHash(), up)
 	return err
