@@ -14,7 +14,9 @@ import (
 )
 
 const (
-	mb = 1 << 20
+	mb      = 1 << 20
+	maxSec  = 1<<63 - 62135596801
+	maxNsec = 999999999
 )
 
 // This implements a chunking reader/writer interface on top of an arbitrary
@@ -338,8 +340,8 @@ func (w *chunkstoreWriter) Close() error {
 func (w *chunkstoreWriter) writeLoop() {
 	chunkIndex := uint16(0)
 	chunk := []byte{}
-	never := time.Unix(1<<63-62135596801, 999999999)
-	flushTime := never
+	maxTime := time.Unix(maxSec, maxNsec)
+	flushTime := maxTime
 	var writeError error
 	bytesFlushed := 0
 	closed := false
@@ -385,7 +387,7 @@ func (w *chunkstoreWriter) writeLoop() {
 			}
 		}
 		if len(chunk) == 0 {
-			flushTime = never
+			flushTime = maxTime
 		} else if time.Until(flushTime) > (w.timeoutDuration) {
 			flushTime = time.Now().Add(w.timeoutDuration)
 		}
