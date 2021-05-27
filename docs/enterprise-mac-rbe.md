@@ -16,17 +16,17 @@ You can follow the standard [Enterprise RBE Setup](enterprise-rbe.md) instructio
 
 Once you have a BuildBuddy cluster deployed with RBE enabled, you can start setting up your Mac executors.
 
-### Downloading XCode
+### Downloading Xcode
 
-When starting with a clean Mac, you'll first need to make sure XCode is installed. You can download XCode from [Apple's Developer Website](https://developer.apple.com/download/more/) (you'll need an Apple Developer account).
+When starting with a clean Mac, you'll first need to make sure Xcode is installed. You can download Xcode from [Apple's Developer Website](https://developer.apple.com/download/more/) (you'll need an Apple Developer account).
 
-We recommend installing at least XCode 12.2 (which is the default XCode version used if no `--xcode_version` Bazel flag is specified).
+We recommend installing at least Xcode 12.2 (which is the default Xcode version used if no `--xcode_version` Bazel flag is specified).
 
 :::note
-If installing on many machines, we recommend downloading the XCode .xip file to a location you control (like a cloud storage bucket) and downloading from there using a simple curl command. This reduces the number of times you have to login to your Apple Developer account.
+If installing on many machines, we recommend downloading the Xcode .xip file to a location you control (like a cloud storage bucket) and downloading from there using a simple curl command. This reduces the number of times you have to login to your Apple Developer account.
 :::
 
-### Installing XCode
+### Installing Xcode
 
 Once your .xip file is downloaded, you can expand it with the following command.
 
@@ -34,13 +34,13 @@ Once your .xip file is downloaded, you can expand it with the following command.
 xip --expand Xcode_12.2.xip
 ```
 
-You can then move it to your `Applications` directory with the version number as a suffix (so multiple XCode versions can be installed together and selected between using the `--xcode_version` Bazel flag).
+You can then move it to your `Applications` directory with the version number as a suffix (so multiple Xcode versions can be installed together and selected between using the `--xcode_version` Bazel flag).
 
 ```sh
 mv Xcode.app /Applications/Xcode_12.2.app
 ```
 
-If this is the first XCode version you're installing, you'll want to select it as your default XCode version with:
+If this is the first Xcode version you're installing, you'll want to select it as your default Xcode version with:
 ```sh
 sudo xcode-select -s /Applications/Xcode_12.2.app
 ```
