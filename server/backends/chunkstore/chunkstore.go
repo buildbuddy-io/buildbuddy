@@ -143,10 +143,21 @@ func (r *chunkstoreReader) copyToReadBuffer(p []byte) int {
 	}
 	if r.reverse {
 		remainingBytesInChunk := len(r.chunk) - r.chunkOff
-		if len(p) <= remainingBytesInChunk {
-			return r.copyAndAdvanceOffset(p, r.chunk[(remainingBytesInChunk-len(p)):])
+
+		// If we intend to saturate our read buffer with this copy,
+		// there will be no more bytes to read after the copy and
+		// there will be len(p) fewer bytes remaining in the chunk
+		remainingBytesInChunkAfterCopy := remainingBytesInChunk - len(p)
+		bytesToReadAfterCopy := 0
+		if len(p) > remainingBytesInChunk {
+			// If we intend to copy the entire rest of the chunk into the
+			// read buffer, there will be no bytes remaining in the chunk
+			// after the copy, and the bytes left to read will be reduced
+			// by the number of bytes currently remaining in the chunk
+			bytesToReadAfterCopy = len(p) - remainingBytesInChunk
+			remainingBytesInChunkAfterCopy = 0
 		}
-		return r.copyAndAdvanceOffset(p[(len(p)-remainingBytesInChunk):], r.chunk[:remainingBytesInChunk])
+		return r.copyAndAdvanceOffset(p[bytesToReadAfterCopy:], r.chunk[remainingBytesInChunkAfterCopy:remainingBytesInChunk])
 	}
 	return r.copyAndAdvanceOffset(p, r.chunk[r.chunkOff:])
 }
@@ -162,7 +173,8 @@ func (r *chunkstoreReader) getNextChunk() error {
 		return status.NotFoundErrorf("Opening %v: Couldn't find blob.", chunkName(r.blobName, r.nextChunkIndex()))
 	}
 	r.chunkIndex = r.nextChunkIndex()
-	r.advanceOffset(int64(len(r.chunk) - r.chunkOff))
+	// Decrementing the chunk offset by the length of the chunk instead
+	// of zeroing it. This is important for the Seek operation.
 	r.chunkOff -= len(r.chunk)
 	var err error
 	r.chunk, err = r.chunkstore.readChunk(r.ctx, r.blobName, r.chunkIndex)
@@ -194,8 +206,10 @@ func (r *chunkstoreReader) Read(p []byte) (int, error) {
 	for bytesRead < len(p) {
 		err := r.getNextChunk()
 		if r.reverse {
+			//Exclude bytes already read in the read buffer
 			bytesRead += r.copyToReadBuffer(p[:(len(p) - bytesRead)])
 		} else {
+			//Exclude bytes already read in the read buffer
 			bytesRead += r.copyToReadBuffer(p[bytesRead:])
 		}
 		if err != nil {
@@ -239,11 +253,14 @@ func (r *chunkstoreReader) Seek(offset int64, whence int) (int64, error) {
 		return r.off, syscall.EINVAL
 	}
 
+	// If the requested offset is within the current chunk, just change the offset and return
 	if offset >= r.off-int64(r.chunkOff) && offset < r.off+int64(len(r.chunk)-r.chunkOff) {
 		r.advanceOffset(offset - r.off)
 		return r.off, nil
 	}
 
+	// If the offset is before the current offset (and not within the current chunk),
+	// reset the offset too the beginning of the file
 	if offset < r.off {
 		r.chunkIndex = r.startIndex
 		r.chunk = []byte{}
