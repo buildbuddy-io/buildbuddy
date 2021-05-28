@@ -62,11 +62,15 @@ func (s *ActionCacheServer) checkFilesExist(ctx context.Context, cache interface
 
 func (s *ActionCacheServer) validateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.ActionResult) error {
 	outputFileDigests := make([]*repb.Digest, 0, len(r.OutputFiles))
+	seen := make(map[string]struct{}, 0)
 	mu := &sync.Mutex{}
 	appendDigest := func(d *repb.Digest) {
 		if d != nil && d.GetSizeBytes() > 0 {
 			mu.Lock()
-			outputFileDigests = append(outputFileDigests, d)
+			if _, ok := seen[d.GetHash()]; !ok {
+				outputFileDigests = append(outputFileDigests, d)
+				seen[d.GetHash()] = struct{}{}
+			}
 			mu.Unlock()
 		}
 	}
@@ -92,6 +96,9 @@ func (s *ActionCacheServer) validateActionResult(ctx context.Context, cache inte
 			for _, dir := range tree.GetChildren() {
 				for _, f := range dir.GetFiles() {
 					appendDigest(f.GetDigest())
+				}
+				for _, d := range dir.GetDirectories() {
+					appendDigest(d.GetDigest())
 				}
 			}
 			return nil
