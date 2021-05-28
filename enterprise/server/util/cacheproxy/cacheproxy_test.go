@@ -528,3 +528,37 @@ func TestGetMulti(t *testing.T) {
 		}
 	}
 }
+
+func TestEmptyRead(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "auth.enable_anonymous_usage", "true")
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	if err := c.StartListening(); err != nil {
+		t.Fatalf("Error setting up cacheproxy: %s", err)
+	}
+	waitUntilServerIsAlive(peer)
+
+	prefix := "null"
+	d := &repb.Digest{
+		Hash:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		SizeBytes: 0,
+	}
+	err = te.GetCache().WithPrefix(prefix).Set(ctx, d, []byte{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Remote-read the random bytes back.
+	_, err = c.RemoteReader(ctx, peer, prefix, d, 0)
+	if err != io.EOF {
+		t.Fatal(err)
+	}
+}

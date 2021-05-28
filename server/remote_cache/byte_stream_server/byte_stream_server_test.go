@@ -95,6 +95,14 @@ func TestRPCRead(t *testing.T) {
 			wantData:  randStr(1000 * 1000 * 100),
 			wantError: nil,
 		},
+		{ // 0 length read
+			instanceNameDigest: digest.NewInstanceNameDigest(&repb.Digest{
+				Hash:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+				SizeBytes: 0,
+			}, ""),
+			wantData:  "",
+			wantError: nil,
+		},
 	}
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
