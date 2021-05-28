@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/interfaces",
+        "//server/util/status",
     ],
 )
 
@@ -17,6 +18,7 @@ go_test(
     embed = [":chunkstore"],
     deps = [
         "//server/testutil/mockstore",
+        "//server/util/status",
         "@com_github_google_go_cmp//cmp",
     ],
 )

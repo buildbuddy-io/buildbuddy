@@ -2,15 +2,14 @@ package chunkstore
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"math"
-	"os"
 	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 const (
@@ -160,7 +159,7 @@ func (r *chunkstoreReader) getNextChunk() error {
 	if exists, err := r.nextChunkExists(); err != nil {
 		return err
 	} else if !exists {
-		return fmt.Errorf("Opening %v: %w", chunkName(r.blobName, r.nextChunkIndex()), os.ErrNotExist)
+		return status.NotFoundErrorf("Opening %v: Couldn't find blob.", chunkName(r.blobName, r.nextChunkIndex()))
 	}
 	r.chunkIndex = r.nextChunkIndex()
 	r.advanceOffset(int64(len(r.chunk) - r.chunkOff))
@@ -200,7 +199,7 @@ func (r *chunkstoreReader) Read(p []byte) (int, error) {
 			bytesRead += r.copyToReadBuffer(p[bytesRead:])
 		}
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) && !r.noChunksRead() {
+			if status.IsNotFoundError(err) && !r.noChunksRead() {
 				return bytesRead, io.EOF
 			}
 			return bytesRead, err
@@ -308,43 +307,32 @@ type chunkstoreWriter struct {
 	blobName           string
 }
 
-func (w *chunkstoreWriter) Write(p []byte) (int, error) {
-	w.writeChannel <- p
+func (w *chunkstoreWriter) readFromWriteResultChannel() (int, error) {
 	select {
 	case result, open := <-w.writeResultChannel:
 		if !open {
-			return 0, os.ErrClosed
+			return 0, status.UnavailableErrorf("Error accessing %v: Already closed.", w.blobName)
 		}
 		return result.size, result.err
-	case <-time.After(20 * time.Second):
-		return 0, context.DeadlineExceeded
+	case <-time.After(w.chunkstore.writeTimeoutDuration):
+		return 0, status.DeadlineExceededErrorf("Error accessing %v: Deadline exceeded.", w.blobName)
 	}
+}
+
+func (w *chunkstoreWriter) Write(p []byte) (int, error) {
+	w.writeChannel <- p
+	return w.readFromWriteResultChannel()
 }
 
 func (w *chunkstoreWriter) Flush() (int, error) {
 	w.writeChannel <- nil
-	select {
-	case result, open := <-w.writeResultChannel:
-		if !open {
-			return 0, os.ErrClosed
-		}
-		return result.size, result.err
-	case <-time.After(20 * time.Second):
-		return 0, context.DeadlineExceeded
-	}
+	return w.readFromWriteResultChannel()
 }
 
 func (w *chunkstoreWriter) Close() error {
 	close(w.writeChannel)
-	select {
-	case result, open := <-w.writeResultChannel:
-		if !open {
-			return fmt.Errorf("Error closing %v: %w", w.blobName, os.ErrClosed)
-		}
-		return result.err
-	case <-time.After(w.chunkstore.writeTimeoutDuration):
-		return os.ErrDeadlineExceeded
-	}
+	_, err := w.readFromWriteResultChannel()
+	return err
 }
 
 func (w *chunkstoreWriter) writeLoop() {
