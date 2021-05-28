@@ -2,13 +2,12 @@ package chunkstore
 
 import (
 	"bytes"
-	"errors"
 	"io"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockstore"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -80,8 +79,8 @@ func TestReadBlob(t *testing.T) {
 	c := New(m, &ChunkstoreOptions{})
 	mtx := &mockstore.Context{}
 
-	if _, err := c.ReadBlob(mtx, "foo"); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("Read did not return os.ErrNotExist for a non-existent blob")
+	if _, err := c.ReadBlob(mtx, "foo"); !status.IsNotFoundError(err) {
+		t.Fatalf("Read did not return status.NotFoundErr for a non-existent blob")
 	}
 
 	m.BlobMap["foo_0000"] = []byte{}
@@ -220,12 +219,12 @@ func TestReaders(t *testing.T) {
 		t.Fatalf("ReverseReader returned an error for non-existent blob: %v", err)
 	}
 
-	if _, err := io.ReadAll(r); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("Reading from Reader did not return os.ErrNotExist for a non-existent blob: %v", err)
+	if _, err := io.ReadAll(r); !status.IsNotFoundError(err) {
+		t.Fatalf("Reading from Reader did not return status.NotFound for a non-existent blob: %v", err)
 	}
 
-	if _, err := io.ReadAll(rr); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("Reading from ReverseReader did not return os.ErrNotExist for a non-existent blob: %v", err)
+	if _, err := io.ReadAll(rr); !status.IsNotFoundError(err) {
+		t.Fatalf("Reading from ReverseReader did not return status.NotFound for a non-existent blob: %v", err)
 	}
 
 	m.BlobMap["foo_0000"] = []byte{}
