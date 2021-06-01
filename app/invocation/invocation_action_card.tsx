@@ -4,6 +4,8 @@ import format from "../format/format";
 import InvocationModel from "./invocation_model";
 import { build } from "../../proto/remote_execution_ts_proto";
 import rpcService from "../service/rpc_service";
+import Long from "long";
+import { bazel_config } from "../../proto/bazel_config_ts_proto";
 
 interface Props {
   model: InvocationModel;
@@ -15,18 +17,36 @@ interface State {
   action?: build.bazel.remote.execution.v2.Action;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   command?: build.bazel.remote.execution.v2.Command;
+  config?: bazel_config.GetBazelConfigResponse;
   error?: string;
 }
 
 export default class ActionCardComponent extends React.Component<Props, State> {
   state: State = {};
   componentDidMount() {
-    this.fetchAction();
+    this.fetchConfig();
+  }
+
+  fetchConfig() {
+    let request = new bazel_config.GetBazelConfigRequest();
+    request.host = window.location.host;
+    request.protocol = window.location.protocol;
+    request.includeCertificate = true;
+    rpcService.service.getBazelConfig(request).then((response: bazel_config.GetBazelConfigResponse) => {
+      console.log(response);
+      this.setState({ ...this.state, config: response });
+      this.fetchAction();
+      this.fetchActionResult();
+    });
   }
 
   fetchAction() {
-    // TODO: Replace localhost:1987 with the remote cache address and prefix the path with the instance name
-    let actionFile = "bytestream://localhost:1987/blobs/" + this.props.search.get("actionDigest");
+    // TODO: Replace localhost:1987 with the remote cache address
+    let actionFile =
+      "bytestream" +
+      this.state.config.configOption[2].flagValue.replace("grpc", "") +
+      "/blobs/" +
+      this.props.search.get("actionDigest");
     rpcService
       .fetchBytestreamFile(actionFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {
@@ -48,7 +68,11 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   }
 
   fetchActionResult() {
-    let actionResultFile = "actioncache://localhost:1987/blobs/ac/" + this.props.search.get("actionDigest");
+    let actionResultFile =
+      "actioncache" +
+      this.state.config.configOption[2].flagValue.replace("grpc", "") +
+      "/blobs/ac/" +
+      this.props.search.get("actionDigest");
     rpcService
       .fetchBytestreamFile(actionResultFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {
@@ -68,7 +92,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   }
 
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
-    // TODO: Replace localhost:1987 with the remote cache address and prefix the path with the instance name
+    // TODO: Replace localhost:1987 with the remote cache address
     let commandFile =
       "bytestream://localhost:1987/blobs/" + action.commandDigest.hash + "/" + action.commandDigest.sizeBytes;
     rpcService
@@ -111,6 +135,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
               {this.state.action && (
                 <div>
                   <div className="action-section">
+                    {" "}
                     <div className="action-property-title">Hash/Size: </div>
                     <div>{this.props.search.get("actionDigest")}</div>
                   </div>
