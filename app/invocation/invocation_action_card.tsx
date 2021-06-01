@@ -41,7 +41,6 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   }
 
   fetchAction() {
-    // TODO: Replace localhost:1987 with the remote cache address
     let actionFile =
       "bytestream" +
       this.state.config.configOption[2].flagValue.replace("grpc", "") +
@@ -92,7 +91,6 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   }
 
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
-    // TODO: Replace localhost:1987 with the remote cache address
     let commandFile =
       "bytestream://localhost:1987/blobs/" + action.commandDigest.hash + "/" + action.commandDigest.sizeBytes;
     rpcService
