@@ -60,9 +60,10 @@ class ExecutorDeploy extends React.Component<ExecutorDeployProps, ExecutorDeploy
             presence of api_key will implicitely enable work streaming. */}
         <code>
           <pre>
-            {`docker run gcr.io/flame-public/buildbuddy-executor-enterprise:latest \\
+            {`docker run --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \\
+    gcr.io/flame-public/buildbuddy-executor-enterprise:latest \\
+    --executor.docker_socket=/var/run/docker.sock \\
     --executor.app_target=${this.props.schedulerUri} \\
-    --executor.enable_work_streaming \\
     --executor.api_key=${this.props.executorKeys[this.state.selectedExecutorKeyIdx]?.value}`}
           </pre>
         </code>
