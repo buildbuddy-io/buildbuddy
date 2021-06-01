@@ -135,7 +135,6 @@ export default class ActionCardComponent extends React.Component<Props, State> {
               {this.state.action && (
                 <div>
                   <div className="action-section">
-                    {" "}
                     <div className="action-property-title">Hash/Size: </div>
                     <div>{this.props.search.get("actionDigest")}</div>
                   </div>
