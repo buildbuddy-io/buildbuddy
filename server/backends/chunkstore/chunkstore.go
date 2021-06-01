@@ -13,9 +13,8 @@ import (
 )
 
 const (
-	mb      = 1 << 20
-	maxSec  = 1<<63 - 62135596801
-	maxNsec = 999999999
+	mb   = 1 << 20
+	year = time.Hour * 24 * 365
 )
 
 // This implements a chunking reader/writer interface on top of an arbitrary
@@ -401,8 +400,7 @@ func (l *writeLoop) readFromWriteChannel() {
 }
 
 func (l *writeLoop) run() {
-	maxTime := time.Unix(maxSec, maxNsec)
-	l.flushTime = maxTime
+	l.flushTime = time.Now().Add(year)
 	l.open = true
 	for l.open {
 		l.readFromWriteChannel()
@@ -414,7 +412,7 @@ func (l *writeLoop) run() {
 			l.write()
 		}
 		if len(l.chunk) == 0 {
-			l.flushTime = maxTime
+			l.flushTime = time.Now().Add(year)
 		} else if time.Until(l.flushTime) > (l.chunkstore.writeTimeoutDuration) {
 			l.flushTime = time.Now().Add(l.chunkstore.writeTimeoutDuration)
 		}
