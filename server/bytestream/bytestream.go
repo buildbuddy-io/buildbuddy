@@ -57,13 +57,13 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 	}
 	defer conn.Close()
 
-	if strings.Contains(url.String(), "/blobs/ac/") {
+	if url.Scheme == "actioncache" {
 		acClient := repb.NewActionCacheClient(conn)
 		instanceName, d, err := digest.ExtractDigestFromActionCacheResourceName(strings.TrimPrefix(url.RequestURI(), "/"))
-
 		if err != nil {
 			return err
 		}
+
 		// Request the ActionResult
 		req := &repb.GetActionResultRequest{
 			InstanceName: instanceName,
