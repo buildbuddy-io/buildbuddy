@@ -59,7 +59,7 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 
 	if strings.Contains(url.String(), "/blobs/ac/") {
 		acClient := repb.NewActionCacheClient(conn)
-		instanceName, d, err := digest.ExtractDigestFromDownloadResourceName(strings.TrimPrefix(url.RequestURI(), "/"))
+		instanceName, d, err := digest.ExtractDigestFromActionCacheResourceName(strings.TrimPrefix(url.RequestURI(), "/"))
 
 		if err != nil {
 			return err
@@ -83,31 +83,30 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 			return err
 		}
 		callback(buf)
+		return nil
+	}
+	client := bspb.NewByteStreamClient(conn)
 
-	} else {
-		client := bspb.NewByteStreamClient(conn)
+	// Request the file bytestream
+	req := &bspb.ReadRequest{
+		ResourceName: strings.TrimPrefix(url.RequestURI(), "/"), // trim leading "/"
+		ReadOffset:   0,                                         // started from the bottom now we here
+		ReadLimit:    0,                                         // no limit
+	}
+	readClient, err := client.Read(ctx, req)
+	if err != nil {
+		return err
+	}
 
-		// Request the file bytestream
-		req := &bspb.ReadRequest{
-			ResourceName: strings.TrimPrefix(url.RequestURI(), "/"), // trim leading "/"
-			ReadOffset:   0,                                         // started from the bottom now we here
-			ReadLimit:    0,                                         // no limit
+	for {
+		rsp, err := readClient.Recv()
+		if err == io.EOF {
+			break
 		}
-		readClient, err := client.Read(ctx, req)
 		if err != nil {
 			return err
 		}
-
-		for {
-			rsp, err := readClient.Recv()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return err
-			}
-			callback(rsp.Data)
-		}
+		callback(rsp.Data)
 	}
 	return nil
 }
