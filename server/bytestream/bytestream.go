@@ -66,11 +66,8 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 		}
 		// Request the ActionResult
 		req := &repb.GetActionResultRequest{
-			InstanceName:      instanceName,
-			ActionDigest:      d,
-			InlineStdout:      true,
-			InlineStderr:      false,
-			InlineOutputFiles: []string{},
+			InstanceName: instanceName,
+			ActionDigest: d,
 		}
 		actionResult, err := acClient.GetActionResult(ctx, req)
 		if err != nil {
