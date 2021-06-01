@@ -18,7 +18,7 @@ import (
 )
 
 func StreamBytestreamFile(ctx context.Context, env environment.Env, url *url.URL, callback func([]byte)) error {
-	if url.Scheme != "bytestream" {
+	if url.Scheme != "bytestream" && url.Scheme != "actioncache" {
 		return status.InvalidArgumentErrorf("Only bytestream:// uris are supported")
 	}
 

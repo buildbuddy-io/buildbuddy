@@ -48,7 +48,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   }
 
   fetchActionResult() {
-    let actionResultFile = "bytestream://localhost:1987/blobs/ac/" + this.props.search.get("actionDigest");
+    let actionResultFile = "actioncache://localhost:1987/blobs/ac/" + this.props.search.get("actionDigest");
     rpcService
       .fetchBytestreamFile(actionResultFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {

@@ -36,7 +36,8 @@ import (
 )
 
 const (
-	bytestreamProtocolPrefix = "bytestream://"
+	bytestreamProtocolPrefix  = "bytestream://"
+	actioncacheProtocolPrefix = "actioncache://"
 )
 
 type BuildBuddyServer struct {
@@ -735,7 +736,7 @@ func getBestFilename(filename, blobname string) string {
 }
 
 func parseByteStreamURL(bsURL, filename string) (*bsLookup, error) {
-	if strings.HasPrefix(bsURL, bytestreamProtocolPrefix) {
+	if strings.HasPrefix(bsURL, bytestreamProtocolPrefix) || strings.HasPrefix(bsURL, actioncacheProtocolPrefix) {
 		u, err := url.Parse(bsURL)
 		if err != nil {
 			return nil, err
