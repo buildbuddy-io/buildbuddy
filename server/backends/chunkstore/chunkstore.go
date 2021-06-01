@@ -317,11 +317,10 @@ type writeResult struct {
 }
 
 type chunkstoreWriter struct {
-	ctx                context.Context
 	chunkstore         *Chunkstore
+	blobName           string
 	writeChannel       chan []byte
 	writeResultChannel chan writeResult
-	blobName           string
 }
 
 func (w *chunkstoreWriter) readFromWriteResultChannel() (int, error) {
@@ -352,79 +351,100 @@ func (w *chunkstoreWriter) Close() error {
 	return err
 }
 
-func (w *chunkstoreWriter) writeLoop() {
-	chunkIndex := uint16(0)
-	chunk := []byte{}
+type writeLoop struct {
+	chunkstore         *Chunkstore
+	blobName           string
+	ctx                context.Context
+	chunkIndex         uint16
+	chunk              []byte
+	flushTime          time.Time
+	writeError         error
+	bytesFlushed       int
+	open               bool
+	timeout            bool
+	writeChannel       chan []byte
+	writeResultChannel chan writeResult
+}
+
+func (l *writeLoop) write() error {
+	size := l.chunkstore.writeBlockSize
+	if len(l.chunk) < l.chunkstore.writeBlockSize {
+		size = len(l.chunk)
+	}
+	bytesWritten, err := l.chunkstore.writeChunk(l.ctx, l.blobName, l.chunkIndex, l.chunk[:size])
+	l.bytesFlushed += bytesWritten
+	l.chunk = l.chunk[bytesWritten:]
+	if bytesWritten > 0 {
+		l.chunkIndex++
+	}
+	if err != nil {
+		l.writeError = err
+	}
+	return err
+}
+
+func (l *writeLoop) readFromWriteChannel() {
+	l.timeout = false
+	var p []byte
+	select {
+	case p, l.open = <-l.writeChannel:
+		if l.open && p == nil {
+			l.flushTime = time.Unix(0, 0)
+		} else {
+			l.chunk = append(l.chunk, p...)
+		}
+	case <-time.After(time.Until(l.flushTime)):
+		l.timeout = true
+	case <-l.ctx.Done():
+		l.open = false
+	}
+}
+
+func (l *writeLoop) run() {
 	maxTime := time.Unix(maxSec, maxNsec)
-	flushTime := maxTime
-	var writeError error
-	bytesFlushed := 0
-	closed := false
-	for !closed {
-		timeout := false
-		select {
-		case p, open := <-w.writeChannel:
-			if !open {
-				closed = true
-			}
-			if open && p == nil {
-				flushTime = time.Unix(0, 0)
-			} else {
-				chunk = append(chunk, p...)
-			}
-		case <-time.After(time.Until(flushTime)):
-			timeout = true
-		case <-w.ctx.Done():
-			closed = true
+	l.flushTime = maxTime
+	l.open = true
+	for l.open {
+		l.readFromWriteChannel()
+		var err error
+		for err == nil && len(l.chunk) >= l.chunkstore.writeBlockSize {
+			err = l.write()
 		}
-		for len(chunk) >= w.chunkstore.writeBlockSize {
-			bytesWritten, err := w.chunkstore.writeChunk(w.ctx, w.blobName, chunkIndex, chunk[:w.chunkstore.writeBlockSize])
-			bytesFlushed += bytesWritten
-			chunk = chunk[bytesWritten:]
-			if bytesWritten > 0 {
-				chunkIndex++
-			}
-			if err != nil {
-				writeError = err
-				break
-			}
+		if err == nil && ((!l.open && l.chunkIndex == 0) || (len(l.chunk) > 0 && (time.Now().After(l.flushTime) || !l.open))) {
+			l.write()
 		}
-		if writeError == nil && ((closed && chunkIndex == 0) || (len(chunk) > 0 && (time.Now().After(flushTime) || closed))) {
-			fmt.Printf("Flush time is %v, Flushing %v\n", flushTime, chunk)
-			bytesWritten, err := w.chunkstore.writeChunk(w.ctx, w.blobName, chunkIndex, chunk)
-			bytesFlushed += bytesWritten
-			chunk = chunk[bytesWritten:]
-			if bytesWritten > 0 {
-				chunkIndex++
-			}
-			if err != nil {
-				writeError = err
-			}
+		if len(l.chunk) == 0 {
+			l.flushTime = maxTime
+		} else if time.Until(l.flushTime) > (l.chunkstore.writeTimeoutDuration) {
+			l.flushTime = time.Now().Add(l.chunkstore.writeTimeoutDuration)
 		}
-		if len(chunk) == 0 {
-			flushTime = maxTime
-		} else if time.Until(flushTime) > (w.chunkstore.writeTimeoutDuration) {
-			flushTime = time.Now().Add(w.chunkstore.writeTimeoutDuration)
-		}
-		if timeout {
+		if l.timeout {
 			continue
 		}
-		w.writeResultChannel <- writeResult{size: bytesFlushed, err: writeError}
-		writeError = nil
-		bytesFlushed = 0
+		l.writeResultChannel <- writeResult{size: l.bytesFlushed, err: l.writeError}
+		l.writeError = nil
+		l.bytesFlushed = 0
 	}
-	close(w.writeResultChannel)
+	close(l.writeResultChannel)
 }
 
 func (c *Chunkstore) Writer(ctx context.Context, blobName string) *chunkstoreWriter {
 	writer := &chunkstoreWriter{
 		chunkstore:         c,
-		ctx:                ctx,
 		blobName:           blobName,
 		writeChannel:       make(chan []byte),
 		writeResultChannel: make(chan writeResult),
 	}
 
-	go writer.writeLoop()
+	loop := &writeLoop{
+		chunkstore:         c,
+		ctx:                ctx,
+		blobName:           blobName,
+		writeChannel:       writer.writeChannel,
+		writeResultChannel: writer.writeResultChannel,
+	}
+
+	go loop.run()
+
 	return writer
 }
