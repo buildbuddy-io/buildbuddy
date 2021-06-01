@@ -13,6 +13,7 @@ interface Props {
 interface State {
   contents?: ArrayBuffer;
   action?: build.bazel.remote.execution.v2.Action;
+  actionResult?: build.bazel.remote.execution.v2.ActionResult;
   command?: build.bazel.remote.execution.v2.Command;
   error?: string;
 }
@@ -46,6 +47,26 @@ export default class ActionCardComponent extends React.Component<Props, State> {
       });
   }
 
+  fetchActionResult() {
+    let actionResultFile = "actioncache://localhost:1987/blobs/ac/" + this.props.search.get("actionDigest");
+    rpcService
+      .fetchBytestreamFile(actionResultFile, this.props.model.getId(), "arraybuffer")
+      .then((action_buff: any) => {
+        let temp_array = new Uint8Array(action_buff);
+        this.setState({
+          ...this.state,
+          actionResult: build.bazel.remote.execution.v2.ActionResult.decode(temp_array),
+        });
+      })
+      .catch(() => {
+        console.error("Error loading action result!");
+        this.setState({
+          ...this.state,
+          error: "Error loading command profile. Make sure your cache is correctly configured.",
+        });
+      });
+  }
+
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
     // TODO: Replace localhost:1987 with the remote cache address and prefix the path with the instance name
     let commandFile =
@@ -70,7 +91,13 @@ export default class ActionCardComponent extends React.Component<Props, State> {
 
   displayList(list: string[]) {
     if (list.length == 0) return <div>None found.</div>;
-    return <div className="action-list">{list.map((argument) => <div>{argument}</div> || [])}</div>;
+    return (
+      <div className="action-list">
+        {list.map((argument) => (
+          <div>{argument}</div>
+        ))}
+      </div>
+    );
   }
 
   render() {
@@ -100,7 +127,9 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                     )}
                   </div>
                   <div className="action-section">
-                    <div className="action-property-title">Do Not Cache: </div>
+                    <div className="action-property-title" onClick={this.fetchActionResult.bind(this)}>
+                      Do Not Cache:{" "}
+                    </div>
                     <div>{this.state.action.doNotCache ? "True" : "False"}</div>
                   </div>
                 </div>
@@ -122,15 +151,12 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                   <div className="action-section">
                     <div className="action-property-title">Environment Variables:</div>
                     <div className="action-list">
-                      {this.state.command.environmentVariables.map(
-                        (variable) =>
-                          (
-                            <div>
-                              <span className="env-name">{variable.name}</span>
-                              <span className="env-value">={variable.value}</span>
-                            </div>
-                          ) || []
-                      )}
+                      {this.state.command.environmentVariables.map((variable) => (
+                        <div>
+                          <span className="env-name">{variable.name}</span>
+                          <span className="env-value">={variable.value}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                   <div className="action-section">
@@ -142,6 +168,22 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                     {this.displayList(this.state.command.outputFiles)}
                   </div>
                   <div></div>
+                </div>
+              )}
+              {this.state.actionResult && (
+                <div>
+                  <pre>
+                    <code>{JSON.stringify(this.state.actionResult, null, 2)}</code>
+                  </pre>
+                  <div>
+                    {this.state.actionResult.outputDirectories.map((dir) => (
+                      <div>
+                        <div>{dir.path}</div>
+                        <div>{dir.treeDigest.hash}</div>
+                        <div>{dir.treeDigest.hash}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

@@ -37,9 +37,11 @@ var (
 
 	// Matches:
 	// - "blobs/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
+	// - "blobs/ac/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
 	// - "uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555/blobs/8afb02ca7aace3ae5cd8748ac589e2e33022b1a4bfd22d5d234c5887e270fe9c/17997850"
-	uploadRegex   = regexp.MustCompile("^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?blobs/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
-	downloadRegex = regexp.MustCompile("^(?:(?P<instance_name>.*)/)?blobs/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
+	uploadRegex      = regexp.MustCompile("^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?blobs/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
+	downloadRegex    = regexp.MustCompile("^(?:(?P<instance_name>.*)/)?blobs/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
+	actionCacheRegex = regexp.MustCompile("^(?:(?P<instance_name>.*)/)?blobs/ac/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
 )
 
 type InstanceNameDigest struct {
@@ -175,6 +177,10 @@ func ExtractDigestFromUploadResourceName(resourceName string) (string, *repb.Dig
 
 func ExtractDigestFromDownloadResourceName(resourceName string) (string, *repb.Digest, error) {
 	return extractDigest(resourceName, downloadRegex)
+}
+
+func ExtractDigestFromActionCacheResourceName(resourceName string) (string, *repb.Digest, error) {
+	return extractDigest(resourceName, actionCacheRegex)
 }
 
 // This is probably the wrong place for this, but works for now.
