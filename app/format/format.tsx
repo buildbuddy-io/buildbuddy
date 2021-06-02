@@ -103,7 +103,7 @@ export function formatTimestampMillis(timestamp: number | Long) {
 }
 
 export function formatTimestampSecondsNanos(seconds: number | Long, nanos: number | Long) {
-  return `${moment(+seconds).format("MMMM Do, YYYY")} at ${moment(+seconds).format(
+  return `${moment(+seconds * 1000).format("MMMM Do, YYYY")} at ${moment(+seconds * 1000).format(
     "h:mm:ss"
   )}:${nanos.toString().substring(0, 2)}`;
 }

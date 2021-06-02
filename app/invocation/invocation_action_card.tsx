@@ -172,7 +172,11 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                           <div className="metadata-detail">{this.state.actionResult.executionMetadata.executorId}</div>
                           <div className="metadata-title">Timeline</div>
                           <div className="metadata-detail">
-                            Queued @ {this.state.actionResult.executionMetadata.queuedTimestamp.nanos}
+                            Queued @{" "}
+                            {format.formatTimestampSecondsNanos(
+                              this.state.actionResult.executionMetadata.queuedTimestamp.seconds,
+                              this.state.actionResult.executionMetadata.queuedTimestamp.nanos
+                            )}
                           </div>
                           <div className="metadata-detail">
                             Worker Started @{" "}
@@ -183,31 +187,52 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                           </div>
                           <div className="metadata-detail">
                             Input Fetching Started @{" "}
-                            {this.state.actionResult.executionMetadata.inputFetchStartTimestamp.nanos}
+                            {format.formatTimestampSecondsNanos(
+                              this.state.actionResult.executionMetadata.inputFetchStartTimestamp.seconds,
+                              this.state.actionResult.executionMetadata.inputFetchStartTimestamp.nanos
+                            )}
                           </div>
                           <div className="metadata-detail">
                             Input Fetching Completed @{" "}
-                            {this.state.actionResult.executionMetadata.inputFetchCompletedTimestamp.nanos}
+                            {format.formatTimestampSecondsNanos(
+                              this.state.actionResult.executionMetadata.inputFetchCompletedTimestamp.seconds,
+                              this.state.actionResult.executionMetadata.inputFetchCompletedTimestamp.nanos
+                            )}
                           </div>
                           <div className="metadata-detail">
                             Execution Started @{" "}
-                            {this.state.actionResult.executionMetadata.executionStartTimestamp.nanos}
+                            {format.formatTimestampSecondsNanos(
+                              this.state.actionResult.executionMetadata.executionStartTimestamp.seconds,
+                              this.state.actionResult.executionMetadata.executionStartTimestamp.nanos
+                            )}
                           </div>
                           <div className="metadata-detail">
                             Execution Completed @{" "}
-                            {this.state.actionResult.executionMetadata.executionCompletedTimestamp.nanos}
+                            {format.formatTimestampSecondsNanos(
+                              this.state.actionResult.executionMetadata.executionCompletedTimestamp.seconds,
+                              this.state.actionResult.executionMetadata.executionCompletedTimestamp.nanos
+                            )}
                           </div>
                           <div className="metadata-detail">
                             Output Upload Started @{" "}
-                            {this.state.actionResult.executionMetadata.outputUploadStartTimestamp.nanos}
+                            {format.formatTimestampSecondsNanos(
+                              this.state.actionResult.executionMetadata.outputUploadStartTimestamp.seconds,
+                              this.state.actionResult.executionMetadata.outputUploadStartTimestamp.nanos
+                            )}
                           </div>
                           <div className="metadata-detail">
                             Output Upload Completed @{" "}
-                            {this.state.actionResult.executionMetadata.outputUploadCompletedTimestamp.nanos}
+                            {format.formatTimestampSecondsNanos(
+                              this.state.actionResult.executionMetadata.outputUploadCompletedTimestamp.seconds,
+                              this.state.actionResult.executionMetadata.outputUploadCompletedTimestamp.nanos
+                            )}
                           </div>
                           <div className="metadata-info">
                             Worker Completed @{" "}
-                            {this.state.actionResult.executionMetadata.workerCompletedTimestamp.nanos}
+                            {format.formatTimestampSecondsNanos(
+                              this.state.actionResult.executionMetadata.workerCompletedTimestamp.seconds,
+                              this.state.actionResult.executionMetadata.workerCompletedTimestamp.nanos
+                            )}
                           </div>
                         </div>
                       ) : (
