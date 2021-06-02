@@ -290,7 +290,7 @@ export default class ExecutionCardComponent extends React.Component {
                 <div>
                   <div
                     className="invocation-execution-row-digest"
-                    onClick={this.handleActionDigestClick.bind(this, execution)}>
+                    onClick={capabilities.action ? this.handleActionDigestClick.bind(this, execution) : undefined}>
                     {stages[execution.stage].name} {execution?.actionDigest?.hash}/{execution?.actionDigest?.sizeBytes}
                   </div>
                   <div>{execution.commandSnippet}</div>
