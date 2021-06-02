@@ -352,3 +352,7 @@
 .prop-value {
   color: #444;
 }
+
+.prop-value .detail {
+  color: #aaa;
+}

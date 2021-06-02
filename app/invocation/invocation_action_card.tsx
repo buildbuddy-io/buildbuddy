@@ -253,7 +253,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                             <div>
                               <span className="prop-name">PATH=</span>
                               <span className="prop-value">{file.path}</span>
-                              {file.isExecutable && <span className="prop-name"> (executable)</span>}
+                              {file.isExecutable && <span className="detail"> (executable)</span>}
                             </div>
                           ))}
                         </div>
