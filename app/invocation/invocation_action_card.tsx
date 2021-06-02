@@ -17,35 +17,18 @@ interface State {
   action?: build.bazel.remote.execution.v2.Action;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   command?: build.bazel.remote.execution.v2.Command;
-  config?: bazel_config.GetBazelConfigResponse;
   error?: string;
 }
 
 export default class ActionCardComponent extends React.Component<Props, State> {
   state: State = {};
   componentDidMount() {
-    this.fetchConfig();
-  }
-
-  fetchConfig() {
-    let request = new bazel_config.GetBazelConfigRequest();
-    request.host = window.location.host;
-    request.protocol = window.location.protocol;
-    request.includeCertificate = true;
-    rpcService.service.getBazelConfig(request).then((response: bazel_config.GetBazelConfigResponse) => {
-      console.log(response);
-      this.setState({ ...this.state, config: response });
-      this.fetchAction();
-      this.fetchActionResult();
-    });
+    this.fetchAction();
+    this.fetchActionResult();
   }
 
   fetchAction() {
-    let actionFile =
-      "bytestream" +
-      this.state.config.configOption[2].flagValue.replace("grpc", "") +
-      "/blobs/" +
-      this.props.search.get("actionDigest");
+    let actionFile = "bytestream://" + this.getCacheAddress() + "/blobs/" + this.props.search.get("actionDigest");
     rpcService
       .fetchBytestreamFile(actionFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {
@@ -68,10 +51,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
 
   fetchActionResult() {
     let actionResultFile =
-      "actioncache" +
-      this.state.config.configOption[2].flagValue.replace("grpc", "") +
-      "/blobs/ac/" +
-      this.props.search.get("actionDigest");
+      "actioncache://" + this.getCacheAddress() + "/blobs/ac/" + this.props.search.get("actionDigest");
     rpcService
       .fetchBytestreamFile(actionResultFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {
@@ -120,6 +100,13 @@ export default class ActionCardComponent extends React.Component<Props, State> {
         ))}
       </div>
     );
+  }
+
+  getCacheAddress() {
+    if (this.props.model.optionsMap.get("remote_cache")) {
+      return this.props.model.optionsMap.get("remote_cache").replace("grpc://", "");
+    }
+    return this.props.model.optionsMap.get("remote_executor").replace("grpc://", "");
   }
 
   render() {
