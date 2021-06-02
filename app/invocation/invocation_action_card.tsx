@@ -175,7 +175,11 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                             Queued @ {this.state.actionResult.executionMetadata.queuedTimestamp.nanos}
                           </div>
                           <div className="metadata-detail">
-                            Worker Started @ {this.state.actionResult.executionMetadata.workerStartTimestamp.nanos}
+                            Worker Started @{" "}
+                            {format.formatTimestampSecondsNanos(
+                              this.state.actionResult.executionMetadata.workerStartTimestamp.seconds,
+                              this.state.actionResult.executionMetadata.workerStartTimestamp.nanos
+                            )}
                           </div>
                           <div className="metadata-detail">
                             Input Fetching Started @{" "}
