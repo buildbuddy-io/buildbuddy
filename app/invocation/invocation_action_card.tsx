@@ -112,7 +112,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                 <div>
                   <div className="action-section">
                     <div className="action-property-title">Hash/Size: </div>
-                    <div>{this.props.search.get("actionDigest")}</div>
+                    <div>{this.props.search.get("actionDigest")} bytes</div>
                   </div>
                   <div className="action-section">
                     <div className="action-property-title">Output Node Properties: </div>
@@ -129,6 +129,12 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                   <div className="action-section">
                     <div className="action-property-title">Do Not Cache: </div>
                     <div>{this.state.action.doNotCache ? "True" : "False"}</div>
+                  </div>
+                  <div className="action-section">
+                    <div className="action-property-title">Input Root Hash/Size:</div>
+                    <span>
+                      {this.state.action.inputRootDigest.hash}/{this.state.action.inputRootDigest.sizeBytes} bytes
+                    </span>
                   </div>
                 </div>
               )}
@@ -247,10 +253,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                             <div>
                               <span className="prop-name">PATH=</span>
                               <span className="prop-value">{file.path}</span>
-                              <div>
-                                <span className="prop-name">Executable? </span>
-                                <span className="prop-value">{file.isExecutable.toString().toUpperCase()}</span>
-                              </div>
+                              {file.isExecutable && <span className="prop-name"> (executable)</span>}
                             </div>
                           ))}
                         </div>
@@ -262,10 +265,10 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                       <div className="action-property-title">Output Directories:</div>
                       {this.state.actionResult.outputDirectories.length ? (
                         <div className="action-list">
-                          {this.state.actionResult.outputDirectories.map((file) => (
+                          {this.state.actionResult.outputDirectories.map((dir) => (
                             <div>
                               <span className="prop-name">PATH=</span>
-                              <span className="prop-value">{file.path}</span>
+                              <span className="prop-value">{dir.path}</span>
                             </div>
                           ))}
                         </div>
