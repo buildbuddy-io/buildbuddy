@@ -1,11 +1,8 @@
-import pako from "pako";
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
 import { build } from "../../proto/remote_execution_ts_proto";
 import rpcService from "../service/rpc_service";
-import Long from "long";
-import { bazel_config } from "../../proto/bazel_config_ts_proto";
 
 interface Props {
   model: InvocationModel;
