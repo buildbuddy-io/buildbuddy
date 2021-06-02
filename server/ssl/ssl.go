@@ -171,13 +171,21 @@ func (s *SSLService) populateTLSConfig() error {
 			hosts = append(hosts, url.Hostname())
 		}
 
+		// Google LB frontend (GFE) doesn't send SNI to backend so we need to provide a default.
+		getCert := func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			if hello.ServerName == "" {
+				hello.ServerName = sslConf.DefaultHost
+			}
+			return s.autocertManager.GetCertificate(hello)
+		}
+
 		s.autocertManager = &autocert.Manager{
 			Prompt:     autocert.AcceptTOS,
 			Cache:      NewCertCache(s.env.GetBlobstore()),
 			HostPolicy: autocert.HostWhitelist(hosts...),
 		}
-		httpTLSConfig.GetCertificate = s.autocertManager.GetCertificate
-		grpcTLSConfig.GetCertificate = s.autocertManager.GetCertificate
+		httpTLSConfig.GetCertificate = getCert
+		grpcTLSConfig.GetCertificate = getCert
 		httpTLSConfig.NextProtos = append(httpTLSConfig.NextProtos, acme.ALPNProto)
 		grpcTLSConfig.NextProtos = append(grpcTLSConfig.NextProtos, acme.ALPNProto)
 

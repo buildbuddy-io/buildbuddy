@@ -157,6 +157,7 @@ type SSLConfig struct {
 	EnableSSL        bool     `yaml:"enable_ssl" usage:"Whether or not to enable SSL/TLS on gRPC connections (gRPCS)."`
 	UpgradeInsecure  bool     `yaml:"upgrade_insecure" usage:"True if http requests should be redirected to https"`
 	UseACME          bool     `yaml:"use_acme" usage:"Whether or not to automatically configure SSL certs using ACME. If ACME is enabled, cert_file and key_file should not be set."`
+	DefaultHost      string   `yaml:"default_host" usage:"Host name to use for ACME generated cert if TLS request does not contain SNI."`
 }
 
 type RemoteExecutionConfig struct {
