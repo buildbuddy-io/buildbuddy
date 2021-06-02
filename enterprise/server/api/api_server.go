@@ -270,7 +270,7 @@ func targetMapFromInvocation(inv *invocation.Invocation) map[string]*apipb.Targe
 				target := targetMap[event.GetBuildEvent().GetId().GetTestSummary().GetLabel()]
 				target.Status = testStatusToStatus(p.TestSummary.OverallStatus)
 				startTimeProto, _ := ptypes.TimestampProto(time.Unix(0, p.TestSummary.FirstStartTimeMillis*int64(time.Millisecond)))
-				duration, _ := time.ParseDuration(string(p.TestSummary.TotalRunDurationMillis) + "ms")
+				duration, _ := time.ParseDuration(fmt.Sprintf("%dms", p.TestSummary.TotalRunDurationMillis))
 				durationProto := ptypes.DurationProto(duration)
 				target.Timing = &cmnpb.Timing{
 					StartTime: startTimeProto,
