@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -489,29 +489,28 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	}
 	webhookData, err := parseRequest(r)
 	if err != nil {
-		log.Printf("error processing webhook request: %s", err)
-		return err
+		return status.WrapError(err, "parse webhook request")
 	}
 	if webhookData == nil {
 		return nil
 	}
 	wf, err := ws.readWorkflowForWebhook(ctx, webhookID)
 	if err != nil {
-		return err
+		return status.WrapError(err, "lookup workflow")
 	}
 
 	key, err := ws.apiKeyForWorkflow(ctx, wf)
 	if err != nil {
-		return err
+		return status.WrapError(err, "lookup API key")
 	}
 	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, ws.env); err != nil {
-		return err
+		return status.WrapError(err, "attach user prefix")
 	}
 	in := instanceName(webhookData)
 	ad, err := ws.createActionForWorkflow(ctx, wf, webhookData, key, in)
 	if err != nil {
-		return err
+		return status.WrapError(err, "create action for workflow")
 	}
 
 	executionID, err := ws.env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{
@@ -520,9 +519,9 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 		ActionDigest:    ad,
 	})
 	if err != nil {
-		return err
+		return status.WrapError(err, "dispatch workflow action")
 	}
-	log.Printf("Started workflow execution (ID: %q)", executionID)
+	log.Infof("Started workflow execution (ID: %q)", executionID)
 	return nil
 }
 
@@ -542,6 +541,7 @@ func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	webhookID := workflowMatch[1]
 	if err := ws.startWorkflow(webhookID, r); err != nil {
+		log.Warningf("Failed to start workflow: %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
