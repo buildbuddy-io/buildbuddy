@@ -178,67 +178,47 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                           <div className="metadata-detail">{this.state.actionResult.executionMetadata.executorId}</div>
                           <div className="metadata-title">Timeline</div>
                           <div className="metadata-detail">
-                            Queued @{" "}
-                            {format.formatTimestampSecondsNanos(
-                              this.state.actionResult.executionMetadata.queuedTimestamp.seconds,
-                              this.state.actionResult.executionMetadata.queuedTimestamp.nanos
-                            )}
+                            Queued @ {format.formatTimestamp(this.state.actionResult.executionMetadata.queuedTimestamp)}
                           </div>
                           <div className="metadata-detail">
                             Worker Started @{" "}
-                            {format.formatTimestampSecondsNanos(
-                              this.state.actionResult.executionMetadata.workerStartTimestamp.seconds,
-                              this.state.actionResult.executionMetadata.workerStartTimestamp.nanos
-                            )}
+                            {format.formatTimestamp(this.state.actionResult.executionMetadata.workerStartTimestamp)}
                           </div>
                           <div className="metadata-detail">
                             Input Fetching Started @{" "}
-                            {format.formatTimestampSecondsNanos(
-                              this.state.actionResult.executionMetadata.inputFetchStartTimestamp.seconds,
-                              this.state.actionResult.executionMetadata.inputFetchStartTimestamp.nanos
-                            )}
+                            {format.formatTimestamp(this.state.actionResult.executionMetadata.inputFetchStartTimestamp)}
                           </div>
                           <div className="metadata-detail">
                             Input Fetching Completed @{" "}
-                            {format.formatTimestampSecondsNanos(
-                              this.state.actionResult.executionMetadata.inputFetchCompletedTimestamp.seconds,
-                              this.state.actionResult.executionMetadata.inputFetchCompletedTimestamp.nanos
+                            {format.formatTimestamp(
+                              this.state.actionResult.executionMetadata.inputFetchCompletedTimestamp
                             )}
                           </div>
                           <div className="metadata-detail">
                             Execution Started @{" "}
-                            {format.formatTimestampSecondsNanos(
-                              this.state.actionResult.executionMetadata.executionStartTimestamp.seconds,
-                              this.state.actionResult.executionMetadata.executionStartTimestamp.nanos
-                            )}
+                            {format.formatTimestamp(this.state.actionResult.executionMetadata.executionStartTimestamp)}
                           </div>
                           <div className="metadata-detail">
                             Execution Completed @{" "}
-                            {format.formatTimestampSecondsNanos(
-                              this.state.actionResult.executionMetadata.executionCompletedTimestamp.seconds,
-                              this.state.actionResult.executionMetadata.executionCompletedTimestamp.nanos
+                            {format.formatTimestamp(
+                              this.state.actionResult.executionMetadata.executionCompletedTimestamp
                             )}
                           </div>
                           <div className="metadata-detail">
                             Output Upload Started @{" "}
-                            {format.formatTimestampSecondsNanos(
-                              this.state.actionResult.executionMetadata.outputUploadStartTimestamp.seconds,
-                              this.state.actionResult.executionMetadata.outputUploadStartTimestamp.nanos
+                            {format.formatTimestamp(
+                              this.state.actionResult.executionMetadata.outputUploadStartTimestamp
                             )}
                           </div>
                           <div className="metadata-detail">
                             Output Upload Completed @{" "}
-                            {format.formatTimestampSecondsNanos(
-                              this.state.actionResult.executionMetadata.outputUploadCompletedTimestamp.seconds,
-                              this.state.actionResult.executionMetadata.outputUploadCompletedTimestamp.nanos
+                            {format.formatTimestamp(
+                              this.state.actionResult.executionMetadata.outputUploadCompletedTimestamp
                             )}
                           </div>
                           <div className="metadata-info">
                             Worker Completed @{" "}
-                            {format.formatTimestampSecondsNanos(
-                              this.state.actionResult.executionMetadata.workerCompletedTimestamp.seconds,
-                              this.state.actionResult.executionMetadata.workerCompletedTimestamp.nanos
-                            )}
+                            {format.formatTimestamp(this.state.actionResult.executionMetadata.workerCompletedTimestamp)}
                           </div>
                         </div>
                       ) : (
@@ -251,7 +231,6 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                         <div className="action-list">
                           {this.state.actionResult.outputFiles.map((file) => (
                             <div>
-                              <span className="prop-name">PATH=</span>
                               <span className="prop-value">{file.path}</span>
                               {file.isExecutable && <span className="detail"> (executable)</span>}
                             </div>

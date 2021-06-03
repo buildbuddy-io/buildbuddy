@@ -102,10 +102,10 @@ export function formatTimestampMillis(timestamp: number | Long) {
   return `${moment(+timestamp).format("MMMM Do, YYYY")} at ${moment(+timestamp).format("h:mm:ss a")}`;
 }
 
-export function formatTimestampSecondsNanos(seconds: number | Long, nanos: number | Long) {
-  return `${moment(+seconds * 1000).format("MMMM Do, YYYY")} at ${moment(+seconds * 1000).format(
-    "h:mm:ss"
-  )}:${nanos.toString().substring(0, 2)}`;
+export function formatTimestamp(timestamp: { seconds?: number | Long; nanos?: number | Long }) {
+  return `${formatTimestampMillis(+timestamp.seconds * 1000)}:${timestamp.nanos
+    .toString()
+    .substring(0, 2)}:${timestamp.nanos.toString().substring(0, 4)}`;
 }
 
 export function formatGitUrl(url: string) {
@@ -137,7 +137,7 @@ export default {
   truncateList,
   formatTimestampUsec,
   formatTimestampMillis,
-  formatTimestampSecondsNanos,
+  formatTimestamp,
   formatGitUrl,
   formatCommitHash,
   formatWithCommas,
