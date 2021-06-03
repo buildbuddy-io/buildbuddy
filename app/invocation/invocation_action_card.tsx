@@ -1,4 +1,3 @@
-import pako from "pako";
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
@@ -22,11 +21,11 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   state: State = {};
   componentDidMount() {
     this.fetchAction();
+    this.fetchActionResult();
   }
 
   fetchAction() {
-    // TODO: Replace localhost:1987 with the remote cache address and prefix the path with the instance name
-    let actionFile = "bytestream://localhost:1987/blobs/" + this.props.search.get("actionDigest");
+    let actionFile = "bytestream://" + this.getCacheAddress() + "/blobs/" + this.props.search.get("actionDigest");
     rpcService
       .fetchBytestreamFile(actionFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {
@@ -48,7 +47,8 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   }
 
   fetchActionResult() {
-    let actionResultFile = "actioncache://localhost:1987/blobs/ac/" + this.props.search.get("actionDigest");
+    let actionResultFile =
+      "actioncache://" + this.getCacheAddress() + "/blobs/ac/" + this.props.search.get("actionDigest");
     rpcService
       .fetchBytestreamFile(actionResultFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {
@@ -68,9 +68,13 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   }
 
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
-    // TODO: Replace localhost:1987 with the remote cache address and prefix the path with the instance name
     let commandFile =
-      "bytestream://localhost:1987/blobs/" + action.commandDigest.hash + "/" + action.commandDigest.sizeBytes;
+      "bytestream://" +
+      this.getCacheAddress() +
+      "/blobs/" +
+      action.commandDigest.hash +
+      "/" +
+      action.commandDigest.sizeBytes;
     rpcService
       .fetchBytestreamFile(commandFile, this.props.model.getId(), "arraybuffer")
       .then((action_buff: any) => {
@@ -98,6 +102,19 @@ export default class ActionCardComponent extends React.Component<Props, State> {
         ))}
       </div>
     );
+  }
+
+  getCacheAddress() {
+    let address = this.props.model.optionsMap.get("remote_executor").replace("grpc://", "");
+    address = address.replace("grpcs://", "");
+    if (this.props.model.optionsMap.get("remote_cache")) {
+      address = this.props.model.optionsMap.get("remote_cache").replace("grpc://", "");
+      address = address.replace("grpcs://", "");
+    }
+    if (this.props.model.optionsMap.get("remote_instance_name")) {
+      address = address + "/" + this.props.model.optionsMap.get("remote_instance_name");
+    }
+    return address;
   }
 
   render() {
