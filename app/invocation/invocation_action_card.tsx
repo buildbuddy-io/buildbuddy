@@ -246,7 +246,6 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                         <div className="action-list">
                           {this.state.actionResult.outputDirectories.map((dir) => (
                             <div>
-                              <span className="prop-name">PATH=</span>
                               <span className="prop-value">{dir.path}</span>
                             </div>
                           ))}
