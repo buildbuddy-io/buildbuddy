@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "execution_service",
+    srcs = ["execution_service.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto:execution_stats_go_proto",
+        "//proto:remote_execution_go_proto",
+        "//server/environment",
+        "//server/remote_cache/digest",
+        "//server/tables",
+        "//server/util/perms",
+        "//server/util/query_builder",
+        "//server/util/status",
+        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
+        "@go_googleapis//google/rpc:status_go_proto",
+        "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
+    ],
+)
