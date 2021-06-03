@@ -58,13 +58,19 @@ func (c *Chunkstore) ReadBlob(ctx context.Context, blobName string) ([]byte, err
 	return data, nil
 }
 
-func (c *Chunkstore) WriteBlob(ctx context.Context, blobName string, data []byte) error {
+func (c *Chunkstore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
 	c.DeleteBlob(ctx, blobName)
 	w := c.Writer(ctx, blobName)
-	if _, err := w.Write(data); err != nil {
-		return err
+	bytesWritten, err := w.Write(data)
+	if err != nil {
+		return bytesWritten, err
 	}
-	return w.Close()
+	bytesFlushed, err := w.Flush()
+	if err != nil {
+		return bytesWritten + bytesFlushed, err
+	}
+
+	return bytesWritten + bytesFlushed, w.Close()
 }
 
 func (c *Chunkstore) DeleteBlob(ctx context.Context, blobName string) error {
