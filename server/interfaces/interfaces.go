@@ -244,6 +244,7 @@ type SchedulerService interface {
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
+	GetGroupIDAndDefaultPoolForUser(ctx context.Context) (string, string, error)
 }
 
 type ExecutionService interface {
