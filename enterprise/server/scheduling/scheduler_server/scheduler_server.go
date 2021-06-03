@@ -500,6 +500,25 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 	return s, nil
 }
 
+func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context) (string, string, error) {
+	defaultPool := s.env.GetConfigurator().GetRemoteExecutionConfig().DefaultPoolName
+	if !s.enableUserOwnedExecutors {
+		return "", defaultPool, nil
+	}
+
+	user, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		if s.env.GetConfigurator().GetAnonymousUsageEnabled() {
+			return s.env.GetConfigurator().GetRemoteExecutionConfig().SharedExecutorPoolGroupID, defaultPool, nil
+		}
+		return "", "", err
+	}
+	if user.GetUseGroupOwnedExecutors() {
+		return user.GetGroupID(), "", nil
+	}
+	return s.env.GetConfigurator().GetRemoteExecutionConfig().SharedExecutorPoolGroupID, defaultPool, nil
+}
+
 func (s *SchedulerServer) checkPreconditions(node *scpb.ExecutionNode) error {
 	if node.GetHost() == "" || node.GetPort() == 0 {
 		return status.FailedPreconditionErrorf("Cannot register node with empty host/port: %s:%d", node.GetHost(), node.GetPort())
