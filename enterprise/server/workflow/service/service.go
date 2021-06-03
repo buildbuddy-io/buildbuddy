@@ -489,28 +489,28 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	}
 	webhookData, err := parseRequest(r)
 	if err != nil {
-		return status.WrapError(err, "parse webhook request")
+		return err
 	}
 	if webhookData == nil {
 		return nil
 	}
 	wf, err := ws.readWorkflowForWebhook(ctx, webhookID)
 	if err != nil {
-		return status.WrapError(err, "lookup workflow")
+		return err
 	}
 
 	key, err := ws.apiKeyForWorkflow(ctx, wf)
 	if err != nil {
-		return status.WrapError(err, "lookup API key")
+		return err
 	}
 	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, ws.env); err != nil {
-		return status.WrapError(err, "attach user prefix")
+		return err
 	}
 	in := instanceName(webhookData)
 	ad, err := ws.createActionForWorkflow(ctx, wf, webhookData, key, in)
 	if err != nil {
-		return status.WrapError(err, "create action for workflow")
+		return err
 	}
 
 	executionID, err := ws.env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{
@@ -519,7 +519,7 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 		ActionDigest:    ad,
 	})
 	if err != nil {
-		return status.WrapError(err, "dispatch workflow action")
+		return err
 	}
 	log.Infof("Started workflow execution (ID: %q)", executionID)
 	return nil
@@ -541,7 +541,7 @@ func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	webhookID := workflowMatch[1]
 	if err := ws.startWorkflow(webhookID, r); err != nil {
-		log.Warningf("Failed to start workflow: %s", err)
+		log.Errorf("Failed to start workflow: %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
