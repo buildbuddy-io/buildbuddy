@@ -1,0 +1,15 @@
+--- enterprise/server/remote_execution/containers/docker/docker.go
++++ enterprise/server/remote_execution/containers/docker/docker.go
+@@ -399,6 +399,12 @@ func (r *dockerCommandContainer) Stats(ctx context.Context) (*container.Stats, e
+ // See https://docs.docker.com/engine/api/v1.41/#operation/ContainerStats
+ type statsResponse struct {
+        MemoryStats struct {
++               MaxUsage int64 `json:"max_usage"`
+                Usage int64 `json:"usage"`
+        } `json:"memory_stats"`
++       CPUStats struct {
++               CPUUsage struct {
++                       TotalUsage int64 `json:"total_usage"`
++               } `json:"cpu_usage"`
++       } `json:"cpu_stats"`
+ }
