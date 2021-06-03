@@ -407,35 +407,38 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 // TryRecycle either adds r back to the pool if appropriate, or removes it,
 // freeing up any resources it holds.
 func (p *Pool) TryRecycle(r *CommandRunner, finishedCleanly bool) {
-	if r.doNotReuse {
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), runnerRecycleTimeout)
 	defer cancel()
 
-	if r.PlatformProperties.RecycleRunner && finishedCleanly {
-		// Clean the workspace once before adding it to the pool.
-		if err := r.Workspace.Clean(); err != nil {
-			log.Errorf("Failed to clean workspace: %s", err)
+	recycled := false
+	defer func() {
+		if !recycled {
 			r.RemoveInBackground()
-			return
 		}
-		// This call happens after we send the final stream event back to the
-		// client, so background context is appropriate.
-		if err := p.Add(ctx, r); err != nil {
-			if status.IsResourceExhaustedError(err) {
-				log.Debugf("Runner exceeded resource limits: %s", err)
-			} else {
-				// If not a resource limit exceeded error, probably it was an error
-				// removing the directory contents or a docker daemon error.
-				log.Errorf("Failed to recycle runner: %s", err)
-			}
-		} else {
-			return
-		}
+	}()
+
+	if !r.PlatformProperties.RecycleRunner || !finishedCleanly || r.doNotReuse {
+		return
 	}
-	r.RemoveInBackground()
+	// Clean the workspace once before adding it to the pool.
+	if err := r.Workspace.Clean(); err != nil {
+		log.Errorf("Failed to clean workspace: %s", err)
+		return
+	}
+	// This call happens after we send the final stream event back to the
+	// client, so background context is appropriate.
+	if err := p.Add(ctx, r); err != nil {
+		if status.IsResourceExhaustedError(err) {
+			log.Debugf("Runner exceeded resource limits: %s", err)
+		} else {
+			// If not a resource limit exceeded error, probably it was an error
+			// removing the directory contents or a docker daemon error.
+			log.Errorf("Failed to recycle runner: %s", err)
+		}
+		return
+	}
+
+	recycled = true
 }
 
 func (p *Pool) setLimits(cfg *config.RunnerPoolConfig) {
