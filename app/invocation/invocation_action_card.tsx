@@ -128,11 +128,25 @@ export default class ActionCardComponent extends React.Component<Props, State> {
               {this.state.action && (
                 <div>
                   <div className="action-section">
-                    <div className="action-property-title">Hash/Size: </div>
+                    <div className="action-property-title">Hash/Size</div>
                     <div>{this.props.search.get("actionDigest")} bytes</div>
                   </div>
                   <div className="action-section">
-                    <div className="action-property-title">Output Node Properties: </div>
+                    <div className="action-property-title">Cacheable</div>
+                    <div>{!this.state.action.doNotCache ? "True" : "False"}</div>
+                  </div>
+                  <div className="action-section">
+                    <div className="action-property-title">Input Root Hash/Size</div>
+                    <span>
+                      {this.state.action.inputRootDigest.hash}/{this.state.action.inputRootDigest.sizeBytes} bytes
+                    </span>
+                  </div>
+                  <div className="action-section">
+                    <div
+                      title="List of required supported NodeProperty [build.bazel.remote.execution.v2.NodeProperty] keys."
+                      className="action-property-title">
+                      Output Node Properties
+                    </div>
                     {this.state.action.outputNodeProperties.length ? (
                       <div>
                         {this.state.action.outputNodeProperties.map((outputNodeProperty) => (
@@ -140,18 +154,8 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                         ))}
                       </div>
                     ) : (
-                      <div>None found.</div>
+                      <div>Default.</div>
                     )}
-                  </div>
-                  <div className="action-section">
-                    <div className="action-property-title">Do Not Cache: </div>
-                    <div>{this.state.action.doNotCache ? "True" : "False"}</div>
-                  </div>
-                  <div className="action-section">
-                    <div className="action-property-title">Input Root Hash/Size:</div>
-                    <span>
-                      {this.state.action.inputRootDigest.hash}/{this.state.action.inputRootDigest.sizeBytes} bytes
-                    </span>
                   </div>
                 </div>
               )}
@@ -160,11 +164,11 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                 {this.state.command && (
                   <div>
                     <div className="action-section">
-                      <div className="action-property-title">Arguments:</div>
+                      <div className="action-property-title">Arguments</div>
                       {this.displayList(this.state.command.arguments)}
                     </div>
                     <div className="action-section">
-                      <div className="action-property-title">Environment Variables:</div>
+                      <div className="action-property-title">Environment Variables</div>
                       <div className="action-list">
                         {this.state.command.environmentVariables.map((variable) => (
                           <div>
@@ -182,11 +186,11 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                 {this.state.actionResult && (
                   <div>
                     <div className="action-section">
-                      <div className="action-property-title">Exit Code: </div>
+                      <div className="action-property-title">Exit Code</div>
                       <div>{this.state.actionResult.exitCode}</div>
                     </div>
                     <div className="action-section">
-                      <div className="action-property-title">Execution Metadata:</div>
+                      <div className="action-property-title">Execution Metadata</div>
                       {this.state.actionResult.executionMetadata ? (
                         <div className="action-list">
                           <div className="metadata-title">Worker</div>
@@ -243,7 +247,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                       )}
                     </div>
                     <div className="action-section">
-                      <div className="action-property-title">Output Files:</div>
+                      <div className="action-property-title">Output Files</div>
                       {this.state.actionResult.outputFiles ? (
                         <div className="action-list">
                           {this.state.actionResult.outputFiles.map((file) => (
@@ -258,7 +262,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                       )}
                     </div>
                     <div className="action-section">
-                      <div className="action-property-title">Output Directories:</div>
+                      <div className="action-property-title">Output Directories</div>
                       {this.state.actionResult.outputDirectories.length ? (
                         <div className="action-list">
                           {this.state.actionResult.outputDirectories.map((dir) => (
@@ -268,7 +272,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                           ))}
                         </div>
                       ) : (
-                        <div>None found.</div>
+                        <div>None.</div>
                       )}
                     </div>
                   </div>
