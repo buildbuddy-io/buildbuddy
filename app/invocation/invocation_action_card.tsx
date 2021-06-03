@@ -129,7 +129,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                 <div>
                   <div className="action-section">
                     <div className="action-property-title">Hash/Size: </div>
-                    <div>{this.props.search.get("actionDigest")}</div>
+                    <div>{this.props.search.get("actionDigest")} bytes</div>
                   </div>
                   <div className="action-section">
                     <div className="action-property-title">Output Node Properties: </div>
@@ -144,65 +144,136 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                     )}
                   </div>
                   <div className="action-section">
-                    <div className="action-property-title" onClick={this.fetchActionResult.bind(this)}>
-                      Do Not Cache:{" "}
-                    </div>
+                    <div className="action-property-title">Do Not Cache: </div>
                     <div>{this.state.action.doNotCache ? "True" : "False"}</div>
                   </div>
+                  <div className="action-section">
+                    <div className="action-property-title">Input Root Hash/Size:</div>
+                    <span>
+                      {this.state.action.inputRootDigest.hash}/{this.state.action.inputRootDigest.sizeBytes} bytes
+                    </span>
+                  </div>
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-        <div className="card">
-          <img className="icon" src="/image/info.svg" />
-          <div className="content">
-            <div className="title">Command details</div>
-            <div className="details">
-              {this.state.command && (
-                <div>
-                  <div className="action-section">
-                    <div className="action-property-title">Arguments:</div>
-                    {this.displayList(this.state.command.arguments)}
-                  </div>
-                  <div className="action-section">
-                    <div className="action-property-title">Environment Variables:</div>
-                    <div className="action-list">
-                      {this.state.command.environmentVariables.map((variable) => (
-                        <div>
-                          <span className="env-name">{variable.name}</span>
-                          <span className="env-value">={variable.value}</span>
-                        </div>
-                      ))}
+              <div className="action-line">
+                <div className="action-title">Command details</div>
+                {this.state.command && (
+                  <div>
+                    <div className="action-section">
+                      <div className="action-property-title">Arguments:</div>
+                      {this.displayList(this.state.command.arguments)}
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Environment Variables:</div>
+                      <div className="action-list">
+                        {this.state.command.environmentVariables.map((variable) => (
+                          <div>
+                            <span className="prop-name">{variable.name}</span>
+                            <span className="prop-value">={variable.value}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  <div className="action-section">
-                    <div className="action-property-title">Output Directories:</div>
-                    {this.displayList(this.state.command.outputDirectories)}
-                  </div>
-                  <div className="action-section">
-                    <div className="action-property-title">Output Files:</div>
-                    {this.displayList(this.state.command.outputFiles)}
-                  </div>
-                  <div></div>
-                </div>
-              )}
-              {this.state.actionResult && (
-                <div>
-                  <pre>
-                    <code>{JSON.stringify(this.state.actionResult, null, 2)}</code>
-                  </pre>
+                )}
+              </div>
+              <div className="action-line">
+                <div className="action-title">Result details</div>
+                {this.state.actionResult && (
                   <div>
-                    {this.state.actionResult.outputDirectories.map((dir) => (
-                      <div>
-                        <div>{dir.path}</div>
-                        <div>{dir.treeDigest.hash}</div>
-                        <div>{dir.treeDigest.hash}</div>
-                      </div>
-                    ))}
+                    <div className="action-section">
+                      <div className="action-property-title">Exit Code: </div>
+                      <div>{this.state.actionResult.exitCode}</div>
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Execution Metadata:</div>
+                      {this.state.actionResult.executionMetadata ? (
+                        <div className="action-list">
+                          <div className="metadata-title">Worker</div>
+                          <div className="metadata-detail">{this.state.actionResult.executionMetadata.worker} </div>
+                          <div className="metadata-title">Executor ID</div>
+                          <div className="metadata-detail">{this.state.actionResult.executionMetadata.executorId}</div>
+                          <div className="metadata-title">Timeline</div>
+                          <div className="metadata-detail">
+                            Queued @ {format.formatTimestamp(this.state.actionResult.executionMetadata.queuedTimestamp)}
+                          </div>
+                          <div className="metadata-detail">
+                            Worker Started @{" "}
+                            {format.formatTimestamp(this.state.actionResult.executionMetadata.workerStartTimestamp)}
+                          </div>
+                          <div className="metadata-detail">
+                            Input Fetching Started @{" "}
+                            {format.formatTimestamp(this.state.actionResult.executionMetadata.inputFetchStartTimestamp)}
+                          </div>
+                          <div className="metadata-detail">
+                            Input Fetching Completed @{" "}
+                            {format.formatTimestamp(
+                              this.state.actionResult.executionMetadata.inputFetchCompletedTimestamp
+                            )}
+                          </div>
+                          <div className="metadata-detail">
+                            Execution Started @{" "}
+                            {format.formatTimestamp(this.state.actionResult.executionMetadata.executionStartTimestamp)}
+                          </div>
+                          <div className="metadata-detail">
+                            Execution Completed @{" "}
+                            {format.formatTimestamp(
+                              this.state.actionResult.executionMetadata.executionCompletedTimestamp
+                            )}
+                          </div>
+                          <div className="metadata-detail">
+                            Output Upload Started @{" "}
+                            {format.formatTimestamp(
+                              this.state.actionResult.executionMetadata.outputUploadStartTimestamp
+                            )}
+                          </div>
+                          <div className="metadata-detail">
+                            Output Upload Completed @{" "}
+                            {format.formatTimestamp(
+                              this.state.actionResult.executionMetadata.outputUploadCompletedTimestamp
+                            )}
+                          </div>
+                          <div className="metadata-info">
+                            Worker Completed @{" "}
+                            {format.formatTimestamp(this.state.actionResult.executionMetadata.workerCompletedTimestamp)}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>None found.</div>
+                      )}
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Output Files:</div>
+                      {this.state.actionResult.outputFiles ? (
+                        <div className="action-list">
+                          {this.state.actionResult.outputFiles.map((file) => (
+                            <div>
+                              <span className="prop-value">{file.path}</span>
+                              {file.isExecutable && <span className="detail"> (executable)</span>}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div>None found.</div>
+                      )}
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Output Directories:</div>
+                      {this.state.actionResult.outputDirectories.length ? (
+                        <div className="action-list">
+                          {this.state.actionResult.outputDirectories.map((dir) => (
+                            <div>
+                              <span className="prop-value">{dir.path}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div>None found.</div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
