@@ -142,8 +142,7 @@ func (r *BuildStatusReporter) appendStatusNameSuffix(p *github.GithubStatusPaylo
 		return p
 	}
 	name := fmt.Sprintf("%s %s", p.Context, r.statusNameSuffix)
-	p = github.NewGithubStatusPayload(name, p.TargetURL, p.Description, p.State)
-	return p
+	return github.NewGithubStatusPayload(name, p.TargetURL, p.Description, p.State)
 }
 
 func (r *BuildStatusReporter) githubPayloadFromWorkspaceStatusEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
