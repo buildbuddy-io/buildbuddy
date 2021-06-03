@@ -137,13 +137,13 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 	r.payloads = make([]*github.GithubStatusPayload, 0)
 }
 
-func (r *BuildStatusReporter) appendStatusNameSuffix(payload *github.GithubStatusPayload) *github.GithubStatusPayload {
+func (r *BuildStatusReporter) appendStatusNameSuffix(p *github.GithubStatusPayload) *github.GithubStatusPayload {
 	if r.statusNameSuffix == "" {
-		return payload
+		return p
 	}
-	clone := *payload
-	clone.Context = fmt.Sprintf("%s %s", clone.Context, r.statusNameSuffix)
-	return &clone
+	name := fmt.Sprintf("%s %s", p.Context, r.statusNameSuffix)
+	p = github.NewGithubStatusPayload(name, p.TargetURL, p.Description, p.State)
+	return p
 }
 
 func (r *BuildStatusReporter) githubPayloadFromWorkspaceStatusEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
