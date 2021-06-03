@@ -126,8 +126,10 @@ func TestWriteBlob(t *testing.T) {
 	test_map := make(map[string][]byte)
 	test_map["foo_0000"] = []byte{}
 
-	if err := c.WriteBlob(mtx, "foo", []byte{}); err != nil {
+	if bytesWritten, err := c.WriteBlob(mtx, "foo", []byte{}); err != nil {
 		t.Fatalf("Encountered error writing empty file: %v", err)
+	} else if bytesWritten != 0 {
+		t.Fatalf("WriteBlob wrote wrong number of bytes for empty file: %d should be 0", bytesWritten)
 	}
 
 	if !cmp.Equal(m.BlobMap, test_map) {
@@ -137,8 +139,10 @@ func TestWriteBlob(t *testing.T) {
 	test_string := []byte("asdfjkl;")
 	test_map["bar_0000"] = test_string
 
-	if err := c.WriteBlob(mtx, "bar", test_string); err != nil {
+	if bytesWritten, err := c.WriteBlob(mtx, "bar", test_string); err != nil {
 		t.Fatalf("Encountered error writing single-chunk file: %v", err)
+	} else if bytesWritten != len(test_string) {
+		t.Fatalf("WriteBlob wrote wrong number of bytes for single-chunk file: %d should be %d", bytesWritten, len(test_string))
 	}
 
 	if !cmp.Equal(m.BlobMap, test_map) {
@@ -167,8 +171,10 @@ func TestWriteBlob(t *testing.T) {
 	test_map["foobar_0012"] = test_string[90:]
 
 	c = New(m, &ChunkstoreOptions{WriteBlockSize: 5})
-	if err := c.WriteBlob(mtx, "foobar", test_string); err != nil {
+	if bytesWritten, err := c.WriteBlob(mtx, "foobar", test_string); err != nil {
 		t.Fatalf("Encountered error writing multi-chunk file: %v", err)
+	} else if bytesWritten != len(test_string) {
+		t.Fatalf("WriteBlob wrote wrong number of bytes for multi-chunk file: %d should be %d", bytesWritten, len(test_string))
 	}
 
 	if !cmp.Equal(m.BlobMap, test_map) {
@@ -198,8 +204,10 @@ func TestWriteBlob(t *testing.T) {
 	delete(test_map, "foobar_0012")
 
 	c = New(m, &ChunkstoreOptions{WriteBlockSize: 6})
-	if err := c.WriteBlob(mtx, "foobar", test_string); err != nil {
+	if bytesWritten, err := c.WriteBlob(mtx, "foobar", test_string); err != nil {
 		t.Fatalf("Encountered error overwriting multi-chunk file: %v", err)
+	} else if bytesWritten != len(test_string) {
+		t.Fatalf("WriteBlob wrote wrong number of bytes for overwriting multi-chunk file: %d should be %d", bytesWritten, len(test_string))
 	}
 
 	if !cmp.Equal(m.BlobMap, test_map) {
