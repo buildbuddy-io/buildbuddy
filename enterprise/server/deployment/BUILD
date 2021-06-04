@@ -9,7 +9,8 @@ container_push(
     # --define version=1.2.3 as arguments to the bazel build command.
     registry = "gcr.io",
     repository = "flame-public/buildbuddy-ci-runner",
-    tag = "$(version)",
+    # tag = "$(version)",
+    tag = "debug",
     tags = ["manual"],  # Don't include this target in wildcard patterns
     visibility = [
         "//enterprise:__subpackages__",
