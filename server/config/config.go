@@ -167,8 +167,8 @@ type RemoteExecutionConfig struct {
 	SharedExecutorPoolGroupID    string `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
 	RedisPubSubPoolSize          int    `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
 	EnableRemoteExec             bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
-	DisableRedisListPubSub       bool   `yaml:"disable_redis_list_pubsub" usage:"If true, revert to native redis PubSub."`
-	DisableRedisNativePubSub     bool   `yaml:"disable_redis_native_pubsub" usage:"If true, disable use of native redis PubSub in favor of list-based PubSub."`
+	DisableRedisListPubSub       bool   `yaml:"disable_redis_list_pubsub" usage:"If true, disable use of list Redis PubSub for status updates."`
+	DisableRedisStreamPubSub     bool   `yaml:"disable_redis_stream_pubsub" usage:"If true, disable use of stream redis PubSub for status updates."`
 	RequireExecutorAuthorization bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
 	EnableNonLocalScheduling     bool   `yaml:"enable_non_local_scheduling" usage:"If true, schedulers can make RPCs to other schedulers to enqueue task reservations instead of always talking directly to executors."`
 	EnableUserOwnedExecutors     bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
