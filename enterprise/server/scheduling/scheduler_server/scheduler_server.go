@@ -298,6 +298,20 @@ func (np *nodePool) RemoveConnectedExecutor(handle executor_handle.ExecutorHandl
 	return false
 }
 
+func (np *nodePool) FindConnectedExecutorByID(executorID string) *executionNode {
+	if executorID == "" {
+		return nil
+	}
+	np.mu.Lock()
+	defer np.mu.Unlock()
+	for _, node := range np.connectedExecutors {
+		if node.GetExecutorID() == executorID {
+			return node
+		}
+	}
+	return nil
+}
+
 // unclaimedTasksList maintains a subset of unclaimed task IDs that can be given out to newly registered executors.
 // Only the most recent maxUnclaimedTasksTracked task IDs are kept.
 type unclaimedTasksList struct {
@@ -1144,6 +1158,10 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			enqueueRequest.GetTaskId(), time.Now().Sub(startTime), strings.Join(successfulReservations, ", "))
 	}()
 
+	// Note: preferredNode may be nil if the executor ID isn't specified or if
+	// the executor is no longer connected.
+	preferredNode := nodeBalancer.FindConnectedExecutorByID(enqueueRequest.GetExecutorId())
+
 	attempts := 0
 	var nodes []*executionNode
 	sampleIndex := 0
@@ -1162,18 +1180,28 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			log.Warningf("Attempted to send probe %d times for task %q with pool key %+v. This should not happen.", attempts, enqueueRequest.GetTaskId(), key)
 		}
 		if sampleIndex == 0 {
-			sampleConnectedExecutors := opts.alwaysScheduleLocally
-			newNodes, err := nodeBalancer.SampleNodes(ctx, probeCount, sampleConnectedExecutors)
-			if err != nil {
-				return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
+			if preferredNode != nil {
+				nodes = []*executionNode{preferredNode}
+				// Unset the preferred node so that we fall back to random sampling
+				// (in subsequent loop iterations) if the preferred node probe fails.
+				preferredNode = nil
+			} else {
+				sampleConnectedExecutors := opts.alwaysScheduleLocally
+				newNodes, err := nodeBalancer.SampleNodes(ctx, probeCount, sampleConnectedExecutors)
+				if err != nil {
+					return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
+				}
+				nodes = newNodes
 			}
-			nodes = newNodes
 		}
 		if sampleIndex >= len(nodes) {
 			return status.FailedPreconditionErrorf("sampleIndex %d >= %d", sampleIndex, len(nodes))
 		}
 		node := nodes[sampleIndex]
 		sampleIndex = (sampleIndex + 1) % len(nodes)
+		// Set the executor ID in case the node is owned by another scheduler, so
+		// that the scheduler can prefer this node for the probe.
+		enqueueRequest.ExecutorId = node.GetExecutorID()
 
 		scheduleLocally := opts.alwaysScheduleLocally
 		if !scheduleLocally && node.GetSchedulerURI() == "" {
