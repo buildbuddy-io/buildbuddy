@@ -60,7 +60,7 @@ const (
 	defaultRunnerDiskSizeLimitBytes = 16e9
 	// Memory usage estimate multiplier for pooled runners, relative to the
 	// default memory estimate for execution tasks.
-	runnerMemUsageEstimateMultiplierBytes = 6.5
+	runnerMemUsageEstimateMultiplierBytes = 10
 	// The maximum fraction of allocated RAM that can be allocated to pooled
 	// runners.
 	runnerAllocatedRAMFractionBytes = 0.8
@@ -263,6 +263,7 @@ func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
 		return status.WrapError(err, "failed to compute container stats")
 	}
 	if stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
+		log.Debugf("Not recycling runner: mem usage %.2f GB exceeds limit of %.2f GB", float64(stats.MemoryUsageBytes)/1e9, float64(p.maxRunnerMemoryUsageBytes)/1e9)
 		return RunnerMaxMemoryExceeded
 	}
 	du, err := r.Workspace.DiskUsageBytes()
@@ -270,6 +271,7 @@ func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
 		return status.WrapError(err, "failed to compute runner disk usage")
 	}
 	if du > p.maxRunnerDiskUsageBytes {
+		log.Debugf("Not recycling runner: disk size %.2f GB exceeds limit of %.2f GB", float64(r.diskUsageBytes)/1e9, float64(p.maxRunnerDiskUsageBytes)/1e9)
 		return RunnerMaxDiskSizeExceeded
 	}
 
@@ -476,6 +478,12 @@ func (p *Pool) setLimits(cfg *config.RunnerPoolConfig) {
 	p.maxRunnerCount = count
 	p.maxRunnerMemoryUsageBytes = mem
 	p.maxRunnerDiskUsageBytes = disk
+	log.Infof(
+		"Runner pool limits: max runners = %d, max memory per runner = %.2f GB, "+
+			"max disk per runner = %.2f GB",
+		p.maxRunnerCount, float64(p.maxRunnerMemoryUsageBytes)/1e9,
+		float64(p.maxRunnerDiskUsageBytes)/1e9,
+	)
 }
 
 type errSlice []error
