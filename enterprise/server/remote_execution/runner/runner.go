@@ -60,7 +60,7 @@ const (
 	defaultRunnerDiskSizeLimitBytes = 16e9
 	// Memory usage estimate multiplier for pooled runners, relative to the
 	// default memory estimate for execution tasks.
-	runnerMemUsageEstimateMultiplierBytes = 6.5
+	runnerMemUsageEstimateMultiplierBytes = 10
 	// The maximum fraction of allocated RAM that can be allocated to pooled
 	// runners.
 	runnerAllocatedRAMFractionBytes = 0.8
