@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -106,6 +107,7 @@ func main() {
 	if err := os.Chdir(repoDirName); err != nil {
 		fatal(status.WrapErrorf(err, "cd %q", repoDirName))
 	}
+	sh(&setupLogs, `ls -la`)
 	cfg, err := readConfig()
 	if err != nil {
 		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
@@ -404,7 +406,28 @@ type actionRunner struct {
 	progressCount int32
 }
 
+var setupLogs bytes.Buffer
+
+func setupLog(f string, args ...interface{}) {
+	setupLogs.Write([]byte(fmt.Sprintf("[setup] "+f+"\n", args...)))
+}
+func sh(out io.Writer, script string) {
+	out.Write([]byte(string("=== DEBUG ===\n")))
+	cmd := exec.Command("sh", "-c", script)
+	cmd.Stdout = out
+	cmd.Stderr = out
+	if err := cmd.Run(); err != nil {
+		out.Write([]byte(fmt.Sprintf(">>> Command %q failed: %s", script, err)))
+		return
+	}
+	out.Write([]byte("===\n"))
+}
+
 func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
+	b, _ := io.ReadAll(&setupLogs)
+	ar.log.Printf(string(b))
+	setupLogs.Reset()
+
 	ar.log.Printf("Running action: %s", ar.action.Name)
 
 	// Only print this to the local logs -- it's mostly useful for development purposes.
@@ -653,6 +676,7 @@ func setupGitRepo(ctx context.Context) error {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
 	}
 	if repoDirInfo != nil {
+		setupLog("Syncing existing repo")
 		err := syncExistingRepo(ctx, repoDirName)
 		if err == nil {
 			return nil
@@ -665,6 +689,7 @@ func setupGitRepo(ctx context.Context) error {
 				"Deleting and initializing from scratch. Error: %s",
 			err,
 		)
+		setupLog("Failed to sync existing repo")
 		if err := os.RemoveAll(repoDirName); err != nil {
 			return status.WrapErrorf(err, "rm -r %q", repoDirName)
 		}
@@ -674,6 +699,7 @@ func setupGitRepo(ctx context.Context) error {
 		return status.WrapErrorf(err, "mkdir %q", repoDirName)
 	}
 
+	setupLog("Setting up new git repo")
 	return setupNewGitRepo(ctx, repoDirName)
 }
 
