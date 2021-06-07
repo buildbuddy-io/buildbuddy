@@ -105,7 +105,9 @@ export function formatTimestampMillis(timestamp: number | Long) {
 export function formatTimestamp(timestamp: { seconds?: number | Long; nanos?: number | Long }) {
   return `${moment(+timestamp.seconds * 1000).format("MMMM Do, YYYY")} at ${moment(+timestamp.seconds * 1000).format(
     "h:mm:ss"
-  )}:${Math.floor(+timestamp.nanos / 10000000)} ${moment(+timestamp.seconds * 1000).format("A")}`;
+  )}:${Math.floor(+timestamp.nanos / 10000000)
+    .toString()
+    .padStart(2, "0")} ${moment(+timestamp.seconds * 1000).format("A")}`;
 }
 
 export function formatGitUrl(url: string) {
