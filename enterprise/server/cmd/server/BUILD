@@ -6,7 +6,7 @@ go_library(
     name = "server_lib",
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/server",
-    visibility = ["//visibility:private"],
+    visibility = ["//visibility:public"],
     deps = [
         "//enterprise:bundle",
         "//enterprise/server/api",

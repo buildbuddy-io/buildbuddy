@@ -6,7 +6,7 @@ go_library(
     name = "executor_lib",
     srcs = ["executor.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/executor",
-    visibility = ["//visibility:private"],
+    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/auth",
         "//enterprise/server/backends/gcs_cache",

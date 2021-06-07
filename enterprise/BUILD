@@ -23,6 +23,7 @@ filegroup(
     srcs = [
         "LICENSE",
     ],
+    visibility = ["//visibility:public"],
 )
 
 # N.B. this is ignored by gazelle so must be updated by hand.
