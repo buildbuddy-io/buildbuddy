@@ -11,9 +11,7 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
-        "//server/real_environment",
         "//server/testutil/testauth",
-        "//server/testutil/testenv",
         "@com_github_stretchr_testify//require",
     ],
 )
