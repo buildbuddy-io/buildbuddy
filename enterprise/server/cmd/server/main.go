@@ -189,7 +189,11 @@ func main() {
 		}
 	}
 
-	realEnv.SetTaskRouter(task_router.New(realEnv))
+	taskRouter, err := task_router.New(realEnv)
+	if err != nil {
+		log.Fatalf("Failed to create server: %s", err)
+	}
+	realEnv.SetTaskRouter(taskRouter)
 
 	if dcc := configurator.GetDistributedCacheConfig(); dcc != nil {
 		dcConfig := distributed.CacheConfig{
