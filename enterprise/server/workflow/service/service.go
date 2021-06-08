@@ -379,6 +379,25 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		}...)
 	}
 	conf := ws.env.GetConfigurator()
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "container-image", Value: "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1"},
+			// Reuse the docker container for the CI runner across executions if
+			// possible, and also keep the git repo around so it doesn't need to be
+			// re-cloned each time.
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "preserve-workspace", Value: "true"},
+			// Pass the workflow ID to the executor so that it can try to assign
+			// this task to a runner which has previously executed the workflow.
+			{Name: "workflow-id", Value: wf.WorkflowID},
+		},
+	}
+	rbeCfg := conf.GetRemoteExecutionConfig()
+	if rbeCfg != nil && rbeCfg.WorkflowsPoolName != "" {
+		platform.Properties = append(platform.Properties, &repb.Platform_Property{
+			Name: "Pool", Value: rbeCfg.WorkflowsPoolName,
+		})
+	}
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
 		Arguments: []string{
@@ -392,19 +411,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--trigger_event=" + wd.EventName,
 			"--trigger_branch=" + wd.TargetBranch,
 		},
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "container-image", Value: "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1"},
-				// Reuse the docker container for the CI runner across executions if
-				// possible, and also keep the git repo around so it doesn't need to be
-				// re-cloned each time.
-				{Name: "recycle-runner", Value: "true"},
-				{Name: "preserve-workspace", Value: "true"},
-				// Pass the workflow ID to the executor so that it can try to assign
-				// this task to a runner which has previously executed the workflow.
-				{Name: "workflow-id", Value: wf.WorkflowID},
-			},
-		},
+		Platform: platform,
 	}
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, cmd)
 	if err != nil {
