@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/executor_handle"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
@@ -29,6 +30,7 @@ import (
 	"google.golang.org/grpc/peer"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
@@ -145,6 +147,26 @@ func (en *executionNode) String() string {
 
 func (en *executionNode) GetExecutorID() string {
 	return en.executorID
+}
+
+func toNodeInterfaces(nodes []*executionNode) []interfaces.ExecutionNode {
+	out := make([]interfaces.ExecutionNode, 0, len(nodes))
+	for _, node := range nodes {
+		out = append(out, node)
+	}
+	return out
+}
+
+func fromNodeInterfaces(nodes []interfaces.ExecutionNode) ([]*executionNode, error) {
+	out := make([]*executionNode, 0, len(nodes))
+	for _, node := range nodes {
+		en, ok := node.(*executionNode)
+		if !ok {
+			return nil, status.InternalError("failed to convert executionNode to interface; this should never happen")
+		}
+		out = append(out, en)
+	}
+	return out, nil
 }
 
 type nodePoolKey struct {
@@ -447,6 +469,7 @@ type Options struct {
 type SchedulerServer struct {
 	env                  environment.Env
 	rdb                  *redis.Client
+	taskRouter           interfaces.TaskRouter
 	schedulerClientCache *schedulerClientCache
 	shuttingDown         <-chan struct{}
 	// host:port at which this scheduler can be reached
@@ -488,10 +511,16 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		return nil
 	})
 
+	taskRouter := env.GetTaskRouter()
+	if taskRouter == nil {
+		return nil, status.FailedPreconditionError("Missing task router in env")
+	}
+
 	s := &SchedulerServer{
 		env:                          env,
 		pools:                        make(map[nodePoolKey]*nodePool),
 		rdb:                          env.GetRemoteExecutionRedisClient(),
+		taskRouter:                   taskRouter,
 		schedulerClientCache:         newSchedulerClientCache(),
 		shuttingDown:                 shuttingDown,
 		enableUserOwnedExecutors:     enableUserOwnedExecutors,
@@ -1130,7 +1159,7 @@ type enqueueTaskReservationOpts struct {
 	alwaysScheduleLocally bool
 }
 
-func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRequest *scpb.EnqueueTaskReservationRequest, opts enqueueTaskReservationOpts) error {
+func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRequest *scpb.EnqueueTaskReservationRequest, serializedTask []byte, opts enqueueTaskReservationOpts) error {
 	os := enqueueRequest.GetSchedulingMetadata().GetOs()
 	arch := enqueueRequest.GetSchedulingMetadata().GetArch()
 	pool := enqueueRequest.GetSchedulingMetadata().GetPool()
@@ -1157,6 +1186,11 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		log.Infof("Enqueue task reservations for task %q took %s. Reservations: [%s]",
 			enqueueRequest.GetTaskId(), time.Now().Sub(startTime), strings.Join(successfulReservations, ", "))
 	}()
+
+	cmd, remoteInstanceName, err := extractRoutingProps(serializedTask)
+	if err != nil {
+		return err
+	}
 
 	// Note: preferredNode may be nil if the executor ID isn't specified or if
 	// the executor is no longer connected.
@@ -1186,12 +1220,21 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				// (in subsequent loop iterations) if the preferred node probe fails.
 				preferredNode = nil
 			} else {
-				sampleConnectedExecutors := opts.alwaysScheduleLocally
-				newNodes, err := nodeBalancer.SampleNodes(ctx, probeCount, sampleConnectedExecutors)
-				if err != nil {
+				nodes = nodeBalancer.nodes
+				if opts.alwaysScheduleLocally {
+					nodes = nodeBalancer.connectedExecutors
+				}
+				if len(nodes) == 0 {
 					return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
 				}
-				nodes = newNodes
+				rankedNodes, err := s.taskRouter.RankNodes(ctx, cmd, remoteInstanceName, toNodeInterfaces(nodes))
+				if err != nil {
+					log.Errorf("Failed to rank nodes: %s", err)
+				}
+				nodes, err = fromNodeInterfaces(rankedNodes)
+				if err != nil {
+					return err
+				}
 			}
 		}
 		if sampleIndex >= len(nodes) {
@@ -1277,7 +1320,7 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 		numReplicas:           probesPerTask,
 		alwaysScheduleLocally: false,
 	}
-	if err := s.enqueueTaskReservations(ctx, enqueueRequest, opts); err != nil {
+	if err := s.enqueueTaskReservations(ctx, enqueueRequest, req.GetSerializedTask(), opts); err != nil {
 		return nil, err
 	}
 	return &scpb.ScheduleTaskResponse{}, nil
@@ -1291,7 +1334,7 @@ func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.
 		maxAttempts:           10,
 		alwaysScheduleLocally: true,
 	}
-	if err := s.enqueueTaskReservations(ctx, req, opts); err != nil {
+	if err := s.enqueueTaskReservations(ctx, req, nil /*=serializedTask*/, opts); err != nil {
 		return nil, err
 	}
 	return &scpb.EnqueueTaskReservationResponse{}, nil
@@ -1322,7 +1365,7 @@ func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueue
 		numReplicas:           probesPerTask,
 		alwaysScheduleLocally: false,
 	}
-	if err := s.enqueueTaskReservations(ctx, enqueueRequest, opts); err != nil {
+	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task.serializedTask, opts); err != nil {
 		log.Errorf("ReEnqueueTask failed for task %q: %s", req.GetTaskId(), err.Error())
 		return nil, err
 	}
@@ -1380,4 +1423,15 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 	return &scpb.GetExecutionNodesResponse{
 		ExecutionNode: executionNodes,
 	}, nil
+}
+
+func extractRoutingProps(serializedTask []byte) (*repb.Command, string, error) {
+	if serializedTask == nil {
+		return nil, "", nil
+	}
+	task := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(serializedTask, task); err != nil {
+		return nil, "", status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
+	}
+	return task.GetCommand(), task.GetExecuteRequest().GetInstanceName(), nil
 }

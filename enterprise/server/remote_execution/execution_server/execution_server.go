@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -30,15 +31,14 @@ import (
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/codes"
 
-	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	tspb "github.com/golang/protobuf/ptypes/timestamp"
-
 	anypb "github.com/golang/protobuf/ptypes/any"
 	durationpb "github.com/golang/protobuf/ptypes/duration"
-	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	gstatus "google.golang.org/grpc/status"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	tspb "github.com/golang/protobuf/ptypes/timestamp"
 )
 
 const (
@@ -730,6 +730,19 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 		log.Debugf("PublishOperation: operation %q stage: %s", taskID, stage)
 
+		// Before publishing the COMPLETED operation, update the task router
+		// so that subsequent tasks with similar routing properties can get
+		// routed back to the same executor.
+		if stage == repb.ExecutionStage_COMPLETED {
+			response := operation.ExtractExecuteResponse(op)
+			if response != nil {
+				if err := s.updateRouter(ctx, taskID, response); err != nil {
+					// Errors from updating the router should not be fatal.
+					log.Errorf("Failed to update task router: %s", err)
+				}
+			}
+		}
+
 		if s.streamPubSub != nil {
 			data, err := proto.Marshal(op)
 			if err != nil {
@@ -770,4 +783,40 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			}
 		}
 	}
+}
+
+func (s *ExecutionServer) updateRouter(ctx context.Context, taskID string, executeResponse *repb.ExecuteResponse) error {
+	router := s.env.GetTaskRouter()
+	if router == nil {
+		return nil
+	}
+	// If the result was served from cache, nothing was actually executed, so no
+	// need to update the task router.
+	if executeResponse.GetCachedResult() {
+		return nil
+	}
+	// TODO: Maybe pre-fetch the command at the beginning of PublishOperation,
+	// since it requires 2 round trips to CAS.
+	instanceName, d, err := digest.ExtractDigestFromUploadResourceName(taskID)
+	if err != nil {
+		return status.WrapError(err, "parse upload resource name")
+	}
+	actionInstanceNameDigest := digest.NewInstanceNameDigest(d, instanceName)
+	bsClient := s.env.GetByteStreamClient()
+	if bsClient == nil {
+		log.Debug("Not updating task router due to missing ByteStreamClient")
+		return nil
+	}
+	action := &repb.Action{}
+	if err := cachetools.GetBlobAsProto(ctx, bsClient, actionInstanceNameDigest, action); err != nil {
+		return status.WrapError(err, "get action from CAS")
+	}
+	cmdDigest := action.GetCommandDigest()
+	cmdInstanceNameDigest := digest.NewInstanceNameDigest(cmdDigest, instanceName)
+	cmd := &repb.Command{}
+	if err := cachetools.GetBlobAsProto(ctx, bsClient, cmdInstanceNameDigest, cmd); err != nil {
+		return status.WrapError(err, "get command from CAS")
+	}
+	nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
+	return router.MarkComplete(ctx, cmd, instanceName, nodeID)
 }

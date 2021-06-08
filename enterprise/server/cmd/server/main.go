@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -187,6 +188,8 @@ func main() {
 			realEnv.SetRemoteExecutionRedisPubSubClient(redisClient)
 		}
 	}
+
+	realEnv.SetTaskRouter(task_router.New(realEnv))
 
 	if dcc := configurator.GetDistributedCacheConfig(); dcc != nil {
 		dcConfig := distributed.CacheConfig{

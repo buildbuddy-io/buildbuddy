@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbeclient"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -114,6 +115,10 @@ func (r *Env) setupRootDirectoryWithTestCommandBinary(ctx context.Context) *repb
 // The returned environment does not have any executors by default. Use the
 // Add*Executor functions to add executors.
 func NewRBETestEnv(t *testing.T) *Env {
+	seed := time.Now().UnixNano()
+	rand.Seed(seed)
+	log.Infof("Test seed: %d", seed)
+
 	redisTarget := testredis.Start(t)
 	envOpts := &enterprise_testenv.Options{RedisTarget: redisTarget}
 	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
@@ -166,6 +171,9 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	opts.SchedulerServerOptions.LocalPortOverride = int32(port)
 
 	env.SetAuthenticator(newTestAuthenticator())
+	router, err := task_router.New(env)
+	require.NoError(t, err)
+	env.SetTaskRouter(router)
 	scheduler, err := scheduler_server.NewSchedulerServerWithOptions(env, &opts.SchedulerServerOptions)
 	if err != nil {
 		assert.FailNowf(t, "could not setup SchedulerServer", err.Error())
@@ -192,6 +200,9 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	server.casClient = repb.NewContentAddressableStorageClient(clientConn)
 	server.byteStreamClient = bspb.NewByteStreamClient(clientConn)
 	server.schedulerClient = scpb.NewSchedulerClient(clientConn)
+
+	// For tests only, fulfill bytestream requests with self-RPC.
+	server.env.SetByteStreamClient(server.byteStreamClient)
 
 	return server
 }
@@ -347,6 +358,12 @@ func (e *Executor) stop() {
 
 func (r *Env) AddBuildBuddyServer() *BuildBuddyServer {
 	return r.AddBuildBuddyServerWithOptions(&BuildBuddyServerOptions{})
+}
+
+func (r *Env) AddBuildBuddyServers(n int) {
+	for i := 0; i < n; i++ {
+		r.AddBuildBuddyServer()
+	}
 }
 
 func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *BuildBuddyServer {
