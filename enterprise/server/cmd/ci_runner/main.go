@@ -438,10 +438,10 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 	}
 
 	wfc := &bespb.WorkflowConfigured{
+		WorkflowId:          *workflowID,
 		ActionName:          ar.action.Name,
 		ActionTriggerBranch: *triggerBranch,
 		ActionTriggerEvent:  *triggerEvent,
-		WorkflowId:          *workflowID,
 	}
 	configuredEvent := &bespb.BuildEvent{
 		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}},
