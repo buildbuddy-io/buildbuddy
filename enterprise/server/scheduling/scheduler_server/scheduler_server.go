@@ -257,41 +257,6 @@ func (np *nodePool) NodeCount(ctx context.Context) (int, error) {
 	return len(np.nodes), nil
 }
 
-func (np *nodePool) SampleNodes(ctx context.Context, numSamples int, onlyConnected bool) ([]*executionNode, error) {
-	np.RefreshNodes(ctx) // usually a no-op
-	var nodes []*executionNode
-	np.mu.Lock()
-	defer np.mu.Unlock()
-	if onlyConnected {
-		nodes = np.connectedExecutors
-	} else {
-		nodes = np.nodes
-	}
-
-	if len(nodes) == 0 {
-		return nil, status.FailedPreconditionError("No nodes registered")
-	}
-
-	// Random sampling without replacement: iterate through the list
-	// of nodes, swapping the current machine with one later in
-	// the list, until we have the desired number of samples.
-	var samples []*executionNode
-	for sampleIndex := 0; sampleIndex < numSamples; sampleIndex++ {
-		// Wrap around in case we're requesting more samples than there are nodes.
-		// In this case, there will be replacement, but only after we've sampled all
-		// the nodes.
-		nodeIndex := sampleIndex % len(nodes)
-
-		swapIndex := nodeIndex + rand.Intn(len(nodes)-nodeIndex)
-		nodes[nodeIndex], nodes[swapIndex] = nodes[swapIndex], nodes[nodeIndex]
-
-		node := nodes[nodeIndex]
-		samples = append(samples, node)
-	}
-
-	return samples, nil
-}
-
 func (np *nodePool) AddConnectedExecutor(id string, handle executor_handle.ExecutorHandle) bool {
 	np.mu.Lock()
 	defer np.mu.Unlock()
