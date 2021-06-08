@@ -10,6 +10,7 @@ go_library(
     ],
     deps = [
         "//server/interfaces",
+        "//server/util/log",
         "@com_github_go_redis_redis_v8//:redis",
     ],
 )
