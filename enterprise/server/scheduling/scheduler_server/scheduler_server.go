@@ -1390,6 +1390,8 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 	}, nil
 }
 
+// extractRoutingProps deserializes the given task and returns the properties
+// needed to route the task (command and remote instance name).
 func extractRoutingProps(serializedTask []byte) (*repb.Command, string, error) {
 	if serializedTask == nil {
 		return nil, "", nil
