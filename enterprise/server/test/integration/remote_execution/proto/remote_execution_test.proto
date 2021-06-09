@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+option go_package = "remoteexecutiontest";
+
+message ExitOp {
+  int32 exit_code = 1;
+}
+
+// Instruction sent from controller to test command.
+message ControllerToCommandRequest {
+  // Only one Op field should be set.
+
+  // Instructs the command to exit.
+  ExitOp exit_op = 1;
+}
+
+message RegisterCommandRequest {
+  string command_name = 1;
+}
+
+// Service used by remote execution test commands to register with a controller
+// and receive instructions.
+service CommandController {
+  // Registers with the controller for as long as the stream is open.
+  rpc RegisterCommand(RegisterCommandRequest)
+      returns (stream ControllerToCommandRequest) {}
+}

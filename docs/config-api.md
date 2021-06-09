@@ -4,7 +4,7 @@ title: API Configuration
 sidebar_label: API
 ---
 
-The API is only configurable in the [Enterprise version](enterprise.md) of BuildBuddy.
+The API is only configurable in the [Enterprise version](enterprise.md) of BuildBuddy. For more information, view the [API Documentation](enterprise-api.md).
 
 ## Section
 

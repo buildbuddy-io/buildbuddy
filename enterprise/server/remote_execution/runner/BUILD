@@ -1,0 +1,49 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "runner",
+    srcs = ["runner.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//enterprise/server/remote_execution/commandutil",
+        "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/platform",
+        "//enterprise/server/remote_execution/workspace",
+        "//enterprise/server/tasksize",
+        "//proto:acl_go_proto",
+        "//proto:remote_execution_go_proto",
+        "//proto:user_id_go_proto",
+        "//proto:worker_go_proto",
+        "//server/config",
+        "//server/interfaces",
+        "//server/metrics",
+        "//server/resources",
+        "//server/util/log",
+        "//server/util/perms",
+        "//server/util/status",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_prometheus_client_golang//prometheus",
+    ],
+)
+
+go_test(
+    name = "runner_test",
+    srcs = ["runner_test.go"],
+    deps = [
+        ":runner",
+        "//enterprise/server/remote_execution/containers/bare",
+        "//enterprise/server/remote_execution/platform",
+        "//enterprise/server/remote_execution/workspace",
+        "//enterprise/server/tasksize",
+        "//proto:remote_execution_go_proto",
+        "//server/config",
+        "//server/interfaces",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/util/status",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

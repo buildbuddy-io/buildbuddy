@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -489,7 +489,6 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	}
 	webhookData, err := parseRequest(r)
 	if err != nil {
-		log.Printf("error processing webhook request: %s", err)
 		return err
 	}
 	if webhookData == nil {
@@ -522,7 +521,7 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	log.Printf("Started workflow execution (ID: %q)", executionID)
+	log.Infof("Started workflow execution (ID: %q)", executionID)
 	return nil
 }
 
@@ -542,6 +541,7 @@ func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	webhookID := workflowMatch[1]
 	if err := ws.startWorkflow(webhookID, r); err != nil {
+		log.Errorf("Failed to start workflow: %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

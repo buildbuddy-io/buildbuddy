@@ -2,9 +2,9 @@ package pubsub
 
 import (
 	"context"
-	"log"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/go-redis/redis/v8"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -93,17 +93,17 @@ func (p *ListPubSub) Publish(ctx context.Context, channelName string, message st
 	return err
 }
 
-type listSubscriber struct {
+type channelSubscriber struct {
 	cancel context.CancelFunc
 	ch     <-chan string
 }
 
-func (s *listSubscriber) Close() error {
+func (s *channelSubscriber) Close() error {
 	s.cancel()
 	return nil
 }
 
-func (s *listSubscriber) Chan() <-chan string {
+func (s *channelSubscriber) Chan() <-chan string {
 	return s.ch
 }
 
@@ -116,19 +116,19 @@ func (p *ListPubSub) Subscribe(ctx context.Context, channelName string) interfac
 			vals, err := p.rdb.BLPop(ctx, 0*time.Second, channelName).Result()
 			if err != nil {
 				if err != context.Canceled {
-					log.Printf("Error executing BLPop: %v", err)
+					log.Errorf("Error executing BLPop: %v", err)
 				}
 				return
 			}
 
 			// Should not happen.
 			if vals == nil || len(vals) != 2 {
-				log.Printf("Wrong number of elemenents returned from BLPop: %v", vals)
+				log.Errorf("Wrong number of elemenents returned from BLPop: %v", vals)
 				return
 			}
 			// ... and neither should this.
 			if vals[0] != channelName {
-				log.Printf("Returned key %q did not match expected key %q", vals[0], channelName)
+				log.Errorf("Returned key %q did not match expected key %q", vals[0], channelName)
 				return
 			}
 			select {
@@ -138,8 +138,121 @@ func (p *ListPubSub) Subscribe(ctx context.Context, channelName string) interfac
 			}
 		}
 	}()
-	return &listSubscriber{
+	return &channelSubscriber{
 		cancel: cancel,
 		ch:     ch,
 	}
+}
+
+// To keep things simple for now, we maintain streams with a single value per element stored under the following key.
+const streamDataField = "data"
+
+type StreamPubSub struct {
+	rdb *redis.Client
+}
+
+// NewStreamPubSub creates a PubSub client based on a Redis-stream.
+func NewStreamPubSub(redisClient *redis.Client) *StreamPubSub {
+	return &StreamPubSub{rdb: redisClient}
+}
+
+func (p *StreamPubSub) subscribe(ctx context.Context, channelName string, startFromTail bool) interfaces.Subscriber {
+	ch := make(chan string)
+	ctx, cancel := context.WithCancel(ctx)
+
+	deliverMsg := func(msg *redis.XMessage) bool {
+		data, ok := msg.Values[streamDataField]
+		if !ok {
+			log.Errorf("Message %q on stream %q missing data field", msg.ID, channelName)
+			return false
+		}
+		str, ok := data.(string)
+		if !ok {
+			log.Errorf("Message %q on stream %q is of type %T, wanted string", msg.ID, channelName, data)
+			return false
+		}
+
+		select {
+		case ch <- str:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+
+	go func() {
+		defer close(ch)
+
+		// Start from beginning of stream.
+		streamID := "0"
+
+		// If starting from tail, check if the stream has any elements.
+		// If it does then publish the last element and subscribe to messages following that element.
+		if startFromTail {
+			msgs, err := p.rdb.XRevRangeN(ctx, channelName, "+", "-", 1).Result()
+			if err != nil {
+				log.Errorf("Unable to retrieve last element of stream %q: %s", channelName, err)
+				return
+			}
+			if len(msgs) == 1 {
+				msg := msgs[0]
+				streamID = msg.ID
+				if !deliverMsg(&msg) {
+					return
+				}
+			}
+		}
+
+		for {
+			result, err := p.rdb.XRead(ctx, &redis.XReadArgs{
+				Streams: []string{channelName, streamID},
+				Block:   0, // Block indefinitely.
+			}).Result()
+			if err != nil {
+				if err != context.Canceled {
+					log.Errorf("Error reading from stream %q: %s", channelName, err)
+				}
+				return
+			}
+
+			// We are subscribing to a single stream so there should be exactly one response.
+			if len(result) != 1 {
+				log.Errorf("Did not receive exactly one result for channel %q, got %d", channelName, len(result))
+				return
+			}
+
+			for _, msg := range result[0].Messages {
+				if !deliverMsg(&msg) {
+					return
+				}
+			}
+		}
+	}()
+	return &channelSubscriber{
+		cancel: cancel,
+		ch:     ch,
+	}
+}
+
+// SubscribeHead returns a subscription for all previous and future message on the stream.
+func (p *StreamPubSub) SubscribeHead(ctx context.Context, channelName string) interfaces.Subscriber {
+	// Subscribe from the beginning of the stream.
+	return p.subscribe(ctx, channelName, false /*startFromTail=*/)
+}
+
+// SubscribeTail returns a subscription for messages starting from the last message already on the stream, if any.
+func (p *StreamPubSub) SubscribeTail(ctx context.Context, channelName string) interfaces.Subscriber {
+	// Subscribe from the last elements of the stream, if any.
+	return p.subscribe(ctx, channelName, true /*startFromTail=*/)
+}
+
+func (p *StreamPubSub) Publish(ctx context.Context, channelName string, message string) error {
+	pipe := p.rdb.TxPipeline()
+	pipe.XAdd(ctx, &redis.XAddArgs{
+		Stream: channelName,
+		Values: map[string]interface{}{streamDataField: message},
+	})
+	pipe.Expire(ctx, channelName, listTTL)
+	_, err := pipe.Exec(ctx)
+	return err
 }
