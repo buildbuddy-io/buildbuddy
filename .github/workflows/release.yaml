@@ -45,6 +45,7 @@ jobs:
   
       - name: Upload Artifacts
         run: |
-          "${GITHUB_WORKSPACE}/bin/bazel" build -c opt --stamp --define version=${{ steps.tag.outputs.TAG }} --define release=true //server/cmd/buildbuddy:buildbuddy
+          echo ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }} | gh auth login --with-token
+          "${GITHUB_WORKSPACE}/bin/bazel" build --config=release --define version=${{ steps.tag.outputs.TAG }} //server/cmd/buildbuddy:buildbuddy
           cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-${{matrix.OSName}}-amd64
-          gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-${{matrix.OSName}}-amd64
+          gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-${{matrix.OSName}}-amd64 --clobber
