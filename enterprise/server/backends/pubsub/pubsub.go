@@ -225,6 +225,7 @@ func (p *StreamPubSub) subscribe(ctx context.Context, channelName string, startF
 				if !deliverMsg(&msg) {
 					return
 				}
+				streamID = msg.ID
 			}
 		}
 	}()
