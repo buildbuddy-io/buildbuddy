@@ -1,0 +1,3 @@
+This image is the base of the remote-executor image. It includes the "docker
+package" as well as a credential-helper because our executor app runs actions
+on docker by invoking the "docker" command.
