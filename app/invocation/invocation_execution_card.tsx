@@ -279,7 +279,10 @@ export default class ExecutionCardComponent extends React.Component {
           </div>
           <div className="invocation-execution-table">
             {this.state.executions.sort(this.sort.bind(this)).map((execution, index) => (
-              <div key={index} className="invocation-execution-row">
+              <div
+                key={index}
+                className="invocation-execution-row clickable"
+                onClick={this.handleActionDigestClick.bind(this, execution)}>
                 <div className="invocation-execution-row-image">
                   <img
                     className={stages[execution.stage].class}
@@ -287,7 +290,7 @@ export default class ExecutionCardComponent extends React.Component {
                     alt={stages[execution.stage].name}
                   />
                 </div>
-                <div className="clickable" onClick={this.handleActionDigestClick.bind(this, execution)}>
+                <div>
                   <div className="invocation-execution-row-digest">
                     {stages[execution.stage].name} {execution?.actionDigest?.hash}/{execution?.actionDigest?.sizeBytes}
                   </div>
