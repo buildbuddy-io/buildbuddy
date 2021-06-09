@@ -31,7 +31,9 @@ const (
 	defaultPreferredNodeLimit = 1
 	// The preferred node limit for workflows. This should be at least as big as
 	// the number of probes per task, since we strongly prefer to route workflow
-	// actions to executors that ran them previously.
+	// actions to executors that ran them previously. Here, it's set slightly
+	// bigger than the number of probes, in case any of the nodes go down or
+	// a probe fails.
 	workflowsPreferredNodeLimit = 6
 )
 
@@ -70,7 +72,7 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 
 	key, err := tr.routingKey(ctx, cmd, remoteInstanceName)
 	if err != nil {
-		return nil, status.WrapError(err, "rank nodes")
+		return nil, err
 	}
 	preferredNodeIDs, err := tr.rdb.LRange(ctx, key, 0, -1).Result()
 	if err != nil {
@@ -114,7 +116,7 @@ func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remot
 	}
 	key, err := tr.routingKey(ctx, cmd, remoteInstanceName)
 	if err != nil {
-		return status.WrapError(err, "mark task complete")
+		return err
 	}
 
 	pipe := tr.rdb.TxPipeline()
