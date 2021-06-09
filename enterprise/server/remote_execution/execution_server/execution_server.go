@@ -324,15 +324,7 @@ func (s *ExecutionServer) operationFromExecution(ctx context.Context, te *tables
 }
 
 func (s *ExecutionServer) readProtoFromCAS(ctx context.Context, d *digest.InstanceNameDigest, msg proto.Message) error {
-	cache := namespace.CASCache(s.cache, d.GetInstanceName())
-	data, err := cache.Get(ctx, d.Digest)
-	if err != nil {
-		if status.IsNotFoundError(err) {
-			return digest.MissingDigestError(d.Digest)
-		}
-		return err
-	}
-	return proto.Unmarshal([]byte(data), msg)
+	return cachetools.ReadProtoFromCAS(ctx, s.cache, d, msg)
 }
 
 // getUnvalidatedActionResult fetches an action result from the cache but does
@@ -688,7 +680,10 @@ func loopAfterTimeout(ctx context.Context, timeout time.Duration, f func()) {
 }
 
 func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperationServer) error {
-	ctx := stream.Context()
+	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
+	if err != nil {
+		return err
+	}
 	lastOp := &longrunning.Operation{}
 	lastWrite := time.Now()
 	taskID := ""
@@ -802,19 +797,14 @@ func (s *ExecutionServer) updateRouter(ctx context.Context, taskID string, execu
 		return status.WrapError(err, "parse upload resource name")
 	}
 	actionInstanceNameDigest := digest.NewInstanceNameDigest(d, instanceName)
-	bsClient := s.env.GetByteStreamClient()
-	if bsClient == nil {
-		log.Debug("Not updating task router due to missing ByteStreamClient")
-		return nil
-	}
 	action := &repb.Action{}
-	if err := cachetools.GetBlobAsProto(ctx, bsClient, actionInstanceNameDigest, action); err != nil {
+	if err := s.readProtoFromCAS(ctx, actionInstanceNameDigest, action); err != nil {
 		return status.WrapError(err, "get action from CAS")
 	}
 	cmdDigest := action.GetCommandDigest()
 	cmdInstanceNameDigest := digest.NewInstanceNameDigest(cmdDigest, instanceName)
 	cmd := &repb.Command{}
-	if err := cachetools.GetBlobAsProto(ctx, bsClient, cmdInstanceNameDigest, cmd); err != nil {
+	if err := s.readProtoFromCAS(ctx, cmdInstanceNameDigest, cmd); err != nil {
 		return status.WrapError(err, "get command from CAS")
 	}
 	nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()

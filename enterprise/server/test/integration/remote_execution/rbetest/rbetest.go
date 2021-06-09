@@ -201,9 +201,6 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	server.byteStreamClient = bspb.NewByteStreamClient(clientConn)
 	server.schedulerClient = scpb.NewSchedulerClient(clientConn)
 
-	// For tests only, fulfill bytestream requests with self-RPC.
-	server.env.SetByteStreamClient(server.byteStreamClient)
-
 	return server
 }
 
