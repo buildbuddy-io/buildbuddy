@@ -41,6 +41,13 @@ func TestExtractValues(t *testing.T) {
 		path   string
 		errMsg string
 	}{
+		{nil, "<ANY_FIELD_NAME>", `call of ExtractValues on nil value`},
+		{&Parent{}, "<INVALID_FIELD_NAME>", `invalid field "<INVALID_FIELD_NAME>" (parent path: "")`},
+		{&Parent{Child: &Child{}}, "Child.<INVALID_FIELD_NAME>", `invalid field "<INVALID_FIELD_NAME>" (parent path: "Child")`},
+		{&Parent{}, "ChildList.9999999999", `strconv.ParseInt: parsing "9999999999": value out of range`},
+		{&Parent{}, "ChildList.Foo", `invalid field access of "Foo" on list (parent path: "ChildList")`},
+		{&Parent{}, "ChildList.0", `out of bounds: index 0 of "ChildList"`},
+		{&Parent{}, "Child", `nil value of "Child"`},
 		{&Parent{StrList: []string{"hello"}}, "Str.0", `cannot access field "0" of string "Str"`},
 		{&Parent{StrList: []string{"hello"}}, "Str.Foo", `cannot access field "Foo" of string "Str"`},
 	} {

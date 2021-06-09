@@ -23,7 +23,6 @@ go_library(
         "//server/util/status",
         "@com_github_coreos_go_oidc//:go-oidc",
         "@com_github_dgrijalva_jwt_go//:jwt-go",
-        "@io_gorm_gorm//:gorm",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//peer",

@@ -1672,6 +1672,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.9",
     )
     go_repository(
+        name = "com_github_mattn_go_shellwords",
+        importpath = "github.com/mattn/go-shellwords",
+        sum = "h1:vCoR9VPpsk/TZFW2JwK5I9S0xdrtUq2bph6/YjEPnaw=",
+        version = "v1.0.11",
+    )
+
+    go_repository(
         name = "com_github_mattn_go_sqlite3",
         importpath = "github.com/mattn/go-sqlite3",
         sum = "h1:gXHsfypPkaMZrKbD5209QV9jbUTJKjyR5WD3HYQSd+U=",
@@ -1896,6 +1903,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/opencontainers/selinux",
         sum = "h1:+77ba4ar4jsCbL1GLbFL8fFM57w6suPfSS9PDLDY7KM=",
         version = "v1.8.0",
+        build_directives = [
+            "gazelle:resolve go github.com/willf/bitset @com_github_willf_bitset//:bitset",
+        ],
     )
 
     go_repository(

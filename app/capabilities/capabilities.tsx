@@ -16,6 +16,7 @@ export class Capabilities {
   manageApiKeys: boolean;
   workflows: boolean;
   executors: boolean;
+  action: boolean;
   userOwnedExecutors: boolean;
   executorKeyCreation: boolean;
 
@@ -37,7 +38,7 @@ export class Capabilities {
     this.deleteInvocation = true;
     this.manageApiKeys = true;
     this.workflows = localStorage["workflows_enabled"] === "true";
-    this.executors = localStorage["executors_enabled"] === "true";
+    this.executors = window.buildbuddyConfig && window.buildbuddyConfig.user_owned_executors_enabled;
     this.userOwnedExecutors = window.buildbuddyConfig && window.buildbuddyConfig.user_owned_executors_enabled;
     this.executorKeyCreation = window.buildbuddyConfig && window.buildbuddyConfig.executor_key_creation_enabled;
     this.paths = new Set(paths);

@@ -18,13 +18,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/oauth2"
-	"gorm.io/gorm"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -163,7 +163,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 		rsp.WebhookRegistered = true
 	}
 
-	err = ws.env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 		workflowID, err := tables.PrimaryKeyForTable("Workflows")
 		if err != nil {
 			return status.InternalError(err.Error())
@@ -203,7 +203,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 		return nil, err
 	}
 	var wf tables.Workflow
-	err = ws.env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 		if err := tx.Raw(`SELECT user_id, group_id, perms, access_token, repo_url, github_webhook_id FROM Workflows WHERE workflow_id = ?`, workflowID).Take(&wf).Error; err != nil {
 			return err
 		}
@@ -237,7 +237,7 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	}
 	q.SetOrderBy("created_at_usec" /*ascending=*/, true)
 	qStr, qArgs := q.Build()
-	err := ws.env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+	err := ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 		rows, err := tx.Raw(qStr, qArgs...).Rows()
 		if err != nil {
 			return err
@@ -472,6 +472,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				// re-cloned each time.
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "preserve-workspace", Value: "true"},
+				// Pass the workflow ID to the executor so that it can try to assign
+				// this task to a runner which has previously executed the workflow.
+				{Name: "workflow-id", Value: wf.WorkflowID},
 			},
 		},
 	}
@@ -561,7 +564,6 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	}
 	webhookData, err := parseRequest(r)
 	if err != nil {
-		log.Printf("error processing webhook request: %s", err)
 		return err
 	}
 	if webhookData == nil {
@@ -601,8 +603,8 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workf
 	if err != nil {
 		return "", err
 	}
-	log.Infof("Started workflow execution %s", executionID)
-	return invocationID, nil
+	log.Infof("Started workflow execution (ID: %q)", executionID)
+	return nil
 }
 
 func isGitHubURL(s string) bool {
@@ -621,6 +623,7 @@ func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	webhookID := workflowMatch[1]
 	if err := ws.startWorkflow(webhookID, r); err != nil {
+		log.Errorf("Failed to start workflow: %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

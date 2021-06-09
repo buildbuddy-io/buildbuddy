@@ -17,12 +17,14 @@ import SuggestionCardComponent from "./invocation_suggestion_card";
 import InvocationFilterComponent from "./invocation_filter";
 import InvocationInProgressComponent from "./invocation_in_progress";
 import InvocationModel from "./invocation_model";
+import WorkflowCommands from "./workflow_commands";
 import InvocationNotFoundComponent from "./invocation_not_found";
 import InvocationOverviewComponent from "./invocation_overview";
 import RawLogsCardComponent from "./invocation_raw_logs_card";
 import InvocationTabsComponent, { getActiveTab } from "./invocation_tabs";
 import TimingCardComponent from "./invocation_timing_card";
 import ExecutionCardComponent from "./invocation_execution_card";
+import ActionCardComponent from "./invocation_action_card";
 import TargetsComponent from "./invocation_targets";
 import { BuildBuddyError } from "../util/errors";
 
@@ -200,6 +202,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <ErrorCardComponent model={this.state.model} />
           )}
 
+          {this.state.model.workflowConfigured && (activeTab === "all" || activeTab === "commands") && (
+            <WorkflowCommands model={this.state.model} />
+          )}
+
           {isBazelInvocation && (activeTab === "all" || activeTab == "targets") && (
             <TargetsComponent
               model={this.state.model}
@@ -245,6 +251,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {activeTab == "execution" && (
             <ExecutionCardComponent model={this.state.model} inProgress={this.state.inProgress} />
           )}
+
+          {activeTab == "action" && <ActionCardComponent model={this.state.model} search={this.props.search} />}
 
           {activeTab == "fetches" && <FetchCardComponent model={this.state.model} inProgress={this.state.inProgress} />}
 

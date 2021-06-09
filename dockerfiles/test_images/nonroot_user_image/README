@@ -1,0 +1,3 @@
+This image is the test image for the "run as root" test. It specifies a non-root
+USER to so that the test can ensure it is successfully forcing the use of the
+root user.

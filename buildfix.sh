@@ -14,7 +14,7 @@ gofmt -w .
 
 if which clang-format &>/dev/null; then
   echo "Formatting .proto files..."
-  clang-format -i $(git ls-files --exclude-standard | grep '\.proto$')
+  clang-format -i --style=Google $(git ls-files --exclude-standard | grep '\.proto$')
 else
   echo -e "${c_yellow}WARNING: Missing clang-format; will not format proto files.${c_reset}"
 fi

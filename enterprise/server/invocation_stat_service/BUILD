@@ -11,8 +11,11 @@ go_library(
     deps = [
         "//proto:invocation_go_proto",
         "//server/environment",
+        "//server/util/blocklist",
         "//server/util/db",
+        "//server/util/log",
         "//server/util/perms",
+        "//server/util/query_builder",
         "//server/util/status",
     ],
 )

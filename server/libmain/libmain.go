@@ -296,6 +296,8 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 
 	// Support prometheus grpc metrics.
 	grpc_prometheus.Register(grpcServer)
+	// Enable prometheus latency metrics too.
+	grpc_prometheus.EnableHandlingTimeHistogram()
 
 	// Start Build-Event-Protocol and Remote-Cache services.
 	StartBuildEventServicesOrDie(env, grpcServer)

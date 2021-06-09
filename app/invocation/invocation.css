@@ -1,3 +1,39 @@
+.action-line {
+  margin-top: 32px;
+  padding-top: 32px;
+  border-top: 1px solid rgb(238, 238, 238);
+}
+
+.action-title {
+  font-weight: 700;
+  font-size: 18px;
+  color: #222;
+  margin-bottom: 16px;
+}
+
+.action-list {
+  display: block;
+  color: #222;
+}
+
+.action-section {
+  display: flex;
+  margin-bottom: 16px;
+}
+
+.action-section div {
+  flex-grow: 1;
+}
+
+.action-section div.action-property-title {
+  width: 20%;
+  flex-grow: 0;
+  flex-shrink: 0;
+  text-align: right;
+  margin-right: 16px;
+  font-weight: 700;
+}
+
 .cache-sections {
   display: flex;
   flex-wrap: wrap;
@@ -200,6 +236,7 @@
   font-size: 0.8em;
   font-weight: 600;
   margin-bottom: 4px;
+  cursor: pointer;
 }
 
 .invocation-execution-row-stats div {
@@ -294,4 +331,28 @@
   justify-content: space-between;
   flex-wrap: wrap;
   grid-gap: 8px;
+}
+
+.metadata-title {
+  text-decoration: underline;
+  font-weight: 600;
+  color: #222;
+}
+
+.metadata-detail {
+  font-weight: 300;
+  color: #444;
+}
+
+.prop-name {
+  color: #222;
+  font-weight: 600;
+}
+
+.prop-value {
+  color: #444;
+}
+
+.prop-value .detail {
+  color: #aaa;
 }

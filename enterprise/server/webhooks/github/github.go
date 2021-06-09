@@ -40,7 +40,8 @@ func RegisterWebhook(ctx context.Context, accessToken, repoURL, webhookURL strin
 	// name field. TODO: Is this actually required?
 	name := "web"
 	hook, _, err := client.Repositories.CreateHook(ctx, owner, repo, &gh.Hook{
-		Name: &name,
+		Name:   &name,
+		Events: eventsToReceive,
 		Config: map[string]interface{}{
 			"url":    webhookURL,
 			"events": eventsToReceive,

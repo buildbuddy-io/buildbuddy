@@ -13,7 +13,19 @@ export type TabsContext = {
   role: string;
 };
 
-export type TabId = "all" | "targets" | "log" | "details" | "artifacts" | "timing" | "cache" | "raw" | "execution" | "fetches";
+export type TabId =
+  | "all"
+  | "targets"
+  | "commands"
+  | "log"
+  | "details"
+  | "artifacts"
+  | "timing"
+  | "cache"
+  | "raw"
+  | "execution"
+  | "fetches"
+  | "action";
 
 export function getTabId(hash: string): TabId {
   return (hash.substring(1) as TabId) || "all";
@@ -24,7 +36,7 @@ export function getActiveTab({ hash, role, denseMode }: TabsContext): TabId {
 
   if (!denseMode) return "all";
 
-  return role === CI_RUNNER_ROLE ? "log" : "targets";
+  return role === CI_RUNNER_ROLE ? "commands" : "targets";
 }
 
 export default class InvocationTabsComponent extends React.Component<InvocationTabsProps> {
@@ -43,6 +55,7 @@ export default class InvocationTabsComponent extends React.Component<InvocationT
       <div className="tabs">
         {!this.props.denseMode && this.renderTab("all", { href: "#", label: "All" })}
         {isBazelInvocation && this.renderTab("targets", { label: "Targets" })}
+        {!isBazelInvocation && this.renderTab("commands", { label: "Commands" })}
         {this.renderTab("log", { label: "Logs" })}
         {this.renderTab("details", { label: "Details" })}
         {isBazelInvocation && this.renderTab("artifacts", { label: "Artifacts" })}

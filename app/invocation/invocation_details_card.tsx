@@ -35,6 +35,23 @@ export default class ArtifactsCardComponent extends React.Component {
         <div className="content">
           <div className="title">Invocation details</div>
           <div className="details">
+            {this.props.model.workflowConfigured && (
+              <>
+                <div className="invocation-section">
+                  <div className="invocation-section-title">Workflow action</div>
+                  <div>{this.props.model.workflowConfigured.actionName}</div>
+                </div>
+                <div className="invocation-section">
+                  <div className="invocation-section-title">Trigger event</div>
+                  <div>{this.props.model.workflowConfigured.actionTriggerEvent}</div>
+                </div>
+                <div className="invocation-section">
+                  <div className="invocation-section-title">Target branch</div>
+                  <div>{this.props.model.workflowConfigured.actionTriggerBranch}</div>
+                </div>
+              </>
+            )}
+
             <div className="invocation-section">
               <div className="invocation-section-title">Status</div>
               <div>{this.props.model.getStatus()}</div>

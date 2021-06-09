@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -37,7 +38,7 @@ func NewInvocationSearchService(env environment.Env, h *db.DBHandle) *Invocation
 
 func defaultSortParams() *inpb.InvocationSort {
 	return &inpb.InvocationSort{
-		SortField: inpb.InvocationSort_CREATED_AT_USEC_SORT_FIELD,
+		SortField: inpb.InvocationSort_UPDATED_AT_USEC_SORT_FIELD,
 		Ascending: false,
 	}
 }
@@ -107,6 +108,14 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 		return nil, err
 	}
 
+	groupID := req.GetRequestContext().GetGroupId()
+	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
+		return nil, err
+	}
+	if blocklist.IsBlockedForStatsQuery(groupID) {
+		return nil, status.ResourceExhaustedErrorf("Too many rows.")
+	}
+
 	q := query_builder.NewQuery(`SELECT * FROM Invocations as i`)
 
 	// Don't include anonymous builds.
@@ -138,6 +147,8 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	switch sort.SortField {
 	case inpb.InvocationSort_CREATED_AT_USEC_SORT_FIELD:
 		q.SetOrderBy("created_at_usec", sort.Ascending)
+	case inpb.InvocationSort_UPDATED_AT_USEC_SORT_FIELD:
+		q.SetOrderBy("updated_at_usec", sort.Ascending)
 	}
 
 	limitSize := defaultLimitSize

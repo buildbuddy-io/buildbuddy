@@ -33,6 +33,13 @@ message RegisterNodeRequest {
 
   // The node pool in which to register the node.
   string pool = 7;
+
+  // Unique ID that identifies this executor instance within a node pool. It is
+  // set once when the executor binary starts and preserved for the lifetime of
+  // the executor. Each executor generates its own ID on startup.
+  //
+  // Ex. "34c5cf7e-b3b1-4e20-b43c-3e196b30d983"
+  string executor_id = 8;
 }
 
 message RegisterNodeResponse {
@@ -89,7 +96,9 @@ message ScheduleTaskResponse {
   // Intentionally left blank.
 }
 
-message ReEnqueueTaskRequest { string task_id = 1; }
+message ReEnqueueTaskRequest {
+  string task_id = 1;
+}
 
 message ReEnqueueTaskResponse {
   // Intentionally left blank.
@@ -99,11 +108,24 @@ message EnqueueTaskReservationRequest {
   string task_id = 1;
   TaskSize task_size = 2;
   SchedulingMetadata scheduling_metadata = 3;
+
+  // If set, enqueue the task reservation on the given executor instance if it
+  // is directly connected to the scheduler that receives this request.
+  //
+  // If unset, or if there is no such connected executor, select any directly
+  // connected executor suitable for running the task.
+  //
+  // Ex. "610a4cd4-3c0f-41bb-ad72-abe933837d58"
+  string executor_id = 4;
 }
 
-message EnqueueTaskReservationResponse { string task_id = 1; }
+message EnqueueTaskReservationResponse {
+  string task_id = 1;
+}
 
-message RegisterExecutorRequest { ExecutionNode node = 1; }
+message RegisterExecutorRequest {
+  ExecutionNode node = 1;
+}
 
 message RegisterAndStreamWorkRequest {
   // Only one of the fields should be sent. oneofs not used due to awkward Go
@@ -178,10 +200,20 @@ message ExecutionNode {
   // Remote execution pool that this node is assigned to.
   // Ex. "buildbuddy-executors-us-west1-b"
   string pool = 7;
+
+  // Version of the executor binary.
+  string version = 8;
+
+  // Unique ID that identifies this executor instance within a node pool. It is
+  // set once when the executor binary starts and preserved for the lifetime of
+  // the executor. Each executor generates its own ID on startup.
+  //
+  // Ex. "34c5cf7e-b3b1-4e20-b43c-3e196b30d983"
+  string executor_id = 9;
 }
 
 message GetExecutionNodesRequest {
-  context.ResponseContext response_context = 1;
+  context.RequestContext request_context = 1;
 }
 
 message GetExecutionNodesResponse {

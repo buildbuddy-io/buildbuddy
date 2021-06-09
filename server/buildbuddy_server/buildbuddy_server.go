@@ -36,7 +36,8 @@ import (
 )
 
 const (
-	bytestreamProtocolPrefix = "bytestream://"
+	bytestreamProtocolPrefix  = "bytestream://"
+	actioncacheProtocolPrefix = "actioncache://"
 )
 
 type BuildBuddyServer struct {
@@ -662,6 +663,13 @@ func (s *BuildBuddyServer) GetInvocationStat(ctx context.Context, req *inpb.GetI
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (s *BuildBuddyServer) GetTrend(ctx context.Context, req *inpb.GetTrendRequest) (*inpb.GetTrendResponse, error) {
+	if iss := s.env.GetInvocationStatService(); iss != nil {
+		return iss.GetTrend(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error) {
 	if es := s.env.GetExecutionService(); es != nil {
 		return es.GetExecution(ctx, req)
@@ -734,7 +742,7 @@ func getBestFilename(filename, blobname string) string {
 }
 
 func parseByteStreamURL(bsURL, filename string) (*bsLookup, error) {
-	if strings.HasPrefix(bsURL, bytestreamProtocolPrefix) {
+	if strings.HasPrefix(bsURL, bytestreamProtocolPrefix) || strings.HasPrefix(bsURL, actioncacheProtocolPrefix) {
 		u, err := url.Parse(bsURL)
 		if err != nil {
 			return nil, err

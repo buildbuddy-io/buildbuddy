@@ -49,6 +49,7 @@ nogo(
 # Ignore generated proto files
 # gazelle:exclude **/*.pb.go
 # gazelle:exclude bundle.go
+# gazelle:exclude enterprise/bundle.go
 # Prefer generated BUILD files to be called BUILD over BUILD.bazel
 # gazelle:build_file_name BUILD,BUILD.bazel
 # gazelle:prefix github.com/buildbuddy-io/buildbuddy

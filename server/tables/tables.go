@@ -4,15 +4,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"gorm.io/gorm"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
-)
-
-const (
-	mySQLDialect = "mysql"
 )
 
 type tableDescriptor struct {
@@ -341,17 +338,21 @@ func (t *TelemetryLog) TableName() string {
 }
 
 type ExecutionNode struct {
-	OS                string
-	Host              string `gorm:"primaryKey"`
-	Pool              string
-	SchedulerHostPort string
-	GroupID           string
-	Constraints       string
-	Arch              string
 	Model
+	GroupID               string `gorm:"primaryKey;default:''"`
+	Host                  string `gorm:"primaryKey"`
+	Port                  int32  `gorm:"primaryKey;autoIncrement:false"`
+	OS                    string
+	Arch                  string
+	Pool                  string
+	Version               string
+	Constraints           string
 	AssignableMemoryBytes int64
 	AssignableMilliCPU    int64
-	Port                  int32 `gorm:"primaryKey;autoIncrement:false"`
+	SchedulerHostPort     string
+	UserID                string
+	Perms                 int
+	ExecutorID            string
 }
 
 func (n *ExecutionNode) TableName() string {
@@ -520,11 +521,40 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		})
 	}
 
+	executorsTable := (&ExecutionNode{}).TableName()
+	// If the table doesn't have group_id column yet, drop the whole table so that GORM re-creates it with a new
+	// primary key that includes group_id.
+	if m.HasTable(executorsTable) && !m.HasColumn(&ExecutionNode{}, "group_id") {
+		if err := m.DropTable(executorsTable); err != nil {
+			return nil, err
+		}
+	}
+
 	return postMigrate, nil
 }
 
 // Manual migration called after auto-migration.
 func PostAutoMigrate(db *gorm.DB) error {
+	indexes := map[string]string{
+		"invocations_trends_query_index":   "(`group_id`, `updated_at_usec`)",
+		"invocations_stats_group_id_index": "(`group_id`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+		"invocations_stats_user_index":     "(`group_id`, `user`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+		"invocations_stats_host_index":     "(`group_id`, `host`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+		"invocations_stats_repo_index":     "(`group_id`, `repo_url`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+		"invocations_stats_commit_index":   "(`group_id`, `commit_sha`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+	}
+	m := db.Migrator()
+	if m.HasTable("Invocations") {
+		for indexName, cols := range indexes {
+			if m.HasIndex("Invocations", indexName) {
+				continue
+			}
+			err := db.Exec(fmt.Sprintf("CREATE INDEX `%s` ON `Invocations`%s", indexName, cols)).Error
+			if err != nil {
+				log.Errorf("Error creating %s: %s", indexName, err)
+			}
+		}
+	}
 	return nil
 }
 

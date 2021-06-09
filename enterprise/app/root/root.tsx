@@ -91,10 +91,10 @@ export default class EnterpriseRootComponent extends React.Component {
   render() {
     let invocationId = router.getInvocationId(this.state.path);
     let compareInvocationIds = router.getInvocationIdsForCompare(this.state.path);
-    let historyUser = router.getHistoryUser(this.state.path);
-    let historyHost = router.getHistoryHost(this.state.path);
-    let historyRepo = router.getHistoryRepo(this.state.path);
-    let historyCommit = router.getHistoryCommit(this.state.path);
+    let historyUser = this.state.user && router.getHistoryUser(this.state.path);
+    let historyHost = this.state.user && router.getHistoryHost(this.state.path);
+    let historyRepo = this.state.user && router.getHistoryRepo(this.state.path);
+    let historyCommit = this.state.user && router.getHistoryCommit(this.state.path);
     let settings = this.state.path.startsWith("/settings");
     let org = this.state.path.startsWith("/org/");
     let orgCreate = this.state.path === Path.createOrgPath;
@@ -151,6 +151,7 @@ export default class EnterpriseRootComponent extends React.Component {
                   <InvocationComponent
                     user={this.state.user}
                     invocationId={invocationId}
+                    key={invocationId}
                     hash={this.state.hash}
                     search={this.state.search}
                     denseMode={this.state.denseMode}

@@ -33,12 +33,12 @@ import (
 const (
 	testAuthenticationHeader = "test-auth-header"
 
-	TestApiKeyHeader = "test-buildbuddy-api-key"
-	jwtHeader        = "x-buildbuddy-jwt"
+	APIKeyHeader = "x-buildbuddy-api-key"
+	jwtHeader    = "x-buildbuddy-jwt"
 )
 
 var (
-	testApiKeyRegex = regexp.MustCompile(TestApiKeyHeader + "=([a-zA-Z0-9]+)")
+	testApiKeyRegex = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]+)")
 	jwtTestKey      = []byte("testKey")
 )
 
@@ -99,7 +99,7 @@ func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthent
 }
 
 func (a *TestAuthenticator) AuthenticateHTTPRequest(w http.ResponseWriter, r *http.Request) context.Context {
-	headerVal := r.Header.Get(TestApiKeyHeader)
+	headerVal := r.Header.Get(APIKeyHeader)
 	if user, ok := a.testUsers[headerVal]; ok {
 		return context.WithValue(r.Context(), testAuthenticationHeader, user)
 	}
@@ -108,7 +108,7 @@ func (a *TestAuthenticator) AuthenticateHTTPRequest(w http.ResponseWriter, r *ht
 
 func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) context.Context {
 	if grpcMD, ok := metadata.FromIncomingContext(ctx); ok {
-		for _, h := range []string{TestApiKeyHeader, jwtHeader} {
+		for _, h := range []string{APIKeyHeader, jwtHeader} {
 			headerVals := grpcMD[h]
 			for _, headerVal := range headerVals {
 				if user, ok := a.testUsers[headerVal]; ok {
@@ -162,6 +162,20 @@ func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey st
 	return context.WithValue(ctx, testAuthenticationHeader, a.testUsers[apiKey])
 }
 
+func (a *TestAuthenticator) WithAuthenticatedUser(ctx context.Context, userID string) (context.Context, error) {
+	userInfo, ok := a.testUsers[userID]
+	if !ok {
+		return nil, status.FailedPreconditionErrorf("User %q unknown to test authenticator.", userID)
+	}
+	ctx = context.WithValue(ctx, testAuthenticationHeader, userInfo)
+	jwt, err := TestJWTForUserID(userInfo.GetUserID())
+	if err != nil {
+		return nil, err
+	}
+	ctx = context.WithValue(ctx, jwtHeader, jwt)
+	return ctx, nil
+}
+
 func RequestContext(userID string, groupID string) *ctxpb.RequestContext {
 	return &ctxpb.RequestContext{
 		UserId: &uidpb.UserId{
@@ -171,8 +185,8 @@ func RequestContext(userID string, groupID string) *ctxpb.RequestContext {
 	}
 }
 
-// WithAuthenticatedUser sets the authenticated user to the given user.
-func WithAuthenticatedUser(ctx context.Context, userInfo interfaces.UserInfo) context.Context {
+// WithAuthenticatedUserInfo sets the authenticated user to the given user.
+func WithAuthenticatedUserInfo(ctx context.Context, userInfo interfaces.UserInfo) context.Context {
 	return context.WithValue(ctx, testAuthenticationHeader, userInfo)
 }
 

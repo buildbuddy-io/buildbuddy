@@ -82,6 +82,7 @@ export default class RootComponent extends React.Component {
             {invocationId && (
               <InvocationComponent
                 invocationId={invocationId}
+                key={invocationId}
                 hash={this.state.hash}
                 search={this.state.search}
                 denseMode={this.state.denseMode}

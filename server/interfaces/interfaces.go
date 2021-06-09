@@ -152,8 +152,8 @@ type APIKeyGroup interface {
 type AuthDB interface {
 	InsertOrUpdateUserToken(ctx context.Context, subID string, token *tables.Token) error
 	ReadToken(ctx context.Context, subID string) (*tables.Token, error)
-	GetAPIKeyGroupFromAPIKey(apiKey string) (APIKeyGroup, error)
-	GetAPIKeyGroupFromBasicAuth(login, pass string) (APIKeyGroup, error)
+	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
+	GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (APIKeyGroup, error)
 }
 
 type UserDB interface {
@@ -198,6 +198,7 @@ type Webhook interface {
 // Allows aggregating invocation statistics.
 type InvocationStatService interface {
 	GetInvocationStat(ctx context.Context, req *inpb.GetInvocationStatRequest) (*inpb.GetInvocationStatResponse, error)
+	GetTrend(ctx context.Context, req *inpb.GetTrendRequest) (*inpb.GetTrendResponse, error)
 }
 
 // Allows searching invocations.
@@ -244,16 +245,42 @@ type SchedulerService interface {
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
+	GetGroupIDAndDefaultPoolForUser(ctx context.Context) (string, string, error)
 }
 
 type ExecutionService interface {
 	GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error)
 }
 
-// CommandContainer provides an execution environment for commands.
-type CommandContainer interface {
-	// Run the given command within the container.
-	Run(ctx context.Context, command *repb.Command, workingDir string) *CommandResult
+type ExecutionNode interface {
+	// GetExecutorID returns the ID for this execution node that uniquely identifies
+	// it within a node pool.
+	GetExecutorID() string
+}
+
+// TaskRouter decides which execution nodes should execute a task.
+//
+// Routing is namespaced by group ID (extracted from context) and remote instance
+// name. Tasks with different namespaces are not guaranteed to be routed the same.
+//
+// It is the caller's responsibility to check whether any execution nodes
+// passed via parameters are accessible by the authenticated group in the context.
+type TaskRouter interface {
+	// RankNodes returns a slice of the given nodes sorted in decreasing order of
+	// their suitability for executing the given command. Nodes with equal
+	// suitability are returned in random order (for load balancing purposes).
+	//
+	// If an error occurs, the nodes are returned in random order. The returned
+	// error can be logged, but should not be treated as fatal.
+	RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) ([]ExecutionNode, error)
+
+	// MarkComplete notifies the router that the command has been completed by the
+	// given executor instance. Subsequent calls to RankNodes may assign a higher
+	// rank to nodes with the given instance ID, given similar commands.
+	//
+	// Callers should not treat the returned error as fatal, since task routing is
+	// intended to be best-effort.
+	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string) error
 }
 
 // CommandResult captures the output and details of an executed command.
@@ -333,7 +360,7 @@ func (f CheckerFunc) Check(ctx context.Context) error {
 }
 
 type HealthChecker interface {
-	// Adds a healthcheck -- the server's readiness is dependend on all
+	// AddHealthCheck adds a healthcheck -- the server's readiness is dependent on all
 	// registered heathchecks passing.
 	AddHealthCheck(name string, hc Checker)
 
@@ -345,7 +372,7 @@ type HealthChecker interface {
 	RegisterShutdownFunction(hc CheckerFunc)
 
 	// WaitForGracefulShutdown should be called as the last thing in a
-	// main function -- it will block forever until a server recieves a
+	// main function -- it will block forever until a server receives a
 	// shutdown signal.
 	WaitForGracefulShutdown()
 
@@ -356,4 +383,9 @@ type HealthChecker interface {
 	// If a HealthCheck returns failure for some reason, the server will
 	// stop returning OK and will instead return Service Unavailable error.
 	ReadinessHandler() http.Handler
+
+	// Shutdown initiates a shutdown of the server.
+	// This is intended to be used by tests as normally shutdown is automatically initiated upon receipt of a SIGTERM
+	// signal.
+	Shutdown()
 }

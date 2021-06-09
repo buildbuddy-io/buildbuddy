@@ -2,13 +2,11 @@ package authdb
 
 import (
 	"context"
-	"errors"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"gorm.io/gorm"
 )
 
 type AuthDB struct {
@@ -39,10 +37,10 @@ func (g *apiKeyGroup) GetUseGroupOwnedExecutors() bool {
 
 func (d *AuthDB) InsertOrUpdateUserToken(ctx context.Context, subID string, token *tables.Token) error {
 	token.SubID = subID
-	return d.h.Transaction(func(tx *gorm.DB) error {
+	return d.h.Transaction(ctx, func(tx *db.DB) error {
 		var existing tables.Token
 		if err := tx.Where("sub_id = ?", subID).First(&existing).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			if db.IsRecordNotFound(err) {
 				return tx.Create(token).Error
 			}
 			return err
@@ -61,9 +59,9 @@ func (d *AuthDB) ReadToken(ctx context.Context, subID string) (*tables.Token, er
 	return ti, nil
 }
 
-func (d *AuthDB) GetAPIKeyGroupFromAPIKey(apiKey string) (interfaces.APIKeyGroup, error) {
+func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
+	err := d.h.TransactionWithOptions(ctx, db.StaleReadOptions(), func(tx *db.DB) error {
 		existingRow := tx.Raw(`
 			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
 			FROM `+"`Groups`"+` AS g, APIKeys AS ak
@@ -72,7 +70,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(apiKey string) (interfaces.APIKeyGroup
 		return existingRow.Take(akg).Error
 	})
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if db.IsRecordNotFound(err) {
 			return nil, status.UnauthenticatedErrorf("Invalid API key %s", apiKey)
 		}
 		return nil, err
@@ -80,9 +78,9 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(apiKey string) (interfaces.APIKeyGroup
 	return akg, nil
 }
 
-func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(login, pass string) (interfaces.APIKeyGroup, error) {
+func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(db.StaleReadOptions(), func(tx *gorm.DB) error {
+	err := d.h.TransactionWithOptions(ctx, db.StaleReadOptions(), func(tx *db.DB) error {
 		existingRow := tx.Raw(`
 			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
 			FROM `+"`Groups`"+` AS g, APIKeys AS ak
@@ -91,7 +89,7 @@ func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(login, pass string) (interfaces.API
 		return existingRow.Scan(akg).Error
 	})
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if db.IsRecordNotFound(err) {
 			return nil, status.UnauthenticatedErrorf("User/Group specified by %s:%s not found", login, pass)
 		}
 		return nil, err

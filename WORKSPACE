@@ -157,6 +157,26 @@ load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
 
 protobuf_deps()
 
+load("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
+
+dockerfile_image(
+    name = "default_execution_image",
+    dockerfile = "//dockerfiles/default_execution_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "executor_image",
+    dockerfile = "//dockerfiles/executor_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "nonroot_user_image",
+    dockerfile = "//dockerfiles/test_images/nonroot_user_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
 load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
 
 container_pull(

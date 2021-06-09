@@ -46,7 +46,7 @@ func (s *ActionCacheServer) getCASCache(instanceName string) interfaces.Cache {
 	return namespace.CASCache(s.cache, instanceName)
 }
 
-func (s *ActionCacheServer) checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*repb.Digest) error {
+func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*repb.Digest) error {
 	foundMap, err := cache.ContainsMulti(ctx, digests)
 	if err != nil {
 		return err
@@ -60,7 +60,7 @@ func (s *ActionCacheServer) checkFilesExist(ctx context.Context, cache interface
 	return nil
 }
 
-func (s *ActionCacheServer) validateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.ActionResult) error {
+func ValidateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.ActionResult) error {
 	outputFileDigests := make([]*repb.Digest, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
 	appendDigest := func(d *repb.Digest) {
@@ -101,7 +101,7 @@ func (s *ActionCacheServer) validateActionResult(ctx context.Context, cache inte
 		return err
 	}
 
-	return s.checkFilesExist(ctx, cache, outputFileDigests)
+	return checkFilesExist(ctx, cache, outputFileDigests)
 }
 
 func setWorkerMetadata(ar *repb.ActionResult) {
@@ -155,7 +155,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := proto.Unmarshal(blob, rsp); err != nil {
 		return nil, err
 	}
-	if err := s.validateActionResult(ctx, casCache, rsp); err != nil {
+	if err := ValidateActionResult(ctx, casCache, rsp); err != nil {
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
 	return rsp, nil

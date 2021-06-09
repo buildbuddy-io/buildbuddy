@@ -24,9 +24,9 @@ message ApiKey {
   enum Capability {
     UNKNOWN_CAPABILITY = 0;
     // Allows writing to the content-addressable store and action cache.
-    CACHE_WRITE_CAPABILITY = 1; // 2^0
+    CACHE_WRITE_CAPABILITY = 1;  // 2^0
     // Allows registering an executor with the scheduler.
-    REGISTER_EXECUTOR_CAPABILITY = 2; // 2^1
+    REGISTER_EXECUTOR_CAPABILITY = 2;  // 2^1
   }
 
   // Capabilities associated with this API key.
@@ -90,7 +90,9 @@ message UpdateApiKeyRequest {
   repeated ApiKey.Capability capability = 4;
 }
 
-message UpdateApiKeyResponse { context.ResponseContext response_context = 1; }
+message UpdateApiKeyResponse {
+  context.ResponseContext response_context = 1;
+}
 
 message DeleteApiKeyRequest {
   context.RequestContext request_context = 1;
@@ -100,4 +102,6 @@ message DeleteApiKeyRequest {
   string id = 2;
 }
 
-message DeleteApiKeyResponse { context.ResponseContext response_context = 1; }
+message DeleteApiKeyResponse {
+  context.ResponseContext response_context = 1;
+}

@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
 go_library(
-    name = "ci_runner_lib",
+    name = "main",
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
     visibility = [
@@ -18,6 +18,7 @@ go_library(
         "//server/util/git",
         "//server/util/grpc_client",
         "//server/util/lockingbuffer",
+        "//server/util/log",
         "//server/util/status",
         "@com_github_go_git_go_git_v5//:go-git",
         "@com_github_go_git_go_git_v5//config",
@@ -34,7 +35,7 @@ go_library(
 
 go_binary(
     name = "ci_runner",
-    embed = [":ci_runner_lib"],
+    embed = [":main"],
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
