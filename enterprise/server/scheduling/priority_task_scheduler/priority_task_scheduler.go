@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_leaser"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -27,11 +28,6 @@ const (
 
 var shuttingDownLogOnce sync.Once
 
-type Options struct {
-	RAMBytesCapacityOverride  int64
-	CPUMillisCapacityOverride int64
-}
-
 type PriorityTaskScheduler struct {
 	env           environment.Env
 	log           log.Logger
@@ -42,23 +38,11 @@ type PriorityTaskScheduler struct {
 
 	mu                    sync.Mutex
 	activeTaskCancelFuncs map[*context.CancelFunc]struct{}
-	ramBytesCapacity      int64
-	ramBytesUsed          int64
-	cpuMillisCapacity     int64
-	cpuMillisUsed         int64
+	resourceTracker       interfaces.ResourceTracker
 }
 
-func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, options *Options) *PriorityTaskScheduler {
+func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor) *PriorityTaskScheduler {
 	sublog := log.NamedSubLogger(exec.Name())
-
-	ramBytesCapacity := options.RAMBytesCapacityOverride
-	if ramBytesCapacity == 0 {
-		ramBytesCapacity = int64(float64(resources.GetAllocatedRAMBytes()) * .80)
-	}
-	cpuMillisCapacity := options.CPUMillisCapacityOverride
-	if cpuMillisCapacity == 0 {
-		cpuMillisCapacity = int64(float64(resources.GetAllocatedCPUMillis()) * .80)
-	}
 
 	qes := &PriorityTaskScheduler{
 		env:                   env,
@@ -67,9 +51,8 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 		exec:                  exec,
 		newTaskSignal:         make(chan struct{}, 1),
 		activeTaskCancelFuncs: make(map[*context.CancelFunc]struct{}, 0),
+		resourceTracker:       env.GetResourceTracker(),
 		shuttingDown:          false,
-		ramBytesCapacity:      ramBytesCapacity,
-		cpuMillisCapacity:     cpuMillisCapacity,
 	}
 	// This func ensures that we don't attempt to "claim" work that was enqueued
 	// but not started yet, ensuring that someone else will have a chance to get it.
@@ -141,23 +124,11 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.Exec
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeTaskCancelFuncs[cancel] = struct{}{}
 	metrics.RemoteExecutionTasksExecuting.Set(float64(len(q.activeTaskCancelFuncs)))
-	if size := res.GetTaskSize(); size != nil {
-		q.ramBytesUsed += size.GetEstimatedMemoryBytes()
-		q.cpuMillisUsed += size.GetEstimatedMilliCpu()
-		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.ramBytesUsed))
-		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.cpuMillisUsed))
-	}
 }
 
 func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	delete(q.activeTaskCancelFuncs, cancel)
 	metrics.RemoteExecutionTasksExecuting.Set(float64(len(q.activeTaskCancelFuncs)))
-	if size := res.GetTaskSize(); size != nil {
-		q.ramBytesUsed -= size.GetEstimatedMemoryBytes()
-		q.cpuMillisUsed -= size.GetEstimatedMilliCpu()
-		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.ramBytesUsed))
-		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.cpuMillisUsed))
-	}
 }
 
 func (q *PriorityTaskScheduler) canFitAnotherTask(res *scpb.EnqueueTaskReservationRequest) bool {
@@ -194,15 +165,29 @@ func (q *PriorityTaskScheduler) handleTask() {
 	if qLen == 0 {
 		return
 	}
-	nextTask := q.pq.Peek()
-	if nextTask == nil || !q.canFitAnotherTask(nextTask) {
-		return
-	}
-	reservation := q.pq.Pop()
+	reservation := q.pq.Peek()
 	if reservation == nil {
-		q.log.Warningf("reservation is nil")
 		return
 	}
+
+	res := &interfaces.Resources{
+		MemoryBytes: reservation.GetSize().GetEstimatedMemoryBytes(),
+		MilliCPU:    reservation.GetSize().GetEstimatedMilliCpu(),
+	}
+	// Evict from the runner pool until there are enough resources to run the
+	// task.
+	// TODO: Consider reducing the estimated memory for the task if it can be
+	// guaranteed to run on an existing paused runner, since most of the
+	// task's data is probably already available in the runner's memory.
+	for !q.resourceTracker.Request(res) {
+		if !q.exec.RunnerPool().TryEvict() {
+			return
+		}
+	}
+
+	// This pop should always succeed since we peeked above while holding the lock.
+	q.pq.Pop()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	q.trackTask(reservation, &cancel)
 
@@ -212,6 +197,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 			q.mu.Lock()
 			defer q.mu.Unlock()
 			q.untrackTask(reservation, &cancel)
+			q.resourceTracker.Return(res)
 		}()
 
 		taskLease := task_leaser.NewTaskLeaser(q.env, q.exec.Name(), reservation.GetTaskId())

@@ -63,6 +63,7 @@ type Env interface {
 	GetRemoteExecutionService() interfaces.RemoteExecutionService
 	GetSchedulerService() interfaces.SchedulerService
 	GetTaskRouter() interfaces.TaskRouter
+	GetResourceTracker() interfaces.ResourceTracker
 	GetCacheRedisClient() *redis.Client
 	GetRemoteExecutionRedisClient() *redis.Client
 	GetRemoteExecutionRedisPubSubClient() *redis.Client

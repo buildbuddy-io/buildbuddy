@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -80,6 +81,9 @@ var (
 	// added to the pool because its current disk usage exceeds the max configured
 	// limit.
 	RunnerMaxDiskSizeExceeded = status.ResourceExhaustedError("runner disk size limit exceeded")
+	// NotEnoughResources is returned from Pool.Add if a runner cannot be added
+	// because there aren't enough system resources available.
+	NotEnoughResources = status.ResourceExhaustedError("not enough system resources available to pool runner")
 
 	flagFilePattern           = regexp.MustCompile(`^(?:@|--?flagfile=)(.+)`)
 	externalRepositoryPattern = regexp.MustCompile(`^@.*//.*`)
@@ -210,6 +214,10 @@ func (r *CommandRunner) RemoveInBackground() chan error {
 	return errCh
 }
 
+func (r *CommandRunner) Resources() *interfaces.Resources {
+	return &interfaces.Resources{MemoryBytes: r.memoryUsageBytes}
+}
+
 // ACLForUser returns an ACL that grants anyone in the given user's group to
 // Read/Write permissions for a runner.
 func ACLForUser(user interfaces.UserInfo) *aclpb.ACL {
@@ -231,14 +239,18 @@ type Pool struct {
 	maxRunnerCount            int
 	maxRunnerMemoryUsageBytes int64
 	maxRunnerDiskUsageBytes   int64
+	resourceTracker           interfaces.ResourceTracker
 
 	mu             sync.RWMutex // protects(isShuttingDown), protects(runners)
 	isShuttingDown bool
 	runners        []*CommandRunner
 }
 
-func NewPool(cfg *config.RunnerPoolConfig) *Pool {
-	p := &Pool{runners: []*CommandRunner{}}
+func NewPool(env environment.Env, cfg *config.RunnerPoolConfig) *Pool {
+	p := &Pool{
+		resourceTracker: env.GetResourceTracker(),
+		runners:         []*CommandRunner{},
+	}
 	p.setLimits(cfg)
 	return p
 }
@@ -280,6 +292,10 @@ func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
 		return status.UnavailableError("pool is shutting down; cannot add new runners")
 	}
 
+	if !p.resourceTracker.Request(r.Resources()) {
+		return NotEnoughResources
+	}
+
 	if len(p.runners) == p.maxRunnerCount {
 		if len(p.runners) == 0 {
 			return status.InternalError("pool max runner count is 0; this should never happen")
@@ -292,6 +308,7 @@ func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
 		metrics.RunnerPoolCount.Dec()
 		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
 		metrics.RunnerPoolMemoryUsageBytes.Sub(float64(r.memoryUsageBytes))
+		p.resourceTracker.Return(r.Resources())
 
 		// TODO: Add to a cleanup queue instead of spawning a goroutine here.
 		go func() {
@@ -364,6 +381,7 @@ func (p *Pool) Take(q *Query) *CommandRunner {
 		metrics.RecycleRunnerRequests.With(prometheus.Labels{
 			metrics.RecycleRunnerRequestStatusLabel: hitStatusLabel,
 		}).Inc()
+		p.resourceTracker.Return(r.Resources())
 
 		return r
 	}
@@ -402,6 +420,36 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 		return status.InternalErrorf("failed to shut down runner pool: %s", errSlice(errs))
 	}
 	return nil
+}
+
+// TryEvict attempts to evict a runner from the pool in order to free up system
+// resources. It returns whether a runner was evicted.
+func (p *Pool) TryEvict() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if len(p.runners) == 0 {
+		return false
+	}
+
+	// Evict the first and oldest runner.
+	r := p.runners[0]
+	p.runners = p.runners[1:]
+
+	metrics.RunnerPoolCount.Dec()
+	metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
+	metrics.RunnerPoolMemoryUsageBytes.Sub(float64(r.memoryUsageBytes))
+	p.resourceTracker.Return(&interfaces.Resources{
+		MemoryBytes: r.memoryUsageBytes,
+	})
+
+	go func() {
+		if err := <-r.RemoveInBackground(); err != nil {
+			log.Errorf("Failed to remove evicted runner: %s", err)
+		}
+	}()
+
+	return true
 }
 
 // TryRecycle either adds r back to the pool if appropriate, or removes it,

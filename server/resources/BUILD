@@ -9,6 +9,8 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//server/interfaces",
+        "//server/metrics",
         "//server/util/log",
         "@com_github_elastic_gosigar//:gosigar",
     ],

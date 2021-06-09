@@ -7,8 +7,11 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/elastic/gosigar"
+
 )
 
 const (
@@ -114,4 +117,64 @@ func GetMyPort() (int32, error) {
 		return 0, err
 	}
 	return int32(i), nil
+}
+
+type Tracker struct {
+	capacity *interfaces.Resources
+
+	mu       sync.Mutex // protects(assigned)
+	assigned *interfaces.Resources
+}
+
+type TrackerOptions struct {
+	RAMBytesCapacityOverride  int64
+	CPUMillisCapacityOverride int64
+}
+
+func NewTracker(opts *TrackerOptions) *Tracker {
+	capacity := &interfaces.Resources{
+		MemoryBytes: opts.RAMBytesCapacityOverride,
+		MilliCPU:    opts.CPUMillisCapacityOverride,
+	}
+	if capacity.MemoryBytes == 0 {
+		capacity.MemoryBytes = int64(float64(GetAllocatedRAMBytes()) * .80)
+	}
+	if capacity.MilliCPU == 0 {
+		capacity.MilliCPU = int64(float64(GetAllocatedCPUMillis()) * .80)
+	}
+	return &Tracker{
+		capacity: &interfaces.Resources{
+			MemoryBytes: GetAllocatedRAMBytes(),
+			MilliCPU:    GetAllocatedCPUMillis(),
+		},
+	}
+}
+
+func (t *Tracker) Request(r *interfaces.Resources) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if r.MemoryBytes > t.capacity.MemoryBytes-t.assigned.MemoryBytes ||
+		r.MilliCPU > t.capacity.MilliCPU-t.assigned.MilliCPU {
+		return false
+	}
+
+	t.assigned.MemoryBytes += r.MemoryBytes
+	t.assigned.MilliCPU += r.MilliCPU
+	t.updateMetrics()
+	return true
+}
+
+func (t *Tracker) Return(r *interfaces.Resources) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.assigned.MemoryBytes -= r.MemoryBytes
+	t.assigned.MilliCPU -= r.MilliCPU
+	t.updateMetrics()
+}
+
+func (t *Tracker) updateMetrics() {
+	metrics.RemoteExecutionAssignedRAMBytes.Set(float64(t.assigned.MemoryBytes))
+	metrics.RemoteExecutionAssignedMilliCPU.Set(float64(t.assigned.MilliCPU))
 }

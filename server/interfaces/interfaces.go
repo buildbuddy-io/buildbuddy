@@ -346,6 +346,20 @@ type RepoDownloader interface {
 	TestRepoAccess(ctx context.Context, repoURL, username, accessToken string) error
 }
 
+type Resources struct {
+	MemoryBytes int64
+	MilliCPU    int64
+	// TODO: Track disk usage here as well.
+}
+
+type ResourceTracker interface {
+	// Request the given resources, returning false if the resources are not
+	// available.
+	Request(*Resources) bool
+	// Return the given resources back to the machine.
+	Return(*Resources)
+}
+
 type Checker interface {
 	// Returns nil on success, error on failure. Returning an error will
 	// indicate to the health checker that this service is unhealthy and

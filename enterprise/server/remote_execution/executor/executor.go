@@ -179,6 +179,10 @@ func (s *Executor) Name() string {
 	return s.name
 }
 
+func (s *Executor) RunnerPool() *runner.Pool {
+	return s.runnerPool
+}
+
 func (s *Executor) hostBuildRoot() string {
 	if s.podID == "" {
 		// Probably running on bare metal -- return the build root directly.

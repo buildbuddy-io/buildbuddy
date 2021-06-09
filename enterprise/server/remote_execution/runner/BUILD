@@ -16,6 +16,7 @@ go_library(
         "//proto:user_id_go_proto",
         "//proto:worker_go_proto",
         "//server/config",
+        "//server/environment",
         "//server/interfaces",
         "//server/metrics",
         "//server/resources",
