@@ -44,8 +44,11 @@ jobs:
         run: echo ::set-output name=TAG::${GITHUB_REF/refs\/tags\//}
   
       - name: Upload Artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }} | gh auth login --with-token
+          touch "hello-from-${{matrix.OSName}}.txt
+          gh release upload ${{ steps.tag.outputs.TAG }} "hello-from-${{matrix.OSName}}.txt"
           "${GITHUB_WORKSPACE}/bin/bazel" build --config=release --define version=${{ steps.tag.outputs.TAG }} //server/cmd/buildbuddy:buildbuddy
           cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-${{matrix.OSName}}-amd64
           gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-${{matrix.OSName}}-amd64 --clobber
