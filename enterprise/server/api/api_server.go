@@ -258,6 +258,7 @@ func targetMapFromInvocation(inv *invocation.Invocation) map[string]*apipb.Targe
 					Label:    label,
 					Status:   cmnpb.Status_BUILDING,
 					RuleType: strings.Replace(p.Configured.TargetKind, " rule", "", -1),
+					Tag:      p.Configured.Tag,
 				}
 			}
 		case *build_event_stream.BuildEvent_Completed:

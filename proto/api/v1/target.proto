@@ -47,8 +47,11 @@ message Target {
   // When this target started and its duration.
   Timing timing = 4;
 
-  // The type of the target rule Ex: java_binary
+  // The type of the target rule. Ex: java_binary
   string rule_type = 5;
+
+  // Tags applied to this target (if any).
+  repeated string tag = 6;
 }
 
 // The selector used to specify which targets to return.
