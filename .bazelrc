@@ -68,6 +68,7 @@ build:release --tls_client_key=buildbuddy-key.pem
 build:release -c opt
 build:release --stamp
 build:release --define release=true
+build:release --remote_download_toplevel
 
 # By default, build logs get sent to the production server
 build --bes_results_url=https://app.buildbuddy.io/invocation/
