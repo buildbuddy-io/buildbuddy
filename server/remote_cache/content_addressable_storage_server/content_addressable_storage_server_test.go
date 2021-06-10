@@ -48,6 +48,35 @@ func (e *evilCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*
 	return rsp, err
 }
 
+func TestBatchUpdateBlobs(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	clientConn := runCASServer(ctx, te, t)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	req := &repb.BatchUpdateBlobsRequest{}
+	for i := 0; i < 100; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
+			Digest: d,
+			Data:   buf,
+		})
+	}
+	rsp, err := casClient.BatchUpdateBlobs(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, 100, len(rsp.GetResponses()))
+	for _, singleRsp := range rsp.GetResponses() {
+		assert.Equal(t, int32(gcodes.OK), singleRsp.GetStatus().GetCode())
+	}
+}
+
 func TestMalevolentCache(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
@@ -79,14 +108,4 @@ func TestMalevolentCache(t *testing.T) {
 	assert.Equal(t, 1, len(set.GetResponses()))
 	assert.Equal(t, d.GetHash(), set.GetResponses()[0].GetDigest().GetHash())
 	assert.Equal(t, int32(gcodes.OK), set.GetResponses()[0].GetStatus().GetCode())
-
-	get, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
-		Digests: []*repb.Digest{d},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Equal(t, 1, len(get.GetResponses()))
-	assert.Equal(t, d.GetHash(), get.GetResponses()[0].GetDigest().GetHash())
-	assert.Equal(t, int32(gcodes.NotFound), get.GetResponses()[0].GetStatus().GetCode())
 }

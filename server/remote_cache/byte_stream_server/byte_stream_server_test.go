@@ -6,10 +6,13 @@ import (
 	"io"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"google.golang.org/grpc"
 
@@ -127,5 +130,56 @@ func TestRPCRead(t *testing.T) {
 		if got != tc.wantData {
 			t.Errorf("got %.100s; want %.100s", got, tc.wantData)
 		}
+	}
+}
+
+func TestRPCWrite(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	clientConn := runByteStreamServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	// Test that a regular bytestream upload works.
+	d, readSeeker := testdigest.NewRandomDigestReader(t, 1000)
+	instanceNameDigest := digest.NewInstanceNameDigest(d, "")
+	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRPCMalformedWrite(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	clientConn := runByteStreamServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	// Test that a malformed upload (incorrect digest) is rejected.
+	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+	instanceNameDigest := digest.NewInstanceNameDigest(d, "")
+	buf[0] = ^buf[0] // flip bits in byte to corrupt digest.
+
+	readSeeker := bytes.NewReader(buf)
+	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
+	if !status.IsDataLossError(err) {
+		t.Fatalf("Expected data loss error but got %s", err)
+	}
+}
+
+func TestRPCTooLongWrite(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	clientConn := runByteStreamServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	// Test that a malformed upload (wrong bytesize) is rejected.
+	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+	d.SizeBytes += 1 // increment expected byte count by 1 to trigger mismatch.
+	instanceNameDigest := digest.NewInstanceNameDigest(d, "")
+
+	readSeeker := bytes.NewReader(buf)
+	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
+	if !status.IsDataLossError(err) {
+		t.Fatalf("Expected data loss error but got %s", err)
 	}
 }
