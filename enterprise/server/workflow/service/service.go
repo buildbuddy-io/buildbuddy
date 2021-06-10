@@ -650,8 +650,7 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	return err
 }
 
-// starts a workflow execution and returns the invocation ID for the workflow
-// invocation to be spawned by the CI runner.
+// starts a CI runner execution and returns the execution ID.
 func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workflow, wd *webhook_data.WebhookData, extraCIRunnerArgs []string) (string, error) {
 	key, err := ws.apiKeyForWorkflow(ctx, wf)
 	if err != nil {
