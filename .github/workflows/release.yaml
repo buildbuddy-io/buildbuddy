@@ -39,6 +39,11 @@ jobs:
           mv bazelisk-${{matrix.OSName}}-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
           chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
 
+      - name: Create certs
+        run: |
+          echo "${{ secrets.BUILDBUDDY_ORG_CERT }}">buildbuddy-cert.pem
+          echo "${{ secrets.BUILDBUDDY_ORG_KEY }}">buildbuddy-key.pem
+
       - name: Get Tag
         id: tag
         run: echo ::set-output name=TAG::${GITHUB_REF/refs\/tags\//}
