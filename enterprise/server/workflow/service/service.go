@@ -393,6 +393,7 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 		case op := <-opCh:
 			stage = operation.ExtractStage(op)
 		case <-time.After(1 * time.Second):
+			// Fall through
 		}
 		if stage == repb.ExecutionStage_EXECUTING || stage == repb.ExecutionStage_COMPLETED {
 			_, err := indb.LookupInvocation(ctx, invocationID)
