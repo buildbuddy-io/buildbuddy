@@ -88,7 +88,7 @@ var (
 	triggerBranch = flag.String("trigger_branch", "", "Branch to check action triggers against.")
 	workflowID    = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 	actionName    = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
-	invocationID  = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow.")
+	invocationID  = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
@@ -152,7 +152,12 @@ func RunAllActions(ctx context.Context, cfg *config.BuildBuddyConfig, im *initMe
 			continue
 		}
 
-		iid := *invocationID
+		iid := ""
+		// Respect the invocation ID flag only when running a single action
+		// (via ExecuteWorkflow).
+		if *actionName != "" {
+			iid = *invocationID
+		}
 		if iid == "" {
 			iid = newUUID()
 		}

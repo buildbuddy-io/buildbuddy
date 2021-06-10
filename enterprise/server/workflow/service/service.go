@@ -5,13 +5,16 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
@@ -25,6 +28,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/oauth2"
+	"google.golang.org/genproto/googleapis/longrunning"
+	"gorm.io/gorm"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -293,7 +298,10 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	// Lookup workflow
 	wf := &tables.Workflow{}
 	db := ws.env.GetDBHandle()
-	err = db.Raw(`SELECT group_id, repo_url, access_token, perms FROM Workflows WHERE workflow_id = ?`).Take(wf).Error
+	err = db.Raw(
+		`SELECT group_id, repo_url, access_token, perms FROM Workflows WHERE workflow_id = ?`,
+		req.GetWorkflowId(),
+	).Take(wf).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, status.NotFoundError("Workflow not found")
@@ -310,7 +318,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	// Execute
 	isRepoPrivate := false
 	// TODO: Support other Git providers. We default to false on those for now,
-	// which means that we don't pass auth credentials in this case.
+	// which means that we don't pass secrets even for private repos.
 	if isGitHubURL(wf.RepoURL) {
 		isRepoPrivate, err = github.IsRepoPrivate(ctx, wf.AccessToken, wf.RepoURL)
 		if err != nil {
@@ -318,7 +326,8 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		}
 	}
 	// TODO: Refactor to avoid using this WebhookData struct in the case of manual
-	// workflow execution, since there are no webhooks involved.
+	// workflow execution, since there are no webhooks involved when executing a
+	// workflow manually.
 	wd := &webhook_data.WebhookData{
 		PushedBranch:  req.GetBranch(),
 		TargetBranch:  req.GetBranch(),
@@ -326,9 +335,78 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		SHA:           req.GetCommitSha(),
 		IsRepoPrivate: isRepoPrivate,
 	}
-	invocationID, err := ws.executeWorkflow(ctx, wf, wd, req.GetActionName())
+	invocationUUID, err := guuid.NewRandom()
+	if err != nil {
+		return nil, err
+	}
+	invocationID := invocationUUID.String()
+	extraCIRunnerArgs := []string{
+		fmt.Sprintf("--action_name=%s", req.GetActionName()),
+		fmt.Sprintf("--invocation_id=%s", invocationID),
+	}
+
+	executionID, err := ws.executeWorkflow(ctx, wf, wd, extraCIRunnerArgs)
+
+	if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
+		return nil, err
+	}
 
 	return &wfpb.ExecuteWorkflowResponse{InvocationId: invocationID}, nil
+}
+
+func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context, executionID, invocationID string) error {
+	executionClient := ws.env.GetRemoteExecutionClient()
+	indb := ws.env.GetInvocationDB()
+
+	errCh := make(chan error)
+	opCh := make(chan *longrunning.Operation)
+
+	waitStream, err := executionClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
+		Name: executionID,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Listen on operation stream in the background
+	go func() {
+		for {
+			op, err := waitStream.Recv()
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				errCh <- err
+				return
+			}
+			opCh <- op
+		}
+	}()
+
+	stage := repb.ExecutionStage_UNKNOWN
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-errCh:
+			return err
+		case op := <-opCh:
+			stage = operation.ExtractStage(op)
+		case <-time.After(1 * time.Second):
+		}
+		if stage == repb.ExecutionStage_EXECUTING || stage == repb.ExecutionStage_COMPLETED {
+			_, err := indb.LookupInvocation(ctx, invocationID)
+			if err == nil {
+				return nil
+			}
+			if !db.IsRecordNotFound(err) {
+				return err
+			}
+		}
+		if stage == repb.ExecutionStage_COMPLETED {
+			return status.InternalErrorf("Failed to create workflow invocation (execution ID: %s)", executionID)
+		}
+	}
 }
 
 func (ws *workflowService) GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error) {
@@ -408,20 +486,20 @@ func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID
 // Creates an action that executes the CI runner for the given workflow and params.
 // Returns the digest of the action as well as the invocation ID that the CI runner
 // will assign to the workflow invocation.
-func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *webhook_data.WebhookData, ak *tables.APIKey, instanceName, actionName string) (*repb.Digest, string, error) {
+func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *webhook_data.WebhookData, ak *tables.APIKey, instanceName string, extraArgs []string) (*repb.Digest, error) {
 	cache := ws.env.GetCache()
 	if cache == nil {
-		return nil, "", status.UnavailableError("No cache configured.")
+		return nil, status.UnavailableError("No cache configured.")
 	}
 
 	runnerBinName := "buildbuddy_ci_runner"
 	runnerBinFile, err := runnerBinaryFile()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	runnerBinDigest, err := cachetools.UploadBytesToCAS(ctx, cache, instanceName, runnerBinFile)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	dir := &repb.Directory{
 		Files: []*repb.FileNode{
@@ -434,7 +512,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, dir)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	envVars := []*repb.Command_EnvironmentVariable{}
 	if wd.IsTrusted() {
@@ -444,14 +522,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			{Name: "REPO_TOKEN", Value: wf.AccessToken},
 		}...)
 	}
-	invocationID, err := guuid.NewRandom()
-	if err != nil {
-		return nil, "", status.UnknownErrorf("Failed to generate invocation ID: %s", err.Error())
-	}
 	conf := ws.env.GetConfigurator()
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
-		Arguments: []string{
+		Arguments: append([]string{
 			"./" + runnerBinName,
 			"--bes_backend=" + conf.GetAppEventsAPIURL(),
 			"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
@@ -461,9 +535,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--workflow_id=" + wf.WorkflowID,
 			"--trigger_event=" + wd.EventName,
 			"--trigger_branch=" + wd.TargetBranch,
-			"--action_name=" + actionName,
-			"--invocation_id=" + invocationID.String(),
-		},
+		}, extraArgs...),
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "container-image", Value: "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1"},
@@ -480,7 +552,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, cmd)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	action := &repb.Action{
 		CommandDigest:   cmdDigest,
@@ -489,9 +561,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, action)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return actionDigest, invocationID.String(), err
+	return actionDigest, err
 }
 
 func runnerBinaryFile() (*os.File, error) {
@@ -573,14 +645,13 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	actionName := "" // Run all actions that match.
-	_, err = ws.executeWorkflow(ctx, wf, webhookData, actionName)
+	_, err = ws.executeWorkflow(ctx, wf, webhookData, nil /*=extraCIRunnerArgs*/)
 	return err
 }
 
 // starts a workflow execution and returns the invocation ID for the workflow
 // invocation to be spawned by the CI runner.
-func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workflow, wd *webhook_data.WebhookData, actionName string) (string, error) {
+func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workflow, wd *webhook_data.WebhookData, extraCIRunnerArgs []string) (string, error) {
 	key, err := ws.apiKeyForWorkflow(ctx, wf)
 	if err != nil {
 		return "", err
@@ -590,7 +661,7 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workf
 		return "", err
 	}
 	in := instanceName(wd)
-	ad, invocationID, err := ws.createActionForWorkflow(ctx, wf, wd, key, in, actionName)
+	ad, err := ws.createActionForWorkflow(ctx, wf, wd, key, in, extraCIRunnerArgs)
 	if err != nil {
 		return "", err
 	}
@@ -604,7 +675,7 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workf
 		return "", err
 	}
 	log.Infof("Started workflow execution (ID: %q)", executionID)
-	return nil
+	return executionID, nil
 }
 
 func isGitHubURL(s string) bool {

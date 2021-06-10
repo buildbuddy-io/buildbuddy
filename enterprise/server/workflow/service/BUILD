@@ -12,6 +12,7 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//enterprise/server/remote_execution/operation",
         "//enterprise/server/webhooks/bitbucket",
         "//enterprise/server/webhooks/github",
         "//enterprise/server/webhooks/webhook_data",
@@ -30,7 +31,9 @@ go_library(
         "//server/util/status",
         "@com_github_google_go_github//github",
         "@com_github_google_uuid//:uuid",
+        "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@io_gorm_gorm//:gorm",
         "@org_golang_x_oauth2//:oauth2",
     ],
 )
