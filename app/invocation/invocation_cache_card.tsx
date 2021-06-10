@@ -7,6 +7,8 @@ interface Props {
   model: InvocationModel;
 }
 
+const bitsPerByte = 8;
+
 export default class CacheCardComponent extends React.Component {
   props: Props;
 
@@ -25,8 +27,8 @@ export default class CacheCardComponent extends React.Component {
           {this.props.model.cacheStats.length && (
             <div className="details">
               {this.props.model.cacheStats.map((cacheStat) => {
-                let downloadThroughput = +cacheStat.downloadThroughputBytesPerSecond / 1000000 || 0;
-                let uploadThroughput = +cacheStat.uploadThroughputBytesPerSecond / 1000000 || 0;
+                let downloadThroughput = bitsPerByte * (+cacheStat.downloadThroughputBytesPerSecond / 1000000) || 0;
+                let uploadThroughput = bitsPerByte * (+cacheStat.uploadThroughputBytesPerSecond / 1000000) || 0;
                 return (
                   <div className="cache-sections">
                     <div className="cache-section">
@@ -98,11 +100,11 @@ export default class CacheCardComponent extends React.Component {
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch download-color-swatch"></span>
-                            <span className="cache-stat">{downloadThroughput.toFixed(2)}</span> MB / sec download
+                            <span className="cache-stat">{downloadThroughput.toFixed(2)}</span> mbps download
                           </div>
                           <div className="cache-chart-label">
                             <span className="color-swatch upload-color-swatch"></span>
-                            <span className="cache-stat">{uploadThroughput.toFixed(2)}</span> MB / sec upload
+                            <span className="cache-stat">{uploadThroughput.toFixed(2)}</span> mbps upload
                           </div>
                         </div>
                       </div>
