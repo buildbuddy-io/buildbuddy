@@ -731,7 +731,8 @@ func (s *SchedulerServer) authorizeExecutor(ctx context.Context) (string, error)
 	if auth == nil {
 		return "", status.FailedPreconditionError("executor authorization required, but authenticator is not set")
 	}
-	user, err := auth.AuthenticateGRPCRequest(ctx)
+	// TODO(vadim): this should call auth.AuthenticateGRPCRequest to refresh credentials.
+	user, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
 		return "", err
 	}
