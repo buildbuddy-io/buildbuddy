@@ -66,7 +66,7 @@ container_image(
     name = "base_image",
     base = "@executor_image//image:dockerfile_image.tar",
     symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/buildbuddy_internal/enterprise/config/executor.release.yaml",
+        "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/buildbuddy/enterprise/config/executor.release.yaml",
     },
     tags = ["manual"],
     visibility = ["//visibility:public"],

@@ -1,0 +1,59 @@
+name: "release"
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'release skip')"
+    steps:
+      - uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}"
+          prerelease: false
+          draft: true
+
+  build:
+    runs-on: ${{ matrix.os }}
+    if: "!contains(github.event.head_commit.message, 'release skip')"
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        include:
+          - os: macos-latest
+            OSName: darwin
+
+          - os: ubuntu-latest
+            OSName: linux
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Install bazelisk
+        run: |
+          curl -LO "https://github.com/bazelbuild/bazelisk/releases/download/v1.1.0/bazelisk-${{matrix.OSName}}-amd64"
+          mkdir -p "${GITHUB_WORKSPACE}/bin/"
+          mv bazelisk-${{matrix.OSName}}-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
+          chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
+
+      - name: Create certs
+        run: |
+          echo "${{ secrets.BUILDBUDDY_ORG_CERT }}">buildbuddy-cert.pem
+          echo "${{ secrets.BUILDBUDDY_ORG_KEY }}">buildbuddy-key.pem
+
+      - name: Get Tag
+        id: tag
+        run: echo ::set-output name=TAG::${GITHUB_REF/refs\/tags\//}
+  
+      - name: Upload Artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          "${GITHUB_WORKSPACE}/bin/bazel" build --config=release --define version=${{ steps.tag.outputs.TAG }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
+          cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-${{matrix.OSName}}-amd64
+          cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-${{matrix.OSName}}-amd64
+          cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-${{matrix.OSName}}-amd64
+          gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-${{matrix.OSName}}-amd64 buildbuddy-enterprise-${{matrix.OSName}}-amd64 executor-enterprise-${{matrix.OSName}}-amd64 --clobber

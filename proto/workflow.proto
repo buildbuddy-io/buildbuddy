@@ -13,7 +13,7 @@ message CreateWorkflowRequest {
   //
   // DEPRECATED: Workflow names aren't used anywhere and we don't
   // require them anymore.
-  string name = 2 [ deprecated = true ];
+  string name = 2 [deprecated = true];
 
   message GitRepo {
     // The HTTPS URL of the Git repository that will be checked
