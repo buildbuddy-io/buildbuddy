@@ -98,7 +98,7 @@ func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthent
 	}
 }
 
-func (a *TestAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
+func (a *TestAuthenticator) AuthenticateHTTPRequest(w http.ResponseWriter, r *http.Request) context.Context {
 	headerVal := r.Header.Get(APIKeyHeader)
 	if user, ok := a.testUsers[headerVal]; ok {
 		return context.WithValue(r.Context(), testAuthenticationHeader, user)
@@ -106,7 +106,7 @@ func (a *TestAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 	return r.Context()
 }
 
-func (a *TestAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
+func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) context.Context {
 	if grpcMD, ok := metadata.FromIncomingContext(ctx); ok {
 		for _, h := range []string{APIKeyHeader, jwtHeader} {
 			headerVals := grpcMD[h]
@@ -118,20 +118,6 @@ func (a *TestAuthenticator) AuthenticatedGRPCContext(ctx context.Context) contex
 		}
 	}
 	return ctx
-}
-
-func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
-	if grpcMD, ok := metadata.FromIncomingContext(ctx); ok {
-		for _, h := range []string{APIKeyHeader, jwtHeader} {
-			headerVals := grpcMD[h]
-			for _, headerVal := range headerVals {
-				if user, ok := a.testUsers[headerVal]; ok {
-					return user, nil
-				}
-			}
-		}
-	}
-	return nil, status.PermissionDeniedError("invalid user")
 }
 
 func (a *TestAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {

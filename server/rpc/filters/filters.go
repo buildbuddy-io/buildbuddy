@@ -67,7 +67,7 @@ func contextReplacingUnaryClientInterceptor(ctxFn func(ctx context.Context) cont
 
 func addAuthToContext(env environment.Env, ctx context.Context) context.Context {
 	if auth := env.GetAuthenticator(); auth != nil {
-		return auth.AuthenticatedGRPCContext(ctx)
+		return auth.AuthenticateGRPCRequest(ctx)
 	}
 	return ctx
 }

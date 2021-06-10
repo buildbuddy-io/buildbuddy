@@ -59,39 +59,22 @@ type Authenticator interface {
 	// Handle a callback from authentication provider.
 	Auth(w http.ResponseWriter, r *http.Request)
 
-	// AuthenticatedHTTPContext authenticates the user using the credentials present in the HTTP request and creates a
-	// child context that contains the results.
-	//
-	// This function is called automatically for every HTTP request via a filter and the new context is passed to
-	// application code.
-	//
-	// Application code can retrieve the stored information by calling AuthenticatedUser.
-	AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context
+	// Called by the authentication handler to authenticate a request. If a
+	// user was authenticated, a new context will be returned that contains
+	// a UserToken.
+	AuthenticateHTTPRequest(w http.ResponseWriter, r *http.Request) context.Context
 
-	// AuthenticatedGRPCContext authenticates the user using the credentials present in the gRPC metadata and creates a
-	// child context that contains the result.
-	//
-	// This function is called automatically for every gRPC request via a filter and the new context is passed to
-	// application code.
-	//
-	// Application code that retrieve the stored information by calling AuthenticatedUser.
-	AuthenticatedGRPCContext(ctx context.Context) context.Context
-
-	// AuthenticateGRPCRequest authenticates the user using the credentials present in the gRPC metadata and returns the
-	// result.
-	//
-	// You should only use this function if you need fresh information (for example to re-validate credentials during a
-	// long running operation). For all other cases it is better to use the information cached in the context
-	// retrieved via AuthenticatedUser.
-	AuthenticateGRPCRequest(ctx context.Context) (UserInfo, error)
+	// Called by the authentication handler to authenticate a request. If a
+	// user was authenticated, a new context will be returned that contains
+	// a BasicAuthToken.
+	AuthenticateGRPCRequest(ctx context.Context) context.Context
 
 	// FillUser may be used to construct an initial tables.User object. It
 	// is filled based on information from the authenticator's JWT.
 	FillUser(ctx context.Context, user *tables.User) error
 
-	// AuthenticatedUser returns the UserInfo stored in the context.
-	//
-	// See AuthenticatedHTTPContext/AuthenticatedGRPCContext for a description of how the context is created.
+	// Returns the UserInfo extracted from any authorization headers
+	// present in the request.
 	AuthenticatedUser(ctx context.Context) (UserInfo, error)
 
 	// Parses and returns a BuildBuddy API key from the given string.

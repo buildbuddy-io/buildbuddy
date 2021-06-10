@@ -11,11 +11,11 @@ import (
 
 type NullAuthenticator struct{}
 
-func (a *NullAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
+func (a *NullAuthenticator) AuthenticateHTTPRequest(w http.ResponseWriter, r *http.Request) context.Context {
 	return r.Context()
 }
 
-func (a *NullAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
+func (a *NullAuthenticator) AuthenticateGRPCRequest(ctx context.Context) context.Context {
 	return ctx
 }
 
@@ -45,8 +45,4 @@ func (a *NullAuthenticator) ParseAPIKeyFromString(input string) string {
 
 func (a *NullAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
 	return ctx
-}
-
-func (a *NullAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
-	return nil, nil
 }
