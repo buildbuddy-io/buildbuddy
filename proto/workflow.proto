@@ -10,7 +10,10 @@ message CreateWorkflowRequest {
 
   // The name of this workflow.
   // Ex. "Let It Flow"
-  string name = 2;
+  //
+  // DEPRECATED: Workflow names aren't used anywhere and we don't
+  // require them anymore.
+  string name = 2 [ deprecated = true ];
 
   message GitRepo {
     // The HTTPS URL of the Git repository that will be checked
@@ -108,6 +111,39 @@ message GetWorkflowsResponse {
   }
 
   repeated Workflow workflow = 2;
+}
+
+message ExecuteWorkflowRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // ID of the workflow to be executed.
+  // Ex. "WF4576963743584254779"
+  string workflow_id = 2;
+
+  // Name of the workflow action to execute. Corresponds to an action in
+  // buildbuddy.yaml, or an action name in the default workflow config if
+  // buildbuddy.yaml is missing from the repo.
+  // Ex. "Test all targets"
+  string action_name = 3;
+
+  // SHA of the commit to be checked out in order to execute the workflow.
+  // Ex. "e782592faf56da05cc0a243220689135e807958f"
+  string commit_sha = 4;
+
+  // Branch corresponding to the SHA to be checked out.
+  // Ex. "cool-feature"
+  string branch = 5;
+}
+
+message ExecuteWorkflowResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  // The invocation ID of the workflow execution. This invocation will not exist
+  // in the DB until the CI runner executes and kicks off the invocation, so
+  // clients may need to poll the API to check for existence.
+  string invocation_id = 2;
 }
 
 enum GitProvider {
