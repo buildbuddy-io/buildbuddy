@@ -52,6 +52,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          "${GITHUB_WORKSPACE}/bin/bazel" build --config=release --define version=${{ steps.tag.outputs.TAG }} //server/cmd/buildbuddy:buildbuddy
+          "${GITHUB_WORKSPACE}/bin/bazel" build --config=release --define version=${{ steps.tag.outputs.TAG }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
           cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-${{matrix.OSName}}-amd64
-          gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-${{matrix.OSName}}-amd64 --clobber
+          cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-${{matrix.OSName}}-amd64
+          cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-${{matrix.OSName}}-amd64
+          gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-${{matrix.OSName}}-amd64 buildbuddy-enterprise-${{matrix.OSName}}-amd64 executor-enterprise-${{matrix.OSName}}-amd64 --clobber
