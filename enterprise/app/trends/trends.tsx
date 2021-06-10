@@ -225,10 +225,10 @@ export default class TrendsComponent extends React.Component {
                 }
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
-                formatHoverValue={(value) => (value || 0).toFixed(2) + " mb downloaded"}
-                formatSecondaryHoverValue={(value) => (value || 0).toFixed(2) + " mbps"}
-                name="mb downloaded"
-                secondaryName="mbps download throughput"
+                formatHoverValue={(value) => (value || 0).toFixed(2) + " Mb downloaded"}
+                formatSecondaryHoverValue={(value) => (value || 0).toFixed(2) + " Mbps"}
+                name="Mb downloaded"
+                secondaryName="Mbps download throughput"
                 secondaryLine={true}
                 separateAxis={true}
               />
@@ -246,10 +246,10 @@ export default class TrendsComponent extends React.Component {
                 }
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
-                formatHoverValue={(value) => (value || 0).toFixed(2) + " mb uploaded"}
-                formatSecondaryHoverValue={(value) => (value || 0).toFixed(2) + " mbps"}
-                name="mb uploaded"
-                secondaryName="mbps upload throughput"
+                formatHoverValue={(value) => (value || 0).toFixed(2) + " Mb uploaded"}
+                formatSecondaryHoverValue={(value) => (value || 0).toFixed(2) + " Mbps"}
+                name="Mb uploaded"
+                secondaryName="Mbps upload throughput"
                 secondaryLine={true}
                 separateAxis={true}
               />

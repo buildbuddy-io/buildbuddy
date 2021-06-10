@@ -100,11 +100,11 @@ export default class CacheCardComponent extends React.Component {
                         <div>
                           <div className="cache-chart-label">
                             <span className="color-swatch download-color-swatch"></span>
-                            <span className="cache-stat">{downloadThroughput.toFixed(2)}</span> mbps download
+                            <span className="cache-stat">{downloadThroughput.toFixed(2)}</span> Mbps download
                           </div>
                           <div className="cache-chart-label">
                             <span className="color-swatch upload-color-swatch"></span>
-                            <span className="cache-stat">{uploadThroughput.toFixed(2)}</span> mbps upload
+                            <span className="cache-stat">{uploadThroughput.toFixed(2)}</span> Mbps upload
                           </div>
                         </div>
                       </div>
