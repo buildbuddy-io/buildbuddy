@@ -77,6 +77,41 @@ func TestBatchUpdateBlobs(t *testing.T) {
 	}
 }
 
+func TestBatchUpdateRejectCorruptBlobs(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	clientConn := runCASServer(ctx, te, t)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	req := &repb.BatchUpdateBlobsRequest{}
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	buf[0] = ^buf[0] // corrupt the data in buf
+	req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
+		Digest: d,
+		Data:   buf,
+	})
+
+	d2, buf := testdigest.NewRandomDigestBuf(t, 100)
+	d2.SizeBytes += 1 // corrupt the payload size of d2
+	req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
+		Digest: d2,
+		Data:   buf,
+	})
+
+	rsp, err := casClient.BatchUpdateBlobs(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, 2, len(rsp.GetResponses()))
+	assert.Equal(t, int32(gcodes.DataLoss), rsp.GetResponses()[0].GetStatus().GetCode())
+	assert.Equal(t, int32(gcodes.DataLoss), rsp.GetResponses()[1].GetStatus().GetCode())
+}
+
 func TestMalevolentCache(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
