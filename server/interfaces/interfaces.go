@@ -71,7 +71,7 @@ type Authenticator interface {
 	// AuthenticatedGRPCContext authenticates the user using the credentials present in the gRPC metadata and creates a
 	// child context that contains the result.
 	//
-	// This function is called automatically for every gRPC request via a filter adn the new context is passed to
+	// This function is called automatically for every gRPC request via a filter and the new context is passed to
 	// application code.
 	//
 	// Application code that retrieve the stored information by calling AuthenticatedUser.
