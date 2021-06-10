@@ -67,7 +67,7 @@ container_image(
     name = "base_image",
     base = "@buildbuddy_go_image_base//image",
     symlinks = {
-        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/buildbuddy_internal/enterprise/config/buildbuddy.release.yaml",
+        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/buildbuddy/enterprise/config/buildbuddy.release.yaml"
     },
     tags = ["manual"],
     visibility = ["//visibility:public"],
