@@ -79,13 +79,13 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 	request, err := http.NewRequest(http.MethodGet, "/", strings.NewReader(""))
 	require.NoErrorf(t, err, "could not create HTTP request")
 	response := httptest.NewRecorder()
-	authCtx := auth.AuthenticateHTTPRequest(response, request)
+	authCtx := auth.AuthenticatedHTTPContext(response, request)
 	requireAuthenticationError(t, authCtx)
 
 	// Valid JWT cookie, but user does not exist.
 	request.AddCookie(&http.Cookie{Name: jwtCookie, Value: validJWT})
 	request.AddCookie(&http.Cookie{Name: authIssuerCookie, Value: testIssuer})
-	authCtx = auth.AuthenticateHTTPRequest(response, request)
+	authCtx = auth.AuthenticatedHTTPContext(response, request)
 	requireAuthenticationError(t, authCtx)
 	// User information should still be populated (it's needed for user creation).
 	require.Equal(t, validUserToken, authCtx.Value(contextUserKey), "context user details should match details returned by provider")
@@ -98,7 +98,7 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 	}
 	err = env.GetUserDB().InsertUser(context.Background(), user)
 	require.NoError(t, err, "could not insert user")
-	authCtx = auth.AuthenticateHTTPRequest(response, request)
+	authCtx = auth.AuthenticatedHTTPContext(response, request)
 	requireAuthenticated(t, authCtx)
 	require.Equal(t, validUserToken, authCtx.Value(contextUserKey), "context user details should match details returned by provider")
 
@@ -108,7 +108,7 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 	require.NoErrorf(t, err, "could not create HTTP request")
 	request.AddCookie(&http.Cookie{Name: jwtCookie, Value: expiredJWT})
 	request.AddCookie(&http.Cookie{Name: authIssuerCookie, Value: testIssuer})
-	authCtx = auth.AuthenticateHTTPRequest(response, request)
+	authCtx = auth.AuthenticatedHTTPContext(response, request)
 	requireAuthenticationError(t, authCtx)
 
 	// Insert a refresh token into the DB & auth should succeed.
@@ -116,7 +116,7 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 	err = env.GetAuthDB().InsertOrUpdateUserToken(context.Background(), subID, token)
 	require.NoError(t, err, "could not insert token")
 	response = httptest.NewRecorder()
-	authCtx = auth.AuthenticateHTTPRequest(response, request)
+	authCtx = auth.AuthenticatedHTTPContext(response, request)
 	requireAuthenticated(t, authCtx)
 	newJwtCookie := getResponseCookie(response.Result(), jwtCookie)
 	require.NotNil(t, newJwtCookie, "JWT cookie should be updated")
