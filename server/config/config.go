@@ -46,6 +46,7 @@ type appConfig struct {
 	LogIncludeShortFileName   bool   `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
 	NoDefaultUserGroup        bool   `yaml:"no_default_user_group" usage:"Cloud-Only"`
 	LogEnableGCPLoggingFormat bool   `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
+	LogErrorStackTraces       bool   `yaml:"log_error_stack_traces" usage:"If true, stack traces will be printed for errors that have them."`
 }
 
 type buildEventProxy struct {
@@ -424,6 +425,10 @@ func (c *Configurator) GetAppAddUserToDomainGroup() bool {
 
 func (c *Configurator) GetAppLogIncludeShortFileName() bool {
 	return c.gc.App.LogIncludeShortFileName
+}
+
+func (c *Configurator) GetAppLogErrorStackTraces() bool {
+	return c.gc.App.LogErrorStackTraces
 }
 
 func (c *Configurator) GetAppEnableStructuredLogging() bool {
