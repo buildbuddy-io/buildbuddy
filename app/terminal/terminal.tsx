@@ -1,17 +1,11 @@
 import React from "react";
 import { LazyLog } from "react-lazylog";
 
-export interface TerminalProps extends React.DOMAttributes<{}> {
-  options?: any;
+export interface TerminalProps {
   value?: string;
 }
 
 export default class TerminalComponent extends React.Component<TerminalProps> {
-  container: HTMLDivElement;
-  constructor(props?: TerminalProps, context?: any) {
-    super(props, context);
-  }
-
   render() {
     return (
       <div className="terminal">
@@ -27,4 +21,3 @@ export default class TerminalComponent extends React.Component<TerminalProps> {
     );
   }
 }
-export { TerminalComponent };
