@@ -6,6 +6,7 @@ go_test(
     args = [
         "-test.bench=.",
     ],
+    tags = ["manual"],
     deps = [
         "//enterprise/server/backends/distributed",
         "//proto:remote_execution_go_proto",
