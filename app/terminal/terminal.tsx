@@ -21,3 +21,5 @@ export default class TerminalComponent extends React.Component<TerminalProps> {
     );
   }
 }
+
+export { TerminalComponent };
