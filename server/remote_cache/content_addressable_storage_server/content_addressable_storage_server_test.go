@@ -103,13 +103,20 @@ func TestBatchUpdateRejectCorruptBlobs(t *testing.T) {
 		Data:   buf,
 	})
 
+	d3, buf := testdigest.NewRandomDigestBuf(t, 100)
+	req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
+		Digest: d3,
+		Data:   buf,
+	})
+
 	rsp, err := casClient.BatchUpdateBlobs(ctx, req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, 2, len(rsp.GetResponses()))
+	assert.Equal(t, 3, len(rsp.GetResponses()))
 	assert.Equal(t, int32(gcodes.DataLoss), rsp.GetResponses()[0].GetStatus().GetCode())
 	assert.Equal(t, int32(gcodes.DataLoss), rsp.GetResponses()[1].GetStatus().GetCode())
+	assert.Equal(t, int32(gcodes.OK), rsp.GetResponses()[2].GetStatus().GetCode())
 }
 
 func TestMalevolentCache(t *testing.T) {
