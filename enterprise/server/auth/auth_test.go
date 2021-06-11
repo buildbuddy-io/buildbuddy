@@ -87,6 +87,8 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 	request.AddCookie(&http.Cookie{Name: authIssuerCookie, Value: testIssuer})
 	authCtx = auth.AuthenticateHTTPRequest(response, request)
 	requireAuthenticationError(t, authCtx)
+	// User information should still be populated (it's needed for user creation).
+	require.Equal(t, validUserToken, authCtx.Value(contextUserKey), "context user details should match details returned by provider")
 
 	// Create matching user, authentication should now succeed.
 	user := &tables.User{
