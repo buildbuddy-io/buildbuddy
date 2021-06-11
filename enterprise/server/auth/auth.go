@@ -740,6 +740,9 @@ func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 	if err != nil {
 		return err
 	}
+	if user.Blocked {
+		return status.PermissionDeniedError("You do not have permission to perform this action")
+	}
 	user.UserID = pk
 	user.SubID = t.GetSubID()
 	user.FirstName = t.GivenName

@@ -211,6 +211,8 @@ type User struct {
 	// for everything.
 	Groups []*Group `gorm:"-"`
 	Model
+
+	Blocked bool
 }
 
 func (u *User) TableName() string {
