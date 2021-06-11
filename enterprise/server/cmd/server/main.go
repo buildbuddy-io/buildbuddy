@@ -94,7 +94,7 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	env.SetAuthDB(authdb.NewAuthDB(env.GetDBHandle()))
 	configureFilesystemsOrDie(env)
-	authenticator, err := auth.NewOpenIDAuthenticator(ctx, env)
+	authenticator, err := auth.NewOpenIDAuthenticator(ctx, env, &auth.Options{})
 	if err == nil {
 		env.SetAuthenticator(authenticator)
 	} else {

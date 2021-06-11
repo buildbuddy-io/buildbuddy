@@ -182,19 +182,6 @@ func clearLoginCookie(w http.ResponseWriter) {
 	clearCookie(w, authIssuerCookie)
 }
 
-type basicAuthToken struct {
-	user     string
-	password string
-}
-
-func (b *basicAuthToken) GetUser() string {
-	return b.user
-}
-
-func (b *basicAuthToken) GetPassword() string {
-	return b.password
-}
-
 type userToken struct {
 	Email      string `json:"email"`
 	Sub        string `json:"sub"`
@@ -217,13 +204,15 @@ func (t *userToken) GetSubID() string {
 	return t.issuer + "/" + t.Sub
 }
 
-type authConfig struct {
-	issuerURL string
-	clientID  string
-	secret    string
+type authenticator interface {
+	getIssuer() string
+	authCodeURL(state string, opts ...oauth2.AuthCodeOption) string
+	exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
+	verifyTokenAndExtractUser(ctx context.Context, jwt string, checkExpiry bool) (*userToken, error)
+	renewToken(ctx context.Context, refreshToken string) (*oauth2.Token, error)
 }
 
-type authenticator struct {
+type oidcAuthenticator struct {
 	oauth2Config *oauth2.Config
 	oidcConfig   *oidc.Config
 	provider     *oidc.Provider
@@ -240,7 +229,19 @@ func extractToken(issuer string, idToken *oidc.IDToken) (*userToken, error) {
 	return ut, nil
 }
 
-func (a *authenticator) verifyTokenAndExtractUser(ctx context.Context, jwt string, checkExpiry bool) (*userToken, error) {
+func (a *oidcAuthenticator) getIssuer() string {
+	return a.issuer
+}
+
+func (a *oidcAuthenticator) authCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
+	return a.oauth2Config.AuthCodeURL(state, opts...)
+}
+
+func (a *oidcAuthenticator) exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+	return a.oauth2Config.Exchange(ctx, code, opts...)
+}
+
+func (a *oidcAuthenticator) verifyTokenAndExtractUser(ctx context.Context, jwt string, checkExpiry bool) (*userToken, error) {
 	conf := a.oidcConfig
 	conf.SkipExpiryCheck = !checkExpiry
 	validToken, err := a.provider.Verifier(conf).Verify(ctx, jwt)
@@ -248,6 +249,11 @@ func (a *authenticator) verifyTokenAndExtractUser(ctx context.Context, jwt strin
 		return nil, err
 	}
 	return extractToken(a.issuer, validToken)
+}
+
+func (a *oidcAuthenticator) renewToken(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
+	src := a.oauth2Config.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken})
+	return src.Token() // this actually renews the token
 }
 
 type apiKeyGroupCacheEntry struct {
@@ -313,33 +319,19 @@ func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup interfaces.APIKeyGroup
 	c.mu.Unlock()
 }
 
+type Options struct {
+	AuthenticatorsOverride []authenticator // FOR TESTING
+}
+
 type OpenIDAuthenticator struct {
 	env              environment.Env
 	myURL            *url.URL
 	apiKeyGroupCache *apiKeyGroupCache
-	authenticators   []*authenticator
+	authenticators   []authenticator
 }
 
-func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAuthenticator, error) {
-	oia := &OpenIDAuthenticator{
-		env: env,
-	}
-
-	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
-	if len(authConfigs) == 0 {
-		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
-	}
-
-	myURL, err := url.Parse(env.GetConfigurator().GetAppBuildBuddyURL())
-	if err != nil {
-		return nil, err
-	}
-	authURL, err := myURL.Parse("/auth/")
-	if err != nil {
-		return nil, err
-	}
-	oia.myURL = myURL
-	oia.authenticators = make([]*authenticator, 0)
+func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.OauthProvider, authURL *url.URL) ([]authenticator, error) {
+	var authenticators []authenticator
 	for _, authConfig := range authConfigs {
 		provider, err := oidc.NewProvider(ctx, authConfig.IssuerURL)
 		if err != nil {
@@ -358,12 +350,44 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAu
 			// "openid" is a required scope for OpenID Connect flows.
 			Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
 		}
-		oia.authenticators = append(oia.authenticators, &authenticator{
+		authenticators = append(authenticators, &oidcAuthenticator{
 			issuer:       authConfig.IssuerURL,
 			oauth2Config: oauth2Config,
 			oidcConfig:   oidcConfig,
 			provider:     provider,
 		})
+	}
+	return authenticators, nil
+}
+
+func NewOpenIDAuthenticator(ctx context.Context, env environment.Env, opts *Options) (*OpenIDAuthenticator, error) {
+	oia := &OpenIDAuthenticator{
+		env: env,
+	}
+
+	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
+	if len(authConfigs) == 0 && len(opts.AuthenticatorsOverride) == 0 {
+		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
+	}
+
+	myURL, err := url.Parse(env.GetConfigurator().GetAppBuildBuddyURL())
+	if err != nil {
+		return nil, err
+	}
+	authURL, err := myURL.Parse("/auth/")
+	if err != nil {
+		return nil, err
+	}
+	oia.myURL = myURL
+	if len(opts.AuthenticatorsOverride) > 0 {
+		for _, a := range opts.AuthenticatorsOverride {
+			oia.authenticators = append(oia.authenticators, a)
+		}
+	} else {
+		oia.authenticators, err = createAuthenticatorsFromConfig(ctx, authConfigs, authURL)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Set the JWT key.
@@ -401,9 +425,9 @@ func (a *OpenIDAuthenticator) validateRedirectURL(redirectURL string) error {
 	return nil
 }
 
-func (a *OpenIDAuthenticator) getAuthConfig(issuer string) *authenticator {
+func (a *OpenIDAuthenticator) getAuthConfig(issuer string) authenticator {
 	for _, a := range a.authenticators {
-		if sameHostname(a.issuer, issuer) {
+		if sameHostname(a.getIssuer(), issuer) {
 			return a
 		}
 	}
@@ -652,21 +676,16 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		if err != nil {
 			return authContextWithError(ctx, err)
 		}
-		token := new(oauth2.Token)
-		token.RefreshToken = tt.RefreshToken
-		src := auth.oauth2Config.TokenSource(ctx, token)
-		newToken, err := src.Token() // this actually renews the token
+		newToken, err := auth.renewToken(ctx, tt.RefreshToken)
 		if err != nil {
 			return authContextWithError(ctx, err)
 		}
-		if newToken.AccessToken != token.AccessToken {
-			if err := authDB.InsertOrUpdateUserToken(ctx, ut.GetSubID(), tt); err != nil {
-				return authContextWithError(ctx, err)
-			}
-			if jwt, ok := newToken.Extra("id_token").(string); ok {
-				setLoginCookie(w, jwt, issuer)
-				return a.authContextFromSubID(context.WithValue(ctx, contextUserKey, ut), ut.GetSubID())
-			}
+		if err := authDB.InsertOrUpdateUserToken(ctx, ut.GetSubID(), tt); err != nil {
+			return authContextWithError(ctx, err)
+		}
+		if jwt, ok := newToken.Extra("id_token").(string); ok {
+			setLoginCookie(w, jwt, issuer)
+			return a.authContextFromSubID(context.WithValue(ctx, contextUserKey, ut), ut.GetSubID())
 		}
 	}
 	return r.Context()
@@ -735,7 +754,7 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	setCookie(w, authIssuerCookie, issuer, time.Now().Add(tempCookieDuration))
 
 	// Redirect to the login provider (and ask for a refresh token).
-	u := auth.oauth2Config.AuthCodeURL(state, authCodeOption...)
+	u := auth.authCodeURL(state, authCodeOption...)
 	http.Redirect(w, r, u, http.StatusTemporaryRedirect)
 }
 
@@ -778,7 +797,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	code := r.URL.Query().Get("code")
-	oauth2Token, err := auth.oauth2Config.Exchange(ctx, code, authCodeOption...)
+	oauth2Token, err := auth.exchange(ctx, code, authCodeOption...)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
