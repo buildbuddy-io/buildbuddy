@@ -8,7 +8,7 @@ import CacheChartComponent from "./cache_chart";
 import { Subscription } from "rxjs";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
 
-const bitsPerByte = 8;
+const BITS_PER_BYTE = 8;
 
 interface Props {
   user: User;
@@ -217,7 +217,7 @@ export default class TrendsComponent extends React.Component {
                 data={this.state.lastNDates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.totalDownloadSizeBytes / 1000000}
                 extractSecondaryValue={(date) =>
-                  bitsPerByte *
+                  BITS_PER_BYTE *
                   (+this.state.dateToStatMap.get(date)?.totalDownloadSizeBytes /
                     +this.state.dateToStatMap.get(date)?.totalDownloadUsec)
                 }
@@ -236,7 +236,7 @@ export default class TrendsComponent extends React.Component {
                 data={this.state.lastNDates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.totalUploadSizeBytes / 1000000}
                 extractSecondaryValue={(date) =>
-                  bitsPerByte *
+                  BITS_PER_BYTE *
                   (+this.state.dateToStatMap.get(date)?.totalUploadSizeBytes /
                     +this.state.dateToStatMap.get(date)?.totalUploadUsec)
                 }

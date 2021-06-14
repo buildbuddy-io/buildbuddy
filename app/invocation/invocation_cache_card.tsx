@@ -7,7 +7,7 @@ interface Props {
   model: InvocationModel;
 }
 
-const bitsPerByte = 8;
+const BITS_PER_BYTE = 8;
 
 export default class CacheCardComponent extends React.Component {
   props: Props;
@@ -27,8 +27,8 @@ export default class CacheCardComponent extends React.Component {
           {this.props.model.cacheStats.length && (
             <div className="details">
               {this.props.model.cacheStats.map((cacheStat) => {
-                let downloadThroughput = bitsPerByte * (+cacheStat.downloadThroughputBytesPerSecond / 1000000) || 0;
-                let uploadThroughput = bitsPerByte * (+cacheStat.uploadThroughputBytesPerSecond / 1000000) || 0;
+                let downloadThroughput = BITS_PER_BYTE * (+cacheStat.downloadThroughputBytesPerSecond / 1000000);
+                let uploadThroughput = BITS_PER_BYTE * (+cacheStat.uploadThroughputBytesPerSecond / 1000000);
                 return (
                   <div className="cache-sections">
                     <div className="cache-section">
