@@ -8,14 +8,17 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/golang/protobuf/proto"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 func StreamBytestreamFile(ctx context.Context, env environment.Env, url *url.URL, callback func([]byte)) error {
-	if url.Scheme != "bytestream" {
+	if url.Scheme != "bytestream" && url.Scheme != "actioncache" {
 		return status.InvalidArgumentErrorf("Only bytestream:// uris are supported")
 	}
 
@@ -53,6 +56,32 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 		return err
 	}
 	defer conn.Close()
+
+	if url.Scheme == "actioncache" {
+		acClient := repb.NewActionCacheClient(conn)
+		instanceName, d, err := digest.ExtractDigestFromActionCacheResourceName(strings.TrimPrefix(url.RequestURI(), "/"))
+		if err != nil {
+			return err
+		}
+
+		// Request the ActionResult
+		req := &repb.GetActionResultRequest{
+			InstanceName: instanceName,
+			ActionDigest: d,
+		}
+		actionResult, err := acClient.GetActionResult(ctx, req)
+		if err != nil {
+			return err
+		}
+
+		// Turn ActionResult into []byte
+		buf, err := proto.Marshal(actionResult)
+		if err != nil {
+			return err
+		}
+		callback(buf)
+		return nil
+	}
 	client := bspb.NewByteStreamClient(conn)
 
 	// Request the file bytestream

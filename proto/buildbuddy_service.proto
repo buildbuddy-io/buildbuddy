@@ -26,6 +26,8 @@ service BuildBuddyService {
       returns (invocation.UpdateInvocationResponse);
   rpc DeleteInvocation(invocation.DeleteInvocationRequest)
       returns (invocation.DeleteInvocationResponse);
+  rpc GetTrend(invocation.GetTrendRequest)
+      returns (invocation.GetTrendResponse);
 
   // Bazel Config API
   rpc GetBazelConfig(bazel_config.GetBazelConfigRequest)
@@ -71,5 +73,7 @@ service BuildBuddyService {
       returns (workflow.DeleteWorkflowResponse);
   rpc GetWorkflows(workflow.GetWorkflowsRequest)
       returns (workflow.GetWorkflowsResponse);
+  rpc ExecuteWorkflow(workflow.ExecuteWorkflowRequest)
+      returns (workflow.ExecuteWorkflowResponse);
   rpc GetRepos(workflow.GetReposRequest) returns (workflow.GetReposResponse);
 }

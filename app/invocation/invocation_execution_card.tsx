@@ -1,6 +1,8 @@
 import React from "react";
 import format from "../format/format";
+import capabilities from "../capabilities/capabilities";
 import InvocationModel from "./invocation_model";
+import router from "../router/router";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import Select, { Option } from "../components/select/select";
 
@@ -184,6 +186,18 @@ export default class ExecutionCardComponent extends React.Component {
     });
   }
 
+  handleActionDigestClick(execution: execution_stats.Execution) {
+    router.navigateTo(
+      "/invocation/" +
+        this.props.model.getId() +
+        "?actionDigest=" +
+        execution.actionDigest.hash +
+        "/" +
+        execution.actionDigest.sizeBytes +
+        "#action"
+    );
+  }
+
   render() {
     if (this.state.loading) {
       return <div className="loading" />;
@@ -265,7 +279,10 @@ export default class ExecutionCardComponent extends React.Component {
           </div>
           <div className="invocation-execution-table">
             {this.state.executions.sort(this.sort.bind(this)).map((execution, index) => (
-              <div key={index} className="invocation-execution-row">
+              <div
+                key={index}
+                className="invocation-execution-row clickable"
+                onClick={this.handleActionDigestClick.bind(this, execution)}>
                 <div className="invocation-execution-row-image">
                   <img
                     className={stages[execution.stage].class}

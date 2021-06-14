@@ -26,19 +26,20 @@ func ExtractValues(obj interface{}, fieldPaths ...string) (map[string]string, er
 	values := map[string]string{}
 	objVal := reflect.Indirect(reflect.ValueOf(obj))
 	if !objVal.IsValid() {
-		return nil, fmt.Errorf("call of fieldValues on nil value")
+		return nil, fmt.Errorf("call of ExtractValues on nil value")
 	}
 	for _, path := range fieldPaths {
 		fields := strings.Split(path, ".")
 		cur := objVal
+		parentPath := []string{}
 		curPath := []string{}
 		for _, name := range fields {
 			t := cur.Kind()
-
+			curPath = append(parentPath, name)
 			if t == reflect.Struct {
 				cur = cur.FieldByName(name)
 				if !cur.IsValid() {
-					return nil, fmt.Errorf("invalid field %q of %q", name, strings.Join(curPath, "."))
+					return nil, fmt.Errorf("invalid field %q (parent path: %q)", name, strings.Join(parentPath, "."))
 				}
 				cur = reflect.Indirect(cur)
 				if !cur.IsValid() {
@@ -46,28 +47,28 @@ func ExtractValues(obj interface{}, fieldPaths ...string) (map[string]string, er
 				}
 			} else if t == reflect.Slice || t == reflect.Array {
 				if !digitsRegexp.MatchString(name) {
-					return nil, fmt.Errorf("invalid field access %q of list %q", name, strings.Join(curPath, "."))
+					return nil, fmt.Errorf("invalid field access of %q on list (parent path: %q)", name, strings.Join(parentPath, "."))
 				}
 				index64, err := strconv.ParseInt(name, 10, 32)
 				if err != nil {
-					return nil, fmt.Errorf("failed to parse %q as int: %s", name, err)
+					return nil, err
 				}
 				index := int(index64)
 				cur = reflect.Indirect(cur)
 				if !cur.IsValid() {
-					return nil, fmt.Errorf("nil value at %q", strings.Join(curPath, "."))
+					return nil, fmt.Errorf("invalid value of %q", strings.Join(curPath, "."))
 				}
 				if int(index) >= cur.Len() {
-					return nil, fmt.Errorf("out of bounds: index %q of %q", name, strings.Join(curPath, "."))
+					return nil, fmt.Errorf("out of bounds: index %s of %q", name, strings.Join(parentPath, "."))
 				}
 				cur = reflect.Indirect(cur.Index(index))
 				if !cur.IsValid() {
 					return nil, fmt.Errorf("nil value of %q", strings.Join(curPath, "."))
 				}
 			} else {
-				return nil, fmt.Errorf("cannot access field %q of %T %q", name, cur.Interface(), strings.Join(curPath, "."))
+				return nil, fmt.Errorf("cannot access field %q of %T %q", name, cur.Interface(), strings.Join(parentPath, "."))
 			}
-			curPath = append(curPath, name)
+			parentPath = curPath
 		}
 		el := cur.Interface()
 		str, ok := el.(string)

@@ -152,8 +152,8 @@ type APIKeyGroup interface {
 type AuthDB interface {
 	InsertOrUpdateUserToken(ctx context.Context, subID string, token *tables.Token) error
 	ReadToken(ctx context.Context, subID string) (*tables.Token, error)
-	GetAPIKeyGroupFromAPIKey(apiKey string) (APIKeyGroup, error)
-	GetAPIKeyGroupFromBasicAuth(login, pass string) (APIKeyGroup, error)
+	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
+	GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (APIKeyGroup, error)
 }
 
 type UserDB interface {
@@ -198,6 +198,7 @@ type Webhook interface {
 // Allows aggregating invocation statistics.
 type InvocationStatService interface {
 	GetInvocationStat(ctx context.Context, req *inpb.GetInvocationStatRequest) (*inpb.GetInvocationStatResponse, error)
+	GetTrend(ctx context.Context, req *inpb.GetTrendRequest) (*inpb.GetTrendResponse, error)
 }
 
 // Allows searching invocations.
@@ -215,6 +216,7 @@ type WorkflowService interface {
 	CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error)
 	DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error)
 	GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error)
+	ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error)
 	GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
@@ -243,6 +245,7 @@ type SchedulerService interface {
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
+	GetGroupIDAndDefaultPoolForUser(ctx context.Context) (string, string, error)
 }
 
 type ExecutionService interface {
@@ -267,17 +270,13 @@ type TaskRouter interface {
 	// their suitability for executing the given command. Nodes with equal
 	// suitability are returned in random order (for load balancing purposes).
 	//
-	// If an error occurs, the nodes are returned in random order. The returned
-	// error can be logged, but should not be treated as fatal.
-	RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) ([]ExecutionNode, error)
+	// If an error occurs, the input nodes should be returned in random order.
+	RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) []ExecutionNode
 
 	// MarkComplete notifies the router that the command has been completed by the
 	// given executor instance. Subsequent calls to RankNodes may assign a higher
 	// rank to nodes with the given instance ID, given similar commands.
-	//
-	// Callers should not treat the returned error as fatal, since task routing is
-	// intended to be best-effort.
-	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string) error
+	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
 }
 
 // CommandResult captures the output and details of an executed command.

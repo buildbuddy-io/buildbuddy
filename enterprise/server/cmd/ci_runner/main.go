@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/user"
@@ -88,6 +87,8 @@ var (
 	triggerEvent  = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	triggerBranch = flag.String("trigger_branch", "", "Branch to check action triggers against.")
 	workflowID    = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
+	actionName    = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
+	invocationID  = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
@@ -99,6 +100,11 @@ func main() {
 	im := &initMetrics{start: time.Now()}
 
 	flag.Parse()
+
+	if (*actionName == "") != (*invocationID == "") {
+		log.Fatalf("--action_name and --invocation_id must either be both present or both missing.")
+	}
+
 	ctx := context.Background()
 
 	if err := setupGitRepo(ctx); err != nil {
@@ -142,13 +148,25 @@ func RunAllActions(ctx context.Context, cfg *config.BuildBuddyConfig, im *initMe
 	for _, action := range cfg.Actions {
 		startTime := time.Now()
 
-		if !matchesAnyTrigger(action, *triggerEvent, *triggerBranch) {
-			log.Debugf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *triggerBranch, actionDebugString(action))
+		if *actionName != "" {
+			if action.Name != *actionName {
+				continue
+			}
+		} else if !matchesAnyTrigger(action, *triggerEvent, *triggerBranch) {
+			log.Printf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *triggerBranch, actionDebugString(action))
 			continue
 		}
 
+		iid := ""
+		// Respect the invocation ID flag only when running a single action
+		// (via ExecuteWorkflow).
+		if *actionName != "" {
+			iid = *invocationID
+		} else {
+			iid = newUUID()
+		}
 		bep := newBuildEventPublisher(&bepb.StreamId{
-			InvocationId: newUUID(),
+			InvocationId: iid,
 			BuildId:      newUUID(),
 		})
 		bep.Start(ctx)
@@ -395,11 +413,13 @@ func (bep *buildEventPublisher) setError(err error) {
 
 // actionRunner runs a single action in the BuildBuddy config.
 type actionRunner struct {
-	action        *config.Action
-	log           *invocationLog
-	bep           *buildEventPublisher
-	username      string
-	hostname      string
+	action   *config.Action
+	log      *invocationLog
+	bep      *buildEventPublisher
+	username string
+	hostname string
+
+	mu            sync.Mutex // protects(progressCount)
 	progressCount int32
 }
 
@@ -437,6 +457,7 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 	}
 
 	wfc := &bespb.WorkflowConfigured{
+		WorkflowId:          *workflowID,
 		ActionName:          ar.action.Name,
 		ActionTriggerBranch: *triggerBranch,
 		ActionTriggerEvent:  *triggerEvent,
@@ -587,18 +608,35 @@ func (ar *actionRunner) printCommandLine(bazelArgs []string) {
 }
 
 func (ar *actionRunner) flushProgress() error {
-	buf, err := ioutil.ReadAll(ar.log)
+	event, err := ar.nextProgressEvent()
 	if err != nil {
-		return status.WrapError(err, "failed to read action logs")
+		return err
+	}
+	if event == nil {
+		// No progress to flush.
+		return nil
+	}
+
+	return ar.bep.Publish(event)
+}
+
+func (ar *actionRunner) nextProgressEvent() (*bespb.BuildEvent, error) {
+	ar.mu.Lock()
+	defer ar.mu.Unlock()
+
+	buf, err := ar.log.ReadAll()
+	if err != nil {
+		return nil, status.WrapError(err, "failed to read action logs")
 	}
 	if len(buf) == 0 {
-		return nil
+		return nil, nil
 	}
 	count := ar.progressCount
 	ar.progressCount++
+
 	output := string(buf)
 
-	return ar.bep.Publish(&bespb.BuildEvent{
+	return &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: count}}},
 		Children: []*bespb.BuildEventId{
 			{Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: count + 1}}},
@@ -607,7 +645,7 @@ func (ar *actionRunner) flushProgress() error {
 			// Only outputting to stderr for now, like Bazel does.
 			Stderr: output,
 		}},
-	})
+	}, nil
 }
 
 // TODO: Handle shell variable expansion. Probably want to run this with sh -c

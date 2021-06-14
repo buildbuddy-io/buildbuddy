@@ -11,13 +11,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/sync/errgroup"
-	"gorm.io/gorm"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -315,7 +315,7 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 	}
 }
 
-func readRepoTargetsWithTx(ctx context.Context, env environment.Env, repoURL string, tx *gorm.DB) ([]*tables.Target, error) {
+func readRepoTargetsWithTx(ctx context.Context, env environment.Env, repoURL string, tx *db.DB) ([]*tables.Target, error) {
 	q := query_builder.NewQuery(`SELECT * FROM Targets as t`)
 	q = q.AddWhereClause(`t.repo_url = ?`, repoURL)
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
@@ -345,7 +345,7 @@ func readRepoTargets(ctx context.Context, env environment.Env, repoURL string) (
 	}
 	var err error
 	rsp := make([]*tables.Target, 0)
-	err = env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+	err = env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 		rsp, err = readRepoTargetsWithTx(ctx, env, repoURL, tx)
 		return err
 	})
@@ -367,7 +367,7 @@ func updateTargets(ctx context.Context, env environment.Env, targets []*tables.T
 		return status.FailedPreconditionError("database not configured")
 	}
 	for _, t := range targets {
-		err := env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+		err := env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 			var existing tables.Target
 			if err := tx.Where("target_id = ?", t.TargetID).First(&existing).Error; err != nil {
 				return err
@@ -402,7 +402,7 @@ func insertTargets(ctx context.Context, env environment.Env, targets []*tables.T
 			valueArgs = append(valueArgs, nowInt64)
 			valueArgs = append(valueArgs, nowInt64)
 		}
-		err := env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+		err := env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 			stmt := fmt.Sprintf("INSERT INTO Targets (repo_url, target_id, user_id, group_id, perms, label, rule_type, created_at_usec, updated_at_usec) VALUES %s", strings.Join(valueStrings, ","))
 			return tx.Exec(stmt, valueArgs...).Error
 		})
@@ -441,7 +441,7 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 			valueArgs = append(valueArgs, nowInt64)
 			valueArgs = append(valueArgs, nowInt64)
 		}
-		err := env.GetDBHandle().Transaction(func(tx *gorm.DB) error {
+		err := env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 			stmt := fmt.Sprintf("INSERT INTO TargetStatuses (target_id, invocation_pk, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s", strings.Join(valueStrings, ","))
 			return tx.Exec(stmt, valueArgs...).Error
 		})

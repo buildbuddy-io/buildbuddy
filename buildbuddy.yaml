@@ -8,4 +8,4 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      - test //... --config=workflows
+      - test //... //enterprise/server/test/performance/cache:cache_test --config=workflows

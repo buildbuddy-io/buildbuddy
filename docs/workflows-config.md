@@ -29,7 +29,7 @@ actions:
         branches:
           - "main"
     bazel_commands:
-      - "bazel test //... --build_metadata=ROLE=CI --bes_backend=grpcs://cloud.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/"
+      - "test //... --build_metadata=ROLE=CI --bes_backend=grpcs://cloud.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/"
 ```
 
 This config is equivalent to the default config that we use if you do

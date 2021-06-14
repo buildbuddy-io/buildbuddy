@@ -16,6 +16,7 @@ export class Capabilities {
   manageApiKeys: boolean;
   workflows: boolean;
   executors: boolean;
+  action: boolean;
   userOwnedExecutors: boolean;
   executorKeyCreation: boolean;
 

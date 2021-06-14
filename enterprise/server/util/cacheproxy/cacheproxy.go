@@ -2,6 +2,7 @@ package cacheproxy
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -26,6 +27,7 @@ const readBufSizeBytes = 1000000 // 1MB
 type CacheProxy struct {
 	env                   environment.Env
 	cache                 interfaces.Cache
+	log                   log.Logger
 	mu                    *sync.Mutex
 	server                *grpc.Server
 	clients               map[string]dcpb.DistributedCacheClient
@@ -38,6 +40,7 @@ func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *
 	proxy := &CacheProxy{
 		env:        env,
 		cache:      c,
+		log:        log.NamedSubLogger(fmt.Sprintf("CacheProxy(%s)", listenAddr)),
 		listenAddr: listenAddr,
 		mu:         &sync.Mutex{},
 		// server goes here
@@ -160,7 +163,7 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 	rsp := &dcpb.GetMultiResponse{}
 	for d, buf := range found {
 		if len(buf) == 0 {
-			log.Warningf("Cache on peer %q (prefix %q) returned a zero-length response for %s", c.listenAddr, req.GetPrefix(), d.GetHash())
+			c.log.Warningf("returned a zero-length response for %s", req.GetPrefix()+d.GetHash())
 		}
 		rsp.KeyValue = append(rsp.KeyValue, &dcpb.KV{
 			Key:   digestToKey(d),
@@ -186,20 +189,22 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	if err != nil {
 		return err
 	}
+	up, _ := prefix.UserPrefixFromContext(ctx)
 	d := digestFromKey(req.GetKey())
 	reader, err := c.cache.WithPrefix(req.GetPrefix()).Reader(ctx, d, req.GetOffset())
 	if err != nil {
+		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", req.GetPrefix()+d.GetHash(), up, err)
 		return err
 	}
 	defer reader.Close()
 
 	bufSize := int64(readBufSizeBytes)
-	if d.GetSizeBytes() < bufSize {
+	if d.GetSizeBytes() > 0 && d.GetSizeBytes() < bufSize {
 		bufSize = d.GetSizeBytes()
 	}
 	copyBuf := make([]byte, bufSize)
 	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf)
-
+	c.log.Debugf("Read(%q) succeeded (user prefix: %s)", req.GetPrefix()+d.GetHash(), up)
 	return err
 }
 
@@ -214,6 +219,8 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	if err != nil {
 		return err
 	}
+	up, _ := prefix.UserPrefixFromContext(ctx)
+
 	var bytesWritten int64
 	var writeCloser io.WriteCloser
 	for {
@@ -228,6 +235,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			d := digestFromKey(req.GetKey())
 			wc, err := c.cache.WithPrefix(req.GetPrefix()).Writer(ctx, d)
 			if err != nil {
+				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", req.GetPrefix()+d.GetHash(), up, err)
 				return err
 			}
 			writeCloser = wc
@@ -244,6 +252,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			if err := writeCloser.Close(); err != nil {
 				return err
 			}
+			c.log.Debugf("Write(%q) succeeded (user prefix: %s)", req.GetPrefix()+req.GetKey().GetKey(), up)
 			return stream.SendAndClose(&dcpb.WriteResponse{
 				CommittedSize: bytesWritten,
 			})
