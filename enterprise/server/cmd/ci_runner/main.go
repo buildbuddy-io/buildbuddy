@@ -100,6 +100,11 @@ func main() {
 	im := &initMetrics{start: time.Now()}
 
 	flag.Parse()
+
+	if (*actionName == "") != (*invocationID == "") {
+		log.Fatalf("--action_name and --invocation_id must either be both present or both missing.")
+	}
+
 	ctx := context.Background()
 
 	if err := setupGitRepo(ctx); err != nil {
@@ -157,8 +162,7 @@ func RunAllActions(ctx context.Context, cfg *config.BuildBuddyConfig, im *initMe
 		// (via ExecuteWorkflow).
 		if *actionName != "" {
 			iid = *invocationID
-		}
-		if iid == "" {
+		} else {
 			iid = newUUID()
 		}
 		bep := newBuildEventPublisher(&bepb.StreamId{

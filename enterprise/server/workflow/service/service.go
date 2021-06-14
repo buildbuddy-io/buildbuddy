@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,7 +28,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/oauth2"
 	"google.golang.org/genproto/googleapis/longrunning"
-	"gorm.io/gorm"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -297,13 +295,12 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 
 	// Lookup workflow
 	wf := &tables.Workflow{}
-	db := ws.env.GetDBHandle()
-	err = db.Raw(
+	err = ws.env.GetDBHandle().Raw(
 		`SELECT group_id, repo_url, access_token, perms FROM Workflows WHERE workflow_id = ?`,
 		req.GetWorkflowId(),
 	).Take(wf).Error
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if db.IsRecordNotFound(err) {
 			return nil, status.NotFoundError("Workflow not found")
 		}
 		return nil, status.InternalError(err.Error())
@@ -346,7 +343,6 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 
 	executionID, err := ws.executeWorkflow(ctx, wf, wd, extraCIRunnerArgs)
-
 	if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
 		return nil, err
 	}
@@ -356,6 +352,9 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 
 func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context, executionID, invocationID string) error {
 	executionClient := ws.env.GetRemoteExecutionClient()
+	if executionClient == nil {
+		return status.UnimplementedError("Missing remote execution client.")
+	}
 	indb := ws.env.GetInvocationDB()
 
 	errCh := make(chan error)
@@ -393,7 +392,7 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 		case op := <-opCh:
 			stage = operation.ExtractStage(op)
 		case <-time.After(1 * time.Second):
-			// Fall through
+			break
 		}
 		if stage == repb.ExecutionStage_EXECUTING || stage == repb.ExecutionStage_COMPLETED {
 			_, err := indb.LookupInvocation(ctx, invocationID)
@@ -561,9 +560,6 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		DoNotCache:      true,
 	}
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, action)
-	if err != nil {
-		return nil, err
-	}
 	return actionDigest, err
 }
 
