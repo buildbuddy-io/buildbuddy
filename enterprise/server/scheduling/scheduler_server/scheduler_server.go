@@ -78,6 +78,9 @@ const (
 	schedulerEnqueueTaskReservationFailureSleep = 1 * time.Second
 
 	removeExecutorCleanupTimeout = 15 * time.Second
+
+	// How often we revalidate credentials for an open registration stream.
+	checkRegistrationCredentialsInterval = 5 * time.Minute
 )
 
 var (
@@ -689,6 +692,8 @@ func (s *SchedulerServer) processExecutorStream(ctx context.Context, handle exec
 		}
 	}()
 
+	checkCredentialsTicker := time.NewTicker(checkRegistrationCredentialsInterval)
+
 	for {
 		select {
 		case <-s.shuttingDown:
@@ -703,6 +708,13 @@ func (s *SchedulerServer) processExecutorStream(ctx context.Context, handle exec
 				return err
 			}
 			registeredNode = registration
+		case <-checkCredentialsTicker.C:
+			if _, err := s.authorizeExecutor(ctx); err != nil {
+				if status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err) {
+					return err
+				}
+				log.Warningf("could not revalidate executor registration: %s", err)
+			}
 		}
 	}
 }
@@ -716,6 +728,7 @@ func (s *SchedulerServer) authorizeExecutor(ctx context.Context) (string, error)
 	if auth == nil {
 		return "", status.FailedPreconditionError("executor authorization required, but authenticator is not set")
 	}
+	// TODO(vadim): this should call auth.AuthenticateGRPCRequest to refresh credentials.
 	user, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
 		return "", err
