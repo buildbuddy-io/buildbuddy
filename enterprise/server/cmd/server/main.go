@@ -167,6 +167,13 @@ func main() {
 	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {
 		redisClient := redisutil.NewClient(redisTarget, healthChecker, "remote_execution_redis")
 		realEnv.SetRemoteExecutionRedisClient(redisClient)
+
+		// Task router uses the remote execution redis client.
+		taskRouter, err := task_router.New(realEnv)
+		if err != nil {
+			log.Fatalf("Failed to create server: %s", err)
+		}
+		realEnv.SetTaskRouter(taskRouter)
 	}
 
 	if rbeConfig := configurator.GetRemoteExecutionConfig(); rbeConfig != nil {
@@ -188,12 +195,6 @@ func main() {
 			realEnv.SetRemoteExecutionRedisPubSubClient(redisClient)
 		}
 	}
-
-	taskRouter, err := task_router.New(realEnv)
-	if err != nil {
-		log.Fatalf("Failed to create server: %s", err)
-	}
-	realEnv.SetTaskRouter(taskRouter)
 
 	if dcc := configurator.GetDistributedCacheConfig(); dcc != nil {
 		dcConfig := distributed.CacheConfig{
