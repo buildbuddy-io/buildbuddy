@@ -683,7 +683,7 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workf
 	if err != nil {
 		return "", err
 	}
-	log.Errorf("Started workflow execution (ID: %q)", executionID)
+	log.Infof("Started workflow execution (ID: %q)", executionID)
 	return executionID, nil
 }
 
