@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -437,7 +438,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		if property.Name == platformOSKey {
 			os = strings.ToLower(property.Value)
 		}
-		if property.Name == platformPoolKey && property.Value != "default" {
+		if property.Name == platformPoolKey && property.Value != platform.DefaultPoolName {
 			pool = strings.ToLower(property.Value)
 		}
 		if property.Name == platformArchKey {

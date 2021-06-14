@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
@@ -425,7 +426,7 @@ func (ws *workflowService) workflowsPoolName() string {
 	if cfg != nil && cfg.WorkflowsPoolName != "" {
 		return cfg.WorkflowsPoolName
 	}
-	return "default"
+	return platform.DefaultPoolName
 }
 
 func runnerBinaryFile() (*os.File, error) {
