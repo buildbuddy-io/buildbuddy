@@ -152,8 +152,8 @@ func (en *executionNode) GetExecutorID() string {
 	return en.executorID
 }
 
-// TODO: Expand interfaces.ExecutionNode interface to include all executionNode
-// functionality, then use interfaces.ExecutionNode everywhere.
+// TODO(bduffany): Expand interfaces.ExecutionNode interface to include all
+// executionNode functionality, then use interfaces.ExecutionNode everywhere.
 
 func toNodeInterfaces(nodes []*executionNode) []interfaces.ExecutionNode {
 	out := make([]interfaces.ExecutionNode, 0, len(nodes))

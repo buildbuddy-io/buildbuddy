@@ -786,22 +786,20 @@ func (s *ExecutionServer) updateRouter(ctx context.Context, taskID string, execu
 	if executeResponse.GetCachedResult() {
 		return nil
 	}
-	// TODO: Maybe pre-fetch the command at the beginning of PublishOperation,
-	// since it requires 2 round trips to CAS.
 	instanceName, d, err := digest.ExtractDigestFromUploadResourceName(taskID)
 	if err != nil {
-		return status.WrapError(err, "parse upload resource name")
+		return err
 	}
 	actionInstanceNameDigest := digest.NewInstanceNameDigest(d, instanceName)
 	action := &repb.Action{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionInstanceNameDigest, action); err != nil {
-		return status.WrapError(err, "get action from CAS")
+		return err
 	}
 	cmdDigest := action.GetCommandDigest()
 	cmdInstanceNameDigest := digest.NewInstanceNameDigest(cmdDigest, instanceName)
 	cmd := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
-		return status.WrapError(err, "get command from CAS")
+		return err
 	}
 	nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
 	router.MarkComplete(ctx, cmd, instanceName, nodeID)
