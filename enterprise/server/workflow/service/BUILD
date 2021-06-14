@@ -33,7 +33,6 @@ go_library(
         "@com_github_google_uuid//:uuid",
         "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
-        "@io_gorm_gorm//:gorm",
         "@org_golang_x_oauth2//:oauth2",
     ],
 )
