@@ -94,7 +94,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   }
 
   displayList(list: string[]) {
-    if (list.length == 0) return <div>None found.</div>;
+    if (list.length == 0) return <div>None found</div>;
     return (
       <div className="action-list">
         {list.map((argument) => (
@@ -154,7 +154,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                         ))}
                       </div>
                     ) : (
-                      <div>Default.</div>
+                      <div>Default</div>
                     )}
                   </div>
                 </div>
@@ -243,7 +243,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                           </div>
                         </div>
                       ) : (
-                        <div>None found.</div>
+                        <div>None found</div>
                       )}
                     </div>
                     <div className="action-section">
@@ -258,7 +258,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                           ))}
                         </div>
                       ) : (
-                        <div>None found.</div>
+                        <div>None found</div>
                       )}
                     </div>
                     <div className="action-section">
@@ -272,7 +272,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                           ))}
                         </div>
                       ) : (
-                        <div>None.</div>
+                        <div>None</div>
                       )}
                     </div>
                   </div>

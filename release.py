@@ -103,10 +103,28 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     run_or_die(push_tag_cmd)
 
 def update_docker_image(new_version, update_latest_tag):
-    version_build_cmd = 'bazel run -c opt --stamp --define version=server-image-%s --define release=true deployment:release_onprem' % new_version
+    clean_cmd = 'bazel clean --expunge'
+    run_or_die(clean_cmd)
+
+    # build the open source app
+    version_build_cmd = 'bazel run -c opt --stamp --define version=%s --define release=true deployment:release_onprem' % new_version
     run_or_die(version_build_cmd)
     if update_latest_tag:
         latest_build_cmd = 'bazel run -c opt --stamp --define version=latest --define release=true deployment:release_onprem'
+        run_or_die(latest_build_cmd)
+
+    # build the enterprise app
+    version_build_cmd = 'bazel run -c opt --stamp --define version=enterprise-%s --define release=true enterprise/deployment:release_enterprise' % new_version
+    run_or_die(version_build_cmd)
+    if update_latest_tag:
+        latest_build_cmd = 'bazel run -c opt --stamp --define version=latest --define release=true enterprise/deployment:release_enterprise'
+        run_or_die(latest_build_cmd)
+
+    # build the executor
+    version_build_cmd = 'bazel run -c opt --stamp --define version=enterprise-%s --define release=true enterprise/deployment:release_executor_enterprise' % new_version
+    run_or_die(version_build_cmd)
+    if update_latest_tag:
+        latest_build_cmd = 'bazel run -c opt --stamp --define version=latest --define release=true enterprise/deployment:release_executor_enterprise'
         run_or_die(latest_build_cmd)
 
 def generate_release_notes(old_version):

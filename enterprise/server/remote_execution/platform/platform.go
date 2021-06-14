@@ -22,7 +22,7 @@ const (
 	// empty or unset.
 	unsetContainerImageVal = "none"
 
-	recycleRunnerPropertyName       = "recycle-runner"
+	RecycleRunnerPropertyName       = "recycle-runner"
 	preserveWorkspacePropertyName   = "preserve-workspace"
 	persistentWorkerPropertyName    = "persistent-workers"
 	persistentWorkerKeyPropertyName = "persistentWorkerKey"
@@ -80,7 +80,7 @@ func ParseProperties(plat *repb.Platform, execProps *ExecutorProperties) (*Prope
 		ContainerImage:      containerImage,
 		DockerForceRoot:     boolProp(m, dockerRunAsRootPropertyName, false),
 		EnableXcodeOverride: boolProp(m, enableXcodeOverridePropertyName, false),
-		RecycleRunner:       boolProp(m, recycleRunnerPropertyName, false),
+		RecycleRunner:       boolProp(m, RecycleRunnerPropertyName, false),
 		PreserveWorkspace:   boolProp(m, preserveWorkspacePropertyName, false),
 		PersistentWorker:    boolProp(m, persistentWorkerPropertyName, false),
 		PersistentWorkerKey: stringProp(m, persistentWorkerKeyPropertyName, ""),
@@ -175,4 +175,21 @@ func stringListProp(props map[string]string, name string) []string {
 		}
 	}
 	return vals
+}
+
+// FindValue scans the platform properties for the given property name (ignoring
+// case) and returns the value of that property if it exists, otherwise "".
+func FindValue(platform *repb.Platform, name string) string {
+	name = strings.ToLower(name)
+	for _, prop := range platform.GetProperties() {
+		if prop.GetName() == name {
+			return strings.TrimSpace(prop.GetValue())
+		}
+	}
+	return ""
+}
+
+// IsTrue returns whether the given platform property value is truthy.
+func IsTrue(value string) bool {
+	return strings.EqualFold(value, "true")
 }

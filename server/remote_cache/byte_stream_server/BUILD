@@ -28,10 +28,13 @@ go_test(
     embed = [":byte_stream_server"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/util/prefix",
         "//server/util/random",
+        "//server/util/status",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//status",

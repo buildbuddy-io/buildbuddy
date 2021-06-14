@@ -14,7 +14,7 @@ module.exports = {
       },
     },
     prism: {
-      additionalLanguages: ['promql'],
+      additionalLanguages: ['promql', 'protobuf'],
     },
     navbar: {
       logo: {

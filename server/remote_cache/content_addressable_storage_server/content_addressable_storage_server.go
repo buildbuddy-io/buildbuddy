@@ -2,6 +2,7 @@ package content_addressable_storage_server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -24,6 +25,7 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const gRPCMaxSize = int64(4194304 - 2000)
@@ -151,8 +153,28 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 				Digest: uploadDigest,
 				Status: &statuspb.Status{Code: int32(codes.OK)},
 			})
-			// Skip putting this in the kv map -- we don't want the
-			// cache to be queried for empty files.
+			// Skip putting this in the kv map -- we don't want to attempt to
+			// write empty files.
+			continue
+		}
+		checksum := sha256.New()
+		checksum.Write(uploadRequest.GetData())
+		computedDigest := fmt.Sprintf("%x", checksum.Sum(nil))
+		if computedDigest != uploadDigest.GetHash() {
+			err := status.DataLossErrorf("Uploaded bytes checksum (%q) did not match digest (%q).", computedDigest, uploadDigest.GetHash())
+			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
+				Digest: uploadDigest,
+				Status: gstatus.Convert(err).Proto(),
+			})
+			continue
+
+		}
+		if int64(len(uploadRequest.GetData())) != uploadDigest.GetSizeBytes() {
+			err := status.DataLossErrorf("%d bytes were uploaded but %d were expected.", len(uploadRequest.GetData()), uploadDigest.GetSizeBytes())
+			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
+				Digest: uploadDigest,
+				Status: gstatus.Convert(err).Proto(),
+			})
 			continue
 		}
 		kvs[uploadDigest] = uploadRequest.GetData()
