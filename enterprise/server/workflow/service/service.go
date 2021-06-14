@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
@@ -538,6 +539,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		}, extraArgs...),
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
+				{Name: "Pool", Value: ws.workflowsPoolName()},
 				{Name: "container-image", Value: "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1"},
 				// Reuse the docker container for the CI runner across executions if
 				// possible, and also keep the git repo around so it doesn't need to be
@@ -561,6 +563,14 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, action)
 	return actionDigest, err
+}
+
+func (ws *workflowService) workflowsPoolName() string {
+	cfg := ws.env.GetConfigurator().GetRemoteExecutionConfig()
+	if cfg != nil && cfg.WorkflowsPoolName != "" {
+		return cfg.WorkflowsPoolName
+	}
+	return platform.DefaultPoolValue
 }
 
 func runnerBinaryFile() (*os.File, error) {

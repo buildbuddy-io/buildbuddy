@@ -13,6 +13,7 @@ go_library(
     ],
     deps = [
         "//enterprise/server/remote_execution/operation",
+        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/webhooks/bitbucket",
         "//enterprise/server/webhooks/github",
         "//enterprise/server/webhooks/webhook_data",
