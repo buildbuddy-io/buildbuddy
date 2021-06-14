@@ -344,6 +344,9 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 
 	executionID, err := ws.executeWorkflow(ctx, wf, wd, extraCIRunnerArgs)
+	if err != nil {
+		return nil, err
+	}
 	if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
 		return nil, err
 	}
@@ -680,7 +683,7 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workf
 	if err != nil {
 		return "", err
 	}
-	log.Infof("Started workflow execution (ID: %q)", executionID)
+	log.Errorf("Started workflow execution (ID: %q)", executionID)
 	return executionID, nil
 }
 
