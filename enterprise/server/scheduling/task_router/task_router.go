@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
@@ -55,7 +56,7 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 
 // RankNodes returns the input nodes ordered by their affinity to the given
 // routing properties.
-func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) ([]interfaces.ExecutionNode, error) {
+func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.ExecutionNode {
 	nodes = copyNodes(nodes)
 
 	rand.Shuffle(len(nodes), func(i, j int) {
@@ -63,20 +64,22 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 	})
 
 	if cmd == nil {
-		return nodes, nil
+		return nodes
 	}
 	preferredNodeLimit := getPreferredNodeLimit(cmd)
 	if preferredNodeLimit == 0 {
-		return nodes, nil
+		return nodes
 	}
 
 	key, err := tr.routingKey(ctx, cmd, remoteInstanceName)
 	if err != nil {
-		return nil, err
+		log.Errorf("Failed to compute routing key: %s", err)
+		return nodes
 	}
 	preferredNodeIDs, err := tr.rdb.LRange(ctx, key, 0, -1).Result()
 	if err != nil {
-		return nil, status.InternalErrorf("rank nodes: redis LRANGE failed: %s", err)
+		log.Errorf("Failed to rank nodes: redis LRANGE failed: %s", err)
+		return nodes
 	}
 
 	nodeByID := map[string]interfaces.ExecutionNode{}
@@ -103,20 +106,21 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 		ranked = append(ranked, node)
 	}
 
-	return ranked, nil
+	return ranked
 }
 
 // MarkComplete updates the routing table after a task is completed, so that
 // future tasks with those properties are more likely to be fulfilled by the
 // given node.
-func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorID string) error {
+func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorID string) {
 	nodeListMaxLength := getPreferredNodeLimit(cmd)
 	if nodeListMaxLength == 0 {
-		return nil
+		return
 	}
 	key, err := tr.routingKey(ctx, cmd, remoteInstanceName)
 	if err != nil {
-		return err
+		log.Errorf("Failed to compute routing key: %s", err)
+		return
 	}
 
 	pipe := tr.rdb.TxPipeline()
@@ -128,10 +132,9 @@ func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remot
 	pipe.LTrim(ctx, key, 0, int64(nodeListMaxLength)-1)
 	pipe.Expire(ctx, key, routingPropsKeyTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
-		return status.InternalErrorf("mark task complete: redis pipeline failed: %s", err)
+		log.Errorf("Failed to mark task complete: redis pipeline failed: %s", err)
+		return
 	}
-
-	return nil
 }
 
 // getPreferredNodeLimit returns the max number of nodes that should be stored

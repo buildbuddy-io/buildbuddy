@@ -25,6 +25,7 @@ go_library(
         "//enterprise/server/invocation_stat_service",
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/scheduling/scheduler_server",
+        "//enterprise/server/scheduling/task_router",
         "//enterprise/server/splash",
         "//enterprise/server/telemetry",
         "//enterprise/server/util/redisutil",

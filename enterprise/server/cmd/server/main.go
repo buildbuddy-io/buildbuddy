@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -168,6 +169,13 @@ func main() {
 	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {
 		redisClient := redisutil.NewClient(redisTarget, healthChecker, "remote_execution_redis")
 		realEnv.SetRemoteExecutionRedisClient(redisClient)
+
+		// Task router uses the remote execution redis client.
+		taskRouter, err := task_router.New(realEnv)
+		if err != nil {
+			log.Fatalf("Failed to create server: %s", err)
+		}
+		realEnv.SetTaskRouter(taskRouter)
 	}
 
 	if rbeConfig := configurator.GetRemoteExecutionConfig(); rbeConfig != nil {
