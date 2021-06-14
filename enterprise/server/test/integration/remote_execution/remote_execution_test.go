@@ -196,6 +196,37 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T)
 	require.Equal(t, "BB", res.Stdout)
 }
 
+func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServers(3)
+	rbe.AddExecutors(10)
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "preserve-workspace", Value: "true"},
+		},
+	}
+	opts := &rbetest.ExecuteOpts{UserID: rbetest.TestUserID1}
+
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{"touch", "foo.txt"},
+		Platform:  platform,
+	}, opts)
+	res := cmd.Wait()
+
+	require.Equal(t, 0, res.ExitCode)
+
+	cmd = rbe.Execute(&repb.Command{
+		Arguments: []string{"stat", "foo.txt"},
+		Platform:  platform,
+	}, opts)
+	res = cmd.Wait()
+
+	require.Equal(t, 0, res.ExitCode)
+}
+
 func TestSimpleCommandWithMultipleExecutors(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 

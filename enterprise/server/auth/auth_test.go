@@ -69,10 +69,7 @@ func (f fakeOidcAuthenticator) renewToken(ctx context.Context, refreshToken stri
 func TestAuthenticateHTTPRequest(t *testing.T) {
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{})
 
-	opts := &Options{
-		AuthenticatorsOverride: []authenticator{&fakeOidcAuthenticator{}},
-	}
-	auth, err := NewOpenIDAuthenticator(context.Background(), env, opts)
+	auth, err := newForTesting(context.Background(), env, &fakeOidcAuthenticator{})
 	require.NoErrorf(t, err, "could not create authenticator")
 
 	// JWT cookie not present, auth should fail.

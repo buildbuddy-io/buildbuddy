@@ -319,10 +319,6 @@ func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup interfaces.APIKeyGroup
 	c.mu.Unlock()
 }
 
-type Options struct {
-	AuthenticatorsOverride []authenticator // FOR TESTING
-}
-
 type OpenIDAuthenticator struct {
 	env              environment.Env
 	myURL            *url.URL
@@ -360,14 +356,9 @@ func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.Oa
 	return authenticators, nil
 }
 
-func NewOpenIDAuthenticator(ctx context.Context, env environment.Env, opts *Options) (*OpenIDAuthenticator, error) {
+func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProviders []config.OauthProvider) (*OpenIDAuthenticator, error) {
 	oia := &OpenIDAuthenticator{
 		env: env,
-	}
-
-	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
-	if len(authConfigs) == 0 && len(opts.AuthenticatorsOverride) == 0 {
-		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
 	}
 
 	myURL, err := url.Parse(env.GetConfigurator().GetAppBuildBuddyURL())
@@ -379,15 +370,9 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env, opts *Opti
 		return nil, err
 	}
 	oia.myURL = myURL
-	if len(opts.AuthenticatorsOverride) > 0 {
-		for _, a := range opts.AuthenticatorsOverride {
-			oia.authenticators = append(oia.authenticators, a)
-		}
-	} else {
-		oia.authenticators, err = createAuthenticatorsFromConfig(ctx, authConfigs, authURL)
-		if err != nil {
-			return nil, err
-		}
+	oia.authenticators, err = createAuthenticatorsFromConfig(ctx, oauthProviders, authURL)
+	if err != nil {
+		return nil, err
 	}
 
 	// Set the JWT key.
@@ -401,8 +386,25 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env, opts *Opti
 		}
 		oia.apiKeyGroupCache = akgCache
 	}
-
 	return oia, nil
+}
+
+func newForTesting(ctx context.Context, env environment.Env, testAuthenticator authenticator) (*OpenIDAuthenticator, error) {
+	oia, err := newOpenIDAuthenticator(ctx, env, nil /*oauthProviders=*/)
+	if err != nil {
+		return nil, err
+	}
+	oia.authenticators = append(oia.authenticators, testAuthenticator)
+	return oia, nil
+}
+
+func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAuthenticator, error) {
+	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
+	if len(authConfigs) == 0 {
+		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
+	}
+
+	return newOpenIDAuthenticator(ctx, env, authConfigs)
 }
 
 func sameHostname(urlStringA, urlStringB string) bool {
