@@ -10,6 +10,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/util/log",
         "//server/util/perms",
         "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",

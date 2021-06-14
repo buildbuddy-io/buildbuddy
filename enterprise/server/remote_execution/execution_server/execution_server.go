@@ -31,14 +31,14 @@ import (
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/codes"
 
-	anypb "github.com/golang/protobuf/ptypes/any"
-	durationpb "github.com/golang/protobuf/ptypes/duration"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
-	gstatus "google.golang.org/grpc/status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	anypb "github.com/golang/protobuf/ptypes/any"
+	durationpb "github.com/golang/protobuf/ptypes/duration"
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -323,10 +323,6 @@ func (s *ExecutionServer) operationFromExecution(ctx context.Context, te *tables
 	return op, nil
 }
 
-func (s *ExecutionServer) readProtoFromCAS(ctx context.Context, d *digest.InstanceNameDigest, msg proto.Message) error {
-	return cachetools.ReadProtoFromCAS(ctx, s.cache, d, msg)
-}
-
 // getUnvalidatedActionResult fetches an action result from the cache but does
 // not validate it.
 // N.B. This should only be used if the calling code has already ensured the
@@ -375,13 +371,13 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 	adInstanceDigest := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
 	action := &repb.Action{}
-	if err := s.readProtoFromCAS(ctx, adInstanceDigest, action); err != nil {
+	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, adInstanceDigest, action); err != nil {
 		log.Errorf("Error fetching action: %s", err.Error())
 		return "", err
 	}
 	cmdInstanceDigest := digest.NewInstanceNameDigest(action.GetCommandDigest(), req.GetInstanceName())
 	command := &repb.Command{}
-	if err := s.readProtoFromCAS(ctx, cmdInstanceDigest, command); err != nil {
+	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceDigest, command); err != nil {
 		log.Errorf("Error fetching command: %s", err.Error())
 		return "", err
 	}
@@ -733,7 +729,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if response != nil {
 				if err := s.updateRouter(ctx, taskID, response); err != nil {
 					// Errors from updating the router should not be fatal.
-					log.Errorf("Failed to update task router: %s", err)
+					log.Errorf("Failed to update task router for task %s: %s", taskID, err)
 				}
 			}
 		}
@@ -798,15 +794,16 @@ func (s *ExecutionServer) updateRouter(ctx context.Context, taskID string, execu
 	}
 	actionInstanceNameDigest := digest.NewInstanceNameDigest(d, instanceName)
 	action := &repb.Action{}
-	if err := s.readProtoFromCAS(ctx, actionInstanceNameDigest, action); err != nil {
+	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionInstanceNameDigest, action); err != nil {
 		return status.WrapError(err, "get action from CAS")
 	}
 	cmdDigest := action.GetCommandDigest()
 	cmdInstanceNameDigest := digest.NewInstanceNameDigest(cmdDigest, instanceName)
 	cmd := &repb.Command{}
-	if err := s.readProtoFromCAS(ctx, cmdInstanceNameDigest, cmd); err != nil {
+	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
 		return status.WrapError(err, "get command from CAS")
 	}
 	nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
-	return router.MarkComplete(ctx, cmd, instanceName, nodeID)
+	router.MarkComplete(ctx, cmd, instanceName, nodeID)
+	return nil
 }

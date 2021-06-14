@@ -40,33 +40,27 @@ func TestTaskRouter_RankNodes_Workflows_ReturnsMultipleRunnersThatExecutedWorkfl
 	}
 	instanceName := "test-instance"
 
-	err := router.MarkComplete(ctx, cmd, instanceName, executorID1)
-
-	require.NoError(t, err)
+	router.MarkComplete(ctx, cmd, instanceName, executorID1)
 
 	nodes := sequentiallyNumberedNodes(100)
 
 	// Task should now be routed to executor 1.
 
-	ranked, err := router.RankNodes(ctx, cmd, instanceName, nodes)
+	ranked := router.RankNodes(ctx, cmd, instanceName, nodes)
 
-	require.NoError(t, err)
 	require.ElementsMatch(t, nodes, ranked)
 	require.Equal(t, executorID1, ranked[0].GetExecutorID())
 
 	// Mark the same task complete by executor 2 as well.
 
-	err = router.MarkComplete(ctx, cmd, instanceName, executorID2)
-
-	require.NoError(t, err)
+	router.MarkComplete(ctx, cmd, instanceName, executorID2)
 
 	// Task should now be routed to executor 2 then 1 in order, since executor 2
 	// ran the task more recently, and we memorize several recent executors for
 	// workflow tasks.
 
-	ranked, err = router.RankNodes(ctx, cmd, instanceName, nodes)
+	ranked = router.RankNodes(ctx, cmd, instanceName, nodes)
 
-	require.NoError(t, err)
 	require.ElementsMatch(t, nodes, ranked)
 	require.Equal(t, executorID2, ranked[0].GetExecutorID())
 	require.Equal(t, executorID1, ranked[1].GetExecutorID())
@@ -87,33 +81,27 @@ func TestTaskRouter_RankNodes_DefaultNodeLimit_ReturnsOnlyLatestNodeMarkedComple
 	}
 	instanceName := "test-instance"
 
-	err := router.MarkComplete(ctx, cmd, instanceName, executorID1)
-
-	require.NoError(t, err)
+	router.MarkComplete(ctx, cmd, instanceName, executorID1)
 
 	nodes := sequentiallyNumberedNodes(100)
 
 	// Task should now be routed to executor 1.
 
-	ranked, err := router.RankNodes(ctx, cmd, instanceName, nodes)
+	ranked := router.RankNodes(ctx, cmd, instanceName, nodes)
 
-	require.NoError(t, err)
 	require.ElementsMatch(t, nodes, ranked)
 	require.Equal(t, executorID1, ranked[0].GetExecutorID())
 
 	// Mark the same task complete by executor 2 as well.
 
-	err = router.MarkComplete(ctx, cmd, instanceName, executorID2)
+	router.MarkComplete(ctx, cmd, instanceName, executorID2)
 
-	require.NoError(t, err)
-
-	ranked, err = router.RankNodes(ctx, cmd, instanceName, nodes)
+	ranked = router.RankNodes(ctx, cmd, instanceName, nodes)
 
 	// Task should now be routed to executor 2, but executor 1 should be ranked
 	// randomly, since we only store up to 1 recent executor for non-workflow
 	// tasks.
 
-	require.NoError(t, err)
 	require.ElementsMatch(t, nodes, ranked)
 	require.Equal(t, executorID2, ranked[0].GetExecutorID())
 
@@ -127,9 +115,8 @@ func TestTaskRouter_RankNodes_JustShufflesIfCommandIsNotAvailable(t *testing.T) 
 	ctx := withAuthUser(t, context.Background(), env, "US1")
 	instanceName := ""
 
-	ranked, err := router.RankNodes(ctx, nil /*=cmd*/, instanceName, nodes)
+	ranked := router.RankNodes(ctx, nil /*=cmd*/, instanceName, nodes)
 
-	require.NoError(t, err)
 	requireReordered(t, nodes, ranked)
 }
 
@@ -140,9 +127,8 @@ func TestTaskRouter_MarkComplete_DoesNotAffectNonRecyclableTasks(t *testing.T) {
 	cmd := &repb.Command{}
 	instanceName := "test-instance"
 
-	err := router.MarkComplete(ctx, cmd, instanceName, executorID1)
+	router.MarkComplete(ctx, cmd, instanceName, executorID1)
 
-	require.NoError(t, err)
 	requireNotAlwaysRanked(0, executorID1, t, router, ctx, cmd, instanceName)
 }
 
@@ -159,11 +145,10 @@ func TestTaskRouter_MarkComplete_DoesNotAffectOtherGroups(t *testing.T) {
 	}
 	instanceName := "test-instance"
 
-	err := router.MarkComplete(ctx1, cmd, instanceName, executorID1)
+	router.MarkComplete(ctx1, cmd, instanceName, executorID1)
 
 	ctx2 := withAuthUser(t, context.Background(), env, "US2")
 
-	require.NoError(t, err)
 	requireNotAlwaysRanked(0, executorID1, t, router, ctx2, cmd, instanceName)
 }
 
@@ -180,11 +165,10 @@ func TestTaskRouter_MarkComplete_DoesNotAffectOtherRemoteInstances(t *testing.T)
 	}
 	instanceName1 := "test-instance"
 
-	err := router.MarkComplete(ctx, cmd, instanceName1, executorID1)
+	router.MarkComplete(ctx, cmd, instanceName1, executorID1)
 
 	instanceName2 := "another-test-instance"
 
-	require.NoError(t, err)
 	requireNotAlwaysRanked(0, executorID1, t, router, ctx, cmd, instanceName2)
 }
 
@@ -194,10 +178,9 @@ func requireNotAlwaysRanked(rank int, executorID string, t *testing.T, router in
 	nodes := sequentiallyNumberedNodes(100)
 	nTrials := 10
 	for i := 0; i < nTrials; i++ {
-		ranked, err := router.RankNodes(ctx, cmd, instanceName, nodes)
+		ranked := router.RankNodes(ctx, cmd, instanceName, nodes)
 
 		require.Equal(t, len(nodes), len(ranked))
-		require.NoError(t, err)
 		if ranked[rank].GetExecutorID() != executorID {
 			return
 		}

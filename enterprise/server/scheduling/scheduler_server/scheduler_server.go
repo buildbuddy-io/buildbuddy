@@ -1195,10 +1195,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				if len(nodes) == 0 {
 					return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
 				}
-				rankedNodes, err := s.taskRouter.RankNodes(ctx, cmd, remoteInstanceName, toNodeInterfaces(nodes))
-				if err != nil {
-					log.Errorf("Failed to rank nodes: %s", err)
-				}
+				rankedNodes := s.taskRouter.RankNodes(ctx, cmd, remoteInstanceName, toNodeInterfaces(nodes))
 				nodes, err = fromNodeInterfaces(rankedNodes)
 				if err != nil {
 					return err

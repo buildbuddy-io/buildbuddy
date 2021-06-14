@@ -269,17 +269,13 @@ type TaskRouter interface {
 	// their suitability for executing the given command. Nodes with equal
 	// suitability are returned in random order (for load balancing purposes).
 	//
-	// If an error occurs, the nodes are returned in random order. The returned
-	// error can be logged, but should not be treated as fatal.
-	RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) ([]ExecutionNode, error)
+	// If an error occurs, the input nodes should be returned in random order.
+	RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) []ExecutionNode
 
 	// MarkComplete notifies the router that the command has been completed by the
 	// given executor instance. Subsequent calls to RankNodes may assign a higher
 	// rank to nodes with the given instance ID, given similar commands.
-	//
-	// Callers should not treat the returned error as fatal, since task routing is
-	// intended to be best-effort.
-	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string) error
+	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
 }
 
 // CommandResult captures the output and details of an executed command.
