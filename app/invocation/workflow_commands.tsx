@@ -59,23 +59,6 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
             iconPath="/image/x-circle.svg"
           />
         )}
-        {succeeded.length > 0 && (
-          <WorkflowCommandsCard
-            status="succeeded"
-            results={succeeded}
-            className="card-success"
-            iconPath="/image/check-circle.svg"
-          />
-        )}
-        {notRun.length > 0 && (
-          <WorkflowCommandsCard
-            status="not run"
-            results={notRun}
-            className="card-neutral"
-            iconPath="/image/skipped-circle.svg"
-            linksDisabled={true}
-          />
-        )}
         {inProgress.length > 0 && (
           <WorkflowCommandsCard
             status="in progress"
@@ -91,6 +74,23 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
             className="card-neutral"
             iconPath="/image/play-circle.svg"
             linksDisabled={true}
+          />
+        )}
+        {notRun.length > 0 && (
+          <WorkflowCommandsCard
+            status="not run"
+            results={notRun}
+            className="card-neutral"
+            iconPath="/image/skipped-circle.svg"
+            linksDisabled={true}
+          />
+        )}
+        {succeeded.length > 0 && (
+          <WorkflowCommandsCard
+            status="succeeded"
+            results={succeeded}
+            className="card-success"
+            iconPath="/image/check-circle.svg"
           />
         )}
       </>
