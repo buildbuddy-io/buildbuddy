@@ -438,7 +438,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		if property.Name == platformOSKey {
 			os = strings.ToLower(property.Value)
 		}
-		if property.Name == platformPoolKey && property.Value != platform.DefaultPoolName {
+		if property.Name == platformPoolKey && property.Value != platform.DefaultPoolValue {
 			pool = strings.ToLower(property.Value)
 		}
 		if property.Name == platformArchKey {

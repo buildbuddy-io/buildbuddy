@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	// DefaultPoolName is the value for the "Pool" platform property that selects
+	// DefaultPoolValue is the value for the "Pool" platform property that selects
 	// the default executor pool for remote execution.
-	DefaultPoolName = "default"
+	DefaultPoolValue = "default"
 
 	containerImagePropertyName = "container-image"
 	DefaultContainerImage      = "gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"

@@ -426,7 +426,7 @@ func (ws *workflowService) workflowsPoolName() string {
 	if cfg != nil && cfg.WorkflowsPoolName != "" {
 		return cfg.WorkflowsPoolName
 	}
-	return platform.DefaultPoolName
+	return platform.DefaultPoolValue
 }
 
 func runnerBinaryFile() (*os.File, error) {
