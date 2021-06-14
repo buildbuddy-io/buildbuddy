@@ -215,9 +215,7 @@ export default class TrendsComponent extends React.Component {
               <TrendsChartComponent
                 title="Cache read throughput"
                 data={this.state.lastNDates}
-                extractValue={(date) =>
-                  bitsPerByte * (+this.state.dateToStatMap.get(date)?.totalDownloadSizeBytes / 1000000)
-                }
+                extractValue={(date) => +this.state.dateToStatMap.get(date)?.totalDownloadSizeBytes / 1000000}
                 extractSecondaryValue={(date) =>
                   bitsPerByte *
                   (+this.state.dateToStatMap.get(date)?.totalDownloadSizeBytes /
@@ -225,9 +223,9 @@ export default class TrendsComponent extends React.Component {
                 }
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
-                formatHoverValue={(value) => (value || 0).toFixed(2) + " Mb downloaded"}
+                formatHoverValue={(value) => (value || 0).toFixed(2) + " MB downloaded"}
                 formatSecondaryHoverValue={(value) => (value || 0).toFixed(2) + " Mbps"}
-                name="Mb downloaded"
+                name="MB downloaded"
                 secondaryName="Mbps download throughput"
                 secondaryLine={true}
                 separateAxis={true}
@@ -236,9 +234,7 @@ export default class TrendsComponent extends React.Component {
               <TrendsChartComponent
                 title="Cache write throughput"
                 data={this.state.lastNDates}
-                extractValue={(date) =>
-                  bitsPerByte * (+this.state.dateToStatMap.get(date)?.totalUploadSizeBytes / 1000000)
-                }
+                extractValue={(date) => +this.state.dateToStatMap.get(date)?.totalUploadSizeBytes / 1000000}
                 extractSecondaryValue={(date) =>
                   bitsPerByte *
                   (+this.state.dateToStatMap.get(date)?.totalUploadSizeBytes /
@@ -246,9 +242,9 @@ export default class TrendsComponent extends React.Component {
                 }
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
-                formatHoverValue={(value) => (value || 0).toFixed(2) + " Mb uploaded"}
+                formatHoverValue={(value) => (value || 0).toFixed(2) + " MB uploaded"}
                 formatSecondaryHoverValue={(value) => (value || 0).toFixed(2) + " Mbps"}
-                name="Mb uploaded"
+                name="MB uploaded"
                 secondaryName="Mbps upload throughput"
                 secondaryLine={true}
                 separateAxis={true}
