@@ -108,7 +108,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		log.Fatal("Executor config not found")
 	}
 
-	authenticator, err := auth.NewOpenIDAuthenticator(context.Background(), realEnv, &auth.Options{})
+	authenticator, err := auth.NewOpenIDAuthenticator(context.Background(), realEnv)
 	if err == nil {
 		realEnv.SetAuthenticator(authenticator)
 	} else {
