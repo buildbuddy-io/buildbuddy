@@ -728,8 +728,10 @@ func (s *SchedulerServer) authorizeExecutor(ctx context.Context) (string, error)
 	if auth == nil {
 		return "", status.FailedPreconditionError("executor authorization required, but authenticator is not set")
 	}
-	// TODO(vadim): this should call auth.AuthenticateGRPCRequest to refresh credentials.
-	user, err := auth.AuthenticatedUser(ctx)
+	// We intentionally use AuthenticateGRPCRequest instead of AuthenticatedUser to ensure that we refresh the
+	// credentials to handle the case where the API key is deleted (or capabilities are updated) after the stream was
+	// created.
+	user, err := auth.AuthenticateGRPCRequest(ctx)
 	if err != nil {
 		return "", err
 	}
