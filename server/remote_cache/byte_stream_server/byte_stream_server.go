@@ -2,6 +2,9 @@ package byte_stream_server
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
+	"hash"
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -143,6 +146,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 type writeState struct {
 	writer             io.WriteCloser
+	checksum           hash.Hash
 	d                  *repb.Digest
 	activeResourceName string
 	bytesWritten       int64
@@ -208,6 +212,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	} else {
 		wc = devnull.NewWriteCloser()
 	}
+	ws.checksum = sha256.New()
 	ws.writer = wc
 	ws.alreadyExists = exists
 	if exists {
@@ -216,7 +221,28 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 		ws.bytesWritten = 0
 	}
 	return ws, nil
+}
 
+func (w *writeState) Write(buf []byte) error {
+	n, err := w.writer.Write(buf)
+	if err != nil {
+		return err
+	}
+	w.bytesWritten += int64(n)
+	w.checksum.Write(buf)
+	return nil
+}
+
+func (w *writeState) Close() error {
+	// Verify that digest length and hash match.
+	computedDigest := fmt.Sprintf("%x", w.checksum.Sum(nil))
+	if computedDigest != w.d.GetHash() {
+		return status.DataLossErrorf("Uploaded bytes checksum (%q) did not match digest (%q).", computedDigest, w.d.GetHash())
+	}
+	if w.bytesWritten != w.d.GetSizeBytes() {
+		return status.DataLossErrorf("%d bytes were uploaded but %d were expected.", w.bytesWritten, w.d.GetSizeBytes())
+	}
+	return w.writer.Close()
 }
 
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
@@ -268,14 +294,12 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 		}
-
-		n, err := streamState.writer.Write(req.Data)
-		if err != nil {
+		if err := streamState.Write(req.Data); err != nil {
 			return err
 		}
-		streamState.bytesWritten += int64(n)
+
 		if req.FinishWrite {
-			if err := streamState.writer.Close(); err != nil {
+			if err := streamState.Close(); err != nil {
 				return err
 			}
 			return stream.SendAndClose(&bspb.WriteResponse{

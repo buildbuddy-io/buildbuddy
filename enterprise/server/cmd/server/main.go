@@ -3,11 +3,9 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io/fs"
 	"time"
-
-	"github.com/go-redis/redis/v8"
-	"google.golang.org/api/option"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -25,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -33,12 +32,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
+	"github.com/go-redis/redis/v8"
+	"google.golang.org/api/option"
 
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bundle "github.com/buildbuddy-io/enterprise/bundle"
 )
 
@@ -166,6 +169,13 @@ func main() {
 	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {
 		redisClient := redisutil.NewClient(redisTarget, healthChecker, "remote_execution_redis")
 		realEnv.SetRemoteExecutionRedisClient(redisClient)
+
+		// Task router uses the remote execution redis client.
+		taskRouter, err := task_router.New(realEnv)
+		if err != nil {
+			log.Fatalf("Failed to create server: %s", err)
+		}
+		realEnv.SetTaskRouter(taskRouter)
 	}
 
 	if rbeConfig := configurator.GetRemoteExecutionConfig(); rbeConfig != nil {
@@ -237,6 +247,13 @@ func main() {
 			log.Fatalf("Error configuring scheduler server: %v", err)
 		}
 		realEnv.SetSchedulerService(schedulerServer)
+
+		// Fulfill internal remote execution requests locally.
+		conn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", *libmain.GRPCPort))
+		if err != nil {
+			log.Fatalf("Error initializing remote execution client: %s", err)
+		}
+		realEnv.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
 	}
 
 	executionService := execution_service.NewExecutionService(realEnv)

@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/backends/pubsub",
         "//enterprise/server/remote_execution/operation",
+        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/tasksize",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
@@ -16,6 +17,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/action_cache_server",
+        "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/remote_cache/namespace",
         "//server/tables",
