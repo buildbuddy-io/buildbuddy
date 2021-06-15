@@ -93,9 +93,8 @@ func init() {
 }
 
 type StatusReporter interface {
-	// Returns nil on success, error on failure. Returning an error will
-	// indicate to the health checker that this service is unhealthy and
-	// that the server is not ready to serve.
+	// Returns a text or HTML snippet that represents the service's current
+	// running state in a compact way.
 	Statusz(ctx context.Context) string
 }
 type StatusFunc func(ctx context.Context) string
