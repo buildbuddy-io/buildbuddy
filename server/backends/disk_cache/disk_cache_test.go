@@ -62,7 +62,7 @@ func getTmpDir(t *testing.T) string {
 }
 
 func TestGetSet(t *testing.T) {
-	maxSizeBytes := int64(1000000000) // 1GB
+	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := getTmpDir(t)
 	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
 	if err != nil {
@@ -103,7 +103,7 @@ func randomDigests(t *testing.T, sizes ...int64) map[*repb.Digest][]byte {
 }
 
 func TestMultiGetSet(t *testing.T) {
-	maxSizeBytes := int64(1000000000) // 1GB
+	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := getTmpDir(t)
 	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
 	if err != nil {
@@ -138,7 +138,7 @@ func TestMultiGetSet(t *testing.T) {
 }
 
 func TestReadWrite(t *testing.T) {
-	maxSizeBytes := int64(1000000000) // 1GB
+	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := getTmpDir(t)
 	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
 	if err != nil {
@@ -264,7 +264,7 @@ func TestLRU(t *testing.T) {
 }
 
 func TestFileAtomicity(t *testing.T) {
-	maxSizeBytes := int64(100000000) // 100MB
+	maxSizeBytes := int64(100_000_000) // 100MB
 	rootDir := getTmpDir(t)
 	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
 	if err != nil {
@@ -294,7 +294,7 @@ func TestFileAtomicity(t *testing.T) {
 }
 
 func TestAsyncLoading(t *testing.T) {
-	maxSizeBytes := int64(100000000) // 100MB
+	maxSizeBytes := int64(100_000_000) // 100MB
 	rootDir := getTmpDir(t)
 	ctx := getAnonContext(t)
 	anonPath := filepath.Join(rootDir, "ANON")
@@ -351,6 +351,47 @@ func TestAsyncLoading(t *testing.T) {
 		}
 		if !exists {
 			t.Fatalf("%q was not found in cache.", d.GetHash())
+		}
+	}
+}
+
+func TestJanitorThread(t *testing.T) {
+	maxSizeBytes := int64(10_000_000) // 10MB
+	ctx := getAnonContext(t)
+	rootDir := getTmpDir(t)
+	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fill the cache.
+	digests := make([]*repb.Digest, 0)
+	for i := 0; i < 999; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
+		err := dc.Set(ctx, d, buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		digests = append(digests, d)
+	}
+
+	// Make a new disk cache with a smaller size. The
+	// janitor should clean extra data up, oldest first.
+	dc, err = disk_cache.NewDiskCache(rootDir, maxSizeBytes/2) // 5MB
+	if err != nil {
+		t.Fatal(err)
+	}
+	// GC runs after 100ms, so give it a little time to delete the files.
+	time.Sleep(500 * time.Millisecond)
+	for i, d := range digests {
+		if i > 500 {
+			break
+		}
+		contains, err := dc.Contains(ctx, d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if contains {
+			t.Fatalf("Expected oldest digest %+v to be deleted", d)
 		}
 	}
 }
