@@ -356,7 +356,7 @@ func TestAsyncLoading(t *testing.T) {
 }
 
 func TestJanitorThread(t *testing.T) {
-	maxSizeBytes := int64(100_000_000) // 10MB
+	maxSizeBytes := int64(10_000_000) // 10MB
 	ctx := getAnonContext(t)
 	rootDir := getTmpDir(t)
 	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
@@ -381,9 +381,9 @@ func TestJanitorThread(t *testing.T) {
 		t.Fatal(err)
 	}
 	// GC runs after 100ms, so give it a little time to delete the files.
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	for i, d := range digests {
-		if i < 500 {
+		if i > 500 {
 			break
 		}
 		contains, err := dc.Contains(ctx, d)
