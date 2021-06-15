@@ -7,6 +7,7 @@ go_test(
         "//enterprise/server/cmd/ci_runner",
         "//server/testutil/bazel:bazel-3.7.0_crossplatform",
     ],
+    shard_count = 4,
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
