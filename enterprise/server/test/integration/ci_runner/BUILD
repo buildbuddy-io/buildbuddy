@@ -5,7 +5,6 @@ go_test(
     srcs = ["ci_runner_test.go"],
     data = [
         "//enterprise/server/cmd/ci_runner",
-        "//server/testutil/bazel:bazel-3.7.0_crossplatform",
     ],
     visibility = [
         "//enterprise:__subpackages__",
@@ -13,8 +12,8 @@ go_test(
     ],
     deps = [
         "//proto:invocation_go_proto",
-        "//server/testutil/bazel",
         "//server/testutil/buildbuddy",
+        "//server/testutil/testbazel",
         "@com_github_go_git_go_git_v5//:go-git",
         "@com_github_go_git_go_git_v5//plumbing/object",
         "@com_github_google_uuid//:uuid",
