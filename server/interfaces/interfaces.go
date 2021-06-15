@@ -59,22 +59,39 @@ type Authenticator interface {
 	// Handle a callback from authentication provider.
 	Auth(w http.ResponseWriter, r *http.Request)
 
-	// Called by the authentication handler to authenticate a request. If a
-	// user was authenticated, a new context will be returned that contains
-	// a UserToken.
-	AuthenticateHTTPRequest(w http.ResponseWriter, r *http.Request) context.Context
+	// AuthenticatedHTTPContext authenticates the user using the credentials present in the HTTP request and creates a
+	// child context that contains the results.
+	//
+	// This function is called automatically for every HTTP request via a filter and the new context is passed to
+	// application code.
+	//
+	// Application code can retrieve the stored information by calling AuthenticatedUser.
+	AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context
 
-	// Called by the authentication handler to authenticate a request. If a
-	// user was authenticated, a new context will be returned that contains
-	// a BasicAuthToken.
-	AuthenticateGRPCRequest(ctx context.Context) context.Context
+	// AuthenticatedGRPCContext authenticates the user using the credentials present in the gRPC metadata and creates a
+	// child context that contains the result.
+	//
+	// This function is called automatically for every gRPC request via a filter and the new context is passed to
+	// application code.
+	//
+	// Application code that retrieve the stored information by calling AuthenticatedUser.
+	AuthenticatedGRPCContext(ctx context.Context) context.Context
+
+	// AuthenticateGRPCRequest authenticates the user using the credentials present in the gRPC metadata and returns the
+	// result.
+	//
+	// You should only use this function if you need fresh information (for example to re-validate credentials during a
+	// long running operation). For all other cases it is better to use the information cached in the context
+	// retrieved via AuthenticatedUser.
+	AuthenticateGRPCRequest(ctx context.Context) (UserInfo, error)
 
 	// FillUser may be used to construct an initial tables.User object. It
 	// is filled based on information from the authenticator's JWT.
 	FillUser(ctx context.Context, user *tables.User) error
 
-	// Returns the UserInfo extracted from any authorization headers
-	// present in the request.
+	// AuthenticatedUser returns the UserInfo stored in the context.
+	//
+	// See AuthenticatedHTTPContext/AuthenticatedGRPCContext for a description of how the context is created.
 	AuthenticatedUser(ctx context.Context) (UserInfo, error)
 
 	// Parses and returns a BuildBuddy API key from the given string.
@@ -216,6 +233,7 @@ type WorkflowService interface {
 	CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error)
 	DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error)
 	GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error)
+	ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error)
 	GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
@@ -269,17 +287,13 @@ type TaskRouter interface {
 	// their suitability for executing the given command. Nodes with equal
 	// suitability are returned in random order (for load balancing purposes).
 	//
-	// If an error occurs, the nodes are returned in random order. The returned
-	// error can be logged, but should not be treated as fatal.
-	RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) ([]ExecutionNode, error)
+	// If an error occurs, the input nodes should be returned in random order.
+	RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) []ExecutionNode
 
 	// MarkComplete notifies the router that the command has been completed by the
 	// given executor instance. Subsequent calls to RankNodes may assign a higher
 	// rank to nodes with the given instance ID, given similar commands.
-	//
-	// Callers should not treat the returned error as fatal, since task routing is
-	// intended to be best-effort.
-	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string) error
+	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
 }
 
 // CommandResult captures the output and details of an executed command.

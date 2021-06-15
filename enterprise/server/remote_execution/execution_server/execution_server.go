@@ -12,11 +12,13 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -33,10 +35,9 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	tspb "github.com/golang/protobuf/ptypes/timestamp"
-
 	anypb "github.com/golang/protobuf/ptypes/any"
 	durationpb "github.com/golang/protobuf/ptypes/duration"
+	tspb "github.com/golang/protobuf/ptypes/timestamp"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -323,18 +324,6 @@ func (s *ExecutionServer) operationFromExecution(ctx context.Context, te *tables
 	return op, nil
 }
 
-func (s *ExecutionServer) readProtoFromCAS(ctx context.Context, d *digest.InstanceNameDigest, msg proto.Message) error {
-	cache := namespace.CASCache(s.cache, d.GetInstanceName())
-	data, err := cache.Get(ctx, d.Digest)
-	if err != nil {
-		if status.IsNotFoundError(err) {
-			return digest.MissingDigestError(d.Digest)
-		}
-		return err
-	}
-	return proto.Unmarshal([]byte(data), msg)
-}
-
 // getUnvalidatedActionResult fetches an action result from the cache but does
 // not validate it.
 // N.B. This should only be used if the calling code has already ensured the
@@ -383,13 +372,13 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 	adInstanceDigest := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
 	action := &repb.Action{}
-	if err := s.readProtoFromCAS(ctx, adInstanceDigest, action); err != nil {
+	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, adInstanceDigest, action); err != nil {
 		log.Errorf("Error fetching action: %s", err.Error())
 		return "", err
 	}
 	cmdInstanceDigest := digest.NewInstanceNameDigest(action.GetCommandDigest(), req.GetInstanceName())
 	command := &repb.Command{}
-	if err := s.readProtoFromCAS(ctx, cmdInstanceDigest, command); err != nil {
+	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceDigest, command); err != nil {
 		log.Errorf("Error fetching command: %s", err.Error())
 		return "", err
 	}
@@ -437,7 +426,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		if property.Name == platformOSKey {
 			os = strings.ToLower(property.Value)
 		}
-		if property.Name == platformPoolKey && property.Value != "default" {
+		if property.Name == platformPoolKey && property.Value != platform.DefaultPoolValue {
 			pool = strings.ToLower(property.Value)
 		}
 		if property.Name == platformArchKey {
@@ -688,7 +677,10 @@ func loopAfterTimeout(ctx context.Context, timeout time.Duration, f func()) {
 }
 
 func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperationServer) error {
-	ctx := stream.Context()
+	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
+	if err != nil {
+		return err
+	}
 	lastOp := &longrunning.Operation{}
 	lastWrite := time.Now()
 	taskID := ""
@@ -730,6 +722,19 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 		log.Debugf("PublishOperation: operation %q stage: %s", taskID, stage)
 
+		// Before publishing the COMPLETED operation, update the task router
+		// so that subsequent tasks with similar routing properties can get
+		// routed back to the same executor.
+		if stage == repb.ExecutionStage_COMPLETED {
+			response := operation.ExtractExecuteResponse(op)
+			if response != nil {
+				if err := s.updateRouter(ctx, taskID, response); err != nil {
+					// Errors from updating the router should not be fatal.
+					log.Errorf("Failed to update task router for task %s: %s", taskID, err)
+				}
+			}
+		}
+
 		if s.streamPubSub != nil {
 			data, err := proto.Marshal(op)
 			if err != nil {
@@ -770,4 +775,34 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			}
 		}
 	}
+}
+
+func (s *ExecutionServer) updateRouter(ctx context.Context, taskID string, executeResponse *repb.ExecuteResponse) error {
+	router := s.env.GetTaskRouter()
+	if router == nil {
+		return nil
+	}
+	// If the result was served from cache, nothing was actually executed, so no
+	// need to update the task router.
+	if executeResponse.GetCachedResult() {
+		return nil
+	}
+	instanceName, d, err := digest.ExtractDigestFromUploadResourceName(taskID)
+	if err != nil {
+		return err
+	}
+	actionInstanceNameDigest := digest.NewInstanceNameDigest(d, instanceName)
+	action := &repb.Action{}
+	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionInstanceNameDigest, action); err != nil {
+		return err
+	}
+	cmdDigest := action.GetCommandDigest()
+	cmdInstanceNameDigest := digest.NewInstanceNameDigest(cmdDigest, instanceName)
+	cmd := &repb.Command{}
+	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
+		return err
+	}
+	nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
+	router.MarkComplete(ctx, cmd, instanceName, nodeID)
+	return nil
 }

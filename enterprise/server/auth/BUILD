@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "auth",
@@ -26,6 +26,19 @@ go_library(
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//peer",
+        "@org_golang_x_oauth2//:oauth2",
+    ],
+)
+
+go_test(
+    name = "auth_test",
+    srcs = ["auth_test.go"],
+    embed = [":auth"],
+    deps = [
+        "//enterprise/server/testutil/enterprise_testenv",
+        "//server/tables",
+        "//server/util/status",
+        "@com_github_stretchr_testify//require",
         "@org_golang_x_oauth2//:oauth2",
     ],
 )

@@ -7,10 +7,13 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/backends/authdb",
         "//enterprise/server/backends/redis_cache",
+        "//enterprise/server/backends/userdb",
         "//enterprise/server/util/redisutil",
         "//server/testutil/healthcheck",
         "//server/testutil/testenv",
         "//server/util/log",
+        "@com_github_stretchr_testify//assert",
     ],
 )
