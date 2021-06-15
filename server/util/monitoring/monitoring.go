@@ -5,6 +5,7 @@ import (
 	"net/http/pprof"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -20,6 +21,9 @@ func RegisterMonitoringHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	// Statusz page
+	mux.Handle("/statusz", statusz.Server())
 }
 
 // StartMonitoringHandler enables the prometheus and pprof monitoring handlers

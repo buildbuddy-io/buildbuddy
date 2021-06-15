@@ -2,6 +2,7 @@ package disk_cache
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -96,7 +98,15 @@ func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
 	if err := c.initializeCache(); err != nil {
 		return nil, err
 	}
+	statusz.AddSection("disk_cache", "On disk LRU cache", c)
 	return c, nil
+}
+
+func (c *DiskCache) Statusz(ctx context.Context) string {
+	buf := ""
+	buf += fmt.Sprintf("Root directory: %s<br>", c.rootDir)
+	buf += fmt.Sprintf("Mapped into LRU: %t<br>", *c.diskIsMapped)
+	return buf
 }
 
 func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
