@@ -26,21 +26,35 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+config_setting(
+    name = "fastbuild",
+    values = {"compilation_mode": "fastbuild"},
+)
+
 # N.B. this is ignored by gazelle so must be updated by hand.
 # It must live at the repo root to be able to bundle other files using
 # "go:embed".
 go_library(
     name = "bundle",
     srcs = ["bundle.go"],
-    embedsrcs = [
-        "//:VERSION",
-        "//enterprise:config_files",
-        "//enterprise:licenses",
-        "//enterprise/app:app_bundle",
-        "//enterprise/app:style",
-        "//:config_files",
-        "//static",
-    ],
+    embedsrcs = select({
+        ":fastbuild": [
+            "//:VERSION",
+            "//enterprise:config_files",
+            "//enterprise:licenses",
+            "//:config_files",
+            "//static",
+        ],
+        "//conditions:default": [
+            "//:VERSION",
+            "//enterprise:config_files",
+            "//enterprise:licenses",
+            "//enterprise/app:app_bundle",
+            "//enterprise/app:style",
+            "//:config_files",
+            "//static",
+        ],
+    }),
     importpath = "github.com/buildbuddy-io/enterprise/bundle",
     visibility = ["//enterprise/server/cmd/server:__subpackages__"],
     deps = [
