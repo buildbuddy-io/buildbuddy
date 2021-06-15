@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -58,7 +58,7 @@ type result struct {
 }
 
 func makeRunnerWorkspace(t *testing.T) string {
-	wsDir := bazel.MakeTempWorkspace(t, nil /*=contents*/)
+	wsDir := testbazel.MakeTempWorkspace(t, nil /*=contents*/)
 	// Need a home dir so bazel commands invoked by the runner know where to put
 	// their local cache.
 	homeDir := filepath.Join(wsDir, ".home")
@@ -100,7 +100,7 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	if err != nil {
 		t.Fatal(err)
 	}
-	bazelPath, err := bazelgo.Runfile("server/testutil/bazel/bazel-3.7.0")
+	bazelPath, err := bazelgo.Runfile(testbazel.BazelBinaryPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestCIRunner_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testin
 	runnerInvocation := res.Invocation[0]
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
-	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7.0")
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7")
 }
 
 func TestCIRunner_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsToBES(t *testing.T) {
@@ -305,7 +305,7 @@ func TestCIRunner_ReusedWorkspaceWithTestAllAction_CanReuseWorkspace(t *testing.
 	runnerInvocation := res.Invocation[0]
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
-	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7.0")
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7")
 }
 
 func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
@@ -341,7 +341,7 @@ func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 		runnerInvocation := res.Invocation[0]
 		// Since our workflow just runs `bazel version`, we should be able to see its
 		// output in the action logs.
-		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7.0")
+		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7")
 	}
 
 	run()

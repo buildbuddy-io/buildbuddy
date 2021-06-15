@@ -186,6 +186,14 @@ container_pull(
     repository = "distroless/base-debian10",
 )
 
+# Base image that can be used to build images that are capable of running the Bazel binary.
+container_pull(
+    name = "bazel_image_base",
+    registry = "gcr.io",
+    repository = "distroless/java-debian10",
+    digest = "sha256:ae5d32ed4da6d2207fd34accde64f5b1264cbdd1340fa8c1cfa70cdf1841f9db",
+)
+
 load("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
 
 dockerfile_image(
