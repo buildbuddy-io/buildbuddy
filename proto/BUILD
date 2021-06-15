@@ -102,6 +102,16 @@ proto_library(
 )
 
 proto_library(
+    name = "eventlog_proto",
+    srcs = [
+        "eventlog.proto",
+    ],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+proto_library(
     name = "workflow_proto",
     srcs = [
         "workflow.proto",
@@ -348,6 +358,15 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "eventlog_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/eventlog",
+    proto = ":eventlog_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "workflow_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/workflow",
     proto = ":workflow_proto",
@@ -562,6 +581,11 @@ ts_proto_library(
 ts_proto_library(
     name = "target_ts_proto",
     proto = ":target_proto",
+)
+
+ts_proto_library(
+    name = "eventlog_ts_proto",
+    proto = ":eventlog_proto",
 )
 
 ts_proto_library(
