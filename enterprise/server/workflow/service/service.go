@@ -344,6 +344,9 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 
 	executionID, err := ws.executeWorkflow(ctx, wf, wd, extraCIRunnerArgs)
+	if err != nil {
+		return nil, err
+	}
 	if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
 		return nil, err
 	}
