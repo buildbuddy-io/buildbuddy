@@ -103,9 +103,20 @@ func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
 }
 
 func (c *DiskCache) Statusz(ctx context.Context) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	buf := ""
-	buf += fmt.Sprintf("Root directory: %s<br>", c.rootDir)
-	buf += fmt.Sprintf("Mapped into LRU: %t<br>", *c.diskIsMapped)
+	buf += fmt.Sprintf("<div>Root directory: %s</div>", c.rootDir)
+	percentFull := float64(c.l.Size()) / float64(c.l.MaxSize()) * 100.0
+	buf += fmt.Sprintf("<div>Capacity: %d / %d (%2.2f%% full)</div>", c.l.Size(), c.l.MaxSize(), percentFull)
+	var oldestItem time.Time
+	if _, v, ok := c.l.GetOldest(); ok {
+		if fr, ok := v.(*fileRecord); ok {
+			oldestItem = fr.lastUse
+		}
+	}
+	buf += fmt.Sprintf("<div>%d items (oldest: %s)</div>", c.l.Len(), oldestItem.Format("Jan 02, 2006 15:04:05 PST"))
+	buf += fmt.Sprintf("<div>Mapped into LRU: %t</div>", *c.diskIsMapped)
 	return buf
 }
 
