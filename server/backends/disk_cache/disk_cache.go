@@ -24,6 +24,16 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+const (
+	// cutoffThreshold is the point above which a janitor thread will run
+	// and delete the oldest items from the cache.
+	janitorCutoffThreshold = .90
+
+	// janitorCheckPeriod is how often the janitor thread will wake up to
+	// check the cache size.
+	janitorCheckPeriod = 100 * time.Millisecond
+)
+
 // We keep a record (in memory) of file atime (Last Access Time) and size, and
 // when our cache reaches maxSize we remove the oldest files. Rather than
 // serialize this ledger, we regenerate it from scratch on startup by looking
@@ -96,6 +106,7 @@ func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
 	if err := c.initializeCache(); err != nil {
 		return nil, err
 	}
+	c.startJanitor()
 	return c, nil
 }
 
@@ -116,6 +127,38 @@ func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
 		fileChannel:  c.fileChannel,
 		diskIsMapped: c.diskIsMapped,
 	}
+}
+
+func (c *DiskCache) reduceCacheSize(targetSize int64) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.l.Size() < targetSize {
+		return false
+	}
+	_, value, ok := c.l.RemoveOldest()
+	if !ok {
+		return false // should never happen
+	}
+	if f, ok := value.(*fileRecord); ok {
+		log.Debugf("Delete thread removed item from cache. Last use was: %s", f.lastUse)
+	}
+	return true
+}
+
+func (c *DiskCache) startJanitor() {
+	targetSize := int64(float64(c.l.MaxSize()) * janitorCutoffThreshold)
+	go func() {
+		for {
+			select {
+			case <-time.After(janitorCheckPeriod):
+				for {
+					if !c.reduceCacheSize(targetSize) {
+						break
+					}
+				}
+			}
+		}
+	}()
 }
 
 func (c *DiskCache) initializeCache() error {

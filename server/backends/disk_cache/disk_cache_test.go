@@ -354,3 +354,42 @@ func TestAsyncLoading(t *testing.T) {
 		}
 	}
 }
+
+func TestJanitorThread(t *testing.T) {
+	maxSizeBytes := int64(10000000) // 10MB
+	ctx := getAnonContext(t)
+	rootDir := getTmpDir(t)
+	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fill the cache.
+	digests := make([]*repb.Digest, 0)
+	for i := 0; i < 999; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
+		err := dc.Set(ctx, d, buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		digests = append(digests, d)
+	}
+
+	// Make a new disk cache with a smaller size. The
+	// janitor should clean extra data up, oldest first.
+	dc, err = disk_cache.NewDiskCache(rootDir, maxSizeBytes/2) // 5MB
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Second)
+	for i, d := range digests {
+		if i < 500 {
+			contains, err := dc.Contains(ctx, d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if contains {
+				t.Fatalf("Expected oldest digest %+v to be deleted", d)
+			}
+		}
+	}
+}
