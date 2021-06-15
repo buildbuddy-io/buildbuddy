@@ -16,7 +16,7 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1623766778755,
+  "iteration": 1623770503117,
   "links": [],
   "panels": [
     {
@@ -5559,7 +5559,7 @@
         "x": 0,
         "y": 11
       },
-      "id": 281,
+      "id": 293,
       "panels": [
         {
           "aliasColors": {},
@@ -5583,7 +5583,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 282,
+          "id": 294,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5608,7 +5608,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1623766778755,
+          "repeatIteration": 1623770503117,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5696,7 +5696,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 283,
+          "id": 295,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5720,7 +5720,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1623766778755,
+          "repeatIteration": 1623770503117,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5806,7 +5806,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 284,
+          "id": 296,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5830,7 +5830,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1623766778755,
+          "repeatIteration": 1623770503117,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5916,7 +5916,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 285,
+          "id": 297,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5940,7 +5940,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1623766778755,
+          "repeatIteration": 1623770503117,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6005,7 +6005,7 @@
           }
         }
       ],
-      "repeatIteration": 1623766778755,
+      "repeatIteration": 1623770503117,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -6025,6 +6025,473 @@
         "w": 24,
         "x": 0,
         "y": 12
+      },
+      "id": 298,
+      "panels": [
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "description": "Number of heap bytes allocated and still in use.",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 165
+          },
+          "hiddenSeries": false,
+          "id": 299,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeat": null,
+          "repeatIteration": 1623770503117,
+          "repeatPanelId": 85,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "job": {
+              "selected": true,
+              "text": "buildbuddy-executor-workflows",
+              "value": "buildbuddy-executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "go_memstats_heap_alloc_bytes{job=\"${job}\"}",
+              "interval": "",
+              "legendFormat": "{{job}} @ {{instance}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            },
+            {
+              "refId": "B"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Heap size",
+          "tooltip": {
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "bytes",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 12,
+            "y": 165
+          },
+          "hiddenSeries": false,
+          "id": 300,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1623770503117,
+          "repeatPanelId": 87,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "job": {
+              "selected": true,
+              "text": "buildbuddy-executor-workflows",
+              "value": "buildbuddy-executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "go_goroutines{job=\"${job}\"}",
+              "interval": "",
+              "legendFormat": "{{job}} @ {{instance}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "goroutines",
+          "tooltip": {
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "description": "% of time spent in the garbage collector since the program started.",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 174
+          },
+          "hiddenSeries": false,
+          "id": 301,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1623770503117,
+          "repeatPanelId": 91,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "job": {
+              "selected": true,
+              "text": "buildbuddy-executor-workflows",
+              "value": "buildbuddy-executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "go_memstats_gc_cpu_fraction{job=\"${job}\"}",
+              "interval": "",
+              "legendFormat": "{{job}} @ {{instance}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "GC CPU fraction",
+          "tooltip": {
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "decimals": null,
+              "format": "percentunit",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 174
+          },
+          "hiddenSeries": false,
+          "id": 302,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1623770503117,
+          "repeatPanelId": 93,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "job": {
+              "selected": true,
+              "text": "buildbuddy-executor-workflows",
+              "value": "buildbuddy-executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "go_gc_duration_seconds{quantile=\"0.5\",job=\"${job}\"}",
+              "interval": "",
+              "legendFormat": "{{job}} @ {{instance}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Median GC duration",
+          "tooltip": {
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "s",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        }
+      ],
+      "repeatIteration": 1623770503117,
+      "repeatPanelId": 83,
+      "scopedVars": {
+        "job": {
+          "selected": true,
+          "text": "buildbuddy-executor-workflows",
+          "value": "buildbuddy-executor-workflows"
+        }
+      },
+      "title": "golang (${job})",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
       },
       "id": 71,
       "panels": [
@@ -6278,9 +6745,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 14
       },
-      "id": 286,
+      "id": 303,
       "panels": [
         {
           "aliasColors": {
@@ -6320,7 +6787,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 287,
+          "id": 304,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -6345,7 +6812,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1623766778755,
+          "repeatIteration": 1623770503117,
           "repeatPanelId": 73,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6430,7 +6897,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 288,
+          "id": 305,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -6455,7 +6922,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1623766778755,
+          "repeatIteration": 1623770503117,
           "repeatPanelId": 79,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6520,7 +6987,7 @@
           }
         }
       ],
-      "repeatIteration": 1623766778755,
+      "repeatIteration": 1623770503117,
       "repeatPanelId": 71,
       "scopedVars": {
         "job": {
@@ -6539,7 +7006,268 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 15
+      },
+      "id": 306,
+      "panels": [
+        {
+          "aliasColors": {
+            "Aborted": "dark-orange",
+            "AlreadyExists": "dark-blue",
+            "Canceled": "dark-yellow",
+            "DataLoss": "dark-red",
+            "DeadlineExceeded": "dark-red",
+            "FailedPrecondition": "dark-red",
+            "Internal": "dark-red",
+            "NotFound": "semi-dark-yellow",
+            "OK": "dark-green",
+            "OutOfRange": "rgb(188, 68, 176)",
+            "PermissionDenied": "dark-purple",
+            "ResourceExhausted": "dark-yellow",
+            "Unauthenticated": "dark-purple",
+            "Unavailable": "dark-red",
+            "Unimplemented": "dark-purple",
+            "Unknown": "rgb(168, 168, 168)"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 8
+          },
+          "hiddenSeries": false,
+          "id": 307,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeat": null,
+          "repeatIteration": 1623770503117,
+          "repeatPanelId": 73,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "job": {
+              "selected": true,
+              "text": "buildbuddy-executor-workflows",
+              "value": "buildbuddy-executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{job=\"${job}\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "{{grpc_code}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Handled gRPC requests per second by status",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "ops",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 12,
+            "y": 8
+          },
+          "hiddenSeries": false,
+          "id": 308,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeat": null,
+          "repeatIteration": 1623770503117,
+          "repeatPanelId": 79,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "job": {
+              "selected": true,
+              "text": "buildbuddy-executor-workflows",
+              "value": "buildbuddy-executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum by (grpc_method) (rate(grpc_server_handled_total{job=\"${job}\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "{{grpc_method}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Handled gRPC requests per second by method",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "ops",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        }
+      ],
+      "repeatIteration": 1623770503117,
+      "repeatPanelId": 71,
+      "scopedVars": {
+        "job": {
+          "selected": true,
+          "text": "buildbuddy-executor-workflows",
+          "value": "buildbuddy-executor-workflows"
+        }
+      },
+      "title": "gRPC (${job})",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 16
       },
       "id": 8,
       "panels": [
@@ -6777,14 +7505,15 @@
         "allValue": null,
         "current": {
           "selected": true,
-          "tags": [],
           "text": [
             "buildbuddy-app",
-            "buildbuddy-executor"
+            "buildbuddy-executor",
+            "buildbuddy-executor-workflows"
           ],
           "value": [
             "buildbuddy-app",
-            "buildbuddy-executor"
+            "buildbuddy-executor",
+            "buildbuddy-executor-workflows"
           ]
         },
         "error": null,
@@ -6803,9 +7532,14 @@
             "selected": true,
             "text": "buildbuddy-executor",
             "value": "buildbuddy-executor"
+          },
+          {
+            "selected": true,
+            "text": "buildbuddy-executor-workflows",
+            "value": "buildbuddy-executor-workflows"
           }
         ],
-        "query": "buildbuddy-app, buildbuddy-executor",
+        "query": "buildbuddy-app, buildbuddy-executor, buildbuddy-executor-workflows",
         "queryValue": "",
         "skipUrlSync": false,
         "type": "custom"
