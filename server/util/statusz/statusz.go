@@ -103,13 +103,13 @@ type Section struct {
 }
 
 type Handler struct {
-	mu       *sync.RWMutex // PROTECTS(sections)
+	mu       sync.RWMutex // PROTECTS(sections)
 	sections map[string]*Section
 }
 
 func NewHandler() *Handler {
 	return &Handler{
-		mu:       &sync.RWMutex{},
+		mu:       sync.RWMutex{},
 		sections: make(map[string]*Section, 0),
 	}
 }
