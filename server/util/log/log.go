@@ -105,9 +105,11 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 		if se, ok := err.(interface {
 			StackTrace() status.StackTrace
 		}); ok {
+			stackBuf := ""
 			for _, f := range se.StackTrace() {
-				Infof("%+s:%d", f, f)
+				stackBuf += fmt.Sprintf("%+s:%d\n", f, f)
 			}
+			Info(stackBuf)
 		}
 	}
 }
