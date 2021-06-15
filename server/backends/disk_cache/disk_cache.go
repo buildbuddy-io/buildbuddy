@@ -47,6 +47,7 @@ type DiskCache struct {
 	rootDir      string
 	prefix       string
 	diskIsMapped *bool
+	lastGCTime   time.Time
 }
 
 type fileRecord struct {
@@ -128,6 +129,7 @@ func (c *DiskCache) Statusz(ctx context.Context) string {
 	}
 	buf += fmt.Sprintf("<div>%d items (oldest: %s)</div>", c.l.Len(), oldestItem.Format("Jan 02, 2006 15:04:05 PST"))
 	buf += fmt.Sprintf("<div>Mapped into LRU: %t</div>", *c.diskIsMapped)
+	buf += fmt.Sprintf("<div>GC Last run: %s</div>", c.lastGCTime.Format("Jan 02, 2006 15:04:05 PST"))
 	return buf
 }
 
@@ -147,6 +149,7 @@ func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
 		prefix:       newPrefix,
 		fileChannel:  c.fileChannel,
 		diskIsMapped: c.diskIsMapped,
+		lastGCTime:   c.lastGCTime,
 	}
 }
 
@@ -163,6 +166,7 @@ func (c *DiskCache) reduceCacheSize(targetSize int64) bool {
 	if f, ok := value.(*fileRecord); ok {
 		log.Debugf("Delete thread removed item from cache. Last use was: %s", f.lastUse)
 	}
+	c.lastGCTime = time.Now()
 	return true
 }
 
