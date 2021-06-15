@@ -182,19 +182,6 @@ func clearLoginCookie(w http.ResponseWriter) {
 	clearCookie(w, authIssuerCookie)
 }
 
-type basicAuthToken struct {
-	user     string
-	password string
-}
-
-func (b *basicAuthToken) GetUser() string {
-	return b.user
-}
-
-func (b *basicAuthToken) GetPassword() string {
-	return b.password
-}
-
 type userToken struct {
 	Email      string `json:"email"`
 	Sub        string `json:"sub"`
@@ -217,13 +204,15 @@ func (t *userToken) GetSubID() string {
 	return t.issuer + "/" + t.Sub
 }
 
-type authConfig struct {
-	issuerURL string
-	clientID  string
-	secret    string
+type authenticator interface {
+	getIssuer() string
+	authCodeURL(state string, opts ...oauth2.AuthCodeOption) string
+	exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
+	verifyTokenAndExtractUser(ctx context.Context, jwt string, checkExpiry bool) (*userToken, error)
+	renewToken(ctx context.Context, refreshToken string) (*oauth2.Token, error)
 }
 
-type authenticator struct {
+type oidcAuthenticator struct {
 	oauth2Config *oauth2.Config
 	oidcConfig   *oidc.Config
 	provider     *oidc.Provider
@@ -240,7 +229,19 @@ func extractToken(issuer string, idToken *oidc.IDToken) (*userToken, error) {
 	return ut, nil
 }
 
-func (a *authenticator) verifyTokenAndExtractUser(ctx context.Context, jwt string, checkExpiry bool) (*userToken, error) {
+func (a *oidcAuthenticator) getIssuer() string {
+	return a.issuer
+}
+
+func (a *oidcAuthenticator) authCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
+	return a.oauth2Config.AuthCodeURL(state, opts...)
+}
+
+func (a *oidcAuthenticator) exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+	return a.oauth2Config.Exchange(ctx, code, opts...)
+}
+
+func (a *oidcAuthenticator) verifyTokenAndExtractUser(ctx context.Context, jwt string, checkExpiry bool) (*userToken, error) {
 	conf := a.oidcConfig
 	conf.SkipExpiryCheck = !checkExpiry
 	validToken, err := a.provider.Verifier(conf).Verify(ctx, jwt)
@@ -248,6 +249,11 @@ func (a *authenticator) verifyTokenAndExtractUser(ctx context.Context, jwt strin
 		return nil, err
 	}
 	return extractToken(a.issuer, validToken)
+}
+
+func (a *oidcAuthenticator) renewToken(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
+	src := a.oauth2Config.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken})
+	return src.Token() // this actually renews the token
 }
 
 type apiKeyGroupCacheEntry struct {
@@ -317,29 +323,11 @@ type OpenIDAuthenticator struct {
 	env              environment.Env
 	myURL            *url.URL
 	apiKeyGroupCache *apiKeyGroupCache
-	authenticators   []*authenticator
+	authenticators   []authenticator
 }
 
-func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAuthenticator, error) {
-	oia := &OpenIDAuthenticator{
-		env: env,
-	}
-
-	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
-	if len(authConfigs) == 0 {
-		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
-	}
-
-	myURL, err := url.Parse(env.GetConfigurator().GetAppBuildBuddyURL())
-	if err != nil {
-		return nil, err
-	}
-	authURL, err := myURL.Parse("/auth/")
-	if err != nil {
-		return nil, err
-	}
-	oia.myURL = myURL
-	oia.authenticators = make([]*authenticator, 0)
+func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.OauthProvider, authURL *url.URL) ([]authenticator, error) {
+	var authenticators []authenticator
 	for _, authConfig := range authConfigs {
 		provider, err := oidc.NewProvider(ctx, authConfig.IssuerURL)
 		if err != nil {
@@ -358,12 +346,33 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAu
 			// "openid" is a required scope for OpenID Connect flows.
 			Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
 		}
-		oia.authenticators = append(oia.authenticators, &authenticator{
+		authenticators = append(authenticators, &oidcAuthenticator{
 			issuer:       authConfig.IssuerURL,
 			oauth2Config: oauth2Config,
 			oidcConfig:   oidcConfig,
 			provider:     provider,
 		})
+	}
+	return authenticators, nil
+}
+
+func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProviders []config.OauthProvider) (*OpenIDAuthenticator, error) {
+	oia := &OpenIDAuthenticator{
+		env: env,
+	}
+
+	myURL, err := url.Parse(env.GetConfigurator().GetAppBuildBuddyURL())
+	if err != nil {
+		return nil, err
+	}
+	authURL, err := myURL.Parse("/auth/")
+	if err != nil {
+		return nil, err
+	}
+	oia.myURL = myURL
+	oia.authenticators, err = createAuthenticatorsFromConfig(ctx, oauthProviders, authURL)
+	if err != nil {
+		return nil, err
 	}
 
 	// Set the JWT key.
@@ -377,8 +386,25 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAu
 		}
 		oia.apiKeyGroupCache = akgCache
 	}
-
 	return oia, nil
+}
+
+func newForTesting(ctx context.Context, env environment.Env, testAuthenticator authenticator) (*OpenIDAuthenticator, error) {
+	oia, err := newOpenIDAuthenticator(ctx, env, nil /*oauthProviders=*/)
+	if err != nil {
+		return nil, err
+	}
+	oia.authenticators = append(oia.authenticators, testAuthenticator)
+	return oia, nil
+}
+
+func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAuthenticator, error) {
+	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
+	if len(authConfigs) == 0 {
+		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
+	}
+
+	return newOpenIDAuthenticator(ctx, env, authConfigs)
 }
 
 func sameHostname(urlStringA, urlStringB string) bool {
@@ -401,9 +427,9 @@ func (a *OpenIDAuthenticator) validateRedirectURL(redirectURL string) error {
 	return nil
 }
 
-func (a *OpenIDAuthenticator) getAuthConfig(issuer string) *authenticator {
+func (a *OpenIDAuthenticator) getAuthConfig(issuer string) authenticator {
 	for _, a := range a.authenticators {
-		if sameHostname(a.issuer, issuer) {
+		if sameHostname(a.getIssuer(), issuer) {
 			return a
 		}
 	}
@@ -458,36 +484,35 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 	return apkg, err
 }
 
-func authenticatedUserTokenString(ctx context.Context, u *tables.User, akg interfaces.APIKeyGroup) (string, error) {
-	if u != nil {
-		var allowedGroups []string
-		for _, g := range u.Groups {
-			allowedGroups = append(allowedGroups, g.GroupID)
-		}
-		claims := &Claims{
-			UserID:        u.UserID,
-			AllowedGroups: allowedGroups,
-		}
-		return assembleJWT(ctx, claims)
-	} else if akg != nil {
-		claims := &Claims{
-			GroupID:                akg.GetGroupID(),
-			AllowedGroups:          []string{akg.GetGroupID()},
-			Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
-			UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
-		}
-		return assembleJWT(ctx, claims)
+func userClaims(u *tables.User) *Claims {
+	var allowedGroups []string
+	for _, g := range u.Groups {
+		allowedGroups = append(allowedGroups, g.GroupID)
 	}
+	return &Claims{
+		UserID:        u.UserID,
+		AllowedGroups: allowedGroups,
+	}
+}
 
-	return "", status.FailedPreconditionErrorf("No user/group to generate JWT for")
+func groupClaims(akg interfaces.APIKeyGroup) *Claims {
+	return &Claims{
+		GroupID:                akg.GetGroupID(),
+		AllowedGroups:          []string{akg.GetGroupID()},
+		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
+		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
+	}
 }
 
 func authContextWithError(ctx context.Context, err error) context.Context {
 	return context.WithValue(ctx, contextUserErrorKey, err)
 }
 
-func authContextWithInfo(ctx context.Context, u *tables.User, akg interfaces.APIKeyGroup) context.Context {
-	tokenString, err := authenticatedUserTokenString(ctx, u, akg)
+func authContextFromClaims(ctx context.Context, claims *Claims, err error) context.Context {
+	if err != nil {
+		return authContextWithError(ctx, err)
+	}
+	tokenString, err := assembleJWT(ctx, claims)
 	if err != nil {
 		return authContextWithError(ctx, err)
 	}
@@ -509,170 +534,184 @@ func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) string {
 }
 
 func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
-	return a.authContextFromAPIKey(ctx, apiKey)
+	claims, err := a.claimsFromAPIKey(ctx, apiKey)
+	return authContextFromClaims(ctx, claims, err)
 }
 
-func (a *OpenIDAuthenticator) authContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
+func (a *OpenIDAuthenticator) claimsFromAPIKey(ctx context.Context, apiKey string) (*Claims, error) {
 	akg, err := a.lookupAPIKeyGroupFromAPIKey(ctx, apiKey)
 	if err != nil {
-		return authContextWithError(ctx, err)
+		return nil, err
 	}
-	return authContextWithInfo(ctx /*user=*/, nil, akg)
+	return groupClaims(akg), nil
 }
 
-func (a *OpenIDAuthenticator) authContextFromBasicAuth(ctx context.Context, login, pass string) context.Context {
+func (a *OpenIDAuthenticator) claimsFromBasicAuth(ctx context.Context, login, pass string) (*Claims, error) {
 	authDB := a.env.GetAuthDB()
 	if authDB == nil {
-		return authContextWithError(ctx, status.FailedPreconditionError("AuthDB not configured"))
+		return nil, status.FailedPreconditionError("AuthDB not configured")
 	}
 	akg, err := authDB.GetAPIKeyGroupFromBasicAuth(ctx, login, pass)
 	if err != nil {
-		return authContextWithError(ctx, err)
+		return nil, err
 	}
-	return authContextWithInfo(ctx /*user=*/, nil, akg)
+	return groupClaims(akg), nil
 }
 
-func (a *OpenIDAuthenticator) authContextFromSubID(ctx context.Context, subID string) context.Context {
+func (a *OpenIDAuthenticator) claimsFromSubID(ctx context.Context, subID string) (*Claims, error) {
 	u, err := a.lookupUserFromSubID(ctx, subID)
 	if err != nil {
-		return authContextWithError(ctx, err)
+		return nil, err
 	}
-	return authContextWithInfo(ctx, u /*user=*/, nil)
+	return userClaims(u), nil
 }
 
-func (a *OpenIDAuthenticator) authContextFromAuthorityString(ctx context.Context, authority string) context.Context {
+func (a *OpenIDAuthenticator) claimsFromAuthorityString(ctx context.Context, authority string) (*Claims, error) {
 	loginPass := strings.SplitN(authority, ":", 2)
 	if len(loginPass) == 2 {
-		return a.authContextFromBasicAuth(ctx, loginPass[0], loginPass[1])
+		return a.claimsFromBasicAuth(ctx, loginPass[0], loginPass[1])
 	}
-	return a.authContextFromAPIKey(ctx, authority)
+	return a.claimsFromAPIKey(ctx, authority)
 }
 
-// AuthenticateGRPCRequest attempts to authenticate the gRPC request using peer info,
-// API key header, or basic auth headers.
-//
-// If none of the above information is provided, UnauthenticatedError is returned via the
-// `contextUserErrorKey` context value.
-func (a *OpenIDAuthenticator) AuthenticateGRPCRequest(ctx context.Context) context.Context {
+func (a *OpenIDAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
+	return a.authenticateGRPCRequest(ctx, false /* acceptJWT= */)
+}
+
+func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, acceptJWT bool) (*Claims, error) {
 	p, ok := peer.FromContext(ctx)
 
 	if ok && p != nil && p.AuthInfo != nil {
 		certs := p.AuthInfo.(credentials.TLSInfo).State.PeerCertificates
 		if len(certs) > 0 && certs[0].Subject.SerialNumber != "" {
-			return a.authContextFromAPIKey(ctx, certs[0].Subject.SerialNumber)
+			return a.claimsFromAPIKey(ctx, certs[0].Subject.SerialNumber)
 		}
 	}
 
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if keys := md.Get(APIKeyHeader); len(keys) > 0 {
-			return a.authContextFromAPIKey(ctx, keys[0])
+			return a.claimsFromAPIKey(ctx, keys[0])
 		}
 
 		if keys := md.Get(basicAuthHeader); len(keys) > 0 {
-			return a.authContextFromAuthorityString(ctx, keys[0])
+			return a.claimsFromAuthorityString(ctx, keys[0])
 		}
 
 		if keys := md.Get(authorityHeader); len(keys) > 0 {
 			// Authenticate with :authority header
 			lpAndHost := strings.SplitN(keys[0], "@", 2)
 			if len(lpAndHost) == 2 {
-				return a.authContextFromAuthorityString(ctx, lpAndHost[0])
+				return a.claimsFromAuthorityString(ctx, lpAndHost[0])
 			}
 		}
 	}
 
-	// Check if we're already authenticated from incoming headers.
-	if _, err := a.AuthenticatedUser(ctx); err == nil {
-		return ctx
+	if acceptJWT {
+		// Check if we're already authenticated from incoming headers.
+		if claims, err := a.authenticatedUser(ctx); err == nil {
+			return claims, nil
+		}
 	}
-	return authContextWithError(ctx, status.UnauthenticatedError("gRPC request is missing credentials."))
+
+	return nil, status.UnauthenticatedError("gRPC request is missing credentials.")
 }
 
-func (a *OpenIDAuthenticator) AuthenticateHTTPRequest(w http.ResponseWriter, r *http.Request) context.Context {
-	ctx := a.authenticateUser(w, r)
-	ctx = a.authenticateGroup(ctx, r.Context())
-	return ctx
+// AuthenticatedGRPCContext attempts to authenticate the gRPC request using peer info,
+// API key header, or basic auth headers.
+//
+// If none of the above information is provided, UnauthenticatedError is returned via the
+// `contextUserErrorKey` context value.
+func (a *OpenIDAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
+	claims, err := a.authenticateGRPCRequest(ctx, true /* acceptJWT= */)
+	return authContextFromClaims(ctx, claims, err)
 }
 
-func (a *OpenIDAuthenticator) authenticateGroup(ctx context.Context, unauthenticatedCtx context.Context) context.Context {
-	// Skip group auth if user auth failed.
-	if ctx.Value(contextUserErrorKey) != nil {
-		return ctx
+func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
+	claims, userToken, err := a.authenticateUser(w, r)
+	ctx := r.Context()
+	if userToken != nil {
+		// Store the user information in the context even if authentication fails.
+		// This information is used in the user creation flow.
+		ctx = context.WithValue(ctx, contextUserKey, userToken)
 	}
+	if err != nil {
+		return authContextWithError(ctx, err)
+	}
+	err = a.authenticateGroup(ctx, claims)
+	if err != nil {
+		return authContextWithError(ctx, err)
+	}
+	return authContextFromClaims(ctx, claims, err)
+}
+
+func (a *OpenIDAuthenticator) authenticateGroup(ctx context.Context, claims *Claims) error {
 	reqCtx := requestcontext.ProtoRequestContextFromContext(ctx)
 	// If no group ID was provided in context then we'll fall back to a default.
 	if reqCtx == nil || reqCtx.GetGroupId() == "" {
-		return ctx
+		return nil
 	}
 	groupID := reqCtx.GetGroupId()
-	// TODO: refactor so authenticateGroup doesn't need to parse the AuthenticatedUser again.
-	user, err := a.AuthenticatedUser(ctx)
-	if err != nil {
-		return ctx
-	}
-	for _, allowedGroupID := range user.GetAllowedGroups() {
+	for _, allowedGroupID := range claims.GetAllowedGroups() {
 		if groupID == allowedGroupID {
-			return ctx
+			return nil
 		}
 	}
-	return authContextWithError(unauthenticatedCtx, status.PermissionDeniedError("User does not have access to the requested group."))
+	return status.PermissionDeniedError("User does not have access to the requested group.")
 }
 
-func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Request) context.Context {
+func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Request) (*Claims, *userToken, error) {
 	ctx := r.Context()
 	if apiKey := r.Header.Get(APIKeyHeader); apiKey != "" {
-		return a.authContextFromAPIKey(ctx, apiKey)
+		claims, err := a.claimsFromAPIKey(ctx, apiKey)
+		return claims, nil, err
 	}
 
 	jwt := getCookie(r, jwtCookie)
 	if jwt == "" {
-		return authContextWithError(ctx, status.PermissionDeniedErrorf("No jwt set"))
+		return nil, nil, status.PermissionDeniedErrorf("No jwt set")
 	}
 	issuer := getCookie(r, authIssuerCookie)
 	auth := a.getAuthConfig(issuer)
 	if auth == nil {
-		return authContextWithError(ctx, status.PermissionDeniedErrorf("No config found for issuer: %s", issuer))
+		return nil, nil, status.PermissionDeniedErrorf("No config found for issuer: %s", issuer)
 	}
 
 	ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, false)
 	if err != nil {
-		return authContextWithError(ctx, err)
+		return nil, nil, err
 	}
 
 	// Now try to verify the token again -- this time we check for expiry.
 	// If it succeeds, we're done! Otherwise we fall through to refreshing
 	// the token below.
 	if ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, true); err == nil {
-		return a.authContextFromSubID(context.WithValue(ctx, contextUserKey, ut), ut.GetSubID())
+		claims, err := a.claimsFromSubID(ctx, ut.GetSubID())
+		return claims, ut, err
 	}
 
 	// Now attempt to refresh the token.
 	if authDB := a.env.GetAuthDB(); authDB != nil {
 		tt, err := authDB.ReadToken(ctx, ut.GetSubID())
 		if err != nil {
-			return authContextWithError(ctx, err)
+			return nil, nil, err
 		}
-		token := new(oauth2.Token)
-		token.RefreshToken = tt.RefreshToken
-		src := auth.oauth2Config.TokenSource(ctx, token)
-		newToken, err := src.Token() // this actually renews the token
+		newToken, err := auth.renewToken(ctx, tt.RefreshToken)
 		if err != nil {
-			return authContextWithError(ctx, err)
+			return nil, nil, err
 		}
-		if newToken.AccessToken != token.AccessToken {
-			if err := authDB.InsertOrUpdateUserToken(ctx, ut.GetSubID(), tt); err != nil {
-				return authContextWithError(ctx, err)
-			}
-			if jwt, ok := newToken.Extra("id_token").(string); ok {
-				setLoginCookie(w, jwt, issuer)
-				return a.authContextFromSubID(context.WithValue(ctx, contextUserKey, ut), ut.GetSubID())
-			}
+		if err := authDB.InsertOrUpdateUserToken(ctx, ut.GetSubID(), tt); err != nil {
+			return nil, nil, err
+		}
+		if jwt, ok := newToken.Extra("id_token").(string); ok {
+			setLoginCookie(w, jwt, issuer)
+			claims, err := a.claimsFromSubID(ctx, ut.GetSubID())
+			return claims, ut, err
 		}
 	}
-	return r.Context()
+	return nil, nil, status.PermissionDeniedError("could not refresh token")
 }
 
-func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
+func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, error) {
 	// If context already contains a JWT, just verify it and return the claims.
 	if tokenString, ok := ctx.Value(contextTokenStringKey).(string); ok && tokenString != "" {
 		claims := &Claims{}
@@ -685,6 +724,10 @@ func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces
 	// NB: DO NOT CHANGE THIS ERROR MESSAGE. The client app matches it in
 	// order to trigger the CreateUser flow.
 	return nil, status.PermissionDeniedError("User not found")
+}
+
+func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
+	return a.authenticatedUser(ctx)
 }
 
 func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
@@ -735,7 +778,7 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	setCookie(w, authIssuerCookie, issuer, time.Now().Add(tempCookieDuration))
 
 	// Redirect to the login provider (and ask for a refresh token).
-	u := auth.oauth2Config.AuthCodeURL(state, authCodeOption...)
+	u := auth.authCodeURL(state, authCodeOption...)
 	http.Redirect(w, r, u, http.StatusTemporaryRedirect)
 }
 
@@ -778,7 +821,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	code := r.URL.Query().Get("code")
-	oauth2Token, err := auth.oauth2Config.Exchange(ctx, code, authCodeOption...)
+	oauth2Token, err := auth.exchange(ctx, code, authCodeOption...)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
