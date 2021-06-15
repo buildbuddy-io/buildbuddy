@@ -2,6 +2,7 @@ package disk_cache
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -96,7 +98,26 @@ func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
 	if err := c.initializeCache(); err != nil {
 		return nil, err
 	}
+	statusz.AddSection("disk_cache", "On disk LRU cache", c)
 	return c, nil
+}
+
+func (c *DiskCache) Statusz(ctx context.Context) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	buf := ""
+	buf += fmt.Sprintf("<div>Root directory: %s</div>", c.rootDir)
+	percentFull := float64(c.l.Size()) / float64(c.l.MaxSize()) * 100.0
+	buf += fmt.Sprintf("<div>Capacity: %d / %d (%2.2f%% full)</div>", c.l.Size(), c.l.MaxSize(), percentFull)
+	var oldestItem time.Time
+	if _, v, ok := c.l.GetOldest(); ok {
+		if fr, ok := v.(*fileRecord); ok {
+			oldestItem = fr.lastUse
+		}
+	}
+	buf += fmt.Sprintf("<div>%d items (oldest: %s)</div>", c.l.Len(), oldestItem.Format("Jan 02, 2006 15:04:05 PST"))
+	buf += fmt.Sprintf("<div>Mapped into LRU: %t</div>", *c.diskIsMapped)
+	return buf
 }
 
 func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
