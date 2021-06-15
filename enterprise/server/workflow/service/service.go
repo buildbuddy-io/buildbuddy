@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -27,16 +28,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/genproto/googleapis/longrunning"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	githubapi "github.com/google/go-github/github"
+	guuid "github.com/google/uuid"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
-	githubapi "github.com/google/go-github/github"
-	guuid "github.com/google/uuid"
 )
 
 var (
@@ -681,6 +683,9 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workf
 		return "", err
 	}
 	log.Infof("Started workflow execution (ID: %q)", executionID)
+	metrics.WebhookHandlerWorkflowsStarted.With(prometheus.Labels{
+		metrics.WebhookEventName: wd.EventName,
+	}).Inc()
 	return executionID, nil
 }
 
