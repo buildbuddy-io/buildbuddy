@@ -139,6 +139,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		EnableShortFileName:    configurator.GetAppLogIncludeShortFileName(),
 		EnableGCPLoggingFormat: configurator.GetAppLogEnableGCPLoggingFormat(),
 		EnableStructured:       configurator.GetAppEnableStructuredLogging(),
+		EnableStackTraces:      configurator.GetAppLogErrorStackTraces(),
 	}
 	if err := log.Configure(opts); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
