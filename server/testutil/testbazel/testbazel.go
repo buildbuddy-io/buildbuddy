@@ -15,7 +15,7 @@ import (
 const (
 	// BazelBinaryPath specifies the path to the bazel binary used for invocations.
 	// Must match the path in the build rule.
-	BazelBinaryPath = "server/util/bazel/bazel-3.7"
+	BazelBinaryPath = "server/util/bazel/bazel-4.1"
 )
 
 // Invoke the bazel CLI from within the given workspace dir.

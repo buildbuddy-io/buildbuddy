@@ -4,7 +4,7 @@ go_library(
     name = "testbazel",
     testonly = 1,
     srcs = ["testbazel.go"],
-    data = ["//server/util/bazel:bazel-3.7_crossplatform"],
+    data = ["//server/util/bazel:bazel-4.1_crossplatform"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel",
     visibility = ["//visibility:public"],
     deps = [
