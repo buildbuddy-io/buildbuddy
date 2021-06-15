@@ -231,7 +231,7 @@ func TestCIRunner_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testin
 	runnerInvocation := res.Invocation[0]
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
-	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7")
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 }
 
 func TestCIRunner_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsToBES(t *testing.T) {
@@ -305,7 +305,7 @@ func TestCIRunner_ReusedWorkspaceWithTestAllAction_CanReuseWorkspace(t *testing.
 	runnerInvocation := res.Invocation[0]
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
-	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7")
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 }
 
 func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
@@ -341,7 +341,7 @@ func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 		runnerInvocation := res.Invocation[0]
 		// Since our workflow just runs `bazel version`, we should be able to see its
 		// output in the action logs.
-		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7")
+		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 	}
 
 	run()
