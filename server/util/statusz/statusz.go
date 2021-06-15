@@ -21,52 +21,45 @@ const templateContents = `<!DOCTYPE html>
     <style>
 	body {
 	  font-family: sans-serif;
-	  background: #fff;
 	}
 	h1 {
-	  clear: both;
 	  width: 100%;
 	  text-align: center;
 	  font-size: 120%;
 	  background: #eeeeff;
 	}
 	h2 {
-	  clear: both;
 	  width: 100%;
 	  font-size: 110%;
 	  text-align: center;
 	  background: #fffddd;
 	}
-	.lefthand {
-	  float: left;
-	  width: 80%;
-	}
-	.righthand {
-	  text-align: right;
-	}
+        .header {
+          display: flex;
+          justify-content: space-between;
+        }
     </style>
   </head>
-    <h1>Status for {{.BinaryName}}</h1>
-  <div>
-  <div class=lefthand>
-    Started at <span>{{.StartTime.Format "Jan 02, 2006 15:04:05 PST" }}</span><br>
-    Current time <span>{{.CurrentTime.Format "Jan 02, 2006 15:04:05 PST" }}</span><br>
-    App Version <span>{{.AppVersion}} ({{.Commit}})</span><br>
-    Go Version <span>{{.GoVersion}}</span><br>
+  <h1>Status for {{.BinaryName}}</h1>
+  <div class=header>
+    <div>
+      <div>Started at {{.StartTime.Format "Jan 02, 2006 15:04:05 PST" }}</div>
+      <div>Current time {{.CurrentTime.Format "Jan 02, 2006 15:04:05 PST" }}</div>
+      <div>App Version {{.AppVersion}} ({{.Commit}})</div>
+      <div>Go Version {{.GoVersion}}</div>
+    </div>
+    <div>
+      {{.Username}}@{{.Hostname}}
+    </div>
   </div>
-  <div class=righthand>
-    {{.Username}}@{{.Hostname}}<br>
-  </div>
-
-  <br><br><br><br><br>
   {{range $idx, $item := .Sections}}
   <div>
     <h2>
       {{$item.Name}}
     </h2>
     <div>
-      {{$item.Description}}<br>
-      {{$item.HTML}}
+      <div>{{$item.Description}}</div>
+      <div>{{$item.HTML}}</div>
     </div>
   </div>
   {{end}}
