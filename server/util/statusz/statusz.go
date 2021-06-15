@@ -19,29 +19,30 @@ const templateContents = `<!DOCTYPE html>
   <head>
     <title>/statusz</title>
     <style>
-	body {
-	  font-family: sans-serif;
-	}
-	h1 {
-	  width: 100%;
-	  text-align: center;
-	  font-size: 120%;
-	  background: #eeeeff;
-	}
-	h2 {
-	  width: 100%;
-	  font-size: 110%;
-	  text-align: center;
-	  background: #fffddd;
-	}
-        .header {
-          display: flex;
-          justify-content: space-between;
-        }
+      body {
+	font-family: sans-serif;
+      }
+      h1 {
+	width: 100%;
+	text-align: center;
+	font-size: 120%;
+	background: #eeeeff;
+      }
+      h2 {
+	width: 100%;
+	font-size: 110%;
+	text-align: center;
+	background: #fffddd;
+      }
+      .header {
+	display: flex;
+	justify-content: space-between;
+	padding-bottom: 48px
+      }
     </style>
   </head>
   <h1>Status for {{.BinaryName}}</h1>
-  <div class=header>
+  <div class="header">
     <div>
       <div>Started at {{.StartTime.Format "Jan 02, 2006 15:04:05 PST" }}</div>
       <div>Current time {{.CurrentTime.Format "Jan 02, 2006 15:04:05 PST" }}</div>
