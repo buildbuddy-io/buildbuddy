@@ -16,7 +16,7 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1622830522099,
+  "iteration": 1623766778755,
   "links": [],
   "panels": [
     {
@@ -3144,7 +3144,7 @@
         },
         {
           "aliasColors": {
-            "Value": "dark-yellow"
+            "max_memory_exceeded": "dark-orange"
           },
           "bars": false,
           "dashLength": 10,
@@ -3163,6 +3163,206 @@
             "w": 12,
             "x": 0,
             "y": 15
+          },
+          "hiddenSeries": false,
+          "id": 290,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts[${window}]))",
+              "interval": "",
+              "legendFormat": "{{reason}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Recycling failures by reason",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:52",
+              "format": "ops",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:53",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {
+            "miss": "dark-red"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 15
+          },
+          "hiddenSeries": false,
+          "id": 292,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests[${window}]))",
+              "interval": "",
+              "legendFormat": "{{status}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Pool requests by status",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:133",
+              "format": "ops",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:134",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {
+            "Value": "dark-yellow"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 23
           },
           "hiddenSeries": false,
           "id": 278,
@@ -3262,7 +3462,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 15
+            "y": 23
           },
           "hiddenSeries": false,
           "id": 280,
@@ -5359,7 +5559,7 @@
         "x": 0,
         "y": 11
       },
-      "id": 265,
+      "id": 281,
       "panels": [
         {
           "aliasColors": {},
@@ -5383,7 +5583,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 266,
+          "id": 282,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5408,7 +5608,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1622830522099,
+          "repeatIteration": 1623766778755,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5496,7 +5696,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 267,
+          "id": 283,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5520,7 +5720,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1622830522099,
+          "repeatIteration": 1623766778755,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5606,7 +5806,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 268,
+          "id": 284,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5630,7 +5830,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1622830522099,
+          "repeatIteration": 1623766778755,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5716,7 +5916,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 269,
+          "id": 285,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5740,7 +5940,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1622830522099,
+          "repeatIteration": 1623766778755,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5805,7 +6005,7 @@
           }
         }
       ],
-      "repeatIteration": 1622830522099,
+      "repeatIteration": 1623766778755,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -6080,7 +6280,7 @@
         "x": 0,
         "y": 13
       },
-      "id": 270,
+      "id": 286,
       "panels": [
         {
           "aliasColors": {
@@ -6120,7 +6320,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 271,
+          "id": 287,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -6145,7 +6345,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1622830522099,
+          "repeatIteration": 1623766778755,
           "repeatPanelId": 73,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6230,7 +6430,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 272,
+          "id": 288,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -6255,7 +6455,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1622830522099,
+          "repeatIteration": 1623766778755,
           "repeatPanelId": 79,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6320,7 +6520,7 @@
           }
         }
       ],
-      "repeatIteration": 1622830522099,
+      "repeatIteration": 1623766778755,
       "repeatPanelId": 71,
       "scopedVars": {
         "job": {
@@ -6462,7 +6662,7 @@
       "type": "row"
     }
   ],
-  "refresh": "1d",
+  "refresh": "5s",
   "schemaVersion": 26,
   "style": "dark",
   "tags": [],

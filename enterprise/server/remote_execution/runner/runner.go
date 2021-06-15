@@ -246,30 +246,45 @@ func NewPool(cfg *config.RunnerPoolConfig) *Pool {
 // Add adds the given runner into the pool, evicting older runners if needed.
 // If an error is returned, the runner was not successfully added to the pool.
 func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
+	failureReason := ""
+	defer func() {
+		if failureReason != "" {
+			metrics.RunnerPoolFailedRecycleAttempts.With(prometheus.Labels{
+				metrics.RunnerPoolFailedRecycleReason: failureReason,
+			}).Inc()
+		}
+	}()
+
 	// TODO: once CommandContainer lifecycle methods are available, enforce that
 	// the runner's CommandContainer is paused, and return a
 	// FailedPreconditionError if not.
 
 	if r.state != ready {
+		failureReason = "unexpected_runner_state"
 		return status.InternalErrorf("unexpected runner state %d; this should never happen", r.state)
 	}
 	if err := r.Container.Pause(ctx); err != nil {
+		failureReason = "pause_error"
 		return status.WrapError(err, "failed to pause container before adding to the pool")
 	}
 	r.state = paused
 
 	stats, err := r.Container.Stats(ctx)
 	if err != nil {
+		failureReason = "stats_error"
 		return status.WrapError(err, "failed to compute container stats")
 	}
 	if stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
+		failureReason = "max_memory_exceeded"
 		return RunnerMaxMemoryExceeded
 	}
 	du, err := r.Workspace.DiskUsageBytes()
 	if err != nil {
+		failureReason = "disk_usage_error"
 		return status.WrapError(err, "failed to compute runner disk usage")
 	}
 	if du > p.maxRunnerDiskUsageBytes {
+		failureReason = "max_disk_exceeded"
 		return RunnerMaxDiskSizeExceeded
 	}
 
@@ -277,11 +292,13 @@ func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
 	defer p.mu.Unlock()
 
 	if p.isShuttingDown {
+		failureReason = "pool_shutting_down"
 		return status.UnavailableError("pool is shutting down; cannot add new runners")
 	}
 
 	if len(p.runners) == p.maxRunnerCount {
 		if len(p.runners) == 0 {
+			failureReason = "max_count_zero"
 			return status.InternalError("pool max runner count is 0; this should never happen")
 		}
 		// Evict the first and oldest runner to make room for the new one.
