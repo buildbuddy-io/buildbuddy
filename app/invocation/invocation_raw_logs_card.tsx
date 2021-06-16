@@ -43,12 +43,11 @@ export default class RawLogsCardComponent extends React.Component {
           return {
             event: event,
             json: json,
-            containsFilter: this.state.filterString
-              ? json.toLowerCase().includes(this.state.filterString.toLowerCase())
-              : true,
           };
         })
-        .filter((event) => event.containsFilter)
+        .filter((event) =>
+          this.state.filterString ? event.json.toLowerCase().includes(this.state.filterString.toLowerCase()) : true
+        )
     );
     return (
       <>
@@ -70,24 +69,17 @@ export default class RawLogsCardComponent extends React.Component {
                 {filteredEvents
                   .slice(0, (this.props.pageSize && this.state.numPages * this.props.pageSize) || undefined)
                   .map((event) => {
-                    var expanded = this.state.expandedMap.get(event.event.sequenceNumber);
-                    var showEvent = true;
-                    if (this.state.filterString) {
-                      expanded = event.containsFilter;
-                      showEvent = expanded;
-                    }
+                    var expanded = this.state.expandedMap.get(event.event.sequenceNumber) || this.state.filterString;
                     return (
-                      showEvent && (
-                        <div className="raw-event">
-                          <div className="raw-event-title" onClick={this.handleEventClicked.bind(this, event.event)}>
-                            [{expanded ? "-" : "+"}] Build event {event.event.sequenceNumber} -{" "}
-                            {Object.keys(event.event.buildEvent)
-                              .filter((key) => key != "id" && key != "children")
-                              .join(", ")}
-                          </div>
-                          {expanded && <div>{event.json}</div>}
+                      <div className="raw-event">
+                        <div className="raw-event-title" onClick={this.handleEventClicked.bind(this, event.event)}>
+                          [{expanded ? "-" : "+"}] Build event {event.event.sequenceNumber} -{" "}
+                          {Object.keys(event.event.buildEvent)
+                            .filter((key) => key != "id" && key != "children")
+                            .join(", ")}
                         </div>
-                      )
+                        {expanded && <div>{event.json}</div>}
+                      </div>
                     );
                   })}
               </div>
