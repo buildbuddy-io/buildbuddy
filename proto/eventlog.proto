@@ -7,38 +7,38 @@ package eventlog;
 option go_package = "proto;eventlog";
 
 message ChunkRange {
-	// Negative start chunk indicates a chunk at index len(chunks) - start_chunk
-	// e. g. -1 is the last chunk, -2 is the second to last, etc.
-	int32 start_chunk = 1;
-	int32 num_chunks = 2;
+  // Negative start chunk indicates a chunk at index len(chunks) - start_chunk
+  // e. g. -1 is the last chunk, -2 is the second to last, etc.
+  int32 start_chunk = 1;
+  int32 num_chunks = 2;
 }
 
 message LineRange {
-	// Negative offset indicates that the offset is relative to the end
-	int64 num_lines = 2;
+  // Negative offset indicates that the offset is relative to the end
+  int64 num_lines = 2;
 }
 
 message ByteRange {
-	// Negative offset indicates that the offset is relative to the end
-	int64 offset = 1;
-	int64 num_bytes = 2;
+  // Negative offset indicates that the offset is relative to the end
+  int64 offset = 1;
+  int64 num_bytes = 2;
 }
 
 message Range {
-	// Reverse means that we are reversing the order we read data in (though
+  // Reverse means that we are reversing the order we read data in (though
   // not reversing the order of data within a response); in it set, all offsets
   // or start chunks are relative to the end of the data and all sizes are how
   // much to read before the given offset
-	bool reverse = 1;
-	// Chunk to start from (leave 0 to use absolute offset)
-	int32 start_chunk = 2;
-	// Relative offset after the start chunk to start from
-	int64 offset = 3;
-	oneof size {
-		int32 num_chunks = 4; 
-		int64 num_lines = 5; 
-		int64 num_bytes = 6; 
-	}
+  bool reverse = 1;
+  // Chunk to start from (leave 0 to use absolute offset)
+  int32 start_chunk = 2;
+  // Relative offset after the start chunk to start from
+  int64 offset = 3;
+  oneof size {
+    int32 num_chunks = 4;
+    int64 num_lines = 5;
+    int64 num_bytes = 6;
+  }
 }
 
 message GetEventLogRequest {
@@ -47,19 +47,18 @@ message GetEventLogRequest {
 
   // The invocation identifier itself.
   string invocation_id = 2;
-	
-	// The range of the event log to retrieve
-	Range range = 3;
 
+  // The range of the event log to retrieve
+  Range range = 3;
 }
 
 message GetEventLogResponse {
   // The response context.
   context.ResponseContext response_context = 1;
 
-	// The requested log segment
-	string log = 2;
+  // The requested log segment
+  string log = 2;
 
-	// If we have reached the end of the file
-	bool eof = 3;
+  // If we have reached the end of the file
+  bool eof = 3;
 }
