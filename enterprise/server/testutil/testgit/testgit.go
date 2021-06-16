@@ -54,10 +54,12 @@ func (p *FakeProvider) UnregisterWebhook(ctx context.Context, accessToken, repoU
 	return nil
 }
 
+// MakeTempRepo initializes a Git repository with the given file contents, and
+// creates an initial commit of those files. Contents are specified as a map of
+// file paths to file contents. Parent directories are created automatically.
+// The repository contents are automatically deleted in the test cleanup phase.
+// Returns the path to the repo and the SHA of the initial commit.
 func MakeTempRepo(t testing.TB, contents map[string]string) (path, commitSHA string) {
-	// NOTE: Not using bazel.MakeTempWorkspace here since this repo itself does
-	// not need `bazel shutdown` run inside it (only the clone of this repo made
-	// by the runner needs `bazel shutdown` to be run).
 	path = testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, path, contents)
 	for fileRelPath := range contents {
