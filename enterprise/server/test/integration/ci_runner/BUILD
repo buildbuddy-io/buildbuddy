@@ -6,6 +6,7 @@ go_test(
     data = [
         "//enterprise/server/cmd/ci_runner",
     ],
+    shard_count = 4,
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
