@@ -36,6 +36,19 @@ export default class RawLogsCardComponent extends React.Component {
   }
 
   render() {
+    let filteredEvents = this.props.model.invocations.flatMap((invocation) =>
+      invocation.event
+        .map((event) => {
+          let json = JSON.stringify((event.buildEvent as any).toJSON(), null, 4);
+          return {
+            event: event,
+            json: json,
+          };
+        })
+        .filter((event) =>
+          this.state.filterString ? event.json.toLowerCase().includes(this.state.filterString.toLowerCase()) : true
+        )
+    );
     return (
       <>
         <div className="filter">
@@ -52,38 +65,27 @@ export default class RawLogsCardComponent extends React.Component {
           <div className="content">
             <div className="title">Raw logs</div>
             <div className="details code">
-              {this.props.model.invocations.flatMap((invocation) => (
-                <div>
-                  {invocation.event
-                    .slice(0, (this.props.pageSize && this.state.numPages * this.props.pageSize) || undefined)
-                    .map((event) => {
-                      var contents = JSON.stringify((event.buildEvent as any).toJSON(), null, 4);
-                      var expanded = this.state.expandedMap.get(event.sequenceNumber);
-                      var showEvent = true;
-                      if (this.state.filterString) {
-                        expanded = contents.toLowerCase().includes(this.state.filterString.toLowerCase());
-                        showEvent = expanded;
-                      }
-                      return (
-                        showEvent && (
-                          <div className="raw-event">
-                            <div className="raw-event-title" onClick={this.handleEventClicked.bind(this, event)}>
-                              [{expanded ? "-" : "+"}] Build event {event.sequenceNumber} -{" "}
-                              {Object.keys(event.buildEvent)
-                                .filter((key) => key != "id" && key != "children")
-                                .join(", ")}
-                            </div>
-                            {expanded && <div>{contents}</div>}
-                          </div>
-                        )
-                      );
-                    })}
-                </div>
-              ))}
+              <div>
+                {filteredEvents
+                  .slice(0, (this.props.pageSize && this.state.numPages * this.props.pageSize) || undefined)
+                  .map((event) => {
+                    var expanded = this.state.expandedMap.get(event.event.sequenceNumber) || this.state.filterString;
+                    return (
+                      <div className="raw-event">
+                        <div className="raw-event-title" onClick={this.handleEventClicked.bind(this, event.event)}>
+                          [{expanded ? "-" : "+"}] Build event {event.event.sequenceNumber} -{" "}
+                          {Object.keys(event.event.buildEvent)
+                            .filter((key) => key != "id" && key != "children")
+                            .join(", ")}
+                        </div>
+                        {expanded && <div>{event.json}</div>}
+                      </div>
+                    );
+                  })}
+              </div>
             </div>
             {this.props.pageSize &&
-              this.props.model.invocations.flatMap((invocation) => invocation.event).length >
-                this.props.pageSize * this.state.numPages &&
+              filteredEvents.length > this.props.pageSize * this.state.numPages &&
               !!this.state.numPages && (
                 <div className="more" onClick={this.handleMoreClicked.bind(this)}>
                   See more events
