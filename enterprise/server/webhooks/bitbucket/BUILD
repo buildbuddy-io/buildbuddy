@@ -11,6 +11,7 @@ go_library(
     deps = [
         "//enterprise/server/util/fieldgetter",
         "//enterprise/server/webhooks/webhook_data",
+        "//server/interfaces",
         "//server/util/status",
     ],
 )

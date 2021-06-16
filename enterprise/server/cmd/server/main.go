@@ -26,7 +26,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
 	"github.com/buildbuddy-io/buildbuddy/server/libmain"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -121,6 +124,10 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 
 	workflowService := workflow.NewWorkflowService(env)
 	env.SetWorkflowService(workflowService)
+	env.SetGitProviders([]interfaces.GitProvider{
+		github.NewProvider(),
+		bitbucket.NewProvider(),
+	})
 
 	env.SetSplashPrinter(&splash.Printer{})
 }

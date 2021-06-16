@@ -1,13 +1,16 @@
 package bitbucket
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -16,7 +19,13 @@ const (
 	repoBaseURL       = "https://bitbucket.org/"
 )
 
-func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
+type bitbucketGitProvider struct{}
+
+func NewProvider() interfaces.GitProvider {
+	return &bitbucketGitProvider{}
+}
+
+func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.WebhookData, error) {
 	if userAgent := r.Header.Get("User-Agent"); userAgent != expectedUserAgent {
 		return nil, status.UnimplementedErrorf("unexpected user agent: %q; only %q is supported", userAgent, expectedUserAgent)
 	}
@@ -42,7 +51,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 			return nil, nil
 		}
 		branch := v["Push.Changes.0.New.Name"]
-		return &webhook_data.WebhookData{
+		return &interfaces.WebhookData{
 			EventName:     webhook_data.EventName.Push,
 			PushedBranch:  branch,
 			TargetBranch:  branch,
@@ -66,7 +75,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &webhook_data.WebhookData{
+		return &interfaces.WebhookData{
 			EventName:     webhook_data.EventName.PullRequest,
 			PushedBranch:  v["PullRequest.Source.Branch.Name"],
 			TargetBranch:  v["PullRequest.Destination.Branch.Name"],
@@ -78,6 +87,26 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		log.Printf("Ignoring webhook event: %s", eventName)
 		return nil, nil
 	}
+}
+
+func (*bitbucketGitProvider) MatchRepoURL(u *url.URL) bool {
+	return u.Host == "bitbucket.com"
+}
+
+func (*bitbucketGitProvider) MatchWebhookRequest(r *http.Request) bool {
+	return r.Header.Get("X-Event-Key") != ""
+}
+
+func (*bitbucketGitProvider) IsRepoPrivate(ctx context.Context, accessToken, repoURL string) (bool, error) {
+	return false, status.UnimplementedError("Not implemented")
+}
+
+func (*bitbucketGitProvider) RegisterWebhook(ctx context.Context, accessToken, repoURL, webhookURL string) (string, error) {
+	return "", status.UnimplementedError("Not implemented")
+}
+
+func (*bitbucketGitProvider) UnregisterWebhook(ctx context.Context, accessToken, repoURL, webhookID string) error {
+	return status.UnimplementedError("Not implemented")
 }
 
 func unmarshalBody(r *http.Request, payload interface{}) error {
