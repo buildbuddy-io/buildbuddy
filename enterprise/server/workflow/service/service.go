@@ -34,11 +34,11 @@ import (
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
-	githubapi "github.com/google/go-github/github"
-	guuid "github.com/google/uuid"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
+	githubapi "github.com/google/go-github/github"
+	guuid "github.com/google/uuid"
 )
 
 var (
