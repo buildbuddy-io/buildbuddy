@@ -356,3 +356,25 @@
 .prop-value .detail {
   color: #aaa;
 }
+
+.workflow-rerun-button > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.workflow-rerun-button img {
+  width: 16px;
+  height: 16px;
+}
+
+.workflow-rerun-button .loading {
+  --spinner-size: 18px;
+
+  width: var(--spinner-size);
+  height: var(--spinner-size);
+  margin-left: -2px;
+}
+
+.workflow-rerun-button .loading::before {
+  width: var(--spinner-size);
+  height: var(--spinner-size);
+}

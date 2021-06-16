@@ -299,7 +299,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	// Lookup workflow
 	wf := &tables.Workflow{}
 	err = ws.env.GetDBHandle().Raw(
-		`SELECT group_id, repo_url, access_token, perms FROM Workflows WHERE workflow_id = ?`,
+		`SELECT workflow_id, group_id, repo_url, access_token, perms FROM Workflows WHERE workflow_id = ?`,
 		req.GetWorkflowId(),
 	).Take(wf).Error
 	if err != nil {
