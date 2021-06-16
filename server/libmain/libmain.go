@@ -396,7 +396,7 @@ func StartAndRunServices(env environment.Env) {
 	}
 
 	if wfs := env.GetWorkflowService(); wfs != nil {
-		mux.Handle("/webhooks/workflow/", wfs)
+		mux.Handle("/webhooks/workflow/", httpfilters.WrapExternalHandler(env, wfs))
 	}
 
 	handler := http.Handler(mux)
