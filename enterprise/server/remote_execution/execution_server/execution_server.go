@@ -742,8 +742,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			}
 			if err := s.streamPubSub.Publish(stream.Context(), redisKeyForTaskStatusStream(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
 				log.Warningf("Error publishing task %q on stream pubsub: %s", taskID, err)
-				// TODO(vadim): fail early after initial release
-				//return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
+				return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
 			}
 		}
 
