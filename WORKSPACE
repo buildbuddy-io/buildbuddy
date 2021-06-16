@@ -221,8 +221,8 @@ buildbuddy(name = "buildbuddy_toolchain")
 
 http_archive(
     name = "cloudprober",
+    build_file_content = "exports_files([\"cloudprober\"])",
     sha256 = "0a824a6e224d9810514f4a2f4a13f09488672ad483bb0e978c16d8a6b3372625",
     strip_prefix = "cloudprober-v0.11.2-ubuntu-x86_64",
     urls = ["https://github.com/google/cloudprober/releases/download/v0.11.2/cloudprober-v0.11.2-ubuntu-x86_64.zip"],
-    build_file_content = "exports_files([\"cloudprober\"])",
 )

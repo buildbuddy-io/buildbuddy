@@ -17,4 +17,3 @@ go_binary(
     embed = [":bazelrbe_lib"],
     visibility = ["//visibility:public"],
 )
-
