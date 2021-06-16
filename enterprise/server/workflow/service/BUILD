@@ -51,6 +51,7 @@ go_test(
         "//enterprise/server/webhooks/github",
         "//proto:buildbuddy_service_go_proto",
         "//proto:workflow_go_proto",
+        "//server/backends/repo_downloader",
         "//server/buildbuddy_server",
         "//server/interfaces",
         "//server/tables",

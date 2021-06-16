@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/google/uuid"
@@ -66,33 +67,6 @@ func makeRunnerWorkspace(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return wsDir
-}
-
-// TODO: Replace with testfs.MakeTempDir once #361 is merged.
-func makeTempDir(t testing.TB) string {
-	tmpDir, err := os.MkdirTemp("", "buildbuddy-test-*")
-	if err != nil {
-		assert.FailNow(t, "failed to create temp dir", err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			assert.FailNow(t, "failed to clean up temp dir", err)
-		}
-	})
-	return tmpDir
-}
-
-// TODO: Replace with testfs.WriteAllFileContents once #361 is merged.
-func writeAllFileContents(t testing.TB, rootDir string, contents map[string]string) {
-	for relPath, content := range contents {
-		path := filepath.Join(rootDir, relPath)
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			assert.FailNow(t, "failed to create parent dir for file", err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			assert.FailNow(t, "write failed", err)
-		}
-	}
 }
 
 func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
@@ -158,48 +132,11 @@ func newUUID(t *testing.T) string {
 }
 
 func makeGitRepo(t *testing.T, contents map[string]string) (path, commitSHA string) {
-	// NOTE: Not using bazel.MakeTempWorkspace here since this repo itself does
-	// not need `bazel shutdown` run inside it (only the clone of this repo made
-	// by the runner needs `bazel shutdown` to be run).
-	path = makeTempDir(t)
-	writeAllFileContents(t, path, contents)
-	for fileRelPath := range contents {
-		filePath := filepath.Join(path, fileRelPath)
-		// Make shell scripts executable.
-		if strings.HasSuffix(filePath, ".sh") {
-			if err := os.Chmod(filePath, 0750); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
 	// Make the repo contents globally unique so that this makeGitRepo func can be
 	// called more than once to create unique repos with incompatible commit
 	// history.
-	if err := ioutil.WriteFile(filepath.Join(path, ".repo_id"), []byte(newUUID(t)), 0775); err != nil {
-		t.Fatal(err)
-	}
-
-	repo, err := git.PlainInit(path, false /*=bare*/)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tree, err := repo.Worktree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := tree.AddGlob("*"); err != nil {
-		t.Fatal(err)
-	}
-	hash, err := tree.Commit("Initial commit", &git.CommitOptions{
-		Author: &gitobject.Signature{
-			Name:  "Test",
-			Email: "test@buildbuddy.io",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path, hash.String()
+	contents[".repo_id"] = newUUID(t)
+	return testgit.MakeTempRepo(t, contents)
 }
 
 func TestCIRunner_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testing.T) {

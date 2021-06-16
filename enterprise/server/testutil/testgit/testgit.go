@@ -4,9 +4,17 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	git "github.com/go-git/go-git/v5"
+	gitobject "github.com/go-git/go-git/v5/plumbing/object"
 )
 
 const (
@@ -44,4 +52,43 @@ func (p *FakeProvider) RegisterWebhook(ctx context.Context, accessToken, repoURL
 func (p *FakeProvider) UnregisterWebhook(ctx context.Context, accessToken, repoURL, webhookID string) error {
 	p.UnregisteredWebhookID = webhookID
 	return nil
+}
+
+func MakeTempRepo(t testing.TB, contents map[string]string) (path, commitSHA string) {
+	// NOTE: Not using bazel.MakeTempWorkspace here since this repo itself does
+	// not need `bazel shutdown` run inside it (only the clone of this repo made
+	// by the runner needs `bazel shutdown` to be run).
+	path = testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, path, contents)
+	for fileRelPath := range contents {
+		filePath := filepath.Join(path, fileRelPath)
+		// Make shell scripts executable.
+		if strings.HasSuffix(filePath, ".sh") {
+			if err := os.Chmod(filePath, 0750); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	repo, err := git.PlainInit(path, false /*=bare*/)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tree.AddGlob("*"); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := tree.Commit("Initial commit", &git.CommitOptions{
+		Author: &gitobject.Signature{
+			Name:  "Test",
+			Email: "test@buildbuddy.io",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path, hash.String()
+
 }
