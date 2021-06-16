@@ -14,8 +14,6 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
-        "//enterprise/server/webhooks/bitbucket",
-        "//enterprise/server/webhooks/github",
         "//enterprise/server/webhooks/webhook_data",
         "//proto:context_go_proto",
         "//proto:remote_execution_go_proto",
@@ -48,7 +46,6 @@ go_test(
     deps = [
         ":service",
         "//enterprise/server/testutil/testgit",
-        "//enterprise/server/webhooks/github",
         "//proto:buildbuddy_service_go_proto",
         "//proto:workflow_go_proto",
         "//server/backends/repo_downloader",
@@ -58,7 +55,6 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/db",
-        "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//metadata",

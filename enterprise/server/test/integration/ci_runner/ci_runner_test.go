@@ -3,12 +3,10 @@ package ci_runner_test
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testgit"
@@ -20,8 +18,6 @@ import (
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	git "github.com/go-git/go-git/v5"
-	gitobject "github.com/go-git/go-git/v5/plumbing/object"
 )
 
 var (

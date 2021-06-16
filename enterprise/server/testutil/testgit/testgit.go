@@ -90,5 +90,4 @@ func MakeTempRepo(t testing.TB, contents map[string]string) (path, commitSHA str
 		t.Fatal(err)
 	}
 	return path, hash.String()
-
 }

@@ -7,8 +7,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github/test_data"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/stretchr/testify/assert"
+
 )
 
 func webhookRequest(t *testing.T, eventType string, payload []byte) *http.Request {
@@ -24,10 +25,10 @@ func webhookRequest(t *testing.T, eventType string, payload []byte) *http.Reques
 func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 	req := webhookRequest(t, "push", test_data.PushEvent)
 
-	data, err := github.ParseRequest(req)
+	data, err := github.NewProvider().ParseWebhookData(req)
 
 	assert.NoError(t, err)
-	assert.Equal(t, &webhook_data.WebhookData{
+	assert.Equal(t, &interfaces.WebhookData{
 		EventName:     "push",
 		PushedBranch:  "main",
 		TargetBranch:  "main",
@@ -40,10 +41,10 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 	req := webhookRequest(t, "pull_request", test_data.PullRequestEvent)
 
-	data, err := github.ParseRequest(req)
+	data, err := github.NewProvider().ParseWebhookData(req)
 
 	assert.NoError(t, err)
-	assert.Equal(t, &webhook_data.WebhookData{
+	assert.Equal(t, &interfaces.WebhookData{
 		EventName:     "pull_request",
 		PushedBranch:  "pr-1613157046",
 		TargetBranch:  "main",
@@ -56,7 +57,7 @@ func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 func TestParseRequest_InvalidEvent_Error(t *testing.T) {
 	req := webhookRequest(t, "push", []byte{})
 
-	data, err := github.ParseRequest(req)
+	data, err := github.NewProvider().ParseWebhookData(req)
 
 	assert.Error(t, err)
 	assert.Nil(t, data)

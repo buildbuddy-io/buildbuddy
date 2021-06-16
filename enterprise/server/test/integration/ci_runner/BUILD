@@ -12,6 +12,7 @@ go_test(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//enterprise/server/testutil/testgit",
         "//proto:invocation_go_proto",
         "//server/testutil/buildbuddy",
         "//server/testutil/testbazel",
