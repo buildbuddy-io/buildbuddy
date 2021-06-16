@@ -9,6 +9,7 @@ go_library(
         "//server/interfaces",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/statusz",
         "@org_golang_x_sync//errgroup",
     ],
 )

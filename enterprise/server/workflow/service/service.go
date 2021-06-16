@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -27,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/genproto/googleapis/longrunning"
 
@@ -297,7 +299,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	// Lookup workflow
 	wf := &tables.Workflow{}
 	err = ws.env.GetDBHandle().Raw(
-		`SELECT group_id, repo_url, access_token, perms FROM Workflows WHERE workflow_id = ?`,
+		`SELECT workflow_id, group_id, repo_url, access_token, perms FROM Workflows WHERE workflow_id = ?`,
 		req.GetWorkflowId(),
 	).Take(wf).Error
 	if err != nil {
@@ -344,6 +346,9 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 
 	executionID, err := ws.executeWorkflow(ctx, wf, wd, extraCIRunnerArgs)
+	if err != nil {
+		return nil, err
+	}
 	if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
 		return nil, err
 	}
@@ -681,6 +686,9 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workf
 		return "", err
 	}
 	log.Infof("Started workflow execution (ID: %q)", executionID)
+	metrics.WebhookHandlerWorkflowsStarted.With(prometheus.Labels{
+		metrics.WebhookEventName: wd.EventName,
+	}).Inc()
 	return executionID, nil
 }
 

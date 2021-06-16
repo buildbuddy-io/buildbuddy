@@ -9,8 +9,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/metadata"
 
@@ -33,12 +33,12 @@ var (
 func TestBuild_RemoteCacheFlags_Anonymous_SecondBuildIsCached(t *testing.T) {
 	app := buildbuddy_enterprise.Run(t)
 	ctx := context.Background()
-	ws := bazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
 	buildFlags := []string{"//:hello.txt"}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
 
-	result := bazel.Invoke(ctx, t, ws, "build", buildFlags...)
+	result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)
 	assert.Contains(t, result.Stderr, "Build completed successfully")
@@ -48,9 +48,9 @@ func TestBuild_RemoteCacheFlags_Anonymous_SecondBuildIsCached(t *testing.T) {
 	)
 
 	// Clear the local cache so we can try for a remote cache hit.
-	bazel.Clean(ctx, t, ws)
+	testbazel.Clean(ctx, t, ws)
 
-	result = bazel.Invoke(ctx, t, ws, "build", buildFlags...)
+	result = testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)
 	assert.Contains(t, result.Stderr, "Build completed successfully")
@@ -61,7 +61,7 @@ func TestBuild_RemoteCacheFlags_Anonymous_SecondBuildIsCached(t *testing.T) {
 }
 
 func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T) {
-	ws := bazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
 	// Run the app with an API key we control so that we can authorize using it.
 	app := buildbuddy_enterprise.Run(
 		t,
@@ -83,7 +83,7 @@ func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T
 	buildFlags := []string{"//:hello.txt", fmt.Sprintf("--remote_header=%s=%s", auth.APIKeyHeader, readWriteKey)}
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
 
-	result := bazel.Invoke(ctx, t, ws, "build", buildFlags...)
+	result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)
 	assert.Contains(t, result.Stderr, "Build completed successfully")
@@ -93,9 +93,9 @@ func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T
 	)
 
 	// Clear the local cache so we can try for a remote cache hit.
-	bazel.Clean(ctx, t, ws)
+	testbazel.Clean(ctx, t, ws)
 
-	result = bazel.Invoke(ctx, t, ws, "build", buildFlags...)
+	result = testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)
 	assert.Contains(t, result.Stderr, "Build completed successfully")
@@ -106,7 +106,7 @@ func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T
 }
 
 func TestBuild_RemoteCacheFlags_ReadOnlyApiKey_SecondBuildIsNotCached(t *testing.T) {
-	ws := bazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
 	// Run the app with an API key we control so that we can authorize using it.
 	app := buildbuddy_enterprise.Run(
 		t,
@@ -128,7 +128,7 @@ func TestBuild_RemoteCacheFlags_ReadOnlyApiKey_SecondBuildIsNotCached(t *testing
 	buildFlags := []string{"//:hello.txt", fmt.Sprintf("--remote_header=%s=%s", auth.APIKeyHeader, readOnlyKey)}
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
 
-	result := bazel.Invoke(ctx, t, ws, "build", buildFlags...)
+	result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)
 	assert.Contains(t, result.Stderr, "Build completed successfully")
@@ -138,9 +138,9 @@ func TestBuild_RemoteCacheFlags_ReadOnlyApiKey_SecondBuildIsNotCached(t *testing
 	)
 
 	// Clear the local cache so the remote cache will be queried.
-	bazel.Clean(ctx, t, ws)
+	testbazel.Clean(ctx, t, ws)
 
-	result = bazel.Invoke(ctx, t, ws, "build", buildFlags...)
+	result = testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)
 	assert.Contains(t, result.Stderr, "Build completed successfully")
@@ -153,12 +153,12 @@ func TestBuild_RemoteCacheFlags_ReadOnlyApiKey_SecondBuildIsNotCached(t *testing
 func TestBuild_RemoteCacheFlags_NoAuthConfigured_SecondBuildIsCached(t *testing.T) {
 	app := buildbuddy_enterprise.RunWithConfig(t, buildbuddy_enterprise.NoAuthConfig)
 	ctx := context.Background()
-	ws := bazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
 	buildFlags := []string{"//:hello.txt"}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
 
-	result := bazel.Invoke(ctx, t, ws, "build", buildFlags...)
+	result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)
 	assert.Contains(t, result.Stderr, "Build completed successfully")
@@ -168,9 +168,9 @@ func TestBuild_RemoteCacheFlags_NoAuthConfigured_SecondBuildIsCached(t *testing.
 	)
 
 	// Clear the local cache so we can try for a remote cache hit.
-	bazel.Clean(ctx, t, ws)
+	testbazel.Clean(ctx, t, ws)
 
-	result = bazel.Invoke(ctx, t, ws, "build", buildFlags...)
+	result = testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)
 	assert.Contains(t, result.Stderr, "Build completed successfully")

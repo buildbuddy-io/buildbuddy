@@ -8,6 +8,8 @@ import CacheChartComponent from "./cache_chart";
 import { Subscription } from "rxjs";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
 
+const BITS_PER_BYTE = 8;
+
 interface Props {
   user: User;
   hash: string;
@@ -215,15 +217,16 @@ export default class TrendsComponent extends React.Component {
                 data={this.state.lastNDates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.totalDownloadSizeBytes / 1000000}
                 extractSecondaryValue={(date) =>
-                  +this.state.dateToStatMap.get(date)?.totalDownloadSizeBytes /
-                  +this.state.dateToStatMap.get(date)?.totalDownloadUsec
+                  BITS_PER_BYTE *
+                  (+this.state.dateToStatMap.get(date)?.totalDownloadSizeBytes /
+                    +this.state.dateToStatMap.get(date)?.totalDownloadUsec)
                 }
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0).toFixed(2) + " MB downloaded"}
-                formatSecondaryHoverValue={(value) => (value || 0).toFixed(2) + " MB / sec"}
+                formatSecondaryHoverValue={(value) => (value || 0).toFixed(2) + " Mbps"}
                 name="MB downloaded"
-                secondaryName="MB / sec download throughput"
+                secondaryName="Mbps download throughput"
                 secondaryLine={true}
                 separateAxis={true}
               />
@@ -233,15 +236,16 @@ export default class TrendsComponent extends React.Component {
                 data={this.state.lastNDates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.totalUploadSizeBytes / 1000000}
                 extractSecondaryValue={(date) =>
-                  +this.state.dateToStatMap.get(date)?.totalUploadSizeBytes /
-                  +this.state.dateToStatMap.get(date)?.totalUploadUsec
+                  BITS_PER_BYTE *
+                  (+this.state.dateToStatMap.get(date)?.totalUploadSizeBytes /
+                    +this.state.dateToStatMap.get(date)?.totalUploadUsec)
                 }
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0).toFixed(2) + " MB uploaded"}
-                formatSecondaryHoverValue={(value) => (value || 0).toFixed(2) + " MB / sec"}
+                formatSecondaryHoverValue={(value) => (value || 0).toFixed(2) + " Mbps"}
                 name="MB uploaded"
-                secondaryName="MB / sec upload throughput"
+                secondaryName="Mbps upload throughput"
                 secondaryLine={true}
                 separateAxis={true}
               />

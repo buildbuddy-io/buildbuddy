@@ -139,6 +139,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		EnableShortFileName:    configurator.GetAppLogIncludeShortFileName(),
 		EnableGCPLoggingFormat: configurator.GetAppLogEnableGCPLoggingFormat(),
 		EnableStructured:       configurator.GetAppEnableStructuredLogging(),
+		EnableStackTraces:      configurator.GetAppLogErrorStackTraces(),
 	}
 	if err := log.Configure(opts); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
@@ -395,7 +396,7 @@ func StartAndRunServices(env environment.Env) {
 	}
 
 	if wfs := env.GetWorkflowService(); wfs != nil {
-		mux.Handle("/webhooks/workflow/", wfs)
+		mux.Handle("/webhooks/workflow/", httpfilters.WrapExternalHandler(env, wfs))
 	}
 
 	handler := http.Handler(mux)
