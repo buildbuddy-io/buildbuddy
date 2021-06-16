@@ -30,6 +30,7 @@
     "chalk": "^4.0.0",
     "clang-format": "^1.4.0",
     "concurrently": "^5.3.0",
+    "dagre-d3-react": "^0.2.4",
     "diff-match-patch": "^1.0.5",
     "escodegen": "^2.0.0",
     "espree": "^7.0.0",

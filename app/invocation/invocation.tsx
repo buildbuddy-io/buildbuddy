@@ -9,6 +9,7 @@ import TargetComponent from "../target/target";
 import DenseInvocationOverviewComponent from "./dense/dense_invocation_overview";
 import ArtifactsCardComponent from "./invocation_artifacts_card";
 import BuildLogsCardComponent from "./invocation_build_logs_card";
+import QueryGraphCardComponent from "./invocation_query_graph_card";
 import CacheCardComponent from "./invocation_cache_card";
 import FetchCardComponent from "./invocation_fetch_card";
 import InvocationDetailsCardComponent from "./invocation_details_card";
@@ -216,6 +217,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
           )}
 
           {(activeTab === "all" || activeTab == "log") && <SuggestionCardComponent model={this.state.model} />}
+
+          {(activeTab === "all" || activeTab == "log") && this.state.model.isQuery() && (
+            <QueryGraphCardComponent model={this.state.model} expanded={activeTab == "log"} />
+          )}
 
           {(activeTab === "all" || activeTab == "log") && (
             <BuildLogsCardComponent model={this.state.model} expanded={activeTab == "log"} />
