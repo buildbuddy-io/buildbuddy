@@ -121,8 +121,8 @@ func main() {
 	if err := os.Chdir(repoDirName); err != nil {
 		fatal(status.WrapErrorf(err, "cd %q", repoDirName))
 	}
-	debugScript(&initLogs, `pwd`)
-	debugScript(&initLogs, `ls -la`)
+	runDebugScript(&initLogs, `pwd`)
+	runDebugScript(&initLogs, `ls -la`)
 	cfg, err := readConfig()
 	if err != nil {
 		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
@@ -437,7 +437,7 @@ func initLog(f string, args ...interface{}) {
 	initLogs.Write([]byte(fmt.Sprintf(f+"\n", args...)))
 }
 
-func debugScript(out io.Writer, script string) {
+func runDebugScript(out io.Writer, script string) {
 	if !*debug {
 		return
 	}
@@ -580,7 +580,7 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 			ar.log.Printf("%s(command exited with code %d)%s", ansiGray, exitCode, ansiReset)
 		}
 
-		debugScript(ar.log, `ls -la`)
+		runDebugScript(ar.log, `ls -la`)
 
 		// Publish the status of each command as well as the finish time.
 		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Wait()`.
