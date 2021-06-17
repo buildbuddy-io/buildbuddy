@@ -107,6 +107,10 @@ func main() {
 
 	ctx := context.Background()
 
+	// Put all files in the home directory to prevent any potential issues caused
+	// by the bazel cache directory living on a different filesystem than the
+	// workspace volume.
+	os.Chdir("/root")
 	if err := setupGitRepo(ctx); err != nil {
 		fatal(status.WrapError(err, "failed to set up git repo"))
 	}
