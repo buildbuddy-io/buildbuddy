@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"crypto/sha256"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -46,8 +45,6 @@ const (
 )
 
 var (
-	ciRunnerDebug = flag.Bool("ci_runner_debug", false, "Pass --debug to the CI runner.")
-
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 )
 
@@ -545,7 +542,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--workflow_id=" + wf.WorkflowID,
 			"--trigger_event=" + wd.EventName,
 			"--trigger_branch=" + wd.TargetBranch,
-			"--debug=" + fmt.Sprintf("%v", *ciRunnerDebug),
+			"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		}, extraArgs...),
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
@@ -589,6 +586,14 @@ func (ws *workflowService) workflowsImage() string {
 		return cfg.WorkflowsDefaultImage
 	}
 	return workflowsImage
+}
+
+func (ws *workflowService) ciRunnerDebugMode() bool {
+	cfg := ws.env.GetConfigurator().GetRemoteExecutionConfig()
+	if cfg == nil {
+		return false
+	}
+	return cfg.WorkflowsCIRunnerDebug
 }
 
 func runnerBinaryFile() (*os.File, error) {

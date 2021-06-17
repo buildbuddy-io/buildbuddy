@@ -101,7 +101,7 @@ var (
 	// initLogs contain informational logs from the setup phase (cloning the
 	// git repo and deciding which actions to run) which are reported as part of
 	// the first action's logs.
-	initLogs bytes.Buffer
+	initLog bytes.Buffer
 )
 
 func main() {
@@ -121,8 +121,8 @@ func main() {
 	if err := os.Chdir(repoDirName); err != nil {
 		fatal(status.WrapErrorf(err, "cd %q", repoDirName))
 	}
-	runDebugScript(&initLogs, `pwd`)
-	runDebugScript(&initLogs, `ls -la`)
+	runDebugScript(&initLog, `pwd`)
+	runDebugScript(&initLog, `ls -la`)
 	cfg, err := readConfig()
 	if err != nil {
 		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
@@ -433,19 +433,13 @@ type actionRunner struct {
 	progressCount int32
 }
 
-func initLog(f string, args ...interface{}) {
-	initLogs.Write([]byte(fmt.Sprintf(f+"\n", args...)))
-}
-
 func runDebugScript(out io.Writer, script string) {
 	if !*debug {
 		return
 	}
 	out.Write([]byte(string(fmt.Sprintf("(debug) # %s\n", script))))
-	cmd := exec.Command("sh", "-c", script)
-	cmd.Stdout = out
-	cmd.Stderr = out
-	err := cmd.Run()
+	output, err := exec.Command("sh", "-c", script).CombinedOutput()
+	out.Write(output)
 	exitCode := getExitCode(err)
 	if exitCode != noExitCode {
 		out.Write([]byte(fmt.Sprintf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)))
@@ -455,8 +449,8 @@ func runDebugScript(out io.Writer, script string) {
 
 func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 	// Print the initLogs to the first action's logs.
-	b, _ := io.ReadAll(&initLogs)
-	initLogs.Reset()
+	b, _ := io.ReadAll(&initLog)
+	initLog.Reset()
 	ar.log.Printf(string(b))
 
 	ar.log.Printf("Running action: %s", ar.action.Name)
@@ -710,7 +704,7 @@ func setupGitRepo(ctx context.Context) error {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
 	}
 	if repoDirInfo != nil {
-		initLog("Syncing existing git repo.")
+		initLog.WriteString("Syncing existing git repo.\n")
 		err := syncExistingRepo(ctx, repoDirName)
 		if err == nil {
 			return nil
@@ -723,7 +717,7 @@ func setupGitRepo(ctx context.Context) error {
 				"Deleting and initializing from scratch. Error: %s",
 			err,
 		)
-		initLog("Failed to sync existing git repo.")
+		initLog.WriteString("Failed to sync existing git repo.\n")
 		if err := os.RemoveAll(repoDirName); err != nil {
 			return status.WrapErrorf(err, "rm -r %q", repoDirName)
 		}
@@ -733,7 +727,7 @@ func setupGitRepo(ctx context.Context) error {
 		return status.WrapErrorf(err, "mkdir %q", repoDirName)
 	}
 
-	initLog("Cloning git repo.")
+	initLog.WriteString("Cloning git repo.\n")
 	return setupNewGitRepo(ctx, repoDirName)
 }
 
