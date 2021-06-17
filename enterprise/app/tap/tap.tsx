@@ -321,8 +321,8 @@ export default class TapComponent extends React.Component {
 
               {this.state.targetHistory
                 .filter((targetHistory) => (filter ? targetHistory.target.label.includes(filter) : true))
-                .slice(0, this.state.targetLimit)
                 .sort(this.sort.bind(this))
+                .slice(0, this.state.targetLimit)
                 .map((targetHistory) => {
                   let targetParts = targetHistory.target.label.split(":");
                   let targetPath = targetParts.length > 0 ? targetParts[0] : "";

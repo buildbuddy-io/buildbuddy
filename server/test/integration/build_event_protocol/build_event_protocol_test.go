@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -19,11 +19,11 @@ var (
 func TestBuildWithBESFlags_Success(t *testing.T) {
 	app := buildbuddy.Run(t)
 	ctx := context.Background()
-	ws := bazel.MakeTempWorkspace(t, workspaceContents)
+	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
 	buildFlags := []string{"//:hello.txt"}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
 
-	result := bazel.Invoke(ctx, t, ws, "build", buildFlags...)
+	result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)
 	assert.Contains(t, result.Stderr, "Build completed successfully")

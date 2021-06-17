@@ -8,8 +8,10 @@ go_library(
     deps = [
         "//enterprise/server/scheduling/executor_handle",
         "//proto:api_key_go_proto",
+        "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/resources",
         "//server/tables",
         "//server/util/background",

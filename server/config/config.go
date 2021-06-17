@@ -46,6 +46,7 @@ type appConfig struct {
 	LogIncludeShortFileName   bool   `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
 	NoDefaultUserGroup        bool   `yaml:"no_default_user_group" usage:"Cloud-Only"`
 	LogEnableGCPLoggingFormat bool   `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
+	LogErrorStackTraces       bool   `yaml:"log_error_stack_traces" usage:"If true, stack traces will be printed for errors that have them."`
 }
 
 type buildEventProxy struct {
@@ -162,13 +163,14 @@ type SSLConfig struct {
 
 type RemoteExecutionConfig struct {
 	DefaultPoolName              string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
+	WorkflowsPoolName            string `yaml:"workflows_pool_name" usage:"The executor pool to use for workflow actions. Defaults to the default executor pool if not specified."`
 	RedisTarget                  string `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Required for remote execution. To ease migration, the redis target from the cache config will be used if this value is not specified."`
 	TaskPersistence              string `yaml:"task_persistence" usage:"One of redis|db|dualwrite. Specifies where inflight task information is stored."`
 	SharedExecutorPoolGroupID    string `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
 	RedisPubSubPoolSize          int    `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
 	EnableRemoteExec             bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
-	DisableRedisListPubSub       bool   `yaml:"disable_redis_list_pubsub" usage:"If true, revert to native redis PubSub."`
-	DisableRedisNativePubSub     bool   `yaml:"disable_redis_native_pubsub" usage:"If true, disable use of native redis PubSub in favor of list-based PubSub."`
+	DisableRedisListPubSub       bool   `yaml:"disable_redis_list_pubsub" usage:"If true, disable use of list Redis PubSub for status updates."`
+	DisableRedisStreamPubSub     bool   `yaml:"disable_redis_stream_pubsub" usage:"If true, disable use of stream redis PubSub for status updates."`
 	RequireExecutorAuthorization bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
 	EnableNonLocalScheduling     bool   `yaml:"enable_non_local_scheduling" usage:"If true, schedulers can make RPCs to other schedulers to enqueue task reservations instead of always talking directly to executors."`
 	EnableUserOwnedExecutors     bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
@@ -187,7 +189,7 @@ type ExecutorConfig struct {
 	DockerMountMode         string           `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/"`
 	RunnerPool              RunnerPoolConfig `yaml:"runner_pool"`
 	DockerNetHost           bool             `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
-	EnableWorkStreaming     bool             `yaml:"enable_work_streaming" usage:"Enables executor work streaming (WIP)."`
+	DisableWorkStreaming    bool             `yaml:"disable_work_streaming" usage:"If true, revert to the older non-streaming API for receiving work."`
 	DockerSiblingContainers bool             `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
 	DefaultXCodeVersion     string           `yaml:"default_xcode_version" usage:"Sets the default XCode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
 }
@@ -424,6 +426,10 @@ func (c *Configurator) GetAppAddUserToDomainGroup() bool {
 
 func (c *Configurator) GetAppLogIncludeShortFileName() bool {
 	return c.gc.App.LogIncludeShortFileName
+}
+
+func (c *Configurator) GetAppLogErrorStackTraces() bool {
+	return c.gc.App.LogErrorStackTraces
 }
 
 func (c *Configurator) GetAppEnableStructuredLogging() bool {

@@ -63,7 +63,7 @@ var (
 	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
 	sslPort        = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
-	gRPCPort       = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
+	GRPCPort       = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
 	gRPCSPort      = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 
@@ -139,6 +139,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		EnableShortFileName:    configurator.GetAppLogIncludeShortFileName(),
 		EnableGCPLoggingFormat: configurator.GetAppLogEnableGCPLoggingFormat(),
 		EnableStructured:       configurator.GetAppEnableStructuredLogging(),
+		EnableStackTraces:      configurator.GetAppLogErrorStackTraces(),
 	}
 	if err := log.Configure(opts); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
@@ -351,7 +352,7 @@ func StartAndRunServices(env environment.Env) {
 
 	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
-	grpcServer := StartGRPCServiceOrDie(env, buildBuddyServer, gRPCPort, nil)
+	grpcServer := StartGRPCServiceOrDie(env, buildBuddyServer, GRPCPort, nil)
 
 	if sslService.IsEnabled() {
 		creds, err := sslService.GetGRPCSTLSCreds()
@@ -395,7 +396,7 @@ func StartAndRunServices(env environment.Env) {
 	}
 
 	if wfs := env.GetWorkflowService(); wfs != nil {
-		mux.Handle("/webhooks/workflow/", wfs)
+		mux.Handle("/webhooks/workflow/", httpfilters.WrapExternalHandler(env, wfs))
 	}
 
 	handler := http.Handler(mux)
@@ -404,7 +405,7 @@ func StartAndRunServices(env environment.Env) {
 	}
 
 	if sp := env.GetSplashPrinter(); sp != nil {
-		sp.PrintSplashScreen(*port, *gRPCPort)
+		sp.PrintSplashScreen(*port, *GRPCPort)
 	}
 
 	server := &http.Server{

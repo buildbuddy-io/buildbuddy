@@ -40,7 +40,8 @@ func RegisterWebhook(ctx context.Context, accessToken, repoURL, webhookURL strin
 	// name field. TODO: Is this actually required?
 	name := "web"
 	hook, _, err := client.Repositories.CreateHook(ctx, owner, repo, &gh.Hook{
-		Name: &name,
+		Name:   &name,
+		Events: eventsToReceive,
 		Config: map[string]interface{}{
 			"url":    webhookURL,
 			"events": eventsToReceive,
@@ -66,6 +67,24 @@ func UnregisterWebhook(ctx context.Context, accessToken, repoURL string, webhook
 	return err
 }
 
+// IsRepoPrivate returns whether the given GitHub repo is private.
+func IsRepoPrivate(ctx context.Context, accessToken, repoURL string) (bool, error) {
+	owner, repo, err := parseOwnerRepo(repoURL)
+	if err != nil {
+		return false, err
+	}
+	client := newGitHubClient(ctx, accessToken)
+	r, _, err := client.Repositories.Get(ctx, owner, repo)
+	if err != nil {
+		return false, err
+	}
+	if r.Private == nil {
+		return false, status.UnknownError(`GitHub returned invalid response from hooks API (missing "private" field)`)
+	}
+	return *r.Private, nil
+}
+
+// returns "owner", "repo" from a string like "https://github.com/owner/repo.git"
 func parseOwnerRepo(url string) (string, string, error) {
 	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(url)
 	if err != nil {

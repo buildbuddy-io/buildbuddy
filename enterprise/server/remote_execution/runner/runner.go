@@ -246,43 +246,77 @@ func NewPool(cfg *config.RunnerPoolConfig) *Pool {
 // Add adds the given runner into the pool, evicting older runners if needed.
 // If an error is returned, the runner was not successfully added to the pool.
 func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
+	if err := p.add(ctx, r); err != nil {
+		metrics.RunnerPoolFailedRecycleAttempts.With(prometheus.Labels{
+			metrics.RunnerPoolFailedRecycleReason: err.Label,
+		}).Inc()
+		return err.Error
+	}
+	return nil
+}
+
+func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 	// TODO: once CommandContainer lifecycle methods are available, enforce that
 	// the runner's CommandContainer is paused, and return a
 	// FailedPreconditionError if not.
 
 	if r.state != ready {
-		return status.InternalErrorf("unexpected runner state %d; this should never happen", r.state)
+		return &labeledError{
+			status.InternalErrorf("unexpected runner state %d; this should never happen", r.state),
+			"unexpected_runner_state",
+		}
 	}
 	if err := r.Container.Pause(ctx); err != nil {
-		return status.WrapError(err, "failed to pause container before adding to the pool")
+		return &labeledError{
+			status.WrapError(err, "failed to pause container before adding to the pool"),
+			"pause_failed",
+		}
 	}
 	r.state = paused
 
 	stats, err := r.Container.Stats(ctx)
 	if err != nil {
-		return status.WrapError(err, "failed to compute container stats")
+		return &labeledError{
+			status.WrapError(err, "failed to compute container stats"),
+			"stats_failed",
+		}
 	}
 	if stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
-		return RunnerMaxMemoryExceeded
+		return &labeledError{
+			RunnerMaxMemoryExceeded,
+			"max_memory_exceeded",
+		}
 	}
 	du, err := r.Workspace.DiskUsageBytes()
 	if err != nil {
-		return status.WrapError(err, "failed to compute runner disk usage")
+		return &labeledError{
+			status.WrapError(err, "failed to compute runner disk usage"),
+			"compute_disk_usage_failed",
+		}
 	}
 	if du > p.maxRunnerDiskUsageBytes {
-		return RunnerMaxDiskSizeExceeded
+		return &labeledError{
+			RunnerMaxDiskSizeExceeded,
+			"max_disk_usage_exceeded",
+		}
 	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if p.isShuttingDown {
-		return status.UnavailableError("pool is shutting down; cannot add new runners")
+		return &labeledError{
+			status.UnavailableError("pool is shutting down; cannot add new runners"),
+			"pool_shutting_down",
+		}
 	}
 
 	if len(p.runners) == p.maxRunnerCount {
 		if len(p.runners) == 0 {
-			return status.InternalError("pool max runner count is 0; this should never happen")
+			return &labeledError{
+				status.InternalError("pool max runner count is 0; this should never happen"),
+				"max_runner_count_zero",
+			}
 		}
 		// Evict the first and oldest runner to make room for the new one.
 		r := p.runners[0]
@@ -476,6 +510,13 @@ func (p *Pool) setLimits(cfg *config.RunnerPoolConfig) {
 	p.maxRunnerCount = count
 	p.maxRunnerMemoryUsageBytes = mem
 	p.maxRunnerDiskUsageBytes = disk
+}
+
+type labeledError struct {
+	// Error is the wrapped error.
+	Error error
+	// Label is a short label for Prometheus.
+	Label string
 }
 
 type errSlice []error

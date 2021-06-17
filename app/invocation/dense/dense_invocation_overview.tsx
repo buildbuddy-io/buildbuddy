@@ -1,10 +1,8 @@
 import React from "react";
 import { User } from "../../auth/auth_service";
 import router from "../../router/router";
+import InvocationButtons from "../invocation_buttons";
 import InvocationModel from "../invocation_model";
-import InvocationCompareButton from "../invocation_compare_button";
-import InvocationShareButton from "../invocation_share_button";
-import InvocationMenuComponent from "../invocation_menu";
 
 interface Props {
   user?: User;
@@ -36,19 +34,7 @@ export default class DenseInvocationOverviewComponent extends React.Component {
               {this.props.invocationId} ({this.props.model.getStartDate()}, {this.props.model.getStartTime()})
             </div>
           </div>
-          <div className="invocation-top-right-buttons">
-            <InvocationCompareButton invocationId={this.props.invocationId} />
-            <InvocationShareButton
-              user={this.props.user}
-              model={this.props.model}
-              invocationId={this.props.invocationId}
-            />
-            <InvocationMenuComponent
-              user={this.props.user}
-              model={this.props.model}
-              invocationId={this.props.invocationId}
-            />
-          </div>
+          <InvocationButtons invocationId={this.props.invocationId} model={this.props.model} user={this.props.user} />
         </div>
         <div className={`dense-invocation-status-bar ${this.props.model.getStatusClass()}`}>
           <div>

@@ -2,13 +2,16 @@ package version
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+
+	bundle "github.com/buildbuddy-io/buildbuddy"
 )
 
 const (
@@ -30,14 +33,19 @@ func Print() {
 	log.Infof("%s compiled with %s", appVersion, GoVersion())
 }
 
-func AppVersion(in ...[]byte) string {
+func AppVersion() string {
 	var versionBytes []byte
-	if len(in) > 0 {
-		versionBytes = in[0]
-	} else if rfp, err := bazel.RunfilesPath(); err == nil {
+	if rfp, err := bazel.RunfilesPath(); err == nil {
 		versionFile := filepath.Join(rfp, versionFilename)
-		if b, err := ioutil.ReadFile(versionFile); err == nil {
+		if b, err := os.ReadFile(versionFile); err == nil {
 			versionBytes = b
+		}
+	}
+	if versionBytes == nil {
+		if bundleFS, err := bundle.Get(); err == nil {
+			if data, err := fs.ReadFile(bundleFS, versionFilename); err == nil {
+				versionBytes = data
+			}
 		}
 	}
 	if versionBytes != nil {

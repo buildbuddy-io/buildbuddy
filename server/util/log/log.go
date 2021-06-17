@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/proto"
 	"github.com/rs/zerolog"
@@ -18,7 +19,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
+	gstatus "google.golang.org/grpc/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -26,6 +27,8 @@ import (
 const (
 	callerSkipFrameCount = 3
 )
+
+var logErrorStackTraces bool
 
 func formatDuration(dur time.Duration) string {
 	switch {
@@ -40,13 +43,23 @@ func formatDuration(dur time.Duration) string {
 	}
 }
 
-func fmtErr(err error) string {
-	code := status.Code(err)
+func isExpectedGRPCError(code codes.Code) bool {
 	switch code {
 	case codes.OK, codes.NotFound, codes.AlreadyExists, codes.Canceled, codes.Unavailable, codes.ResourceExhausted:
+		// Common codes we see in normal operation.
+		return true
+	default:
+		// Less common codes.
+		return false
+	}
+}
+
+func fmtErr(err error) string {
+	code := gstatus.Code(err)
+	if isExpectedGRPCError(code) {
 		// Common codes we see in normal operation. Just show the code.
 		return code.String()
-	default:
+	} else {
 		// Less common codes: show the full error.
 		return err.Error()
 	}
@@ -83,6 +96,21 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 		Infof("%s %s %s %s %s [%s]", "gRPC", reqID, iid, shortPath, fmtErr(err), formatDuration(dur))
 	} else {
 		Infof("%s %s %s %s [%s]", "gRPC", reqID, shortPath, fmtErr(err), formatDuration(dur))
+	}
+	if logErrorStackTraces {
+		code := gstatus.Code(err)
+		if isExpectedGRPCError(code) {
+			return
+		}
+		if se, ok := err.(interface {
+			StackTrace() status.StackTrace
+		}); ok {
+			stackBuf := ""
+			for _, f := range se.StackTrace() {
+				stackBuf += fmt.Sprintf("%+s:%d\n", f, f)
+			}
+			Info(stackBuf)
+		}
 	}
 }
 
@@ -144,9 +172,11 @@ type Opts struct {
 	EnableShortFileName    bool
 	EnableGCPLoggingFormat bool
 	EnableStructured       bool
+	EnableStackTraces      bool
 }
 
 func Configure(opts Opts) error {
+	logErrorStackTraces = opts.EnableStackTraces
 	var logger zerolog.Logger
 	if opts.EnableStructured {
 		logger = StructuredLogger()
