@@ -243,21 +243,28 @@ type GitProviders []GitProvider
 
 type GitProvider interface {
 	// MatchRepoURL returns whether a given repo URL should be handled by this
-	// provider.
+	// provider. If multiple providers match, the first one in the GitProviders
+	// list is chosen to handle the repo URL.
 	MatchRepoURL(u *url.URL) bool
+
 	// MatchWebhookRequest returns whether a given webhook request was sent by
-	// this git provider.
+	// this git provider. If multiple providers match, the first one in the
+	// GitProviders list is chosen to handle the webhook.
 	MatchWebhookRequest(req *http.Request) bool
+
 	// ParseWebhookData parses webhook data from the given HTTP request sent to
 	// a webhook endpoint. It should only be called if MatchWebhookRequest returns
 	// true.
 	ParseWebhookData(req *http.Request) (*WebhookData, error)
+
 	// IsRepoPrivate returns whether the repo is only viewable by its owner and
 	// trusted users.
 	IsRepoPrivate(ctx context.Context, accessToken, repoURL string) (bool, error)
+
 	// RegisterWebhook registers the given webhook URL to listen for push and
 	// pull request (also called "merge request") events.
 	RegisterWebhook(ctx context.Context, accessToken, repoURL, webhookURL string) (string, error)
+
 	// UnregisterWebhook unregisters the webhook with the given ID from the repo.
 	UnregisterWebhook(ctx context.Context, accessToken, repoURL, webhookID string) error
 
@@ -268,6 +275,7 @@ type GitProvider interface {
 type WebhookData struct {
 	// EventName is the canonical event name that this data was created from.
 	EventName string
+
 	// PushedBranch is the name of the branch in the source repo that triggered the
 	// event when pushed. Note that for forks, the branch here references the branch
 	// name in the forked repository, and the TargetBranch references the branch in
@@ -290,19 +298,23 @@ type WebhookData struct {
 	// - PushedBranch: "bar-feature" // in "some-user/example-fork" repo
 	// - TargetBranch: "main"        // in "example/example" repo
 	PushedBranch string
+
 	// TargetBranch is the branch associated with the event that determines whether
 	// actions should be triggered. For push events this is the branch that was
 	// pushed to. For pull_request events this is the base branch into which the PR
 	// branch is being merged.
 	TargetBranch string
+
 	// RepoURL points to the canonical repo URL containing the sources needed for the
 	// workflow.
 	//
 	// This will be different from the workflow repo if the workflow is run on a forked
 	// repo as part of a pull request.
 	RepoURL string
+
 	// SHA of the commit to be checked out.
 	SHA string
+
 	// IsRepoPrivate returns whether the repo is private.
 	IsRepoPrivate bool
 }
