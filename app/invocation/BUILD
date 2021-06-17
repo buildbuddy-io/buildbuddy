@@ -41,6 +41,7 @@ ts_library(
         "@npm//@types/moment",
         "@npm//@types/pako",
         "@npm//@types/react",
+        "@npm//dagre-d3-react",
         "@npm//long",
         "@npm//moment",
         "@npm//pako",
