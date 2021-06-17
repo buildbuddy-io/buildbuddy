@@ -246,7 +246,7 @@ type invocationLog struct {
 
 func newInvocationLog() *invocationLog {
 	invLog := &invocationLog{writeListener: func() {}}
-	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stdout)
+	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
 	return invLog
 }
 
