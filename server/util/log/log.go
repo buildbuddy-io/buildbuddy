@@ -129,7 +129,7 @@ func init() {
 }
 
 func LocalLogger() zerolog.Logger {
-	output := zerolog.ConsoleWriter{Out: os.Stdout}
+	output := zerolog.ConsoleWriter{Out: os.Stderr}
 	output.FormatCaller = func(i interface{}) string {
 		s, ok := i.(string)
 		if !ok {
