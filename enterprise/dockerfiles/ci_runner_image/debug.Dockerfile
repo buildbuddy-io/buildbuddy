@@ -17,7 +17,7 @@ WORKDIR /root/bazel
 RUN git checkout 4.1.0
 RUN USE_BAZEL_VERSION=4.1.0 bazelisk build //src:bazel-bin
 
-RUN git checkout 20cdd150ba2d66df8b7433ada7ffa75d1bf22e9d
+RUN git checkout 7327116cddfe9a4f28687ef902dbb5822ebfa230
 RUN USE_BAZEL_VERSION=4.1.0 bazelisk build //src:bazel-bin
 
 RUN cp bazel-bin/src/bazel /usr/local/bin/bazel
