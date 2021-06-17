@@ -379,8 +379,15 @@
   height: var(--spinner-size);
 }
 
+.invocation-query-graph-card {
+  padding: 0;
+}
+
 svg.invocation-query-graph {
   width: 100%;
+  cursor: all-scroll;
+  border-radius: 8px;
+  background: #f9f9f9;
 }
 
 svg.invocation-query-graph .nodes {

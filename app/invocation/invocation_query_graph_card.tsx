@@ -4,12 +4,9 @@ import DagreGraph from "dagre-d3-react";
 
 interface Props {
   model: InvocationModel;
-  expanded: boolean;
 }
 
-export default class QueryGraphCardComponent extends React.Component {
-  props: Props;
-
+export default class QueryGraphCardComponent extends React.Component<Props> {
   render() {
     if (!this.props.model.consoleBuffer.includes("digraph mygraph {")) {
       return <></>;
@@ -30,7 +27,7 @@ export default class QueryGraphCardComponent extends React.Component {
     }
 
     return (
-      <div className="card">
+      <div className="card invocation-query-graph-card">
         <DagreGraph
           className="invocation-query-graph"
           nodes={Array.from(nodes).map((node) => {
@@ -43,7 +40,7 @@ export default class QueryGraphCardComponent extends React.Component {
             ranker: "tight-tree",
           }}
           width={`${width}px`}
-          height={`80vh`}
+          height={`60vh`}
           shape="rect"
           fitBoundaries
           zoomable

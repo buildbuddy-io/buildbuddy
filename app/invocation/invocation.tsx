@@ -219,7 +219,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {(activeTab === "all" || activeTab == "log") && <SuggestionCardComponent model={this.state.model} />}
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.isQuery() && (
-            <QueryGraphCardComponent model={this.state.model} expanded={activeTab == "log"} />
+            <QueryGraphCardComponent model={this.state.model} />
           )}
 
           {(activeTab === "all" || activeTab == "log") && (
