@@ -91,10 +91,17 @@ var (
 	actionName    = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	invocationID  = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 
+	debug = flag.Bool("debug", false, "Print additional debug information in the action logs.")
+
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
+
+	// initLogs contain informational logs from the setup phase (cloning the
+	// git repo and deciding which actions to run) which are reported as part of
+	// the first action's logs.
+	initLogs bytes.Buffer
 )
 
 func main() {
@@ -114,7 +121,8 @@ func main() {
 	if err := os.Chdir(repoDirName); err != nil {
 		fatal(status.WrapErrorf(err, "cd %q", repoDirName))
 	}
-	sh(&setupLogs, `ls -la`)
+	debugScript(&initLogs, `pwd`)
+	debugScript(&initLogs, `ls -la`)
 	cfg, err := readConfig()
 	if err != nil {
 		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
@@ -425,27 +433,31 @@ type actionRunner struct {
 	progressCount int32
 }
 
-var setupLogs bytes.Buffer
-
-func setupLog(f string, args ...interface{}) {
-	setupLogs.Write([]byte(fmt.Sprintf("[setup] "+f+"\n", args...)))
+func initLog(f string, args ...interface{}) {
+	initLogs.Write([]byte(fmt.Sprintf(f+"\n", args...)))
 }
-func sh(out io.Writer, script string) {
-	out.Write([]byte(string("=== DEBUG ===\n")))
+
+func debugScript(out io.Writer, script string) {
+	if !*debug {
+		return
+	}
+	out.Write([]byte(string(fmt.Sprintf("(debug) # %s\n", script))))
 	cmd := exec.Command("sh", "-c", script)
 	cmd.Stdout = out
 	cmd.Stderr = out
-	if err := cmd.Run(); err != nil {
-		out.Write([]byte(fmt.Sprintf(">>> Command %q failed: %s", script, err)))
-		return
+	err := cmd.Run()
+	exitCode := getExitCode(err)
+	if exitCode != noExitCode {
+		out.Write([]byte(fmt.Sprintf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)))
 	}
 	out.Write([]byte("===\n"))
 }
 
 func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
-	b, _ := io.ReadAll(&setupLogs)
+	// Print the initLogs to the first action's logs.
+	b, _ := io.ReadAll(&initLogs)
+	initLogs.Reset()
 	ar.log.Printf(string(b))
-	setupLogs.Reset()
 
 	ar.log.Printf("Running action: %s", ar.action.Name)
 
@@ -567,6 +579,8 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 		if exitCode != noExitCode {
 			ar.log.Printf("%s(command exited with code %d)%s", ansiGray, exitCode, ansiReset)
 		}
+
+		debugScript(ar.log, `ls -la`)
 
 		// Publish the status of each command as well as the finish time.
 		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Wait()`.
@@ -696,7 +710,7 @@ func setupGitRepo(ctx context.Context) error {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
 	}
 	if repoDirInfo != nil {
-		setupLog("Syncing existing repo")
+		initLog("Syncing existing git repo.")
 		err := syncExistingRepo(ctx, repoDirName)
 		if err == nil {
 			return nil
@@ -709,7 +723,7 @@ func setupGitRepo(ctx context.Context) error {
 				"Deleting and initializing from scratch. Error: %s",
 			err,
 		)
-		setupLog("Failed to sync existing repo")
+		initLog("Failed to sync existing git repo.")
 		if err := os.RemoveAll(repoDirName); err != nil {
 			return status.WrapErrorf(err, "rm -r %q", repoDirName)
 		}
@@ -719,7 +733,7 @@ func setupGitRepo(ctx context.Context) error {
 		return status.WrapErrorf(err, "mkdir %q", repoDirName)
 	}
 
-	setupLog("Setting up new git repo")
+	initLog("Cloning git repo.")
 	return setupNewGitRepo(ctx, repoDirName)
 }
 

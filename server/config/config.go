@@ -164,6 +164,7 @@ type SSLConfig struct {
 type RemoteExecutionConfig struct {
 	DefaultPoolName              string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
 	WorkflowsPoolName            string `yaml:"workflows_pool_name" usage:"The executor pool to use for workflow actions. Defaults to the default executor pool if not specified."`
+	WorkflowsDefaultImage        string `yaml:"workflows_default_image" usage:"The default docker image to use for running workflows."`
 	RedisTarget                  string `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Required for remote execution. To ease migration, the redis target from the cache config will be used if this value is not specified."`
 	TaskPersistence              string `yaml:"task_persistence" usage:"One of redis|db|dualwrite. Specifies where inflight task information is stored."`
 	SharedExecutorPoolGroupID    string `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`

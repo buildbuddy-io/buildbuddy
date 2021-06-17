@@ -25,7 +25,7 @@ http_archive(
     ],
 )
 
-load("@bazel_gazelle//:deps.bzl", "go_repository")
+load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
 
 go_rules_dependencies()
@@ -54,8 +54,6 @@ load(":deps.bzl", "install_buildbuddy_dependencies")
 
 # gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
 install_buildbuddy_dependencies()
-
-load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
 
 gazelle_dependencies()
 
@@ -194,11 +192,15 @@ container_pull(
     repository = "distroless/java-debian10",
 )
 
-load("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
-
 dockerfile_image(
     name = "ci_runner_image",
     dockerfile = "//enterprise/dockerfiles/ci_runner_image:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "ci_runner_debug_image",
+    dockerfile = "//enterprise/dockerfiles/ci_runner_image:debug.Dockerfile",
     visibility = ["//visibility:public"],
 )
 
