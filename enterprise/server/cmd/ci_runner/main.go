@@ -121,8 +121,8 @@ func main() {
 	if err := os.Chdir(repoDirName); err != nil {
 		fatal(status.WrapErrorf(err, "cd %q", repoDirName))
 	}
-	runDebugScript(&initLog, `pwd`)
-	runDebugScript(&initLog, `ls -la`)
+	runDebugCommand(&initLog, `pwd`)
+	runDebugCommand(&initLog, `ls -la`)
 	cfg, err := readConfig()
 	if err != nil {
 		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
@@ -433,18 +433,18 @@ type actionRunner struct {
 	progressCount int32
 }
 
-func runDebugScript(out io.Writer, script string) {
+func runDebugCommand(out io.Writer, script string) {
 	if !*debug {
 		return
 	}
-	out.Write([]byte(string(fmt.Sprintf("(debug) # %s\n", script))))
+	io.WriteString(out, fmt.Sprintf("(debug) # %s\n", script))
 	output, err := exec.Command("sh", "-c", script).CombinedOutput()
 	out.Write(output)
 	exitCode := getExitCode(err)
 	if exitCode != noExitCode {
-		out.Write([]byte(fmt.Sprintf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)))
+		io.WriteString(out, fmt.Sprintf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset))
 	}
-	out.Write([]byte("===\n"))
+	io.WriteString(out, "===\n")
 }
 
 func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
@@ -574,7 +574,7 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 			ar.log.Printf("%s(command exited with code %d)%s", ansiGray, exitCode, ansiReset)
 		}
 
-		runDebugScript(ar.log, `ls -la`)
+		runDebugCommand(ar.log, `ls -la`)
 
 		// Publish the status of each command as well as the finish time.
 		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Wait()`.
