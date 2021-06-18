@@ -378,3 +378,38 @@
   width: var(--spinner-size);
   height: var(--spinner-size);
 }
+
+.invocation-query-graph-card {
+  padding: 0;
+  background: #f9f9f9;
+}
+
+svg.invocation-query-graph {
+  width: 100%;
+  cursor: all-scroll;
+}
+
+svg.invocation-query-graph .nodes {
+  fill: #fff;
+  stroke: #263238;
+  stroke-width: 4px;
+}
+svg.invocation-query-graph .nodes text {
+  fill: #000;
+}
+
+svg.invocation-query-graph path {
+  stroke: #263238;
+  fill: #263238;
+  stroke-width: 2px;
+}
+
+svg.invocation-query-graph .nodes text {
+  stroke-width: 0;
+  font-size: 0.9em;
+}
+
+svg.invocation-query-graph .nodes rect {
+  rx: 8px;
+  ry: 8px;
+}

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -41,10 +40,12 @@ import (
 	guuid "github.com/google/uuid"
 )
 
+const (
+	workflowsImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1"
+)
+
 var (
-	workflowURLMatcher   = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
-	buildbuddyCIUserName = "buildbuddy"
-	buildbuddyCIHostName = "buildbuddy-ci-runner"
+	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 )
 
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
@@ -572,11 +573,12 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--workflow_id=" + wf.WorkflowID,
 			"--trigger_event=" + wd.EventName,
 			"--trigger_branch=" + wd.TargetBranch,
+			"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		}, extraArgs...),
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "Pool", Value: ws.workflowsPoolName()},
-				{Name: "container-image", Value: "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1"},
+				{Name: "container-image", Value: ws.workflowsImage()},
 				// Reuse the docker container for the CI runner across executions if
 				// possible, and also keep the git repo around so it doesn't need to be
 				// re-cloned each time.
@@ -607,6 +609,22 @@ func (ws *workflowService) workflowsPoolName() string {
 		return cfg.WorkflowsPoolName
 	}
 	return platform.DefaultPoolValue
+}
+
+func (ws *workflowService) workflowsImage() string {
+	cfg := ws.env.GetConfigurator().GetRemoteExecutionConfig()
+	if cfg != nil && cfg.WorkflowsDefaultImage != "" {
+		return cfg.WorkflowsDefaultImage
+	}
+	return workflowsImage
+}
+
+func (ws *workflowService) ciRunnerDebugMode() bool {
+	cfg := ws.env.GetConfigurator().GetRemoteExecutionConfig()
+	if cfg == nil {
+		return false
+	}
+	return cfg.WorkflowsCIRunnerDebug
 }
 
 func runnerBinaryFile() (*os.File, error) {
@@ -648,27 +666,6 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 		return status.UnavailableError("Remote execution not configured.")
 	}
 	return nil
-}
-
-func (ws *workflowService) getBazelFlags(ak *tables.APIKey, instanceName string) ([]string, error) {
-	flags := []string{
-		"--build_metadata=USER=" + buildbuddyCIUserName,
-		"--build_metadata=HOST=" + buildbuddyCIHostName,
-		"--remote_header=x-buildbuddy-api-key=" + ak.Value,
-		"--remote_instance_name=" + instanceName,
-	}
-	if bbURL := ws.env.GetConfigurator().GetAppBuildBuddyURL(); bbURL != "" {
-		u, err := url.Parse(bbURL)
-		if err != nil {
-			return nil, err
-		}
-		u.Path = path.Join(u.Path, "invocation")
-		flags = append(flags, fmt.Sprintf("--bes_results_url=%s/", u))
-	}
-	if eventsAPIURL := ws.env.GetConfigurator().GetAppEventsAPIURL(); eventsAPIURL != "" {
-		flags = append(flags, "--bes_backend="+eventsAPIURL)
-	}
-	return flags, nil
 }
 
 func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) error {

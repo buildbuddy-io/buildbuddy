@@ -123,7 +123,8 @@ export default class InvocationModel {
           model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         }
         if (buildEvent.unstructuredCommandLine) {
-          model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+          model.unstructuredCommandLine =
+            buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
         }
       }
     }
@@ -477,5 +478,9 @@ export default class InvocationModel {
         ?.map((link) => link?.match(/\[(?<linkText>.*)\]\((?<linkUrl>.*)\)/)?.groups)
         ?.filter((link) => link?.linkUrl?.startsWith("http://") || link?.linkUrl?.startsWith("https://")) || []
     );
+  }
+
+  isQuery() {
+    return this.getCommand() == "query";
   }
 }
