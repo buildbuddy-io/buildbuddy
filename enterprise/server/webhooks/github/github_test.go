@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github/test_data"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/stretchr/testify/assert"
-
 )
 
 func webhookRequest(t *testing.T, eventType string, payload []byte) *http.Request {
