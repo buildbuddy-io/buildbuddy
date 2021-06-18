@@ -671,6 +671,11 @@ d3-shape@^2.0.0:
   resolved "https://registry.yarnpkg.com/d3-time/-/d3-time-2.0.0.tgz#ad7c127d17c67bd57a4c61f3eaecb81108b1e0ab"
   integrity sha512-2mvhstTFcMvwStWd9Tj3e6CEqtOivtD8AUiHT8ido/xmzrI9ijrUUihZ6nHuf/vsScRBonagOdj0Vv+SEL5G3Q==
 
+dagre-d3-react@^0.2.4:
+  version "0.2.4"
+  resolved "https://registry.yarnpkg.com/dagre-d3-react/-/dagre-d3-react-0.2.4.tgz#df6037e0c117fc207f7513ee5f175aefb4a96749"
+  integrity sha512-spYk0zaI8Mm+5E+99veMDS7CG2Prpce1CcjQINHTKmJe0XUkmFEey5yRr4Ag7htXdirw1Lf/rlBiZgORcc1Nyg==
+
 date-fns@^2.0.1:
   version "2.19.0"
   resolved "https://registry.yarnpkg.com/date-fns/-/date-fns-2.19.0.tgz#65193348635a28d5d916c43ec7ce6fbd145059e1"

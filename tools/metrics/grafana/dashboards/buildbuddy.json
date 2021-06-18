@@ -817,7 +817,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (code) (rate(buildbuddy_http_request_handler_duration_usec_count[${window}]))",
+              "expr": "sum by (code) (rate(buildbuddy_http_request_handler_duration_usec_count{route=\"/webhooks/workflow/:id\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{code}}",
               "queryType": "randomWalk",
