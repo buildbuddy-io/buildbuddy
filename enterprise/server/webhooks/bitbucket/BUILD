@@ -22,7 +22,6 @@ go_test(
     deps = [
         ":bitbucket",
         "//enterprise/server/webhooks/bitbucket/test_data",
-        "//enterprise/server/webhooks/webhook_data",
         "//server/interfaces",
         "@com_github_stretchr_testify//assert",
     ],

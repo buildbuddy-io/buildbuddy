@@ -29,7 +29,6 @@ go_test(
     deps = [
         ":github",
         "//enterprise/server/webhooks/github/test_data",
-        "//enterprise/server/webhooks/webhook_data",
         "//server/interfaces",
         "@com_github_stretchr_testify//assert",
     ],
