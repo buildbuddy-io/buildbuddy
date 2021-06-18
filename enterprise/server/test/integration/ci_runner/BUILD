@@ -12,11 +12,10 @@ go_test(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//enterprise/server/testutil/testgit",
         "//proto:invocation_go_proto",
         "//server/testutil/buildbuddy",
         "//server/testutil/testbazel",
-        "@com_github_go_git_go_git_v5//:go-git",
-        "@com_github_go_git_go_git_v5//plumbing/object",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

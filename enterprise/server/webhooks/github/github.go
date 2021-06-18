@@ -2,14 +2,17 @@ package github
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"mime"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/oauth2"
 
@@ -22,6 +25,12 @@ var (
 	eventsToReceive = []string{"push", "pull_request"}
 )
 
+type githubGitProvider struct{}
+
+func NewProvider() interfaces.GitProvider {
+	return &githubGitProvider{}
+}
+
 func newGitHubClient(ctx context.Context, accessToken string) *gh.Client {
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
 	tc := oauth2.NewClient(ctx, ts)
@@ -30,10 +39,10 @@ func newGitHubClient(ctx context.Context, accessToken string) *gh.Client {
 
 // RegisterWebhook registers the given webhook to the repo and returns the ID of
 // the registered webhook.
-func RegisterWebhook(ctx context.Context, accessToken, repoURL, webhookURL string) (int64, error) {
+func (*githubGitProvider) RegisterWebhook(ctx context.Context, accessToken, repoURL, webhookURL string) (string, error) {
 	owner, repo, err := parseOwnerRepo(repoURL)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	client := newGitHubClient(ctx, accessToken)
 	// GitHub's API documentation says this is the only allowed string for the
@@ -48,27 +57,31 @@ func RegisterWebhook(ctx context.Context, accessToken, repoURL, webhookURL strin
 		},
 	})
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	if hook.ID == nil {
-		return 0, status.UnknownError("GitHub returned invalid response from hooks API (missing ID field).")
+		return "", status.UnknownError("GitHub returned invalid response from hooks API (missing ID field).")
 	}
-	return *hook.ID, nil
+	return fmt.Sprintf("%d", *hook.ID), nil
 }
 
 // UnregisterWebhook removes the webhook from the Git repo.
-func UnregisterWebhook(ctx context.Context, accessToken, repoURL string, webhookID int64) error {
+func (*githubGitProvider) UnregisterWebhook(ctx context.Context, accessToken, repoURL, webhookID string) error {
 	owner, repo, err := parseOwnerRepo(repoURL)
 	if err != nil {
 		return err
 	}
 	client := newGitHubClient(ctx, accessToken)
-	_, err = client.Repositories.DeleteHook(ctx, owner, repo, webhookID)
+	id, err := strconv.ParseInt(webhookID, 10 /*=base*/, 64 /*=bitSize*/)
+	if err != nil {
+		return err
+	}
+	_, err = client.Repositories.DeleteHook(ctx, owner, repo, id)
 	return err
 }
 
 // IsRepoPrivate returns whether the given GitHub repo is private.
-func IsRepoPrivate(ctx context.Context, accessToken, repoURL string) (bool, error) {
+func (*githubGitProvider) IsRepoPrivate(ctx context.Context, accessToken, repoURL string) (bool, error) {
 	owner, repo, err := parseOwnerRepo(repoURL)
 	if err != nil {
 		return false, err
@@ -84,20 +97,15 @@ func IsRepoPrivate(ctx context.Context, accessToken, repoURL string) (bool, erro
 	return *r.Private, nil
 }
 
-// returns "owner", "repo" from a string like "https://github.com/owner/repo.git"
-func parseOwnerRepo(url string) (string, string, error) {
-	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(url)
-	if err != nil {
-		return "", "", status.WrapError(err, "Failed to parse owner/repo from GitHub URL")
-	}
-	parts := strings.Split(ownerRepo, "/")
-	if len(parts) < 2 {
-		return "", "", status.InvalidArgumentErrorf("Invalid owner/repo %q", ownerRepo)
-	}
-	return parts[0], parts[1], nil
+func (*githubGitProvider) MatchRepoURL(u *url.URL) bool {
+	return u.Host == "github.com"
 }
 
-func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
+func (*githubGitProvider) MatchWebhookRequest(r *http.Request) bool {
+	return r.Header.Get("X-Github-Event") != ""
+}
+
+func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.WebhookData, error) {
 	payload, err := webhookJSONPayload(r)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("failed to parse webhook payload: %s", err)
@@ -123,7 +131,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 			return nil, err
 		}
 		branch := strings.TrimPrefix(v["Ref"], "refs/heads/")
-		return &webhook_data.WebhookData{
+		return &interfaces.WebhookData{
 			EventName:     webhook_data.EventName.Push,
 			PushedBranch:  branch,
 			TargetBranch:  branch,
@@ -151,7 +159,7 @@ func ParseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
 		if !(v["Action"] == "opened" || v["Action"] == "synchronize") {
 			return nil, nil
 		}
-		return &webhook_data.WebhookData{
+		return &interfaces.WebhookData{
 			EventName:     webhook_data.EventName.PullRequest,
 			PushedBranch:  v["PullRequest.Head.Ref"],
 			TargetBranch:  v["PullRequest.Base.Ref"],
@@ -191,4 +199,17 @@ func webhookJSONPayload(r *http.Request) ([]byte, error) {
 	default:
 		return nil, status.InvalidArgumentErrorf("unhandled MIME type: %q", contentType)
 	}
+}
+
+// returns "owner", "repo" from a string like "https://github.com/owner/repo.git"
+func parseOwnerRepo(url string) (string, string, error) {
+	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(url)
+	if err != nil {
+		return "", "", status.WrapError(err, "Failed to parse owner/repo from GitHub URL")
+	}
+	parts := strings.Split(ownerRepo, "/")
+	if len(parts) < 2 {
+		return "", "", status.InvalidArgumentErrorf("Invalid owner/repo %q", ownerRepo)
+	}
+	return parts[0], parts[1], nil
 }

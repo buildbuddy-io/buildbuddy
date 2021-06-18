@@ -14,10 +14,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -36,6 +35,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	githubapi "github.com/google/go-github/github"
 	guuid "github.com/google/uuid"
 )
@@ -57,7 +57,7 @@ func generateWebhookID() (string, error) {
 	return strings.ToLower(u.String()), nil
 }
 
-func instanceName(wd *webhook_data.WebhookData) string {
+func instanceName(wd *interfaces.WebhookData) string {
 	// Note, we use a unique remote instance per repo URL, so that forked repos
 	// don't share the same cache as the base repo.
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(wd.RepoURL)))
@@ -134,6 +134,15 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 
 	// Do a quick check to see if this is a valid repo that we can actually access.
 	repoURL := repoReq.GetRepoUrl()
+	u, err := gitutil.ParseRepoURL(repoURL)
+	if err != nil {
+		return nil, err
+	}
+
+	provider, err := ws.providerForRepo(u)
+	if err != nil {
+		return nil, err
+	}
 	username := repoReq.GetUsername()
 	accessToken := repoReq.GetAccessToken()
 
@@ -162,13 +171,11 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 
 	rsp := &wfpb.CreateWorkflowResponse{}
 
-	gitHubWebhookID := int64(0)
-	if isGitHubURL(repoURL) {
-		if gitHubWebhookID, err = github.RegisterWebhook(ctx, accessToken, repoURL, webhookURL); err != nil {
-			return nil, status.WrapError(err, "Failed to register webhook to GitHub")
-		}
-		rsp.WebhookRegistered = true
+	providerWebhookID, err := provider.RegisterWebhook(ctx, accessToken, repoURL, webhookURL)
+	if err != nil && !status.IsUnimplementedError(err) {
+		return nil, err
 	}
+	rsp.WebhookRegistered = (providerWebhookID != "")
 
 	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 		workflowID, err := tables.PrimaryKeyForTable("Workflows")
@@ -178,16 +185,16 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 		rsp.Id = workflowID
 		rsp.WebhookUrl = webhookURL
 		wf := &tables.Workflow{
-			WorkflowID:      workflowID,
-			UserID:          permissions.UserID,
-			GroupID:         permissions.GroupID,
-			Perms:           permissions.Perms,
-			Name:            req.GetName(),
-			RepoURL:         repoURL,
-			Username:        username,
-			AccessToken:     accessToken,
-			WebhookID:       webhookID,
-			GitHubWebhookID: gitHubWebhookID,
+			WorkflowID:           workflowID,
+			UserID:               permissions.UserID,
+			GroupID:              permissions.GroupID,
+			Perms:                permissions.Perms,
+			Name:                 req.GetName(),
+			RepoURL:              repoURL,
+			Username:             username,
+			AccessToken:          accessToken,
+			WebhookID:            webhookID,
+			GitProviderWebhookID: providerWebhookID,
 		}
 		return tx.Create(wf).Error
 	})
@@ -211,7 +218,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 	}
 	var wf tables.Workflow
 	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
-		if err := tx.Raw(`SELECT user_id, group_id, perms, access_token, repo_url, github_webhook_id FROM Workflows WHERE workflow_id = ?`, workflowID).Take(&wf).Error; err != nil {
+		if err := tx.Raw(`SELECT user_id, group_id, perms, access_token, repo_url, git_provider_webhook_id FROM Workflows WHERE workflow_id = ?`, workflowID).Take(&wf).Error; err != nil {
 			return err
 		}
 		acl := perms.ToACLProto(&uidpb.UserId{Id: wf.UserID}, wf.GroupID, wf.Perms)
@@ -223,12 +230,31 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 	if err != nil {
 		return nil, err
 	}
-	if wf.GitHubWebhookID != 0 {
-		if err := github.UnregisterWebhook(ctx, wf.AccessToken, wf.RepoURL, wf.GitHubWebhookID); err != nil {
-			return nil, status.WrapError(err, "Failed to unregister the webhook from GitHub. The hook may need to be removed manually via the repo settings.")
+	if wf.GitProviderWebhookID != "" {
+		const errMsg = "Failed to remove the webhook from the repo; it may need to be removed manually via the repo's settings page"
+
+		u, err := gitutil.ParseRepoURL(wf.RepoURL)
+		if err != nil {
+			return nil, status.WrapError(err, errMsg)
+		}
+		provider, err := ws.providerForRepo(u)
+		if err != nil {
+			return nil, status.WrapError(err, errMsg)
+		}
+		if err := provider.UnregisterWebhook(ctx, wf.AccessToken, wf.RepoURL, wf.GitProviderWebhookID); err != nil {
+			return nil, status.WrapError(err, errMsg)
 		}
 	}
 	return &wfpb.DeleteWorkflowResponse{}, nil
+}
+
+func (ws *workflowService) providerForRepo(u *url.URL) (interfaces.GitProvider, error) {
+	for _, provider := range ws.env.GetGitProviders() {
+		if provider.MatchRepoURL(u) {
+			return provider, nil
+		}
+	}
+	return nil, status.InvalidArgumentErrorf("could not find git provider for %s", u.Hostname())
 }
 
 func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
@@ -317,19 +343,24 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 
 	// Execute
-	isRepoPrivate := false
-	// TODO: Support other Git providers. We default to false on those for now,
-	// which means that we don't pass secrets even for private repos.
-	if isGitHubURL(wf.RepoURL) {
-		isRepoPrivate, err = github.IsRepoPrivate(ctx, wf.AccessToken, wf.RepoURL)
-		if err != nil {
-			return nil, status.WrapErrorf(err, "failed to determine whether repo is private")
-		}
+	repoURL, err := gitutil.ParseRepoURL(wf.RepoURL)
+	if err != nil {
+		return nil, err
+	}
+	provider, err := ws.providerForRepo(repoURL)
+	if err != nil {
+		return nil, err
+	}
+	isRepoPrivate, err := provider.IsRepoPrivate(ctx, wf.AccessToken, wf.RepoURL)
+	// If IsRepoPrivate is not yet implemented, treat it as untrusted, meaning
+	// secrets will not be passed to the CI runner.
+	if err != nil && !status.IsUnimplementedError(err) {
+		return nil, status.WrapErrorf(err, "failed to determine whether repo is private")
 	}
 	// TODO: Refactor to avoid using this WebhookData struct in the case of manual
 	// workflow execution, since there are no webhooks involved when executing a
 	// workflow manually.
-	wd := &webhook_data.WebhookData{
+	wd := &interfaces.WebhookData{
 		PushedBranch:  req.GetBranch(),
 		TargetBranch:  req.GetBranch(),
 		RepoURL:       wf.RepoURL,
@@ -493,7 +524,7 @@ func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID
 // Creates an action that executes the CI runner for the given workflow and params.
 // Returns the digest of the action as well as the invocation ID that the CI runner
 // will assign to the workflow invocation.
-func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *webhook_data.WebhookData, ak *tables.APIKey, instanceName string, extraArgs []string) (*repb.Digest, error) {
+func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, ak *tables.APIKey, instanceName string, extraArgs []string) (*repb.Digest, error) {
 	cache := ws.env.GetCache()
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
@@ -522,7 +553,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		return nil, err
 	}
 	envVars := []*repb.Command_EnvironmentVariable{}
-	if wd.IsTrusted() {
+	if webhook_data.IsTrusted(wd) {
 		envVars = append(envVars, []*repb.Command_EnvironmentVariable{
 			{Name: "BUILDBUDDY_API_KEY", Value: ak.Value},
 			{Name: "REPO_USER", Value: wf.Username},
@@ -615,12 +646,11 @@ func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Wor
 	return k, nil
 }
 
-func parseRequest(r *http.Request) (*webhook_data.WebhookData, error) {
-	if r.Header.Get("X-Github-Event") != "" {
-		return github.ParseRequest(r)
-	}
-	if r.Header.Get("X-Event-Key") != "" {
-		return bitbucket.ParseRequest(r)
+func (ws *workflowService) parseRequest(r *http.Request) (*interfaces.WebhookData, error) {
+	for _, provider := range ws.env.GetGitProviders() {
+		if provider.MatchWebhookRequest(r) {
+			return provider.ParseWebhookData(r)
+		}
 	}
 	return nil, status.UnimplementedErrorf("failed to classify Git provider from webhook request: %+v", r)
 }
@@ -643,7 +673,7 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err := ws.checkStartWorkflowPreconditions(ctx); err != nil {
 		return err
 	}
-	webhookData, err := parseRequest(r)
+	webhookData, err := ws.parseRequest(r)
 	if err != nil {
 		return err
 	}
@@ -659,7 +689,7 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 }
 
 // starts a CI runner execution and returns the execution ID.
-func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workflow, wd *webhook_data.WebhookData, extraCIRunnerArgs []string) (string, error) {
+func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, extraCIRunnerArgs []string) (string, error) {
 	key, err := ws.apiKeyForWorkflow(ctx, wf)
 	if err != nil {
 		return "", err
