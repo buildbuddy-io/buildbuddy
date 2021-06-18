@@ -146,7 +146,7 @@ func (c *DiskCache) Statusz(ctx context.Context) string {
 
 	buf += "<div>Value Sizes (bytes):</div>"
 	for i, bucket := range buckets {
-		buf += fmt.Sprintf("<div>10e%d bytes: %d</div>", i, bucket)
+		buf += fmt.Sprintf("<div>1e%d bytes: %d</div>", i, bucket)
 	}
 	return buf
 }
