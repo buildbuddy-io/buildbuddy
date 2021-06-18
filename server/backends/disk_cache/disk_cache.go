@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -130,6 +131,23 @@ func (c *DiskCache) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("<div>%d items (oldest: %s)</div>", c.l.Len(), oldestItem.Format("Jan 02, 2006 15:04:05 PST"))
 	buf += fmt.Sprintf("<div>Mapped into LRU: %t</div>", *c.diskIsMapped)
 	buf += fmt.Sprintf("<div>GC Last run: %s</div>", c.lastGCTime.Format("Jan 02, 2006 15:04:05 PST"))
+
+	buckets := make([]int, 10)
+	for _, key := range c.l.Keys() {
+		if v, found := c.l.Peek(key); found {
+			if fr, ok := v.(*fileRecord); ok {
+				bucket := int(math.Log10(float64(fr.sizeBytes)))
+				if bucket < len(buckets) {
+					buckets[bucket] += 1
+				}
+			}
+		}
+	}
+
+	buf += "<div>Value Sizes (bytes):</div>"
+	for i, bucket := range buckets {
+		buf += fmt.Sprintf("<div>10e%d bytes: %d</div>", i, bucket)
+	}
 	return buf
 }
 
