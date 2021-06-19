@@ -341,7 +341,6 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if err := perms.AuthorizeRead(&user, wfACL); err != nil {
 		return nil, err
 	}
-
 	// Execute
 	repoURL, err := gitutil.ParseRepoURL(wf.RepoURL)
 	if err != nil {
@@ -552,7 +551,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if err != nil {
 		return nil, err
 	}
-	envVars := []*repb.Command_EnvironmentVariable{}
+	envVars := []*repb.Command_EnvironmentVariable{
+		{Name: "BAZEL_COMMAND", Value: ws.ciRunnerBazelCommand()},
+	}
 	if webhook_data.IsTrusted(wd) {
 		envVars = append(envVars, []*repb.Command_EnvironmentVariable{
 			{Name: "BUILDBUDDY_API_KEY", Value: ak.Value},
@@ -627,6 +628,14 @@ func (ws *workflowService) ciRunnerDebugMode() bool {
 	return cfg.WorkflowsCIRunnerDebug
 }
 
+func (ws *workflowService) ciRunnerBazelCommand() string {
+	cfg := ws.env.GetConfigurator().GetRemoteExecutionConfig()
+	if cfg == nil {
+		return ""
+	}
+	return cfg.WorkflowsCIRunnerBazelCommand
+}
+
 func runnerBinaryFile() (*os.File, error) {
 	path, err := bazelgo.Runfile("enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
 	if err != nil {
@@ -636,11 +645,9 @@ func runnerBinaryFile() (*os.File, error) {
 }
 
 func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Workflow) (*tables.APIKey, error) {
-	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
-	q.AddWhereClause("group_id = ?", wf.GroupID)
-	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}
-	if err := ws.env.GetDBHandle().Raw(qStr, qArgs...).Take(&k).Error; err != nil {
+	err := ws.env.GetDBHandle().Raw(`SELECT * FROM APIKeys WHERE group_id = ?`, wf.GroupID).Take(&k).Error
+	if err != nil {
 		return nil, err
 	}
 	return k, nil

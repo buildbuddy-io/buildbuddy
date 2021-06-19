@@ -26,10 +26,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbeclient"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
+	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -45,6 +49,8 @@ import (
 
 	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	guuid "github.com/google/uuid"
@@ -52,7 +58,6 @@ import (
 )
 
 const (
-	TestUserID1    = "US1"
 	ExecutorAPIKey = "EXECUTOR_API_KEY"
 
 	testCommandBinaryRunfilePath = "enterprise/server/test/integration/remote_execution/command/testcommand_/testcommand"
@@ -76,6 +81,13 @@ type Env struct {
 	// Used to generate executor names when not specified.
 	executorNameCounter uint64
 	envOpts             *enterprise_testenv.Options
+
+	UserID1  string
+	GroupID1 string
+}
+
+func (r *Env) GetBuildBuddyServiceClient() bbspb.BuildBuddyServiceClient {
+	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].buildBuddyServiceClient
 }
 
 func (r *Env) GetRemoteExecutionClient() repb.ExecutionClient {
@@ -88,6 +100,10 @@ func (r *Env) GetByteStreamClient() bspb.ByteStreamClient {
 
 func (r *Env) GetContentAddressableStorageClient() repb.ContentAddressableStorageClient {
 	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].casClient
+}
+
+func (r *Env) GetActionCacheClient() repb.ActionCacheClient {
+	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].acClient
 }
 
 func (r *Env) uploadInputRoot(ctx context.Context, rootDir string) *repb.Digest {
@@ -122,14 +138,24 @@ func NewRBETestEnv(t *testing.T) *Env {
 	redisTarget := testredis.Start(t)
 	envOpts := &enterprise_testenv.Options{RedisTarget: redisTarget}
 	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
-	testEnv.SetAuthenticator(newTestAuthenticator())
+	// Create a group in the DB.
+	orgURLID := "test"
+	userID := "US1"
+	groupID, err := testEnv.GetUserDB().InsertOrUpdateGroup(context.Background(), &tables.Group{
+		URLIdentifier: &orgURLID,
+		UserID:        "US1",
+	})
+	require.NoError(t, err)
 	rbe := &Env{
 		testEnv:     testEnv,
 		t:           t,
 		redisTarget: redisTarget,
 		executors:   make(map[string]*Executor),
 		envOpts:     envOpts,
+		GroupID1:    groupID,
+		UserID1:     userID,
 	}
+	testEnv.SetAuthenticator(rbe.newTestAuthenticator())
 	rbe.testCommandController = newTestCommandController(t)
 	rbe.rbeClient = rbeclient.New(rbe)
 	return rbe
@@ -138,6 +164,10 @@ func NewRBETestEnv(t *testing.T) *Env {
 type BuildBuddyServerOptions struct {
 	SchedulerServerOptions scheduler_server.Options
 	ExecutionServerOptions execution_server.Options
+	GRPCPort               int
+
+	// EnvModifier modifies the environment before starting the BuildBuddy server.
+	EnvModifier func(env *testenv.TestEnv)
 }
 
 // buildBuddyServerEnv is a specialized environment that allows us to return a random SchedulerClient for every
@@ -156,39 +186,54 @@ type BuildBuddyServer struct {
 	env  *buildBuddyServerEnv
 	port int
 
-	schedulerServer *scheduler_server.SchedulerServer
-	executionServer repb.ExecutionServer
+	schedulerServer         *scheduler_server.SchedulerServer
+	executionServer         repb.ExecutionServer
+	buildBuddyServiceServer *buildbuddy_server.BuildBuddyServer
+	buildEventServer        *build_event_server.BuildEventProtocolServer
 
 	// Clients used by test framework.
-	executionClient  repb.ExecutionClient
-	casClient        repb.ContentAddressableStorageClient
-	byteStreamClient bspb.ByteStreamClient
-	schedulerClient  scpb.SchedulerClient
+	executionClient         repb.ExecutionClient
+	casClient               repb.ContentAddressableStorageClient
+	acClient                repb.ActionCacheClient
+	byteStreamClient        bspb.ByteStreamClient
+	schedulerClient         scpb.SchedulerClient
+	buildBuddyServiceClient bbspb.BuildBuddyServiceClient
 }
 
 func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBuddyServerOptions) *BuildBuddyServer {
-	port := app.FreePort(t)
+	port := opts.GRPCPort
+	if port == 0 {
+		port = app.FreePort(t)
+	}
 	opts.SchedulerServerOptions.LocalPortOverride = int32(port)
 
-	env.SetAuthenticator(newTestAuthenticator())
+	env.SetAuthenticator(env.rbeEnv.newTestAuthenticator())
 	router, err := task_router.New(env)
-	require.NoError(t, err)
+	require.NoError(t, err, "could not set up TaskRouter")
 	env.SetTaskRouter(router)
 	scheduler, err := scheduler_server.NewSchedulerServerWithOptions(env, &opts.SchedulerServerOptions)
-	if err != nil {
-		assert.FailNowf(t, "could not setup SchedulerServer", err.Error())
-	}
+	require.NoError(t, err, "could not set up SchedulerServer")
 	executionServer, err := execution_server.NewExecutionServerWithOptions(env, &opts.ExecutionServerOptions)
-	if err != nil {
-		assert.FailNowf(t, "could not setup ExecutionServer", err.Error())
+	require.NoError(t, err, "could not set up ExecutionServer")
+	env.SetRemoteExecutionService(executionServer)
+	buildBuddyServiceServer, err := buildbuddy_server.NewBuildBuddyServer(env, nil /*=sslService*/)
+	require.NoError(t, err, "could not set up BuildBuddyServiceServer")
+	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env)
+	require.NoError(t, err, "could not set up BuildEventProtocolServer")
+	env.SetBuildEventHandler(build_event_handler.NewBuildEventHandler(env))
+
+	if opts.EnvModifier != nil {
+		opts.EnvModifier(env.TestEnv)
 	}
 
 	server := &BuildBuddyServer{
-		t:               t,
-		env:             env,
-		port:            port,
-		schedulerServer: scheduler,
-		executionServer: executionServer,
+		t:                       t,
+		env:                     env,
+		port:                    port,
+		schedulerServer:         scheduler,
+		executionServer:         executionServer,
+		buildBuddyServiceServer: buildBuddyServiceServer,
+		buildEventServer:        buildEventServer,
 	}
 	server.start()
 
@@ -197,9 +242,12 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 		assert.FailNowf(t, "could not connect to BuildBuddy server", err.Error())
 	}
 	server.executionClient = repb.NewExecutionClient(clientConn)
+	env.SetRemoteExecutionClient(server.executionClient)
 	server.casClient = repb.NewContentAddressableStorageClient(clientConn)
+	server.acClient = repb.NewActionCacheClient(clientConn)
 	server.byteStreamClient = bspb.NewByteStreamClient(clientConn)
 	server.schedulerClient = scpb.NewSchedulerClient(clientConn)
+	server.buildBuddyServiceClient = bbspb.NewBuildBuddyServiceClient(clientConn)
 
 	return server
 }
@@ -216,6 +264,8 @@ func (s *BuildBuddyServer) start() {
 	s.env.SetSchedulerService(s.schedulerServer)
 	scpb.RegisterSchedulerServer(grpcServer, s.schedulerServer)
 	repb.RegisterExecutionServer(grpcServer, s.executionServer)
+	bbspb.RegisterBuildBuddyServiceServer(grpcServer, s.buildBuddyServiceServer)
+	pepb.RegisterPublishBuildEventServer(grpcServer, s.buildEventServer)
 
 	byteStreamServer, err := byte_stream_server.NewByteStreamServer(s.env)
 	if err != nil {
@@ -366,12 +416,10 @@ func (r *Env) AddBuildBuddyServers(n int) {
 func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *BuildBuddyServer {
 	envOpts := &enterprise_testenv.Options{RedisTarget: r.redisTarget}
 	env := &buildBuddyServerEnv{TestEnv: enterprise_testenv.GetCustomTestEnv(r.t, envOpts), rbeEnv: r}
+	// We're using an in-memory SQLite database so we need to make sure all servers share the same handle.
+	env.SetDBHandle(r.testEnv.GetDBHandle())
 
 	server := newBuildBuddyServer(r.t, env, opts)
-	// We're using an in-memory SQLite database so we need to make sure all servers share the same handle.
-	if len(r.buildBuddyServers) > 0 {
-		server.env.SetDBHandle(r.buildBuddyServers[0].env.GetDBHandle())
-	}
 	r.buildBuddyServers = append(r.buildBuddyServers, server)
 	return server
 }
@@ -464,7 +512,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 	env.SetSchedulerClient(scpb.NewSchedulerClient(clientConn))
-	env.SetAuthenticator(newTestAuthenticator())
+	env.SetAuthenticator(r.newTestAuthenticator())
 
 	executorConfig := env.GetConfigurator().GetExecutorConfig()
 	fc, err := filecache.NewFileCache(executorConfig.LocalCacheDirectory, executorConfig.LocalCacheSizeBytes)
@@ -548,8 +596,8 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	return executor
 }
 
-func newTestAuthenticator() *testauth.TestAuthenticator {
-	users := testauth.TestUsers(TestUserID1, "GR1")
+func (r *Env) newTestAuthenticator() *testauth.TestAuthenticator {
+	users := testauth.TestUsers(r.UserID1, r.GroupID1)
 	users[ExecutorAPIKey] = &testauth.TestUser{
 		GroupID:       "GR123",
 		AllowedGroups: []string{"GR123"},
@@ -643,7 +691,7 @@ func (c *Command) Wait() *CommandResult {
 				assert.FailNowf(c.env.t, fmt.Sprintf("command %q did not finish succesfully", c.Name), status.Err.Error())
 			}
 			ctx := context.Background()
-			ctx = c.env.withUserID(ctx, c.userID)
+			ctx = c.env.WithUserID(ctx, c.userID)
 			stdout, stderr, err := c.rbeClient.GetStdoutAndStderr(ctx, status)
 			if err != nil {
 				assert.FailNowf(c.env.t, "could not fetch outputs", err.Error())
@@ -736,7 +784,7 @@ func (r *Env) ExecuteCustomCommand(args ...string) *Command {
 	return r.Execute(minimalCommand(args...), &ExecuteOpts{})
 }
 
-func (r *Env) withUserID(ctx context.Context, userID string) context.Context {
+func (r *Env) WithUserID(ctx context.Context, userID string) context.Context {
 	ctx = r.testEnv.GetAuthenticator().AuthContextFromAPIKey(ctx, userID)
 	jwt, _ := testauth.TestJWTForUserID(userID)
 	ctx = metadata.AppendToOutgoingContext(
@@ -758,7 +806,7 @@ type ExecuteOpts struct {
 func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 	ctx := context.Background()
 	if opts.UserID != "" {
-		ctx = r.withUserID(ctx, opts.UserID)
+		ctx = r.WithUserID(ctx, opts.UserID)
 	}
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.testEnv)

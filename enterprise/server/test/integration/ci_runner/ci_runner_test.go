@@ -83,7 +83,6 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	cmd.Env = append(cmd.Env, env...)
 	cmd.Env = append(cmd.Env, []string{
 		fmt.Sprintf("BAZEL_COMMAND=%s", bazelPath),
-		fmt.Sprintf("HOME=%s", filepath.Join(workDir, ".home")),
 	}...)
 	outputBytes, err := cmd.CombinedOutput()
 	exitCode := 0

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	"github.com/stretchr/testify/require"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 )
@@ -18,12 +19,16 @@ const (
 	BazelBinaryPath = "server/util/bazel/bazel-4.1"
 )
 
+// BinaryPath returns the path to the bazel binary.
+func BinaryPath(t *testing.T) string {
+	path, err := bazelgo.Runfile(BazelBinaryPath)
+	require.NoError(t, err, "look up bazel binary path")
+	return path
+}
+
 // Invoke the bazel CLI from within the given workspace dir.
 func Invoke(ctx context.Context, t *testing.T, workspaceDir string, subCommand string, args ...string) *bazel.InvocationResult {
-	bazelBinaryPath, err := bazelgo.Runfile(BazelBinaryPath)
-	if err != nil {
-		return &bazel.InvocationResult{Error: err}
-	}
+	bazelBinaryPath := BinaryPath(t)
 	return bazel.Invoke(ctx, bazelBinaryPath, workspaceDir, subCommand, args...)
 }
 

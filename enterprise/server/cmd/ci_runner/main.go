@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path"
 	"regexp"
 	"strings"
 	"sync"
@@ -115,6 +116,14 @@ func main() {
 
 	ctx := context.Background()
 
+	// Bazel needs a HOME dir; ensure that one is set.
+	if err := ensureHomeDir(); err != nil {
+		fatal(status.WrapError(err, "ensure HOME"))
+	}
+	// Make sure PATH is set.
+	if err := ensurePath(); err != nil {
+		fatal(status.WrapError(err, "ensure PATH"))
+	}
 	if err := setupGitRepo(ctx); err != nil {
 		fatal(status.WrapError(err, "failed to set up git repo"))
 	}
@@ -127,7 +136,6 @@ func main() {
 	if err != nil {
 		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
 	}
-
 	RunAllActions(ctx, cfg, im)
 }
 
@@ -163,7 +171,7 @@ func RunAllActions(ctx context.Context, cfg *config.BuildBuddyConfig, im *initMe
 				continue
 			}
 		} else if !matchesAnyTrigger(action, *triggerEvent, *triggerBranch) {
-			log.Printf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *triggerBranch, actionDebugString(action))
+			log.Debugf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *triggerBranch, actionDebugString(action))
 			continue
 		}
 
@@ -698,6 +706,26 @@ func bazelCommand() string {
 	return bazeliskBinaryName
 }
 
+func ensureHomeDir() error {
+	if os.Getenv("HOME") != "" {
+		return nil
+	}
+	os.MkdirAll(".home", 0777)
+	wd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	os.Setenv("HOME", path.Join(wd, ".home"))
+	return nil
+}
+
+func ensurePath() error {
+	if os.Getenv("PATH") != "" {
+		return nil
+	}
+	return os.Setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+}
+
 func setupGitRepo(ctx context.Context) error {
 	repoDirInfo, err := os.Stat(repoDirName)
 	if err != nil && !os.IsNotExist(err) {
@@ -723,7 +751,7 @@ func setupGitRepo(ctx context.Context) error {
 		}
 	}
 
-	if err := os.Mkdir(repoDirName, 0o775); err != nil {
+	if err := os.Mkdir(repoDirName, 0o777); err != nil {
 		return status.WrapErrorf(err, "mkdir %q", repoDirName)
 	}
 
