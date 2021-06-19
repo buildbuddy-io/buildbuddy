@@ -341,6 +341,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if err := perms.AuthorizeRead(&user, wfACL); err != nil {
 		return nil, err
 	}
+
 	// Execute
 	repoURL, err := gitutil.ParseRepoURL(wf.RepoURL)
 	if err != nil {
@@ -645,9 +646,11 @@ func runnerBinaryFile() (*os.File, error) {
 }
 
 func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Workflow) (*tables.APIKey, error) {
+	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
+	q.AddWhereClause("group_id = ?", wf.GroupID)
+	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}
-	err := ws.env.GetDBHandle().Raw(`SELECT * FROM APIKeys WHERE group_id = ?`, wf.GroupID).Take(&k).Error
-	if err != nil {
+	if err := ws.env.GetDBHandle().Raw(qStr, qArgs...).Take(&k).Error; err != nil {
 		return nil, err
 	}
 	return k, nil

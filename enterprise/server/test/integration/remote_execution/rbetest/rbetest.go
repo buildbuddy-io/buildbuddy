@@ -102,10 +102,6 @@ func (r *Env) GetContentAddressableStorageClient() repb.ContentAddressableStorag
 	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].casClient
 }
 
-func (r *Env) GetActionCacheClient() repb.ActionCacheClient {
-	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].acClient
-}
-
 func (r *Env) uploadInputRoot(ctx context.Context, rootDir string) *repb.Digest {
 	r.testEnv.SetByteStreamClient(r.GetByteStreamClient())
 	r.testEnv.SetContentAddressableStorageClient(r.GetContentAddressableStorageClient())
@@ -138,7 +134,8 @@ func NewRBETestEnv(t *testing.T) *Env {
 	redisTarget := testredis.Start(t)
 	envOpts := &enterprise_testenv.Options{RedisTarget: redisTarget}
 	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
-	// Create a group in the DB.
+	// Create a group for use in tests (this will also create an API key for the
+	// group).
 	orgURLID := "test"
 	userID := "US1"
 	groupID, err := testEnv.GetUserDB().InsertOrUpdateGroup(context.Background(), &tables.Group{
@@ -194,7 +191,6 @@ type BuildBuddyServer struct {
 	// Clients used by test framework.
 	executionClient         repb.ExecutionClient
 	casClient               repb.ContentAddressableStorageClient
-	acClient                repb.ActionCacheClient
 	byteStreamClient        bspb.ByteStreamClient
 	schedulerClient         scpb.SchedulerClient
 	buildBuddyServiceClient bbspb.BuildBuddyServiceClient
@@ -244,7 +240,6 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	server.executionClient = repb.NewExecutionClient(clientConn)
 	env.SetRemoteExecutionClient(server.executionClient)
 	server.casClient = repb.NewContentAddressableStorageClient(clientConn)
-	server.acClient = repb.NewActionCacheClient(clientConn)
 	server.byteStreamClient = bspb.NewByteStreamClient(clientConn)
 	server.schedulerClient = scpb.NewSchedulerClient(clientConn)
 	server.buildBuddyServiceClient = bbspb.NewBuildBuddyServiceClient(clientConn)

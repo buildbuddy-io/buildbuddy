@@ -136,6 +136,7 @@ func main() {
 	if err != nil {
 		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
 	}
+
 	RunAllActions(ctx, cfg, im)
 }
 
