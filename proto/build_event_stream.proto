@@ -49,11 +49,13 @@ message BuildEventId {
 
   // Identifier of an event indicating the beginning of a build; this will
   // normally be the first event.
-  message BuildStartedId {}
+  message BuildStartedId {
+  }
 
   // Identifier on an event indicating the original commandline received by
   // the bazel server.
-  message UnstructuredCommandLineId {}
+  message UnstructuredCommandLineId {
+  }
 
   // Identifier on an event describing the commandline received by Bazel.
   message StructuredCommandLineId {
@@ -65,11 +67,13 @@ message BuildEventId {
   }
 
   // Identifier of an event indicating the workspace status.
-  message WorkspaceStatusId {}
+  message WorkspaceStatusId {
+  }
 
   // Identifier on an event reporting on the options included in the command
   // line, both explicitly and implicitly.
-  message OptionsParsedId {}
+  message OptionsParsedId {
+  }
 
   // Identifier of an event reporting that an external resource was fetched
   // from.
@@ -88,9 +92,11 @@ message BuildEventId {
     repeated string pattern = 1;
   }
 
-  message WorkspaceConfigId {}
+  message WorkspaceConfigId {
+  }
 
-  message BuildMetadataId {}
+  message BuildMetadataId {
+  }
 
   // Identifier of an event indicating that a target has been expanded by
   // identifying for which configurations it should be build.
@@ -180,24 +186,29 @@ message BuildEventId {
   }
 
   // Identifier of the BuildFinished event, indicating the end of a build.
-  message BuildFinishedId {}
+  message BuildFinishedId {
+  }
 
   // Identifier of an event providing additional logs/statistics after
   // completion of the build.
-  message BuildToolLogsId {}
+  message BuildToolLogsId {
+  }
 
   // Identifier of an event providing build metrics after completion
   // of the build.
-  message BuildMetricsId {}
+  message BuildMetricsId {
+  }
 
   // Identifier of an event providing convenience symlinks information.
-  message ConvenienceSymlinksIdentifiedId {}
+  message ConvenienceSymlinksIdentifiedId {
+  }
 
   // BUILDBUDDY-SPECIFIC EVENTS BELOW
 
   // Identifier of an event providing a list of bazel commands that are
   // run as part of a BuildBuddy workflow.
-  message WorkflowConfiguredId {}
+  message WorkflowConfiguredId {
+  }
 
   // Identifier of an event providing the status of a completed invocation
   // within a BuildBuddy workflow.
@@ -403,7 +414,8 @@ message Configuration {
 // The main information is in the chaining part: the id will contain the
 // target pattern that was expanded and the children id will contain the
 // target or target pattern it was expanded to.
-message PatternExpanded {}
+message PatternExpanded {
+}
 
 // Enumeration type characterizing the size of a test, as specified by the
 // test rule.

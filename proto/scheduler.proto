@@ -150,26 +150,33 @@ message RegisterAndStreamWorkResponse {
 service Scheduler {
   // Deprecated. Being replaced by RegisterAndStreamWork which allows task
   // reservations to be sent via the stream.
-  rpc RegisterNode(stream RegisterNodeRequest) returns (RegisterNodeResponse) {}
+  rpc RegisterNode(stream RegisterNodeRequest) returns (RegisterNodeResponse) {
+  }
 
   rpc RegisterAndStreamWork(stream RegisterAndStreamWorkRequest)
-      returns (stream RegisterAndStreamWorkResponse) {}
+      returns (stream RegisterAndStreamWorkResponse) {
+  }
 
-  rpc LeaseTask(stream LeaseTaskRequest) returns (stream LeaseTaskResponse) {}
+  rpc LeaseTask(stream LeaseTaskRequest) returns (stream LeaseTaskResponse) {
+  }
 
-  rpc ScheduleTask(ScheduleTaskRequest) returns (ScheduleTaskResponse) {}
+  rpc ScheduleTask(ScheduleTaskRequest) returns (ScheduleTaskResponse) {
+  }
 
-  rpc ReEnqueueTask(ReEnqueueTaskRequest) returns (ReEnqueueTaskResponse) {}
+  rpc ReEnqueueTask(ReEnqueueTaskRequest) returns (ReEnqueueTaskResponse) {
+  }
 
   // Request to enqueue a task reservation for an existing task to a locally
   // chosen executor.
   rpc EnqueueTaskReservation(EnqueueTaskReservationRequest)
-      returns (EnqueueTaskReservationResponse) {}
+      returns (EnqueueTaskReservationResponse) {
+  }
 }
 
 service QueueExecutor {
   rpc EnqueueTaskReservation(EnqueueTaskReservationRequest)
-      returns (EnqueueTaskReservationResponse) {}
+      returns (EnqueueTaskReservationResponse) {
+  }
 }
 
 message ExecutionNode {

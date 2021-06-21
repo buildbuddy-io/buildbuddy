@@ -23,5 +23,6 @@ message RegisterCommandRequest {
 service CommandController {
   // Registers with the controller for as long as the stream is open.
   rpc RegisterCommand(RegisterCommandRequest)
-      returns (stream ControllerToCommandRequest) {}
+      returns (stream ControllerToCommandRequest) {
+  }
 }

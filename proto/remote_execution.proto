@@ -133,7 +133,8 @@ service Execution {
   }
 }
 
-message PublishOperationResponse {}
+message PublishOperationResponse {
+}
 
 // The action cache API is used to query whether a given action has already been
 // performed and, if so, retrieve its result. Unlike the
