@@ -68,9 +68,8 @@ const (
 
 	// Bazel binary constants
 
-	bazelBinaryName                = "bazel"
-	bazeliskBinaryName             = "bazelisk"
-	bazelCommandOverrideEnvVarName = "BAZEL_COMMAND"
+	bazelBinaryName    = "bazel"
+	bazeliskBinaryName = "bazelisk"
 
 	// ANSI codes for cases where the aurora equivalent is not supported by our UI
 	// (ex: aurora's "grayscale" mode results in some ANSI codes that we don't currently
@@ -92,7 +91,8 @@ var (
 	actionName    = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	invocationID  = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 
-	debug = flag.Bool("debug", false, "Print additional debug information in the action logs.")
+	bazelCommand = flag.String("bazel_command", "", "Bazel command to use instead of `bazelisk`.")
+	debug        = flag.Bool("debug", false, "Print additional debug information in the action logs.")
 
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
@@ -577,7 +577,7 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 		// time. The UI is expecting this invocation ID so that it can render a
 		// BuildBuddy invocation URL for each bazel_command that is executed.
 		args = append(args, fmt.Sprintf("--invocation_id=%s", iid))
-		runErr := runCommand(ctx, bazelCommand(), args /*env=*/, nil, ar.log)
+		runErr := runCommand(ctx, getBazelCommand(), args /*env=*/, nil, ar.log)
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
 			ar.log.Printf("%s(command exited with code %d)%s", ansiGray, exitCode, ansiReset)
@@ -700,9 +700,9 @@ func bazelArgs(cmd string) ([]string, error) {
 	return tokens, nil
 }
 
-func bazelCommand() string {
-	if override := os.Getenv(bazelCommandOverrideEnvVarName); override != "" {
-		return override
+func getBazelCommand() string {
+	if *bazelCommand != "" {
+		return *bazelCommand
 	}
 	return bazeliskBinaryName
 }

@@ -67,6 +67,7 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	if err != nil {
 		t.Fatal(err)
 	}
+	args = append(args, "--bazel_command="+bazelPath)
 
 	cmd := exec.Command(binPath, args...)
 	cmd.Dir = workDir
@@ -74,9 +75,6 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	// TODO: Make this closer to the real deployed runner setup.
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, env...)
-	cmd.Env = append(cmd.Env, []string{
-		fmt.Sprintf("BAZEL_COMMAND=%s", bazelPath),
-	}...)
 	outputBytes, err := cmd.CombinedOutput()
 	exitCode := 0
 	if err != nil {

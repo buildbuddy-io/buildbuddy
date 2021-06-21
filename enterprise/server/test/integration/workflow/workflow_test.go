@@ -3,6 +3,8 @@ package workflows_test
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strconv"
 	"testing"
 	"time"
 
@@ -15,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -28,19 +29,31 @@ import (
 var (
 	simpleRepoContents = map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
+		"BUILD": `
+sh_binary(
+    name = "nop",
+    srcs = ["nop.sh"],
+)
+`,
+		"nop.sh": ``,
 		"buildbuddy.yaml": `
 actions:
   - name: "Version"
     triggers: { push: { branches: [ master ] } }
-    bazel_commands: [ version ]
+    bazel_commands: [ "build //:nop" ]
 `,
 	}
 )
 
 func newWorkflowsTestEnv(t *testing.T, gp interfaces.GitProvider) *rbetest.Env {
 	port := app.FreePort(t)
+	// Set events_api_url to point to the test BB app server (this gets
+	// propagated to the CI runner so it knows where to publish build events).
 	flags.Set(t, "app.events_api_url", fmt.Sprintf("grpc://localhost:%d", port))
+	// Use bare execution -- Docker isn't supported in tests yet.
 	flags.Set(t, "remote_execution.workflows_default_image", "none")
+	// Use a pre-built bazel instead of invoking bazelisk, which significantly
+	// slows down the test.
 	flags.Set(t, "remote_execution.workflows_ci_runner_bazel_command", testbazel.BinaryPath(t))
 
 	env := rbetest.NewRBETestEnv(t)
@@ -52,7 +65,7 @@ func newWorkflowsTestEnv(t *testing.T, gp interfaces.GitProvider) *rbetest.Env {
 			env.SetWorkflowService(service.NewWorkflowService(env))
 		},
 	})
-	env.AddExecutors(2)
+	env.AddExecutors(10)
 	return env
 }
 
@@ -74,6 +87,16 @@ func waitForInvocationComplete(t *testing.T, ctx context.Context, bb bbspb.Build
 
 		<-time.After(50 * time.Millisecond)
 	}
+}
+
+func actionCount(t *testing.T, inv *inpb.Invocation) int {
+	re := regexp.MustCompile(`([\d]+) total actions?`)
+	matches := re.FindAllStringSubmatch(inv.GetConsoleBuffer(), -1)
+	require.NotEmpty(t, matches)
+	nStr := matches[0][1]
+	n, err := strconv.Atoi(nStr)
+	require.NoError(t, err)
+	return n
 }
 
 func TestCreateAndExecute(t *testing.T) {
@@ -109,8 +132,31 @@ func TestCreateAndExecute(t *testing.T) {
 
 	inv := waitForInvocationComplete(t, ctx, bb, reqCtx, execResp.GetInvocationId())
 
-	assert.True(t, inv.GetSuccess())
-	assert.Equal(t, repoURL, inv.GetRepoUrl())
-	assert.Equal(t, commitSHA, inv.GetCommitSha())
-	assert.Equal(t, "CI_RUNNER", inv.GetRole())
+	require.True(t, inv.GetSuccess(), "workflow invocation should succeed")
+	require.Equal(t, repoURL, inv.GetRepoUrl())
+	require.Equal(t, commitSHA, inv.GetCommitSha())
+	require.Equal(t, "CI_RUNNER", inv.GetRole())
+	nActionsFirstRun := actionCount(t, inv)
+
+	// Now run the workflow again and make sure the build is cached.
+
+	execResp, err = bb.ExecuteWorkflow(ctx, &wfpb.ExecuteWorkflowRequest{
+		RequestContext: reqCtx,
+		WorkflowId:     createResp.GetId(),
+		ActionName:     "Version",
+		CommitSha:      commitSHA,
+		Branch:         "master",
+	})
+
+	require.NoError(t, err)
+	require.NotEmpty(t, execResp.GetInvocationId())
+
+	inv = waitForInvocationComplete(t, ctx, bb, reqCtx, execResp.GetInvocationId())
+
+	require.True(t, inv.GetSuccess(), "workflow invocation should succeed")
+	nActionsSecondRun := actionCount(t, inv)
+	require.Less(
+		t, nActionsSecondRun, nActionsFirstRun,
+		"should execute fewer actions on second run since build should be cached",
+	)
 }
