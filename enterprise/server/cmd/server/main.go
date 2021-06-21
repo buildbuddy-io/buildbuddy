@@ -45,7 +45,7 @@ import (
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	bundle "github.com/buildbuddy-io/enterprise/bundle"
+	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 )
 
 var (

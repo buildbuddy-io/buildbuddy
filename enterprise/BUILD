@@ -55,7 +55,7 @@ go_library(
             "//static",
         ],
     }),
-    importpath = "github.com/buildbuddy-io/enterprise/bundle",
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise",
     visibility = ["//enterprise/server/cmd/server:__subpackages__"],
     deps = [
         "//server/util/log",
