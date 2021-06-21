@@ -24,10 +24,12 @@ type InvocationResult struct {
 }
 
 type bazelStderrHandler struct {
+	stderrBuffer bytes.Buffer
 	invocationID string
 }
 
 func (w *bazelStderrHandler) Write(b []byte) (int, error) {
+	w.stderrBuffer.Write(b)
 	line := string(b)
 	if m := invocationIDRegexp.FindAllStringSubmatch(line, -1); len(m) > 0 {
 		w.invocationID = m[0][1]
@@ -43,7 +45,7 @@ func Invoke(ctx context.Context, bazelBinary string, workspaceDir string, subCom
 	// See https://docs.bazel.build/versions/master/guide.html#clientserver-implementation
 	bazelArgs := []string{"--max_idle_secs=5", subCommand}
 	bazelArgs = append(bazelArgs, args...)
-	var stderr, stdout bytes.Buffer
+	var stdout bytes.Buffer
 	cmd := exec.CommandContext(ctx, bazelBinary, bazelArgs...)
 	cmd.Stdout = &stdout
 	stderrHandler := &bazelStderrHandler{}
@@ -61,7 +63,7 @@ func Invoke(ctx context.Context, bazelBinary string, workspaceDir string, subCom
 	}
 	return &InvocationResult{
 		Stdout:       string(stdout.Bytes()),
-		Stderr:       string(stderr.Bytes()),
+		Stderr:       stderrHandler.stderrBuffer.String(),
 		InvocationID: stderrHandler.invocationID,
 		Error:        err,
 	}
