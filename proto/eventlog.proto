@@ -13,23 +13,23 @@ message GetEventLogChunkRequest {
   // The invocation identifier itself.
   string invocation_id = 2;
 
-  message OptionalChunklID {
-    int32 value = 1;
-  }
-
-  // Optionally specify the chunk to be returned; gets the last chunk if unset
-  OptionalChunkID chunk_id = 3;
+  // Optionally specify the chunk to be returned; gets the last chunk if empty
+  string chunk_id = 3;
 }
 
 message GetEventLogChunkResponse {
   // The response context.
   context.ResponseContext response_context = 1;
 
+  // The surrounding chunk ids. Empty if no such chunk exists
+  string previous_chunk_id = 2;
+  string next_chunk_id = 3;
+
   message Chunk {
-    int32 chunk_id = 1;
+    string chunk_id = 1;
     bytes buffer = 2;
   }
 
   // The requested chunk
-  Chunk chunk = 2;
+  Chunk chunk = 4;
 }
