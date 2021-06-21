@@ -1,11 +1,5 @@
-.settings {
-  margin-top: 32px;
-}
-
-.settings-title {
-  font-size: 32px;
-  font-weight: 700;
-  margin-bottom: 16px;
+.settings .title.settings-title {
+  margin-bottom: 0;
 }
 
 .settings-section {
@@ -27,7 +21,6 @@
 .settings-option-title {
   font-weight: 600;
   font-size: 18px;
-  margin-top: 48px;
 }
 
 .settings-option-description {
@@ -48,14 +41,113 @@
   cursor: inherit;
 }
 
-.settings .organization-form {
-  margin-top: 16px;
-}
-
 .settings .organization-form .settings-option-title {
   margin-top: 0;
 }
 
-.settings .api-keys-section {
+.settings .settings-layout {
+  display: flex;
+  padding: 32px 0;
+}
+
+.settings .settings-tabs {
+  margin-right: 32px;
+  width: 200px;
+}
+
+.settings .settings-content {
+  width: 768px;
+  max-width: 100%;
+}
+
+.settings .settings-tab-group {
+  --border: 1px solid #607d8b;
+
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  border: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.settings .settings-tab-group > :not(:last-child) {
+  border-bottom: var(--border);
+}
+
+.settings .settings-tab-group-header {
+  margin-bottom: 8px;
+}
+
+.settings .settings-tab-group-title {
+  font-weight: 600;
+}
+
+.settings .settings-tab-group-subtitle {
+  color: #616161;
+  white-space: nowrap;
+  overflow-x: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings .settings-tab-group-title:not(:first-child) {
   margin-top: 16px;
+}
+
+.settings .settings-tab-group:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.settings .settings-tab {
+  padding: 8px 16px;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 100ms ease-out;
+}
+
+.settings .settings-tab:hover {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.settings .settings-tab:not(.active-tab):hover {
+  background: #f5f5f5;
+}
+
+.settings .settings-tab:active,
+.settings .settings-tab.active-tab {
+  box-shadow: 0 1px 2px inset rgba(0, 0, 0, 0.2);
+}
+
+.settings .settings-tab.active-tab {
+  background: #e0f2f1;
+  color: #004d40;
+}
+
+.settings .settings-tab::before {
+  content: "";
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 3px;
+  background: #009688;
+
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: 100ms ease-out;
+}
+
+.settings .settings-tab.active-tab::before {
+  transform: initial;
+}
+
+.settings .settings-tab:first-child {
+  border-top-left-radius: var(--border-radius);
+  border-top-right-radius: var(--border-radius);
+}
+
+.settings .settings-tab:last-child {
+  border-bottom-left-radius: var(--border-radius);
+  border-bottom-right-radius: var(--border-radius);
 }

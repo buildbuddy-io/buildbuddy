@@ -24,12 +24,12 @@ class Router {
 
   navigateTo(path: string) {
     var newUrl = window.location.protocol + "//" + window.location.host + path;
-    window.history.pushState({ path: newUrl }, "", newUrl);
+    window.history.pushState({}, "", newUrl);
   }
 
   navigateToQueryParam(key: string, value: string) {
     let targetUrl = `?${key}=${value}`;
-    window.history.pushState({ path: targetUrl }, "", targetUrl);
+    window.history.pushState({}, "", targetUrl);
   }
 
   navigateHome(hash?: string) {

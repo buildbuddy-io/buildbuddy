@@ -10,8 +10,7 @@
 }
 
 .organization-form {
-  padding-top: 32px;
-  max-width: 720px;
+  max-width: 600px;
 }
 
 .organization-form .bold {
@@ -103,12 +102,6 @@
   margin-bottom: 16px;
 }
 
-.organization-edit-form {
-  padding: 16px;
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  border-radius: 8px;
-}
-
 .organization-edit-form .organization-form-submit-button {
   margin-bottom: 0;
 }
@@ -119,7 +112,7 @@
   padding: 16px;
   display: inline-flex;
   align-items: center;
-  margin-top: 16px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
 }
 
