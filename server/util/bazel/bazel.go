@@ -34,7 +34,7 @@ func (w *bazelStderrHandler) Write(b []byte) (int, error) {
 	if m := invocationIDRegexp.FindAllStringSubmatch(line, -1); len(m) > 0 {
 		w.invocationID = m[0][1]
 	}
-	log.Infof("[bazel] %s", strings.TrimSuffix(string(b), "\n"))
+	log.Infof("[bazel] %s", strings.TrimSuffix(line, "\n"))
 	return len(b), nil
 }
 
