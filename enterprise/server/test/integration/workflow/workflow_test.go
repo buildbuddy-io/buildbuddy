@@ -38,7 +38,7 @@ sh_binary(
 		"nop.sh": ``,
 		"buildbuddy.yaml": `
 actions:
-  - name: "Version"
+  - name: "Test action"
     triggers: { push: { branches: [ master ] } }
     bazel_commands: [ "build //:nop" ]
 `,
@@ -119,13 +119,15 @@ func TestCreateAndExecute(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, createResp.GetId())
 
-	execResp, err := bb.ExecuteWorkflow(ctx, &wfpb.ExecuteWorkflowRequest{
+	execReq := &wfpb.ExecuteWorkflowRequest{
 		RequestContext: reqCtx,
 		WorkflowId:     createResp.GetId(),
-		ActionName:     "Version",
+		ActionName:     "Test action",
 		CommitSha:      commitSHA,
 		Branch:         "master",
-	})
+	}
+
+	execResp, err := bb.ExecuteWorkflow(ctx, execReq)
 
 	require.NoError(t, err)
 	require.NotEmpty(t, execResp.GetInvocationId())
@@ -140,13 +142,7 @@ func TestCreateAndExecute(t *testing.T) {
 
 	// Now run the workflow again and make sure the build is cached.
 
-	execResp, err = bb.ExecuteWorkflow(ctx, &wfpb.ExecuteWorkflowRequest{
-		RequestContext: reqCtx,
-		WorkflowId:     createResp.GetId(),
-		ActionName:     "Version",
-		CommitSha:      commitSHA,
-		Branch:         "master",
-	})
+	execResp, err = bb.ExecuteWorkflow(ctx, execReq)
 
 	require.NoError(t, err)
 	require.NotEmpty(t, execResp.GetInvocationId())
