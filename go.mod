@@ -23,8 +23,9 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/lib/pq v1.5.2 // indirect
 	github.com/logrusorgru/aurora v2.0.3+incompatible
-	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
 	github.com/mattn/go-shellwords v1.0.11
+	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pquerna/cachecontrol v0.0.0-20201205024021-ac21108117ac // indirect
 	github.com/prometheus/client_golang v1.6.0
 	github.com/rs/zerolog v1.20.0
