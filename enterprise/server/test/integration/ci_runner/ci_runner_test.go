@@ -55,14 +55,7 @@ type result struct {
 }
 
 func makeRunnerWorkspace(t *testing.T) string {
-	wsDir := testbazel.MakeTempWorkspace(t, nil /*=contents*/)
-	// Need a home dir so bazel commands invoked by the runner know where to put
-	// their local cache.
-	homeDir := filepath.Join(wsDir, ".home")
-	if err := os.Mkdir(homeDir, 0777); err != nil {
-		t.Fatal(err)
-	}
-	return wsDir
+	return testbazel.MakeTempWorkspace(t, nil /*=contents*/)
 }
 
 func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
