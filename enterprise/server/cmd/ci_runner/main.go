@@ -91,7 +91,7 @@ var (
 	actionName    = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	invocationID  = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 
-	bazelCommand = flag.String("bazel_command", bazeliskBinaryName, "Bazel command to use instead of `bazelisk`.")
+	bazelCommand = flag.String("bazel_command", bazeliskBinaryName, "Bazel command to use.")
 	debug        = flag.Bool("debug", false, "Print additional debug information in the action logs.")
 
 	// Test-only flags
