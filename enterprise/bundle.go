@@ -1,4 +1,4 @@
-package buildbuddy
+package enterprise
 
 import (
 	"embed"
