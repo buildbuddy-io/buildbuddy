@@ -4,9 +4,7 @@ import (
 	"context"
 	"io/ioutil"
 	"os"
-	"path"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
