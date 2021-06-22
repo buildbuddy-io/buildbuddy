@@ -14,7 +14,6 @@ go_test(
         "//proto:workflow_go_proto",
         "//server/backends/repo_downloader",
         "//server/interfaces",
-        "//server/testutil/app",
         "//server/testutil/testbazel",
         "//server/testutil/testenv",
         "//server/util/testing/flags",
