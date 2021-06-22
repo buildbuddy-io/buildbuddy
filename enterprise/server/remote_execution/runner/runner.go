@@ -51,7 +51,7 @@ const (
 	removed
 
 	// How long to spend waiting for a runner to be removed before giving up.
-	runnerCleanupTimeout = 2 * time.Second
+	runnerCleanupTimeout = 30 * time.Second
 	// Allowed time to spend trying to pause a runner and add it to the pool.
 	runnerRecycleTimeout = 15 * time.Second
 
