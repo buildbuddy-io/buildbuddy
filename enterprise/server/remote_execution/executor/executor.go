@@ -53,10 +53,6 @@ const (
 	uploadDeadlineExtension = time.Minute * 1
 )
 
-var (
-	once sync.Once
-)
-
 type Executor struct {
 	env        environment.Env
 	runnerPool *runner.Pool
