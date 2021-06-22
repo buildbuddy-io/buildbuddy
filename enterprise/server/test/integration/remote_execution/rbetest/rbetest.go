@@ -161,7 +161,6 @@ func NewRBETestEnv(t *testing.T) *Env {
 type BuildBuddyServerOptions struct {
 	SchedulerServerOptions scheduler_server.Options
 	ExecutionServerOptions execution_server.Options
-	GRPCPort               int
 
 	// EnvModifier modifies the environment before starting the BuildBuddy server.
 	EnvModifier func(env *testenv.TestEnv)
@@ -197,10 +196,7 @@ type BuildBuddyServer struct {
 }
 
 func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBuddyServerOptions) *BuildBuddyServer {
-	port := opts.GRPCPort
-	if port == 0 {
-		port = app.FreePort(t)
-	}
+	port := app.FreePort(t)
 	opts.SchedulerServerOptions.LocalPortOverride = int32(port)
 
 	env.SetAuthenticator(env.rbeEnv.newTestAuthenticator())
@@ -281,6 +277,10 @@ func (s *BuildBuddyServer) start() {
 	repb.RegisterActionCacheServer(grpcServer, acServer)
 
 	go grpcServerRunFunc()
+}
+
+func (s *BuildBuddyServer) GRPCPort() int {
+	return s.port
 }
 
 type testCommandController struct {

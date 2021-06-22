@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -46,25 +45,24 @@ actions:
 )
 
 func newWorkflowsTestEnv(t *testing.T, gp interfaces.GitProvider) *rbetest.Env {
-	port := app.FreePort(t)
-	// Set events_api_url to point to the test BB app server (this gets
-	// propagated to the CI runner so it knows where to publish build events).
-	flags.Set(t, "app.events_api_url", fmt.Sprintf("grpc://localhost:%d", port))
-	// Use bare execution -- Docker isn't supported in tests yet.
-	flags.Set(t, "remote_execution.workflows_default_image", "none")
-	// Use a pre-built bazel instead of invoking bazelisk, which significantly
-	// slows down the test.
-	flags.Set(t, "remote_execution.workflows_ci_runner_bazel_command", testbazel.BinaryPath(t))
-
 	env := rbetest.NewRBETestEnv(t)
-	env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
-		GRPCPort: port,
+
+	bbServer := env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		EnvModifier: func(env *testenv.TestEnv) {
 			env.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 			env.SetGitProviders([]interfaces.GitProvider{gp})
 			env.SetWorkflowService(service.NewWorkflowService(env))
 		},
 	})
+	// Use bare execution -- Docker isn't supported in tests yet.
+	flags.Set(t, "remote_execution.workflows_default_image", "none")
+	// Use a pre-built bazel instead of invoking bazelisk, which significantly
+	// slows down the test.
+	flags.Set(t, "remote_execution.workflows_ci_runner_bazel_command", testbazel.BinaryPath(t))
+	// Set events_api_url to point to the test BB app server (this gets
+	// propagated to the CI runner so it knows where to publish build events).
+	flags.Set(t, "app.events_api_url", fmt.Sprintf("grpc://localhost:%d", bbServer.GRPCPort()))
+
 	env.AddExecutors(10)
 	return env
 }
