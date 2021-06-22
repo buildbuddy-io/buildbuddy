@@ -25,7 +25,7 @@ http_archive(
     ],
 )
 
-load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
+load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
 load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
 
 go_rules_dependencies()
@@ -80,14 +80,6 @@ load("@npm//@bazel/labs:package.bzl", "npm_bazel_labs_dependencies")
 npm_bazel_labs_dependencies()
 
 # Docker
-
-# Temporary workaround for https://github.com/bazelbuild/rules_docker/issues/1814
-# Can be removed after https://github.com/bazelbuild/rules_docker/pull/1829/files is released.
-go_repository(
-    name = "com_github_google_go_containerregistry",
-    commit = "efb2d62d93a7705315b841d0544cb5b13565ff2a",
-    importpath = "github.com/google/go-containerregistry",
-)
 
 http_archive(
     name = "io_bazel_rules_docker",
