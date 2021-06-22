@@ -718,6 +718,8 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 func (p *Pool) remove(r *CommandRunner) {
 	for i := range p.runners {
 		if p.runners[i] == r {
+			// Not using the "swap with last element" trick here because we need to
+			// preserve ordering.
 			p.runners = append(p.runners[:i], p.runners[i+1:]...)
 			break
 		}
