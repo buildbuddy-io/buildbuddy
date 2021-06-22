@@ -129,9 +129,6 @@ type CommandRunner struct {
 	// runner.
 	InstanceName string
 
-	// pool holds a reference to the parent pool that constructed this runner.
-	pool *Pool
-
 	// Container is the handle on the container (possibly the bare /
 	// NOP container) that is used to execute commands.
 	Container container.CommandContainer
