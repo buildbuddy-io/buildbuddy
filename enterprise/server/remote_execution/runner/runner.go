@@ -222,9 +222,8 @@ func (r *CommandRunner) Remove(ctx context.Context) error {
 	return nil
 }
 
-func (r *CommandRunner) RemoveWithDeadline(ctx context.Context) error {
-	deadline := time.Now().Add(runnerCleanupTimeout)
-	ctx, cancel := context.WithDeadline(ctx, deadline)
+func (r *CommandRunner) RemoveWithTimeout(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, runnerCleanupTimeout)
 	defer cancel()
 	return r.Remove(ctx)
 }
@@ -232,7 +231,7 @@ func (r *CommandRunner) RemoveWithDeadline(ctx context.Context) error {
 func (r *CommandRunner) RemoveInBackground() {
 	// TODO: Add to a cleanup queue instead of spawning a goroutine here.
 	go func() {
-		if err := r.RemoveWithDeadline(context.Background()); err != nil {
+		if err := r.RemoveWithTimeout(context.Background()); err != nil {
 			log.Errorf("Failed to remove runner: %s", err)
 		}
 	}()
@@ -643,7 +642,7 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 
 	errs := []error{}
 	for _, r := range pooledRunners {
-		if err := r.RemoveWithDeadline(ctx); err != nil {
+		if err := r.RemoveWithTimeout(ctx); err != nil {
 			errs = append(errs, err)
 		}
 	}
