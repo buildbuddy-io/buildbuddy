@@ -82,6 +82,7 @@ func newTestEnv(t *testing.T) *testenv.TestEnv {
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers(
 		"US1", "GR1",
 		"US2", "GR2",
+		"US3", "GR3",
 	)))
 	return env
 }
@@ -278,21 +279,31 @@ func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T
 func TestRunnerPool_ExceedMaxRunnerCount_OldestRunnerEvicted(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, &config.RunnerPoolConfig{
-		MaxRunnerCount:            1,
+		MaxRunnerCount:            2,
 		MaxRunnerDiskSizeBytes:    unlimited,
 		MaxRunnerMemoryUsageBytes: unlimited,
 	})
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+	task := newTask()
+	ctxUser1 := withAuthenticatedUser(t, context.Background(), "US1")
+	ctxUser2 := withAuthenticatedUser(t, context.Background(), "US2")
+	ctxUser3 := withAuthenticatedUser(t, context.Background(), "US3")
 
-	r1 := mustGetNewRunner(t, ctx, pool, newTask())
-	r2 := mustGetNewRunner(t, ctx, pool, newTask())
+	r1 := mustGetNewRunner(t, ctxUser1, pool, task)
+	r2 := mustGetNewRunner(t, ctxUser2, pool, task)
+	r3 := mustGetNewRunner(t, ctxUser3, pool, task)
 
-	mustAddWithoutEviction(t, ctx, pool, r1)
-	mustAddWithEviction(t, ctx, pool, r2)
+	// Limit is 2, so r1 and r2 should be added with no problem.
 
-	r3 := mustGetPausedRunner(t, ctx, pool, newTask())
+	mustAddWithoutEviction(t, ctxUser2, pool, r2)
+	mustAddWithoutEviction(t, ctxUser1, pool, r1)
+	mustAddWithEviction(t, ctxUser3, pool, r3)
 
-	assert.Same(t, r2, r3, "since runner limit is 1, last added runner should be the only runner in the pool")
+	// Should be able to get r1 and r3 back from the pool. r2 should have been
+	// evicted since it's the oldest (least recently added back to the pool).
+
+	mustGetPausedRunner(t, ctxUser1, pool, task)
+	mustGetPausedRunner(t, ctxUser3, pool, task)
+	mustGetNewRunner(t, ctxUser2, pool, task)
 }
 
 func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {

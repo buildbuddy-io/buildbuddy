@@ -409,6 +409,10 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 	defer p.mu.Unlock()
 
 	r.state = paused
+	// Push the runner to the end of the list to ensure that we always evict
+	// the LRU runner.
+	p.remove(r)
+	p.runners = append(p.runners, r)
 
 	if p.pausedRunnerCount() > p.maxRunnerCount {
 		if p.maxRunnerCount == 0 {
@@ -612,13 +616,14 @@ type query struct {
 	InstanceName string
 }
 
-// take finds a paused runner in the pool. If one is found, it is unpaused
-// and returned.
+// take finds the most recently used runner in the pool that matches the given
+// query. If one is found, it is unpaused and returned.
 func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	for _, r := range p.runners {
+	for i := len(p.runners) - 1; i >= 0; i-- {
+		r := p.runners[i]
 		if r.state != paused ||
 			r.PlatformProperties.ContainerImage != q.ContainerImage ||
 			r.PlatformProperties.WorkflowID != q.WorkflowID ||
@@ -708,15 +713,6 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 		return status.InternalErrorf("failed to shut down runner pool: %s", errSlice(errs))
 	}
 	return nil
-}
-
-func (p *Pool) indexOf(r *CommandRunner) int {
-	for i := range p.runners {
-		if p.runners[i] == r {
-			return i
-		}
-	}
-	return -1
 }
 
 func (p *Pool) remove(r *CommandRunner) {
