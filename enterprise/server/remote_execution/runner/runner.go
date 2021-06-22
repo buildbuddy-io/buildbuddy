@@ -263,10 +263,9 @@ type Pool struct {
 	maxRunnerMemoryUsageBytes int64
 	maxRunnerDiskUsageBytes   int64
 
-	mu             sync.RWMutex // protects(isShuttingDown, runners, activeRunners)
+	mu             sync.RWMutex // protects(isShuttingDown), protects(runners)
 	isShuttingDown bool
 	runners        []*CommandRunner
-	activeRunners  map[*CommandRunner]struct{}
 }
 
 func NewPool(env environment.Env) (*Pool, error) {
@@ -334,23 +333,6 @@ func (p *Pool) containerType() platform.ContainerType {
 		return platform.ContainerdContainerType
 	}
 	return platform.BareContainerType
-}
-
-func (p *Pool) markActive(ctx context.Context, r *CommandRunner) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.isShuttingDown {
-		return status.UnavailableErrorf("Pool is shutting down; new tasks may not be made active.")
-	}
-	p.activeRunners[r] = struct{}{}
-	return nil
-}
-
-func (p *Pool) markInactive(r *CommandRunner) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	delete(p.activeRunners, r)
 }
 
 // Add adds the given runner into the pool, evicting older runners if needed.
