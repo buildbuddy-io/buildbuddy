@@ -114,27 +114,75 @@ func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *config.RunnerPoolCon
 	return p
 }
 
+func mustGet(t *testing.T, ctx context.Context, pool *runner.Pool, task *repb.ExecutionTask) *runner.CommandRunner {
+	initialActiveCount := pool.ActiveRunnerCount()
+	r, err := pool.Get(ctx, task)
+	require.NoError(t, err)
+	require.Equal(t, initialActiveCount+1, pool.ActiveRunnerCount())
+	runMinimalCommand(t, r)
+	return r
+}
+
+func mustAdd(t *testing.T, ctx context.Context, pool *runner.Pool, r *runner.CommandRunner) {
+	initialActiveCount := pool.ActiveRunnerCount()
+
+	err := pool.Add(ctx, r)
+
+	require.NoError(t, err)
+	require.Equal(t, initialActiveCount-1, pool.ActiveRunnerCount(), "active runner count should decrease when adding back to pool")
+}
+
+func mustAddWithoutEviction(t *testing.T, ctx context.Context, pool *runner.Pool, r *runner.CommandRunner) {
+	initialPausedCount := pool.PausedRunnerCount()
+	initialCount := pool.RunnerCount()
+
+	mustAdd(t, ctx, pool, r)
+
+	require.Equal(t, initialPausedCount+1, pool.PausedRunnerCount())
+	require.Equal(t, initialCount, pool.RunnerCount())
+}
+
+func mustAddWithEviction(t *testing.T, ctx context.Context, pool *runner.Pool, r *runner.CommandRunner) {
+	initialPausedCount := pool.PausedRunnerCount()
+	initialCount := pool.RunnerCount()
+
+	mustAdd(t, ctx, pool, r)
+
+	require.Equal(t, initialPausedCount, pool.PausedRunnerCount())
+	require.Equal(t, initialCount-1, pool.RunnerCount())
+}
+
+func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *runner.Pool, task *repb.ExecutionTask) *runner.CommandRunner {
+	initialPausedCount := pool.PausedRunnerCount()
+	initialCount := pool.RunnerCount()
+	r := mustGet(t, ctx, pool, task)
+	require.Equal(t, initialPausedCount-1, pool.PausedRunnerCount())
+	require.Equal(t, initialCount, pool.RunnerCount())
+	return r
+}
+
+func mustGetNewRunner(t *testing.T, ctx context.Context, pool *runner.Pool, task *repb.ExecutionTask) *runner.CommandRunner {
+	initialPausedCount := pool.PausedRunnerCount()
+	initialCount := pool.RunnerCount()
+	r := mustGet(t, ctx, pool, task)
+	require.Equal(t, initialPausedCount, pool.PausedRunnerCount())
+	require.Equal(t, initialCount+1, pool.RunnerCount())
+	return r
+}
+
 func TestRunnerPool_CanAddAndGetBackSameRunner(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
-	r, err := pool.Get(ctx, newTask())
+	r1 := mustGetNewRunner(t, ctx, pool, newTask())
 
-	require.NoError(t, err)
+	mustAddWithoutEviction(t, ctx, pool, r1)
 
-	runMinimalCommand(t, r)
+	r2 := mustGetPausedRunner(t, ctx, pool, newTask())
 
-	err = pool.Add(context.Background(), r)
-
-	require.NoError(t, err)
-	assert.Equal(t, 1, pool.Size())
-
-	taken, err := pool.Get(ctx, newTask())
-
-	require.NoError(t, err)
-	assert.Same(t, r, taken)
-	assert.Equal(t, 0, pool.Size())
+	assert.Same(t, r1, r2)
+	assert.Equal(t, 0, pool.PausedRunnerCount())
 }
 
 func TestRunnerPool_CannotTakeRunnerFromOtherGroup(t *testing.T) {
@@ -143,21 +191,13 @@ func TestRunnerPool_CannotTakeRunnerFromOtherGroup(t *testing.T) {
 	ctxUser1 := withAuthenticatedUser(t, context.Background(), "US1")
 	ctxUser2 := withAuthenticatedUser(t, context.Background(), "US2")
 
-	r, err := pool.Get(ctxUser1, newTask())
+	r1 := mustGetNewRunner(t, ctxUser1, pool, newTask())
 
-	require.NoError(t, err)
+	mustAddWithoutEviction(t, ctxUser1, pool, r1)
 
-	runMinimalCommand(t, r)
+	r2 := mustGetNewRunner(t, ctxUser2, pool, newTask())
 
-	err = pool.Add(context.Background(), r)
-
-	require.NoError(t, err)
-
-	taken, err := pool.Get(ctxUser2, newTask())
-
-	require.NoError(t, err)
-	assert.NotSame(t, r, taken)
-	assert.Equal(t, 1, pool.Size())
+	assert.NotSame(t, r1, r2)
 }
 
 func TestRunnerPool_CannotTakeRunnerFromOtherInstanceName(t *testing.T) {
@@ -169,21 +209,13 @@ func TestRunnerPool_CannotTakeRunnerFromOtherInstanceName(t *testing.T) {
 	task2 := newTask()
 	task2.ExecuteRequest = &repb.ExecuteRequest{InstanceName: "instance/2"}
 
-	r, err := pool.Get(ctx, task1)
+	r1 := mustGetNewRunner(t, ctx, pool, task1)
 
-	require.NoError(t, err)
+	mustAddWithoutEviction(t, ctx, pool, r1)
 
-	runMinimalCommand(t, r)
+	r2 := mustGetNewRunner(t, ctx, pool, task2)
 
-	err = pool.Add(context.Background(), r)
-
-	require.NoError(t, err)
-	assert.Equal(t, 1, pool.Size())
-
-	taken, err := pool.Get(ctx, task2)
-
-	assert.NotSame(t, r, taken)
-	assert.Equal(t, 1, pool.Size())
+	assert.NotSame(t, r1, r2)
 }
 
 func TestRunnerPool_CannotTakeRunnerFromOtherWorkflow(t *testing.T) {
@@ -200,21 +232,14 @@ func TestRunnerPool_CannotTakeRunnerFromOtherWorkflow(t *testing.T) {
 		task1.Command.Platform.Properties,
 		&repb.Platform_Property{Name: "workflow-id", Value: "WF2"},
 	)
-	r, err := pool.Get(ctx, task1)
 
-	require.NoError(t, err)
+	r1 := mustGetNewRunner(t, ctx, pool, task1)
 
-	runMinimalCommand(t, r)
+	mustAddWithoutEviction(t, ctx, pool, r1)
 
-	err = pool.Add(context.Background(), r)
+	r2 := mustGetNewRunner(t, ctx, pool, task2)
 
-	require.NoError(t, err)
-	assert.Equal(t, 1, pool.Size())
-
-	taken, err := pool.Get(ctx, task2)
-
-	assert.NotSame(t, r, taken)
-	assert.Equal(t, 1, pool.Size())
+	assert.NotSame(t, r1, r2)
 }
 
 func TestRunnerPool_Shutdown_RemovesAllRunners(t *testing.T) {
@@ -222,21 +247,15 @@ func TestRunnerPool_Shutdown_RemovesAllRunners(t *testing.T) {
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
-	r, err := pool.Get(ctx, newTask())
+	r := mustGetNewRunner(t, ctx, pool, newTask())
+
+	mustAdd(t, ctx, pool, r)
+
+	err := pool.Shutdown(context.Background())
 
 	require.NoError(t, err)
-
-	runMinimalCommand(t, r)
-
-	err = pool.Add(context.Background(), r)
-
-	require.NoError(t, err)
-	assert.Equal(t, 1, pool.Size())
-
-	err = pool.Shutdown(context.Background())
-
-	require.NoError(t, err)
-	assert.Equal(t, 0, pool.Size())
+	assert.Equal(t, 0, pool.PausedRunnerCount())
+	assert.Equal(t, 0, pool.ActiveRunnerCount())
 }
 
 func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T) {
@@ -253,7 +272,7 @@ func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T
 	err = pool.Add(context.Background(), r)
 
 	require.NoError(t, err)
-	assert.Equal(t, 1, pool.Size())
+	assert.Equal(t, 1, pool.PausedRunnerCount())
 }
 
 func TestRunnerPool_ExceedMaxRunnerCount_OldestRunnerEvicted(t *testing.T) {
@@ -265,31 +284,15 @@ func TestRunnerPool_ExceedMaxRunnerCount_OldestRunnerEvicted(t *testing.T) {
 	})
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
-	get := func() *runner.CommandRunner {
-		r, err := pool.Get(ctx, newTask())
-		require.NoError(t, err)
-		runMinimalCommand(t, r)
-		return r
-	}
+	r1 := mustGetNewRunner(t, ctx, pool, newTask())
+	r2 := mustGetNewRunner(t, ctx, pool, newTask())
 
-	r1 := get()
-	r2 := get()
+	mustAddWithoutEviction(t, ctx, pool, r1)
+	mustAddWithEviction(t, ctx, pool, r2)
 
-	err := pool.Add(ctx, r1)
+	r3 := mustGetPausedRunner(t, ctx, pool, newTask())
 
-	require.NoError(t, err)
-	require.Equal(t, 1, pool.Size())
-
-	err = pool.Add(ctx, r2)
-
-	require.NoError(t, err)
-	require.Equal(t, 1, pool.Size(), "should have evicted an older runner and added another one, leaving the size at 1")
-
-	taken, err := pool.Get(ctx, newTask())
-
-	require.NoError(t, err)
-	assert.Same(t, r2, taken, "since runner limit is 1, last added runner should be the only runner in the pool")
-	assert.Equal(t, 0, pool.Size())
+	assert.Same(t, r2, r3, "since runner limit is 1, last added runner should be the only runner in the pool")
 }
 
 func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
@@ -302,14 +305,12 @@ func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
 	})
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
-	r, err := pool.Get(ctx, newTask())
+	r := mustGetNewRunner(t, ctx, pool, newTask())
 
-	runMinimalCommand(t, r)
-
-	err = pool.Add(context.Background(), r)
+	err := pool.Add(context.Background(), r)
 
 	assert.True(t, status.IsResourceExhaustedError(err), "should exceed disk limit")
-	assert.Equal(t, 0, pool.Size())
+	assert.Equal(t, 0, pool.PausedRunnerCount())
 }
 
 func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
@@ -337,10 +338,13 @@ func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
 		}
 	}
 
-	// Shut down while the runner is *out* of the pool (and still executing).
+	require.Equal(t, 1, pool.ActiveRunnerCount())
+
+	// Shut down while the runner is active (and still executing).
 	err = pool.Shutdown(context.Background())
 
 	require.NoError(t, err)
+	require.Equal(t, 0, pool.ActiveRunnerCount())
 	_, err = os.Stat(path.Join(r.Workspace.Path(), "foo.txt"))
 	require.True(t, os.IsNotExist(err), "runner should have been removed on shutdown")
 }
