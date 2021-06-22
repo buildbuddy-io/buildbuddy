@@ -312,38 +312,5 @@ func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
 	assert.Equal(t, 0, pool.Size())
 }
 
-func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
-	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, noLimitsCfg)
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
-
-	r, err := pool.Get(ctx, newTask())
-
-	require.NoError(t, err)
-
-	go func() {
-		runShellCommand(t, r, `touch foo.txt && sleep infinity`)
-	}()
-	// Poll for foo.txt to exist.
-	for {
-		_, err = os.Stat(path.Join(r.Workspace.Path(), "foo.txt"))
-		if err == nil {
-			break
-		}
-		if os.IsNotExist(err) {
-			<-time.After(10 * time.Millisecond)
-		} else {
-			require.FailNow(t, err.Error())
-		}
-	}
-
-	// Shut down while the runner is *out* of the pool (and still executing).
-	err = pool.Shutdown(context.Background())
-
-	require.NoError(t, err)
-	_, err = os.Stat(path.Join(r.Workspace.Path(), "foo.txt"))
-	require.True(t, os.IsNotExist(err), "runner should have been removed on shutdown")
-}
-
 // TODO: Test mem limit. We currently don't compute mem usage for bare runners,
 // so there's not a great way to test this yet.

@@ -173,11 +173,6 @@ func (r *CommandRunner) PrepareForTask(task *repb.ExecutionTask) error {
 }
 
 func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
-	if err := r.pool.markActive(ctx, r); err != nil {
-		return commandutil.ErrorResult(err)
-	}
-	defer r.pool.markInactive(r)
-
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
@@ -215,14 +210,14 @@ func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfa
 
 func (r *CommandRunner) Remove(ctx context.Context) error {
 	errs := []error{}
+	if err := r.Workspace.Remove(); err != nil {
+		errs = append(errs, err)
+	}
 	if s := r.state; s != initial && s != removed {
 		r.state = removed
 		if err := r.Container.Remove(ctx); err != nil {
 			errs = append(errs, err)
 		}
-	}
-	if err := r.Workspace.Remove(); err != nil {
-		errs = append(errs, err)
 	}
 	if len(errs) > 0 {
 		return errSlice(errs)
@@ -323,7 +318,6 @@ func NewPool(env environment.Env) (*Pool, error) {
 		containerdSocket: containerdSocket,
 		buildRoot:        executorConfig.GetRootDirectory(),
 		runners:          []*CommandRunner{},
-		activeRunners:    map[*CommandRunner]struct{}{},
 	}
 	p.setLimits(&executorConfig.RunnerPool)
 	return p, nil
@@ -362,12 +356,6 @@ func (p *Pool) markInactive(r *CommandRunner) {
 	delete(p.activeRunners, r)
 }
 
-func (p *Pool) shuttingDown() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.isShuttingDown
-}
-
 // Add adds the given runner into the pool, evicting older runners if needed.
 // If an error is returned, the runner was not successfully added to the pool.
 func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
@@ -381,13 +369,6 @@ func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
 }
 
 func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
-	if p.shuttingDown() {
-		return &labeledError{
-			status.UnavailableError("pool is shutting down; cannot add new runners"),
-			"pool_shutting_down",
-		}
-	}
-
 	// TODO: once CommandContainer lifecycle methods are available, enforce that
 	// the runner's CommandContainer is paused, and return a
 	// FailedPreconditionError if not.
@@ -435,6 +416,13 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	if p.isShuttingDown {
+		return &labeledError{
+			status.UnavailableError("pool is shutting down; cannot add new runners"),
+			"pool_shutting_down",
+		}
+	}
 
 	if len(p.runners) == p.maxRunnerCount {
 		if len(p.runners) == 0 {
@@ -522,15 +510,6 @@ func (p *Pool) PullDefaultImage() {
 // The returned runner is considered "active" and will be killed if the
 // executor is shut down.
 func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunner, error) {
-	r, err := p.get(ctx, task)
-	if err != nil {
-		return nil, err
-	}
-	r.pool = p
-	return r, nil
-}
-
-func (p *Pool) get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunner, error) {
 	props, err := platform.ParseProperties(task.GetCommand().GetPlatform(), p.props())
 	if err != nil {
 		return nil, err
@@ -683,17 +662,10 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 	p.isShuttingDown = true
 	pooledRunners := p.runners
 	p.runners = nil
-	activeRunners := p.activeRunners
-	p.activeRunners = nil
 	p.mu.Unlock()
 
 	errs := []error{}
 
-	for r, _ := range activeRunners {
-		if err := r.Remove(ctx); err != nil {
-			errs = append(errs, err)
-		}
-	}
 	for _, r := range pooledRunners {
 		if err := r.Remove(ctx); err != nil {
 			errs = append(errs, err)
