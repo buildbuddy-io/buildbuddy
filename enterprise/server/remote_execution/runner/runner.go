@@ -51,7 +51,7 @@ const (
 	removed
 
 	// How long to spend waiting for a runner to be removed before giving up.
-	runnerCleanupTimeout = 30 * time.Second
+	runnerCleanupTimeout = 2 * time.Second
 	// Allowed time to spend trying to pause a runner and add it to the pool.
 	runnerRecycleTimeout = 15 * time.Second
 
@@ -197,17 +197,20 @@ func (r *CommandRunner) Remove(ctx context.Context) error {
 	return nil
 }
 
-// RemoveInBackground removes the command runner in the background, returning
-// a channel that receives a signal when the removal attempt is completed.
-func (r *CommandRunner) RemoveInBackground() chan error {
-	errCh := make(chan error)
+func (r *CommandRunner) RemoveWithDeadline(ctx context.Context) error {
+	deadline := time.Now().Add(runnerCleanupTimeout)
+	ctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	return r.Remove(ctx)
+}
+
+func (r *CommandRunner) RemoveInBackground() {
+	// TODO: Add to a cleanup queue instead of spawning a goroutine here.
 	go func() {
-		deadline := time.Now().Add(runnerCleanupTimeout)
-		ctx, cancel := context.WithDeadline(context.Background(), deadline)
-		defer cancel()
-		errCh <- r.Remove(ctx)
+		if err := r.RemoveWithDeadline(context.Background()); err != nil {
+			log.Errorf("Failed to remove runner: %s", err)
+		}
 	}()
-	return errCh
 }
 
 // ACLForUser returns an ACL that grants anyone in the given user's group to
@@ -327,13 +330,7 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
 		metrics.RunnerPoolMemoryUsageBytes.Sub(float64(r.memoryUsageBytes))
 
-		// TODO: Add to a cleanup queue instead of spawning a goroutine here.
-		go func() {
-			err := <-r.RemoveInBackground()
-			if err != nil {
-				log.Errorf("Failed to remove evicted runner: %s", err)
-			}
-		}()
+		r.RemoveInBackground()
 	}
 
 	p.runners = append(p.runners, r)
@@ -427,8 +424,7 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 
 	errs := []error{}
 	for _, r := range runners {
-		err := <-r.RemoveInBackground()
-		if err != nil {
+		if err := r.RemoveWithDeadline(ctx); err != nil {
 			errs = append(errs, err)
 		}
 	}
