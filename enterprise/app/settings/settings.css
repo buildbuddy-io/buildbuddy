@@ -53,6 +53,7 @@
 .settings .settings-tabs {
   margin-right: 32px;
   width: 200px;
+  flex-shrink: 0;
 }
 
 .settings .settings-content {
