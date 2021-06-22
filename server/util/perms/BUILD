@@ -12,6 +12,7 @@ go_library(
         "//server/interfaces",
         "//server/util/log",
         "//server/util/query_builder",
+        "//server/util/request_context",
         "//server/util/status",
     ],
 )
