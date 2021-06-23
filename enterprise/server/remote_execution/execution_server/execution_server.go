@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/codes"
 
@@ -568,6 +569,18 @@ type waitOpts struct {
 	isExecuteRequest bool
 }
 
+func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
+	if a := s.env.GetAuthenticator(); a != nil {
+		user, err := a.AuthenticatedUser(ctx)
+		if err != nil {
+			log.Warningf("Could not determine groupID for metrics: %s", err)
+			return "unknown"
+		}
+		return user.GetGroupID()
+	}
+	return ""
+}
+
 func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream streamLike, opts waitOpts) error {
 	log.Debugf("WaitExecution called for: %q", req.GetName())
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
@@ -624,8 +637,9 @@ func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream s
 		}
 	}
 
-	metrics.RemoteExecutionWaitingExecutionResult.Inc()
-	defer metrics.RemoteExecutionWaitingExecutionResult.Dec()
+	groupID := s.getGroupIDForMetrics(ctx)
+	metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Inc()
+	defer metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Dec()
 
 	for {
 		if opts.enableDBFallback {

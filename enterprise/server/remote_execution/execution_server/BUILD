@@ -28,6 +28,7 @@ go_library(
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
+        "@com_github_prometheus_client_golang//prometheus",
         "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
         "@io_bazel_rules_go//proto/wkt:any_go_proto",
