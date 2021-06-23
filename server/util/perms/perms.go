@@ -243,9 +243,13 @@ func AuthorizeGroupAccess(ctx context.Context, env environment.Env, groupID stri
 // UI (determined via the proto request context), returning an error if the user
 // does not have access to the selected group.
 func AuthenticateSelectedGroupID(ctx context.Context, env environment.Env) (string, error) {
-	groupID := requestcontext.ProtoRequestContextFromContext(ctx).GetGroupId()
+	protoCtx := requestcontext.ProtoRequestContextFromContext(ctx)
+	if protoCtx == nil {
+		return "", status.InvalidArgumentError("request_context field is required")
+	}
+	groupID := protoCtx.GetGroupId()
 	if groupID == "" {
-		return "", status.InvalidArgumentError("request_context.group_id field is missing or empty.")
+		return "", status.InvalidArgumentError("request_context.group_id field is required")
 	}
 	if err := AuthorizeGroupAccess(ctx, env, groupID); err != nil {
 		return "", err
