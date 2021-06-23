@@ -16,7 +16,7 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1623850895138,
+  "iteration": 1624412671991,
   "links": [],
   "panels": [
     {
@@ -256,6 +256,118 @@
         "w": 24,
         "x": 0,
         "y": 1
+      },
+      "id": 330,
+      "panels": [
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 2
+          },
+          "hiddenSeries": false,
+          "id": 348,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "increase(cloudprober_success[10m]) / increase(cloudprober_total[10m])",
+              "interval": "",
+              "legendFormat": "{{probe}}",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Success Rate",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:59",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "$$hashKey": "object:60",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        }
+      ],
+      "title": "Probers",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 2
       },
       "id": 11,
       "panels": [
@@ -563,7 +675,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 2
+        "y": 3
       },
       "id": 220,
       "panels": [
@@ -878,7 +990,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 3
+        "y": 4
       },
       "id": 240,
       "panels": [
@@ -1479,7 +1591,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 4
+        "y": 5
       },
       "id": 15,
       "panels": [
@@ -1901,7 +2013,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 6
       },
       "id": 28,
       "panels": [
@@ -3142,7 +3254,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 6
+        "y": 7
       },
       "id": 264,
       "panels": [
@@ -3757,7 +3869,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 7
+        "y": 8
       },
       "id": 38,
       "panels": [
@@ -4293,7 +4405,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 9
       },
       "id": 48,
       "panels": [
@@ -4698,7 +4810,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 9
+        "y": 10
       },
       "id": 107,
       "panels": [
@@ -5307,7 +5419,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 11
       },
       "id": 83,
       "panels": [
@@ -5761,9 +5873,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 12
       },
-      "id": 293,
+      "id": 331,
       "panels": [
         {
           "aliasColors": {},
@@ -5787,7 +5899,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 294,
+          "id": 332,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5812,7 +5924,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1623850895138,
+          "repeatIteration": 1624412671991,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5900,7 +6012,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 295,
+          "id": 333,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5924,7 +6036,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1623850895138,
+          "repeatIteration": 1624412671991,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6010,7 +6122,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 296,
+          "id": 334,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -6034,7 +6146,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1623850895138,
+          "repeatIteration": 1624412671991,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6120,7 +6232,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 297,
+          "id": 335,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -6144,7 +6256,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1623850895138,
+          "repeatIteration": 1624412671991,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6209,7 +6321,7 @@
           }
         }
       ],
-      "repeatIteration": 1623850895138,
+      "repeatIteration": 1624412671991,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -6228,9 +6340,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 13
       },
-      "id": 298,
+      "id": 336,
       "panels": [
         {
           "aliasColors": {},
@@ -6254,7 +6366,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 299,
+          "id": 337,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -6279,7 +6391,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1623850895138,
+          "repeatIteration": 1624412671991,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6367,7 +6479,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 300,
+          "id": 338,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -6391,7 +6503,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1623850895138,
+          "repeatIteration": 1624412671991,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6477,7 +6589,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 301,
+          "id": 339,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -6501,7 +6613,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1623850895138,
+          "repeatIteration": 1624412671991,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6587,7 +6699,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 302,
+          "id": 340,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -6611,7 +6723,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1623850895138,
+          "repeatIteration": 1624412671991,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6676,7 +6788,7 @@
           }
         }
       ],
-      "repeatIteration": 1623850895138,
+      "repeatIteration": 1624412671991,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -6695,7 +6807,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 14
       },
       "id": 71,
       "panels": [
@@ -6949,9 +7061,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 15
       },
-      "id": 303,
+      "id": 341,
       "panels": [
         {
           "aliasColors": {
@@ -6991,7 +7103,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 304,
+          "id": 342,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -7016,7 +7128,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1623850895138,
+          "repeatIteration": 1624412671991,
           "repeatPanelId": 73,
           "repeatedByRow": true,
           "scopedVars": {
@@ -7101,7 +7213,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 305,
+          "id": 343,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -7126,7 +7238,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1623850895138,
+          "repeatIteration": 1624412671991,
           "repeatPanelId": 79,
           "repeatedByRow": true,
           "scopedVars": {
@@ -7191,7 +7303,7 @@
           }
         }
       ],
-      "repeatIteration": 1623850895138,
+      "repeatIteration": 1624412671991,
       "repeatPanelId": 71,
       "scopedVars": {
         "job": {
@@ -7210,9 +7322,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 16
       },
-      "id": 306,
+      "id": 344,
       "panels": [
         {
           "aliasColors": {
@@ -7252,7 +7364,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 307,
+          "id": 345,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -7277,7 +7389,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1623850895138,
+          "repeatIteration": 1624412671991,
           "repeatPanelId": 73,
           "repeatedByRow": true,
           "scopedVars": {
@@ -7362,7 +7474,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 308,
+          "id": 346,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -7387,7 +7499,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1623850895138,
+          "repeatIteration": 1624412671991,
           "repeatPanelId": 79,
           "repeatedByRow": true,
           "scopedVars": {
@@ -7452,7 +7564,7 @@
           }
         }
       ],
-      "repeatIteration": 1623850895138,
+      "repeatIteration": 1624412671991,
       "repeatPanelId": 71,
       "scopedVars": {
         "job": {
@@ -7471,7 +7583,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 17
       },
       "id": 8,
       "panels": [
