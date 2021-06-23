@@ -24,12 +24,10 @@ func ProtoRequestContextFromContext(ctx context.Context) *ctxpb.RequestContext {
 	return val.(*ctxpb.RequestContext)
 }
 
-type requestContextGetter interface {
-	GetRequestContext() *ctxpb.RequestContext
-}
-
 func GetProtoRequestContext(req proto.Message) *ctxpb.RequestContext {
-	if req, ok := req.(requestContextGetter); ok {
+	if req, ok := req.(interface {
+		GetRequestContext() *ctxpb.RequestContext
+	}); ok {
 		return req.GetRequestContext()
 	}
 	return nil
