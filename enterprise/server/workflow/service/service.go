@@ -41,7 +41,7 @@ import (
 )
 
 const (
-	workflowsImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1"
+	workflowsImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.7"
 )
 
 var (
