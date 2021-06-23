@@ -88,6 +88,9 @@ const (
 
 	/// Reason for a runner not being added to the runner pool.
 	RunnerPoolFailedRecycleReason = "reason"
+
+	// GroupID associated with the request.
+	GroupID = "group_id"
 )
 
 const (
@@ -280,11 +283,13 @@ var (
 		ExecutedActionStageLabel,
 	})
 
-	RemoteExecutionWaitingExecutionResult = promauto.NewGauge(prometheus.GaugeOpts{
+	RemoteExecutionWaitingExecutionResult = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "waiting_execution_result",
 		Help:      "Number of execution requests for which the client is actively waiting for results.",
+	}, []string{
+		GroupID,
 	})
 
 	/// #### Examples
