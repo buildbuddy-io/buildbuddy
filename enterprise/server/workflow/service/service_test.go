@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -147,7 +148,7 @@ func TestList(t *testing.T) {
 		WebhookID:  "WHID1",
 	}
 	err := te.GetDBHandle().Create(&row).Error
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	row2 := &tables.Workflow{
 		WorkflowID: "WF2",
@@ -158,7 +159,7 @@ func TestList(t *testing.T) {
 		WebhookID:  "WHID2",
 	}
 	err = te.GetDBHandle().Create(&row2).Error
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	row3 := &tables.Workflow{
 		WorkflowID: "WF3",
@@ -169,17 +170,22 @@ func TestList(t *testing.T) {
 		WebhookID:  "WHID3",
 	}
 	err = te.GetDBHandle().Create(&row3).Error
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	req := &wfpb.GetWorkflowsRequest{}
+	user1Req := &wfpb.GetWorkflowsRequest{
+		RequestContext: testauth.RequestContext("USER1", "GROUP1"),
+	}
 	ctx1 := metadata.AppendToOutgoingContext(ctx, testauth.APIKeyHeader, "USER1")
-	rsp, err := bbClient.GetWorkflows(ctx1, req)
-	assert.NoError(t, err)
+	rsp, err := bbClient.GetWorkflows(ctx1, user1Req)
+	require.NoError(t, err)
 	assert.Equal(t, 2, len(rsp.GetWorkflow()), "Two workflows owned by USER1 should be returned")
 
+	user2Req := &wfpb.GetWorkflowsRequest{
+		RequestContext: testauth.RequestContext("USER2", "GROUP2"),
+	}
 	ctx2 := metadata.AppendToOutgoingContext(ctx, testauth.APIKeyHeader, "USER2")
-	rsp, err = bbClient.GetWorkflows(ctx2, req)
-	assert.NoError(t, err)
+	rsp, err = bbClient.GetWorkflows(ctx2, user2Req)
+	require.NoError(t, err)
 	assert.Equal(t, []*wfpb.GetWorkflowsResponse_Workflow{{
 		Id:         "WF3",
 		RepoUrl:    "file:///ANY",

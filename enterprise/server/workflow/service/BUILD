@@ -56,6 +56,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/db",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//metadata",
     ],
