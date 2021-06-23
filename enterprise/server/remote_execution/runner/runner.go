@@ -429,6 +429,12 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 				break
 			}
 		}
+		if evictIndex == -1 {
+			return &labeledError{
+				status.InternalError("could not find runner to evict; this should never happen"),
+				"evict_failed",
+			}
+		}
 
 		r := p.runners[evictIndex]
 		p.runners = append(p.runners[:evictIndex], p.runners[evictIndex+1:]...)
@@ -501,14 +507,6 @@ func (p *Pool) PullDefaultImage() {
 // The returned runner is considered "active" and will be killed if the
 // executor is shut down.
 func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunner, error) {
-	r, err := p.get(ctx, task)
-	if err != nil {
-		return nil, err
-	}
-	return r, nil
-}
-
-func (p *Pool) get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunner, error) {
 	props, err := platform.ParseProperties(task.GetCommand().GetPlatform(), p.props())
 	if err != nil {
 		return nil, err
@@ -675,13 +673,7 @@ func (p *Pool) PausedRunnerCount() int {
 func (p *Pool) ActiveRunnerCount() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	n := 0
-	for _, r := range p.runners {
-		if r.state != paused {
-			n++
-		}
-	}
-	return n
+	return len(p.runners) - p.pausedRunnerCount()
 }
 
 func (p *Pool) pausedRunnerCount() int {
