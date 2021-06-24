@@ -261,10 +261,11 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	if err := ws.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
-	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env)
+	groupID, err := perms.AuthenticateSelectedGroupID(ctx, req.GetRequestContext(), ws.env)
 	if err != nil {
 		return nil, err
 	}
+
 	rsp := &wfpb.GetWorkflowsResponse{}
 	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM Workflows`)
 	// Respect selected group ID.
