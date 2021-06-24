@@ -696,6 +696,7 @@ func (p *Pool) tryEvict() bool {
 	r := p.runners[0]
 	p.runners = p.runners[1:]
 
+	metrics.RunnerPoolEvictions.Inc()
 	metrics.RunnerPoolCount.Dec()
 	metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
 	metrics.RunnerPoolMemoryUsageBytes.Sub(float64(r.memoryUsageBytes))
