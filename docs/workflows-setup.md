@@ -53,12 +53,13 @@ the tests pass on BuildBuddy.
 
 ## Building in the workflow runner environment
 
-BuildBuddy workflows execute using Docker on an Ubuntu 18.04 base image
-with some commonly used tools and libraries pre-installed.
+BuildBuddy workflows execute using Docker on a recent Ubuntu base image
+(Ubuntu 18.04 at the time of this writing), with some commonly used tools
+and libraries pre-installed.
 
-If you would like to understand whether your build will succeed with
-BuildBuddy workflows without having to set up a workflow and trigger it
-via git push, you can run the image, clone your Git repo, and invoke
+If you would like to test whether your build will succeed with
+BuildBuddy workflows without having to set up and trigger the workflow,
+you can instead run the image with Docker, clone your Git repo, and invoke
 `bazel` to run your tests.
 
 ```bash
@@ -66,7 +67,8 @@ via git push, you can run the image, clone your Git repo, and invoke
 docker run --rm -it "gcr.io/flame-public/buildbuddy-ci-runner:latest"
 
 # Clone your repo and test it
-git clone https://github.com/acme-inc/acme && cd acme
+git clone https://github.com/acme-inc/acme
+cd acme
 bazel test //...
 ```
 
