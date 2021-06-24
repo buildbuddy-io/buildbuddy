@@ -101,7 +101,7 @@ export default class CreateWorkflowComponent extends React.Component<CreateWorkf
                   onChange={this.onChange.bind(this, this.state.request.gitRepo, "repoUrl")}
                   placeholder="https://github.com/acme-inc/app"
                 />
-                <div className="explanation">GitHub and Bitbucket are supported.</div>
+                <div className="explanation">Currently only GitHub is fully supported.</div>
               </div>
               <div className="form-row">
                 <label htmlFor="gitRepo.accessToken">Repository access token</label>
