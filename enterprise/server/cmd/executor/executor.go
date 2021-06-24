@@ -27,12 +27,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
-
 	"github.com/google/uuid"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -44,7 +44,6 @@ import (
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
 var (
@@ -186,6 +185,8 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		realEnv.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
 	}
 
+	realEnv.SetResourceTracker(resources.NewTracker(&resources.TrackerOptions{}))
+
 	return realEnv
 }
 
@@ -246,7 +247,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error initializing ExecutionServer: %s", err)
 	}
-	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, executionServer, &priority_task_scheduler.Options{})
+	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, executionServer)
 	if err := taskScheduler.Start(); err != nil {
 		log.Fatalf("Error starting task scheduler: %v", err)
 	}

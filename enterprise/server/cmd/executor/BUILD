@@ -60,6 +60,7 @@ go_binary(
     ],
     embed = [":executor_lib"],
     visibility = ["//visibility:public"],
+    deps = ["//server/resources"],
 )
 
 container_image(

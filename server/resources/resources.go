@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/elastic/gosigar"
-
 )
 
 const (
@@ -120,10 +119,10 @@ func GetMyPort() (int32, error) {
 }
 
 type Tracker struct {
-	capacity *interfaces.Resources
+	capacity interfaces.Resources
 
 	mu       sync.Mutex // protects(assigned)
-	assigned *interfaces.Resources
+	assigned interfaces.Resources
 }
 
 type TrackerOptions struct {
@@ -132,22 +131,20 @@ type TrackerOptions struct {
 }
 
 func NewTracker(opts *TrackerOptions) *Tracker {
-	capacity := &interfaces.Resources{
-		MemoryBytes: opts.RAMBytesCapacityOverride,
-		MilliCPU:    opts.CPUMillisCapacityOverride,
-	}
-	if capacity.MemoryBytes == 0 {
-		capacity.MemoryBytes = int64(float64(GetAllocatedRAMBytes()) * .80)
-	}
-	if capacity.MilliCPU == 0 {
-		capacity.MilliCPU = int64(float64(GetAllocatedCPUMillis()) * .80)
-	}
-	return &Tracker{
-		capacity: &interfaces.Resources{
-			MemoryBytes: GetAllocatedRAMBytes(),
-			MilliCPU:    GetAllocatedCPUMillis(),
+	t := &Tracker{
+		assigned: interfaces.Resources{},
+		capacity: interfaces.Resources{
+			MemoryBytes: opts.RAMBytesCapacityOverride,
+			MilliCPU:    opts.CPUMillisCapacityOverride,
 		},
 	}
+	if t.capacity.MemoryBytes == 0 {
+		t.capacity.MemoryBytes = int64(float64(GetAllocatedRAMBytes()) * .80)
+	}
+	if t.capacity.MilliCPU == 0 {
+		t.capacity.MilliCPU = int64(float64(GetAllocatedCPUMillis()) * .80)
+	}
+	return t
 }
 
 func (t *Tracker) Request(r *interfaces.Resources) bool {

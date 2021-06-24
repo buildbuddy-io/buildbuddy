@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -336,8 +337,8 @@ type ExecutorOptions struct {
 	APIKey string
 	// Optional server to be used for task leasing, cache requests, etc
 	// If not specified the executor will connect to a random server.
-	Server                       *BuildBuddyServer
-	priorityTaskSchedulerOptions priority_task_scheduler.Options
+	Server                 *BuildBuddyServer
+	resourceTrackerOptions resources.TrackerOptions
 }
 
 // Executor is a handle for a running executor instance.
@@ -398,7 +399,7 @@ func (r *Env) AddExecutor() *Executor {
 // Blocks until executor registers with the scheduler.
 func (r *Env) AddSingleTaskExecutorWithOptions(options *ExecutorOptions) *Executor {
 	optionsCopy := *options
-	optionsCopy.priorityTaskSchedulerOptions = priority_task_scheduler.Options{
+	optionsCopy.resourceTrackerOptions = resources.TrackerOptions{
 		RAMBytesCapacityOverride:  tasksize.DefaultMemEstimate,
 		CPUMillisCapacityOverride: tasksize.DefaultCPUEstimate,
 	}
@@ -455,6 +456,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	}
 
 	env := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
+	env.SetResourceTracker(resources.NewTracker(&options.resourceTrackerOptions))
 	r.t.Cleanup(func() {
 		env.GetHealthChecker().Shutdown()
 		log.Infof("Waiting for executor %q to shut down.", options.Name)
@@ -510,7 +512,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("could not create executor %q", options.Name), err.Error())
 	}
-	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, exec, &options.priorityTaskSchedulerOptions)
+	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, exec)
 	taskScheduler.Start()
 
 	executorPort := app.FreePort(r.t)

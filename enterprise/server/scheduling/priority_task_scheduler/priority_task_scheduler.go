@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
@@ -131,23 +130,6 @@ func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequ
 	metrics.RemoteExecutionTasksExecuting.Set(float64(len(q.activeTaskCancelFuncs)))
 }
 
-func (q *PriorityTaskScheduler) canFitAnotherTask(res *scpb.EnqueueTaskReservationRequest) bool {
-	// Only ever run as many sized tasks as we have memory for.
-	knownRAMremaining := q.ramBytesCapacity - q.ramBytesUsed
-	knownCPUremaining := q.cpuMillisCapacity - q.cpuMillisUsed
-	willFit := knownRAMremaining >= res.GetTaskSize().GetEstimatedMemoryBytes() && knownCPUremaining >= res.GetTaskSize().GetEstimatedMilliCpu()
-
-	if willFit {
-		q.log.Infof("ram remaining: %d, cpu remaining: %d, tasks running: %d, q depth: %d", knownRAMremaining, knownCPUremaining, len(q.activeTaskCancelFuncs), q.pq.Len())
-		if res.GetTaskSize().GetEstimatedMemoryBytes() == 0 {
-			q.log.Warningf("Scheduling another unknown size task. THIS SHOULD NOT HAPPEN! res: %+v", res)
-		} else {
-			q.log.Infof("Scheduling another task of size: %+v", res.GetTaskSize())
-		}
-	}
-	return willFit
-}
-
 func (q *PriorityTaskScheduler) handleTask() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -171,8 +153,8 @@ func (q *PriorityTaskScheduler) handleTask() {
 	}
 
 	res := &interfaces.Resources{
-		MemoryBytes: reservation.GetSize().GetEstimatedMemoryBytes(),
-		MilliCPU:    reservation.GetSize().GetEstimatedMilliCpu(),
+		MemoryBytes: reservation.GetTaskSize().GetEstimatedMemoryBytes(),
+		MilliCPU:    reservation.GetTaskSize().GetEstimatedMilliCpu(),
 	}
 	// Evict from the runner pool until there are enough resources to run the
 	// task.
@@ -185,8 +167,6 @@ func (q *PriorityTaskScheduler) handleTask() {
 			return
 		}
 	}
-
-	// At this point we were successfully granted the resources.
 
 	// This pop should always succeed since we peeked above while holding the lock.
 	q.pq.Pop()
