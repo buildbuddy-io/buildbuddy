@@ -88,7 +88,7 @@ var (
 	RunnerMaxDiskSizeExceeded = status.ResourceExhaustedError("runner disk size limit exceeded")
 	// NotEnoughResources is returned from Pool.Add if a runner cannot be added
 	// because there aren't enough system resources available.
-	NotEnoughResources = status.ResourceExhaustedError("not enough system resources available to pool runner")
+	NotEnoughResources = status.ResourceExhaustedError("not enough system resources available to pool more runners")
 
 	podIDFromCpusetRegexp = regexp.MustCompile("/kubepods(/.*?)?/pod([a-z0-9\\-]{36})/")
 
@@ -420,7 +420,12 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 	}
 
 	if !p.resourceTracker.Request(r.Resources()) {
-		return &labeledError{NotEnoughResources, "not_enough_resources"}
+		// Try evicting one runner and see if that will free up the necessary
+		// resources. Otherwise, we are probably just overloaded with regular
+		// execution tasks, so don't keep trying to evict.
+		if p.tryEvict() && !p.resourceTracker.Request(r.Resources()) {
+			return &labeledError{NotEnoughResources, "not_enough_resources"}
+		}
 	}
 
 	if len(p.runners) == p.maxRunnerCount {
