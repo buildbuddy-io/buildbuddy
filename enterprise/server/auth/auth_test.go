@@ -121,6 +121,41 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 	require.Equal(t, validUserToken, authCtx.Value(contextUserKey), "context user details should match details returned by provider")
 }
 
+func TestBlocking(t *testing.T) {
+	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{})
+
+	auth, err := newForTesting(context.Background(), env, &fakeOidcAuthenticator{})
+	require.NoErrorf(t, err, "could not create authenticator")
+
+	// JWT cookie not present, auth should fail.
+	request, err := http.NewRequest(http.MethodGet, "/", strings.NewReader(""))
+	require.NoErrorf(t, err, "could not create HTTP request")
+	response := httptest.NewRecorder()
+	authCtx := auth.AuthenticatedHTTPContext(response, request)
+	requireAuthenticationError(t, authCtx)
+
+	// Valid JWT cookie, but user does not exist.
+	request.AddCookie(&http.Cookie{Name: jwtCookie, Value: validJWT})
+	request.AddCookie(&http.Cookie{Name: authIssuerCookie, Value: testIssuer})
+	authCtx = auth.AuthenticatedHTTPContext(response, request)
+	requireAuthenticationError(t, authCtx)
+	// User information should still be populated (it's needed for user creation).
+	require.Equal(t, validUserToken, authCtx.Value(contextUserKey), "context user details should match details returned by provider")
+
+	// Create matching user, authentication should now succeed.
+	user := &tables.User{
+		UserID:  userID,
+		SubID:   subID,
+		Email:   userEmail,
+		Blocked: false,
+	}
+	err = env.GetUserDB().InsertUser(context.Background(), user)
+	require.NoError(t, err, "could not insert user")
+	authCtx = auth.AuthenticatedHTTPContext(response, request)
+	requireAuthenticated(t, authCtx)
+	require.Equal(t, validUserToken, authCtx.Value(contextUserKey), "context user details should match details returned by provider")
+}
+
 func getResponseCookie(response *http.Response, name string) *http.Cookie {
 	for _, c := range response.Cookies() {
 		if c.Name == name {
