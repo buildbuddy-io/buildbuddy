@@ -424,23 +424,16 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 	}
 
 	if len(p.runners) == p.maxRunnerCount {
-		if len(p.runners) == 0 {
+		didEvict := p.tryEvict()
+		if !didEvict {
+			// Eviction only fails if the runner list is empty, which implies the
+			// max runner count is 0, but we treat 0 to mean "default" which should
+			// allow at least one task if the executor is configured properly.
 			return &labeledError{
-				status.InternalError("pool max runner count is 0; this should never happen"),
+				status.InternalError("pool max runner count is 0; this indicates a bad executor configuration"),
 				"max_runner_count_zero",
 			}
 		}
-		// Evict the first and oldest runner to make room for the new one.
-		r := p.runners[0]
-		p.runners = p.runners[1:]
-
-		metrics.RunnerPoolEvictions.Inc()
-		metrics.RunnerPoolCount.Dec()
-		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
-		metrics.RunnerPoolMemoryUsageBytes.Sub(float64(r.memoryUsageBytes))
-		p.resourceTracker.Return(r.Resources())
-
-		r.RemoveInBackground()
 	}
 
 	p.runners = append(p.runners, r)
@@ -677,7 +670,10 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 func (p *Pool) TryEvict() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	return p.tryEvict()
+}
 
+func (p *Pool) tryEvict() bool {
 	// DO NOT MERGE: Count only paused runners once https://github.com/buildbuddy-io/buildbuddy/pull/578
 	// is submitted.
 	if len(p.runners) == 0 {
