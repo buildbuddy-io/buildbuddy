@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/proto"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -209,6 +210,7 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 
 func GetUnaryClientInterceptor() grpc.DialOption {
 	return grpc.WithChainUnaryInterceptor(
+		otelgrpc.UnaryClientInterceptor(),
 		grpc_prometheus.UnaryClientInterceptor,
 		setHeadersUnaryClientInterceptor(),
 	)
@@ -216,6 +218,7 @@ func GetUnaryClientInterceptor() grpc.DialOption {
 
 func GetStreamClientInterceptor() grpc.DialOption {
 	return grpc.WithChainStreamInterceptor(
+		otelgrpc.StreamClientInterceptor(),
 		grpc_prometheus.StreamClientInterceptor,
 		setHeadersStreamClientInterceptor(),
 	)

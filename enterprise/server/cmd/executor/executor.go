@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	"github.com/google/uuid"
 	"google.golang.org/api/option"
@@ -212,7 +213,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
-
 	opts := log.Opts{
 		Level:                  configurator.GetAppLogLevel(),
 		EnableShortFileName:    configurator.GetAppLogIncludeShortFileName(),
@@ -222,6 +222,9 @@ func main() {
 	if err := log.Configure(opts); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
+	}
+	if err := tracing.Configure(configurator); err != nil {
+		log.Fatalf("Could not configure tracing: %s", err)
 	}
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
