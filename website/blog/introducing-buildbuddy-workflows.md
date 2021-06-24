@@ -1,5 +1,5 @@
 ---
-slug: buildbuddy-workflows-launch
+slug: introducing-buildbuddy-workflows
 title: "Introducing BuildBuddy workflows: convenient, fast, and secure CI for bazel"
 author: Brandon Duffany
 author_title: Engineer @ BuildBuddy
