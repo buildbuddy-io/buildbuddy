@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/backends/pubsub",
         "//enterprise/server/remote_execution/operation",
+        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/tasksize",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
@@ -16,6 +17,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/action_cache_server",
+        "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/remote_cache/namespace",
         "//server/tables",
@@ -26,6 +28,7 @@ go_library(
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
+        "@com_github_prometheus_client_golang//prometheus",
         "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
         "@io_bazel_rules_go//proto/wkt:any_go_proto",

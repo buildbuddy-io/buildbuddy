@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//server/util/status",
         "//server/util/uuid",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_rs_zerolog//:zerolog",

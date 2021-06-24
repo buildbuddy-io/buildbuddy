@@ -2,6 +2,7 @@ package disk_cache
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -19,9 +20,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+const (
+	// cutoffThreshold is the point above which a janitor thread will run
+	// and delete the oldest items from the cache.
+	janitorCutoffThreshold = .90
+
+	// janitorCheckPeriod is how often the janitor thread will wake up to
+	// check the cache size.
+	janitorCheckPeriod = 100 * time.Millisecond
 )
 
 // We keep a record (in memory) of file atime (Last Access Time) and size, and
@@ -35,11 +47,12 @@ type DiskCache struct {
 	rootDir      string
 	prefix       string
 	diskIsMapped *bool
+	lastGCTime   time.Time
 }
 
 type fileRecord struct {
-	lastUse   time.Time
 	key       string
+	lastUse   int64
 	sizeBytes int64
 }
 
@@ -57,7 +70,7 @@ func evictFn(key interface{}, value interface{}) {
 	}
 }
 
-func getLastUse(info os.FileInfo) time.Time {
+func getLastUse(info os.FileInfo) int64 {
 	stat := info.Sys().(*syscall.Stat_t)
 	// Super Gross! https://github.com/golang/go/issues/31735
 	value := reflect.ValueOf(stat)
@@ -69,7 +82,7 @@ func getLastUse(info os.FileInfo) time.Time {
 	} else {
 		ts = syscall.Timespec{}
 	}
-	return time.Unix(ts.Sec, ts.Nsec)
+	return time.Unix(ts.Sec, ts.Nsec).UnixNano()
 }
 
 func makeRecord(fullPath string, info os.FileInfo) *fileRecord {
@@ -96,7 +109,28 @@ func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
 	if err := c.initializeCache(); err != nil {
 		return nil, err
 	}
+	c.startJanitor()
+	statusz.AddSection("disk_cache", "On disk LRU cache", c)
 	return c, nil
+}
+
+func (c *DiskCache) Statusz(ctx context.Context) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	buf := ""
+	buf += fmt.Sprintf("<div>Root directory: %s</div>", c.rootDir)
+	percentFull := float64(c.l.Size()) / float64(c.l.MaxSize()) * 100.0
+	buf += fmt.Sprintf("<div>Capacity: %d / %d (%2.2f%% full)</div>", c.l.Size(), c.l.MaxSize(), percentFull)
+	var oldestItem time.Time
+	if _, v, ok := c.l.GetOldest(); ok {
+		if fr, ok := v.(*fileRecord); ok {
+			oldestItem = time.Unix(0, fr.lastUse)
+		}
+	}
+	buf += fmt.Sprintf("<div>%d items (oldest: %s)</div>", c.l.Len(), oldestItem.Format("Jan 02, 2006 15:04:05 PST"))
+	buf += fmt.Sprintf("<div>Mapped into LRU: %t</div>", *c.diskIsMapped)
+	buf += fmt.Sprintf("<div>GC Last run: %s</div>", c.lastGCTime.Format("Jan 02, 2006 15:04:05 PST"))
+	return buf
 }
 
 func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
@@ -115,7 +149,41 @@ func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
 		prefix:       newPrefix,
 		fileChannel:  c.fileChannel,
 		diskIsMapped: c.diskIsMapped,
+		lastGCTime:   c.lastGCTime,
 	}
+}
+
+func (c *DiskCache) reduceCacheSize(targetSize int64) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.l.Size() < targetSize {
+		return false
+	}
+	_, value, ok := c.l.RemoveOldest()
+	if !ok {
+		return false // should never happen
+	}
+	if f, ok := value.(*fileRecord); ok {
+		log.Debugf("Delete thread removed item from cache. Last use was: %d", f.lastUse)
+	}
+	c.lastGCTime = time.Now()
+	return true
+}
+
+func (c *DiskCache) startJanitor() {
+	targetSize := int64(float64(c.l.MaxSize()) * janitorCutoffThreshold)
+	go func() {
+		for {
+			select {
+			case <-time.After(janitorCheckPeriod):
+				for {
+					if !c.reduceCacheSize(targetSize) {
+						break
+					}
+				}
+			}
+		}
+	}()
 }
 
 func (c *DiskCache) initializeCache() error {
@@ -150,7 +218,7 @@ func (c *DiskCache) initializeCache() error {
 		}
 
 		// Sort entries by ascending ATime.
-		sort.Slice(records, func(i, j int) bool { return records[i].lastUse.Before(records[j].lastUse) })
+		sort.Slice(records, func(i, j int) bool { return records[i].lastUse < records[j].lastUse })
 
 		c.mu.Lock()
 		// Populate our LRU with everything we scanned from disk.
@@ -330,7 +398,7 @@ func (c *DiskCache) Set(ctx context.Context, d *repb.Digest, data []byte) error 
 	c.l.Add(k, &fileRecord{
 		key:       k,
 		sizeBytes: int64(n),
-		lastUse:   time.Now(),
+		lastUse:   time.Now().UnixNano(),
 	})
 	return err
 
@@ -413,7 +481,7 @@ func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser,
 			c.l.Add(k, &fileRecord{
 				key:       k,
 				sizeBytes: totalBytesWritten,
-				lastUse:   time.Now(),
+				lastUse:   time.Now().UnixNano(),
 			})
 			return nil
 		},

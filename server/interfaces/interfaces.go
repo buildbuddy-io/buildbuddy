@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -59,22 +60,39 @@ type Authenticator interface {
 	// Handle a callback from authentication provider.
 	Auth(w http.ResponseWriter, r *http.Request)
 
-	// Called by the authentication handler to authenticate a request. If a
-	// user was authenticated, a new context will be returned that contains
-	// a UserToken.
-	AuthenticateHTTPRequest(w http.ResponseWriter, r *http.Request) context.Context
+	// AuthenticatedHTTPContext authenticates the user using the credentials present in the HTTP request and creates a
+	// child context that contains the results.
+	//
+	// This function is called automatically for every HTTP request via a filter and the new context is passed to
+	// application code.
+	//
+	// Application code can retrieve the stored information by calling AuthenticatedUser.
+	AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context
 
-	// Called by the authentication handler to authenticate a request. If a
-	// user was authenticated, a new context will be returned that contains
-	// a BasicAuthToken.
-	AuthenticateGRPCRequest(ctx context.Context) context.Context
+	// AuthenticatedGRPCContext authenticates the user using the credentials present in the gRPC metadata and creates a
+	// child context that contains the result.
+	//
+	// This function is called automatically for every gRPC request via a filter and the new context is passed to
+	// application code.
+	//
+	// Application code that retrieve the stored information by calling AuthenticatedUser.
+	AuthenticatedGRPCContext(ctx context.Context) context.Context
+
+	// AuthenticateGRPCRequest authenticates the user using the credentials present in the gRPC metadata and returns the
+	// result.
+	//
+	// You should only use this function if you need fresh information (for example to re-validate credentials during a
+	// long running operation). For all other cases it is better to use the information cached in the context
+	// retrieved via AuthenticatedUser.
+	AuthenticateGRPCRequest(ctx context.Context) (UserInfo, error)
 
 	// FillUser may be used to construct an initial tables.User object. It
 	// is filled based on information from the authenticator's JWT.
 	FillUser(ctx context.Context, user *tables.User) error
 
-	// Returns the UserInfo extracted from any authorization headers
-	// present in the request.
+	// AuthenticatedUser returns the UserInfo stored in the context.
+	//
+	// See AuthenticatedHTTPContext/AuthenticatedGRPCContext for a description of how the context is created.
 	AuthenticatedUser(ctx context.Context) (UserInfo, error)
 
 	// Parses and returns a BuildBuddy API key from the given string.
@@ -216,8 +234,89 @@ type WorkflowService interface {
 	CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error)
 	DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error)
 	GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error)
+	ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error)
 	GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
+type GitProviders []GitProvider
+
+type GitProvider interface {
+	// MatchRepoURL returns whether a given repo URL should be handled by this
+	// provider. If multiple providers match, the first one in the GitProviders
+	// list is chosen to handle the repo URL.
+	MatchRepoURL(u *url.URL) bool
+
+	// MatchWebhookRequest returns whether a given webhook request was sent by
+	// this git provider. If multiple providers match, the first one in the
+	// GitProviders list is chosen to handle the webhook.
+	MatchWebhookRequest(req *http.Request) bool
+
+	// ParseWebhookData parses webhook data from the given HTTP request sent to
+	// a webhook endpoint. It should only be called if MatchWebhookRequest returns
+	// true.
+	ParseWebhookData(req *http.Request) (*WebhookData, error)
+
+	// IsRepoPrivate returns whether the repo is only viewable by its owner and
+	// trusted users.
+	IsRepoPrivate(ctx context.Context, accessToken, repoURL string) (bool, error)
+
+	// RegisterWebhook registers the given webhook URL to listen for push and
+	// pull request (also called "merge request") events.
+	RegisterWebhook(ctx context.Context, accessToken, repoURL, webhookURL string) (string, error)
+
+	// UnregisterWebhook unregisters the webhook with the given ID from the repo.
+	UnregisterWebhook(ctx context.Context, accessToken, repoURL, webhookID string) error
+
+	// TODO(bduffany): CreateStatus, ListRepos
+}
+
+// WebhookData represents the data extracted from a Webhook event.
+type WebhookData struct {
+	// EventName is the canonical event name that this data was created from.
+	EventName string
+
+	// PushedBranch is the name of the branch in the source repo that triggered the
+	// event when pushed. Note that for forks, the branch here references the branch
+	// name in the forked repository, and the TargetBranch references the branch in
+	// the main repository into which the PushedBranch will be merged.
+	//
+	// Some examples:
+	//
+	// Push main branch (e.g. `git push main` or merge a PR into main):
+	// - RepoURL: "https://github.com/example/example.git"
+	// - PushedBranch: "main" // in "example/example" repo
+	// - TargetBranch: "main" // in "example/example" repo
+	//
+	// Push to a PR branch within the mainline repo:
+	// - RepoURL: "https://github.com/example/example.git"
+	// - PushedBranch: "foo-feature" // in "example/example" repo
+	// - TargetBranch: "main"        // in "example/example" repo
+	//
+	// Push to a PR branch within a forked repo:
+	// - RepoURL: "https://github.com/some-user/example-fork.git"
+	// - PushedBranch: "bar-feature" // in "some-user/example-fork" repo
+	// - TargetBranch: "main"        // in "example/example" repo
+	PushedBranch string
+
+	// TargetBranch is the branch associated with the event that determines whether
+	// actions should be triggered. For push events this is the branch that was
+	// pushed to. For pull_request events this is the base branch into which the PR
+	// branch is being merged.
+	TargetBranch string
+
+	// RepoURL points to the canonical repo URL containing the sources needed for the
+	// workflow.
+	//
+	// This will be different from the workflow repo if the workflow is run on a forked
+	// repo as part of a pull request.
+	RepoURL string
+
+	// SHA of the commit to be checked out.
+	SHA string
+
+	// IsRepoPrivate returns whether the repo is private.
+	IsRepoPrivate bool
 }
 
 type SplashPrinter interface {
@@ -269,17 +368,13 @@ type TaskRouter interface {
 	// their suitability for executing the given command. Nodes with equal
 	// suitability are returned in random order (for load balancing purposes).
 	//
-	// If an error occurs, the nodes are returned in random order. The returned
-	// error can be logged, but should not be treated as fatal.
-	RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) ([]ExecutionNode, error)
+	// If an error occurs, the input nodes should be returned in random order.
+	RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) []ExecutionNode
 
 	// MarkComplete notifies the router that the command has been completed by the
 	// given executor instance. Subsequent calls to RankNodes may assign a higher
 	// rank to nodes with the given instance ID, given similar commands.
-	//
-	// Callers should not treat the returned error as fatal, since task routing is
-	// intended to be best-effort.
-	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string) error
+	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
 }
 
 // CommandResult captures the output and details of an executed command.

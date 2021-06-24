@@ -2,10 +2,8 @@ import React from "react";
 import { User } from "../auth/auth_service";
 import format from "../format/format";
 import router from "../router/router";
-import InvocationCompareButton from "./invocation_compare_button";
-import InvocationMenuComponent from "./invocation_menu";
+import InvocationButtons from "./invocation_buttons";
 import InvocationModel from "./invocation_model";
-import InvocationShareButton from "./invocation_share_button";
 
 interface Props {
   model: InvocationModel;
@@ -78,19 +76,7 @@ export default class InvocationOverviewComponent extends React.Component {
             )}
             <span>Invocation {this.props.invocationId}</span>
           </div>
-          <div className="invocation-top-right-buttons">
-            <InvocationCompareButton invocationId={this.props.invocationId} />
-            <InvocationShareButton
-              user={this.props.user}
-              model={this.props.model}
-              invocationId={this.props.invocationId}
-            />
-            <InvocationMenuComponent
-              user={this.props.user}
-              model={this.props.model}
-              invocationId={this.props.invocationId}
-            />
-          </div>
+          <InvocationButtons invocationId={this.props.invocationId} model={this.props.model} user={this.props.user} />
         </div>
         <div className="titles">
           {isBazelInvocation && (
@@ -154,7 +140,9 @@ export default class InvocationOverviewComponent extends React.Component {
             </div>
           )}
           {isBazelInvocation && (
-            <div className="detail clickable" onClick={this.handleFetchesClicked.bind(this)}>
+            <div
+              className={this.props.model.getFetchURLs().length ? "detail clickable" : "detail"}
+              onClick={this.handleFetchesClicked.bind(this)}>
               <img className="icon" src="/image/link.svg" />
               {this.props.model.getFetchURLs().length} fetches
             </div>

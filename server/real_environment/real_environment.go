@@ -39,6 +39,7 @@ type RealEnv struct {
 	resourceTracker                  interfaces.ResourceTracker
 	healthChecker                    interfaces.HealthChecker
 	workflowService                  interfaces.WorkflowService
+	gitProviders                     interfaces.GitProviders
 	staticFilesystem                 fs.FS
 	appFilesystem                    fs.FS
 	blobstore                        interfaces.Blobstore
@@ -290,6 +291,12 @@ func (r *RealEnv) GetWorkflowService() interfaces.WorkflowService {
 }
 func (r *RealEnv) SetWorkflowService(wf interfaces.WorkflowService) {
 	r.workflowService = wf
+}
+func (r *RealEnv) GetGitProviders() interfaces.GitProviders {
+	return r.gitProviders
+}
+func (r *RealEnv) SetGitProviders(gp interfaces.GitProviders) {
+	r.gitProviders = gp
 }
 
 func (r *RealEnv) SetCacheRedisClient(redisClient *redis.Client) {

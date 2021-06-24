@@ -434,10 +434,10 @@ type Workflow struct {
 	WebhookID   string `gorm:"uniqueIndex:workflow_webhook_id_index"`
 	Model
 	Perms int `gorm:"index:workflow_perms"`
-	// GithubWebhookID is the ID returned from the GitHub API when
-	// registering the webhook. This will only be set for GitHub URLs in the
-	// case where we successfully auto-registered the webhook.
-	GitHubWebhookID int64 `gorm:"column:github_webhook_id"`
+	// GitProviderWebhookID is the ID returned from the Git provider API when
+	// registering the webhook. This will only be set for the case where we
+	// successfully auto-registered the webhook.
+	GitProviderWebhookID string
 }
 
 func (wf *Workflow) TableName() string {

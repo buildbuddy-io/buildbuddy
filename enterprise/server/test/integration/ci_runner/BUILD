@@ -5,18 +5,17 @@ go_test(
     srcs = ["ci_runner_test.go"],
     data = [
         "//enterprise/server/cmd/ci_runner",
-        "//server/testutil/bazel:bazel-3.7.0_crossplatform",
     ],
+    shard_count = 4,
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//enterprise/server/testutil/testgit",
         "//proto:invocation_go_proto",
-        "//server/testutil/bazel",
         "//server/testutil/buildbuddy",
-        "@com_github_go_git_go_git_v5//:go-git",
-        "@com_github_go_git_go_git_v5//plumbing/object",
+        "//server/testutil/testbazel",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

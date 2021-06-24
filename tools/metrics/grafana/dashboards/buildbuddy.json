@@ -16,7 +16,7 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1622830522099,
+  "iteration": 1624481106206,
   "links": [],
   "panels": [
     {
@@ -256,6 +256,118 @@
         "w": 24,
         "x": 0,
         "y": 1
+      },
+      "id": 330,
+      "panels": [
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 2
+          },
+          "hiddenSeries": false,
+          "id": 348,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "increase(cloudprober_success[10m]) / increase(cloudprober_total[10m])",
+              "interval": "",
+              "legendFormat": "{{probe}}",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Success Rate",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:59",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "$$hashKey": "object:60",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        }
+      ],
+      "title": "Probers",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 2
       },
       "id": 11,
       "panels": [
@@ -563,7 +675,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 2
+        "y": 3
       },
       "id": 220,
       "panels": [
@@ -642,7 +754,8 @@
           },
           "yaxes": [
             {
-              "format": "short",
+              "$$hashKey": "object:146",
+              "format": "ops",
               "label": null,
               "logBase": 1,
               "max": null,
@@ -650,6 +763,209 @@
               "show": true
             },
             {
+              "$$hashKey": "object:147",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 3
+          },
+          "hiddenSeries": false,
+          "id": 310,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum by (event) (rate(buildbuddy_webhook_handler_workflows_started{event!=\"\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "{{event}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            },
+            {
+              "expr": "sum (rate(buildbuddy_webhook_handler_workflows_started{event=\"\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "rerun_button",
+              "refId": "B"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Workflows started by trigger event",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:33",
+              "format": "ops",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:34",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 11
+          },
+          "hiddenSeries": false,
+          "id": 312,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum by (code) (rate(buildbuddy_http_request_handler_duration_usec_count{route=\"/webhooks/workflow/:id\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "{{code}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Webhook events by response code",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:93",
+              "format": "ops",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:94",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -674,7 +990,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 3
+        "y": 4
       },
       "id": 240,
       "panels": [
@@ -697,7 +1013,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 1
+            "y": 20
           },
           "hiddenSeries": false,
           "id": 254,
@@ -800,7 +1116,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 1
+            "y": 20
           },
           "hiddenSeries": false,
           "id": 251,
@@ -920,7 +1236,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 9
+            "y": 28
           },
           "hiddenSeries": false,
           "id": 250,
@@ -1041,7 +1357,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 9
+            "y": 28
           },
           "hiddenSeries": false,
           "id": 252,
@@ -1162,7 +1478,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 17
+            "y": 36
           },
           "hiddenSeries": false,
           "id": 253,
@@ -1275,7 +1591,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 4
+        "y": 5
       },
       "id": 15,
       "panels": [
@@ -1298,7 +1614,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 26
+            "y": 21
           },
           "hiddenSeries": false,
           "id": 17,
@@ -1395,7 +1711,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 26
+            "y": 21
           },
           "hiddenSeries": false,
           "id": 19,
@@ -1494,7 +1810,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 34
+            "y": 29
           },
           "hiddenSeries": false,
           "id": 4,
@@ -1606,7 +1922,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 34
+            "y": 29
           },
           "hiddenSeries": false,
           "id": 9,
@@ -1697,7 +2013,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 6
       },
       "id": 28,
       "panels": [
@@ -1722,7 +2038,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 6
+            "y": 7
           },
           "hiddenSeries": false,
           "id": 190,
@@ -1746,20 +2062,27 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": true,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "count(buildbuddy_remote_execution_tasks_executing > 0) / count(buildbuddy_remote_execution_tasks_executing)",
+              "expr": "count(buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"} > 0) / count(buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"})",
               "interval": "",
               "legendFormat": "Working",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "1 - count(buildbuddy_remote_execution_tasks_executing > 0) / count(buildbuddy_remote_execution_tasks_executing)",
+              "expr": "1 - count(buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"} > 0) / count(buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"})",
               "interval": "",
               "legendFormat": "Idle",
               "refId": "B"
@@ -1785,6 +2108,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:141",
               "format": "percentunit",
               "label": null,
               "logBase": 1,
@@ -1793,6 +2117,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:142",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -1828,7 +2153,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 6
+            "y": 7
           },
           "hiddenSeries": false,
           "id": 159,
@@ -1853,6 +2178,13 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
           "seriesOverrides": [
             {
               "alias": "Executor instances",
@@ -1864,14 +2196,14 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "avg(buildbuddy_remote_execution_queue_length)",
+              "expr": "avg(buildbuddy_remote_execution_queue_length{job=\"buildbuddy-${pool}\"})",
               "interval": "",
               "legendFormat": "Avg executor queue length",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "sum(up{job=\"buildbuddy-executor\"})",
+              "expr": "sum(up{job=\"buildbuddy-${pool}\"})",
               "interval": "",
               "legendFormat": "Executor instances",
               "refId": "B"
@@ -1897,6 +2229,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:170",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -1905,6 +2238,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:171",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -1941,7 +2275,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 15
+            "y": 16
           },
           "hiddenSeries": false,
           "id": 210,
@@ -1965,13 +2299,20 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "histogram_quantile(\n  0.5,\n  sum by (le, stage) (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{stage!=\"worker\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.5,\n  sum by (le, stage) (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{stage!=\"worker\", job=\"buildbuddy-${pool}\"}[${window}]))\n)",
               "hide": false,
               "interval": "",
               "legendFormat": "{{stage}}",
@@ -1979,7 +2320,7 @@
               "refId": "A"
             },
             {
-              "expr": "histogram_quantile(\n  0.99,\n  sum by (le, stage)\n    (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.99,\n  sum by (le, stage)\n    (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{job=\"buildbuddy-${pool}\"}[${window}]))\n)",
               "hide": true,
               "interval": "",
               "legendFormat": "p99/{{stage}}",
@@ -2006,6 +2347,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:199",
               "format": "µs",
               "label": null,
               "logBase": 1,
@@ -2014,6 +2356,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:200",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2033,6 +2376,7 @@
           "dashLength": 10,
           "dashes": false,
           "datasource": "Prometheus",
+          "description": "",
           "fieldConfig": {
             "defaults": {
               "custom": {
@@ -2062,7 +2406,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 15
+            "y": 16
           },
           "hiddenSeries": false,
           "id": 178,
@@ -2087,20 +2431,27 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "avg(buildbuddy_remote_execution_assigned_milli_cpu{job=\"buildbuddy-executor\", pod_name=~\"executor-.*\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_cpu_cores{pod=~\"executor-.*\"} * 1000, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
+              "expr": "avg(buildbuddy_remote_execution_assigned_milli_cpu{job=\"buildbuddy-${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_cpu_cores{pod=~\"${pool}-.*\"} * 1000, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
               "interval": "",
               "legendFormat": "Avg CPU assigned",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "avg(buildbuddy_remote_execution_assigned_ram_bytes{job=\"buildbuddy-executor\", pod_name=~\"executor-.*\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_memory_bytes{pod=~\"executor-.*\"}, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
+              "expr": "avg(buildbuddy_remote_execution_assigned_ram_bytes{job=\"buildbuddy-${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_memory_bytes{pod=~\"${pool}-.*\"}, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
               "interval": "",
               "legendFormat": "Avg RAM assigned",
               "refId": "B"
@@ -2126,6 +2477,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:281",
               "format": "percentunit",
               "label": null,
               "logBase": 1,
@@ -2134,6 +2486,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:282",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2159,16 +2512,16 @@
             },
             "overrides": []
           },
-          "fill": 0,
+          "fill": 1,
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 23
+            "y": 24
           },
           "hiddenSeries": false,
-          "id": 200,
+          "id": 31,
           "legend": {
             "avg": false,
             "current": false,
@@ -2189,13 +2542,20 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(buildbuddy_remote_execution_queue_length) / 3",
+              "expr": "sum(rate(buildbuddy_remote_execution_count{job=\"buildbuddy-${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -2206,7 +2566,7 @@
           "timeFrom": null,
           "timeRegions": [],
           "timeShift": null,
-          "title": "Approx. total unclaimed tasks",
+          "title": "Actions executed per second",
           "tooltip": {
             "shared": true,
             "sort": 0,
@@ -2222,14 +2582,16 @@
           },
           "yaxes": [
             {
-              "format": "short",
-              "label": null,
+              "$$hashKey": "object:250",
+              "format": "ops",
+              "label": "",
               "logBase": 1,
               "max": null,
-              "min": null,
+              "min": "0",
               "show": true
             },
             {
+              "$$hashKey": "object:251",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2263,7 +2625,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 23
+            "y": 24
           },
           "hiddenSeries": false,
           "id": 35,
@@ -2287,13 +2649,20 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{job=\"buildbuddy-${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -2320,6 +2689,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:279",
               "format": "binBps",
               "label": null,
               "logBase": 1,
@@ -2328,200 +2698,7 @@
               "show": true
             },
             {
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": "Prometheus",
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
-          "fill": 1,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 31
-          },
-          "hiddenSeries": false,
-          "id": 31,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": false,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
-          "options": {
-            "alertThreshold": true
-          },
-          "percentage": false,
-          "pluginVersion": "7.3.5",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "sum(rate(buildbuddy_remote_execution_count[${window}]))",
-              "interval": "",
-              "legendFormat": "",
-              "queryType": "randomWalk",
-              "refId": "A"
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "Actions executed per second",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "format": "ops",
-              "label": "",
-              "logBase": 1,
-              "max": null,
-              "min": "0",
-              "show": true
-            },
-            {
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": "Prometheus",
-          "decimals": 0,
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
-          "fill": 1,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 31
-          },
-          "hiddenSeries": false,
-          "id": 68,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": false,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
-          "options": {
-            "alertThreshold": true
-          },
-          "percentage": false,
-          "pluginVersion": "7.3.5",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "sum(up{job=\"buildbuddy-executor\"})",
-              "interval": "",
-              "legendFormat": "",
-              "queryType": "randomWalk",
-              "refId": "A"
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "Remote executor instances",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "decimals": 0,
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": "0",
-              "show": true
-            },
-            {
+              "$$hashKey": "object:280",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2554,7 +2731,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 39
+            "y": 32
           },
           "hiddenSeries": false,
           "id": 33,
@@ -2578,13 +2755,20 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{job=\"buildbuddy-${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -2611,6 +2795,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:312",
               "format": "binBps",
               "label": null,
               "logBase": 1,
@@ -2619,6 +2804,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:313",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2651,7 +2837,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 39
+            "y": 32
           },
           "hiddenSeries": false,
           "id": 102,
@@ -2676,13 +2862,20 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (job, instance) (buildbuddy_remote_execution_queue_length{job=\"buildbuddy-executor\"})",
+              "expr": "sum by (job, instance) (buildbuddy_remote_execution_queue_length{job=\"buildbuddy-${pool}\"})",
               "interval": "",
               "legendFormat": "{{job}} @ {{instance}}",
               "queryType": "randomWalk",
@@ -2709,6 +2902,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:371",
               "decimals": 0,
               "format": "short",
               "label": null,
@@ -2718,6 +2912,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:372",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2749,7 +2944,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 47
+            "y": 40
           },
           "hiddenSeries": false,
           "id": 129,
@@ -2773,13 +2968,20 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "quantile(0.5, buildbuddy_remote_execution_queue_length)",
+              "expr": "quantile(0.5, buildbuddy_remote_execution_queue_length{job=\"buildbuddy-${pool}\"})",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -2806,6 +3008,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:408",
               "decimals": 0,
               "format": "short",
               "label": null,
@@ -2815,6 +3018,633 @@
               "show": true
             },
             {
+              "$$hashKey": "object:409",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 40
+          },
+          "hiddenSeries": false,
+          "id": 180,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": false,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"${pool}-[a-f0-9].*\"}[5m]))",
+              "interval": "",
+              "legendFormat": "{{pod}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Total CPU usage (CPU seconds)",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:445",
+              "format": "s",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:446",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        }
+      ],
+      "repeat": "pool",
+      "scopedVars": {
+        "pool": {
+          "selected": false,
+          "text": "executor",
+          "value": "executor"
+        }
+      },
+      "title": "Remote execution (${pool})",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "id": 349,
+      "panels": [
+        {
+          "aliasColors": {
+            "Idle": "dark-purple"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "description": "Chart is stacked, so values always add up to 100%.",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 8
+          },
+          "hiddenSeries": false,
+          "id": 350,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 190,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": true,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "count(buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"} > 0) / count(buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"})",
+              "interval": "",
+              "legendFormat": "Working",
+              "queryType": "randomWalk",
+              "refId": "A"
+            },
+            {
+              "expr": "1 - count(buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"} > 0) / count(buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"})",
+              "interval": "",
+              "legendFormat": "Idle",
+              "refId": "B"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Fraction of working executors",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:141",
+              "format": "percentunit",
+              "label": null,
+              "logBase": 1,
+              "max": "1",
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:142",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {
+            "Avg executor queue length": "dark-red",
+            "Executor instances": "dark-blue",
+            "Value": "dark-green"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 12,
+            "y": 8
+          },
+          "hiddenSeries": false,
+          "id": 351,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "rightSide": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 159,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [
+            {
+              "alias": "Executor instances",
+              "linewidth": 3
+            }
+          ],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "avg(buildbuddy_remote_execution_queue_length{job=\"buildbuddy-${pool}\"})",
+              "interval": "",
+              "legendFormat": "Avg executor queue length",
+              "queryType": "randomWalk",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(up{job=\"buildbuddy-${pool}\"})",
+              "interval": "",
+              "legendFormat": "Executor instances",
+              "refId": "B"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Executor autoscaling",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:170",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:171",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {
+            "output_upload": "dark-orange",
+            "output_upload stage": "dark-orange",
+            "queued": "dark-red",
+            "queued stage": "dark-red"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 17
+          },
+          "hiddenSeries": false,
+          "id": 352,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 2,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 210,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "histogram_quantile(\n  0.5,\n  sum by (le, stage) (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{stage!=\"worker\", job=\"buildbuddy-${pool}\"}[${window}]))\n)",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "{{stage}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            },
+            {
+              "expr": "histogram_quantile(\n  0.99,\n  sum by (le, stage)\n    (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{job=\"buildbuddy-${pool}\"}[${window}]))\n)",
+              "hide": true,
+              "interval": "",
+              "legendFormat": "p99/{{stage}}",
+              "refId": "B"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Median action stage durations",
+          "tooltip": {
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:199",
+              "format": "µs",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:200",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": null,
+                "filterable": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 17
+          },
+          "hiddenSeries": false,
+          "id": 353,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 178,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "avg(buildbuddy_remote_execution_assigned_milli_cpu{job=\"buildbuddy-${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_cpu_cores{pod=~\"${pool}-.*\"} * 1000, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
+              "interval": "",
+              "legendFormat": "Avg CPU assigned",
+              "queryType": "randomWalk",
+              "refId": "A"
+            },
+            {
+              "expr": "avg(buildbuddy_remote_execution_assigned_ram_bytes{job=\"buildbuddy-${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_memory_bytes{pod=~\"${pool}-.*\"}, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
+              "interval": "",
+              "legendFormat": "Avg RAM assigned",
+              "refId": "B"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Avg resources allocated to tasks",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:281",
+              "format": "percentunit",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:282",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2846,125 +3676,10 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 55
+            "y": 25
           },
           "hiddenSeries": false,
-          "id": 180,
-          "legend": {
-            "alignAsTable": true,
-            "avg": false,
-            "current": true,
-            "max": false,
-            "min": false,
-            "show": true,
-            "sort": "current",
-            "sortDesc": true,
-            "total": false,
-            "values": true
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
-          "options": {
-            "alertThreshold": true
-          },
-          "percentage": false,
-          "pluginVersion": "7.3.5",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"executor-dev\"}[${window}]))",
-              "interval": "",
-              "legendFormat": "CPU usage",
-              "queryType": "randomWalk",
-              "refId": "A"
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "Total CPU usage",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": "0",
-              "show": true
-            },
-            {
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
-        }
-      ],
-      "title": "Remote execution",
-      "type": "row"
-    },
-    {
-      "collapsed": true,
-      "datasource": null,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 6
-      },
-      "id": 264,
-      "panels": [
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": "Prometheus",
-          "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
-          "fill": 1,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 7
-          },
-          "hiddenSeries": false,
-          "id": 274,
+          "id": 354,
           "legend": {
             "avg": false,
             "current": false,
@@ -2985,13 +3700,23 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 31,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_count)",
+              "expr": "sum(rate(buildbuddy_remote_execution_count{job=\"buildbuddy-${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -3002,7 +3727,702 @@
           "timeFrom": null,
           "timeRegions": [],
           "timeShift": null,
-          "title": "Total pooled runners",
+          "title": "Actions executed per second",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:250",
+              "format": "ops",
+              "label": "",
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:251",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {
+            "Value": "yellow"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 25
+          },
+          "hiddenSeries": false,
+          "id": 355,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": false,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 35,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{job=\"buildbuddy-${pool}\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Total uploaded bytes per second",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:279",
+              "format": "binBps",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:280",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 33
+          },
+          "hiddenSeries": false,
+          "id": 356,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": false,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 33,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{job=\"buildbuddy-${pool}\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Total downloaded bytes per second",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:312",
+              "format": "binBps",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:313",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "description": "Number of actions waiting to be executed",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 33
+          },
+          "hiddenSeries": false,
+          "id": 357,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 102,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum by (job, instance) (buildbuddy_remote_execution_queue_length{job=\"buildbuddy-${pool}\"})",
+              "interval": "",
+              "legendFormat": "{{job}} @ {{instance}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Executor queue length by instance",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:371",
+              "decimals": 0,
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:372",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 41
+          },
+          "hiddenSeries": false,
+          "id": 358,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": false,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 129,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "quantile(0.5, buildbuddy_remote_execution_queue_length{job=\"buildbuddy-${pool}\"})",
+              "interval": "",
+              "legendFormat": "",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Median executor queue length",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:408",
+              "decimals": 0,
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:409",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 41
+          },
+          "hiddenSeries": false,
+          "id": 359,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": false,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 180,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"${pool}-[a-f0-9].*\"}[5m]))",
+              "interval": "",
+              "legendFormat": "{{pod}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Total CPU usage (CPU seconds)",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:445",
+              "format": "s",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:446",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        }
+      ],
+      "repeatIteration": 1624481106206,
+      "repeatPanelId": 28,
+      "scopedVars": {
+        "pool": {
+          "selected": false,
+          "text": "executor-workflows",
+          "value": "executor-workflows"
+        }
+      },
+      "title": "Remote execution (${pool})",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 264,
+      "panels": [
+        {
+          "aliasColors": {
+            "Executor count (for comparison)": "semi-dark-blue"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 9
+          },
+          "hiddenSeries": false,
+          "id": 274,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "rightSide": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_count{job=\"buildbuddy-${pool}\"})",
+              "interval": "",
+              "legendFormat": "Total",
+              "queryType": "randomWalk",
+              "refId": "A"
+            },
+            {
+              "expr": "avg(buildbuddy_remote_execution_runner_pool_count{job=\"buildbuddy-${pool}\"})",
+              "interval": "",
+              "legendFormat": "Average",
+              "refId": "B"
+            },
+            {
+              "expr": "sum(up{job=\"buildbuddy-${pool}\"})",
+              "interval": "",
+              "legendFormat": "Executor count (for comparison)",
+              "refId": "C"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Pooled runner count",
           "tooltip": {
             "shared": true,
             "sort": 0,
@@ -3062,7 +4482,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 7
+            "y": 9
           },
           "hiddenSeries": false,
           "id": 276,
@@ -3086,13 +4506,20 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_remote_execution_runner_pool_evictions[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_runner_pool_evictions{job=\"buildbuddy-${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -3144,6 +4571,220 @@
         },
         {
           "aliasColors": {
+            "max_memory_exceeded": "dark-orange"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 17
+          },
+          "hiddenSeries": false,
+          "id": 290,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{job=\"buildbuddy-${pool}\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "{{reason}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Recycling failures by reason",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:52",
+              "format": "ops",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:53",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {
+            "miss": "dark-red"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 17
+          },
+          "hiddenSeries": false,
+          "id": 292,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{job=\"buildbuddy-${pool}\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "{{status}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Pool requests by status",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:133",
+              "format": "ops",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:134",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {
             "Value": "dark-yellow"
           },
           "bars": false,
@@ -3162,7 +4803,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 15
+            "y": 25
           },
           "hiddenSeries": false,
           "id": 278,
@@ -3186,13 +4827,20 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes)",
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{job=\"buildbuddy-${pool}\"})",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -3262,7 +4910,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 15
+            "y": 25
           },
           "hiddenSeries": false,
           "id": 280,
@@ -3286,13 +4934,20 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor",
+              "value": "executor"
+            }
+          },
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes)",
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{job=\"buildbuddy-${pool}\"})",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -3343,7 +4998,15 @@
           }
         }
       ],
-      "title": "Runner recycling",
+      "repeat": "pool",
+      "scopedVars": {
+        "pool": {
+          "selected": false,
+          "text": "executor",
+          "value": "executor"
+        }
+      },
+      "title": "Runner recycling (${pool})",
       "type": "row"
     },
     {
@@ -3353,7 +5016,706 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 7
+        "y": 9
+      },
+      "id": 360,
+      "panels": [
+        {
+          "aliasColors": {
+            "Executor count (for comparison)": "semi-dark-blue"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 10
+          },
+          "hiddenSeries": false,
+          "id": 361,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "rightSide": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 274,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_count{job=\"buildbuddy-${pool}\"})",
+              "interval": "",
+              "legendFormat": "Total",
+              "queryType": "randomWalk",
+              "refId": "A"
+            },
+            {
+              "expr": "avg(buildbuddy_remote_execution_runner_pool_count{job=\"buildbuddy-${pool}\"})",
+              "interval": "",
+              "legendFormat": "Average",
+              "refId": "B"
+            },
+            {
+              "expr": "sum(up{job=\"buildbuddy-${pool}\"})",
+              "interval": "",
+              "legendFormat": "Executor count (for comparison)",
+              "refId": "C"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Pooled runner count",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:146",
+              "decimals": 0,
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:147",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {
+            "Value": "dark-red"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 10
+          },
+          "hiddenSeries": false,
+          "id": 362,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": false,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 276,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum(rate(buildbuddy_remote_execution_runner_pool_evictions{job=\"buildbuddy-${pool}\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Runner pool evictions",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:179",
+              "format": "ops",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:180",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {
+            "max_memory_exceeded": "dark-orange"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 18
+          },
+          "hiddenSeries": false,
+          "id": 363,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 290,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{job=\"buildbuddy-${pool}\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "{{reason}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Recycling failures by reason",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:52",
+              "format": "ops",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:53",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {
+            "miss": "dark-red"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 18
+          },
+          "hiddenSeries": false,
+          "id": 364,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 292,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{job=\"buildbuddy-${pool}\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "{{status}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Pool requests by status",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:133",
+              "format": "ops",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:134",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {
+            "Value": "dark-yellow"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 26
+          },
+          "hiddenSeries": false,
+          "id": 365,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": false,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 278,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{job=\"buildbuddy-${pool}\"})",
+              "interval": "",
+              "legendFormat": "",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Total memory usage",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:559",
+              "format": "bytes",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:560",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {
+            "Value": "dark-purple"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 26
+          },
+          "hiddenSeries": false,
+          "id": 366,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": false,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 280,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "pool": {
+              "selected": false,
+              "text": "executor-workflows",
+              "value": "executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{job=\"buildbuddy-${pool}\"})",
+              "interval": "",
+              "legendFormat": "",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Total workspace size",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:697",
+              "format": "bytes",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:698",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        }
+      ],
+      "repeatIteration": 1624481106206,
+      "repeatPanelId": 264,
+      "scopedVars": {
+        "pool": {
+          "selected": false,
+          "text": "executor-workflows",
+          "value": "executor-workflows"
+        }
+      },
+      "title": "Runner recycling (${pool})",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 10
       },
       "id": 38,
       "panels": [
@@ -3889,7 +6251,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 11
       },
       "id": 48,
       "panels": [
@@ -4294,7 +6656,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 9
+        "y": 12
       },
       "id": 107,
       "panels": [
@@ -4903,7 +7265,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 13
       },
       "id": 83,
       "panels": [
@@ -4956,7 +7318,7 @@
           "repeat": null,
           "scopedVars": {
             "job": {
-              "selected": true,
+              "selected": false,
               "text": "buildbuddy-app",
               "value": "buildbuddy-app"
             }
@@ -5065,7 +7427,7 @@
           "renderer": "flot",
           "scopedVars": {
             "job": {
-              "selected": true,
+              "selected": false,
               "text": "buildbuddy-app",
               "value": "buildbuddy-app"
             }
@@ -5172,7 +7534,7 @@
           "renderer": "flot",
           "scopedVars": {
             "job": {
-              "selected": true,
+              "selected": false,
               "text": "buildbuddy-app",
               "value": "buildbuddy-app"
             }
@@ -5279,7 +7641,7 @@
           "renderer": "flot",
           "scopedVars": {
             "job": {
-              "selected": true,
+              "selected": false,
               "text": "buildbuddy-app",
               "value": "buildbuddy-app"
             }
@@ -5342,7 +7704,7 @@
       "repeat": "job",
       "scopedVars": {
         "job": {
-          "selected": true,
+          "selected": false,
           "text": "buildbuddy-app",
           "value": "buildbuddy-app"
         }
@@ -5357,9 +7719,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 14
       },
-      "id": 265,
+      "id": 367,
       "panels": [
         {
           "aliasColors": {},
@@ -5383,7 +7745,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 266,
+          "id": 368,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5408,12 +7770,12 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1622830522099,
+          "repeatIteration": 1624481106206,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
             "job": {
-              "selected": true,
+              "selected": false,
               "text": "buildbuddy-executor",
               "value": "buildbuddy-executor"
             }
@@ -5496,7 +7858,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 267,
+          "id": 369,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5520,12 +7882,12 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1622830522099,
+          "repeatIteration": 1624481106206,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
             "job": {
-              "selected": true,
+              "selected": false,
               "text": "buildbuddy-executor",
               "value": "buildbuddy-executor"
             }
@@ -5606,7 +7968,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 268,
+          "id": 370,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5630,12 +7992,12 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1622830522099,
+          "repeatIteration": 1624481106206,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
             "job": {
-              "selected": true,
+              "selected": false,
               "text": "buildbuddy-executor",
               "value": "buildbuddy-executor"
             }
@@ -5716,7 +8078,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 269,
+          "id": 371,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -5740,12 +8102,12 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1622830522099,
+          "repeatIteration": 1624481106206,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
             "job": {
-              "selected": true,
+              "selected": false,
               "text": "buildbuddy-executor",
               "value": "buildbuddy-executor"
             }
@@ -5805,11 +8167,11 @@
           }
         }
       ],
-      "repeatIteration": 1622830522099,
+      "repeatIteration": 1624481106206,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
-          "selected": true,
+          "selected": false,
           "text": "buildbuddy-executor",
           "value": "buildbuddy-executor"
         }
@@ -5824,7 +8186,474 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 15
+      },
+      "id": 372,
+      "panels": [
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "description": "Number of heap bytes allocated and still in use.",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 165
+          },
+          "hiddenSeries": false,
+          "id": 373,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeat": null,
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 85,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "job": {
+              "selected": false,
+              "text": "buildbuddy-executor-workflows",
+              "value": "buildbuddy-executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "go_memstats_heap_alloc_bytes{job=\"${job}\"}",
+              "interval": "",
+              "legendFormat": "{{job}} @ {{instance}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            },
+            {
+              "refId": "B"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Heap size",
+          "tooltip": {
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "bytes",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 12,
+            "y": 165
+          },
+          "hiddenSeries": false,
+          "id": 374,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 87,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "job": {
+              "selected": false,
+              "text": "buildbuddy-executor-workflows",
+              "value": "buildbuddy-executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "go_goroutines{job=\"${job}\"}",
+              "interval": "",
+              "legendFormat": "{{job}} @ {{instance}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "goroutines",
+          "tooltip": {
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "description": "% of time spent in the garbage collector since the program started.",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 174
+          },
+          "hiddenSeries": false,
+          "id": 375,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 91,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "job": {
+              "selected": false,
+              "text": "buildbuddy-executor-workflows",
+              "value": "buildbuddy-executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "go_memstats_gc_cpu_fraction{job=\"${job}\"}",
+              "interval": "",
+              "legendFormat": "{{job}} @ {{instance}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "GC CPU fraction",
+          "tooltip": {
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "decimals": null,
+              "format": "percentunit",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 174
+          },
+          "hiddenSeries": false,
+          "id": 376,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 93,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "job": {
+              "selected": false,
+              "text": "buildbuddy-executor-workflows",
+              "value": "buildbuddy-executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "go_gc_duration_seconds{quantile=\"0.5\",job=\"${job}\"}",
+              "interval": "",
+              "legendFormat": "{{job}} @ {{instance}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Median GC duration",
+          "tooltip": {
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "s",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        }
+      ],
+      "repeatIteration": 1624481106206,
+      "repeatPanelId": 83,
+      "scopedVars": {
+        "job": {
+          "selected": false,
+          "text": "buildbuddy-executor-workflows",
+          "value": "buildbuddy-executor-workflows"
+        }
+      },
+      "title": "golang (${job})",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 16
       },
       "id": 71,
       "panels": [
@@ -5893,7 +8722,7 @@
           "repeat": null,
           "scopedVars": {
             "job": {
-              "selected": true,
+              "selected": false,
               "text": "buildbuddy-app",
               "value": "buildbuddy-app"
             }
@@ -6000,7 +8829,7 @@
           "repeat": null,
           "scopedVars": {
             "job": {
-              "selected": true,
+              "selected": false,
               "text": "buildbuddy-app",
               "value": "buildbuddy-app"
             }
@@ -6063,7 +8892,7 @@
       "repeat": "job",
       "scopedVars": {
         "job": {
-          "selected": true,
+          "selected": false,
           "text": "buildbuddy-app",
           "value": "buildbuddy-app"
         }
@@ -6078,9 +8907,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 17
       },
-      "id": 270,
+      "id": 377,
       "panels": [
         {
           "aliasColors": {
@@ -6120,7 +8949,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 271,
+          "id": 378,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -6145,12 +8974,12 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1622830522099,
+          "repeatIteration": 1624481106206,
           "repeatPanelId": 73,
           "repeatedByRow": true,
           "scopedVars": {
             "job": {
-              "selected": true,
+              "selected": false,
               "text": "buildbuddy-executor",
               "value": "buildbuddy-executor"
             }
@@ -6230,7 +9059,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 272,
+          "id": 379,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -6255,12 +9084,12 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1622830522099,
+          "repeatIteration": 1624481106206,
           "repeatPanelId": 79,
           "repeatedByRow": true,
           "scopedVars": {
             "job": {
-              "selected": true,
+              "selected": false,
               "text": "buildbuddy-executor",
               "value": "buildbuddy-executor"
             }
@@ -6320,11 +9149,11 @@
           }
         }
       ],
-      "repeatIteration": 1622830522099,
+      "repeatIteration": 1624481106206,
       "repeatPanelId": 71,
       "scopedVars": {
         "job": {
-          "selected": true,
+          "selected": false,
           "text": "buildbuddy-executor",
           "value": "buildbuddy-executor"
         }
@@ -6339,7 +9168,268 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 18
+      },
+      "id": 380,
+      "panels": [
+        {
+          "aliasColors": {
+            "Aborted": "dark-orange",
+            "AlreadyExists": "dark-blue",
+            "Canceled": "dark-yellow",
+            "DataLoss": "dark-red",
+            "DeadlineExceeded": "dark-red",
+            "FailedPrecondition": "dark-red",
+            "Internal": "dark-red",
+            "NotFound": "semi-dark-yellow",
+            "OK": "dark-green",
+            "OutOfRange": "rgb(188, 68, 176)",
+            "PermissionDenied": "dark-purple",
+            "ResourceExhausted": "dark-yellow",
+            "Unauthenticated": "dark-purple",
+            "Unavailable": "dark-red",
+            "Unimplemented": "dark-purple",
+            "Unknown": "rgb(168, 168, 168)"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 8
+          },
+          "hiddenSeries": false,
+          "id": 381,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeat": null,
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 73,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "job": {
+              "selected": false,
+              "text": "buildbuddy-executor-workflows",
+              "value": "buildbuddy-executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{job=\"${job}\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "{{grpc_code}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Handled gRPC requests per second by status",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "ops",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 12,
+            "y": 8
+          },
+          "hiddenSeries": false,
+          "id": 382,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "repeat": null,
+          "repeatIteration": 1624481106206,
+          "repeatPanelId": 79,
+          "repeatedByRow": true,
+          "scopedVars": {
+            "job": {
+              "selected": false,
+              "text": "buildbuddy-executor-workflows",
+              "value": "buildbuddy-executor-workflows"
+            }
+          },
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum by (grpc_method) (rate(grpc_server_handled_total{job=\"${job}\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "{{grpc_method}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Handled gRPC requests per second by method",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "ops",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        }
+      ],
+      "repeatIteration": 1624481106206,
+      "repeatPanelId": 71,
+      "scopedVars": {
+        "job": {
+          "selected": false,
+          "text": "buildbuddy-executor-workflows",
+          "value": "buildbuddy-executor-workflows"
+        }
+      },
+      "title": "gRPC (${job})",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 19
       },
       "id": 8,
       "panels": [
@@ -6462,7 +9552,7 @@
       "type": "row"
     }
   ],
-  "refresh": "1d",
+  "refresh": "1m",
   "schemaVersion": 26,
   "style": "dark",
   "tags": [],
@@ -6576,36 +9666,82 @@
       {
         "allValue": null,
         "current": {
-          "selected": true,
-          "tags": [],
+          "selected": false,
           "text": [
-            "buildbuddy-app",
-            "buildbuddy-executor"
+            "All"
           ],
           "value": [
-            "buildbuddy-app",
-            "buildbuddy-executor"
+            "$__all"
           ]
         },
         "error": null,
         "hide": 0,
-        "includeAll": false,
+        "includeAll": true,
         "label": "Jobs",
         "multi": true,
         "name": "job",
         "options": [
           {
             "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
             "text": "buildbuddy-app",
             "value": "buildbuddy-app"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "buildbuddy-executor",
             "value": "buildbuddy-executor"
+          },
+          {
+            "selected": false,
+            "text": "buildbuddy-executor-workflows",
+            "value": "buildbuddy-executor-workflows"
           }
         ],
-        "query": "buildbuddy-app, buildbuddy-executor",
+        "query": "buildbuddy-app, buildbuddy-executor, buildbuddy-executor-workflows",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "allValue": null,
+        "current": {
+          "selected": false,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "error": null,
+        "hide": 0,
+        "includeAll": true,
+        "label": "Executor pool",
+        "multi": true,
+        "name": "pool",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "executor",
+            "value": "executor"
+          },
+          {
+            "selected": false,
+            "text": "executor-workflows",
+            "value": "executor-workflows"
+          }
+        ],
+        "query": "executor, executor-workflows",
         "queryValue": "",
         "skipUrlSync": false,
         "type": "custom"

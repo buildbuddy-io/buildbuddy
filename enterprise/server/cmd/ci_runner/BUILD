@@ -54,3 +54,13 @@ container_image(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
 )
+
+container_image(
+    name = "ci_runner_debug_image",
+    base = "@ci_runner_debug_image//image:dockerfile_image.tar",
+    tags = ["manual"],
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
+)

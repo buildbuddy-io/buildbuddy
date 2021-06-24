@@ -3,24 +3,21 @@ package ci_runner_test
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/bazel"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	git "github.com/go-git/go-git/v5"
-	gitobject "github.com/go-git/go-git/v5/plumbing/object"
 )
 
 var (
@@ -58,7 +55,7 @@ type result struct {
 }
 
 func makeRunnerWorkspace(t *testing.T) string {
-	wsDir := bazel.MakeTempWorkspace(t, nil /*=contents*/)
+	wsDir := testbazel.MakeTempWorkspace(t, nil /*=contents*/)
 	// Need a home dir so bazel commands invoked by the runner know where to put
 	// their local cache.
 	homeDir := filepath.Join(wsDir, ".home")
@@ -68,39 +65,12 @@ func makeRunnerWorkspace(t *testing.T) string {
 	return wsDir
 }
 
-// TODO: Replace with testfs.MakeTempDir once #361 is merged.
-func makeTempDir(t testing.TB) string {
-	tmpDir, err := os.MkdirTemp("", "buildbuddy-test-*")
-	if err != nil {
-		assert.FailNow(t, "failed to create temp dir", err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			assert.FailNow(t, "failed to clean up temp dir", err)
-		}
-	})
-	return tmpDir
-}
-
-// TODO: Replace with testfs.WriteAllFileContents once #361 is merged.
-func writeAllFileContents(t testing.TB, rootDir string, contents map[string]string) {
-	for relPath, content := range contents {
-		path := filepath.Join(rootDir, relPath)
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			assert.FailNow(t, "failed to create parent dir for file", err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			assert.FailNow(t, "write failed", err)
-		}
-	}
-}
-
 func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
 	binPath, err := bazelgo.Runfile("enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
 	if err != nil {
 		t.Fatal(err)
 	}
-	bazelPath, err := bazelgo.Runfile("server/testutil/bazel/bazel-3.7.0")
+	bazelPath, err := bazelgo.Runfile(testbazel.BazelBinaryPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,48 +128,11 @@ func newUUID(t *testing.T) string {
 }
 
 func makeGitRepo(t *testing.T, contents map[string]string) (path, commitSHA string) {
-	// NOTE: Not using bazel.MakeTempWorkspace here since this repo itself does
-	// not need `bazel shutdown` run inside it (only the clone of this repo made
-	// by the runner needs `bazel shutdown` to be run).
-	path = makeTempDir(t)
-	writeAllFileContents(t, path, contents)
-	for fileRelPath := range contents {
-		filePath := filepath.Join(path, fileRelPath)
-		// Make shell scripts executable.
-		if strings.HasSuffix(filePath, ".sh") {
-			if err := os.Chmod(filePath, 0750); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
 	// Make the repo contents globally unique so that this makeGitRepo func can be
 	// called more than once to create unique repos with incompatible commit
 	// history.
-	if err := ioutil.WriteFile(filepath.Join(path, ".repo_id"), []byte(newUUID(t)), 0775); err != nil {
-		t.Fatal(err)
-	}
-
-	repo, err := git.PlainInit(path, false /*=bare*/)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tree, err := repo.Worktree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := tree.AddGlob("*"); err != nil {
-		t.Fatal(err)
-	}
-	hash, err := tree.Commit("Initial commit", &git.CommitOptions{
-		Author: &gitobject.Signature{
-			Name:  "Test",
-			Email: "test@buildbuddy.io",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path, hash.String()
+	contents[".repo_id"] = newUUID(t)
+	return testgit.MakeTempRepo(t, contents)
 }
 
 func TestCIRunner_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testing.T) {
@@ -231,7 +164,7 @@ func TestCIRunner_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testin
 	runnerInvocation := res.Invocation[0]
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
-	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7.0")
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 }
 
 func TestCIRunner_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsToBES(t *testing.T) {
@@ -305,7 +238,7 @@ func TestCIRunner_ReusedWorkspaceWithTestAllAction_CanReuseWorkspace(t *testing.
 	runnerInvocation := res.Invocation[0]
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
-	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7.0")
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 }
 
 func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
@@ -341,7 +274,7 @@ func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 		runnerInvocation := res.Invocation[0]
 		// Since our workflow just runs `bazel version`, we should be able to see its
 		// output in the action logs.
-		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: 3.7.0")
+		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 	}
 
 	run()

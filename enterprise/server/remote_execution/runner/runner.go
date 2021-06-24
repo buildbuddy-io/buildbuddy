@@ -14,8 +14,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/containerd"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -34,6 +38,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
+	dockerclient "github.com/docker/docker/client"
 )
 
 const (
@@ -85,9 +90,29 @@ var (
 	// because there aren't enough system resources available.
 	NotEnoughResources = status.ResourceExhaustedError("not enough system resources available to pool runner")
 
+	podIDFromCpusetRegexp = regexp.MustCompile("/kubepods(/.*?)?/pod([a-z0-9\\-]{36})/")
+
 	flagFilePattern           = regexp.MustCompile(`^(?:@|--?flagfile=)(.+)`)
 	externalRepositoryPattern = regexp.MustCompile(`^@.*//.*`)
 )
+
+func k8sPodID() (string, error) {
+	if _, err := os.Stat("/proc/1/cpuset"); err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	buf, err := os.ReadFile("/proc/1/cpuset")
+	if err != nil {
+		return "", err
+	}
+	cpuset := string(buf)
+	if m := podIDFromCpusetRegexp.FindStringSubmatch(cpuset); m != nil {
+		return m[2], nil
+	}
+	return "", nil
+}
 
 // State indicates the current state of a CommandContainer.
 type state int
@@ -186,12 +211,11 @@ func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfa
 func (r *CommandRunner) Remove(ctx context.Context) error {
 	errs := []error{}
 	if err := r.Workspace.Remove(); err != nil {
-		log.Errorf("Failed to clean up runner workspace: %s", err)
 		errs = append(errs, err)
 	}
 	if s := r.state; s != initial && s != removed {
+		r.state = removed
 		if err := r.Container.Remove(ctx); err != nil {
-			log.Errorf("Failed to remove runner container: %s", err)
 			errs = append(errs, err)
 		}
 	}
@@ -201,17 +225,19 @@ func (r *CommandRunner) Remove(ctx context.Context) error {
 	return nil
 }
 
-// RemoveInBackground removes the command runner in the background, returning
-// a channel that receives a signal when the removal attempt is completed.
-func (r *CommandRunner) RemoveInBackground() chan error {
-	errCh := make(chan error)
+func (r *CommandRunner) RemoveWithTimeout(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, runnerCleanupTimeout)
+	defer cancel()
+	return r.Remove(ctx)
+}
+
+func (r *CommandRunner) RemoveInBackground() {
+	// TODO: Add to a cleanup queue instead of spawning a goroutine here.
 	go func() {
-		deadline := time.Now().Add(runnerCleanupTimeout)
-		ctx, cancel := context.WithDeadline(context.Background(), deadline)
-		defer cancel()
-		errCh <- r.Remove(ctx)
+		if err := r.RemoveWithTimeout(context.Background()); err != nil {
+			log.Errorf("Failed to remove runner: %s", err)
+		}
 	}()
-	return errCh
 }
 
 func (r *CommandRunner) Resources() *interfaces.Resources {
@@ -230,12 +256,18 @@ func ACLForUser(user interfaces.UserInfo) *aclpb.ACL {
 	return perms.ToACLProto(userID, groupID, permBits)
 }
 
-// Pool holds a collection of paused runners that can be reused.
+// Pool keeps track of command runners, both inactive (paused) and running.
 //
-// In the case of bare command execution, the paused runner may not actually
-// have its execution suspended. The pool doesn't currently account for CPU
+// In the case of bare command execution, paused runners may not actually
+// have their execution suspended. The pool doesn't currently account for CPU
 // usage in this case.
 type Pool struct {
+	env              environment.Env
+	podID            string
+	buildRoot        string
+	dockerClient     *dockerclient.Client
+	containerdSocket string
+
 	maxRunnerCount            int
 	maxRunnerMemoryUsageBytes int64
 	maxRunnerDiskUsageBytes   int64
@@ -246,59 +278,157 @@ type Pool struct {
 	runners        []*CommandRunner
 }
 
-func NewPool(env environment.Env, cfg *config.RunnerPoolConfig) *Pool {
-	p := &Pool{
-		resourceTracker: env.GetResourceTracker(),
-		runners:         []*CommandRunner{},
+func NewPool(env environment.Env) (*Pool, error) {
+	executorConfig := env.GetConfigurator().GetExecutorConfig()
+	if executorConfig == nil {
+		return nil, status.FailedPreconditionError("No executor config found")
 	}
-	p.setLimits(cfg)
-	return p
+
+	podID, err := k8sPodID()
+	if err != nil {
+		return nil, status.FailedPreconditionErrorf("Failed to determine k8s pod ID: %s", err)
+	}
+
+	var dockerClient *dockerclient.Client
+	containerdSocket := ""
+	if executorConfig.ContainerdSocket != "" {
+		_, err := os.Stat(executorConfig.ContainerdSocket)
+		if os.IsNotExist(err) {
+			return nil, status.FailedPreconditionErrorf("Containerd socket %q not found", executorConfig.ContainerdSocket)
+		}
+		containerdSocket = executorConfig.ContainerdSocket
+		log.Info("Using containerd for execution")
+		if executorConfig.DockerSocket != "" {
+			log.Warning("containerd_socket and docker_socket both specified. Ignoring docker_socket in favor of containerd.")
+		}
+	} else if executorConfig.DockerSocket != "" {
+		_, err := os.Stat(executorConfig.DockerSocket)
+		if os.IsNotExist(err) {
+			return nil, status.FailedPreconditionErrorf("Docker socket %q not found", executorConfig.DockerSocket)
+		}
+		dockerSocket := executorConfig.DockerSocket
+		dockerClient, err = dockerclient.NewClientWithOpts(
+			dockerclient.WithHost(fmt.Sprintf("unix://%s", dockerSocket)),
+			dockerclient.WithAPIVersionNegotiation(),
+		)
+		if err != nil {
+			return nil, status.FailedPreconditionErrorf("Failed to create docker client: %s", err)
+		}
+		log.Info("Using docker for execution")
+	}
+
+	resourceTracker := env.GetResourceTracker()
+	if resourceTracker == nil {
+		return nil, status.FailedPreconditionError("Runner pool requires a ResourceTracker (missing from env).")
+	}
+
+	p := &Pool{
+		env:              env,
+		resourceTracker:  resourceTracker,
+		podID:            podID,
+		dockerClient:     dockerClient,
+		containerdSocket: containerdSocket,
+		buildRoot:        executorConfig.GetRootDirectory(),
+		runners:          []*CommandRunner{},
+	}
+	p.setLimits(&executorConfig.RunnerPool)
+	return p, nil
+}
+
+func (p *Pool) props() *platform.ExecutorProperties {
+	return &platform.ExecutorProperties{
+		ContainerType: p.containerType(),
+	}
+}
+
+func (p *Pool) containerType() platform.ContainerType {
+	if p.dockerClient != nil {
+		return platform.DockerContainerType
+	}
+	if p.containerdSocket != "" {
+		return platform.ContainerdContainerType
+	}
+	return platform.BareContainerType
 }
 
 // Add adds the given runner into the pool, evicting older runners if needed.
 // If an error is returned, the runner was not successfully added to the pool.
 func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
+	if err := p.add(ctx, r); err != nil {
+		metrics.RunnerPoolFailedRecycleAttempts.With(prometheus.Labels{
+			metrics.RunnerPoolFailedRecycleReason: err.Label,
+		}).Inc()
+		return err.Error
+	}
+	return nil
+}
+
+func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 	// TODO: once CommandContainer lifecycle methods are available, enforce that
 	// the runner's CommandContainer is paused, and return a
 	// FailedPreconditionError if not.
 
 	if r.state != ready {
-		return status.InternalErrorf("unexpected runner state %d; this should never happen", r.state)
+		return &labeledError{
+			status.InternalErrorf("unexpected runner state %d; this should never happen", r.state),
+			"unexpected_runner_state",
+		}
 	}
 	if err := r.Container.Pause(ctx); err != nil {
-		return status.WrapError(err, "failed to pause container before adding to the pool")
+		return &labeledError{
+			status.WrapError(err, "failed to pause container before adding to the pool"),
+			"pause_failed",
+		}
 	}
 	r.state = paused
 
 	stats, err := r.Container.Stats(ctx)
 	if err != nil {
-		return status.WrapError(err, "failed to compute container stats")
+		return &labeledError{
+			status.WrapError(err, "failed to compute container stats"),
+			"stats_failed",
+		}
 	}
 	if stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
-		return RunnerMaxMemoryExceeded
+		return &labeledError{
+			RunnerMaxMemoryExceeded,
+			"max_memory_exceeded",
+		}
 	}
 	du, err := r.Workspace.DiskUsageBytes()
 	if err != nil {
-		return status.WrapError(err, "failed to compute runner disk usage")
+		return &labeledError{
+			status.WrapError(err, "failed to compute runner disk usage"),
+			"compute_disk_usage_failed",
+		}
 	}
 	if du > p.maxRunnerDiskUsageBytes {
-		return RunnerMaxDiskSizeExceeded
+		return &labeledError{
+			RunnerMaxDiskSizeExceeded,
+			"max_disk_usage_exceeded",
+		}
 	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if p.isShuttingDown {
-		return status.UnavailableError("pool is shutting down; cannot add new runners")
+		return &labeledError{
+			status.UnavailableError("pool is shutting down; cannot add new runners"),
+			"pool_shutting_down",
+		}
 	}
 
 	if !p.resourceTracker.Request(r.Resources()) {
-		return NotEnoughResources
+		return &labeledError{NotEnoughResources, "not_enough_resources"}
 	}
 
 	if len(p.runners) == p.maxRunnerCount {
 		if len(p.runners) == 0 {
-			return status.InternalError("pool max runner count is 0; this should never happen")
+			return &labeledError{
+				status.InternalError("pool max runner count is 0; this should never happen"),
+				"max_runner_count_zero",
+			}
 		}
 		// Evict the first and oldest runner to make room for the new one.
 		r := p.runners[0]
@@ -310,13 +440,7 @@ func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
 		metrics.RunnerPoolMemoryUsageBytes.Sub(float64(r.memoryUsageBytes))
 		p.resourceTracker.Return(r.Resources())
 
-		// TODO: Add to a cleanup queue instead of spawning a goroutine here.
-		go func() {
-			err := <-r.RemoveInBackground()
-			if err != nil {
-				log.Errorf("Failed to remove evicted runner: %s", err)
-			}
-		}()
+		r.RemoveInBackground()
 	}
 
 	p.runners = append(p.runners, r)
@@ -333,9 +457,136 @@ func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
 	return nil
 }
 
-// Query specifies a set of search criteria for runners within a pool.
+func (p *Pool) hostBuildRoot() string {
+	if p.podID == "" {
+		// Probably running on bare metal -- return the build root directly.
+		return p.buildRoot
+	}
+	// Running on k8s -- return the path to the build root on the *host* node.
+	// TODO(bduffany): Make this configurable in YAML, populating {{.PodID}} via template.
+	// People might have conventions other than executor-data for the volume name + remotebuilds
+	// for the build root dir.
+	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
+}
+
+func (p *Pool) PullDefaultImage() {
+	if p.dockerClient != nil {
+		cfg := p.env.GetConfigurator().GetExecutorConfig()
+		c := docker.NewDockerContainer(
+			p.dockerClient, platform.DefaultContainerImage, p.hostBuildRoot(),
+			&docker.DockerOptions{
+				Socket:                  cfg.DockerSocket,
+				EnableSiblingContainers: cfg.DockerSiblingContainers,
+				UseHostNetwork:          cfg.DockerNetHost,
+				DockerMountMode:         cfg.DockerMountMode,
+			},
+		)
+		start := time.Now()
+		// Give the command (which triggers a container pull) up to 1 minute
+		// to succeed. In practice I saw clean pulls take about 30 seconds.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+		err := c.PullImageIfNecessary(ctx)
+		if err == nil {
+			log.Debugf("Pulled default image %q in %s", platform.DefaultContainerImage, time.Since(start))
+		} else {
+			log.Debugf("Error pulling default image %q: %s", platform.DefaultContainerImage, err)
+		}
+	}
+}
+
+// Get returns a runner that can be used to execute the given task. The caller
+// must call TryRecycle on the returned runner when done using it.
+//
+// If the task has runner recycling enabled then it attempts to find a runner
+// from the pool that can execute the task. If runner recycling is disabled or
+// if there are no eligible paused runners, it creates and returns a new runner.
+//
+// The returned runner is considered "active" and will be killed if the
+// executor is shut down.
+func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunner, error) {
+	props, err := platform.ParseProperties(task.GetCommand().GetPlatform(), p.props())
+	if err != nil {
+		return nil, err
+	}
+	// TODO: This mutates the task; find a cleaner way to do this.
+	platform.ApplyOverrides(p.env, props, task.GetCommand())
+
+	user, err := auth.UserFromTrustedJWT(ctx)
+	// PermissionDenied and Unimplemented both imply that this is an
+	// anonymous execution, so ignore those.
+	if err != nil && !status.IsPermissionDeniedError(err) && !status.IsUnimplementedError(err) {
+		return nil, err
+	}
+
+	instanceName := task.GetExecuteRequest().GetInstanceName()
+
+	workerKey := props.PersistentWorkerKey
+	if props.PersistentWorker && workerKey == "" {
+		workerArgs, _ := SplitArgsIntoWorkerArgsAndFlagFiles(task.GetCommand().GetArguments())
+		workerKey = strings.Join(workerArgs, " ")
+	}
+
+	if props.RecycleRunner {
+		if user == nil {
+			return nil, status.InvalidArgumentError(
+				"runner recycling is not supported for anonymous builds " +
+					`(recycling was requested via platform property "recycle-runner=true")`)
+		}
+
+		r := p.take(&query{
+			User:           user,
+			ContainerImage: props.ContainerImage,
+			WorkflowID:     props.WorkflowID,
+			InstanceName:   instanceName,
+			WorkerKey:      workerKey,
+		})
+		if r != nil {
+			log.Info("Reusing workspace for task.")
+			r.PlatformProperties = props
+			return r, nil
+		}
+	}
+	wsOpts := &workspace.Opts{Preserve: props.PreserveWorkspace}
+	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
+	if err != nil {
+		return nil, err
+	}
+	ctr := p.newContainer(props)
+	return &CommandRunner{
+		ACL:                ACLForUser(user),
+		PlatformProperties: props,
+		InstanceName:       instanceName,
+		WorkerKey:          workerKey,
+		Container:          ctr,
+		Workspace:          ws,
+	}, nil
+}
+
+func (p *Pool) newContainer(props *platform.Properties) container.CommandContainer {
+	switch p.containerType() {
+	case platform.DockerContainerType:
+		cfg := p.env.GetConfigurator().GetExecutorConfig()
+		return docker.NewDockerContainer(
+			p.dockerClient, props.ContainerImage, p.hostBuildRoot(),
+			&docker.DockerOptions{
+				Socket:                  cfg.DockerSocket,
+				EnableSiblingContainers: cfg.DockerSiblingContainers,
+				UseHostNetwork:          cfg.DockerNetHost,
+				DockerMountMode:         cfg.DockerMountMode,
+				ForceRoot:               props.DockerForceRoot,
+			},
+		)
+	case platform.ContainerdContainerType:
+		return containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
+	default:
+		return bare.NewBareCommandContainer()
+	}
+}
+
+// query specifies a set of search criteria for runners within a pool.
 // All criteria must match in order for a runner to be matched.
-type Query struct {
+type query struct {
 	// User is the current authenticated user. This query will only match runners
 	// that this user can access.
 	// Required.
@@ -356,9 +607,9 @@ type Query struct {
 	InstanceName string
 }
 
-// Take takes any runner matching the given query out of the pool. If no
+// take takes any runner matching the given query out of the pool. If no
 // matching runners are found, `nil` is returned.
-func (p *Pool) Take(q *Query) *CommandRunner {
+func (p *Pool) take(q *query) *CommandRunner {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -405,14 +656,13 @@ func (p *Pool) Size() int {
 func (p *Pool) Shutdown(ctx context.Context) error {
 	p.mu.Lock()
 	p.isShuttingDown = true
-	runners := p.runners
+	pooledRunners := p.runners
 	p.runners = nil
 	p.mu.Unlock()
 
 	errs := []error{}
-	for _, r := range runners {
-		err := <-r.RemoveInBackground()
-		if err != nil {
+	for _, r := range pooledRunners {
+		if err := r.RemoveWithTimeout(ctx); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -428,6 +678,8 @@ func (p *Pool) TryEvict() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	// DO NOT MERGE: Count only paused runners once https://github.com/buildbuddy-io/buildbuddy/pull/578
+	// is submitted.
 	if len(p.runners) == 0 {
 		return false
 	}
@@ -443,11 +695,7 @@ func (p *Pool) TryEvict() bool {
 		MemoryBytes: r.memoryUsageBytes,
 	})
 
-	go func() {
-		if err := <-r.RemoveInBackground(); err != nil {
-			log.Errorf("Failed to remove evicted runner: %s", err)
-		}
-	}()
+	r.RemoveInBackground()
 
 	return true
 }
@@ -476,8 +724,8 @@ func (p *Pool) TryRecycle(r *CommandRunner, finishedCleanly bool) {
 	// This call happens after we send the final stream event back to the
 	// client, so background context is appropriate.
 	if err := p.Add(ctx, r); err != nil {
-		if status.IsResourceExhaustedError(err) {
-			log.Debugf("Runner exceeded resource limits: %s", err)
+		if status.IsResourceExhaustedError(err) || status.IsUnavailableError(err) {
+			log.Debug(err.Error())
 		} else {
 			// If not a resource limit exceeded error, probably it was an error
 			// removing the directory contents or a docker daemon error.
@@ -524,6 +772,13 @@ func (p *Pool) setLimits(cfg *config.RunnerPoolConfig) {
 	p.maxRunnerCount = count
 	p.maxRunnerMemoryUsageBytes = mem
 	p.maxRunnerDiskUsageBytes = disk
+}
+
+type labeledError struct {
+	// Error is the wrapped error.
+	Error error
+	// Label is a short label for Prometheus.
+	Label string
 }
 
 type errSlice []error

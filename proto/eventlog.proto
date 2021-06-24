@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package eventlog;
+
+option go_package = "proto;eventlog";
+
+message GetEventLogChunkRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // The invocation identifier itself.
+  string invocation_id = 2;
+
+  // Optionally specify the chunk to be returned; gets the last chunk if empty
+  string chunk_id = 3;
+}
+
+message GetEventLogChunkResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  // The surrounding chunk ids. Empty if no such chunk exists
+  string previous_chunk_id = 2;
+  string next_chunk_id = 3;
+
+  message Chunk {
+    string chunk_id = 1;
+    bytes buffer = 2;
+  }
+
+  // The requested chunk
+  Chunk chunk = 4;
+}

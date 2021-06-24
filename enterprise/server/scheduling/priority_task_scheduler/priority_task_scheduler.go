@@ -180,10 +180,13 @@ func (q *PriorityTaskScheduler) handleTask() {
 	// guaranteed to run on an existing paused runner, since most of the
 	// task's data is probably already available in the runner's memory.
 	for !q.resourceTracker.Request(res) {
-		if !q.exec.RunnerPool().TryEvict() {
+		didEvict := q.exec.RunnerPool().TryEvict()
+		if !didEvict {
 			return
 		}
 	}
+
+	// At this point we were successfully granted the resources.
 
 	// This pop should always succeed since we peeked above while holding the lock.
 	q.pq.Pop()

@@ -1,0 +1,2 @@
+This image is the one that will be used to execute actions sent to the remote
+execution API when they do not already have a docker image specified.

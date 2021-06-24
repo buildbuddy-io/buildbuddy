@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -26,13 +27,19 @@ const (
 	healthCheckTimeout = 2 * time.Second // How long a health check may take, max.
 )
 
+type serviceStatus struct {
+	Name  string
+	Error error
+}
+
 type HealthChecker struct {
 	done          chan bool
 	quit          chan struct{}
 	checkers      map[string]interfaces.Checker
+	lastStatus    []*serviceStatus
 	serverType    string
 	shutdownFuncs []interfaces.CheckerFunc
-	lock          sync.RWMutex // protects: readyToServe, shuttingDown
+	mu            sync.RWMutex // protects: readyToServe, shuttingDown
 	readyToServe  bool
 	shuttingDown  bool
 }
@@ -45,6 +52,7 @@ func NewHealthChecker(serverType string) *HealthChecker {
 		shutdownFuncs: make([]interfaces.CheckerFunc, 0),
 		readyToServe:  true,
 		checkers:      make(map[string]interfaces.Checker, 0),
+		lastStatus:    make([]*serviceStatus, 0),
 	}
 	sigTerm := make(chan os.Signal)
 	go func() {
@@ -55,20 +63,40 @@ func NewHealthChecker(serverType string) *HealthChecker {
 	go hc.handleShutdownFuncs()
 	go func() {
 		for {
-			hc.runHealthChecks(context.Background())
-			time.Sleep(healthCheckPeriod)
+			select {
+			case <-hc.quit:
+				return
+			case <-time.After(healthCheckPeriod):
+				hc.runHealthChecks(context.Background())
+			}
 		}
 	}()
+	statusz.AddSection("healthcheck", "Backend service health checks", &hc)
 	return &hc
+}
+
+func (h *HealthChecker) Statusz(ctx context.Context) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	buf := `<table style="width: 150px;"><tr><th>Name</th><th>Status</th></tr>`
+	for _, serviceStatus := range h.lastStatus {
+		statusString := "OK"
+		if serviceStatus.Error != nil {
+			statusString = serviceStatus.Error.Error()
+		}
+		buf += fmt.Sprintf("<tr><td>%s</td><td>%s</td></tr>", serviceStatus.Name, statusString)
+	}
+	buf += "</table>"
+	return buf
 }
 
 func (h *HealthChecker) handleShutdownFuncs() {
 	<-h.quit
 
-	h.lock.Lock()
+	h.mu.Lock()
 	h.readyToServe = false
 	h.shuttingDown = true
-	h.lock.Unlock()
+	h.mu.Unlock()
 
 	// We use fmt here and below because this code is called from the
 	// signal handler and log.Printf can be a little wonky.
@@ -102,10 +130,10 @@ func (h *HealthChecker) RegisterShutdownFunction(f interfaces.CheckerFunc) {
 func (h *HealthChecker) AddHealthCheck(name string, f interfaces.Checker) {
 	// Mark the service as unhealthy until the healthcheck runs
 	// and it becomes healthy.
-	h.lock.Lock()
+	h.mu.Lock()
 	h.checkers[name] = f
 	h.readyToServe = false
-	h.lock.Unlock()
+	h.mu.Unlock()
 }
 
 func (h *HealthChecker) WaitForGracefulShutdown() {
@@ -118,22 +146,25 @@ func (h *HealthChecker) Shutdown() {
 }
 
 func (h *HealthChecker) runHealthChecks(ctx context.Context) {
-	h.lock.RLock()
-	bail := h.shuttingDown
-	h.lock.RUnlock()
-	if bail {
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
 	defer cancel()
+
+	statusData := make([]*serviceStatus, 0)
+	statusDataMu := sync.Mutex{}
 
 	eg, ctx := errgroup.WithContext(ctx)
 	for name, ck := range h.checkers {
 		name := name
 		checkFn := ck
 		eg.Go(func() error {
-			if err := checkFn.Check(ctx); err != nil {
+			err := checkFn.Check(ctx)
+
+			// Update per-service statusData
+			statusDataMu.Lock()
+			statusData = append(statusData, &serviceStatus{name, err})
+			statusDataMu.Unlock()
+
+			if err != nil {
 				return status.UnavailableErrorf("Service %s is unhealthy: %s", name, err)
 			}
 			return nil
@@ -147,12 +178,13 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 	}
 
 	previousReadinessState := false
-	h.lock.Lock()
+	h.mu.Lock()
 	if !h.shuttingDown {
 		previousReadinessState = h.readyToServe
 		h.readyToServe = newReadinessState
+		h.lastStatus = statusData
 	}
-	h.lock.Unlock()
+	h.mu.Unlock()
 
 	if newReadinessState != previousReadinessState {
 		log.Infof("HealthChecker transitioning from ready: %t => ready: %t", previousReadinessState, newReadinessState)
@@ -163,9 +195,9 @@ func (h *HealthChecker) ReadinessHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqServerType := serverType(r)
 		if reqServerType == h.serverType {
-			h.lock.RLock()
+			h.mu.RLock()
 			ready := h.readyToServe
-			h.lock.RUnlock()
+			h.mu.RUnlock()
 
 			if ready {
 				w.WriteHeader(http.StatusOK)

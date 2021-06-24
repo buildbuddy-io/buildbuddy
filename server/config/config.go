@@ -46,6 +46,7 @@ type appConfig struct {
 	LogIncludeShortFileName   bool   `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
 	NoDefaultUserGroup        bool   `yaml:"no_default_user_group" usage:"Cloud-Only"`
 	LogEnableGCPLoggingFormat bool   `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
+	LogErrorStackTraces       bool   `yaml:"log_error_stack_traces" usage:"If true, stack traces will be printed for errors that have them."`
 }
 
 type buildEventProxy struct {
@@ -162,6 +163,9 @@ type SSLConfig struct {
 
 type RemoteExecutionConfig struct {
 	DefaultPoolName              string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
+	WorkflowsPoolName            string `yaml:"workflows_pool_name" usage:"The executor pool to use for workflow actions. Defaults to the default executor pool if not specified."`
+	WorkflowsDefaultImage        string `yaml:"workflows_default_image" usage:"The default docker image to use for running workflows."`
+	WorkflowsCIRunnerDebug       bool   `yaml:"workflows_ci_runner_debug" usage:"Whether to run the CI runner in debug mode."`
 	RedisTarget                  string `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Required for remote execution. To ease migration, the redis target from the cache config will be used if this value is not specified."`
 	TaskPersistence              string `yaml:"task_persistence" usage:"One of redis|db|dualwrite. Specifies where inflight task information is stored."`
 	SharedExecutorPoolGroupID    string `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
@@ -424,6 +428,10 @@ func (c *Configurator) GetAppAddUserToDomainGroup() bool {
 
 func (c *Configurator) GetAppLogIncludeShortFileName() bool {
 	return c.gc.App.LogIncludeShortFileName
+}
+
+func (c *Configurator) GetAppLogErrorStackTraces() bool {
+	return c.gc.App.LogErrorStackTraces
 }
 
 func (c *Configurator) GetAppEnableStructuredLogging() bool {

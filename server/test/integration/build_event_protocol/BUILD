@@ -4,8 +4,8 @@ go_test(
     name = "build_event_protocol_test",
     srcs = ["build_event_protocol_test.go"],
     deps = [
-        "//server/testutil/bazel",
         "//server/testutil/buildbuddy",
+        "//server/testutil/testbazel",
         "@com_github_stretchr_testify//assert",
     ],
 )

@@ -32,7 +32,7 @@ func AuthRepoURL(repoURL, user, token string) (string, error) {
 	if user == "" && token == "" {
 		return repoURL, nil
 	}
-	u, err := parse(repoURL)
+	u, err := ParseRepoURL(repoURL)
 	if err != nil {
 		return "", status.InvalidArgumentErrorf("invalid repo URL %q", repoURL)
 	}
@@ -50,7 +50,7 @@ func AuthRepoURL(repoURL, user, token string) (string, error) {
 }
 
 func StripRepoURLCredentials(repoURL string) string {
-	u, err := parse(repoURL)
+	u, err := ParseRepoURL(repoURL)
 	if err != nil {
 		log.Warning("Failed to parse repo URL while attempting to strip credentials.")
 		return repoURL
@@ -60,7 +60,7 @@ func StripRepoURLCredentials(repoURL string) string {
 }
 
 func OwnerRepoFromRepoURL(repoURL string) (string, error) {
-	u, err := parse(repoURL)
+	u, err := ParseRepoURL(repoURL)
 	if err != nil {
 		return "", status.WrapErrorf(err, "failed to parse repo URL %q", repoURL)
 	}
@@ -70,7 +70,7 @@ func OwnerRepoFromRepoURL(repoURL string) (string, error) {
 	return path, nil
 }
 
-func parse(repoURL string) (*url.URL, error) {
+func ParseRepoURL(repoURL string) (*url.URL, error) {
 	// The giturls package covers most edge cases, but it's a bit unforgiving if
 	// the URL either doesn't look like "git@" or if it fails to specify an
 	// explicit protocol. Here, we attempt to salvage the situation if the URL

@@ -85,6 +85,12 @@ const (
 	/// Status of the recycle runner request: `hit` if the executor assigned a
 	/// recycled runner to the action; `miss` otherwise.
 	RecycleRunnerRequestStatusLabel = "status"
+
+	/// Reason for a runner not being added to the runner pool.
+	RunnerPoolFailedRecycleReason = "reason"
+
+	// GroupID associated with the request.
+	GroupID = "group_id"
 )
 
 const (
@@ -277,11 +283,13 @@ var (
 		ExecutedActionStageLabel,
 	})
 
-	RemoteExecutionWaitingExecutionResult = promauto.NewGauge(prometheus.GaugeOpts{
+	RemoteExecutionWaitingExecutionResult = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "waiting_execution_result",
 		Help:      "Number of execution requests for which the client is actively waiting for results.",
+	}, []string{
+		GroupID,
 	})
 
 	/// #### Examples
@@ -429,6 +437,15 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "runner_pool_evictions",
 		Help:      "Number of command runners removed from the pool to make room for other runners.",
+	})
+
+	RunnerPoolFailedRecycleAttempts = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "runner_pool_failed_recycle_attempts",
+		Help:      "Number of failed attempts to add runners to the pool.",
+	}, []string{
+		RunnerPoolFailedRecycleReason,
 	})
 
 	RunnerPoolMemoryUsageBytes = promauto.NewGauge(prometheus.GaugeOpts{

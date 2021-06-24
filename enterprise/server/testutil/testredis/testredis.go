@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
@@ -57,11 +58,11 @@ func Start(t *testing.T) string {
 	go func() {
 		err := cmd.Wait()
 		if err != nil {
-			log.Printf("redis server did not exit cleanly: %v", err)
+			log.Warningf("redis server did not exit cleanly: %v", err)
 		}
 	}()
 	t.Cleanup(func() {
-		log.Print("Shutting down Redis server.")
+		log.Info("Shutting down Redis server.")
 		cancel()
 	})
 	return fmt.Sprintf("localhost:%d", redisPort)
@@ -70,6 +71,6 @@ func Start(t *testing.T) string {
 type logWriter struct{}
 
 func (w *logWriter) Write(b []byte) (int, error) {
-	log.Printf("[redis server] %s", string(b))
+	log.Infof("[redis server] %s", strings.TrimSuffix(string(b), "\n"))
 	return len(b), nil
 }

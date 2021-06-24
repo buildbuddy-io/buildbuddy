@@ -4,23 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"regexp"
-	"strings"
-	"sync"
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/containerd"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -37,7 +25,6 @@ import (
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	dockerclient "github.com/docker/docker/client"
 	durationpb "github.com/golang/protobuf/ptypes/duration"
 	timestamppb "github.com/golang/protobuf/ptypes/timestamp"
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
@@ -65,38 +52,11 @@ const (
 	uploadDeadlineExtension = time.Minute * 1
 )
 
-var (
-	once                  sync.Once
-	podIDFromCpusetRegexp = regexp.MustCompile("/kubepods(/.*?)?/pod([a-z0-9\\-]{36})/")
-)
-
-func k8sPodID() (string, error) {
-	if _, err := os.Stat("/proc/1/cpuset"); err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
-		}
-		return "", err
-	}
-	buf, err := ioutil.ReadFile("/proc/1/cpuset")
-	if err != nil {
-		return "", err
-	}
-	cpuset := string(buf)
-	if m := podIDFromCpusetRegexp.FindStringSubmatch(cpuset); m != nil {
-		return m[2], nil
-	}
-	return "", nil
-}
-
 type Executor struct {
-	env              environment.Env
-	buildRoot        string
-	dockerClient     *dockerclient.Client
-	containerdSocket string
-	runnerPool       *runner.Pool
-	podID            string
-	id               string
-	name             string
+	env        environment.Env
+	runnerPool *runner.Pool
+	id         string
+	name       string
 }
 
 type Options struct {
@@ -110,68 +70,30 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 	if executorConfig == nil {
 		return nil, status.FailedPreconditionError("No executor config found")
 	}
-
 	if err := disk.EnsureDirectoryExists(executorConfig.GetRootDirectory()); err != nil {
 		return nil, err
 	}
-
-	podID, err := k8sPodID()
-	if err != nil {
-		return nil, status.FailedPreconditionErrorf("Failed to determine k8s pod ID: %s", err)
-	}
-
-	var dockerClient *dockerclient.Client
-	containerdSocket := ""
-	if executorConfig.ContainerdSocket != "" {
-		_, err := os.Stat(executorConfig.ContainerdSocket)
-		if os.IsNotExist(err) {
-			return nil, status.FailedPreconditionErrorf("Containerd socket %q not found", executorConfig.ContainerdSocket)
-		}
-		containerdSocket = executorConfig.ContainerdSocket
-		log.Info("Using containerd for execution")
-		if executorConfig.DockerSocket != "" {
-			log.Warning("containerd_socket and docker_socket both specified. Ignoring docker_socket in favor of containerd.")
-		}
-	} else if executorConfig.DockerSocket != "" {
-		_, err := os.Stat(executorConfig.DockerSocket)
-		if os.IsNotExist(err) {
-			return nil, status.FailedPreconditionErrorf("Docker socket %q not found", executorConfig.DockerSocket)
-		}
-		dockerSocket := executorConfig.DockerSocket
-		dockerClient, err = dockerclient.NewClientWithOpts(
-			dockerclient.WithHost(fmt.Sprintf("unix://%s", dockerSocket)),
-			dockerclient.WithAPIVersionNegotiation(),
-		)
-		if err != nil {
-			return nil, status.FailedPreconditionErrorf("Failed to create docker client: %s", err)
-		}
-		log.Info("Using docker for execution")
-	}
-
 	name := options.NameOverride
 	if name == "" {
 		name = base64.StdEncoding.EncodeToString(uuid.NodeID())
 	}
+	runnerPool, err := runner.NewPool(env)
+	if err != nil {
+		return nil, err
+	}
 
-	// TODO: Pass HealthChecker explicitly instead of getting it from env.
-	runnerPool := runner.NewPool(&executorConfig.RunnerPool)
+	s := &Executor{
+		env:        env,
+		id:         id,
+		name:       name,
+		runnerPool: runnerPool,
+	}
 	if hc := env.GetHealthChecker(); hc != nil {
 		hc.RegisterShutdownFunction(runnerPool.Shutdown)
 	} else {
 		return nil, status.FailedPreconditionError("Missing health checker in env")
 	}
-
-	s := &Executor{
-		env:              env,
-		buildRoot:        executorConfig.GetRootDirectory(),
-		dockerClient:     dockerClient,
-		containerdSocket: containerdSocket,
-		podID:            podID,
-		id:               id,
-		name:             name,
-		runnerPool:       runnerPool,
-	}
-	go s.pullDefaultImage()
+	go s.runnerPool.PullDefaultImage()
 	return s, nil
 }
 
@@ -181,44 +103,6 @@ func (s *Executor) Name() string {
 
 func (s *Executor) RunnerPool() *runner.Pool {
 	return s.runnerPool
-}
-
-func (s *Executor) hostBuildRoot() string {
-	if s.podID == "" {
-		// Probably running on bare metal -- return the build root directly.
-		return s.buildRoot
-	}
-	// Running on k8s -- return the path to the build root on the *host* node.
-	// TODO(bduffany): Make this configurable in YAML, populating {{.PodID}} via template.
-	// People might have conventions other than executor-data for the volume name + remotebuilds
-	// for the build root dir.
-	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", s.podID)
-}
-
-func (s *Executor) pullDefaultImage() {
-	if s.dockerClient != nil {
-		cfg := s.env.GetConfigurator().GetExecutorConfig()
-		runner := docker.NewDockerContainer(
-			s.dockerClient, platform.DefaultContainerImage, s.hostBuildRoot(),
-			&docker.DockerOptions{
-				Socket:                  cfg.DockerSocket,
-				EnableSiblingContainers: cfg.DockerSiblingContainers,
-				UseHostNetwork:          cfg.DockerNetHost,
-				DockerMountMode:         cfg.DockerMountMode,
-			},
-		)
-		start := time.Now()
-		// Give the command (which triggers a container pull) up to 1 minute
-		// to succeed. In practice I saw clean pulls take about 30 seconds.
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-		defer cancel()
-		err := runner.PullImageIfNecessary(ctx)
-		if err == nil {
-			log.Debugf("Pulled default image %q in %s", platform.DefaultContainerImage, time.Since(start))
-		} else {
-			log.Debugf("Error pulling default image %q: %s", platform.DefaultContainerImage, err)
-		}
-	}
 }
 
 func diffTimestamps(startPb, endPb *tspb.Timestamp) time.Duration {
@@ -262,102 +146,6 @@ func parseTimeout(timeout *durationpb.Duration, maxDuration time.Duration) (time
 	return requestDuration, nil
 }
 
-func (s *Executor) props() *platform.ExecutorProperties {
-	return &platform.ExecutorProperties{
-		ContainerType: s.containerType(),
-	}
-}
-
-func (s *Executor) containerType() platform.ContainerType {
-	if s.dockerClient != nil {
-		return platform.DockerContainerType
-	}
-	if s.containerdSocket != "" {
-		return platform.ContainerdContainerType
-	}
-	return platform.BareContainerType
-}
-
-func (s *Executor) getOrCreateRunner(ctx context.Context, task *repb.ExecutionTask) (*runner.CommandRunner, error) {
-	props, err := platform.ParseProperties(task.GetCommand().GetPlatform(), s.props())
-	if err != nil {
-		return nil, err
-	}
-	// TODO: This mutates the task; find a cleaner way to do this.
-	platform.ApplyOverrides(s.env, props, task.GetCommand())
-
-	user, err := auth.UserFromTrustedJWT(ctx)
-	// PermissionDenied and Unimplemented both imply that this is an
-	// anonymous execution, so ignore those.
-	if err != nil && !status.IsPermissionDeniedError(err) && !status.IsUnimplementedError(err) {
-		return nil, err
-	}
-
-	instanceName := task.GetExecuteRequest().GetInstanceName()
-
-	workerKey := props.PersistentWorkerKey
-	if props.PersistentWorker && workerKey == "" {
-		workerArgs, _ := runner.SplitArgsIntoWorkerArgsAndFlagFiles(task.GetCommand().GetArguments())
-		workerKey = strings.Join(workerArgs, " ")
-	}
-
-	if props.RecycleRunner {
-		if user == nil {
-			return nil, status.InvalidArgumentError(
-				"runner recycling is not supported for anonymous builds " +
-					`(recycling was requested via platform property "recycle-runner=true")`)
-		}
-
-		r := s.runnerPool.Take(&runner.Query{
-			User:           user,
-			ContainerImage: props.ContainerImage,
-			WorkflowID:     props.WorkflowID,
-			InstanceName:   instanceName,
-			WorkerKey:      workerKey,
-		})
-		if r != nil {
-			log.Info("Reusing workspace for task.")
-			r.PlatformProperties = props
-			return r, nil
-		}
-	}
-	wsOpts := &workspace.Opts{Preserve: props.PreserveWorkspace}
-	ws, err := workspace.New(s.env, s.buildRoot, wsOpts)
-	if err != nil {
-		return nil, err
-	}
-	ctr := s.newContainer(props)
-	return &runner.CommandRunner{
-		ACL:                runner.ACLForUser(user),
-		PlatformProperties: props,
-		InstanceName:       instanceName,
-		WorkerKey:          workerKey,
-		Container:          ctr,
-		Workspace:          ws,
-	}, nil
-}
-
-func (s *Executor) newContainer(props *platform.Properties) container.CommandContainer {
-	switch s.containerType() {
-	case platform.DockerContainerType:
-		cfg := s.env.GetConfigurator().GetExecutorConfig()
-		return docker.NewDockerContainer(
-			s.dockerClient, props.ContainerImage, s.hostBuildRoot(),
-			&docker.DockerOptions{
-				Socket:                  cfg.DockerSocket,
-				EnableSiblingContainers: cfg.DockerSiblingContainers,
-				UseHostNetwork:          cfg.DockerNetHost,
-				DockerMountMode:         cfg.DockerMountMode,
-				ForceRoot:               props.DockerForceRoot,
-			},
-		)
-	case platform.ContainerdContainerType:
-		return containerd.NewContainerdContainer(s.containerdSocket, props.ContainerImage, s.hostBuildRoot())
-	default:
-		return bare.NewBareCommandContainer()
-	}
-}
-
 func (s *Executor) ExecuteTaskAndStreamResults(task *repb.ExecutionTask, stream operation.StreamLike) error {
 	// From here on in we use these liberally, so check that they are setup properly
 	// in the environment.
@@ -395,7 +183,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(task *repb.ExecutionTask, stream 
 		}
 	}
 
-	r, err := s.getOrCreateRunner(ctx, task)
+	r, err := s.runnerPool.Get(ctx, task)
 	if err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error creating runner for command: %s", err.Error()))
 	}

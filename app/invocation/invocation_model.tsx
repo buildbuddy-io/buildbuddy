@@ -123,7 +123,8 @@ export default class InvocationModel {
           model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         }
         if (buildEvent.unstructuredCommandLine) {
-          model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+          model.unstructuredCommandLine =
+            buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
         }
       }
     }
@@ -254,6 +255,10 @@ export default class InvocationModel {
     return this.buildMetadataMap.get("COMMIT_SHA") || this.workspaceStatusMap.get("COMMIT_SHA") || this.getGithubSHA();
   }
 
+  getBranch() {
+    return this.buildMetadataMap.get("GIT_BRANCH") || this.workspaceStatusMap.get("GIT_BRANCH") || this.getGithubRef();
+  }
+
   getGithubUser() {
     return this.clientEnvMap.get("GITHUB_ACTOR");
   }
@@ -268,6 +273,10 @@ export default class InvocationModel {
 
   getGithubSHA() {
     return this.clientEnvMap.get("GITHUB_SHA");
+  }
+
+  getGithubRef() {
+    return this.clientEnvMap.get("GITHUB_REF");
   }
 
   getGithubRun() {
@@ -290,8 +299,12 @@ export default class InvocationModel {
     return this.invocations.find(() => true).role;
   }
 
+  isWorkflowInvocation() {
+    return this.getRole() === CI_RUNNER_ROLE;
+  }
+
   isBazelInvocation() {
-    return this.getRole() !== CI_RUNNER_ROLE;
+    return !this.isWorkflowInvocation();
   }
 
   getTool() {
@@ -465,5 +478,9 @@ export default class InvocationModel {
         ?.map((link) => link?.match(/\[(?<linkText>.*)\]\((?<linkUrl>.*)\)/)?.groups)
         ?.filter((link) => link?.linkUrl?.startsWith("http://") || link?.linkUrl?.startsWith("https://")) || []
     );
+  }
+
+  isQuery() {
+    return this.getCommand() == "query";
   }
 }

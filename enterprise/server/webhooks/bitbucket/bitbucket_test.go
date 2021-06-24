@@ -7,7 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket/test_data"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,10 +25,10 @@ func webhookRequest(t *testing.T, eventType string, payload []byte) *http.Reques
 func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 	req := webhookRequest(t, "repo:push", test_data.PushEvent)
 
-	data, err := bitbucket.ParseRequest(req)
+	data, err := bitbucket.NewProvider().ParseWebhookData(req)
 
 	assert.NoError(t, err)
-	assert.Equal(t, &webhook_data.WebhookData{
+	assert.Equal(t, &interfaces.WebhookData{
 		EventName:     "push",
 		PushedBranch:  "main",
 		TargetBranch:  "main",
@@ -41,10 +41,10 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 	req := webhookRequest(t, "pullrequest:updated", test_data.PullRequestEvent)
 
-	data, err := bitbucket.ParseRequest(req)
+	data, err := bitbucket.NewProvider().ParseWebhookData(req)
 
 	assert.NoError(t, err)
-	assert.Equal(t, &webhook_data.WebhookData{
+	assert.Equal(t, &interfaces.WebhookData{
 		EventName:     "pull_request",
 		PushedBranch:  "test-1614450472",
 		TargetBranch:  "main",
