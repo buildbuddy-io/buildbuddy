@@ -169,7 +169,10 @@ func (q *PriorityTaskScheduler) handleTask() {
 	}
 
 	// This pop should always succeed since we peeked above while holding the lock.
-	q.pq.Pop()
+	if reservation := q.pq.Pop(); reservation == nil {
+		log.Errorf("Bad state: failed to pop reservation from the queue.")
+		return
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	q.trackTask(reservation, &cancel)
