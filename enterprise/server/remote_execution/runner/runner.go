@@ -691,11 +691,10 @@ func (p *Pool) TryEvict() bool {
 	metrics.RunnerPoolCount.Dec()
 	metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
 	metrics.RunnerPoolMemoryUsageBytes.Sub(float64(r.memoryUsageBytes))
-	p.resourceTracker.Return(&interfaces.Resources{
-		MemoryBytes: r.memoryUsageBytes,
-	})
 
 	r.RemoveInBackground()
+
+	p.resourceTracker.Return(r.Resources())
 
 	return true
 }
