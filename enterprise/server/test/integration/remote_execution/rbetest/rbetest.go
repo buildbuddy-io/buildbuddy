@@ -137,7 +137,6 @@ func NewRBETestEnv(t *testing.T) *Env {
 
 type BuildBuddyServerOptions struct {
 	SchedulerServerOptions scheduler_server.Options
-	ExecutionServerOptions execution_server.Options
 }
 
 // buildBuddyServerEnv is a specialized environment that allows us to return a random SchedulerClient for every
@@ -178,7 +177,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	if err != nil {
 		assert.FailNowf(t, "could not setup SchedulerServer", err.Error())
 	}
-	executionServer, err := execution_server.NewExecutionServerWithOptions(env, &opts.ExecutionServerOptions)
+	executionServer, err := execution_server.NewExecutionServer(env)
 	if err != nil {
 		assert.FailNowf(t, "could not setup ExecutionServer", err.Error())
 	}

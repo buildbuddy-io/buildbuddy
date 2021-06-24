@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -469,87 +468,6 @@ func TestMultipleSchedulersAndExecutors(t *testing.T) {
 	}
 }
 
-func TestMixedModeExecutionStreamPubSubAndListPubSub(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
-
-	// First server runs without stream-based PubSub (old behavior).
-	streamPubSubServer := rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
-		ExecutionServerOptions: execution_server.Options{
-			DisableRedisStreamPubSub: true,
-		},
-	})
-	// Second server runs with support for stream-based PubSub.
-	listPubSubServer := rbe.AddBuildBuddyServer()
-
-	// Add executor that reports updates to server using stream-based PubSub.
-	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Name: "streamPubSubExecutor", Server: streamPubSubServer})
-	// Add executor that reports updates to server using list-based PubSub.
-	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Name: "listPubSubExecutor", Server: listPubSubServer})
-
-	var cmds []*rbetest.Command
-	for i := 0; i < 10; i++ {
-		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
-		cmds = append(cmds, cmd)
-	}
-
-	for i := range cmds {
-		res := cmds[i].Wait()
-		assert.Equal(t, 0, res.ExitCode, "exit code should be propagated")
-		assert.Equal(t, fmt.Sprintf("hello from command %d\n", i), res.Stdout, "stdout should be propagated")
-		assert.Equal(t, "", res.Stderr, "stderr should be empty")
-	}
-}
-
-func TestExecutionWithoutRedisListPubSub(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
-
-	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
-		ExecutionServerOptions: execution_server.Options{
-			DisableRedisListPubSub: true,
-		},
-	})
-
-	rbe.AddExecutors(5)
-
-	var cmds []*rbetest.Command
-	for i := 0; i < 10; i++ {
-		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
-		cmds = append(cmds, cmd)
-	}
-
-	for i := range cmds {
-		res := cmds[i].Wait()
-		assert.Equal(t, 0, res.ExitCode, "exit code should be propagated")
-		assert.Equal(t, fmt.Sprintf("hello from command %d\n", i), res.Stdout, "stdout should be propagated")
-		assert.Equal(t, "", res.Stderr, "stderr should be empty")
-	}
-}
-
-func TestExecutionWithoutRedisStreamPubSub(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
-
-	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
-		ExecutionServerOptions: execution_server.Options{
-			DisableRedisStreamPubSub: true,
-		},
-	})
-
-	rbe.AddExecutors(5)
-
-	var cmds []*rbetest.Command
-	for i := 0; i < 10; i++ {
-		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
-		cmds = append(cmds, cmd)
-	}
-
-	for i := range cmds {
-		res := cmds[i].Wait()
-		assert.Equal(t, 0, res.ExitCode, "exit code should be propagated")
-		assert.Equal(t, fmt.Sprintf("hello from command %d\n", i), res.Stdout, "stdout should be propagated")
-		assert.Equal(t, "", res.Stderr, "stderr should be empty")
-	}
-}
-
 func TestWorkSchedulingOnNewExecutor(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
@@ -602,46 +520,6 @@ func TestWaitExecution(t *testing.T) {
 	// Start multiple servers so that executions are spread out across different servers.
 	for i := 0; i < 5; i++ {
 		rbe.AddBuildBuddyServer()
-	}
-	rbe.AddExecutors(5)
-
-	var cmds []*rbetest.ControlledCommand
-	for i := 0; i < 10; i++ {
-		cmds = append(cmds, rbe.ExecuteControlledCommand(fmt.Sprintf("command%d", i+1)))
-	}
-
-	// Wait until all the commands have started running & have been accepted by the server.
-	for _, c := range cmds {
-		c.WaitStarted()
-		c.WaitAccepted()
-	}
-
-	// Cancel in-flight Execute requests and call the WaitExecution API.
-	for _, c := range cmds {
-		c.ReplaceWaitUsingWaitExecutionAPI()
-	}
-
-	for i, c := range cmds {
-		c.Exit(int32(i))
-	}
-
-	for i, cmd := range cmds {
-		res := cmd.Wait()
-		assert.Equal(t, i, res.ExitCode, "exit code should be propagated for command %q", cmd.Name)
-	}
-}
-
-// Test WaitExecution across different severs with only stream-pubsub updates enabled.
-func TestWaitExecutionWithStreamPubSub(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
-
-	// Start multiple servers so that executions are spread out across different servers.
-	for i := 0; i < 5; i++ {
-		rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
-			ExecutionServerOptions: execution_server.Options{
-				DisableRedisListPubSub: true,
-			},
-		})
 	}
 	rbe.AddExecutors(5)
 
