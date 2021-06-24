@@ -536,6 +536,11 @@ func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset in
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		readStart := time.Now()
 		r, err := c.remoteReader(ctx, peer, c.prefix, d, offset)
+		elapsed := time.Now().Sub(readStart)
+		if elapsed > 5*time.Second {
+			log.Warningf("Reader(%q) on peer %s took %s with err %v", c.prefix+d.GetHash(), peer, elapsed, err)
+		}
+
 		if err == nil {
 			c.log.Debugf("Reader(%q) found on peer %s", c.prefix+d.GetHash(), peer)
 			backfill()
@@ -545,8 +550,6 @@ func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset in
 			c.log.Debugf("Reader(%q) not found on peer %s", c.prefix+d.GetHash(), peer)
 			continue
 		}
-
-		log.Debugf("Reader(%q) on peer %s failed after %s: %s", c.prefix+d.GetHash(), peer, time.Now().Sub(readStart), err)
 
 		// Some other error -- mark this peer as failed and try the next one.
 		ps.MarkPeerAsFailed(peer)
