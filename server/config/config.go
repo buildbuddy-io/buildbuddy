@@ -162,21 +162,22 @@ type SSLConfig struct {
 }
 
 type RemoteExecutionConfig struct {
-	DefaultPoolName              string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
-	WorkflowsPoolName            string `yaml:"workflows_pool_name" usage:"The executor pool to use for workflow actions. Defaults to the default executor pool if not specified."`
-	WorkflowsDefaultImage        string `yaml:"workflows_default_image" usage:"The default docker image to use for running workflows."`
-	WorkflowsCIRunnerDebug       bool   `yaml:"workflows_ci_runner_debug" usage:"Whether to run the CI runner in debug mode."`
-	RedisTarget                  string `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Required for remote execution. To ease migration, the redis target from the cache config will be used if this value is not specified."`
-	TaskPersistence              string `yaml:"task_persistence" usage:"One of redis|db|dualwrite. Specifies where inflight task information is stored."`
-	SharedExecutorPoolGroupID    string `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
-	RedisPubSubPoolSize          int    `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
-	EnableRemoteExec             bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
-	DisableRedisListPubSub       bool   `yaml:"disable_redis_list_pubsub" usage:"If true, disable use of list Redis PubSub for status updates."`
-	DisableRedisStreamPubSub     bool   `yaml:"disable_redis_stream_pubsub" usage:"If true, disable use of stream redis PubSub for status updates."`
-	RequireExecutorAuthorization bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
-	EnableNonLocalScheduling     bool   `yaml:"enable_non_local_scheduling" usage:"If true, schedulers can make RPCs to other schedulers to enqueue task reservations instead of always talking directly to executors."`
-	EnableUserOwnedExecutors     bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
-	EnableExecutorKeyCreation    bool   `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
+	DefaultPoolName               string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
+	WorkflowsPoolName             string `yaml:"workflows_pool_name" usage:"The executor pool to use for workflow actions. Defaults to the default executor pool if not specified."`
+	WorkflowsDefaultImage         string `yaml:"workflows_default_image" usage:"The default docker image to use for running workflows."`
+	WorkflowsCIRunnerDebug        bool   `yaml:"workflows_ci_runner_debug" usage:"Whether to run the CI runner in debug mode."`
+	WorkflowsCIRunnerBazelCommand string `yaml:"workflows_ci_runner_bazel_command" usage:"Bazel command to be used by the CI runner."`
+	RedisTarget                   string `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Required for remote execution. To ease migration, the redis target from the cache config will be used if this value is not specified."`
+	TaskPersistence               string `yaml:"task_persistence" usage:"One of redis|db|dualwrite. Specifies where inflight task information is stored."`
+	SharedExecutorPoolGroupID     string `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
+	RedisPubSubPoolSize           int    `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
+	EnableRemoteExec              bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
+	DisableRedisListPubSub        bool   `yaml:"disable_redis_list_pubsub" usage:"If true, disable use of list Redis PubSub for status updates."`
+	DisableRedisStreamPubSub      bool   `yaml:"disable_redis_stream_pubsub" usage:"If true, disable use of stream redis PubSub for status updates."`
+	RequireExecutorAuthorization  bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
+	EnableNonLocalScheduling      bool   `yaml:"enable_non_local_scheduling" usage:"If true, schedulers can make RPCs to other schedulers to enqueue task reservations instead of always talking directly to executors."`
+	EnableUserOwnedExecutors      bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
+	EnableExecutorKeyCreation     bool   `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
 }
 
 type ExecutorConfig struct {
