@@ -421,8 +421,15 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 
 	if !p.resourceTracker.Request(r.Resources()) {
 		// Try evicting one runner and see if that will free up the necessary
-		// resources. Otherwise, we are probably just overloaded with regular
-		// execution tasks, so don't keep trying to evict.
+		// resources. If there are no runners to evict, we might just
+		// overloaded with regular execution tasks, so don't add to the pool.
+		// If we evicted one runner and there still aren't enough resources,
+		// don't keep evicting more runners (for fairness' sake), and instead
+		// just return.
+		// TODO: If the executor is fully saturated with recycling-enabled tasks
+		// then we'll never have enough resources to pool those runners, because
+		// the tasks themselves are consuming all the resources. Figure out a better
+		// strategy that avoids this problem.
 		if p.tryEvict() && !p.resourceTracker.Request(r.Resources()) {
 			return &labeledError{NotEnoughResources, "not_enough_resources"}
 		}
