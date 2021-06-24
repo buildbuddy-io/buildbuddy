@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -90,10 +92,12 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 		return
 	}
 	reqID, _ := uuid.GetFromContext(ctx) // Ignore error, we're logging anyway.
+	fullMethod = strings.Replace(fullMethod, "distributed_cache.DistributedCache/", "D", 1)
+	shortPath := "/" + path.Base(fullMethod)
 	if iid := getInvocationIDFromMD(ctx); iid != "" {
-		Infof("%s %s %s %s %s [%s]", "gRPC", reqID, iid, fullMethod, fmtErr(err), formatDuration(dur))
+		Infof("%s %s %s %s %s [%s]", "gRPC", reqID, iid, shortPath, fmtErr(err), formatDuration(dur))
 	} else {
-		Infof("%s %s %s %s [%s]", "gRPC", reqID, fullMethod, fmtErr(err), formatDuration(dur))
+		Infof("%s %s %s %s [%s]", "gRPC", reqID, shortPath, fmtErr(err), formatDuration(dur))
 	}
 	if logErrorStackTraces {
 		code := gstatus.Code(err)
