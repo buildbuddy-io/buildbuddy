@@ -12,8 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
-
-	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 )
 
 const (
