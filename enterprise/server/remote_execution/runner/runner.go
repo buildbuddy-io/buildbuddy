@@ -354,12 +354,6 @@ func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
 }
 
 func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
-	if p.maxRunnerCount <= 0 {
-		return &labeledError{
-			status.InternalError("pool max runner count is <= 0; this should never happen"),
-			"max_runner_count_zero",
-		}
-	}
 	if p.shuttingDown() {
 		return &labeledError{
 			status.UnavailableError("pool is shutting down; new runners cannot be added."),
@@ -417,7 +411,16 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 	p.runners = append(p.runners, r)
 
 	if p.pausedRunnerCount() > p.maxRunnerCount {
+		if p.maxRunnerCount <= 0 {
+			return &labeledError{
+				status.InternalError("pool max runner count is <= 0; this should never happen"),
+				"max_runner_count_zero",
+			}
+		}
 		// Evict the oldest (first) paused runner to make room for the new one.
+		// Note the two conditionals above imply that
+		// p.pausedRunnerCount() > p.maxRunnerCount > 0, so there's at least one
+		// paused runner in the list.
 		evictIndex := -1
 		for i, r := range p.runners {
 			if r.state == paused {
@@ -425,9 +428,6 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 				break
 			}
 		}
-		// This should never happen because we assert p.maxRunnerCount > 0 at the
-		// start of this method and because p.pausedRunnerCount() > p.maxRunnerCount
-		// (the condition above) -- implying p.pausedRunnerCount() > 0.
 		if evictIndex == -1 {
 			return &labeledError{
 				status.InternalError("could not find runner to evict; this should never happen"),
