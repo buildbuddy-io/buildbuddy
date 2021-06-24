@@ -118,7 +118,7 @@ func GetMyPort() (int32, error) {
 	return int32(i), nil
 }
 
-type Tracker struct {
+type tracker struct {
 	capacity interfaces.Resources
 
 	mu       sync.Mutex // protects(assigned)
@@ -130,8 +130,8 @@ type TrackerOptions struct {
 	CPUMillisCapacityOverride int64
 }
 
-func NewTracker(opts *TrackerOptions) *Tracker {
-	t := &Tracker{
+func NewTracker(opts *TrackerOptions) interfaces.ResourceTracker {
+	t := &tracker{
 		assigned: interfaces.Resources{},
 		capacity: interfaces.Resources{
 			MemoryBytes: opts.RAMBytesCapacityOverride,
@@ -147,7 +147,7 @@ func NewTracker(opts *TrackerOptions) *Tracker {
 	return t
 }
 
-func (t *Tracker) Request(r *interfaces.Resources) bool {
+func (t *tracker) Request(r *interfaces.Resources) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -162,7 +162,7 @@ func (t *Tracker) Request(r *interfaces.Resources) bool {
 	return true
 }
 
-func (t *Tracker) Return(r *interfaces.Resources) {
+func (t *tracker) Return(r *interfaces.Resources) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -171,7 +171,7 @@ func (t *Tracker) Return(r *interfaces.Resources) {
 	t.updateMetrics()
 }
 
-func (t *Tracker) updateMetrics() {
+func (t *tracker) updateMetrics() {
 	metrics.RemoteExecutionAssignedRAMBytes.Set(float64(t.assigned.MemoryBytes))
 	metrics.RemoteExecutionAssignedMilliCPU.Set(float64(t.assigned.MilliCPU))
 }
