@@ -404,13 +404,7 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	r.state = paused
-	// Push the runner to the end of the list to ensure that we always evict
-	// the LRU runner.
-	p.remove(r)
-	p.runners = append(p.runners, r)
-
-	if p.pausedRunnerCount() > p.maxRunnerCount {
+	if p.pausedRunnerCount() >= p.maxRunnerCount {
 		if p.maxRunnerCount <= 0 {
 			return &labeledError{
 				status.InternalError("pool max runner count is <= 0; this should never happen"),
@@ -419,8 +413,8 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 		}
 		// Evict the oldest (first) paused runner to make room for the new one.
 		// Note the two conditionals above imply that
-		// p.pausedRunnerCount() > p.maxRunnerCount > 0, so there's at least one
-		// paused runner in the list.
+		// p.pausedRunnerCount() >= p.maxRunnerCount > 0, so there's now at least
+		// 1 paused runner in the list that can be evicted.
 		evictIndex := -1
 		for i, r := range p.runners {
 			if r.state == paused {
@@ -446,14 +440,22 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 		r.RemoveInBackground()
 	}
 
-	// Cache these values so we don't need to recompute them when updating metrics
-	// upon removal.
+	// Shift this runner to the end of the list since we want to keep the list
+	// sorted in increasing order of `Add` timestamp (per our LRU eviction policy).
+	p.remove(r)
+	p.runners = append(p.runners, r)
+
+	// Cache resource usage values so we don't need to recompute them when
+	// updating metrics upon removal.
 	r.memoryUsageBytes = stats.MemoryUsageBytes
 	r.diskUsageBytes = du
 
 	metrics.RunnerPoolDiskUsageBytes.Add(float64(r.diskUsageBytes))
 	metrics.RunnerPoolMemoryUsageBytes.Add(float64(r.memoryUsageBytes))
 	metrics.RunnerPoolCount.Inc()
+
+	// Officially mark this runner paused and ready for reuse.
+	r.state = paused
 
 	return nil
 }
