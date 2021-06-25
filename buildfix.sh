@@ -117,7 +117,7 @@ if ((commit)) && ! git diff --staged --quiet; then
     exit 1
   fi
 
-  git commit -m "Fix formatting / build issues"
+  git commit -m "Fix formatting / build issues (buildfix.sh)"
   if ((push)); then
     git push
   fi
