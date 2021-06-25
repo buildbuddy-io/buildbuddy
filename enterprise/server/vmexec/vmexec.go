@@ -7,8 +7,10 @@ import (
 	"os/exec"
 	"syscall"
 
-	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 )
 
 type execServer struct{}
@@ -47,11 +49,12 @@ func (*execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.Exe
 
 	rsp := &vmxpb.ExecResponse{}
 	err := cmd.Run()
+	exitCode, err := commandutil.ExitCode(ctx, cmd, err)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ProcessState != nil {
-			rsp.ExitCode = int32(exitErr.ProcessState.ExitCode())
-		}
+		return nil, err
 	}
+
+	rsp.ExitCode = int32(exitCode)
 	rsp.Stdout = stdoutBuf.Bytes()
 	rsp.Stderr = stderrBuf.Bytes()
 	return rsp, nil

@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/remote_execution/commandutil",
         "//proto:vmexec_go_proto",
         "//server/util/status",
     ],

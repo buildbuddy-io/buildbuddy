@@ -34,6 +34,8 @@ message ExecResponse {
   bytes stderr = 3;
 }
 
+// This service is run inside of a VM. It executes commands sent to it over
+// gRPC in the local environment and returns the results.
 service Exec {
   rpc Exec(ExecRequest) returns (ExecResponse);
 }
