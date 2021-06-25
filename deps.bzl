@@ -3424,7 +3424,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         ],
         build_file_proto_mode = "disable",
         importpath = "go.opentelemetry.io/otel",
-        #patches = ["@%s//buildpatches:io_opentelemetry_go_otel" % workspace_name],
         sum = "h1:eaP0Fqu7SXHwvjiqDq83zImeehOHX8doTvU9AwXON8g=",
         version = "v0.20.0",
     )
