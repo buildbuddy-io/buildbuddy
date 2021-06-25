@@ -122,6 +122,11 @@ proto_library(
 )
 
 proto_library(
+    name = "vmexec_proto",
+    srcs = ["vmexec.proto"],
+)
+
+proto_library(
     name = "build_event_stream_proto",
     srcs = ["build_event_stream.proto"],
     deps = [
@@ -364,6 +369,13 @@ go_proto_library(
     deps = [
         ":context_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "vmexec_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/vmexec",
+    proto = ":vmexec_proto",
 )
 
 go_proto_library(
