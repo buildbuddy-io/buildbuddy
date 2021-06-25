@@ -7,7 +7,9 @@ import (
 	"os/exec"
 	"syscall"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 )
 
@@ -25,6 +27,8 @@ func (*execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.Exe
 	if req.GetWorkingDirectory() != "" {
 		cmd.Dir = req.GetWorkingDirectory()
 	}
+
+	// TODO(tylerw): implement this.
 	if req.GetStdinVsockPort() != 0 {
 		return nil, status.UnimplementedError("Vsock stdin not implemented")
 	}
@@ -45,11 +49,12 @@ func (*execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.Exe
 
 	rsp := &vmxpb.ExecResponse{}
 	err := cmd.Run()
+	exitCode, err := commandutil.ExitCode(ctx, cmd, err)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ProcessState != nil {
-			rsp.ExitCode = int32(exitErr.ProcessState.ExitCode())
-		}
+		return nil, err
 	}
+
+	rsp.ExitCode = int32(exitCode)
 	rsp.Stdout = stdoutBuf.Bytes()
 	rsp.Stderr = stderrBuf.Bytes()
 	return rsp, nil

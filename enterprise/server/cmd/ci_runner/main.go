@@ -110,6 +110,9 @@ func main() {
 
 	flag.Parse()
 
+	if *bazelCommand == "" {
+		*bazelCommand = bazeliskBinaryName
+	}
 	if (*actionName == "") != (*invocationID == "") {
 		log.Fatalf("--action_name and --invocation_id must either be both present or both missing.")
 	}
