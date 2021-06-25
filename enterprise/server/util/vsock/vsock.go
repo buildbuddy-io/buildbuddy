@@ -62,9 +62,9 @@ type vListener struct {
 	ctx context.Context
 }
 
-// GuestListener returns a new net.Listener that listens on the guest VSock
+// NewGuestListener returns a new net.Listener that listens on the guest VSock
 // on the specified port.
-func GuestListener(ctx context.Context, port uint32) (net.Listener, error) {
+func NewGuestListener(ctx context.Context, port uint32) (net.Listener, error) {
 	l, err := libVsock.Listen(port)
 	if err != nil {
 		return nil, err
@@ -104,9 +104,9 @@ func isTemporary(err error) bool {
 	return err != nil && ok && tempErr.Temporary()
 }
 
-// HostDial connects to the specified VSock socketPath and port and returns a
+// DialHostToGuest connects to the specified VSock socketPath and port and returns a
 // new net.Conn or error if unable to connect.
-func HostDial(ctx context.Context, socketPath string, port uint32) (net.Conn, error) {
+func DialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.Conn, error) {
 	var d net.Dialer
 	raddr := net.UnixAddr{Name: socketPath, Net: "unix"}
 	conn, err := d.DialContext(ctx, "unix", raddr.String())

@@ -21,7 +21,7 @@ var (
 )
 
 func bufDialer(ctx context.Context, _ string) (net.Conn, error) {
-	return vsock.HostDial(ctx, *sock, vsock.DefaultPort)
+	return vsock.DialHostToGuest(ctx, *sock, vsock.DefaultPort)
 }
 
 func main() {
