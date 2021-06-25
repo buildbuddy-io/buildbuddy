@@ -137,6 +137,7 @@ func FileWriter(ctx context.Context, fullPath string) (io.WriteCloser, error) {
 	return wm, nil
 }
 
+// DirSize returns the size of a directory specified by path, in bytes.
 func DirSize(path string) (int64, error) {
 	var size int64
 	err := filepath.WalkDir(path, func(_ string, entry fs.DirEntry, err error) error {
