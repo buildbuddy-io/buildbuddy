@@ -1,5 +1,3 @@
-exports_files(["vmlinux"])
-
 genrule(
     name = "mkinitfs",
     srcs = [
