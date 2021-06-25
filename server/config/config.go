@@ -195,6 +195,7 @@ type ExecutorConfig struct {
 	DisableWorkStreaming    bool             `yaml:"disable_work_streaming" usage:"If true, revert to the older non-streaming API for receiving work."`
 	DockerSiblingContainers bool             `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
 	DefaultXCodeVersion     string           `yaml:"default_xcode_version" usage:"Sets the default XCode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
+	EnableFirecracker       bool             `yaml:"enable_firecracker" usage:"Enables execution inside of firecracker managed VMs."`
 }
 
 func (c *ExecutorConfig) GetAppTarget() string {

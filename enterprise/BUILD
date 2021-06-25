@@ -37,26 +37,23 @@ config_setting(
 go_library(
     name = "bundle",
     srcs = ["bundle.go"],
-    embedsrcs = select({
-        ":fastbuild": [
-            "//:VERSION",
-            "//enterprise:config_files",
-            "//enterprise:licenses",
-            "//:config_files",
-            "//static",
-        ],
+    embedsrcs = [
+        "//:VERSION",
+        "//enterprise:config_files",
+        "//enterprise:licenses",
+        "//:config_files",
+        "//static",
+        "//enterprise/vmsupport/bin:vmlinux",
+        "//enterprise/vmsupport/bin:initfs",
+    ] + select({
+        ":fastbuild": [],
         "//conditions:default": [
-            "//:VERSION",
-            "//enterprise:config_files",
-            "//enterprise:licenses",
             "//enterprise/app:app_bundle",
             "//enterprise/app:style",
-            "//:config_files",
-            "//static",
         ],
     }),
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise",
-    visibility = ["//enterprise/server/cmd/server:__subpackages__"],
+    visibility = ["//enterprise:__subpackages__"],
     deps = [
         "//server/util/log",
     ],

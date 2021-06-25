@@ -16,6 +16,19 @@ import (
 //go:embed *
 var all embed.FS
 
+func init() {
+	matches, err := fs.Glob(all, "*")
+	if err != nil {
+		return
+	}
+	for _, match := range matches {
+		fs.WalkDir(all, match, func(path string, d fs.DirEntry, err error) error {
+			log.Printf("Path: %q", path)
+			return nil
+		})
+	}
+}
+
 type aliasFS struct {
 	embed.FS
 	remappedPaths map[string]string

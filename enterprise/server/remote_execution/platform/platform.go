@@ -36,9 +36,10 @@ const (
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L164
 	dockerRunAsRootPropertyName = "dockerRunAsRoot"
 
-	BareContainerType       ContainerType = "none"
-	DockerContainerType     ContainerType = "docker"
-	ContainerdContainerType ContainerType = "containerd"
+	BareContainerType        ContainerType = "none"
+	DockerContainerType      ContainerType = "docker"
+	ContainerdContainerType  ContainerType = "containerd"
+	FirecrackerContainerType ContainerType = "firecracker"
 )
 
 // Properties represents the platform properties parsed from a command.

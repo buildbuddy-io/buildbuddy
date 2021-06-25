@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -134,4 +135,20 @@ func FileWriter(ctx context.Context, fullPath string) (io.WriteCloser, error) {
 		DeleteLocalFileIfExists(tmpFileName)
 	})
 	return wm, nil
+}
+
+func DirSize(path string) (int64, error) {
+	var size int64
+	err := filepath.WalkDir(path, func(_ string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		size += info.Size()
+		return nil
+	})
+	return size, err
 }

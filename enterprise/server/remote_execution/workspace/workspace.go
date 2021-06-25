@@ -3,7 +3,6 @@ package workspace
 import (
 	"bytes"
 	"context"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
@@ -157,12 +157,13 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 }
 
 func (ws *Workspace) Remove() error {
-	return os.RemoveAll(ws.rootDir)
+	//return os.RemoveAll(ws.rootDir)
+	return nil
 }
 
 // Size computes the current workspace size in bytes.
 func (ws *Workspace) DiskUsageBytes() (int64, error) {
-	return dirSize(ws.Path())
+	return disk.DirSize(ws.Path())
 }
 
 // Clean removes files and directories in the workspace which are not preserved
@@ -229,20 +230,4 @@ func removeChildren(dirPath string) error {
 
 func isParent(parent, child string) bool {
 	return strings.HasPrefix(child, parent+string(os.PathSeparator))
-}
-
-func dirSize(path string) (int64, error) {
-	var size int64
-	err := filepath.WalkDir(path, func(_ string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		size += info.Size()
-		return nil
-	})
-	return size, err
 }
