@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package vmexec;
+
+message ExecRequest {
+  string working_directory = 1;
+
+  message EnvironmentVariable {
+    // The variable name.
+    string name = 1;
+
+    // The variable value.
+    string value = 2;
+  }
+
+  // The environment variables to set when running the program.
+  repeated EnvironmentVariable environment_variables = 2;
+
+  // The arguments to the command. The first argument must be the path to the
+  // executable.
+  repeated string arguments = 3;
+
+  // Optional. Ports are vsock ports where the host will read/write stdin,
+  // stdout, and stderr. If unset, or set to 0, input will be ignored and
+  // output will be buffered and returned in the ExecResponse.
+  int32 stdin_vsock_port = 4;
+  int32 stdout_vsock_port = 5;
+  int32 stderr_vsock_port = 6;
+}
+
+message ExecResponse {
+  int32 exit_code = 1;
+  bytes stdout = 2;
+  bytes stderr = 3;
+}
+
+service Exec {
+  rpc Exec(ExecRequest) returns (ExecResponse);
+}
