@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 type execServer struct{}
@@ -35,8 +35,8 @@ func (*execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.Exe
 	}
 	if req.GetStderrVsockPort() != 0 {
 		return nil, status.UnimplementedError("Vsock stderr not implemented")
-	}	
-	
+	}
+
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
