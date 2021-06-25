@@ -94,17 +94,19 @@ if ! which fzf &>/dev/null; then
   exit 1
 fi
 
-# Auto-commit only if there are no files staged before
-# selecting files to add.
-if ((commit)); then
-  commit=$(git diff --staged --quiet && echo '1' || echo '0')
-fi
+# Only commit staged files if there were no files staged before running this script.
+prev_stage_clean=$(git diff --staged --quiet && echo 1 || echo 0)
 
 diff -Pdpru "$modified_before" "$modified_after" | perl -n -e '/^\+([^+].*)/ && print "./$1\n"' |
   fzf --exit-0 --prompt='Stage modified files? Select with Arrows, Tab, Shift+Tab, Enter; quit with Ctrl+C > ' --multi |
   xargs -d '\n' --no-run-if-empty git add
 
 if ((commit)) && ! git diff --staged --quiet; then
+  if ! ((prev_stage_clean)); then
+    echo -e "${c_yellow}WARNING: Files will need to be manually committed since there were existing staged files.${c_reset}"
+    exit
+  fi
+
   git commit -m "Fix formatting / build issues"
   if ((push)); then
     git push
