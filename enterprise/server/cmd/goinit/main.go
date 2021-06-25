@@ -100,6 +100,12 @@ func main() {
 	die(mount("devtmpfs", "/dev", "devtmpfs", syscall.MS_NOSUID, "mode=0620,gid=5,ptmxmode=666"))
 
 	die(os.MkdirAll("/newroot", 0755))
+
+	// Quick note about devices: We mount 3 devices on every VM -- the
+	// first is initfs, containing this script, which is mounted on
+	// /dev/vda. The second is the containerfs which is mounted on /dev/vdb.
+	// The third is the workspacefs, containing any input files, mounted on
+	// dev/vdc.
 	die(mount("/dev/vdb", "/newroot", "ext4", syscall.MS_RELATIME, ""))
 
 	die(os.MkdirAll("/newroot/dev", 0755))

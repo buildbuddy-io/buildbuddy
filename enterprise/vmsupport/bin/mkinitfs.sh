@@ -1,7 +1,9 @@
 #!/bin/bash
 set -e
 
-GOINIT=$1
+GOINIT=$1  # path to goinit binary
+FSPATH=$2  # path to write output filesytem to
+
 RANDOM_STR=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 13 ; echo '')-init
 ROOT_DIR=${RANDOM_STR}
 
@@ -10,7 +12,7 @@ cp ${GOINIT} ${ROOT_DIR}/bb/init
 
 DIR_SIZE=$(du -sk ${ROOT_DIR} | awk '{print $1}')
 IMAGE_SIZE_KBYTES=$(echo "${DIR_SIZE} * 1.4 / 1" | bc)
-echo "dir size is: $DIR_SIZE image_size is: $IMAGE_SIZE_KBYTES"
+echo "dir size is: $DIR_SIZE image_size is: $IMAGE_SIZE_KBYTES K"
 IMAGE_FILE=${RANDOM_STR}.ext2
 
 rm -f "${IMAGE_FILE}"
@@ -22,9 +24,9 @@ rm -f "${IMAGE_FILE}"
   -m 1 \
   -r 1 \
   -t ext2 \
-  "${2}" \
+  "${FSPATH}" \
   ${IMAGE_SIZE_KBYTES}k \
 ;
 
-echo "Created initfs: ${2}"
+echo "Created initfs: ${FSPATH}"
 
