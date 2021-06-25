@@ -3,6 +3,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# If ~/go/bin exists, make sure we respect it
+export PATH="$PATH:$HOME/go/bin"
+
 gazelle=0
 stage=0
 commit=0
@@ -68,12 +71,20 @@ else
   echo -e "${c_yellow}WARNING: Missing clang-format tool; will not format proto files.${c_reset}"
 fi
 
-echo "Formatting frontend and markup files..."
-bazel run --ui_event_filters=-info,-stdout,-stderr --noshow_progress //tools/prettier:fix
+echo "Formatting frontend and markup files with prettier..."
+if which node prettier &>/dev/null; then
+  BUILD_WORKSPACE_PATH="$(pwd)" ./tools/prettier/prettier.sh "$(which node)" "$(which prettier)" --write
+else
+  bazel run --ui_event_filters=-info,-stdout,-stderr --noshow_progress //tools/prettier:fix
+fi
 
 if ((gazelle)); then
-  echo "Fixing BUILD dependencies with gazelle..."
-  bazel run --ui_event_filters=-info,-stdout,-stderr --noshow_progress //:gazelle
+  echo "Fixing BUILD deps with gazelle..."
+  if which gazelle &>/dev/null; then
+    gazelle
+  else
+    bazel run --ui_event_filters=-info,-stdout,-stderr --noshow_progress //:gazelle
+  fi
 fi
 
 git diff --name-only | sort >"$modified_after"
@@ -88,7 +99,6 @@ if ! [ -t 0 ] || ! [ -t 1 ]; then
   exit 1
 fi
 
-export PATH="$PATH:$HOME/go/bin"
 if ! which fzf &>/dev/null; then
   echo -e "${c_yellow}WARNING: Missing fzf tool; did not stage any changes.${c_reset}"
   exit 1
