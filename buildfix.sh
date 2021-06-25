@@ -104,7 +104,7 @@ diff -Pdpru "$modified_before" "$modified_after" | perl -n -e '/^\+([^+].*)/ && 
 if ((commit)) && ! git diff --staged --quiet; then
   if ! ((prev_stage_clean)); then
     echo -e "${c_yellow}WARNING: Files will need to be manually committed since there were existing staged files.${c_reset}"
-    exit
+    exit 1
   fi
 
   git commit -m "Fix formatting / build issues"
