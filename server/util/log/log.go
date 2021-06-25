@@ -12,17 +12,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
-	"github.com/golang/protobuf/proto"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	gstatus "google.golang.org/grpc/status"
-
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
@@ -66,27 +63,6 @@ func fmtErr(err error) string {
 	}
 }
 
-func getRequestMetadata(ctx context.Context) *repb.RequestMetadata {
-	if grpcMD, ok := metadata.FromIncomingContext(ctx); ok {
-		rmdVals := grpcMD["build.bazel.remote.execution.v2.requestmetadata-bin"]
-		for _, rmdVal := range rmdVals {
-			rmd := &repb.RequestMetadata{}
-			if err := proto.Unmarshal([]byte(rmdVal), rmd); err == nil {
-				return rmd
-			}
-		}
-	}
-	return nil
-}
-
-func getInvocationIDFromMD(ctx context.Context) string {
-	iid := ""
-	if rmd := getRequestMetadata(ctx); rmd != nil {
-		iid = rmd.GetToolInvocationId()
-	}
-	return iid
-}
-
 func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, err error) {
 	if log.Logger.GetLevel() > zerolog.InfoLevel {
 		return
@@ -96,7 +72,7 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 	// We disambiguate them in the logs by adding a D prefix to DistributedCache methods.
 	fullMethod = strings.Replace(fullMethod, "distributed_cache.DistributedCache/", "D", 1)
 	shortPath := "/" + path.Base(fullMethod)
-	if iid := getInvocationIDFromMD(ctx); iid != "" {
+	if iid := bazel_request.GetInvocationID(ctx); iid != "" {
 		Infof("%s %s %s %s %s [%s]", "gRPC", reqID, iid, shortPath, fmtErr(err), formatDuration(dur))
 	} else {
 		Infof("%s %s %s %s [%s]", "gRPC", reqID, shortPath, fmtErr(err), formatDuration(dur))
