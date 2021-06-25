@@ -16,7 +16,7 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1624481106206,
+  "iteration": 1624558938473,
   "links": [],
   "panels": [
     {
@@ -307,7 +307,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "increase(cloudprober_success[10m]) / increase(cloudprober_total[10m])",
+              "expr": "sum(increase(cloudprober_success[10m])) by (probe) / sum(increase(cloudprober_total[10m])) by (probe)",
               "interval": "",
               "legendFormat": "{{probe}}",
               "refId": "A"
@@ -338,7 +338,7 @@
               "label": null,
               "logBase": 1,
               "max": null,
-              "min": null,
+              "min": "0",
               "show": true
             },
             {
@@ -3184,7 +3184,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 8
+            "y": 7
           },
           "hiddenSeries": false,
           "id": 350,
@@ -3208,7 +3208,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 190,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3302,7 +3302,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 8
+            "y": 7
           },
           "hiddenSeries": false,
           "id": 351,
@@ -3327,7 +3327,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 159,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3427,7 +3427,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 17
+            "y": 16
           },
           "hiddenSeries": false,
           "id": 352,
@@ -3451,7 +3451,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 210,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3561,7 +3561,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 17
+            "y": 16
           },
           "hiddenSeries": false,
           "id": 353,
@@ -3586,7 +3586,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 178,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3676,7 +3676,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 25
+            "y": 24
           },
           "hiddenSeries": false,
           "id": 354,
@@ -3700,7 +3700,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 31,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3786,7 +3786,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 25
+            "y": 24
           },
           "hiddenSeries": false,
           "id": 355,
@@ -3810,7 +3810,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 35,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3895,7 +3895,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 33
+            "y": 32
           },
           "hiddenSeries": false,
           "id": 356,
@@ -3919,7 +3919,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 33,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4004,7 +4004,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 33
+            "y": 32
           },
           "hiddenSeries": false,
           "id": 357,
@@ -4029,7 +4029,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 102,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4114,7 +4114,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 41
+            "y": 40
           },
           "hiddenSeries": false,
           "id": 358,
@@ -4138,7 +4138,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 129,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4223,7 +4223,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 41
+            "y": 40
           },
           "hiddenSeries": false,
           "id": 359,
@@ -4250,7 +4250,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 180,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4317,7 +4317,7 @@
           }
         }
       ],
-      "repeatIteration": 1624481106206,
+      "repeatIteration": 1624558938473,
       "repeatPanelId": 28,
       "scopedVars": {
         "pool": {
@@ -5041,7 +5041,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 10
+            "y": 9
           },
           "hiddenSeries": false,
           "id": 361,
@@ -5066,7 +5066,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 274,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5165,7 +5165,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 10
+            "y": 9
           },
           "hiddenSeries": false,
           "id": 362,
@@ -5189,7 +5189,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 276,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5275,7 +5275,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 18
+            "y": 17
           },
           "hiddenSeries": false,
           "id": 363,
@@ -5299,7 +5299,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 290,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5385,7 +5385,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 18
+            "y": 17
           },
           "hiddenSeries": false,
           "id": 364,
@@ -5409,7 +5409,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 292,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5495,7 +5495,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 26
+            "y": 25
           },
           "hiddenSeries": false,
           "id": 365,
@@ -5519,7 +5519,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 278,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5605,7 +5605,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 26
+            "y": 25
           },
           "hiddenSeries": false,
           "id": 366,
@@ -5629,7 +5629,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 280,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5696,7 +5696,7 @@
           }
         }
       ],
-      "repeatIteration": 1624481106206,
+      "repeatIteration": 1624558938473,
       "repeatPanelId": 264,
       "scopedVars": {
         "pool": {
@@ -7770,7 +7770,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -7882,7 +7882,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -7992,7 +7992,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8102,7 +8102,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8167,7 +8167,7 @@
           }
         }
       ],
-      "repeatIteration": 1624481106206,
+      "repeatIteration": 1624558938473,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -8237,7 +8237,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8349,7 +8349,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8459,7 +8459,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8569,7 +8569,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8634,7 +8634,7 @@
           }
         }
       ],
-      "repeatIteration": 1624481106206,
+      "repeatIteration": 1624558938473,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -8974,7 +8974,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 73,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9084,7 +9084,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 79,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9149,7 +9149,7 @@
           }
         }
       ],
-      "repeatIteration": 1624481106206,
+      "repeatIteration": 1624558938473,
       "repeatPanelId": 71,
       "scopedVars": {
         "job": {
@@ -9235,7 +9235,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 73,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9345,7 +9345,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1624481106206,
+          "repeatIteration": 1624558938473,
           "repeatPanelId": 79,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9410,7 +9410,7 @@
           }
         }
       ],
-      "repeatIteration": 1624481106206,
+      "repeatIteration": 1624558938473,
       "repeatPanelId": 71,
       "scopedVars": {
         "job": {

@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sys/unix"
 
@@ -63,20 +62,20 @@ type vListener struct {
 	ctx context.Context
 }
 
-func GuestListener(ctx context.Context, port uint32) (net.Listener, error) {
+// NewGuestListener returns a new net.Listener that listens on the guest VSock
+// on the specified port.
+func NewGuestListener(ctx context.Context, port uint32) (net.Listener, error) {
 	l, err := libVsock.Listen(port)
 	if err != nil {
 		return nil, err
 	}
-	
 	return &vListener{
-		ctx: ctx,
+		ctx:      ctx,
 		Listener: l,
 	}, nil
 }
 
 func (l *vListener) Accept() (net.Conn, error) {
-	log.Debug("Listener Accept called")
 	for {
 		select {
 		case <-l.ctx.Done():
@@ -84,7 +83,6 @@ func (l *vListener) Accept() (net.Conn, error) {
 		default:
 			conn, err := l.Listener.Accept()
 			if err == nil {
-				log.Debug("Listener accepted successfully!")
 				return conn, err
 			} else if isTemporary(err) {
 				continue
@@ -95,6 +93,8 @@ func (l *vListener) Accept() (net.Conn, error) {
 	}
 }
 
+// isTemporary returns true if the error is non-nil and implements the
+// Temporary() bool interface and is Temporary().
 func isTemporary(err error) bool {
 	tempErr, ok := err.(interface {
 		Temporary() bool
@@ -103,7 +103,10 @@ func isTemporary(err error) bool {
 	return err != nil && ok && tempErr.Temporary()
 }
 
-func HostDial(ctx context.Context, socketPath string, port uint32) (net.Conn, error) {
+// DialHostToGuest connects to the specified VSock socketPath and port and returns a
+// new net.Conn or error if unable to connect.
+func DialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.Conn, error) {
+>>>>>>> cc0879cf5643f22bc4260258e9a04eeb53326b2f
 	var d net.Dialer
 	raddr := net.UnixAddr{Name: socketPath, Net: "unix"}
 	conn, err := d.DialContext(ctx, "unix", raddr.String())
@@ -111,6 +114,7 @@ func HostDial(ctx context.Context, socketPath string, port uint32) (net.Conn, er
 		return nil, err
 	}
 
+	// https://github.com/firecracker-microvm/firecracker/blob/main/docs/vsock.md#host-initiated-connections
 	fcConnectString := fmt.Sprintf("CONNECT %d\n", port)
 	n, err := conn.Write([]byte(fcConnectString))
 	if err != nil {
@@ -126,6 +130,5 @@ func HostDial(ctx context.Context, socketPath string, port uint32) (net.Conn, er
 	if !strings.HasPrefix(rsp, "OK ") {
 		return nil, status.InternalErrorf("HostDial failed: didn't receive 'OK' after CONNECT, got %q", rsp)
 	}
-	log.Printf("HostDialed succesfully")
 	return conn, nil
 }

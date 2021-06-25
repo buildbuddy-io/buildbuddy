@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -91,6 +92,9 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 		return
 	}
 	reqID, _ := uuid.GetFromContext(ctx) // Ignore error, we're logging anyway.
+	// ByteStream and DistributedCache services share some method names.
+	// We disambiguate them in the logs by adding a D prefix to DistributedCache methods.
+	fullMethod = strings.Replace(fullMethod, "distributed_cache.DistributedCache/", "D", 1)
 	shortPath := "/" + path.Base(fullMethod)
 	if iid := getInvocationIDFromMD(ctx); iid != "" {
 		Infof("%s %s %s %s %s [%s]", "gRPC", reqID, iid, shortPath, fmtErr(err), formatDuration(dur))
