@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock",
     visibility = ["//visibility:public"],
     deps = [
-        "//server/util/log",
         "//server/util/status",
         "@com_github_mdlayher_vsock//:vsock",
         "@org_golang_x_sys//unix",
