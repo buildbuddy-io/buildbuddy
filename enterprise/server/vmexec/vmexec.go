@@ -37,7 +37,7 @@ func (*execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.Exe
 	}
 	if req.GetStderrVsockPort() != 0 {
 		return nil, status.UnimplementedError("Vsock stderr not implemented")
-	}	
+	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf

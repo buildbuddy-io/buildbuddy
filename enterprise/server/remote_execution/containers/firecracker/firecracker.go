@@ -30,10 +30,10 @@ import (
 )
 
 var (
-	locateBinariesOnce    sync.Once
-	locateBinariesError   error
-	kernelImagePath       string
-	initFSPath            string
+	locateBinariesOnce  sync.Once
+	locateBinariesError error
+	kernelImagePath     string
+	initFSPath          string
 )
 
 // getStaticFilePath returns the full path to a bundled file. If runfiles are
@@ -80,9 +80,9 @@ func directoryToExt4ImageWithSize(ctx context.Context, directory string, sizeByt
 		"-r", "1",
 		"-t", "ext4",
 		imageFileName,
-		fmt.Sprintf("%dK", sizeBytes / 1e3),
+		fmt.Sprintf("%dK", sizeBytes/1e3),
 	}
-        if err := exec.CommandContext(ctx, args[0], args[1:]...).Run(); err != nil {
+	if err := exec.CommandContext(ctx, args[0], args[1:]...).Run(); err != nil {
 		return "", err
 	}
 	return imageFileName, nil
@@ -110,7 +110,7 @@ func convertContainerToExt4FS(ctx context.Context, containerImage string) (strin
 		return "", err
 	}
 	defer os.RemoveAll(rootFSDir)
-	
+
 	if err := exec.CommandContext(ctx, "podman", "pull", containerImage).Run(); err != nil {
 		return "", err
 	}
@@ -130,7 +130,7 @@ func convertContainerToExt4FS(ctx context.Context, containerImage string) (strin
 	if err != nil {
 		return "", err
 	}
-	
+
 	log.Debugf("Wrote container %q to image file: %q", containerImage, imageFile)
 	return imageFile, nil
 }
@@ -151,7 +151,7 @@ type firecrackerContainer struct {
 	// These are unset when NewContainer is called, but will
 	// be populated by PullImageIfNecessary and Create respectively.
 	workspaceFSPath string
-	rootFSPath     string
+	rootFSPath      string
 }
 
 func NewContainer(ctx context.Context, containerImage, hostRootDir string) container.CommandContainer {
@@ -202,7 +202,7 @@ func (c *firecrackerContainer) getConfig(ctx context.Context, socketPath, rootFS
 		VsockDevices: []firecracker.VsockDevice{
 			fcmodels.VsockDevice{
 				Path: "root", // is this right? should this be a path?
-				CID: contextID,
+				CID:  contextID,
 			},
 		},
 		MachineCfg: fcmodels.MachineConfiguration{
@@ -237,7 +237,7 @@ func (c *firecrackerContainer) Run(ctx context.Context, command *repb.Command, w
 		return nonCmdExit(err)
 	}
 
-	if cmdResult := c.Exec(ctx, command, nil/*=stdin*/, nil/*=stdout*/); cmdResult.Error != nil {
+	if cmdResult := c.Exec(ctx, command, nil /*=stdin*/, nil /*=stdout*/); cmdResult.Error != nil {
 		return cmdResult
 	}
 
@@ -245,24 +245,24 @@ func (c *firecrackerContainer) Run(ctx context.Context, command *repb.Command, w
 		return nonCmdExit(err)
 	}
 	/*
-	m, err := fcclient.NewMachine(ctx, fcCfg, machineOpts...)
-	if err != nil {
-		return nonCmdExit(status.InternalErrorf("Failed creating machine: %s", err))
-	}
+		m, err := fcclient.NewMachine(ctx, fcCfg, machineOpts...)
+		if err != nil {
+			return nonCmdExit(status.InternalErrorf("Failed creating machine: %s", err))
+		}
 
-	if err := m.Start(ctx); err != nil {
-		return nonCmdExit(status.InternalErrorf("Failed starting machine: %s", err))
-	}
+		if err := m.Start(ctx); err != nil {
+			return nonCmdExit(status.InternalErrorf("Failed starting machine: %s", err))
+		}
 
-	if err := m.Wait(ctx); err != nil {
-		return nonCmdExit(err)
-	}
+		if err := m.Wait(ctx); err != nil {
+			return nonCmdExit(err)
+		}
 
-	result := &interfaces.CommandResult{
-		CommandDebugString: fmt.Sprintf("(firecracker) %s", command.GetArguments()),
-		ExitCode:           commandutil.NoExitCode,
-	}
-        */
+		result := &interfaces.CommandResult{
+			CommandDebugString: fmt.Sprintf("(firecracker) %s", command.GetArguments()),
+			ExitCode:           commandutil.NoExitCode,
+		}
+	*/
 	return commandutil.Run(ctx, command, workDir)
 }
 
@@ -279,7 +279,7 @@ func (c *firecrackerContainer) Create(ctx context.Context, workDir string) error
 		return err
 	}
 	log.Debugf("workspace size (bytes): %d", workspaceSizeBytes)
-	workspaceFSPath, err := directoryToExt4ImageWithSize(ctx, c.workDir, workspaceSizeBytes + 1e9)
+	workspaceFSPath, err := directoryToExt4ImageWithSize(ctx, c.workDir, workspaceSizeBytes+1e9)
 	if err != nil {
 		return err
 	}
@@ -289,7 +289,7 @@ func (c *firecrackerContainer) Create(ctx context.Context, workDir string) error
 	if locateBinariesError != nil {
 		return locateBinariesError
 	}
-	
+
 	// Start a VM with a kernel boot arg set to the name of the run script.
 	logrusLogger := logrus.New()
 	logrusLogger.SetLevel(logrus.InfoLevel)
@@ -316,7 +316,7 @@ func (c *firecrackerContainer) Create(ctx context.Context, workDir string) error
 		WithStderr(os.Stderr).
 		Build(ctx)
 	machineOpts = append(machineOpts, fcclient.WithProcessRunner(cmd))
-	
+
 	m, err := fcclient.NewMachine(ctx, *fcCfg, machineOpts...)
 	if err != nil {
 		return status.InternalErrorf("Failed creating machine: %s", err)
@@ -354,14 +354,14 @@ func (c *firecrackerContainer) PullImageIfNecessary(ctx context.Context) error {
 	}
 	log.Printf("generated rootfs at %q", rootFSPath)
 	c.rootFSPath = rootFSPath
-	
+
 	// if a snapshot is cached, use that
 	// otherwise, generate a new one from the container image
 }
 
 // Remove kills any processes currently running inside the container and
 // removes any resources associated with the container itself.
-func (c *firecrackerContainer) Remove(ctx context.Context) error               {
+func (c *firecrackerContainer) Remove(ctx context.Context) error {
 	// terminate the VM?
 	if c.rootFSPath != "" {
 		disk.DeleteLocalFileIfExists(c.rootFSPath)
@@ -373,12 +373,12 @@ func (c *firecrackerContainer) Remove(ctx context.Context) error               {
 }
 
 // Pause freezes a container so that it no longer consumes CPU resources.
-func (c *firecrackerContainer) Pause(ctx context.Context) error                {
+func (c *firecrackerContainer) Pause(ctx context.Context) error {
 	// pause the VM and create a snapshot
 }
 
 // Unpause un-freezes a container so that it can be used to execute commands.
-func (c *firecrackerContainer) Unpause(ctx context.Context) error              {
+func (c *firecrackerContainer) Unpause(ctx context.Context) error {
 	// restore from the latest snapshot otherwise error
 }
 

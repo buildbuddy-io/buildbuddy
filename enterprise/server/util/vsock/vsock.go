@@ -22,8 +22,8 @@ const (
 	ioctlVsockSetGuestCID = uintptr(0x4008AF60)
 
 	// 0, 1 and 2 are reserved CIDs, see http://man7.org/linux/man-pages/man7/vsock.7.html
-	minCID          = 3
-	maxCID          = math.MaxUint32
+	minCID = 3
+	maxCID = math.MaxUint32
 
 	DefaultPort = 25415
 )

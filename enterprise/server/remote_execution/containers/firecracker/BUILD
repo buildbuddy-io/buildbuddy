@@ -4,8 +4,8 @@ go_library(
     name = "firecracker",
     srcs = ["firecracker.go"],
     data = [
+        "//enterprise/vmsupport/bin:initfs",
         "//enterprise/vmsupport/bin:vmlinux",
-	"//enterprise/vmsupport/bin:initfs",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker",
     visibility = ["//visibility:public"],
