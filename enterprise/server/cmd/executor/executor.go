@@ -213,6 +213,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
+
 	opts := log.Opts{
 		Level:                  configurator.GetAppLogLevel(),
 		EnableShortFileName:    configurator.GetAppLogIncludeShortFileName(),
