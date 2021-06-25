@@ -14,7 +14,6 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
-        "//server/resources",
         "//server/util/log",
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",

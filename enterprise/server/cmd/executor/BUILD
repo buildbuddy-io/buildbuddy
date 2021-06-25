@@ -28,6 +28,7 @@ go_library(
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/content_addressable_storage_server",
+        "//server/resources",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
@@ -39,7 +40,6 @@ go_library(
         "@org_golang_google_api//option:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//connectivity",
-        "@org_golang_google_grpc//encoding/gzip",
         "@org_golang_google_grpc//reflection",
         "@org_golang_google_grpc//test/bufconn",
     ],
@@ -60,7 +60,6 @@ go_binary(
     ],
     embed = [":executor_lib"],
     visibility = ["//visibility:public"],
-    deps = ["//server/resources"],
 )
 
 container_image(
