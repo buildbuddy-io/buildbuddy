@@ -106,7 +106,6 @@ func isTemporary(err error) bool {
 // DialHostToGuest connects to the specified VSock socketPath and port and returns a
 // new net.Conn or error if unable to connect.
 func DialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.Conn, error) {
->>>>>>> cc0879cf5643f22bc4260258e9a04eeb53326b2f
 	var d net.Dialer
 	raddr := net.UnixAddr{Name: socketPath, Net: "unix"}
 	conn, err := d.DialContext(ctx, "unix", raddr.String())
