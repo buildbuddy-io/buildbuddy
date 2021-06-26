@@ -10,3 +10,12 @@
 .blogAuthorTitle {
   margin-top: 2rem;
 }
+
+.coverImage {
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  font-weight: 500;
+  color: #444;
+}

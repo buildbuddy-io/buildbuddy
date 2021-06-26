@@ -6,7 +6,7 @@ author_title: Head of Sales @ BuildBuddy
 date: 2021-04-28:12:00:00
 author_url: https://www.linkedin.com/in/gli/
 author_image_url: https://avatars.githubusercontent.com/u/27219306?v=4
-image: https://uploads-ssl.webflow.com/5eeba6a68ba54530ffd09006/606de9e9765e01d812105cf7_socforserviceorganizationslogosos.jpeg
+seo_image: https://uploads-ssl.webflow.com/5eeba6a68ba54530ffd09006/606de9e9765e01d812105cf7_socforserviceorganizationslogosos.jpeg
 tags: [company, security]
 ---
 

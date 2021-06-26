@@ -75,14 +75,14 @@ const MONTHS = [
 function BlogPostItem(props: Props): JSX.Element {
   const { children, frontMatter, metadata, truncated, isBlogPostPage = false } = props;
   const { date, permalink, tags, readingTime } = metadata;
-  const { author, title, image, keywords } = frontMatter;
-
-  const authorURL = frontMatter.author_url || frontMatter.authorURL;
-  const authorTitle = frontMatter.author_title || frontMatter.authorTitle;
-  const authorImageURL = frontMatter.author_image_url || frontMatter.authorImageURL;
+  const { author, title, keywords, subtitle, authorURL, authorTitle, authorImageURL, coverImage, seoImage } = mapKeys(
+    underscoreToCamelCase,
+    frontMatter
+  );
 
   const renderPostHeader = () => {
     const TitleHeading = isBlogPostPage ? "h1" : "h2";
+    const SubtitleHeading = isBlogPostPage ? "h2" : "h3";
     const match = date.substring(0, 10).split("-");
     const year = match[0];
     const month = MONTHS[parseInt(match[1], 10) - 1];
@@ -90,9 +90,11 @@ function BlogPostItem(props: Props): JSX.Element {
 
     return (
       <header>
+        {isBlogPostPage && coverImage && <img className={styles.coverImage} alt="" src={coverImage} />}
         <TitleHeading className={clsx("margin-bottom--sm", styles.blogPostTitle)}>
           {isBlogPostPage ? title : <Link to={permalink}>{title}</Link>}
         </TitleHeading>
+        {subtitle && <SubtitleHeading className={styles.subtitle}>{subtitle}</SubtitleHeading>}
         <div className="margin-vert--md">
           <time dateTime={date} className={styles.blogPostDate}>
             <Translate
@@ -122,7 +124,7 @@ function BlogPostItem(props: Props): JSX.Element {
 
   return (
     <>
-      <Seo {...{ keywords, image }} />
+      <Seo {...{ keywords, image: seoImage || coverImage }} />
 
       <article className={!isBlogPostPage ? "margin-bottom--xl" : undefined}>
         {renderPostHeader()}
@@ -181,6 +183,28 @@ function BlogPostItem(props: Props): JSX.Element {
       </article>
     </>
   );
+}
+
+function mapKeys<K extends string, V = any>(mapper: (_: string) => string, record: Record<K, V>): Record<K, V> {
+  const out = {} as Record<K, V>;
+  for (const [k, v] of Object.entries(record)) {
+    out[mapper(k)] = v;
+  }
+  return out;
+}
+
+function underscoreToCamelCase(text: string): string {
+  const tokens = text.split("_");
+  const [first, ...rest] = tokens;
+  let buffer = first.toLocaleLowerCase();
+  for (const token of rest) {
+    if (token === "url") {
+      buffer += "URL";
+      continue;
+    }
+    buffer += token[0].toLocaleUpperCase() + token.substring(1).toLocaleLowerCase();
+  }
+  return buffer;
 }
 
 export default BlogPostItem;

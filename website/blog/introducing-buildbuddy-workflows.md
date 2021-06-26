@@ -1,37 +1,38 @@
 ---
 slug: introducing-buildbuddy-workflows
-title: "BuildBuddy workflows: convenient, fast, and secure CI for bazel"
+title: "Introducing BuildBuddy Workflows"
+subtitle: "Convenient, fast, and secure CI for Bazel"
 description: "Test subtitle"
 author: Brandon Duffany
 author_title: Engineer @ BuildBuddy
 date: 2021-06-24:12:00:00 # DO NOT MERGE: NEEDS UPDATE
+cover_image: images/workflows_illustration.png
 author_url: https://www.linkedin.com/in/brandon-duffany-39b7217a
 author_image_url: https://avatars.githubusercontent.com/u/2414826?v=4
 tags: [product]
 ---
 
 In our [latest release](TODO/LINK_TO_RELEASE_POST), we launched BuildBuddy
-Workflows, a **convenient**, **fast**, and **secure** CI solution for
-GitHub repositories using Bazel.
+Workflows, a **convenient**, **fast**, and **secure** Continuous Integration (CI)
+solution for GitHub repositories using Bazel.
 
-<div style="text-align: center;">
+Like other CI solutions, workflows give you the confidence that your code
+builds successfully and passes all tests before you merge pull requests or
+deploy a new release.
 
-![](images/workflows_illustration.png)
+But because BuildBuddy workflows are optimized for Bazel repos, they are
+_really fast_.
 
-</div>
+## How fast are BuildBuddy workflows?
 
-Workflows automatically run Bazel on powerful machines deployed close
-to BuildBuddy's servers whenever you push a commit to your repo.
-This gives you the confidence that your code builds successfully and
-passes all tests before you merge pull requests or deploy a new release.
-
-We've used workflows on our own source repositories for the past few
+We've used BuildBuddy workflows on our own source repositories for the past few
 months, comparing them side-by-side against our existing CI solution.
 
 By leveraging the power of Bazel's local caching as well as BuildBuddy's
-remote caching and execution, workflows dramatically sped up our existing CI
-solution, reducing the median duration by around **8X**, with half of all
-builds executing in 30 seconds or less (compared to 3 minutes and 30 seconds).
+remote caching and execution, workflows dramatically sped up our CI runs.
+Compared to our previous solution, we reduced the median duration by about
+**7X**, with half of all builds executing in 30 seconds or less (compare
+to 3 minutes and 30 seconds).
 
 This overlapping histogram chart shows the complete picture: on our repo,
 BuildBuddy workflows rarely took longer than a minute, while on GitHub,
@@ -40,37 +41,45 @@ than 3 minutes on average.
 
 ![overlapping histogram comparing BuildBuddy and GitHub actions](images/workflows.png)
 
-## How workflows work
+## Why does fast CI matter?
 
-Workflows work like this:
+BuildBuddy workflows are impressively fast. But let's take a step back
+a bit. Do we really need faster CI? Does it really matter if a workflow
+takes 30 seconds vs. 4 minutes?
 
-- First, you link your repository to BuildBuddy via the workflows
-  page. This gives us the go-ahead and permissions (if needed) to start
-  listening for new commits and to build your code.
-- Now let's say you open a PR on GitHub. BuildBuddy gets a notification,
-  checks out your repo, and runs `bazel test //...` (by default) on your PR
-  branch.
-- Once the build is complete, BuildBuddy reports a status to the pull
-  request (succeeded or failed).
+Like many other modern source repositories built with Bazel, the [BuildBuddy repo](https://github.com/buildbuddy-io/buildbuddy)
+is fairly large, and has many external dependencies. It's important for us
+(and to our users) to be able to quickly iterate, even as our repo scales up.
 
-The full power of workflows is unlocked when you use them in combination
-with branch protection rules. This means that the PR will not be allowed
-to merge until it passes on BuildBuddy.
+Before we allow new code to be a part of the product, we use CI to ensure that
+all of our tests pass, so that we can be more confident that the code does not
+introduce any regressions.
 
-## How we made workflows fast
+And if CI runs don't complete quickly, developers are inclined to
+"context switch" &mdash; meaning they stop waiting for CI and start working
+on something else. Even for the most disciplined developers who are great at multitasking, this
+introduces cognitive overhead and results in less productivity overall.
+
+The developer experience when CI is **slow** looks a bit like this (red parts of the
+timeline indicate lost productivity):
+
+![](images/slow_ci.png)
+
+The experience when CI is **fast** looks more like this:
+
+![](images/fast_ci.png)
+
+## How did we make workflows fast?
 
 In addition to convenience and security, one of our main goals for workflows
 was to maximize performance, even for very large source repositories.
 
 We did this in two main ways:
 
-1. Ensure that workflows can communicate with BuildBuddy's remote cache and
-   remote execution system with a fast network connection (high throughput
-   and low latency).
-2. Run workflows in a persistent environment (as opposed to creating a
-   fresh environment each time).
+1. Ensure a **fast network connection to BuildBuddy's servers**.
+2. Run workflow actions in a **persistent sandbox environment**.
 
-### Running workflows close to BuildBuddy's servers
+### Fast connection to BuildBuddy
 
 For users taking advantage of BuildBuddy's remote cache and remote
 execution system, it's crucial to ensure that we run workflows very close
@@ -83,12 +92,13 @@ bandwidth will not be a major bottleneck.
 The solution here was simple: run workflows on a dedicated executor
 deployment in the same datacenter where BuildBuddy is deployed.
 
-Because of our recent improvements to our caching infrastructure
-in [BuildBuddy v2](introducing-buildbuddy-v2), the workflow executor
-pool gets <!-- TODO --> latency and <!-- TODO --> throughput to
-the remote cache.
+With GitHub actions or other CI solutions, the network connection might
+be fast (especially after the recent network optimizations we made in
+[BuildBuddy v2](introducing-buildbuddy-v2)) &mdash; but not nearly as fast
+as having the workflow runner on the same local network as BuildBuddy
+itself.
 
-### Persistent containers
+### Sandbox persistence
 
 In [BuildBuddy v2](introducing-buildbuddy-v2#sandboxing), we announced
 improvements to our remote build execution system that allow us to re-use
@@ -112,13 +122,12 @@ several advantages:
   remote caching infrastructure is fast, but the on-disk bazel cache
   is faster.
 
-## Next steps
+## How do I use workflows?
 
-Get started with workflows by checking out our [setup guide](/docs/workflows-setup/).
+Get started with BuildBuddy workflows by checking out our [setup guide](/docs/workflows-setup/).
 If you've already linked your GitHub account to BuildBuddy, it'll only take
-about a minute to enable workflows for a repo.
-
-<!-- TODO: webm video of one-click setup process -->
+about 30 seconds to enable workflows for your repo &mdash; just select a repo
+to link, and we take care of the rest!
 
 As always, message us on [Slack](https://buildbuddy.slack.com) or
 [file an issue](https://github.com/buildbuddy-io/buildbuddy/issues/new)
