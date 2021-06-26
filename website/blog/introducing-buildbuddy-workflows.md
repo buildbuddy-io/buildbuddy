@@ -14,6 +14,12 @@ In our [latest release](TODO/LINK_TO_RELEASE_POST), we launched BuildBuddy
 Workflows, a **convenient**, **fast**, and **secure** CI solution for
 GitHub repositories using Bazel.
 
+<div style="text-align: center;">
+
+![](images/workflows_illustration.png)
+
+</div>
+
 Workflows automatically run Bazel on powerful machines deployed close
 to BuildBuddy's servers whenever you push a commit to your repo.
 This gives you the confidence that your code builds successfully and
@@ -32,7 +38,7 @@ BuildBuddy workflows rarely took longer than a minute, while on GitHub,
 almost all builds took more than a minute, with the majority taking longer
 than 3 minutes on average.
 
-![overlapping histogram comparing BuildBuddy and GitHub actions](/img/workflows.png)
+![overlapping histogram comparing BuildBuddy and GitHub actions](images/workflows.png)
 
 ## How workflows work
 
