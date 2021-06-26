@@ -13,9 +13,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -180,9 +182,9 @@ func TestList(t *testing.T) {
 	ctx2 := metadata.AppendToOutgoingContext(ctx, testauth.APIKeyHeader, "USER2")
 	rsp, err = bbClient.GetWorkflows(ctx2, req)
 	assert.NoError(t, err)
-	assert.Equal(t, []*wfpb.GetWorkflowsResponse_Workflow{{
+	assert.Empty(t, cmp.Diff([]*wfpb.GetWorkflowsResponse_Workflow{{
 		Id:         "WF3",
 		RepoUrl:    "file:///ANY",
 		WebhookUrl: "http://localhost:8080/webhooks/workflow/WHID3",
-	}}, rsp.GetWorkflow(), "Expected workflow fields should be returned")
+	}}, rsp.GetWorkflow(), protocmp.Transform()), "Expected workflow fields should be returned")
 }
