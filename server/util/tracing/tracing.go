@@ -3,6 +3,7 @@ package tracing
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -32,12 +33,12 @@ func newFractionSampler(fraction float64, fractionOverrides map[string]float64) 
 	configDescription := fmt.Sprintf("default=%f", fraction)
 	boundOverrides := make(map[string]uint64)
 	for n, f := range fractionOverrides {
-		boundOverrides[n] = uint64(f * (1 << 63))
+		boundOverrides[n] = uint64(f * math.MaxInt64)
 		configDescription += fmt.Sprintf(",%s=%f", n, f)
 	}
 
 	return &fractionSampler{
-		traceIDUpperBound:          uint64(fraction * (1 << 63)),
+		traceIDUpperBound:          uint64(fraction * math.MaxInt64),
 		traceIDUpperBoundOverrides: boundOverrides,
 		description:                fmt.Sprintf("FractionSampler(%s)", configDescription),
 	}
