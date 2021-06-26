@@ -1,6 +1,7 @@
 ---
 slug: introducing-buildbuddy-workflows
-title: "Introducing BuildBuddy workflows: convenient, fast, and secure CI for bazel"
+title: "BuildBuddy workflows: convenient, fast, and secure CI for bazel"
+description: "Test subtitle"
 author: Brandon Duffany
 author_title: Engineer @ BuildBuddy
 date: 2021-06-24:12:00:00 # DO NOT MERGE: NEEDS UPDATE
@@ -19,11 +20,19 @@ This gives you the confidence that your code builds successfully and
 passes all tests before you merge pull requests or deploy a new release.
 
 We've used workflows on our own source repositories for the past few
-months, and have found them to speed up our existing CI solution by TODO
-on average. If you have a Bazel repository hosted on GitHub, try out
-workflows and let us know what you think!
+months, comparing them side-by-side against our existing CI solution.
 
-<!-- TODO: Chart comparing GitHub CI times to BuildBuddy CI -->
+By leveraging the power of Bazel's local caching as well as BuildBuddy's
+remote caching and execution, workflows dramatically sped up our existing CI
+solution, reducing the median duration by around **8X**, with half of all
+builds executing in 30 seconds or less (compared to 3 minutes and 30 seconds).
+
+This overlapping histogram chart shows the complete picture: on our repo,
+BuildBuddy workflows rarely took longer than a minute, while on GitHub,
+almost all builds took more than a minute, with the majority taking longer
+than 3 minutes on average.
+
+![overlapping histogram comparing BuildBuddy and GitHub actions](/img/workflows.png)
 
 ## How workflows work
 
@@ -62,10 +71,10 @@ execution system, it's crucial to ensure that we run workflows very close
 to BuildBuddy's servers.
 
 This means that if we need to fetch something from BuildBuddy's cache, or
-we need to build a particular target remotely, the network will not be
-a major bottleneck.
+we need to build a particular target remotely, network latency and
+bandwidth will not be a major bottleneck.
 
-The solution here is simple: run workflows on a dedicated executor
+The solution here was simple: run workflows on a dedicated executor
 deployment in the same datacenter where BuildBuddy is deployed.
 
 Because of our recent improvements to our caching infrastructure
