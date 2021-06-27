@@ -112,9 +112,9 @@ several advantages:
   and not re-clone the whole repo.
 - We don't need to start a new bazel server each time, meaning that
   we can re-use the analysis cache from the previous build. Roughly,
-  this means that bazel doesn't have to construct the full build graph by
-  parsing all the BUILD files in your repo, because it already has them in
-  memory. This also means that if you specify a `.bazelversion`, we don't
+  this means that Bazel doesn't have to construct the full build graph by
+  parsing all the BUILD files in your repo, because it has the build graph
+  in memory. This also means that if you specify a `.bazelversion`, we don't
   need to download and install your requested bazel version each time.
 - The development environment keeps the local bazel cache around, meaning
   that we don't need to make as many calls to the remote cache. Our
