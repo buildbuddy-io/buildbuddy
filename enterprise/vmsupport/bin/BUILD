@@ -1,3 +1,5 @@
+exports_files(["vmlinux"])
+
 genrule(
     name = "mkinitrd",
     srcs = [
