@@ -6,15 +6,14 @@ description: "Test subtitle"
 author: Brandon Duffany
 author_title: Engineer @ BuildBuddy
 date: 2021-06-24:12:00:00 # DO NOT MERGE: NEEDS UPDATE
-cover_image: images/workflows_illustration.png
 author_url: https://www.linkedin.com/in/brandon-duffany-39b7217a
 author_image_url: https://avatars.githubusercontent.com/u/2414826?v=4
 tags: [product]
 ---
 
 In our [latest release](TODO/LINK_TO_RELEASE_POST), we launched BuildBuddy
-Workflows, a **convenient**, **fast**, and **secure** Continuous Integration (CI)
-solution for GitHub repositories using Bazel.
+Workflows, a Continuous Integration (CI) solution for Bazel repositories
+hosted on GitHub.
 
 Like other CI solutions, workflows give you the confidence that your code
 builds successfully and passes all tests before you merge pull requests or
@@ -26,26 +25,25 @@ _really fast_.
 ## How fast are BuildBuddy workflows?
 
 We've used BuildBuddy workflows on our own source repositories for the past few
-months, comparing them side-by-side against our existing CI solution.
+months, comparing them side-by-side with our existing CI solution.
 
-By leveraging the power of Bazel's local caching as well as BuildBuddy's
+By leveraging Bazel's local caching as well as BuildBuddy's
 remote caching and execution, workflows dramatically sped up our CI runs.
 Compared to our previous solution, we reduced the median duration by about
 **7X**, with half of all builds executing in 30 seconds or less (compare
 to 3 minutes and 30 seconds).
 
 This overlapping histogram chart shows the complete picture: on our repo,
-BuildBuddy workflows rarely took longer than a minute, while on GitHub,
-almost all builds took more than a minute, with the majority taking longer
-than 3 minutes on average.
+BuildBuddy workflows rarely took longer than a minute, wzhile on GitHub,
+almost all builds took more than a minute, with most builds taking 3 and a half
+minutes or longer.
 
 ![overlapping histogram comparing BuildBuddy and GitHub actions](images/workflows.png)
 
 ## Why does fast CI matter?
 
-BuildBuddy workflows are impressively fast. But let's take a step back
-a bit. Do we really need faster CI? Does it really matter if a workflow
-takes 30 seconds vs. 4 minutes?
+BuildBuddy workflows are impressively fast. But do we really need faster CI?
+Does it really matter if a workflow takes 30 seconds vs. 4 minutes?
 
 Like many other modern source repositories built with Bazel, the [BuildBuddy repo](https://github.com/buildbuddy-io/buildbuddy)
 is fairly large, and has many external dependencies. It's important for us

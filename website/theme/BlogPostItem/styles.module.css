@@ -17,5 +17,5 @@
 
 .subtitle {
   font-weight: 500;
-  color: #444;
+  color: var(--ifm-color-emphasis-600);
 }
