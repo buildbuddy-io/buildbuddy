@@ -4,9 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
@@ -14,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
@@ -39,6 +43,14 @@ func die(err error) {
 	}
 }
 
+func mkdirp(path string, mode fs.FileMode) error {
+	log.Debugf("mkdir %q (mode: %d)", path, mode)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return os.MkdirAll(path, mode)
+	}
+	return nil
+}
+
 func mount(source, target, fstype string, flags uintptr, options string) error {
 	log.Debugf("mount %q => %q (%s) flags: %d, options: %s", source, target, fstype, flags, options)
 	return os.NewSyscallError("MOUNT", syscall.Mount(source, target, fstype, flags, options))
@@ -54,27 +66,19 @@ func chroot(path string) error {
 	return os.NewSyscallError("CHROOT", syscall.Chroot(path))
 }
 
-func reapChildren(ctx context.Context) {
+func reapChildren(ctx context.Context, reapMutex *sync.RWMutex) {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, unix.SIGCHLD)
+
 	for {
 		select {
 		case <-ctx.Done():
-			break
-		default:
-			// borrowed from https://github.com/driusan/dainit/blob/master/zombie.go
-
-			// If there are multiple zombies, Wait4 will reap one, and then block until the next child changes state.
-			// We call it with NOHANG a few times to clear up any backlog, and then make a blocking call until our
-			// next child dies.
+			return
+		case <-c:
+			reapMutex.Lock()
+			defer reapMutex.Unlock()
 			var status syscall.WaitStatus
-
-			// If there are more than 10 zombies, we likely have other problems.
-			for i := 0; i < 10; i++ {
-				// We don't really care what the pid was that got reaped, or if there's nothing to wait for
-				syscall.Wait4(-1, &status, syscall.WNOHANG, nil)
-			}
-
-			// This blocks, so that we're not spending all of our time reaping processes..
-			syscall.Wait4(-1, &status, 0, nil)
+			syscall.Wait4(-1, &status, unix.WNOHANG, nil)
 		}
 	}
 }
@@ -96,102 +100,116 @@ func main() {
 	flag.Parse()
 	log.Infof("Starting BuildBuddy init (args: %s)", os.Args)
 
-	die(os.MkdirAll("/dev", 0755))
+	// Quick note about devices: This script is passed to the kernel via
+	// initrd, which is nice because it's small / read-only. 2 additional
+	// devices are attached to the VM, a containerfs (RO) which is generated
+	// from the container image, and a workspacefs (RW) which is mounted,
+	// with the containerfs using overlayfs. That way all writes done inside
+	// the container are written to the workspacefs and the containerfs is
+	// untouched (and safe for re-use across multiple VMs).
+	die(mkdirp("/dev", 0755))
 	die(mount("devtmpfs", "/dev", "devtmpfs", syscall.MS_NOSUID, "mode=0620,gid=5,ptmxmode=666"))
 
-	die(os.MkdirAll("/newroot", 0755))
+	die(mkdirp("/container", 0755))
+	die(mount("/dev/vda", "/container", "ext4", syscall.MS_RDONLY, ""))
 
-	// Quick note about devices: We mount 3 devices on every VM -- the
-	// first is initfs, containing this script, which is mounted on
-	// /dev/vda. The second is the containerfs which is mounted on /dev/vdb.
-	// The third is the workspacefs, containing any input files, mounted on
-	// dev/vdc.
-	die(mount("/dev/vdb", "/newroot", "ext4", syscall.MS_RELATIME, ""))
+	die(mkdirp("/overlay", 0755))
+	die(mount("/dev/vdb", "/overlay", "ext4", syscall.MS_RELATIME, ""))
 
-	die(os.MkdirAll("/newroot/dev", 0755))
-	die(mount("/dev", "/newroot/dev", "", syscall.MS_MOVE, ""))
+	die(mkdirp("/overlay/root", 0755))
+	die(mkdirp("/overlay/work", 0755))
+
+	die(mkdirp("/mnt", 0755))
+	die(mount("overlayfs:/overlay/root", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/overlay/root,workdir=/overlay/work"))
+
+	die(mkdirp("/mnt/dev", 0755))
+	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
 
 	log.Debugf("switching root!")
-
-	die(chdir("/newroot"))
+	die(chdir("/mnt"))
 	die(mount(".", "/", "", syscall.MS_MOVE, ""))
 	die(chroot("."))
 	die(chdir("/"))
 
-	die(os.MkdirAll("/workspace", 0755))
-	die(mount("/dev/vdc", "/workspace", "ext4", syscall.MS_RELATIME, ""))
-
-	die(os.MkdirAll("/dev/pts", 0755))
+	die(mkdirp("/dev/pts", 0755))
 	die(mount("devpts", "/dev/pts", "devpts", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NOATIME, "mode=0620,gid=5,ptmxmode=666"))
 
-	die(os.MkdirAll("/dev/mqueue", 0755))
+	die(mkdirp("/dev/mqueue", 0755))
 	die(mount("mqueue", "/dev/mqueue", "mqueue", commonMountFlags, ""))
 
-	die(os.MkdirAll("/dev/shm", 1777))
+	die(mkdirp("/dev/shm", 1777))
 	die(mount("shm", "/dev/shm", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, ""))
 
-	die(os.MkdirAll("/dev/hugepages", 0755))
+	die(mkdirp("/dev/hugepages", 0755))
 	die(mount("hugetlbfs", "/dev/hugepages", "hugetlbfs", syscall.MS_RELATIME, "pagesize=2M"))
 
-	die(os.MkdirAll("/proc", 0555))
+	die(mkdirp("/proc", 0555))
 	die(mount("proc", "/proc", "proc", commonMountFlags, ""))
 	die(mount("binfmt_misc", "/proc/sys/fs/binfmt_misc", "binfmt_misc", commonMountFlags|syscall.MS_RELATIME, ""))
 
-	die(os.MkdirAll("/sys", 0555))
+	die(mkdirp("/sys", 0555))
 	die(mount("sys", "/sys", "sysfs", commonMountFlags, ""))
 
-	die(os.MkdirAll("/run", 0755))
+	die(mkdirp("/run", 0755))
 	die(mount("run", "/run", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, ""))
-	die(os.MkdirAll("/run/lock", 1777))
+	die(mkdirp("/run/lock", 1777))
 
 	die(syscall.Symlink("/proc/self/fd", "/dev/fd"))
 	die(syscall.Symlink("/proc/self/fd/0", "/dev/stdin"))
 	die(syscall.Symlink("/proc/self/fd/1", "/dev/stdout"))
 	die(syscall.Symlink("/proc/self/fd/2", "/dev/stderr"))
 
-	die(os.MkdirAll("/root", syscall.S_IRWXU))
+	die(mkdirp("/root", syscall.S_IRWXU))
 
 	die(mount("tmpfs", "/sys/fs/cgroup", "tmpfs", syscall.MS_NOSUID|syscall.MS_NOEXEC|syscall.MS_NODEV, "mode=755"))
-	die(os.MkdirAll("/sys/fs/cgroup/unified", 0555))
+	die(mkdirp("/sys/fs/cgroup/unified", 0555))
 	die(mount("cgroup2", "/sys/fs/cgroup/unified", "cgroup2", cgroupMountFlags, "nsdelegate"))
 
-	die(os.MkdirAll("/sys/fs/cgroup/net_cls,net_prio", 0555))
+	die(mkdirp("/sys/fs/cgroup/net_cls,net_prio", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/net_cls,net_prio", "cgroup", cgroupMountFlags, "net_cls,net_prio"))
 
-	die(os.MkdirAll("/sys/fs/cgroup/hugetlb", 0555))
+	die(mkdirp("/sys/fs/cgroup/hugetlb", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/hugetlb", "cgroup", cgroupMountFlags, "hugetlb"))
 
-	die(os.MkdirAll("/sys/fs/cgroup/pids", 0555))
+	die(mkdirp("/sys/fs/cgroup/pids", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/pids", "cgroup", cgroupMountFlags, "pids"))
 
-	die(os.MkdirAll("/sys/fs/cgroup/freezer", 0555))
+	die(mkdirp("/sys/fs/cgroup/freezer", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/freezer", "cgroup", cgroupMountFlags, "freezer"))
 
-	die(os.MkdirAll("/sys/fs/cgroup/devices", 0555))
+	die(mkdirp("/sys/fs/cgroup/devices", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/devices", "cgroup", cgroupMountFlags, "devices"))
 
-	die(os.MkdirAll("/sys/fs/cgroup/blkio", 0555))
+	die(mkdirp("/sys/fs/cgroup/blkio", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/blkio", "cgroup", cgroupMountFlags, "blkio"))
 
-	die(os.MkdirAll("/sys/fs/cgroup/memory", 0555))
+	die(mkdirp("/sys/fs/cgroup/memory", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/memory", "cgroup", cgroupMountFlags, "memory"))
 
-	die(os.MkdirAll("/sys/fs/cgroup/perf_event", 0555))
+	die(mkdirp("/sys/fs/cgroup/perf_event", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/perf_event", "cgroup", cgroupMountFlags, "perf_event"))
 
-	die(os.MkdirAll("/sys/fs/cgroup/cpuset", 0555))
+	die(mkdirp("/sys/fs/cgroup/cpuset", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/cpuset", "cgroup", cgroupMountFlags, "cpuset"))
 
 	if err := rlimit.MaxRLimit(); err != nil {
 		log.Errorf("Unable to increase rlimit: %s", err)
 	}
 
-	die(os.MkdirAll("/etc", 0755))
+	die(mkdirp("/etc", 0755))
 	die(os.WriteFile("/etc/hostname", []byte("localhost\n"), 0755))
+	hosts := []string{
+		"127.0.0.1	localhost",
+		"::1		localhost ip6-localhost ip6-loopback",
+		"ff02::1		ip6-allnodes",
+		"ff02::2		ip6-allrouters",
+	}
+	die(os.WriteFile("/etc/hosts", []byte(strings.Join(hosts, "\n")), 0755))
 
 	// TODO(tylerw): setup networking
 
-	go reapChildren(rootContext) // start outside of eg so it does not block shutdown.
+	reapMutex := sync.RWMutex{}
+	go reapChildren(rootContext, &reapMutex)
 
 	eg, ctx := errgroup.WithContext(rootContext)
 	if *cmd != "" {
@@ -206,19 +224,23 @@ func main() {
 			log.Debugf("cmd exited!")
 			return nil
 		})
+	} else {
+		log.Infof("Starting vm exec listener on vsock port: %d", *port)
+		eg.Go(func() error {
+			listener, err := vsock.NewGuestListener(ctx, uint32(*port))
+			if err != nil {
+				return err
+			}
+			server := grpc.NewServer()
+			vmService := vmexec.NewServer(&reapMutex)
+			vmxpb.RegisterExecServer(server, vmService)
+			return server.Serve(listener)
+		})
 	}
-	eg.Go(func() error {
-		listener, err := vsock.NewGuestListener(ctx, uint32(*port))
-		if err != nil {
-			return err
-		}
-		server := grpc.NewServer()
-		vmService := vmexec.NewServer()
-		vmxpb.RegisterExecServer(server, vmService)
-		return server.Serve(listener)
-	})
 
-	eg.Wait() // ignore errors.
+	if err := eg.Wait(); err != nil {
+		log.Errorf("Init errgroup finished with err: %s", err)
+	}
 
 	// Halt the system explicitly to prevent a kernel panic.
 	syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)

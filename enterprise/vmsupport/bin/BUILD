@@ -1,11 +1,11 @@
 genrule(
-    name = "mkinitfs",
+    name = "mkinitrd",
     srcs = [
         "//enterprise/server/cmd/goinit",
     ],
-    outs = ["initfs"],
-    cmd = "./$(location mkinitfs.sh) $(location //enterprise/server/cmd/goinit:goinit) \"$@\"",
+    outs = ["initrd.cpio"],
+    cmd = "./$(location mkinitrd.sh) $(location //enterprise/server/cmd/goinit:goinit) \"$@\"",
     tags = ["manual"],
-    tools = ["mkinitfs.sh"],
+    tools = ["mkinitrd.sh"],
     visibility = ["//visibility:public"],
 )
