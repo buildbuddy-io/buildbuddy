@@ -13,6 +13,7 @@ go_library(
         "//server/util/rlimit",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_x_sync//errgroup",
+        "@org_golang_x_sys//unix",
     ],
 )
 

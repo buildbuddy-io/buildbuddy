@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"sync"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -13,13 +14,17 @@ import (
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 )
 
-type execServer struct{}
-
-func NewServer() *execServer {
-	return &execServer{}
+type execServer struct {
+	reapMutex *sync.RWMutex
 }
 
-func (*execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
+func NewServer(reapMutex *sync.RWMutex) *execServer {
+	return &execServer{
+		reapMutex: reapMutex,
+	}
+}
+
+func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
 	if len(req.GetArguments()) < 1 {
 		return nil, status.InvalidArgumentError("Arguments not specified")
 	}
@@ -46,6 +51,9 @@ func (*execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.Exe
 	for _, envVar := range req.GetEnvironmentVariables() {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
+
+	x.reapMutex.RLock()
+	defer x.reapMutex.RUnlock()
 
 	rsp := &vmxpb.ExecResponse{}
 	err := cmd.Run()
