@@ -76,9 +76,9 @@ func reapChildren(ctx context.Context, reapMutex *sync.RWMutex) {
 			return
 		case <-c:
 			reapMutex.Lock()
-			defer reapMutex.Unlock()
 			var status syscall.WaitStatus
 			syscall.Wait4(-1, &status, unix.WNOHANG, nil)
+			reapMutex.Unlock()
 		}
 	}
 }
