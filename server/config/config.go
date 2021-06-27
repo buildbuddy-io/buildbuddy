@@ -31,22 +31,25 @@ type generalConfig struct {
 }
 
 type appConfig struct {
-	BuildBuddyURL             string `yaml:"build_buddy_url" usage:"The external URL where your BuildBuddy instance can be found."`
-	EventsAPIURL              string `yaml:"events_api_url" usage:"Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	CacheAPIURL               string `yaml:"cache_api_url" usage:"Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	RemoteExecutionAPIURL     string `yaml:"remote_execution_api_url" usage:"Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	LogLevel                  string `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}"`
-	GRPCMaxRecvMsgSizeBytes   int    `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
-	GRPCOverHTTPPortEnabled   bool   `yaml:"grpc_over_http_port_enabled" usage:"Cloud-Only"`
-	AddUserToDomainGroup      bool   `yaml:"add_user_to_domain_group" usage:"Cloud-Only"`
-	DefaultToDenseMode        bool   `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
-	CreateGroupPerUser        bool   `yaml:"create_group_per_user" usage:"Cloud-Only"`
-	EnableTargetTracking      bool   `yaml:"enable_target_tracking" usage:"Cloud-Only"`
-	EnableStructuredLogging   bool   `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
-	LogIncludeShortFileName   bool   `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
-	NoDefaultUserGroup        bool   `yaml:"no_default_user_group" usage:"Cloud-Only"`
-	LogEnableGCPLoggingFormat bool   `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
-	LogErrorStackTraces       bool   `yaml:"log_error_stack_traces" usage:"If true, stack traces will be printed for errors that have them."`
+	BuildBuddyURL             string   `yaml:"build_buddy_url" usage:"The external URL where your BuildBuddy instance can be found."`
+	EventsAPIURL              string   `yaml:"events_api_url" usage:"Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	CacheAPIURL               string   `yaml:"cache_api_url" usage:"Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	RemoteExecutionAPIURL     string   `yaml:"remote_execution_api_url" usage:"Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	LogLevel                  string   `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}"`
+	GRPCMaxRecvMsgSizeBytes   int      `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
+	GRPCOverHTTPPortEnabled   bool     `yaml:"grpc_over_http_port_enabled" usage:"Cloud-Only"`
+	AddUserToDomainGroup      bool     `yaml:"add_user_to_domain_group" usage:"Cloud-Only"`
+	DefaultToDenseMode        bool     `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
+	CreateGroupPerUser        bool     `yaml:"create_group_per_user" usage:"Cloud-Only"`
+	EnableTargetTracking      bool     `yaml:"enable_target_tracking" usage:"Cloud-Only"`
+	EnableStructuredLogging   bool     `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
+	LogIncludeShortFileName   bool     `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
+	NoDefaultUserGroup        bool     `yaml:"no_default_user_group" usage:"Cloud-Only"`
+	LogEnableGCPLoggingFormat bool     `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
+	LogErrorStackTraces       bool     `yaml:"log_error_stack_traces" usage:"If true, stack traces will be printed for errors that have them."`
+	TraceServiceName          string   `yaml:"trace_service_name" usage:"Name of the service to associate with traces."`
+	TraceFraction             float64  `yaml:"trace_fraction" usage:"Fraction of requests to sample for tracing."`
+	TraceFractionOverrides    []string `yaml:"trace_fraction_overrides" usage:"Tracing fraction override based on name in format name=fraction."`
 }
 
 type buildEventProxy struct {
@@ -296,6 +299,8 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value) {
 			flag.IntVar(f.Addr().Interface().(*int), fqFieldName, int(f.Int()), docString)
 		case reflect.Int64:
 			flag.Int64Var(f.Addr().Interface().(*int64), fqFieldName, int64(f.Int()), docString)
+		case reflect.Float64:
+			flag.Float64Var(f.Addr().Interface().(*float64), fqFieldName, f.Float(), docString)
 		case reflect.Slice:
 			if f.Type().Elem().Kind() == reflect.String {
 				if slice, ok := f.Interface().([]string); ok {
@@ -608,4 +613,16 @@ func (c *Configurator) GetOrgConfig() *OrgConfig {
 		return &c.gc.Org
 	}
 	return nil
+}
+
+func (c *Configurator) GetTraceServiceName() string {
+	return c.gc.App.TraceServiceName
+}
+
+func (c *Configurator) GetTraceFraction() float64 {
+	return c.gc.App.TraceFraction
+}
+
+func (c *Configurator) GetTraceFractionOverrides() []string {
+	return c.gc.App.TraceFractionOverrides
 }
