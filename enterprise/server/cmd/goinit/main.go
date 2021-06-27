@@ -7,7 +7,9 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
@@ -15,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
@@ -63,16 +66,19 @@ func chroot(path string) error {
 	return os.NewSyscallError("CHROOT", syscall.Chroot(path))
 }
 
-func reapChildren(ctx context.Context) {
+func reapChildren(ctx context.Context, reapMutex *sync.RWMutex) {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, unix.SIGCHLD)
+
 	for {
 		select {
 		case <-ctx.Done():
-			break
-		default:
+			return
+		case <-c:
+			reapMutex.Lock()
+			defer reapMutex.Unlock()
 			var status syscall.WaitStatus
-
-			// This blocks, so that we're not spending all of our time reaping processes.
-			syscall.Wait4(-1, &status, syscall.WEXITED|syscall.WSTOPPED|syscall.WNOWAIT|syscall.WNOHANG, nil)
+			syscall.Wait4(-1, &status, unix.WNOHANG, nil)
 		}
 	}
 }
@@ -94,33 +100,36 @@ func main() {
 	flag.Parse()
 	log.Infof("Starting BuildBuddy init (args: %s)", os.Args)
 
+	// Quick note about devices: This script is passed to the kernel via
+	// initrd, which is nice because it's small / read-only. 2 additional
+	// devices are attached to the VM, a containerfs (RO) which is generated
+	// from the container image, and a workspacefs (RW) which is mounted,
+	// with the containerfs using overlayfs. That way all writes done inside
+	// the container are written to the workspacefs and the containerfs is
+	// untouched (and safe for re-use across multiple VMs).
 	die(mkdirp("/dev", 0755))
 	die(mount("devtmpfs", "/dev", "devtmpfs", syscall.MS_NOSUID, "mode=0620,gid=5,ptmxmode=666"))
 
-	die(mkdirp("/newroot", 0755))
+	die(mkdirp("/container", 0755))
+	die(mount("/dev/vda", "/container", "ext4", syscall.MS_RDONLY, ""))
 
-	// Quick note about devices: We mount 3 devices on every VM -- the
-	// first is initfs, containing this script, which is mounted on
-	// /dev/vda. The second is the containerfs which is mounted on /dev/vdb.
-	// The third is the workspacefs, containing any input files, mounted on
-	// dev/vdc.
-	die(mount("/dev/vdb", "/newroot", "ext4", syscall.MS_RELATIME, ""))
+	die(mkdirp("/overlay", 0755))
+	die(mount("/dev/vdb", "/overlay", "ext4", syscall.MS_RELATIME, ""))
 
-	die(mkdirp("/newroot/dev", 0755))
-	die(mount("/dev", "/newroot/dev", "", syscall.MS_MOVE, ""))
+	die(mkdirp("/overlay/root", 0755))
+	die(mkdirp("/overlay/work", 0755))
+
+	die(mkdirp("/mnt", 0755))
+	die(mount("overlayfs:/overlay/root", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/overlay/root,workdir=/overlay/work"))
+
+	die(mkdirp("/mnt/dev", 0755))
+	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
 
 	log.Debugf("switching root!")
-
-	die(chdir("/newroot"))
+	die(chdir("/mnt"))
 	die(mount(".", "/", "", syscall.MS_MOVE, ""))
 	die(chroot("."))
 	die(chdir("/"))
-
-	die(mkdirp("/workspace", 0755))
-	if _, err := os.Stat("/dev/vdc"); err == nil {
-		log.Debugf("/dev/vdc was present; mounting it to /workspace.")
-		die(mount("/dev/vdc", "/workspace", "ext4", syscall.MS_RELATIME, ""))
-	}
 
 	die(mkdirp("/dev/pts", 0755))
 	die(mount("devpts", "/dev/pts", "devpts", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NOATIME, "mode=0620,gid=5,ptmxmode=666"))
@@ -189,10 +198,18 @@ func main() {
 
 	die(mkdirp("/etc", 0755))
 	die(os.WriteFile("/etc/hostname", []byte("localhost\n"), 0755))
+	hosts := []string{
+		"127.0.0.1	localhost",
+		"::1		localhost ip6-localhost ip6-loopback",
+		"ff02::1		ip6-allnodes",
+		"ff02::2		ip6-allrouters",
+	}
+	die(os.WriteFile("/etc/hosts", []byte(strings.Join(hosts, "\n")), 0755))
 
 	// TODO(tylerw): setup networking
 
-	go reapChildren(rootContext) // start outside of eg so it does not block shutdown.
+	reapMutex := sync.RWMutex{}
+	go reapChildren(rootContext, &reapMutex)
 
 	eg, ctx := errgroup.WithContext(rootContext)
 	if *cmd != "" {
@@ -207,19 +224,23 @@ func main() {
 			log.Debugf("cmd exited!")
 			return nil
 		})
+	} else {
+		log.Infof("Starting vm exec listener on vsock port: %d", *port)
+		eg.Go(func() error {
+			listener, err := vsock.NewGuestListener(ctx, uint32(*port))
+			if err != nil {
+				return err
+			}
+			server := grpc.NewServer()
+			vmService := vmexec.NewServer(&reapMutex)
+			vmxpb.RegisterExecServer(server, vmService)
+			return server.Serve(listener)
+		})
 	}
-	eg.Go(func() error {
-		listener, err := vsock.NewGuestListener(ctx, uint32(*port))
-		if err != nil {
-			return err
-		}
-		server := grpc.NewServer()
-		vmService := vmexec.NewServer()
-		vmxpb.RegisterExecServer(server, vmService)
-		return server.Serve(listener)
-	})
 
-	eg.Wait() // ignore errors.
+	if err := eg.Wait(); err != nil {
+		log.Errorf("Init errgroup finished with err: %s", err)
+	}
 
 	// Halt the system explicitly to prevent a kernel panic.
 	syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
