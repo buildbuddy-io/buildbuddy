@@ -110,15 +110,15 @@ several advantages:
 
 - Whenever a new commit is pushed, we only need to fetch the diffs,
   and not re-clone the whole repo.
-- We don't need to start a new bazel server each time, meaning that
+- We don't need to start a new Bazel server each time, meaning that
   we can re-use the analysis cache from the previous build. Roughly,
   this means that Bazel doesn't have to construct the full build graph by
   parsing all the BUILD files in your repo, because it has the build graph
   in memory. This also means that if you specify a `.bazelversion`, we don't
-  need to download and install your requested bazel version each time.
-- The development environment keeps the local bazel cache around, meaning
+  need to download and install your requested Bazel version each time.
+- The development environment keeps the local Bazel cache around, meaning
   that we don't need to make as many calls to the remote cache. Our
-  remote caching infrastructure is fast, but the on-disk bazel cache
+  remote caching infrastructure is fast, but the on-disk Bazel cache
   is faster.
 
 ## How do I use workflows?
