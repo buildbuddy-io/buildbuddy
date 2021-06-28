@@ -40,7 +40,6 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 			"Push.Changes.0.New.Name",
 			"Push.Changes.0.New.Target.Hash",
 			"Push.Changes.0.New.Type",
-			"Repository.IsPrivate",
 			"Repository.Links.HTML.Href",
 		)
 		if err != nil {
