@@ -259,30 +259,6 @@ func TestManySimpleCommandsWithMultipleExecutors(t *testing.T) {
 	}
 }
 
-func TestManySimpleCommandsWithMultipleExecutors_TaskStreamingEnabled(t *testing.T) {
-	rbe := rbetest.NewRBETestEnv(t)
-
-	rbe.AddBuildBuddyServer()
-	for i := 0; i < 5; i++ {
-		rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{
-			Name:                fmt.Sprintf("executor%d", i+1),
-			EnableWorkStreaming: true,
-		})
-	}
-
-	var cmds []*rbetest.Command
-	for i := 0; i < 5; i++ {
-		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
-		cmds = append(cmds, cmd)
-	}
-	for i := range cmds {
-		res := cmds[i].Wait()
-		assert.Equal(t, 0, res.ExitCode, "exit code should be propagated")
-		assert.Equal(t, fmt.Sprintf("hello from command %d\n", i), res.Stdout, "stdout should be propagated")
-		assert.Equal(t, "", res.Stderr, "stderr should be empty")
-	}
-}
-
 func TestBasicActionIO(t *testing.T) {
 	tmpDir := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, tmpDir, map[string]string{
