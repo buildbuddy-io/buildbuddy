@@ -35,13 +35,11 @@ go_library(
         "//server/util/monitoring",
         "//server/util/tracing",
         "@com_github_google_uuid//:uuid",
-        "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_api//option:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//connectivity",
         "@org_golang_google_grpc//encoding/gzip",
-        "@org_golang_google_grpc//reflection",
         "@org_golang_google_grpc//test/bufconn",
     ],
 )
