@@ -11,6 +11,7 @@ go_library(
 go_test(
     name = "ext4_test",
     srcs = ["ext4_test.go"],
+    tags = ["manual"],  # This won't work on mac.
     deps = [
         ":ext4",
         "//server/remote_cache/digest",
