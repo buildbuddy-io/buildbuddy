@@ -29,44 +29,14 @@ months, comparing them side-by-side with our existing CI solution.
 
 By leveraging Bazel's local caching as well as BuildBuddy's
 remote caching and execution, workflows dramatically sped up our CI runs.
-Compared to our previous solution, we reduced the median duration by about
-**7X**, with half of all builds executing in 30 seconds or less (compare
-to 3 minutes and 30 seconds).
+Compared to our previous solution, we reduced the median duration by nearly
+**8X**.
 
-This overlapping histogram chart shows the complete picture: on our repo,
-BuildBuddy workflows rarely took longer than a minute. With our old
-solution built on GitHub Actions, almost all builds took more than a minute,
-with most builds taking 3 and a half minutes or longer.
+This overlapping histogram chart shows the complete picture. Note that
+the majority of BuildBuddy workflow runs took 30 seconds or less, while
+nearly all runs on GitHub Actions took at least 2 minutes and 15 seconds:
 
 ![overlapping histogram comparing BuildBuddy and GitHub actions](images/workflows.png)
-
-## Why does fast CI matter?
-
-So, BuildBuddy workflows are fast. But do we really need faster CI?
-Does it really matter if a workflow takes 30 seconds vs. 4 minutes?
-
-Like many other modern source repositories built with Bazel, the [BuildBuddy repo](https://github.com/buildbuddy-io/buildbuddy)
-is fairly large, and has many external dependencies. It's important for us
-(and to our users) to be able to quickly iterate, even as our repo's code
-size scales up.
-
-Before we allow new code to be a part of the product, we use CI to ensure that
-all of our tests pass, so that we can be more confident that the code does not
-introduce any regressions.
-
-And if CI runs don't complete quickly, developers are inclined to
-"context switch" &mdash; meaning they stop waiting for CI and start working
-on something else. Even for the most disciplined developers who are great at multitasking, this
-can introduce mental overhead and result in less productivity overall.
-
-The developer experience when CI is **slow** looks a bit like this (red parts of the
-timeline indicate lost productivity):
-
-![](images/slow_ci.png)
-
-The experience when CI is **fast** looks more like this:
-
-![](images/fast_ci.png)
 
 ## How did we make workflows fast?
 
