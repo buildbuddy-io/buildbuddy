@@ -71,7 +71,7 @@ func Configure(configurator *config.Configurator) error {
 		return nil
 	}
 
-	traceExporter, err := texporter.NewExporter()
+	traceExporter, err := texporter.NewExporter(texporter.WithProjectID(configurator.GetProjectID()))
 	if err != nil {
 		log.Warningf("Could not initialize Cloud Trace exporter: %s", err)
 		return nil
