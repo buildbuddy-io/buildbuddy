@@ -374,8 +374,6 @@ type ExecutorOptions struct {
 	// To ease debugging, you should specify an explicit name if it's important to the test on which executor an action
 	// is executed.
 	Name string
-	// Register the executor using new API that supports work streaming.
-	EnableWorkStreaming bool
 	// Optional API key to be sent by executor
 	APIKey string
 	// Optional server to be used for task leasing, cache requests, etc
@@ -569,11 +567,10 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	opts := &scheduler_client.Options{
-		PortOverride:        int32(executorPort),
-		HostnameOverride:    "localhost",
-		NodeNameOverride:    options.Name,
-		EnableWorkStreaming: options.EnableWorkStreaming,
-		APIKeyOverride:      options.APIKey,
+		PortOverride:     int32(executorPort),
+		HostnameOverride: "localhost",
+		NodeNameOverride: options.Name,
+		APIKeyOverride:   options.APIKey,
 	}
 	registration, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, opts)
 	if err != nil {
