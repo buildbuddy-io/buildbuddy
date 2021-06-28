@@ -122,7 +122,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	}
 
 	// Ensure the request is authenticated so some group can own this workflow.
-	groupID, err := perms.AuthenticateSelectedGroupID(ctx, req.GetRequestContext(), ws.env)
+	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env, req.GetRequestContext())
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +257,7 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	if err := ws.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
-	groupID, err := perms.AuthenticateSelectedGroupID(ctx, req.GetRequestContext(), ws.env)
+	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env, req.GetRequestContext())
 	if err != nil {
 		return nil, err
 	}
@@ -470,7 +470,7 @@ func (ws *workflowService) gitHubTokenForAuthorizedGroup(ctx context.Context, re
 	if d == nil {
 		return "", status.FailedPreconditionError("Missing UserDB")
 	}
-	groupID, err := perms.AuthenticateSelectedGroupID(ctx, reqCtx, ws.env)
+	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env, reqCtx)
 	if err != nil {
 		return "", err
 	}

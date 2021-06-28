@@ -242,7 +242,7 @@ func AuthorizeGroupAccess(ctx context.Context, env environment.Env, groupID stri
 // AuthenticateSelectedGroupID returns the group ID selected by the user in the
 // UI (determined via the proto request context), returning an error if the user
 // does not have access to the selected group.
-func AuthenticateSelectedGroupID(ctx context.Context, protoCtx *ctxpb.RequestContext, env environment.Env) (string, error) {
+func AuthenticateSelectedGroupID(ctx context.Context, env environment.Env, protoCtx *ctxpb.RequestContext) (string, error) {
 	if protoCtx == nil {
 		return "", status.InvalidArgumentError("request_context field is required")
 	}
