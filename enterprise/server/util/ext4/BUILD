@@ -17,6 +17,5 @@ go_test(
         "//server/remote_cache/digest",
         "//server/testutil/testdigest",
         "//server/util/disk",
-        "//server/util/log",
     ],
 )
