@@ -534,13 +534,7 @@ func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset in
 	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
-		readStart := time.Now()
 		r, err := c.remoteReader(ctx, peer, c.prefix, d, offset)
-		elapsed := time.Now().Sub(readStart)
-		if elapsed > 5*time.Second {
-			log.Warningf("Reader(%q) on peer %s took %s with err %v", c.prefix+d.GetHash(), peer, elapsed, err)
-		}
-
 		if err == nil {
 			c.log.Debugf("Reader(%q) found on peer %s", c.prefix+d.GetHash(), peer)
 			backfill()
