@@ -160,7 +160,6 @@ func NewRBETestEnv(t *testing.T) *Env {
 
 type BuildBuddyServerOptions struct {
 	SchedulerServerOptions scheduler_server.Options
-	ExecutionServerOptions execution_server.Options
 
 	// EnvModifier modifies the environment before starting the BuildBuddy server.
 	EnvModifier func(env *testenv.TestEnv)
@@ -205,7 +204,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	env.SetTaskRouter(router)
 	scheduler, err := scheduler_server.NewSchedulerServerWithOptions(env, &opts.SchedulerServerOptions)
 	require.NoError(t, err, "could not set up SchedulerServer")
-	executionServer, err := execution_server.NewExecutionServerWithOptions(env, &opts.ExecutionServerOptions)
+	executionServer, err := execution_server.NewExecutionServer(env)
 	require.NoError(t, err, "could not set up ExecutionServer")
 	env.SetRemoteExecutionService(executionServer)
 	buildBuddyServiceServer, err := buildbuddy_server.NewBuildBuddyServer(env, nil /*=sslService*/)
