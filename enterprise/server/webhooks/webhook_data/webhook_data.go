@@ -1,8 +1,5 @@
 package webhook_data
 
-import (
-)
-
 var (
 	// EventName holds canonical webhook event name constants.
 	EventName struct {
