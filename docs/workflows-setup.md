@@ -50,3 +50,26 @@ be **Test all targets**).
 
 After you save your changes, pull requests will not be mergeable unless
 the tests pass on BuildBuddy.
+
+## Building in the workflow runner environment
+
+BuildBuddy workflows execute using Docker on a recent Ubuntu base image
+(Ubuntu 18.04 at the time of this writing), with some commonly used tools
+and libraries pre-installed.
+
+If you would like to test whether your build will succeed with
+BuildBuddy workflows without having to set up and trigger the workflow,
+you can instead run the image with Docker, clone your Git repo, and invoke
+`bazel` to run your tests.
+
+```bash
+# Start a new shell inside the workflows environment (requires docker)
+docker run --rm -it "gcr.io/flame-public/buildbuddy-ci-runner:latest"
+
+# Clone your repo and test it
+git clone https://github.com/acme-inc/acme
+cd acme
+bazel test //...
+```
+
+The Dockerfile we use to build the image (at `HEAD`) is [here](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/dockerfiles/ci_runner_image/Dockerfile).

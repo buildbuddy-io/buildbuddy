@@ -41,7 +41,7 @@ import (
 )
 
 const (
-	workflowsImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1"
+	workflowsImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.7"
 )
 
 var (
@@ -571,6 +571,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--workflow_id=" + wf.WorkflowID,
 			"--trigger_event=" + wd.EventName,
 			"--trigger_branch=" + wd.TargetBranch,
+			"--bazel_command=" + ws.ciRunnerBazelCommand(),
 			"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		}, extraArgs...),
 		Platform: &repb.Platform{
@@ -623,6 +624,14 @@ func (ws *workflowService) ciRunnerDebugMode() bool {
 		return false
 	}
 	return cfg.WorkflowsCIRunnerDebug
+}
+
+func (ws *workflowService) ciRunnerBazelCommand() string {
+	cfg := ws.env.GetConfigurator().GetRemoteExecutionConfig()
+	if cfg == nil {
+		return ""
+	}
+	return cfg.WorkflowsCIRunnerBazelCommand
 }
 
 func runnerBinaryFile() (*os.File, error) {

@@ -67,7 +67,7 @@ func Run(ctx context.Context, command *repb.Command, workDir string) *interfaces
 		return cmd.Run()
 	})
 
-	exitCode, err := exitCode(ctx, cmd, err)
+	exitCode, err := ExitCode(ctx, cmd, err)
 
 	return &interfaces.CommandResult{
 		ExitCode:           exitCode,
@@ -97,7 +97,7 @@ func splitExecutableArgs(commandTokens []string) (executable string, args []stri
 
 // exitCode returns the exit code from the given command, based on the error returned.
 // If the command could not be started or did not exit cleanly, an error is returned.
-func exitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
+func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 	if err == nil {
 		return 0, nil
 	}
