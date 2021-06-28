@@ -186,7 +186,7 @@ func TestList(t *testing.T) {
 		RequestContext: testauth.RequestContext("USER2", "GROUP2"),
 	}
 	ctx2 := metadata.AppendToOutgoingContext(ctx, testauth.APIKeyHeader, "USER2")
-	rsp, err = bbClient.GetWorkflows(ctx2, req)
+	rsp, err = bbClient.GetWorkflows(ctx2, user2Req)
 	assert.NoError(t, err)
 	assert.Empty(t, cmp.Diff([]*wfpb.GetWorkflowsResponse_Workflow{{
 		Id:         "WF3",
