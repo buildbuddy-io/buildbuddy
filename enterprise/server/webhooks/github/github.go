@@ -57,7 +57,7 @@ func (*githubGitProvider) RegisterWebhook(ctx context.Context, accessToken, repo
 		},
 	})
 	if err != nil {
-		return "", err
+		return "", gitHubErrorToStatus(err)
 	}
 	if hook.ID == nil {
 		return "", status.UnknownError("GitHub returned invalid response from hooks API (missing ID field).")
@@ -77,7 +77,14 @@ func (*githubGitProvider) UnregisterWebhook(ctx context.Context, accessToken, re
 		return err
 	}
 	_, err = client.Repositories.DeleteHook(ctx, owner, repo, id)
-	return err
+	if err != nil {
+		return gitHubErrorToStatus(err)
+	}
+	return nil
+}
+
+func gitHubErrorToStatus(err error) error {
+	return status.InternalErrorf("%s", err)
 }
 
 // IsRepoPrivate returns whether the given GitHub repo is private.
@@ -89,7 +96,7 @@ func (*githubGitProvider) IsRepoPrivate(ctx context.Context, accessToken, repoUR
 	client := newGitHubClient(ctx, accessToken)
 	r, _, err := client.Repositories.Get(ctx, owner, repo)
 	if err != nil {
-		return false, err
+		return false, gitHubErrorToStatus(err)
 	}
 	if r.Private == nil {
 		return false, status.UnknownError(`GitHub returned invalid response from hooks API (missing "private" field)`)
