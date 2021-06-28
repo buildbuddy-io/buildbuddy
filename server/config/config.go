@@ -31,22 +31,25 @@ type generalConfig struct {
 }
 
 type appConfig struct {
-	BuildBuddyURL             string `yaml:"build_buddy_url" usage:"The external URL where your BuildBuddy instance can be found."`
-	EventsAPIURL              string `yaml:"events_api_url" usage:"Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	CacheAPIURL               string `yaml:"cache_api_url" usage:"Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	RemoteExecutionAPIURL     string `yaml:"remote_execution_api_url" usage:"Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	LogLevel                  string `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}"`
-	GRPCMaxRecvMsgSizeBytes   int    `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
-	GRPCOverHTTPPortEnabled   bool   `yaml:"grpc_over_http_port_enabled" usage:"Cloud-Only"`
-	AddUserToDomainGroup      bool   `yaml:"add_user_to_domain_group" usage:"Cloud-Only"`
-	DefaultToDenseMode        bool   `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
-	CreateGroupPerUser        bool   `yaml:"create_group_per_user" usage:"Cloud-Only"`
-	EnableTargetTracking      bool   `yaml:"enable_target_tracking" usage:"Cloud-Only"`
-	EnableStructuredLogging   bool   `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
-	LogIncludeShortFileName   bool   `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
-	NoDefaultUserGroup        bool   `yaml:"no_default_user_group" usage:"Cloud-Only"`
-	LogEnableGCPLoggingFormat bool   `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
-	LogErrorStackTraces       bool   `yaml:"log_error_stack_traces" usage:"If true, stack traces will be printed for errors that have them."`
+	BuildBuddyURL             string   `yaml:"build_buddy_url" usage:"The external URL where your BuildBuddy instance can be found."`
+	EventsAPIURL              string   `yaml:"events_api_url" usage:"Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	CacheAPIURL               string   `yaml:"cache_api_url" usage:"Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	RemoteExecutionAPIURL     string   `yaml:"remote_execution_api_url" usage:"Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	LogLevel                  string   `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}"`
+	GRPCMaxRecvMsgSizeBytes   int      `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
+	GRPCOverHTTPPortEnabled   bool     `yaml:"grpc_over_http_port_enabled" usage:"Cloud-Only"`
+	AddUserToDomainGroup      bool     `yaml:"add_user_to_domain_group" usage:"Cloud-Only"`
+	DefaultToDenseMode        bool     `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
+	CreateGroupPerUser        bool     `yaml:"create_group_per_user" usage:"Cloud-Only"`
+	EnableTargetTracking      bool     `yaml:"enable_target_tracking" usage:"Cloud-Only"`
+	EnableStructuredLogging   bool     `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
+	LogIncludeShortFileName   bool     `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
+	NoDefaultUserGroup        bool     `yaml:"no_default_user_group" usage:"Cloud-Only"`
+	LogEnableGCPLoggingFormat bool     `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
+	LogErrorStackTraces       bool     `yaml:"log_error_stack_traces" usage:"If true, stack traces will be printed for errors that have them."`
+	TraceServiceName          string   `yaml:"trace_service_name" usage:"Name of the service to associate with traces."`
+	TraceFraction             float64  `yaml:"trace_fraction" usage:"Fraction of requests to sample for tracing."`
+	TraceFractionOverrides    []string `yaml:"trace_fraction_overrides" usage:"Tracing fraction override based on name in format name=fraction."`
 }
 
 type buildEventProxy struct {
@@ -162,17 +165,18 @@ type SSLConfig struct {
 }
 
 type RemoteExecutionConfig struct {
-	DefaultPoolName              string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
-	WorkflowsPoolName            string `yaml:"workflows_pool_name" usage:"The executor pool to use for workflow actions. Defaults to the default executor pool if not specified."`
-	WorkflowsDefaultImage        string `yaml:"workflows_default_image" usage:"The default docker image to use for running workflows."`
-	WorkflowsCIRunnerDebug       bool   `yaml:"workflows_ci_runner_debug" usage:"Whether to run the CI runner in debug mode."`
-	RedisTarget                  string `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Required for remote execution. To ease migration, the redis target from the cache config will be used if this value is not specified."`
-	SharedExecutorPoolGroupID    string `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
-	RedisPubSubPoolSize          int    `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
-	EnableRemoteExec             bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
-	RequireExecutorAuthorization bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
-	EnableUserOwnedExecutors     bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
-	EnableExecutorKeyCreation    bool   `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
+	DefaultPoolName               string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
+	WorkflowsPoolName             string `yaml:"workflows_pool_name" usage:"The executor pool to use for workflow actions. Defaults to the default executor pool if not specified."`
+	WorkflowsDefaultImage         string `yaml:"workflows_default_image" usage:"The default docker image to use for running workflows."`
+	WorkflowsCIRunnerDebug        bool   `yaml:"workflows_ci_runner_debug" usage:"Whether to run the CI runner in debug mode."`
+	WorkflowsCIRunnerBazelCommand string `yaml:"workflows_ci_runner_bazel_command" usage:"Bazel command to be used by the CI runner."`
+	RedisTarget                   string `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Required for remote execution. To ease migration, the redis target from the cache config will be used if this value is not specified."`
+	SharedExecutorPoolGroupID     string `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
+	RedisPubSubPoolSize           int    `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
+	EnableRemoteExec              bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
+	RequireExecutorAuthorization  bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
+	EnableUserOwnedExecutors      bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
+	EnableExecutorKeyCreation     bool   `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
 }
 
 type ExecutorConfig struct {
@@ -290,6 +294,8 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value) {
 			flag.IntVar(f.Addr().Interface().(*int), fqFieldName, int(f.Int()), docString)
 		case reflect.Int64:
 			flag.Int64Var(f.Addr().Interface().(*int64), fqFieldName, int64(f.Int()), docString)
+		case reflect.Float64:
+			flag.Float64Var(f.Addr().Interface().(*float64), fqFieldName, f.Float(), docString)
 		case reflect.Slice:
 			if f.Type().Elem().Kind() == reflect.String {
 				if slice, ok := f.Interface().([]string); ok {
@@ -602,4 +608,16 @@ func (c *Configurator) GetOrgConfig() *OrgConfig {
 		return &c.gc.Org
 	}
 	return nil
+}
+
+func (c *Configurator) GetTraceServiceName() string {
+	return c.gc.App.TraceServiceName
+}
+
+func (c *Configurator) GetTraceFraction() float64 {
+	return c.gc.App.TraceFraction
+}
+
+func (c *Configurator) GetTraceFractionOverrides() []string {
+	return c.gc.App.TraceFractionOverrides
 }

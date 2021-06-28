@@ -6,7 +6,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
@@ -46,10 +49,19 @@ func GRPCShutdownFunc(grpcServer *grpc.Server) func(ctx context.Context) error {
 	}
 }
 
+func extractInvocationID(ctx context.Context) []attribute.KeyValue {
+	if iid := bazel_request.GetInvocationID(ctx); iid != "" {
+		return []attribute.KeyValue{attribute.String("invocation_id", iid)}
+	}
+	return nil
+}
+
 func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 	return []grpc.ServerOption{
 		filters.GetUnaryInterceptor(env),
 		filters.GetStreamInterceptor(env),
+		grpc.ChainUnaryInterceptor(otelgrpc.UnaryServerInterceptor(otelgrpc.WithContextAttrExtractor(extractInvocationID))),
+		grpc.ChainStreamInterceptor(otelgrpc.StreamServerInterceptor(otelgrpc.WithContextAttrExtractor(extractInvocationID))),
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.MaxRecvMsgSize(env.GetConfigurator().GetGRPCMaxRecvMsgSizeBytes()),

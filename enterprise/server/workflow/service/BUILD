@@ -55,8 +55,10 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/db",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//assert",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

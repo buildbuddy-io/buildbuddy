@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path"
 	"regexp"
 	"strings"
 	"sync"
@@ -67,9 +68,8 @@ const (
 
 	// Bazel binary constants
 
-	bazelBinaryName                = "bazel"
-	bazeliskBinaryName             = "bazelisk"
-	bazelCommandOverrideEnvVarName = "BAZEL_COMMAND"
+	bazelBinaryName    = "bazel"
+	bazeliskBinaryName = "bazelisk"
 
 	// ANSI codes for cases where the aurora equivalent is not supported by our UI
 	// (ex: aurora's "grayscale" mode results in some ANSI codes that we don't currently
@@ -91,7 +91,8 @@ var (
 	actionName    = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	invocationID  = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 
-	debug = flag.Bool("debug", false, "Print additional debug information in the action logs.")
+	bazelCommand = flag.String("bazel_command", bazeliskBinaryName, "Bazel command to use.")
+	debug        = flag.Bool("debug", false, "Print additional debug information in the action logs.")
 
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
@@ -109,12 +110,23 @@ func main() {
 
 	flag.Parse()
 
+	if *bazelCommand == "" {
+		*bazelCommand = bazeliskBinaryName
+	}
 	if (*actionName == "") != (*invocationID == "") {
 		log.Fatalf("--action_name and --invocation_id must either be both present or both missing.")
 	}
 
 	ctx := context.Background()
 
+	// Bazel needs a HOME dir; ensure that one is set.
+	if err := ensureHomeDir(); err != nil {
+		fatal(status.WrapError(err, "ensure HOME"))
+	}
+	// Make sure PATH is set.
+	if err := ensurePath(); err != nil {
+		fatal(status.WrapError(err, "ensure PATH"))
+	}
 	if err := setupGitRepo(ctx); err != nil {
 		fatal(status.WrapError(err, "failed to set up git repo"))
 	}
@@ -163,7 +175,7 @@ func RunAllActions(ctx context.Context, cfg *config.BuildBuddyConfig, im *initMe
 				continue
 			}
 		} else if !matchesAnyTrigger(action, *triggerEvent, *triggerBranch) {
-			log.Printf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *triggerBranch, actionDebugString(action))
+			log.Debugf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *triggerBranch, actionDebugString(action))
 			continue
 		}
 
@@ -568,7 +580,8 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 		// time. The UI is expecting this invocation ID so that it can render a
 		// BuildBuddy invocation URL for each bazel_command that is executed.
 		args = append(args, fmt.Sprintf("--invocation_id=%s", iid))
-		runErr := runCommand(ctx, bazelCommand(), args /*env=*/, nil, ar.log)
+
+		runErr := runCommand(ctx, *bazelCommand, args /*env=*/, nil, ar.log)
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
 			ar.log.Printf("%s(command exited with code %d)%s", ansiGray, exitCode, ansiReset)
@@ -691,11 +704,24 @@ func bazelArgs(cmd string) ([]string, error) {
 	return tokens, nil
 }
 
-func bazelCommand() string {
-	if override := os.Getenv(bazelCommandOverrideEnvVarName); override != "" {
-		return override
+func ensureHomeDir() error {
+	if os.Getenv("HOME") != "" {
+		return nil
 	}
-	return bazeliskBinaryName
+	os.MkdirAll(".home", 0777)
+	wd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	os.Setenv("HOME", path.Join(wd, ".home"))
+	return nil
+}
+
+func ensurePath() error {
+	if os.Getenv("PATH") != "" {
+		return nil
+	}
+	return os.Setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
 }
 
 func setupGitRepo(ctx context.Context) error {
@@ -723,7 +749,7 @@ func setupGitRepo(ctx context.Context) error {
 		}
 	}
 
-	if err := os.Mkdir(repoDirName, 0o775); err != nil {
+	if err := os.Mkdir(repoDirName, 0777); err != nil {
 		return status.WrapErrorf(err, "mkdir %q", repoDirName)
 	}
 

@@ -76,7 +76,7 @@ func TestSimpleCommand_RunnerReuse_CanReadPreviouslyWrittenFileButNotOutputDirs(
 	}
 
 	// Note: authentication is required for workspace reuse, currently.
-	opts := &rbetest.ExecuteOpts{UserID: rbetest.TestUserID1}
+	opts := &rbetest.ExecuteOpts{UserID: rbe.UserID1}
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{
@@ -119,7 +119,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromFileCache(t *testing.T) {
 			{Name: "preserve-workspace", Value: "true"},
 		},
 	}
-	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbetest.TestUserID1}
+	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbe.UserID1}
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"cat", "f1.input", "f2.input"},
@@ -136,7 +136,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromFileCache(t *testing.T) {
 		// present as "b.input" in the previous action).
 		"f1.input": "B",
 	})
-	opts = &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbetest.TestUserID1}
+	opts = &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbe.UserID1}
 
 	cmd = rbe.Execute(&repb.Command{
 		Arguments: []string{"cat", "f1.input", "f2.input"},
@@ -167,7 +167,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T)
 			{Name: "preserve-workspace", Value: "true"},
 		},
 	}
-	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbetest.TestUserID1}
+	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbe.UserID1}
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"cat", "f1.input", "f2.input"},
@@ -182,7 +182,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T)
 		"f1.input": "B",
 		"f2.input": "B",
 	})
-	opts = &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbetest.TestUserID1}
+	opts = &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbe.UserID1}
 
 	cmd = rbe.Execute(&repb.Command{
 		Arguments: []string{"cat", "f1.input", "f2.input"},
@@ -207,7 +207,7 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 			{Name: "preserve-workspace", Value: "true"},
 		},
 	}
-	opts := &rbetest.ExecuteOpts{UserID: rbetest.TestUserID1}
+	opts := &rbetest.ExecuteOpts{UserID: rbe.UserID1}
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"touch", "foo.txt"},
