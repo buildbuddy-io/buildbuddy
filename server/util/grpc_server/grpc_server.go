@@ -61,7 +61,6 @@ func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 		filters.GetUnaryInterceptor(env),
 		filters.GetStreamInterceptor(env),
 		grpc.ChainUnaryInterceptor(otelgrpc.UnaryServerInterceptor(otelgrpc.WithContextAttrExtractor(extractInvocationID))),
-		grpc.ChainStreamInterceptor(otelgrpc.StreamServerInterceptor(otelgrpc.WithContextAttrExtractor(extractInvocationID))),
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.MaxRecvMsgSize(env.GetConfigurator().GetGRPCMaxRecvMsgSizeBytes()),
