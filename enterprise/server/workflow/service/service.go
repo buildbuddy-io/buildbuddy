@@ -121,16 +121,12 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 		return nil, status.InvalidArgumentError("A repo URL is required to create a new workflow.")
 	}
 
-	// Ensure the request is authenticated so some user can own this workflow.
-	var permissions *perms.UserGroupPerm
-	groupID := req.GetRequestContext().GetGroupId()
-	if groupID == "" {
-		return nil, status.InvalidArgumentError("Request context is missing group ID.")
-	}
-	if err := perms.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
+	// Ensure the request is authenticated so some group can own this workflow.
+	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env, req.GetRequestContext())
+	if err != nil {
 		return nil, err
 	}
-	permissions = perms.GroupAuthPermissions(groupID)
+	permissions := perms.GroupAuthPermissions(groupID)
 
 	// Do a quick check to see if this is a valid repo that we can actually access.
 	repoURL := repoReq.GetRepoUrl()
@@ -261,16 +257,22 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	if err := ws.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
+	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env, req.GetRequestContext())
+	if err != nil {
+		return nil, err
+	}
 
 	rsp := &wfpb.GetWorkflowsResponse{}
 	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM Workflows`)
+	// Respect selected group ID.
+	q.AddWhereClause(`group_id = ?`, groupID)
 	// Adds user / permissions check.
 	if err := perms.AddPermissionsCheckToQuery(ctx, ws.env, q); err != nil {
 		return nil, err
 	}
 	q.SetOrderBy("created_at_usec" /*ascending=*/, true)
 	qStr, qArgs := q.Build()
-	err := ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
+	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 		rows, err := tx.Raw(qStr, qArgs...).Rows()
 		if err != nil {
 			return err
@@ -464,16 +466,12 @@ func (ws *workflowService) GetRepos(ctx context.Context, req *wfpb.GetReposReque
 }
 
 func (ws *workflowService) gitHubTokenForAuthorizedGroup(ctx context.Context, reqCtx *ctxpb.RequestContext) (string, error) {
-	_, err := perms.AuthenticatedUser(ctx, ws.env)
-	if err != nil {
-		return "", err
-	}
 	d := ws.env.GetUserDB()
 	if d == nil {
 		return "", status.FailedPreconditionError("Missing UserDB")
 	}
-	groupID := reqCtx.GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
+	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env, reqCtx)
+	if err != nil {
 		return "", err
 	}
 	g, err := d.GetGroupByID(ctx, groupID)

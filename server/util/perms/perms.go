@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -104,11 +105,7 @@ func AuthenticatedUser(ctx context.Context, env environment.Env) (interfaces.Use
 	if auth == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	u, err := auth.AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return u, nil
+	return auth.AuthenticatedUser(ctx)
 }
 
 func AuthorizeRead(authenticatedUser *interfaces.UserInfo, acl *aclpb.ACL) error {
@@ -240,4 +237,21 @@ func AuthorizeGroupAccess(ctx context.Context, env environment.Env, groupID stri
 		}
 	}
 	return status.PermissionDeniedError("You do not have access to the requested group")
+}
+
+// AuthenticateSelectedGroupID returns the group ID selected by the user in the
+// UI (determined via the proto request context), returning an error if the user
+// does not have access to the selected group.
+func AuthenticateSelectedGroupID(ctx context.Context, env environment.Env, protoCtx *ctxpb.RequestContext) (string, error) {
+	if protoCtx == nil {
+		return "", status.InvalidArgumentError("request_context field is required")
+	}
+	groupID := protoCtx.GetGroupId()
+	if groupID == "" {
+		return "", status.InvalidArgumentError("request_context.group_id field is required")
+	}
+	if err := AuthorizeGroupAccess(ctx, env, groupID); err != nil {
+		return "", err
+	}
+	return groupID, nil
 }
