@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"net"
+	"os"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
@@ -17,6 +18,7 @@ import (
 var (
 	sock             = flag.String("sock", "", "Vsock host socket path")
 	cmd              = flag.String("cmd", "pwd", "Command to run")
+	path             = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
 	workingDirectory = flag.String("working_directory", "/", "Working directory to run command from")
 )
 
@@ -37,14 +39,22 @@ func main() {
 		log.Fatalf("Error dialing: %s", err)
 	}
 	defer conn.Close()
+	log.Printf("Connected to client")
 
 	execClient := vmxpb.NewExecClient(conn)
 	rsp, err := execClient.Exec(ctx, &vmxpb.ExecRequest{
 		Arguments:        strings.Split(*cmd, " "),
 		WorkingDirectory: *workingDirectory,
+		EnvironmentVariables: []*vmxpb.ExecRequest_EnvironmentVariable{
+			{
+				Name:  "PATH",
+				Value: *path,
+			},
+		},
 	})
 	if err != nil {
 		log.Fatalf("Error calling exec: %s", err)
 	}
-	log.Printf("Exec response: %+v", rsp)
+	os.Stderr.Write(rsp.Stderr)
+	os.Stdout.Write(rsp.Stdout)
 }

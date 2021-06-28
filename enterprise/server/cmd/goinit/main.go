@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -31,9 +32,9 @@ const (
 )
 
 var (
-	cmd  = flag.String("cmd", "/sbin/getty -L ttyS0 115200 vt100", "The command to execute.")
-	path = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
-	port = flag.Uint("port", vsock.DefaultPort, "The vsock port number to listen on")
+	path      = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
+	port      = flag.Uint("port", vsock.DefaultPort, "The vsock port number to listen on")
+	debugMode = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
 )
 
 // die logs the provided error if it is not nil and then terminates the program.
@@ -131,6 +132,9 @@ func main() {
 	die(chroot("."))
 	die(chdir("/"))
 
+	die(mkdirp("/workspace", 0755))
+	die(mount("/dev/vdb", "/workspace", "ext4", syscall.MS_RELATIME, ""))
+
 	die(mkdirp("/dev/pts", 0755))
 	die(mount("devpts", "/dev/pts", "devpts", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NOATIME, "mode=0620,gid=5,ptmxmode=666"))
 
@@ -199,8 +203,8 @@ func main() {
 	die(mkdirp("/etc", 0755))
 	die(os.WriteFile("/etc/hostname", []byte("localhost\n"), 0755))
 	hosts := []string{
-		"127.0.0.1	localhost",
-		"::1		localhost ip6-localhost ip6-loopback",
+		"127.0.0.1	        localhost",
+		"::1		        localhost ip6-localhost ip6-loopback",
 		"ff02::1		ip6-allnodes",
 		"ff02::2		ip6-allrouters",
 	}
@@ -210,33 +214,32 @@ func main() {
 
 	reapMutex := sync.RWMutex{}
 	go reapChildren(rootContext, &reapMutex)
+	die(os.Setenv("PATH", *path))
 
 	eg, ctx := errgroup.WithContext(rootContext)
-	if *cmd != "" {
+	if *debugMode {
+		log.Warningf("Running init in debug mode; this is not secure!")
 		eg.Go(func() error {
-			cmdParts := strings.Split(*cmd, " ")
-			c := exec.CommandContext(ctx, cmdParts[0], cmdParts[1:]...)
-			c.Env = append(c.Env, fmt.Sprintf("PATH=%s", *path))
-			if err := c.Run(); err != nil {
-				log.Errorf("Configured command failed with err: %s", err)
-				return err
+			c := exec.CommandContext(rootContext, "chpasswd")
+			c.Stdin = bytes.NewBuffer([]byte("root:root"))
+			if _, err := c.CombinedOutput(); err != nil {
+				log.Errorf("Error setting root pw: %s", err)
 			}
-			log.Debugf("cmd exited!")
-			return nil
-		})
-	} else {
-		log.Infof("Starting vm exec listener on vsock port: %d", *port)
-		eg.Go(func() error {
-			listener, err := vsock.NewGuestListener(ctx, uint32(*port))
-			if err != nil {
-				return err
-			}
-			server := grpc.NewServer()
-			vmService := vmexec.NewServer(&reapMutex)
-			vmxpb.RegisterExecServer(server, vmService)
-			return server.Serve(listener)
+			c2 := exec.CommandContext(ctx, "getty", "-L", "ttyS0", "115200", "vt100")
+			return c2.Run()
 		})
 	}
+	log.Infof("Starting vm exec listener on vsock port: %d", *port)
+	eg.Go(func() error {
+		listener, err := vsock.NewGuestListener(ctx, uint32(*port))
+		if err != nil {
+			return err
+		}
+		server := grpc.NewServer()
+		vmService := vmexec.NewServer(&reapMutex)
+		vmxpb.RegisterExecServer(server, vmService)
+		return server.Serve(listener)
+	})
 
 	if err := eg.Wait(); err != nil {
 		log.Errorf("Init errgroup finished with err: %s", err)
