@@ -16,6 +16,7 @@ go_library(
         "//server/resources",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/tracing",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

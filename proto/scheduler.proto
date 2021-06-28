@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/context.proto";
+import "proto/trace.proto";
 
 package scheduler;
 
@@ -117,6 +118,11 @@ message EnqueueTaskReservationRequest {
   //
   // Ex. "610a4cd4-3c0f-41bb-ad72-abe933837d58"
   string executor_id = 4;
+
+  // Used to propagate trace information from the initial Execute request.
+  // Normally trace information is automatically propagated via RPC metadata but that doesn't work for streamed
+  // task reservations since there's one long-running streaming RPC from the executor to the scheduler.
+  trace.Metadata trace_metadata = 100;
 }
 
 message EnqueueTaskReservationResponse {
