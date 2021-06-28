@@ -167,6 +167,7 @@ type SSLConfig struct {
 
 type RemoteExecutionConfig struct {
 	DefaultPoolName               string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
+	EnableWorkflows               bool   `yaml:"enable_workflows" usage:"Whether to enable BuildBuddy workflows."`
 	WorkflowsPoolName             string `yaml:"workflows_pool_name" usage:"The executor pool to use for workflow actions. Defaults to the default executor pool if not specified."`
 	WorkflowsDefaultImage         string `yaml:"workflows_default_image" usage:"The default docker image to use for running workflows."`
 	WorkflowsCIRunnerDebug        bool   `yaml:"workflows_ci_runner_debug" usage:"Whether to run the CI runner in debug mode."`
