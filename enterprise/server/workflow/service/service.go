@@ -14,7 +14,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -345,29 +344,15 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 
 	// Execute
-	repoURL, err := gitutil.ParseRepoURL(wf.RepoURL)
-	if err != nil {
-		return nil, err
-	}
-	provider, err := ws.providerForRepo(repoURL)
-	if err != nil {
-		return nil, err
-	}
-	isRepoPrivate, err := provider.IsRepoPrivate(ctx, wf.AccessToken, wf.RepoURL)
-	// If IsRepoPrivate is not yet implemented, treat it as untrusted, meaning
-	// secrets will not be passed to the CI runner.
-	if err != nil && !status.IsUnimplementedError(err) {
-		return nil, status.WrapErrorf(err, "failed to determine whether repo is private")
-	}
 	// TODO: Refactor to avoid using this WebhookData struct in the case of manual
 	// workflow execution, since there are no webhooks involved when executing a
 	// workflow manually.
 	wd := &interfaces.WebhookData{
-		PushedBranch:  req.GetBranch(),
-		TargetBranch:  req.GetBranch(),
-		RepoURL:       wf.RepoURL,
-		SHA:           req.GetCommitSha(),
-		IsRepoPrivate: isRepoPrivate,
+		PushedBranch: req.GetBranch(),
+		TargetBranch: req.GetBranch(),
+		RepoURL:      wf.RepoURL,
+		SHA:          req.GetCommitSha(),
+		IsTrusted:    true,
 	}
 	invocationUUID, err := guuid.NewRandom()
 	if err != nil {
@@ -551,7 +536,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		return nil, err
 	}
 	envVars := []*repb.Command_EnvironmentVariable{}
-	if webhook_data.IsTrusted(wd) {
+	if wd.IsTrusted {
 		envVars = append(envVars, []*repb.Command_EnvironmentVariable{
 			{Name: "BUILDBUDDY_API_KEY", Value: ak.Value},
 			{Name: "REPO_USER", Value: wf.Username},

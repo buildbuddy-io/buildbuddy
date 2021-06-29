@@ -87,23 +87,6 @@ func gitHubErrorToStatus(err error) error {
 	return status.InternalErrorf("%s", err)
 }
 
-// IsRepoPrivate returns whether the given GitHub repo is private.
-func (*githubGitProvider) IsRepoPrivate(ctx context.Context, accessToken, repoURL string) (bool, error) {
-	owner, repo, err := parseOwnerRepo(repoURL)
-	if err != nil {
-		return false, err
-	}
-	client := newGitHubClient(ctx, accessToken)
-	r, _, err := client.Repositories.Get(ctx, owner, repo)
-	if err != nil {
-		return false, gitHubErrorToStatus(err)
-	}
-	if r.Private == nil {
-		return false, status.UnknownError(`GitHub returned invalid response from hooks API (missing "private" field)`)
-	}
-	return *r.Private, nil
-}
-
 func (*githubGitProvider) MatchRepoURL(u *url.URL) bool {
 	return u.Host == "github.com"
 }
@@ -132,18 +115,19 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 			"HeadCommit.ID",
 			"Ref",
 			"Repo.CloneURL",
-			"Repo.Private",
 		)
 		if err != nil {
 			return nil, err
 		}
 		branch := strings.TrimPrefix(v["Ref"], "refs/heads/")
 		return &interfaces.WebhookData{
-			EventName:     webhook_data.EventName.Push,
-			PushedBranch:  branch,
-			TargetBranch:  branch,
-			RepoURL:       v["Repo.CloneURL"],
-			IsRepoPrivate: v["Repo.Private"] == "true",
+			EventName:    webhook_data.EventName.Push,
+			PushedBranch: branch,
+			TargetBranch: branch,
+			RepoURL:      v["Repo.CloneURL"],
+			// The push handler will not receive events from forked repositories,
+			// so if a commit was pushed to this repo then it is trusted.
+			IsTrusted: true,
 			// For some reason, "HeadCommit.SHA" is nil, but ID has the commit SHA,
 			// so we use that instead.
 			SHA: v["HeadCommit.ID"],
@@ -155,7 +139,7 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 			"Action",
 			"PullRequest.Base.Ref",
 			"PullRequest.Head.Repo.CloneURL",
-			"PullRequest.Base.Repo.Private",
+			"PullRequest.Head.Repo.Fork",
 			"PullRequest.Head.Ref",
 			"PullRequest.Head.SHA",
 		)
@@ -167,12 +151,12 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 			return nil, nil
 		}
 		return &interfaces.WebhookData{
-			EventName:     webhook_data.EventName.PullRequest,
-			PushedBranch:  v["PullRequest.Head.Ref"],
-			TargetBranch:  v["PullRequest.Base.Ref"],
-			RepoURL:       v["PullRequest.Head.Repo.CloneURL"],
-			IsRepoPrivate: v["PullRequest.Base.Repo.Private"] == "true",
-			SHA:           v["PullRequest.Head.SHA"],
+			EventName:    webhook_data.EventName.PullRequest,
+			PushedBranch: v["PullRequest.Head.Ref"],
+			TargetBranch: v["PullRequest.Base.Ref"],
+			RepoURL:      v["PullRequest.Head.Repo.CloneURL"],
+			IsTrusted:    v["PullRequest.Head.Repo.Fork"] == "false",
+			SHA:          v["PullRequest.Head.SHA"],
 		}, nil
 
 	default:
