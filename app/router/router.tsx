@@ -198,8 +198,18 @@ class Router {
   }
 }
 
+// If a repo matches https://github.com/{owner}/{repo} or https://github.com/{owner}/{repo}.git
+// then we'll show it directly in the URL like `{owner}/{repo}`. Otherwise we encode it
+// using `window.btoa`.
+const GITHUB_URL_PREFIX = "^https://github.com";
+const PATH_SEGMENT_PATTERN = "[^/]+";
+const OPTIONAL_DOTGIT_SUFFIX = "(\\.git)?$";
+const GITHUB_REPO_URL_PATTERN = new RegExp(
+  `${GITHUB_URL_PREFIX}/${PATH_SEGMENT_PATTERN}/${PATH_SEGMENT_PATTERN}${OPTIONAL_DOTGIT_SUFFIX}`
+);
+
 function getRepoUrlPathParam(repo: string): string {
-  if (repo.startsWith("https://github.com/")) {
+  if (repo.match(GITHUB_REPO_URL_PATTERN)) {
     return format.formatGitUrl(repo);
   }
   return window.btoa(repo);
