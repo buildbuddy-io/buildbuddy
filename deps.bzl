@@ -3404,7 +3404,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         patch_args = ["-p5"],
         # Adds hook to add extra attrs to RPC server spans.
         # TODO(vadim): try to upstream this
-        patches = ["@%s//buildpatches:trace_extra_attrs.patch" % workspace_name],
+        patches = ["@%s//buildpatches:grpc_tracing.patch" % workspace_name],
         sum = "h1:sO4WKdPAudZGKPcpZT4MJn6JaDmpyLrMPDGGyA1SttE=",
         version = "v0.20.0",
     )
