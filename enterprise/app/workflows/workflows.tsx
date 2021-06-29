@@ -136,12 +136,12 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       <div className="workflows-page">
         <div className="shelf">
           <div className="container">
-          <div>
-            <div className="breadcrumbs">
-              {this.props.user && <span>{this.props.user?.selectedGroupName()}</span>}
-              <span>Workflows</span>
-            </div>
-            <div className="title">Workflows</div>
+            <div>
+              <div className="breadcrumbs">
+                {this.props.user && <span>{this.props.user?.selectedGroupName()}</span>}
+                <span>Workflows</span>
+              </div>
+              <div className="title">Workflows</div>
             </div>
             {response && Boolean(response.workflow.length) && (
               <div className="buttons create-new-container">
@@ -250,8 +250,14 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
     this.props.onClickUnlinkItem(this.props.workflow);
   }
 
+  private onClickRepoUrl(e: React.MouseEvent) {
+    e.preventDefault();
+    const path = (e.target as HTMLAnchorElement).getAttribute("href");
+    router.navigateTo(path);
+  }
+
   render() {
-    const { name, repoUrl } = this.props.workflow;
+    const { repoUrl } = this.props.workflow;
     const { isMenuOpen, copiedToClipboard } = this.state;
 
     const url = new URL(repoUrl);
@@ -262,7 +268,10 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
         <div className="workflow-item-column">
           <div className="workflow-item-row">
             <img className="git-merge-icon" src="/image/git-merge.svg" alt="" />
-            <a href={url.toString()} className="repo-url" target="_new">
+            <a
+              href={router.getWorkflowHistoryUrl(repoUrl)}
+              onClick={this.onClickRepoUrl.bind(this)}
+              className="repo-url">
               {url.host}
               {url.pathname}
             </a>

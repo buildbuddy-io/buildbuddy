@@ -7,7 +7,6 @@
   border: 0;
   border-radius: 8px;
   cursor: pointer;
-  display: block;
   box-sizing: border-box;
   text-align: center;
   line-height: normal;
@@ -16,7 +15,7 @@
 
   flex-shrink: 0;
   align-self: center;
-  display: flex;
+  display: inline-flex;
   align-items: center;
 }
 
