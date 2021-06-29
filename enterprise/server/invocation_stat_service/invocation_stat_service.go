@@ -104,6 +104,10 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 
 	if role := req.GetQuery().GetRole(); role != "" {
 		q.AddWhereClause("role = ?", role)
+	} else {
+		// Don't include workflow invocations in trends since workflows just "wrap"
+		// other invocations, and we want to avoid double-counting.
+		q.AddWhereClause(`role != "CI_RUNNER"`)
 	}
 
 	q.AddWhereClause(`updated_at_usec > ?`, time.Now().Add(-lookbackWindowDays).UnixNano()/1000)
