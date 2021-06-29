@@ -266,7 +266,9 @@ export default class HistoryComponent extends React.Component {
                 </span>
               )}
               {scope && <span>{scope}</span>}
-              {!this.props.username && !this.props.hostname && this.props.hash == "" && <span>Builds</span>}
+              {!this.props.username && !this.props.hostname && this.props.hash == "" && (
+                <>{this.isFilteredToWorkflows() ? <span>Workflow runs</span> : <span>Builds</span>}</>
+              )}
             </div>
             <div className="titles">
               <div className="title">
