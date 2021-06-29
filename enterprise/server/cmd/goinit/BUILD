@@ -20,6 +20,7 @@ go_library(
 go_binary(
     name = "goinit",
     embed = [":goinit_lib"],
+    pure = "on",
     static = "on",
     visibility = ["//visibility:public"],
 )
