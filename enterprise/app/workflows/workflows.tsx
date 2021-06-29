@@ -263,7 +263,7 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
     const url = new URL(repoUrl);
     url.protocol = "https:";
 
-    const historyPath = getHistoryPath(url);
+    console.log({ repoUrl });
 
     return (
       <div className="workflow-item container">
@@ -271,7 +271,7 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
           <div className="workflow-item-row">
             <img className="git-merge-icon" src="/image/git-merge.svg" alt="" />
             <a
-              href={`/history/repo/${historyPath}?workflows=true`}
+              href={router.getWorkflowHistoryPath(repoUrl)}
               onClick={this.onClickRepoUrl.bind(this)}
               className="repo-url">
               {url.host}
@@ -302,12 +302,4 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
       </div>
     );
   }
-}
-
-// TODO (DO NOT MERGE): Does this already exist somewhere?
-function getHistoryPath(url: URL) {
-  if (url.hostname === "github.com") {
-    return url.pathname.substring(1).replace(/\.git$/, "");
-  }
-  return window.btoa(url.toString());
 }

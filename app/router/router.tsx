@@ -108,8 +108,12 @@ class Router {
     this.navigateTo(Path.hostHistoryPath + host);
   }
 
+  getWorkflowHistoryPath(repo: string) {
+    return `${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}?workflows=true`;
+  }
+
   navigateToWorkflowHistory(repo: string) {
-    this.navigateTo(`${Path.repoHistoryPath}${getRepoUrlPathParam}?workflows=true`);
+    this.navigateTo(this.getWorkflowHistoryPath(repo));
   }
 
   navigateToRepoHistory(repo: string) {
@@ -195,10 +199,10 @@ class Router {
 }
 
 function getRepoUrlPathParam(repo: string): string {
-  if (repo.startsWith("https://github.com/") && repo.endsWith(".git")) {
+  if (repo.startsWith("https://github.com/")) {
     return format.formatGitUrl(repo);
   }
-  return btoa(repo);
+  return window.btoa(repo);
 }
 
 function getQueryString(params: Record<string, string>) {

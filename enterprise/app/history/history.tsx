@@ -1,6 +1,7 @@
 import React from "react";
-import { Subscription, fromEvent } from "rxjs";
+import { fromEvent, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
+import LinkButton from "../../../app/components/button/link_button";
 import format from "../../../app/format/format";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
@@ -405,7 +406,30 @@ export default class HistoryComponent extends React.Component {
           </div>
         )}
         {this.state.invocations.length == 0 && this.state.loading && <div className="loading"></div>}
-        {this.state.invocations.length == 0 && !this.state.loading && (
+        {this.state.invocations.length == 0 && !this.state.loading && this.isFilteredToWorkflows() && (
+          <div className="container narrow">
+            <div className="empty-state history">
+              <h2>No workflow runs yet!</h2>
+              <p>
+                Push commits or send pull requests to{" "}
+                <a href={this.props.repo} target="_new" className="text-link">
+                  {format.formatGitUrl(this.props.repo)}
+                </a>{" "}
+                to trigger BuildBuddy workflows.
+              </p>
+              <p>
+                By default, BuildBuddy will run <code className="inline-code">bazel test //...</code> on pushes to your
+                main branch and on pull request branches.
+              </p>
+              <div>
+                <LinkButton href="https://docs.buildbuddy.io/docs/workflows-config" target="_new">
+                  Learn more
+                </LinkButton>
+              </div>
+            </div>
+          </div>
+        )}
+        {this.state.invocations.length == 0 && !this.state.loading && !this.isFilteredToWorkflows() && (
           <div className="container narrow">
             <div className="empty-state history">
               <h2>No builds found!</h2>

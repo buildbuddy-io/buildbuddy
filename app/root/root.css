@@ -550,19 +550,23 @@ button {
 }
 
 code {
-  display: block;
-  padding: 24px 32px;
   border: 1px solid #eee;
-  border-radius: 8px;
-  margin-top: 16px;
-  margin-bottom: 16px;
+  border-radius: 4px;
   background-color: #fafafa;
   font-family: "Source Code Pro", monospace;
+  box-sizing: border-box;
+}
+
+code:not(.inline-code) {
+  display: block;
+  border-radius: 8px;
+  padding: 24px 32px;
+  margin-top: 16px;
+  margin-bottom: 16px;
   line-height: 1.6em;
   white-space: nowrap;
   overflow-y: auto;
   max-width: 100%;
-  box-sizing: border-box;
   position: relative;
 }
 

@@ -9,3 +9,10 @@
   padding: 16px;
   margin-right: 0;
 }
+
+.history a.text-link {
+  text-decoration: underline;
+}
+
+.history.empty-state button {
+}
