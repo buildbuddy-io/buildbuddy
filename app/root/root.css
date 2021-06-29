@@ -559,8 +559,8 @@ code {
 
 code:not(.inline-code) {
   display: block;
-  border-radius: 8px;
   padding: 24px 32px;
+  border-radius: 8px;
   margin-top: 16px;
   margin-bottom: 16px;
   line-height: 1.6em;

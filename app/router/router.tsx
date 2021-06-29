@@ -108,12 +108,12 @@ class Router {
     this.navigateTo(Path.hostHistoryPath + host);
   }
 
-  getWorkflowHistoryPath(repo: string) {
+  getWorkflowHistoryUrl(repo: string) {
     return `${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}?workflows=true`;
   }
 
   navigateToWorkflowHistory(repo: string) {
-    this.navigateTo(this.getWorkflowHistoryPath(repo));
+    this.navigateTo(this.getWorkflowHistoryUrl(repo));
   }
 
   navigateToRepoHistory(repo: string) {

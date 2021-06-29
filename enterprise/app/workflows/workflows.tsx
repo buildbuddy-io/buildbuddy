@@ -271,7 +271,7 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
           <div className="workflow-item-row">
             <img className="git-merge-icon" src="/image/git-merge.svg" alt="" />
             <a
-              href={router.getWorkflowHistoryPath(repoUrl)}
+              href={router.getWorkflowHistoryUrl(repoUrl)}
               onClick={this.onClickRepoUrl.bind(this)}
               className="repo-url">
               {url.host}
