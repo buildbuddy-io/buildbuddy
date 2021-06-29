@@ -34,10 +34,18 @@ index 3575298..193c30a 100644
  	metadata *metadata.MD
  }
 diff --git a/instrumentation/google.golang.org/grpc/otelgrpc/interceptor.go b/instrumentation/google.golang.org/grpc/otelgrpc/interceptor.go
-index 2117497..ef6ba02 100644
+index 2117497..5ebadbe 100644
 --- a/instrumentation/google.golang.org/grpc/otelgrpc/interceptor.go
 +++ b/instrumentation/google.golang.org/grpc/otelgrpc/interceptor.go
-@@ -304,6 +304,16 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
+@@ -150,6 +150,7 @@ func (w *clientStream) RecvMsg(m interface{}) error {
+ 		w.sendStreamEvent(receiveEndEvent, nil)
+ 	} else if err == io.EOF {
+ 		w.sendStreamEvent(receiveEndEvent, nil)
++		w.sendStreamEvent(closeEvent, nil)
+ 	} else if err != nil {
+ 		w.sendStreamEvent(errorEvent, err)
+ 	} else {
+@@ -304,6 +305,16 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
  	}
  }
  
@@ -54,7 +62,7 @@ index 2117497..ef6ba02 100644
  // UnaryServerInterceptor returns a grpc.UnaryServerInterceptor suitable
  // for use in a grpc.NewServer call.
  func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
-@@ -319,12 +329,14 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
+@@ -319,12 +330,14 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
  		bags, spanCtx := Extract(ctx, &metadataCopy, opts...)
  		ctx = baggage.ContextWithBaggage(ctx, bags)
  
@@ -70,7 +78,7 @@ index 2117497..ef6ba02 100644
  		ctx, span := tracer.Start(
  			trace.ContextWithRemoteSpanContext(ctx, spanCtx),
  			name,
-@@ -408,12 +420,14 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
+@@ -408,12 +421,14 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
  		bags, spanCtx := Extract(ctx, &metadataCopy, opts...)
  		ctx = baggage.ContextWithBaggage(ctx, bags)
  
