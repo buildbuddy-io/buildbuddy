@@ -40,7 +40,6 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 			"Push.Changes.0.New.Name",
 			"Push.Changes.0.New.Target.Hash",
 			"Push.Changes.0.New.Type",
-			"Repository.IsPrivate",
 			"Repository.Links.HTML.Href",
 		)
 		if err != nil {
@@ -52,12 +51,14 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 		}
 		branch := v["Push.Changes.0.New.Name"]
 		return &interfaces.WebhookData{
-			EventName:     webhook_data.EventName.Push,
-			PushedBranch:  branch,
-			TargetBranch:  branch,
-			RepoURL:       v["Repository.Links.HTML.Href"],
-			IsRepoPrivate: v["Repository.IsPrivate"] == "true",
-			SHA:           v["Push.Changes.0.New.Target.Hash"],
+			EventName:    webhook_data.EventName.Push,
+			PushedBranch: branch,
+			TargetBranch: branch,
+			RepoURL:      v["Repository.Links.HTML.Href"],
+			// The push handler will not receive events from forked repositories,
+			// so if a commit was pushed to this repo then it is trusted.
+			IsTrusted: true,
+			SHA:       v["Push.Changes.0.New.Target.Hash"],
 		}, nil
 	case "pullrequest:created", "pullrequest:updated":
 		payload := &PullRequestEventPayload{}
@@ -70,18 +71,20 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 			"PullRequest.Source.Branch.Name",
 			"PullRequest.Source.Commit.Hash",
 			"PullRequest.Source.Repository.Links.HTML.Href",
-			"Repository.IsPrivate",
+			"PullRequest.Source.Repository.UUID",
+			"PullRequest.Destination.Repository.UUID",
 		)
 		if err != nil {
 			return nil, err
 		}
+		isFork := v["PullRequest.Source.Repository.UUID"] != v["PullRequest.Destination.Repository.UUID"]
 		return &interfaces.WebhookData{
-			EventName:     webhook_data.EventName.PullRequest,
-			PushedBranch:  v["PullRequest.Source.Branch.Name"],
-			TargetBranch:  v["PullRequest.Destination.Branch.Name"],
-			RepoURL:       v["PullRequest.Source.Repository.Links.HTML.Href"],
-			IsRepoPrivate: v["Repository.IsPrivate"] == "true",
-			SHA:           v["PullRequest.Source.Commit.Hash"],
+			EventName:    webhook_data.EventName.PullRequest,
+			PushedBranch: v["PullRequest.Source.Branch.Name"],
+			TargetBranch: v["PullRequest.Destination.Branch.Name"],
+			RepoURL:      v["PullRequest.Source.Repository.Links.HTML.Href"],
+			IsTrusted:    !isFork,
+			SHA:          v["PullRequest.Source.Commit.Hash"],
 		}, nil
 	default:
 		log.Printf("Ignoring webhook event: %s", eventName)
@@ -95,10 +98,6 @@ func (*bitbucketGitProvider) MatchRepoURL(u *url.URL) bool {
 
 func (*bitbucketGitProvider) MatchWebhookRequest(r *http.Request) bool {
 	return r.Header.Get("X-Event-Key") != ""
-}
-
-func (*bitbucketGitProvider) IsRepoPrivate(ctx context.Context, accessToken, repoURL string) (bool, error) {
-	return false, status.UnimplementedError("Not implemented")
 }
 
 func (*bitbucketGitProvider) RegisterWebhook(ctx context.Context, accessToken, repoURL, webhookURL string) (string, error) {
@@ -163,6 +162,7 @@ type Branch struct {
 type Repository struct {
 	Links     *RepositoryLinks `json:"links"`
 	IsPrivate bool             `json:"is_private"`
+	UUID      string           `json:"uuid"`
 }
 type RepositoryLinks struct {
 	HTML *RepositoryLink `json:"html"`

@@ -257,10 +257,6 @@ type GitProvider interface {
 	// true.
 	ParseWebhookData(req *http.Request) (*WebhookData, error)
 
-	// IsRepoPrivate returns whether the repo is only viewable by its owner and
-	// trusted users.
-	IsRepoPrivate(ctx context.Context, accessToken, repoURL string) (bool, error)
-
 	// RegisterWebhook registers the given webhook URL to listen for push and
 	// pull request (also called "merge request") events.
 	RegisterWebhook(ctx context.Context, accessToken, repoURL, webhookURL string) (string, error)
@@ -315,8 +311,11 @@ type WebhookData struct {
 	// SHA of the commit to be checked out.
 	SHA string
 
-	// IsRepoPrivate returns whether the repo is private.
-	IsRepoPrivate bool
+	// IsTrusted returns whether the committed code came from a trusted actor.
+	// For example, this will be true for members of the organization that owns
+	// the repo, and false for forked repositories sending pull requests to the
+	// repo.
+	IsTrusted bool
 }
 
 type SplashPrinter interface {
