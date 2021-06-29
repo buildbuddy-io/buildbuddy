@@ -36,6 +36,8 @@ go_library(
 go_binary(
     name = "ci_runner",
     embed = [":main"],
+    pure = "on",
+    static = "on",
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
