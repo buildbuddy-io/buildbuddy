@@ -263,8 +263,6 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
     const url = new URL(repoUrl);
     url.protocol = "https:";
 
-    console.log({ repoUrl });
-
     return (
       <div className="workflow-item container">
         <div className="workflow-item-column">
