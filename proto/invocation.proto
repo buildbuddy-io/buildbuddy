@@ -162,6 +162,9 @@ message InvocationQuery {
 
   // The commit sha used for the build.
   string commit_sha = 5;
+
+  // The ROLE metadata set on the build.
+  string role = 6;
 }
 
 message InvocationSort {

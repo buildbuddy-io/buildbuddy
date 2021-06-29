@@ -26,6 +26,7 @@ interface Props {
   repo?: string;
   commit?: string;
   user?: User;
+  search?: URLSearchParams;
   hash: string;
 }
 
@@ -52,18 +53,24 @@ export default class HistoryComponent extends React.Component {
     ["#commits", invocation.AggType.COMMIT_SHA_AGGREGATION_TYPE],
   ]);
 
-  getBuilds(nextPage?: boolean) {
-    let request = new invocation.SearchInvocationRequest();
-    request.query = new invocation.InvocationQuery();
-    request.query.host = this.props.hostname;
-    request.query.user = this.props.username;
-    request.query.repoUrl = this.props.repo;
-    request.query.commitSha = this.props.commit;
-    request.query.groupId = this.props.user?.selectedGroup?.id;
-    request.pageToken = nextPage ? this.state.pageToken : "";
+  private isFilteredToWorkflows() {
+    return this.props.search?.get("workflows") === "true";
+  }
 
-    // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
-    request.count = 126;
+  getBuilds(nextPage?: boolean) {
+    let request = new invocation.SearchInvocationRequest({
+      query: new invocation.InvocationQuery({
+        host: this.props.hostname,
+        user: this.props.username,
+        repoUrl: this.props.repo,
+        commitSha: this.props.commit,
+        groupId: this.props.user?.selectedGroup?.id,
+        role: this.isFilteredToWorkflows() ? "CI_RUNNER" : "",
+      }),
+      pageToken: nextPage ? this.state.pageToken : "",
+      // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
+      count: 126,
+    });
 
     this.setState({
       ...this.state,
@@ -278,12 +285,17 @@ export default class HistoryComponent extends React.Component {
                     </a>
                   </span>
                 )}
-                {this.props.repo && (
+                {this.props.repo && !this.isFilteredToWorkflows() && (
                   <a target="_blank" href={this.getRepoUrl()}>
                     <span>Builds of {format.formatGitUrl(this.props.repo)}</span>
                     <a className="history-trends-button" href={`/trends/?repo=${this.props.repo}`}>
                       View trends
                     </a>
+                  </a>
+                )}
+                {this.props.repo && this.isFilteredToWorkflows() && (
+                  <a target="_blank" href={this.getRepoUrl()}>
+                    <span>Workflow runs of {format.formatGitUrl(this.props.repo)}</span>
                   </a>
                 )}
                 {this.props.commit && (

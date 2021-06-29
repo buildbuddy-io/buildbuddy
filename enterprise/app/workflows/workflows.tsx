@@ -136,12 +136,12 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       <div className="workflows-page">
         <div className="shelf">
           <div className="container">
-          <div>
-            <div className="breadcrumbs">
-              {this.props.user && <span>{this.props.user?.selectedGroupName()}</span>}
-              <span>Workflows</span>
-            </div>
-            <div className="title">Workflows</div>
+            <div>
+              <div className="breadcrumbs">
+                {this.props.user && <span>{this.props.user?.selectedGroupName()}</span>}
+                <span>Workflows</span>
+              </div>
+              <div className="title">Workflows</div>
             </div>
             {response && Boolean(response.workflow.length) && (
               <div className="buttons create-new-container">
@@ -250,19 +250,30 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
     this.props.onClickUnlinkItem(this.props.workflow);
   }
 
+  private onClickRepoUrl(e: React.MouseEvent) {
+    e.preventDefault();
+    const path = (e.target as HTMLAnchorElement).getAttribute("href");
+    router.navigateTo(path);
+  }
+
   render() {
-    const { name, repoUrl } = this.props.workflow;
+    const { repoUrl } = this.props.workflow;
     const { isMenuOpen, copiedToClipboard } = this.state;
 
     const url = new URL(repoUrl);
     url.protocol = "https:";
+
+    const historyPath = getHistoryPath(url);
 
     return (
       <div className="workflow-item container">
         <div className="workflow-item-column">
           <div className="workflow-item-row">
             <img className="git-merge-icon" src="/image/git-merge.svg" alt="" />
-            <a href={url.toString()} className="repo-url" target="_new">
+            <a
+              href={`/history/repo/${historyPath}?workflows=true`}
+              onClick={this.onClickRepoUrl.bind(this)}
+              className="repo-url">
               {url.host}
               {url.pathname}
             </a>
@@ -291,4 +302,12 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
       </div>
     );
   }
+}
+
+// TODO (DO NOT MERGE): Does this already exist somewhere?
+function getHistoryPath(url: URL) {
+  if (url.hostname === "github.com") {
+    return url.pathname.substring(1).replace(/\.git$/, "");
+  }
+  return window.btoa(url.toString());
 }

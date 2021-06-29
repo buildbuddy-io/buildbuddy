@@ -108,6 +108,10 @@ class Router {
     this.navigateTo(Path.hostHistoryPath + host);
   }
 
+  navigateToWorkflowHistory(repo: string) {
+    this.navigateTo(`${Path.repoHistoryPath}${getRepoUrlPathParam}?workflows=true`);
+  }
+
   navigateToRepoHistory(repo: string) {
     if (!capabilities.canNavigateToPath(Path.repoHistoryPath)) {
       alert(
@@ -115,11 +119,7 @@ class Router {
       );
       return;
     }
-    if (repo.startsWith("https://github.com/") && repo.endsWith(".git")) {
-      this.navigateTo(Path.repoHistoryPath + format.formatGitUrl(repo));
-      return;
-    }
-    this.navigateTo(Path.repoHistoryPath + btoa(repo));
+    this.navigateTo(`${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}`);
   }
 
   navigateToCommitHistory(commit: string) {
@@ -192,6 +192,13 @@ class Router {
   getHistoryCommit(path: string) {
     return this.getLastPathComponent(path, Path.commitHistoryPath);
   }
+}
+
+function getRepoUrlPathParam(repo: string): string {
+  if (repo.startsWith("https://github.com/") && repo.endsWith(".git")) {
+    return format.formatGitUrl(repo);
+  }
+  return btoa(repo);
 }
 
 function getQueryString(params: Record<string, string>) {
