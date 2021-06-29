@@ -1,3 +1,23 @@
+diff --git a/BUILD.bazel b/BUILD.bazel
+index 7b3d40f..43a567e 100644
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+ go_library(
+     name = "firecracker-go-sdk",
+     srcs = [
++        "balloon.go",
+         "client_transports.go",
+         "command_builder.go",
+         "doc.go",
+@@ -47,6 +48,7 @@ go_library(
+ go_test(
+     name = "firecracker-go-sdk_test",
+     srcs = [
++        "balloon_test.go",
+         "benchmark_test.go",
+         "client_transports_test.go",
+         "command_builder_test.go",
 diff --git a/balloon.go b/balloon.go
 new file mode 100644
 index 0000000..c189f80
@@ -152,6 +172,32 @@ index 8ba130f..c830aa7 100644
  package firecracker
  
  import (
+diff --git a/client/models/BUILD.bazel b/client/models/BUILD.bazel
+index c845e82..5fa01c9 100644
+--- a/client/models/BUILD.bazel
++++ b/client/models/BUILD.bazel
+@@ -3,6 +3,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
+ go_library(
+     name = "models",
+     srcs = [
++        "balloon.go",
++        "balloon_stats.go",
++        "balloon_stats_update.go",
++        "balloon_update.go",
+         "boot_source.go",
+         "cpu_template.go",
+         "drive.go",
+@@ -17,7 +21,10 @@ go_library(
+         "partial_drive.go",
+         "partial_network_interface.go",
+         "rate_limiter.go",
++        "snapshot_create_params.go",
++        "snapshot_load_params.go",
+         "token_bucket.go",
++        "vm.go",
+         "vsock.go",
+     ],
+     importpath = "github.com/firecracker-microvm/firecracker-go-sdk/client/models",
 diff --git a/client/models/balloon.go b/client/models/balloon.go
 new file mode 100644
 index 0000000..ef07d0d
@@ -1123,6 +1169,49 @@ index 0000000..8ca5e71
 +	*m = res
 +	return nil
 +}
+diff --git a/client/operations/BUILD.bazel b/client/operations/BUILD.bazel
+index 5ae284e..0973385 100644
+--- a/client/operations/BUILD.bazel
++++ b/client/operations/BUILD.bazel
+@@ -3,15 +3,27 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
+ go_library(
+     name = "operations",
+     srcs = [
++        "create_snapshot_parameters.go",
++        "create_snapshot_responses.go",
+         "create_sync_action_parameters.go",
+         "create_sync_action_responses.go",
++        "describe_balloon_config_parameters.go",
++        "describe_balloon_config_responses.go",
++        "describe_balloon_stats_parameters.go",
++        "describe_balloon_stats_responses.go",
+         "describe_instance_parameters.go",
+         "describe_instance_responses.go",
+         "get_machine_configuration_parameters.go",
+         "get_machine_configuration_responses.go",
+         "get_mmds_parameters.go",
+         "get_mmds_responses.go",
++        "load_snapshot_parameters.go",
++        "load_snapshot_responses.go",
+         "operations_client.go",
++        "patch_balloon_parameters.go",
++        "patch_balloon_responses.go",
++        "patch_balloon_stats_interval_parameters.go",
++        "patch_balloon_stats_interval_responses.go",
+         "patch_guest_drive_by_id_parameters.go",
+         "patch_guest_drive_by_id_responses.go",
+         "patch_guest_network_interface_by_id_parameters.go",
+@@ -20,6 +32,10 @@ go_library(
+         "patch_machine_configuration_responses.go",
+         "patch_mmds_parameters.go",
+         "patch_mmds_responses.go",
++        "patch_vm_parameters.go",
++        "patch_vm_responses.go",
++        "put_balloon_parameters.go",
++        "put_balloon_responses.go",
+         "put_guest_boot_source_parameters.go",
+         "put_guest_boot_source_responses.go",
+         "put_guest_drive_by_id_parameters.go",
 diff --git a/client/operations/create_snapshot_parameters.go b/client/operations/create_snapshot_parameters.go
 new file mode 100644
 index 0000000..cb3bab2
@@ -4020,6 +4109,18 @@ index a0d5985..ccfd973 100644
  package firecracker_test
  
  import (
+diff --git a/fctesting/BUILD.bazel b/fctesting/BUILD.bazel
+index 5b8cbca..a8e0670 100644
+--- a/fctesting/BUILD.bazel
++++ b/fctesting/BUILD.bazel
+@@ -12,6 +12,7 @@ go_library(
+     deps = [
+         "//client/operations",
+         "@com_github_sirupsen_logrus//:go_default_library",
++        "@org_golang_x_sys//unix:go_default_library",
+     ],
+ )
+ 
 diff --git a/fctesting/firecracker_mock_client.go b/fctesting/firecracker_mock_client.go
 index fcef989..4f68b27 100644
 --- a/fctesting/firecracker_mock_client.go
@@ -4829,7 +4930,7 @@ index cae1caa..6326281 100644
 +	return nil
 +}
 diff --git a/machine_test.go b/machine_test.go
-index 5c2126c..b51e49b 100644
+index 5c2126c..17c0293 100644
 --- a/machine_test.go
 +++ b/machine_test.go
 @@ -61,20 +61,42 @@ const (
@@ -5021,7 +5122,7 @@ index 5c2126c..b51e49b 100644
  	errchan := make(chan error)
  
  	m := Machine{
-@@ -752,7 +785,8 @@ func TestWaitForSocket(t *testing.T) {
+@@ -752,26 +785,27 @@ func TestWaitForSocket(t *testing.T) {
  		time.Sleep(50 * time.Millisecond)
  		_, err := os.Create(filename)
  		if err != nil {
@@ -5031,7 +5132,17 @@ index 5c2126c..b51e49b 100644
  		}
  	}()
  
-@@ -768,7 +802,7 @@ func TestWaitForSocket(t *testing.T) {
+ 	// Socket file created, HTTP request succeeded
+ 	m.client = NewClient(filename, fctesting.NewLogEntry(t), true, WithOpsClient(&okClient))
+-	if err := m.waitForSocket(500*time.Millisecond, errchan); err != nil {
++	if err := m.WaitForSocket(500*time.Millisecond, errchan); err != nil {
+ 		t.Errorf("waitForSocket returned unexpected error %s", err)
+ 	}
+ 
+ 	// Socket file exists, HTTP request failed
+ 	m.client = NewClient(filename, fctesting.NewLogEntry(t), true, WithOpsClient(&errClient))
+-	if err := m.waitForSocket(500*time.Millisecond, errchan); err != context.DeadlineExceeded {
++	if err := m.WaitForSocket(500*time.Millisecond, errchan); err != context.DeadlineExceeded {
  		t.Error("waitforSocket did not return an expected timeout error")
  	}
  
@@ -5039,7 +5150,20 @@ index 5c2126c..b51e49b 100644
 +	cleanup()
  
  	// No socket file
- 	if err := m.waitForSocket(100*time.Millisecond, errchan); err != context.DeadlineExceeded {
+-	if err := m.waitForSocket(100*time.Millisecond, errchan); err != context.DeadlineExceeded {
++	if err := m.WaitForSocket(100*time.Millisecond, errchan); err != context.DeadlineExceeded {
+ 		t.Error("waitforSocket did not return an expected timeout error")
+ 	}
+ 
+@@ -782,7 +816,7 @@ func TestWaitForSocket(t *testing.T) {
+ 	}()
+ 
+ 	// Unexpected process exit
+-	if err := m.waitForSocket(100*time.Millisecond, errchan); err != chanErr {
++	if err := m.WaitForSocket(100*time.Millisecond, errchan); err != chanErr {
+ 		t.Error("waitForSocket did not properly detect program exit")
+ 	}
+ }
 @@ -817,6 +851,29 @@ func testGetMetadata(ctx context.Context, t *testing.T, m *Machine) {
  	}
  }
