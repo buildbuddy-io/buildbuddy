@@ -198,6 +198,8 @@ func (h *registrationAndTasksExecutorHandle) handleTaskReservationResponse(respo
 }
 
 func (h *registrationAndTasksExecutorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
+	// EnqueueTaskReservation may be called multiple times and OpenTelemetry doesn't have clear documentation as to
+	// whether it's safe to call Inject using a carrier that already has metadata so we clone the proto to be defensive.
 	req, ok := proto.Clone(req).(*scpb.EnqueueTaskReservationRequest)
 	if !ok {
 		log.Errorf("could not clone reservation request")
