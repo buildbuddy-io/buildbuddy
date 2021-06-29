@@ -270,7 +270,13 @@ proto_library(
     srcs = ["scheduler.proto"],
     deps = [
         ":context_proto",
+        ":trace_proto",
     ],
+)
+
+proto_library(
+    name = "trace_proto",
+    srcs = ["trace.proto"],
 )
 
 proto_library(
@@ -548,7 +554,15 @@ go_proto_library(
     proto = ":scheduler_proto",
     deps = [
         ":context_go_proto",
+        ":trace_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "trace_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/trace",
+    proto = ":trace_proto",
 )
 
 go_proto_library(

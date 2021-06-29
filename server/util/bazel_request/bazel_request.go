@@ -9,9 +9,11 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+const RequestMetadataKey = "build.bazel.remote.execution.v2.requestmetadata-bin"
+
 func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
 	if grpcMD, ok := metadata.FromIncomingContext(ctx); ok {
-		rmdVals := grpcMD["build.bazel.remote.execution.v2.requestmetadata-bin"]
+		rmdVals := grpcMD[RequestMetadataKey]
 		for _, rmdVal := range rmdVals {
 			rmd := &repb.RequestMetadata{}
 			if err := proto.Unmarshal([]byte(rmdVal), rmd); err == nil {

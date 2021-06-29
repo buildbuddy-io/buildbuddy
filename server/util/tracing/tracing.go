@@ -1,6 +1,7 @@
 package tracing
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -18,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
+	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
@@ -107,4 +109,53 @@ func Configure(configurator *config.Configurator) error {
 	otel.SetTextMapPropagator(propagator)
 	log.Infof("Tracing enabled with sampler: %s", sampler.Description())
 	return nil
+}
+
+type SetMetadata func(m *tpb.Metadata)
+
+type traceMetadataProtoCarrier struct {
+	metadata    map[string]string
+	setMetadata SetMetadata
+}
+
+func newTraceMetadataProtoCarrier(metadata *tpb.Metadata, setMetadata SetMetadata) *traceMetadataProtoCarrier {
+	return &traceMetadataProtoCarrier{
+		metadata:    metadata.GetEntries(),
+		setMetadata: setMetadata,
+	}
+}
+
+func (c *traceMetadataProtoCarrier) Get(key string) string {
+	return c.metadata[key]
+}
+
+func (c *traceMetadataProtoCarrier) Set(key string, value string) {
+	if c.metadata == nil {
+		c.metadata = make(map[string]string)
+		if c.setMetadata == nil {
+			// Should never happen since this is only called via Inject which always sets setMetadata function.
+			log.Errorf("Can't set metadata w/o setMetadata function")
+			return
+		}
+		c.setMetadata(&tpb.Metadata{Entries: c.metadata})
+	}
+	c.metadata[key] = value
+}
+
+func (c *traceMetadataProtoCarrier) Keys() []string {
+	var keys []string
+	for k := range c.metadata {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func InjectProtoTraceMetadata(ctx context.Context, metadata *tpb.Metadata, setMetadata SetMetadata) {
+	p := otel.GetTextMapPropagator()
+	p.Inject(ctx, newTraceMetadataProtoCarrier(metadata, setMetadata))
+}
+
+func ExtractProtoTraceMetadata(ctx context.Context, metadata *tpb.Metadata) context.Context {
+	p := otel.GetTextMapPropagator()
+	return p.Extract(ctx, newTraceMetadataProtoCarrier(metadata, nil))
 }

@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/tracing",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:trace_go_proto",
         "//server/config",
         "//server/util/log",
         "//server/util/status",
