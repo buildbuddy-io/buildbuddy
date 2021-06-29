@@ -355,8 +355,9 @@ message TrendQuery {
   // The commit sha used for the build.
   string commit_sha = 5;
 
-  // The role played by the build. Ex: "CI"
-  string role = 6;
+  // The role played by the build. Ex: "CI". Multiple filters are combined with
+  // OR.
+  repeated string role = 6;
 }
 
 message GetTrendRequest {
