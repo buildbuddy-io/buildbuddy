@@ -135,7 +135,6 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
 type SettingsTabProps = {
   id: SettingsTabId;
   activeTabId: SettingsTabId;
-  children: any;
 };
 
 class SettingsTab extends React.Component<SettingsTabProps> {
