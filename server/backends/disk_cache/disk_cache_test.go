@@ -395,3 +395,50 @@ func TestJanitorThread(t *testing.T) {
 		}
 	}
 }
+
+func TestZeroLengthFiles(t *testing.T) {
+	maxSizeBytes := int64(100_000_000) // 100MB
+	rootDir := getTmpDir(t)
+	ctx := getAnonContext(t)
+	anonPath := filepath.Join(rootDir, "ANON")
+	if err := disk.EnsureDirectoryExists(anonPath); err != nil {
+		t.Fatal(err)
+	}
+	// Write a single zero length file.
+	badDigest, _ := testdigest.NewRandomDigestBuf(t, 1000)
+	buf := []byte{}
+	dest := filepath.Join(anonPath, badDigest.GetHash())
+	if err := os.WriteFile(dest, buf, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a valid pre-existing file
+	goodDigest, buf := testdigest.NewRandomDigestBuf(t, 1000)
+	dest = filepath.Join(anonPath, goodDigest.GetHash())
+	if err := os.WriteFile(dest, buf, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a new disk cache (this will start async processing of
+	// the data we just wrote above ^)
+	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ensure that the goodDigest exists and the zero length one does not.
+	exists, err := dc.Contains(ctx, badDigest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatalf("%q (empty file) should not be mapped in cache.", badDigest.GetHash())
+	}
+
+	exists, err = dc.Contains(ctx, goodDigest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatalf("%q was not found in cache.", goodDigest.GetHash())
+	}
+}

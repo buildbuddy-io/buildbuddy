@@ -31,6 +31,7 @@ go_test(
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/util/disk",
+        "//server/util/log",
         "//server/util/prefix",
         "//server/util/testing/flags",
         "@org_golang_x_sync//errgroup",

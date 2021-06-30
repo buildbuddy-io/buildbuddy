@@ -209,6 +209,10 @@ func (c *DiskCache) initializeCache() error {
 				if err != nil {
 					return err
 				}
+				if info.Size() == 0 {
+					log.Debugf("Skipping 0 length file: %q", path)
+					return nil
+				}
 				records = append(records, makeRecord(path, info))
 			}
 			return nil
@@ -262,6 +266,10 @@ func (c *DiskCache) addFileToLRUIfExists(k string) bool {
 	}
 	info, err := os.Stat(k)
 	if err == nil {
+		if info.Size() == 0 {
+			log.Debugf("Skipping 0 length file: %q", k)
+			return false
+		}
 		record := makeRecord(k, info)
 		c.fileChannel <- record
 		c.l.Add(record.key, record)
