@@ -24,12 +24,12 @@ class Router {
 
   navigateTo(path: string) {
     var newUrl = window.location.protocol + "//" + window.location.host + path;
-    window.history.pushState({}, "", newUrl);
+    window.history.pushState({ path: newUrl }, "", newUrl);
   }
 
   navigateToQueryParam(key: string, value: string) {
     let targetUrl = `?${key}=${value}`;
-    window.history.pushState({}, "", targetUrl);
+    window.history.pushState({ path: targetUrl }, "", targetUrl);
   }
 
   navigateHome(hash?: string) {
@@ -108,6 +108,14 @@ class Router {
     this.navigateTo(Path.hostHistoryPath + host);
   }
 
+  getWorkflowHistoryUrl(repo: string) {
+    return `${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}?workflows=true`;
+  }
+
+  navigateToWorkflowHistory(repo: string) {
+    this.navigateTo(this.getWorkflowHistoryUrl(repo));
+  }
+
   navigateToRepoHistory(repo: string) {
     if (!capabilities.canNavigateToPath(Path.repoHistoryPath)) {
       alert(
@@ -115,11 +123,7 @@ class Router {
       );
       return;
     }
-    if (repo.startsWith("https://github.com/") && repo.endsWith(".git")) {
-      this.navigateTo(Path.repoHistoryPath + format.formatGitUrl(repo));
-      return;
-    }
-    this.navigateTo(Path.repoHistoryPath + btoa(repo));
+    this.navigateTo(`${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}`);
   }
 
   navigateToCommitHistory(commit: string) {
@@ -192,6 +196,23 @@ class Router {
   getHistoryCommit(path: string) {
     return this.getLastPathComponent(path, Path.commitHistoryPath);
   }
+}
+
+// If a repo matches https://github.com/{owner}/{repo} or https://github.com/{owner}/{repo}.git
+// then we'll show it directly in the URL like `{owner}/{repo}`. Otherwise we encode it
+// using `window.btoa`.
+const GITHUB_URL_PREFIX = "^https://github.com";
+const PATH_SEGMENT_PATTERN = "[^/]+";
+const OPTIONAL_DOTGIT_SUFFIX = "(\\.git)?$";
+const GITHUB_REPO_URL_PATTERN = new RegExp(
+  `${GITHUB_URL_PREFIX}/${PATH_SEGMENT_PATTERN}/${PATH_SEGMENT_PATTERN}${OPTIONAL_DOTGIT_SUFFIX}`
+);
+
+function getRepoUrlPathParam(repo: string): string {
+  if (repo.match(GITHUB_REPO_URL_PATTERN)) {
+    return format.formatGitUrl(repo);
+  }
+  return window.btoa(repo);
 }
 
 function getQueryString(params: Record<string, string>) {
