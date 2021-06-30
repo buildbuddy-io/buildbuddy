@@ -13,7 +13,7 @@ export interface SettingsProps {
   path: string;
 }
 
-type SettingsTabId = "personal/preferences" | "org/details" | "org/github" | "org/api-keys";
+type SettingsTabId = "org/details" | "org/github" | "org/api-keys" | "personal/preferences";
 
 export default class SettingsComponent extends React.Component<SettingsProps> {
   componentWillMount() {
@@ -22,7 +22,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
 
   private getActiveTabId(): SettingsTabId {
     if (this.props.path === "/settings" || this.props.path === "/settings/") {
-      return "personal/preferences";
+      return "org/details";
     }
     return this.props.path.substring("/settings/".length) as SettingsTabId;
   }
@@ -41,19 +41,10 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
           <div className="settings-layout">
             <div className="settings-tabs">
               <div className="settings-tab-group-header">
-                <div className="settings-tab-group-title">Personal settings</div>
-                <div className="settings-tab-group-subtitle">{this.props.user?.displayUser?.name?.full}</div>
-              </div>
-              <SettingsTabGroup>
-                <SettingsTab id="personal/preferences" activeTabId={activeTabId}>
-                  Preferences
-                </SettingsTab>
-              </SettingsTabGroup>
-              <div className="settings-tab-group-header">
                 <div className="settings-tab-group-title">Organization settings</div>
                 <div className="settings-tab-group-subtitle">{this.props.user?.selectedGroupName()}</div>
               </div>
-              <SettingsTabGroup>
+              <div className="settings-tab-group">
                 <SettingsTab id="org/details" activeTabId={activeTabId}>
                   Org details
                 </SettingsTab>
@@ -63,7 +54,16 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 <SettingsTab id="org/api-keys" activeTabId={activeTabId}>
                   API keys
                 </SettingsTab>
-              </SettingsTabGroup>
+              </div>
+              <div className="settings-tab-group-header">
+                <div className="settings-tab-group-title">Personal settings</div>
+                <div className="settings-tab-group-subtitle">{this.props.user?.displayUser?.name?.full}</div>
+              </div>
+              <div className="settings-tab-group">
+                <SettingsTab id="personal/preferences" activeTabId={activeTabId}>
+                  Preferences
+                </SettingsTab>
+              </div>
             </div>
             <div className="settings-content">
               {activeTabId === "personal/preferences" && (
@@ -130,10 +130,6 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
       </div>
     );
   }
-}
-
-function SettingsTabGroup({ children }: { children: any }) {
-  return <div className="settings-tab-group">{children}</div>;
 }
 
 type SettingsTabProps = {

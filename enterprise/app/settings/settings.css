@@ -50,10 +50,29 @@
   padding: 32px 0;
 }
 
-.settings .settings-tabs {
-  margin-right: 32px;
-  width: 200px;
-  flex-shrink: 0;
+/* Large screen */
+@media (min-width: 1281px) {
+  .settings .settings-tabs {
+    margin-right: 32px;
+    width: 200px;
+  }
+}
+
+/* Medium to small screen */
+@media (max-width: 1280px) {
+  .settings .settings-layout {
+    flex-direction: column;
+  }
+
+  .settings .settings-tabs {
+    padding-bottom: 32px;
+    margin-bottom: 32px;
+    border-bottom: 1px solid #eee;
+  }
+
+  .settings .settings-tab-group {
+    display: flex;
+  }
 }
 
 .settings .settings-content {
@@ -70,6 +89,10 @@
   border: var(--border);
   border-radius: 4px;
   overflow: hidden;
+}
+
+.settings .settings-tab-group:not(:last-child) {
+  margin-bottom: 16px;
 }
 
 .settings .settings-tab-group > :not(:last-child) {
@@ -93,10 +116,6 @@
 
 .settings .settings-tab-group-title:not(:first-child) {
   margin-top: 16px;
-}
-
-.settings .settings-tab-group:not(:last-child) {
-  margin-bottom: 8px;
 }
 
 .settings .settings-tab {
