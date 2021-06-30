@@ -93,7 +93,7 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 	} else {
 		return nil, status.FailedPreconditionError("Missing health checker in env")
 	}
-	go s.runnerPool.PullDefaultImage()
+	go s.runnerPool.WarmupDefaultImage()
 	return s, nil
 }
 
