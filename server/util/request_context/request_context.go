@@ -3,6 +3,8 @@ package requestcontext
 import (
 	"context"
 
+	"github.com/golang/protobuf/proto"
+
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 )
 
@@ -20,4 +22,13 @@ func ProtoRequestContextFromContext(ctx context.Context) *ctxpb.RequestContext {
 		return nil
 	}
 	return val.(*ctxpb.RequestContext)
+}
+
+func GetProtoRequestContext(req proto.Message) *ctxpb.RequestContext {
+	if req, ok := req.(interface {
+		GetRequestContext() *ctxpb.RequestContext
+	}); ok {
+		return req.GetRequestContext()
+	}
+	return nil
 }

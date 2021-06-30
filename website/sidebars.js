@@ -3,8 +3,7 @@ module.exports = {
     "Getting Started": ['introduction', 'cloud', 'on-prem', 'contributing'],
     "Guides": ['guides', 'guide-auth', 'guide-metadata'],
     "Remote Build Execution": ['remote-build-execution', 'rbe-setup', 'rbe-platforms', 'rbe-github-actions', 'rbe-pools'],
-    // TODO: Uncomment when workflows are launched.
-    // "Workflows (CI)": ['workflows-setup', 'workflows-config'],
+    "Workflows (CI)": ['workflows-setup', 'workflows-config'],
     "Troubleshooting": ['troubleshooting', 'troubleshooting-rbe', 'troubleshooting-slow-upload'],
     "Enterprise": ['enterprise', 'enterprise-setup', 'enterprise-config', 'enterprise-helm', 'enterprise-rbe', 'enterprise-mac-rbe', 'enterprise-api'],
     "Monitoring": ['prometheus-metrics'],

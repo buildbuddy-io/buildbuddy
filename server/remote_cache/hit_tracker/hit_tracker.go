@@ -7,7 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/prometheus/client_golang/prometheus"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -99,7 +99,7 @@ func NewHitTracker(ctx context.Context, env environment.Env, actionCache bool) *
 	return &HitTracker{
 		c:           env.GetMetricsCollector(),
 		ctx:         ctx,
-		iid:         digest.GetInvocationIDFromMD(ctx),
+		iid:         bazel_request.GetInvocationID(ctx),
 		actionCache: actionCache,
 	}
 }

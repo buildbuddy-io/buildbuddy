@@ -9,11 +9,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
 )
 
 const (
@@ -196,6 +198,15 @@ func (h *registrationAndTasksExecutorHandle) handleTaskReservationResponse(respo
 }
 
 func (h *registrationAndTasksExecutorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
+	// EnqueueTaskReservation may be called multiple times and OpenTelemetry doesn't have clear documentation as to
+	// whether it's safe to call Inject using a carrier that already has metadata so we clone the proto to be defensive.
+	req, ok := proto.Clone(req).(*scpb.EnqueueTaskReservationRequest)
+	if !ok {
+		log.Errorf("could not clone reservation request")
+		return nil, status.InternalError("could not clone reservation request")
+	}
+	tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
+
 	timeout := time.NewTimer(EnqueueTaskReservationTimeout)
 	rspCh := make(chan *scpb.EnqueueTaskReservationResponse, 1)
 	select {

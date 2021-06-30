@@ -37,4 +37,7 @@ message FrontendConfig {
 
   // Whether executor keys can be created.
   bool executor_key_creation_enabled = 8;
+
+  // Whether workflows are enabled.
+  bool workflows_enabled = 9;
 }

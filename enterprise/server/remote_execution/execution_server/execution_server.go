@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -29,16 +30,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/codes"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	anypb "github.com/golang/protobuf/ptypes/any"
-	durationpb "github.com/golang/protobuf/ptypes/duration"
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
-	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -55,23 +54,9 @@ const (
 	platformPoolKey = "Pool"
 )
 
-func diffTimeProtos(startPb, endPb *tspb.Timestamp) time.Duration {
-	start, _ := ptypes.Timestamp(startPb)
-	end, _ := ptypes.Timestamp(endPb)
-	return end.Sub(start)
-}
-
 func timestampToMicros(tsPb *tspb.Timestamp) int64 {
 	ts, _ := ptypes.Timestamp(tsPb)
 	return ts.UnixNano() / 1000
-}
-
-func durationToMicros(dur *durationpb.Duration) int64 {
-	d, err := ptypes.Duration(dur)
-	if err != nil {
-		return 0
-	}
-	return d.Microseconds()
 }
 
 func fillExecutionFromSummary(summary *espb.ExecutionSummary, execution *tables.Execution) {
@@ -95,17 +80,6 @@ func fillExecutionFromSummary(summary *espb.ExecutionSummary, execution *tables.
 	execution.OutputUploadCompletedTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetOutputUploadCompletedTimestamp())
 }
 
-func logActionResult(d *repb.Digest, md *repb.ExecutedActionMetadata) {
-	qTime := diffTimeProtos(md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp())
-	workTime := diffTimeProtos(md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
-	fetchTime := diffTimeProtos(md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
-	execTime := diffTimeProtos(md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
-	uploadTime := diffTimeProtos(md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
-	log.Infof("%q completed action '%s/%d' [q: %02dms work: %02dms, fetch: %02dms, exec: %02dms, upload: %02dms]",
-		md.GetWorker(), d.GetHash(), d.GetSizeBytes(), qTime.Milliseconds(), workTime.Milliseconds(),
-		fetchTime.Milliseconds(), execTime.Milliseconds(), uploadTime.Milliseconds())
-}
-
 func generateCommandSnippet(command *repb.Command) string {
 	const targetLength = 200
 	snippetBits := make([]string, 0)
@@ -124,36 +98,20 @@ func generateCommandSnippet(command *repb.Command) string {
 	return snippet
 }
 
-func redisKeyForTaskStatus(taskID string) string {
-	return "taskStatus/" + taskID
-}
-
 func redisKeyForTaskStatusStream(taskID string) string {
 	return "taskStatusStream/" + taskID
 }
 
-type Options struct {
-	DisableRedisStreamPubSub bool // TEST ONLY
-	DisableRedisListPubSub   bool // TEST ONLY
-}
-
 type ExecutionServer struct {
-	env   environment.Env
-	cache interfaces.Cache
-	// We are in the process of transitioning execution status updates from using Redis lists to Redis streams.
-	// The list PubSub will go away soon.
-	listPubSub   interfaces.PubSub    // OPTIONAL
-	streamPubSub *pubsub.StreamPubSub // OPTIONAL
+	env          environment.Env
+	cache        interfaces.Cache
+	streamPubSub *pubsub.StreamPubSub
 	// If enabled, users may register their own executors.
 	// When enabled, the executor group ID becomes part of the executor key.
 	enableUserOwnedExecutors bool
 }
 
 func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
-	return NewExecutionServerWithOptions(env, &Options{})
-}
-
-func NewExecutionServerWithOptions(env environment.Env, options *Options) (*ExecutionServer, error) {
 	cache := env.GetCache()
 	if cache == nil {
 		return nil, fmt.Errorf("A cache is required to enable the RemoteExecutionServer")
@@ -165,15 +123,7 @@ func NewExecutionServerWithOptions(env environment.Env, options *Options) (*Exec
 		env:                      env,
 		cache:                    cache,
 		enableUserOwnedExecutors: env.GetConfigurator().GetRemoteExecutionConfig().EnableUserOwnedExecutors,
-	}
-
-	if !options.DisableRedisStreamPubSub && !env.GetConfigurator().GetRemoteExecutionConfig().DisableRedisStreamPubSub {
-		log.Info("Enabling PubSub stream based execution status updates.")
-		es.streamPubSub = pubsub.NewStreamPubSub(env.GetRemoteExecutionRedisPubSubClient())
-	}
-	if !options.DisableRedisListPubSub && !env.GetConfigurator().GetRemoteExecutionConfig().DisableRedisListPubSub {
-		log.Info("Enabling PubSub list based execution status updates.")
-		es.listPubSub = pubsub.NewListPubSub(env.GetRemoteExecutionRedisPubSubClient())
+		streamPubSub:             pubsub.NewStreamPubSub(env.GetRemoteExecutionRedisPubSubClient()),
 	}
 	return es, nil
 }
@@ -261,69 +211,6 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 	})
 }
 
-func (s *ExecutionServer) readExecution(ctx context.Context, executionID string) (*tables.Execution, error) {
-	if s.env.GetDBHandle() == nil {
-		return nil, status.FailedPreconditionError("database not configured")
-	}
-	te := &tables.Execution{}
-	existingRow := s.env.GetDBHandle().Raw(`SELECT * FROM Executions as e
-                                                WHERE e.execution_id = ?`, executionID)
-	if err := existingRow.Take(te).Error; err != nil {
-		return nil, err
-	}
-	return te, nil
-}
-
-func (s *ExecutionServer) operationFromExecution(ctx context.Context, te *tables.Execution) (*longrunning.Operation, error) {
-	instanceName, d, err := digest.ExtractDigestFromUploadResourceName(te.ExecutionID)
-	if err != nil {
-		return nil, err
-	}
-	stage := repb.ExecutionStage_Value(te.Stage)
-	metadata, err := ptypes.MarshalAny(&repb.ExecuteOperationMetadata{
-		Stage:        stage,
-		ActionDigest: d,
-	})
-	if err != nil {
-		return nil, err
-	}
-	op := &longrunning.Operation{
-		Name:     te.ExecutionID,
-		Metadata: metadata,
-	}
-
-	details := &anypb.Any{}
-	if err := proto.Unmarshal(te.SerializedStatusDetails, details); err != nil {
-		return nil, err
-	}
-
-	er := &repb.ExecuteResponse{
-		CachedResult: te.CachedResult,
-		Status:       &statuspb.Status{Code: te.StatusCode, Message: te.StatusMessage, Details: []*anypb.Any{details}},
-	}
-	if te.StatusCode == 0 && stage == repb.ExecutionStage_COMPLETED {
-		adInstanceDigest := digest.NewInstanceNameDigest(d, instanceName)
-		// It is OK to use the unvalidated ActionResult here because the
-		// execution has just COMPLETED and all action result contents
-		// were *just* written to the cache.
-		actionResult, err := s.getUnvalidatedActionResult(ctx, adInstanceDigest)
-		if err != nil {
-			return nil, err
-		}
-		er.Result = actionResult
-	}
-	result, err := ptypes.MarshalAny(er)
-	if err != nil {
-		return nil, err
-	}
-	op.Result = &longrunning.Operation_Response{Response: result}
-
-	if stage == repb.ExecutionStage_COMPLETED {
-		op.Done = true
-	}
-	return op, nil
-}
-
 // getUnvalidatedActionResult fetches an action result from the cache but does
 // not validate it.
 // N.B. This should only be used if the calling code has already ensured the
@@ -387,10 +274,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if err != nil {
 		return "", err
 	}
-	invocationID := ""
-	if rmd := digest.GetRequestMetadata(ctx); rmd != nil {
-		invocationID = rmd.GetToolInvocationId()
-	}
+	invocationID := bazel_request.GetInvocationID(ctx)
 
 	if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
 		return "", err
@@ -481,10 +365,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	waitReq := repb.WaitExecutionRequest{
 		Name: executionID,
 	}
-	return s.waitExecution(&waitReq, stream, waitOpts{
-		enableDBFallback: false,
-		isExecuteRequest: true,
-	})
+	return s.waitExecution(&waitReq, stream, waitOpts{isExecuteRequest: true})
 }
 
 // WaitExecution waits for an execution operation to complete. When the client initially
@@ -494,13 +375,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 // server MAY choose to stream additional updates as execution progresses,
 // such as to provide an update as to the state of the execution.
 func (s *ExecutionServer) WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error {
-	return s.waitExecution(req, stream, waitOpts{
-		// Enable database fallback for WaitExecution requests if list-based pubsub is being used.
-		// If Bazel switches from Execute to WaitExecution due to an error, there's a small chance that the pending
-		// Execute call could consume a message from the PubSub queue before WaitExecution sees it.
-		enableDBFallback: s.listPubSub != nil,
-		isExecuteRequest: false,
-	})
+	return s.waitExecution(req, stream, waitOpts{isExecuteRequest: false})
 }
 
 type InProgressExecution struct {
@@ -508,18 +383,6 @@ type InProgressExecution struct {
 	clientStream streamLike
 	lastStage    repb.ExecutionStage_Value
 	opName       string
-}
-
-func (e *InProgressExecution) updateFromDB(ctx context.Context) (done bool, err error) {
-	execution, err := e.server.readExecution(ctx, e.opName)
-	if err != nil {
-		return true, status.NotFoundErrorf("WaitExecution: operation %q not found: %s", e.opName, err)
-	}
-	op, err := e.server.operationFromExecution(ctx, execution)
-	if err != nil {
-		return true, err
-	}
-	return e.processOpUpdate(op)
 }
 
 func (e *InProgressExecution) processSerializedOpUpdate(serializedOp string) (done bool, err error) {
@@ -562,10 +425,20 @@ func (e *InProgressExecution) processOpUpdate(op *longrunning.Operation) (done b
 }
 
 type waitOpts struct {
-	// Whether we should fall back to checking execution status in the database in addition to PubSub.
-	enableDBFallback bool
 	// Indicates whether the wait is being called from Execute or WaitExecution RPC.
 	isExecuteRequest bool
+}
+
+func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
+	if a := s.env.GetAuthenticator(); a != nil {
+		user, err := a.AuthenticatedUser(ctx)
+		if err != nil {
+			log.Warningf("Could not determine groupID for metrics: %s", err)
+			return "unknown"
+		}
+		return user.GetGroupID()
+	}
+	return ""
 }
 
 func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream streamLike, opts waitOpts) error {
@@ -581,31 +454,15 @@ func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream s
 		opName:       req.GetName(),
 	}
 
-	var streamPubSubChan <-chan string
-	if s.streamPubSub != nil {
-		var subscriber interfaces.Subscriber
-		if opts.isExecuteRequest {
-			subscriber = s.streamPubSub.SubscribeHead(ctx, redisKeyForTaskStatusStream(req.GetName()))
-		} else {
-			// If this is a WaitExecution RPC, start the subscription from the last published status, inclusive.
-			subscriber = s.streamPubSub.SubscribeTail(ctx, redisKeyForTaskStatusStream(req.GetName()))
-		}
-		defer subscriber.Close()
-		streamPubSubChan = subscriber.Chan()
+	var subscriber interfaces.Subscriber
+	if opts.isExecuteRequest {
+		subscriber = s.streamPubSub.SubscribeHead(ctx, redisKeyForTaskStatusStream(req.GetName()))
 	} else {
-		// Dummy channel that will never return anything.
-		streamPubSubChan = make(<-chan string)
+		// If this is a WaitExecution RPC, start the subscription from the last published status, inclusive.
+		subscriber = s.streamPubSub.SubscribeTail(ctx, redisKeyForTaskStatusStream(req.GetName()))
 	}
-
-	var listPubSubChan <-chan string
-	if s.listPubSub != nil {
-		subscriber := s.listPubSub.Subscribe(ctx, redisKeyForTaskStatus(req.GetName()))
-		defer subscriber.Close()
-		listPubSubChan = subscriber.Chan()
-	} else {
-		// Dummy channel that will never return anything.
-		listPubSubChan = make(<-chan string)
-	}
+	defer subscriber.Close()
+	streamPubSubChan := subscriber.Chan()
 
 	if opts.isExecuteRequest {
 		// Send a best-effort initial "in progress" update to client.
@@ -624,35 +481,17 @@ func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream s
 		}
 	}
 
-	metrics.RemoteExecutionWaitingExecutionResult.Inc()
-	defer metrics.RemoteExecutionWaitingExecutionResult.Dec()
+	groupID := s.getGroupIDForMetrics(ctx)
+	metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Inc()
+	defer metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Dec()
 
 	for {
-		if opts.enableDBFallback {
-			// Run once initially, in case the task finished before we subscribed to pubsub.
-			if done, err := e.updateFromDB(ctx); done {
-				log.Debugf("WaitExecution %q: progress loop exited: err: %s, done: %t", req.GetName(), err, done)
-				return err
-			}
-		}
 		for {
-			done := false
-			select {
-			case serializedOp, ok := <-streamPubSubChan:
-				if !ok {
-					return status.UnavailableErrorf("Stream PubSub channel closed for %q", req.GetName())
-				}
-				done, err = e.processSerializedOpUpdate(serializedOp)
-			case serializedOp, ok := <-listPubSubChan:
-				if !ok {
-					return status.UnavailableErrorf("List PubSub channel closed for %q", req.GetName())
-				}
-				done, err = e.processSerializedOpUpdate(serializedOp)
-			case <-time.After(10 * time.Second):
-				if opts.enableDBFallback {
-					done, err = e.updateFromDB(ctx)
-				}
+			serializedOp, ok := <-streamPubSubChan
+			if !ok {
+				return status.UnavailableErrorf("Stream PubSub channel closed for %q", req.GetName())
 			}
+			done, err := e.processSerializedOpUpdate(serializedOp)
 			if done {
 				log.Debugf("WaitExecution %q: progress loop exited: err: %v, done: %t", req.GetName(), err, done)
 				return err
@@ -735,26 +574,13 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			}
 		}
 
-		if s.streamPubSub != nil {
-			data, err := proto.Marshal(op)
-			if err != nil {
-				return err
-			}
-			if err := s.streamPubSub.Publish(stream.Context(), redisKeyForTaskStatusStream(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
-				log.Warningf("Error publishing task %q on stream pubsub: %s", taskID, err)
-				return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
-			}
+		data, err := proto.Marshal(op)
+		if err != nil {
+			return err
 		}
-
-		if s.listPubSub != nil {
-			data, err := proto.Marshal(op)
-			if err != nil {
-				return err
-			}
-			if err := s.listPubSub.Publish(stream.Context(), redisKeyForTaskStatus(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
-				log.Warningf("Error publishing task %q on list pubsub: %s", taskID, err)
-				return status.InternalErrorf("Error publishing task %q on list pubsub: %s", taskID, err)
-			}
+		if err := s.streamPubSub.Publish(stream.Context(), redisKeyForTaskStatusStream(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
+			log.Warningf("Error publishing task %q on stream pubsub: %s", taskID, err)
+			return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
 		}
 
 		if stage == repb.ExecutionStage_COMPLETED {

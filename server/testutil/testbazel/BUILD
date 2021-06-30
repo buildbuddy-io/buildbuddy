@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/bazel",
+        "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )

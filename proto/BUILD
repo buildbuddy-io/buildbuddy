@@ -102,6 +102,16 @@ proto_library(
 )
 
 proto_library(
+    name = "eventlog_proto",
+    srcs = [
+        "eventlog.proto",
+    ],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+proto_library(
     name = "workflow_proto",
     srcs = [
         "workflow.proto",
@@ -109,6 +119,11 @@ proto_library(
     deps = [
         ":context_proto",
     ],
+)
+
+proto_library(
+    name = "vmexec_proto",
+    srcs = ["vmexec.proto"],
 )
 
 proto_library(
@@ -255,7 +270,13 @@ proto_library(
     srcs = ["scheduler.proto"],
     deps = [
         ":context_proto",
+        ":trace_proto",
     ],
+)
+
+proto_library(
+    name = "trace_proto",
+    srcs = ["trace.proto"],
 )
 
 proto_library(
@@ -345,6 +366,22 @@ go_proto_library(
         ":context_go_proto",
         "//proto/api/v1:common_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "eventlog_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/eventlog",
+    proto = ":eventlog_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "vmexec_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/vmexec",
+    proto = ":vmexec_proto",
 )
 
 go_proto_library(
@@ -517,7 +554,15 @@ go_proto_library(
     proto = ":scheduler_proto",
     deps = [
         ":context_go_proto",
+        ":trace_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "trace_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/trace",
+    proto = ":trace_proto",
 )
 
 go_proto_library(
@@ -562,6 +607,11 @@ ts_proto_library(
 ts_proto_library(
     name = "target_ts_proto",
     proto = ":target_proto",
+)
+
+ts_proto_library(
+    name = "eventlog_ts_proto",
+    proto = ":eventlog_proto",
 )
 
 ts_proto_library(

@@ -183,28 +183,6 @@ func ExtractDigestFromActionCacheResourceName(resourceName string) (string, *rep
 	return extractDigest(resourceName, actionCacheRegex)
 }
 
-// This is probably the wrong place for this, but works for now.
-func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
-	if grpcMD, ok := gmetadata.FromIncomingContext(ctx); ok {
-		rmdVals := grpcMD["build.bazel.remote.execution.v2.requestmetadata-bin"]
-		for _, rmdVal := range rmdVals {
-			rmd := &repb.RequestMetadata{}
-			if err := proto.Unmarshal([]byte(rmdVal), rmd); err == nil {
-				return rmd
-			}
-		}
-	}
-	return nil
-}
-
-func GetInvocationIDFromMD(ctx context.Context) string {
-	iid := ""
-	if rmd := GetRequestMetadata(ctx); rmd != nil {
-		iid = rmd.GetToolInvocationId()
-	}
-	return iid
-}
-
 func IsCacheDebuggingEnabled(ctx context.Context) bool {
 	if grpcMD, ok := gmetadata.FromIncomingContext(ctx); ok {
 		debugCacheHitsValue := grpcMD["debug-cache-hits"]

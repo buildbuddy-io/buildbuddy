@@ -24,12 +24,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbeclient"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/histogram"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"github.com/google/uuid"
 	"github.com/mattn/go-shellwords"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -894,6 +897,17 @@ func main() {
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
+
+	invocationId := uuid.New().String()
+	log.Infof("Invocation ID: %s", invocationId)
+	md := &repb.RequestMetadata{
+		ToolInvocationId: invocationId,
+	}
+	mdBin, err := proto.Marshal(md)
+	if err != nil {
+		log.Fatalf("Could not set up metadata: %s", err)
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, bazel_request.RequestMetadataKey, string(mdBin))
 
 	gen := newRunner(source, workload)
 	err = gen.run(ctx)

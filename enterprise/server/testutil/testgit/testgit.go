@@ -39,9 +39,6 @@ func (p *FakeProvider) MatchRepoURL(u *url.URL) bool {
 func (p *FakeProvider) MatchWebhookRequest(req *http.Request) bool {
 	return true
 }
-func (p *FakeProvider) IsRepoPrivate(ctx context.Context, accessToken, repoURL string) (bool, error) {
-	return false, nil
-}
 func (p *FakeProvider) ParseWebhookData(req *http.Request) (*interfaces.WebhookData, error) {
 	return nil, status.UnimplementedError("Not implemented")
 }

@@ -136,6 +136,9 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	if group_id := req.GetQuery().GetGroupId(); group_id != "" {
 		q.AddWhereClause("i.group_id = ?", group_id)
 	}
+	if role := req.GetQuery().GetRole(); role != "" {
+		q.AddWhereClause("i.role = ?", role)
+	}
 
 	// Always add permissions check.
 	addPermissionsCheckToQuery(tu, q)

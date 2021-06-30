@@ -171,7 +171,14 @@ export default class EnterpriseRootComponent extends React.Component {
                 {historyHost && (
                   <HistoryComponent user={this.state.user} hostname={historyHost} hash={this.state.hash} />
                 )}
-                {historyRepo && <HistoryComponent user={this.state.user} repo={historyRepo} hash={this.state.hash} />}
+                {historyRepo && (
+                  <HistoryComponent
+                    user={this.state.user}
+                    repo={historyRepo}
+                    hash={this.state.hash}
+                    search={this.state.search}
+                  />
+                )}
                 {historyCommit && (
                   <HistoryComponent user={this.state.user} commit={historyCommit} hash={this.state.hash} />
                 )}

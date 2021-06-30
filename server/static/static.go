@@ -89,9 +89,11 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 
 	userOwnedExecutorsEnabled := false
 	executorKeyCreationEnabled := false
+	workflowsEnabled := false
 	if reConf := env.GetConfigurator().GetRemoteExecutionConfig(); reConf != nil {
 		userOwnedExecutorsEnabled = reConf.EnableUserOwnedExecutors
 		executorKeyCreationEnabled = reConf.EnableExecutorKeyCreation
+		workflowsEnabled = reConf.EnableWorkflows
 	}
 
 	config := cfgpb.FrontendConfig{
@@ -103,6 +105,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 		TestDashboardEnabled:       env.GetConfigurator().EnableTargetTracking(),
 		UserOwnedExecutorsEnabled:  userOwnedExecutorsEnabled,
 		ExecutorKeyCreationEnabled: executorKeyCreationEnabled,
+		WorkflowsEnabled:           workflowsEnabled,
 	}
 	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendTemplateData{
 		Config:           &config,

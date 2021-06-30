@@ -14,7 +14,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -41,7 +40,7 @@ import (
 )
 
 const (
-	workflowsImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1"
+	workflowsImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.7"
 )
 
 var (
@@ -121,16 +120,12 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 		return nil, status.InvalidArgumentError("A repo URL is required to create a new workflow.")
 	}
 
-	// Ensure the request is authenticated so some user can own this workflow.
-	var permissions *perms.UserGroupPerm
-	groupID := req.GetRequestContext().GetGroupId()
-	if groupID == "" {
-		return nil, status.InvalidArgumentError("Request context is missing group ID.")
-	}
-	if err := perms.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
+	// Ensure the request is authenticated so some group can own this workflow.
+	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env, req.GetRequestContext())
+	if err != nil {
 		return nil, err
 	}
-	permissions = perms.GroupAuthPermissions(groupID)
+	permissions := perms.GroupAuthPermissions(groupID)
 
 	// Do a quick check to see if this is a valid repo that we can actually access.
 	repoURL := repoReq.GetRepoUrl()
@@ -261,16 +256,22 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	if err := ws.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
+	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env, req.GetRequestContext())
+	if err != nil {
+		return nil, err
+	}
 
 	rsp := &wfpb.GetWorkflowsResponse{}
 	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM Workflows`)
+	// Respect selected group ID.
+	q.AddWhereClause(`group_id = ?`, groupID)
 	// Adds user / permissions check.
 	if err := perms.AddPermissionsCheckToQuery(ctx, ws.env, q); err != nil {
 		return nil, err
 	}
 	q.SetOrderBy("created_at_usec" /*ascending=*/, true)
 	qStr, qArgs := q.Build()
-	err := ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
+	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 		rows, err := tx.Raw(qStr, qArgs...).Rows()
 		if err != nil {
 			return err
@@ -343,29 +344,15 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 
 	// Execute
-	repoURL, err := gitutil.ParseRepoURL(wf.RepoURL)
-	if err != nil {
-		return nil, err
-	}
-	provider, err := ws.providerForRepo(repoURL)
-	if err != nil {
-		return nil, err
-	}
-	isRepoPrivate, err := provider.IsRepoPrivate(ctx, wf.AccessToken, wf.RepoURL)
-	// If IsRepoPrivate is not yet implemented, treat it as untrusted, meaning
-	// secrets will not be passed to the CI runner.
-	if err != nil && !status.IsUnimplementedError(err) {
-		return nil, status.WrapErrorf(err, "failed to determine whether repo is private")
-	}
 	// TODO: Refactor to avoid using this WebhookData struct in the case of manual
 	// workflow execution, since there are no webhooks involved when executing a
 	// workflow manually.
 	wd := &interfaces.WebhookData{
-		PushedBranch:  req.GetBranch(),
-		TargetBranch:  req.GetBranch(),
-		RepoURL:       wf.RepoURL,
-		SHA:           req.GetCommitSha(),
-		IsRepoPrivate: isRepoPrivate,
+		PushedBranch: req.GetBranch(),
+		TargetBranch: req.GetBranch(),
+		RepoURL:      wf.RepoURL,
+		SHA:          req.GetCommitSha(),
+		IsTrusted:    true,
 	}
 	invocationUUID, err := guuid.NewRandom()
 	if err != nil {
@@ -464,16 +451,12 @@ func (ws *workflowService) GetRepos(ctx context.Context, req *wfpb.GetReposReque
 }
 
 func (ws *workflowService) gitHubTokenForAuthorizedGroup(ctx context.Context, reqCtx *ctxpb.RequestContext) (string, error) {
-	_, err := perms.AuthenticatedUser(ctx, ws.env)
-	if err != nil {
-		return "", err
-	}
 	d := ws.env.GetUserDB()
 	if d == nil {
 		return "", status.FailedPreconditionError("Missing UserDB")
 	}
-	groupID := reqCtx.GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
+	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env, reqCtx)
+	if err != nil {
 		return "", err
 	}
 	g, err := d.GetGroupByID(ctx, groupID)
@@ -553,7 +536,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		return nil, err
 	}
 	envVars := []*repb.Command_EnvironmentVariable{}
-	if webhook_data.IsTrusted(wd) {
+	if wd.IsTrusted {
 		envVars = append(envVars, []*repb.Command_EnvironmentVariable{
 			{Name: "BUILDBUDDY_API_KEY", Value: ak.Value},
 			{Name: "REPO_USER", Value: wf.Username},
@@ -573,6 +556,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--workflow_id=" + wf.WorkflowID,
 			"--trigger_event=" + wd.EventName,
 			"--trigger_branch=" + wd.TargetBranch,
+			"--bazel_command=" + ws.ciRunnerBazelCommand(),
 			"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		}, extraArgs...),
 		Platform: &repb.Platform{
@@ -625,6 +609,14 @@ func (ws *workflowService) ciRunnerDebugMode() bool {
 		return false
 	}
 	return cfg.WorkflowsCIRunnerDebug
+}
+
+func (ws *workflowService) ciRunnerBazelCommand() string {
+	cfg := ws.env.GetConfigurator().GetRemoteExecutionConfig()
+	if cfg == nil {
+		return ""
+	}
+	return cfg.WorkflowsCIRunnerBazelCommand
 }
 
 func runnerBinaryFile() (*os.File, error) {

@@ -11,7 +11,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
-        "//server/remote_cache/digest",
+        "//server/util/bazel_request",
         "@com_github_prometheus_client_golang//prometheus",
     ],
 )
