@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -124,7 +123,7 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 
 func copyOutputs(reader io.Reader, result *interfaces.CommandResult) error {
 	var stdout, stderr bytes.Buffer
-	_, err := stdcopy.StdCopy(io.MultiWriter(&stdout, os.Stdout), io.MultiWriter(&stderr, os.Stderr), reader)
+	_, err := stdcopy.StdCopy(&stdout, &stderr, reader)
 	result.Stdout = stdout.Bytes()
 	result.Stderr = stderr.Bytes()
 	return err
