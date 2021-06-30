@@ -70,7 +70,9 @@ export default class TrendsComponent extends React.Component {
     request.query = new invocation.TrendQuery();
 
     if (this.state.filterOnlyCI) {
-      request.query.role = "CI";
+      request.query.role = ["CI"];
+    } else {
+      request.query.role = ["", "CI"];
     }
 
     if (this.props.search.get("user")) {

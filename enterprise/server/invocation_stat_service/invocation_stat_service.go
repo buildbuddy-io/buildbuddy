@@ -102,8 +102,13 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 		q.AddWhereClause("commit = ?", commitSHA)
 	}
 
-	if role := req.GetQuery().GetRole(); role != "" {
-		q.AddWhereClause("role = ?", role)
+	roleClauses := query_builder.OrClauses{}
+	for _, role := range req.GetQuery().GetRole() {
+		roleClauses.AddOr(`role = ?`, role)
+	}
+	roleQuery, roleArgs := roleClauses.Build()
+	if roleQuery != "" {
+		q.AddWhereClause(fmt.Sprintf("(%s)", roleQuery), roleArgs...)
 	}
 
 	q.AddWhereClause(`updated_at_usec > ?`, time.Now().Add(-lookbackWindowDays).UnixNano()/1000)
