@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/docker/docker/pkg/stdcopy"
 	"google.golang.org/grpc/codes"
 
@@ -68,6 +69,9 @@ func NewDockerContainer(client *dockerclient.Client, image, hostRootDir string, 
 }
 
 func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string) *interfaces.CommandResult {
+	ctx, span := tracing.StartSpan(ctx, "docker.Run")
+	defer span.End()
+
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -79,6 +83,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
+	span.AddEvent("Pull image")
 	// explicitly pull the image before running to avoid the
 	// pull output logs spilling into the execution logs.
 	if err := r.PullImageIfNecessary(ctx); err != nil {
@@ -91,6 +96,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		commandutil.EnvStringList(command),
 		workDir,
 	)
+	span.AddEvent("Create container")
 	createResponse, err := r.client.ContainerCreate(
 		ctx,
 		containerCfg,
@@ -104,6 +110,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
+	span.AddEvent("Start container")
 	cid := createResponse.ID
 	err = r.client.ContainerStart(ctx, cid, dockertypes.ContainerStartOptions{})
 	if err != nil {
@@ -128,6 +135,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		}()
 	}()
 
+	span.AddEvent("Wait for container to finish")
 	statusCh, errCh := r.client.ContainerWait(ctx, cid, dockercontainer.WaitConditionNotRunning)
 
 	select {
@@ -149,6 +157,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 			result.Error = wrapDockerErr(err, "failed to get docker container logs")
 			return result
 		}
+		span.AddEvent("Copy container logs")
 		err = copyOutputs(logs, result)
 		if closeErr := logs.Close(); closeErr != nil {
 			log.Warningf("Failed to close docker logs: %s", closeErr)

@@ -159,3 +159,7 @@ func ExtractProtoTraceMetadata(ctx context.Context, metadata *tpb.Metadata) cont
 	p := otel.GetTextMapPropagator()
 	return p.Extract(ctx, newTraceMetadataProtoCarrier(metadata, nil))
 }
+
+func StartSpan(ctx context.Context, name string) (context.Context, trace.Span) {
+	return otel.GetTracerProvider().Tracer("buildbuddy.io").Start(ctx, name)
+}

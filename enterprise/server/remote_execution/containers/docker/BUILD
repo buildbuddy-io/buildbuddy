@@ -13,6 +13,7 @@ go_library(
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
+        "//server/util/tracing",
         "@com_github_docker_docker//api/types:go_default_library",
         "@com_github_docker_docker//api/types/container:go_default_library",
         "@com_github_docker_docker//client:go_default_library",
