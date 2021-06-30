@@ -59,7 +59,7 @@ The solution here was simple: run Workflows on executors in the same datacenters
 
 With GitHub actions or other CI solutions, the network connection might
 be fast (particularly after the recent network optimizations we made in
-[BuildBuddy v2](introducing-buildbuddy-v2)) &mdash; but not nearly as fast
+[BuildBuddy v2](/blog/introducing-buildbuddy-v2)) &mdash; but not nearly as fast
 as having workflow runners on the same local network as BuildBuddy
 itself.
 
