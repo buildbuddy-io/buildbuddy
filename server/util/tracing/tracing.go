@@ -17,10 +17,16 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/metadata"
 
 	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+)
+
+const (
+	traceHeader           = "x-buildbuddy-trace"
+	forceTraceHeaderValue = "force"
 )
 
 // fractionSampler allows specifying a default sampling fraction as well as overrides based on the span name.
@@ -29,9 +35,10 @@ type fractionSampler struct {
 	traceIDUpperBound          uint64
 	traceIDUpperBoundOverrides map[string]uint64
 	description                string
+	disableForcedTraces        bool
 }
 
-func newFractionSampler(fraction float64, fractionOverrides map[string]float64) *fractionSampler {
+func newFractionSampler(fraction float64, fractionOverrides map[string]float64, disableForcedTraces bool) *fractionSampler {
 	configDescription := fmt.Sprintf("default=%f", fraction)
 	boundOverrides := make(map[string]uint64)
 	for n, f := range fractionOverrides {
@@ -43,17 +50,40 @@ func newFractionSampler(fraction float64, fractionOverrides map[string]float64) 
 		traceIDUpperBound:          uint64(fraction * math.MaxInt64),
 		traceIDUpperBoundOverrides: boundOverrides,
 		description:                fmt.Sprintf("FractionSampler(%s)", configDescription),
+		disableForcedTraces:        disableForcedTraces,
 	}
 }
 
+func (s *fractionSampler) checkForcedTrace(parameters sdktrace.SamplingParameters) bool {
+	if s.disableForcedTraces {
+		return false
+	}
+	md, ok := metadata.FromIncomingContext(parameters.ParentContext)
+	if !ok {
+		// Not an incoming gRPC request
+		return false
+	}
+	hdrs, ok := md[traceHeader]
+	return ok && len(hdrs) > 0 && hdrs[0] == forceTraceHeaderValue
+}
+
 func (s *fractionSampler) ShouldSample(parameters sdktrace.SamplingParameters) sdktrace.SamplingResult {
+	psc := trace.SpanContextFromContext(parameters.ParentContext)
+
+	// Check if sampling is forced via gRPC header.
+	if s.checkForcedTrace(parameters) {
+		return sdktrace.SamplingResult{
+			Decision:   sdktrace.RecordAndSample,
+			Tracestate: psc.TraceState(),
+		}
+	}
+
 	bound := s.traceIDUpperBound
 	if boundOverride, ok := s.traceIDUpperBoundOverrides[parameters.Name]; ok {
 		bound = boundOverride
 	}
 
 	x := binary.BigEndian.Uint64(parameters.TraceID[0:8]) >> 1
-	psc := trace.SpanContextFromContext(parameters.ParentContext)
 	decision := sdktrace.Drop
 	if x < bound {
 		decision = sdktrace.RecordAndSample
@@ -92,7 +122,7 @@ func Configure(configurator *config.Configurator) error {
 		}
 		fractionOverrides[name] = fraction
 	}
-	sampler := newFractionSampler(configurator.GetTraceFraction(), fractionOverrides)
+	sampler := newFractionSampler(configurator.GetTraceFraction(), fractionOverrides, configurator.GetTraceDisableForced())
 
 	var resourceAttrs []attribute.KeyValue
 	if configurator.GetTraceServiceName() != "" {
