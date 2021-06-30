@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,18 +17,7 @@ import (
 	dockerclient "github.com/docker/docker/client"
 )
 
-func makeRootDir(t *testing.T) string {
-	rootDir, err := ioutil.TempDir("/tmp", "buildbuddy_docker_test_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		os.RemoveAll(rootDir)
-	})
-	return rootDir
-}
-
-func makeWorkDir(t *testing.T, rootDir string) string {
+func makeWorkDir(t testing.TB, rootDir string) string {
 	workDir, err := ioutil.TempDir(rootDir, "ws_*")
 	if err != nil {
 		t.Fatal(err)
@@ -43,39 +32,6 @@ func writeFile(t *testing.T, parentDir, fileName, content string) {
 	}
 }
 
-func TestDockerRun(t *testing.T) {
-	socket := "/var/run/docker.sock"
-	dc, err := dockerclient.NewClientWithOpts(
-		dockerclient.WithHost(fmt.Sprintf("unix://%s", socket)),
-		dockerclient.WithAPIVersionNegotiation(),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rootDir := makeRootDir(t)
-	workDir := makeWorkDir(t, rootDir)
-	writeFile(t, workDir, "world.txt", "world")
-	cfg := &docker.DockerOptions{Socket: socket}
-	ctx := context.Background()
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "GREETING", Value: "Hello"},
-		},
-	}
-	expectedResult := &interfaces.CommandResult{
-		ExitCode:           0,
-		Stdout:             []byte("Hello world"),
-		Stderr:             []byte("foo"),
-		CommandDebugString: "(docker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
-	}
-	c := docker.NewDockerContainer(dc, "docker.io/library/busybox", rootDir, cfg)
-
-	res := c.Run(ctx, cmd, workDir)
-
-	assert.Equal(t, expectedResult, res)
-}
-
 func TestDockerLifecycleControl(t *testing.T) {
 	socket := "/var/run/docker.sock"
 	dc, err := dockerclient.NewClientWithOpts(
@@ -85,7 +41,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootDir := makeRootDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	workDir := makeWorkDir(t, rootDir)
 	writeFile(t, workDir, "world.txt", "world")
 	cfg := &docker.DockerOptions{Socket: socket}

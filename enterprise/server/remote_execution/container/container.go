@@ -20,13 +20,6 @@ type Stats struct {
 
 // CommandContainer provides an execution environment for commands.
 type CommandContainer interface {
-	// Run the given command within the container and remove the container after
-	// it is done executing.
-	//
-	// It is approximately the same as calling PullImageIfNecessary, Create,
-	// Exec, then Remove.
-	Run(ctx context.Context, command *repb.Command, workingDir string) *interfaces.CommandResult
-
 	// PullImageIfNecessary pulls the container image if it is not already
 	// available locally.
 	PullImageIfNecessary(ctx context.Context) error
