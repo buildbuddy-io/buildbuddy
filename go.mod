@@ -19,6 +19,7 @@ require (
 	github.com/firecracker-microvm/firecracker-go-sdk v0.22.0
 	github.com/go-git/go-git/v5 v5.2.0
 	github.com/go-redis/redis/v8 v8.10.0
+	github.com/go-redis/redis/extra/redisotel/v8 v8.10.0
 	github.com/gofrs/uuid v3.3.0+incompatible // indirect
 	github.com/golang/protobuf v1.5.2
 	github.com/google/go-cmp v0.5.6
