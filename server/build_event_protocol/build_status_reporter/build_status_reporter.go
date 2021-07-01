@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
@@ -198,6 +199,11 @@ func (r *BuildStatusReporter) githubPayloadFromTestSummaryEvent(event *build_eve
 
 func (r *BuildStatusReporter) githubPayloadFromFinishedEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
 	description := descriptionFromExitCodeName(event.GetFinished().ExitCode.Name)
+	startTime := r.buildEventAccumulator.StartTime()
+	endTime := timeutil.FromMillis(event.GetFinished().GetFinishTimeMillis())
+	if !startTime.IsZero() && endTime.After(startTime) {
+		description = fmt.Sprintf("%s in %s", description, timeutil.ShortFormatDuration(endTime.Sub(startTime)))
+	}
 	if event.GetFinished().OverallSuccess {
 		return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, github.SuccessState)
 	}
@@ -318,7 +324,7 @@ func descriptionFromOverallStatus(overallStatus build_event_stream.TestStatus) s
 
 func descriptionFromExitCodeName(exitCodeName string) string {
 	if exitCodeName == "OK" {
-		return exitCodeName
+		return "Successful"
 	}
 	return strings.Title(strings.ToLower(strings.ReplaceAll(exitCodeName, "_", " ")))
 }
