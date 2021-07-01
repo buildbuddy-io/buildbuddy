@@ -1,4 +1,4 @@
-import React, { CSSProperties } from "react";
+import React from "react";
 import format from "../../../app/format/format";
 import router from "../../../app/router/router";
 import { invocation } from "../../../proto/invocation_ts_proto";
