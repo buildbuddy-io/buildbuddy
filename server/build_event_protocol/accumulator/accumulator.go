@@ -3,9 +3,11 @@ package accumulator
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
@@ -41,6 +43,7 @@ type BEValues struct {
 	valuesMap               map[string]string
 	invocationID            string
 	sawWorkspaceStatusEvent bool
+	buildStartTime          time.Time
 }
 
 func NewBEValues(invocationID string) *BEValues {
@@ -54,7 +57,7 @@ func NewBEValues(invocationID string) *BEValues {
 func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
-		v.populateWorkspaceInfoFromStartedEvent(event)
+		v.handleStartedEvent(event)
 	case *build_event_stream.BuildEvent_StructuredCommandLine:
 		v.populateWorkspaceInfoFromStructuredCommandLine(p.StructuredCommandLine)
 	case *build_event_stream.BuildEvent_BuildMetadata:
@@ -69,7 +72,9 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
 func (v *BEValues) InvocationID() string {
 	return v.invocationID
 }
-
+func (v *BEValues) StartTime() time.Time {
+	return v.buildStartTime
+}
 func (v *BEValues) RepoURL() string {
 	return v.getStringValue(repoURLFieldName)
 }
@@ -122,9 +127,10 @@ func (v *BEValues) setStringValue(fieldName, proposedValue string) bool {
 	return true
 }
 
-func (v *BEValues) populateWorkspaceInfoFromStartedEvent(event *build_event_stream.BuildEvent) {
+func (v *BEValues) handleStartedEvent(event *build_event_stream.BuildEvent) {
 	v.setStringValue(commandFieldName, event.GetStarted().Command)
 	v.setStringValue(patternFieldName, patternFromEvent(event))
+	v.buildStartTime = timeutil.UnixMillis(event.GetStarted().GetStartTimeMillis())
 }
 
 func (v *BEValues) populateWorkspaceInfoFromStructuredCommandLine(commandLine *command_line.CommandLine) {
