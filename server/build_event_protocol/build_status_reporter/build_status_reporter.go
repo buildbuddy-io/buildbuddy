@@ -325,7 +325,7 @@ func descriptionFromOverallStatus(overallStatus build_event_stream.TestStatus) s
 
 func descriptionFromExitCodeName(exitCodeName string) string {
 	if exitCodeName == "OK" {
-		return exitCodeName
+		return "Successful"
 	}
 	return strings.Title(strings.ToLower(strings.ReplaceAll(exitCodeName, "_", " ")))
 }
