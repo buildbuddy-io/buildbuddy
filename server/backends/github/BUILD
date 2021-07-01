@@ -9,6 +9,7 @@ go_library(
         "//server/environment",
         "//server/tables",
         "//server/util/log",
+        "//server/util/perms",
         "//server/util/random",
     ],
 )

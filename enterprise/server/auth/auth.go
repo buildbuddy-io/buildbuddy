@@ -813,7 +813,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	if authError != "" {
 		authErrorDesc := r.URL.Query().Get("error_desc")
 		authErrorDescription := r.URL.Query().Get("error_description")
-		log.Printf("Authenticator returned error: %s (%s %s)", authError, authErrorDesc, authErrorDescription)
+		log.Warningf("Authenticator returned error: %s (%s %s)", authError, authErrorDesc, authErrorDescription)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}

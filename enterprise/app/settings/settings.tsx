@@ -44,6 +44,14 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
     return path;
   }
 
+  private gitHubLinkUrl(): string {
+    const params = new URLSearchParams({
+      group_id: this.props.user?.selectedGroup?.id,
+      redirect_url: window.location.href,
+    });
+    return `/auth/github/link/?${params}`;
+  }
+
   render() {
     const activeTabId = this.getActiveTabId();
 
@@ -125,7 +133,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                         <FilledButton className="settings-button success">GitHub account linked</FilledButton>
                       ) : (
                         <FilledButton className="settings-button settings-link-button">
-                          <a href="/auth/github/link/">Link GitHub account</a>
+                          <a href={this.gitHubLinkUrl()}>Link GitHub account</a>
                         </FilledButton>
                       )}
                     </>
