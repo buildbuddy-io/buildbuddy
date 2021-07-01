@@ -155,7 +155,7 @@ func getPreferredNodeLimit(cmd *repb.Command) int {
 func (tr *taskRouter) routingKey(ctx context.Context, cmd *repb.Command, remoteInstanceName string) (string, error) {
 	parts := []string{"task_route"}
 
-	if u, _ := perms.AuthenticatedUser(ctx, tr.env); u != nil {
+	if u, err := perms.AuthenticatedUser(ctx, tr.env); err == nil {
 		parts = append(parts, u.GetGroupID())
 	} else {
 		parts = append(parts, "ANON")
