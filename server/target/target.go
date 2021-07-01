@@ -57,7 +57,7 @@ func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequ
 		return nil, err
 	}
 	startUsec := int64(0)
-	endUsec := int64(time.Now().UnixNano() / 1000)
+	endUsec := timeutil.ToUsec(time.Now())
 	if st := req.GetStartTimeUsec(); st != 0 {
 		startUsec = st
 	}

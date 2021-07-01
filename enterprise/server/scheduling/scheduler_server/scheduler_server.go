@@ -838,7 +838,7 @@ func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadat
 	props := map[string]interface{}{
 		redisTaskProtoField:       serializedTask,
 		redisTaskMetadataField:    serializedMetadata,
-		redisTaskQueuedAtUsec:     time.Now().UnixNano() / 1000,
+		redisTaskQueuedAtUsec:     timeutil.ToUsec(time.Now()),
 		redisTaskAttempCountField: 0,
 	}
 	c, err := s.rdb.HSet(ctx, redisKeyForTask(taskID), props).Result()
@@ -1103,7 +1103,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			}
 
 			// Prometheus: observe queue wait time.
-			ageInMillis := (time.Now().UnixNano() / 1e6) - (task.queuedTimestamp.UnixNano() / 1e6)
+			ageInMillis := time.Since(task.queuedTimestamp) / time.Millisecond
 			queueWaitTimeMs.Observe(float64(ageInMillis))
 			rsp.SerializedTask = task.serializedTask
 		}

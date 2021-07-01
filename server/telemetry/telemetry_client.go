@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/google/uuid"
 
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
@@ -99,7 +100,7 @@ func (t *TelemetryClient) logTelemetryData() {
 		InstallationUuid: t.installationUUID,
 		InstanceUuid:     t.instanceUUID,
 		LogUuid:          getLogUUID(),
-		RecordedAtUsec:   time.Now().UnixNano() / int64(time.Microsecond),
+		RecordedAtUsec:   timeutil.ToUsec(time.Now()),
 		AppVersion:       t.version,
 		AppUrl:           t.env.GetConfigurator().GetAppBuildBuddyURL(),
 		Hostname:         getHostname(),

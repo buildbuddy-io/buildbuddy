@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
@@ -136,7 +137,7 @@ func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocation
 }
 
 func (d *InvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error) {
-	cutoffUsec := cutoffTime.UnixNano() / 1000
+	cutoffUsec := timeutil.ToUsec(cutoffTime)
 	rows, err := d.h.Raw(`SELECT * FROM Invocations as i
                                    WHERE i.created_at_usec < ?
                                    LIMIT ?`, cutoffUsec, limit).Rows()
@@ -167,8 +168,8 @@ func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat
 		WHERE 
 			i.created_at_usec >= ? AND
 			i.created_at_usec < ?`,
-		int64(time.Now().Truncate(24*time.Hour).Add(-24*time.Hour).UnixNano()/1000),
-		int64(time.Now().Truncate(24*time.Hour).UnixNano()/1000))
+		int64(timeutil.ToUsec(time.Now().Truncate(24*time.Hour).Add(-24*time.Hour))),
+		int64(timeutil.ToUsec(time.Now().Truncate(24*time.Hour))))
 
 	if err := counts.Take(stat).Error; err != nil {
 		return err
