@@ -164,6 +164,8 @@ export default class HistoryInvocationCardComponent extends React.Component {
   }
 
   render() {
+    const roleLabel = format.formatRole(this.props.invocation.role);
+
     return (
       <div
         key={this.props.invocation.invocationId}
@@ -182,6 +184,7 @@ export default class HistoryInvocationCardComponent extends React.Component {
           )}
           <div className="titles">
             <div className="title">{this.getTitle()}</div>
+            {roleLabel && <div className={`role-badge ${this.props.invocation.role}`}>{roleLabel}</div>}
             <div className="subtitle">{format.formatTimestampUsec(this.props.invocation.createdAtUsec)}</div>
           </div>
           {!this.props.hover && (
