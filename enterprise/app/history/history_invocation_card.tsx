@@ -1,4 +1,4 @@
-import React from "react";
+import React, { CSSProperties } from "react";
 import format from "../../../app/format/format";
 import router from "../../../app/router/router";
 import { invocation } from "../../../proto/invocation_ts_proto";
@@ -164,6 +164,8 @@ export default class HistoryInvocationCardComponent extends React.Component {
   }
 
   render() {
+    const roleLabel = format.formatRole(this.props.invocation.role);
+
     return (
       <div
         key={this.props.invocation.invocationId}
@@ -182,6 +184,7 @@ export default class HistoryInvocationCardComponent extends React.Component {
           )}
           <div className="titles">
             <div className="title">{this.getTitle()}</div>
+            {roleLabel && <div className={`role-badge ${this.props.invocation.role}`}>{roleLabel}</div>}
             <div className="subtitle">{format.formatTimestampUsec(this.props.invocation.createdAtUsec)}</div>
           </div>
           {!this.props.hover && (
@@ -214,7 +217,7 @@ export default class HistoryInvocationCardComponent extends React.Component {
                   {this.props.invocation.host}
                 </div>
               )}
-              {this.props.invocation.command && (
+              {this.props.invocation.command && this.props.invocation.command != "workflow run" && (
                 <div className="detail">
                   <img className="icon" src="/image/tool-regular.svg" />
                   {this.props.invocation.command}
