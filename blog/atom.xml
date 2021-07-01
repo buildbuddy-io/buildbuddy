@@ -2,7 +2,7 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://docs.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2021-06-30T18:25:02.148Z</updated>
+    <updated>2021-07-01T17:48:39.125Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://docs.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
@@ -11,7 +11,7 @@
         <title type="html"><![CDATA[index]]></title>
         <id>index</id>
         <link href="https://docs.buildbuddy.io/blog/index"/>
-        <updated>2021-06-30T18:25:02.148Z</updated>
+        <updated>2021-07-01T17:48:39.125Z</updated>
         <summary type="html"><![CDATA[Not found!]]></summary>
     </entry>
 </feed>
