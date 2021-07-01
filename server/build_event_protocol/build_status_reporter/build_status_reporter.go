@@ -201,34 +201,15 @@ func (r *BuildStatusReporter) githubPayloadFromTestSummaryEvent(event *build_eve
 func (r *BuildStatusReporter) githubPayloadFromFinishedEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
 	description := descriptionFromExitCodeName(event.GetFinished().ExitCode.Name)
 	startTime := r.buildEventAccumulator.StartTime()
-	endTime := timeutil.UnixMillis(event.GetFinished().GetFinishTimeMillis())
+	endTime := timeutil.FromMillis(event.GetFinished().GetFinishTimeMillis())
 	if !startTime.IsZero() && endTime.After(startTime) {
-		description = fmt.Sprintf("%s in %s", description, shortFormatDuration(endTime.Sub(startTime)))
+		description = fmt.Sprintf("%s in %s", description, timeutil.ShortFormatDuration(endTime.Sub(startTime)))
 	}
 	if event.GetFinished().OverallSuccess {
 		return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, github.SuccessState)
 	}
 
 	return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, github.FailureState)
-}
-
-func shortFormatDuration(d time.Duration) string {
-	if d > 24*time.Hour {
-		return "> 1d"
-	}
-	if d >= 1*time.Hour {
-		return fmt.Sprintf("%dh", d/time.Hour)
-	}
-	if d >= 1*time.Minute {
-		return fmt.Sprintf("%dm", d/time.Minute)
-	}
-	if d >= 1*time.Second {
-		return fmt.Sprintf("%ds", d/time.Second)
-	}
-	if d >= 1*time.Millisecond {
-		return fmt.Sprintf("%dms", d/time.Millisecond)
-	}
-	return "< 1ms"
 }
 
 func (r *BuildStatusReporter) githubPayloadFromAbortedEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
