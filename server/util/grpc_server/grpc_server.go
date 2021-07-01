@@ -50,13 +50,6 @@ func GRPCShutdownFunc(grpcServer *grpc.Server) func(ctx context.Context) error {
 	}
 }
 
-func extractInvocationID(ctx context.Context) []attribute.KeyValue {
-	if iid := bazel_request.GetInvocationID(ctx); iid != "" {
-		return []attribute.KeyValue{attribute.String("invocation_id", iid)}
-	}
-	return nil
-}
-
 func propagateInvocationIDToSpan(ctx context.Context) {
 	invocationId := bazel_request.GetInvocationID(ctx)
 	if invocationId == "" {
