@@ -1,5 +1,7 @@
 FROM gcr.io/cloud-marketplace/google/debian10@sha256:daeac4ec3dea7b7ad6f0fb689c44c02cbc43f3b6af2f0f8d43f499ac790d9298
 
+COPY data/firecracker /usr/bin/firecracker
+
 RUN apt-get update && apt-get install -y \
   rpm curl apt-transport-https ca-certificates gnupg-agent software-properties-common
 
