@@ -171,7 +171,14 @@ export default class EnterpriseRootComponent extends React.Component {
                 {historyHost && (
                   <HistoryComponent user={this.state.user} hostname={historyHost} hash={this.state.hash} />
                 )}
-                {historyRepo && <HistoryComponent user={this.state.user} repo={historyRepo} hash={this.state.hash} />}
+                {historyRepo && (
+                  <HistoryComponent
+                    user={this.state.user}
+                    repo={historyRepo}
+                    hash={this.state.hash}
+                    search={this.state.search}
+                  />
+                )}
                 {historyCommit && (
                   <HistoryComponent user={this.state.user} commit={historyCommit} hash={this.state.hash} />
                 )}
@@ -180,6 +187,7 @@ export default class EnterpriseRootComponent extends React.Component {
                     user={this.state.user}
                     denseModeEnabled={this.state.denseMode}
                     handleDenseModeToggled={this.handleToggleDenseClicked.bind(this)}
+                    path={this.state.path}
                   />
                 )}
                 {orgCreate && <CreateOrgComponent user={this.state.user} />}

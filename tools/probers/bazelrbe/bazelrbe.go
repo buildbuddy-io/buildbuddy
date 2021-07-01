@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -131,6 +132,8 @@ func main() {
 	if *bazelBinary == "" {
 		log.Fatalf("--bazel_binary is required")
 	}
+
+	rand.Seed(time.Now().UnixNano())
 
 	err := runProbe()
 	if err != nil {

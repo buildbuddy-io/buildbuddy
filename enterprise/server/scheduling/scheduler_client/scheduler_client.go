@@ -33,8 +33,6 @@ type Options struct {
 	NodeNameOverride string
 	// TESTING ONLY: overrides the API key sent by the client
 	APIKeyOverride string
-	// enable task streaming
-	EnableWorkStreaming bool
 }
 
 func makeExecutionNode(executorID string, options *Options) (*scpb.ExecutionNode, error) {
@@ -85,7 +83,6 @@ type Registration struct {
 	queueExecutorServer scpb.QueueExecutorServer
 	node                *scpb.ExecutionNode
 	apiKey              string
-	enableWorkStreaming bool
 	shutdownSignal      chan struct{}
 
 	mu        sync.Mutex
@@ -109,50 +106,6 @@ func (r *Registration) Check(ctx context.Context) error {
 		return nil
 	}
 	return errors.New("not registered to scheduler yet")
-}
-
-// maintainRegistration maintains a registration stream with a scheduler server using the older RegisterNode API.
-// Task reservations are sent to the executor separately using the QueueExecutor gRPC service.
-func (r *Registration) maintainRegistration(ctx context.Context) {
-	registrationReq := &scpb.RegisterNodeRequest{
-		NodeAddress: &scpb.NodeAddress{
-			Host: r.node.GetHost(),
-			Port: r.node.GetPort(),
-		},
-		AssignableMemoryBytes: r.node.GetAssignableMemoryBytes(),
-		AssignableMilliCpu:    r.node.GetAssignableMilliCpu(),
-		Os:                    r.node.GetOs(),
-		Arch:                  r.node.GetArch(),
-		Pool:                  r.node.GetPool(),
-		ExecutorId:            r.node.GetExecutorId(),
-	}
-
-	defer r.setConnected(false)
-
-	for {
-		stream, err := r.schedulerClient.RegisterNode(ctx)
-		if err != nil {
-			log.Warningf("Unable to register using RegisterNode RPC, will retry: %s", err)
-			if done := sleepWithContext(ctx, registrationFailureRetryInterval); done {
-				log.Debugf("Context cancelled, cancelling node registration.")
-				return
-			}
-			continue
-		}
-		for {
-			err := stream.Send(registrationReq)
-			if err != nil {
-				log.Errorf("error registering node with scheduler: %s, will retry...", err)
-				break
-			}
-			r.setConnected(true)
-			if done := sleepWithContext(ctx, schedulerCheckInInterval); done {
-				log.Debugf("Context cancelled, cancelling node registration.")
-				return
-			}
-		}
-		r.setConnected(false)
-	}
 }
 
 func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Scheduler_RegisterAndStreamWorkClient, schedulerMsgs chan *scpb.RegisterAndStreamWorkResponse) (bool, error) {
@@ -266,11 +219,7 @@ func (r *Registration) Start(ctx context.Context) {
 	}
 
 	go func() {
-		if r.enableWorkStreaming {
-			r.maintainRegistrationAndStreamWork(ctx)
-		} else {
-			r.maintainRegistration(ctx)
-		}
+		r.maintainRegistrationAndStreamWork(ctx)
 	}()
 }
 
@@ -297,7 +246,6 @@ func NewRegistration(env environment.Env, queueExecutorServer scpb.QueueExecutor
 		queueExecutorServer: queueExecutorServer,
 		node:                node,
 		apiKey:              apiKey,
-		enableWorkStreaming: options.EnableWorkStreaming,
 		shutdownSignal:      shutdownSignal,
 	}
 	env.GetHealthChecker().AddHealthCheck("registered_to_scheduler", registration)

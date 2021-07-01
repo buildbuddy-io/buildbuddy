@@ -9,7 +9,6 @@ go_test(
     ],
     shard_count = 4,
     deps = [
-        "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/scheduling/scheduler_server",
         "//enterprise/server/test/integration/remote_execution/rbetest",
         "//proto:remote_execution_go_proto",

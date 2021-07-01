@@ -7,11 +7,13 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
-
+	"github.com/golang/protobuf/proto"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	bblog "github.com/buildbuddy-io/buildbuddy/server/util/log"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 )
 
@@ -130,6 +132,19 @@ func requestIDUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return contextReplacingUnaryServerInterceptor(addRequestIdToContext)
 }
 
+// requestContextProtoUnaryServerInterceptor is a server interceptor that
+// copies the request context from the request message into the context.
+func requestContextProtoUnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		msg, ok := req.(proto.Message)
+		if ok {
+			protoCtx := requestcontext.GetProtoRequestContext(msg)
+			ctx = requestcontext.ContextWithProtoRequestContext(ctx, protoCtx)
+		}
+		return handler(ctx, req)
+	}
+}
+
 // logRequestUnaryServerInterceptor defers a call to log the GRPC request.
 func logRequestUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
@@ -178,6 +193,7 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainUnaryInterceptor(
 		requestIDUnaryServerInterceptor(),
 		logRequestUnaryServerInterceptor(),
+		requestContextProtoUnaryServerInterceptor(),
 		authUnaryServerInterceptor(env),
 		copyHeadersUnaryServerInterceptor(),
 	)
@@ -194,6 +210,7 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 
 func GetUnaryClientInterceptor() grpc.DialOption {
 	return grpc.WithChainUnaryInterceptor(
+		otelgrpc.UnaryClientInterceptor(),
 		grpc_prometheus.UnaryClientInterceptor,
 		setHeadersUnaryClientInterceptor(),
 	)
@@ -201,6 +218,7 @@ func GetUnaryClientInterceptor() grpc.DialOption {
 
 func GetStreamClientInterceptor() grpc.DialOption {
 	return grpc.WithChainStreamInterceptor(
+		otelgrpc.StreamClientInterceptor(),
 		grpc_prometheus.StreamClientInterceptor,
 		setHeadersStreamClientInterceptor(),
 	)

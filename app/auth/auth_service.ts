@@ -109,8 +109,13 @@ export class AuthService {
     return requestContext;
   }
 
-  async setSelectedGroupId(groupId: string) {
+  async setSelectedGroupId(groupId: string, { reload = false }: { reload?: boolean } = {}) {
     window.localStorage.setItem(SELECTED_GROUP_ID_LOCAL_STORAGE_KEY, groupId);
+    if (reload) {
+      // Don't publish a new user to avoid UI flickering.
+      window.location.reload();
+      return;
+    }
     const selectedGroup = this.user.groups.find((group) => group.id === groupId);
     if (!selectedGroup) {
       await this.refreshUser();

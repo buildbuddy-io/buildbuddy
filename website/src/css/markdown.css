@@ -8,6 +8,10 @@
   background-repeat: repeat-x;
 }
 
+html[data-theme="dark"] .markdown a {
+  color: #aef0ff;
+}
+
 .markdown a.hash-link {
   background-image: none;
 }

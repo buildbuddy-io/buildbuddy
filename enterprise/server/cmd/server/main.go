@@ -38,8 +38,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
-	"github.com/go-redis/redis/v8"
 	"google.golang.org/api/option"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
@@ -143,6 +143,9 @@ func main() {
 	}
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	realEnv := libmain.GetConfiguredEnvironmentOrDie(configurator, healthChecker)
+	if err := tracing.Configure(configurator); err != nil {
+		log.Fatalf("Could not configure tracing: %s", err)
+	}
 
 	// Setup the prod fanciness in our environment
 	convertToProdOrDie(rootContext, realEnv)
@@ -199,8 +202,7 @@ func main() {
 			opts.IdleTimeout = 1 * time.Minute
 			opts.IdleCheckFrequency = 1 * time.Minute
 			opts.PoolTimeout = 5 * time.Second
-			redisClient := redis.NewClient(opts)
-			healthChecker.AddHealthCheck("remote_execution_redis_pubsub", &redisutil.HealthChecker{Rdb: redisClient})
+			redisClient := redisutil.NewClientWithOpts(opts, healthChecker, "remote_execution_redis_pubsub")
 			realEnv.SetRemoteExecutionRedisPubSubClient(redisClient)
 		}
 	}

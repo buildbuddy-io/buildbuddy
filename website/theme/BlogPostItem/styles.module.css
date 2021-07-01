@@ -10,3 +10,8 @@
 .blogAuthorTitle {
   margin-top: 2rem;
 }
+
+.subtitle {
+  font-weight: 500;
+  color: var(--ifm-color-emphasis-600);
+}

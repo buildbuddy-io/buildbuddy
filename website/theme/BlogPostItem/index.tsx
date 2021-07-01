@@ -75,7 +75,7 @@ const MONTHS = [
 function BlogPostItem(props: Props): JSX.Element {
   const { children, frontMatter, metadata, truncated, isBlogPostPage = false } = props;
   const { date, permalink, tags, readingTime } = metadata;
-  const { author, title, image, keywords } = frontMatter;
+  const { author, title, subtitle, image, keywords } = frontMatter;
 
   const authorURL = frontMatter.author_url || frontMatter.authorURL;
   const authorTitle = frontMatter.author_title || frontMatter.authorTitle;
@@ -83,6 +83,7 @@ function BlogPostItem(props: Props): JSX.Element {
 
   const renderPostHeader = () => {
     const TitleHeading = isBlogPostPage ? "h1" : "h2";
+    const SubtitleHeading = isBlogPostPage ? "h2" : "h3";
     const match = date.substring(0, 10).split("-");
     const year = match[0];
     const month = MONTHS[parseInt(match[1], 10) - 1];
@@ -93,6 +94,7 @@ function BlogPostItem(props: Props): JSX.Element {
         <TitleHeading className={clsx("margin-bottom--sm", styles.blogPostTitle)}>
           {isBlogPostPage ? title : <Link to={permalink}>{title}</Link>}
         </TitleHeading>
+        {subtitle && <SubtitleHeading className={styles.subtitle}>{subtitle}</SubtitleHeading>}
         <div className="margin-vert--md">
           <time dateTime={date} className={styles.blogPostDate}>
             <Translate

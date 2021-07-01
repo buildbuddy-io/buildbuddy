@@ -14,7 +14,6 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
-        "//enterprise/server/webhooks/webhook_data",
         "//proto:context_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:user_id_go_proto",
@@ -55,8 +54,11 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/db",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

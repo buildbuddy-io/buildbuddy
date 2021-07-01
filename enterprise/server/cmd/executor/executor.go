@@ -32,17 +32,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	"github.com/google/uuid"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
-	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/test/bufconn"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
@@ -223,6 +222,9 @@ func main() {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
 	}
+	if err := tracing.Configure(configurator); err != nil {
+		log.Fatalf("Could not configure tracing: %s", err)
+	}
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	localListener = bufconn.Listen(1024 * 1024 * 10 /* 10MB buffer? Seems ok. */)
@@ -277,36 +279,12 @@ func main() {
 		repb.RegisterActionCacheServer(localServer, actionCacheServer)
 	}
 
-	enableWorkStreaming := !env.GetConfigurator().GetExecutorConfig().DisableWorkStreaming
-	if !enableWorkStreaming {
-		grpcServer := grpc.NewServer(grpcOptions...)
-		healthChecker.RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
-		scpb.RegisterQueueExecutorServer(grpcServer, taskScheduler)
-
-		// Support reflection so that tools like grpc-cli (aka stubby) can
-		// enumerate our services and call them.
-		reflection.Register(grpcServer)
-
-		// Support prometheus grpc metrics.
-		grpc_prometheus.Register(grpcServer)
-
-		hostAndGRPCPort := fmt.Sprintf("%s:%d", *listen, *gRPCPort)
-		lis, err := net.Listen("tcp", hostAndGRPCPort)
-		if err != nil {
-			log.Fatalf("Failed to listen: %s", err)
-		}
-		go func() {
-			grpcServer.Serve(lis)
-		}()
-		log.Infof("gRPC listening on grpc://%s", hostAndGRPCPort)
-	}
-
 	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
 	http.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	http.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
-	schedulerOpts := &scheduler_client.Options{EnableWorkStreaming: enableWorkStreaming}
+	schedulerOpts := &scheduler_client.Options{}
 	reg, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, schedulerOpts)
 	if err != nil {
 		log.Fatalf("Error initializing executor registration: %s", err)

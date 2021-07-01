@@ -2,7 +2,6 @@ package ci_runner_test
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,14 +54,7 @@ type result struct {
 }
 
 func makeRunnerWorkspace(t *testing.T) string {
-	wsDir := testbazel.MakeTempWorkspace(t, nil /*=contents*/)
-	// Need a home dir so bazel commands invoked by the runner know where to put
-	// their local cache.
-	homeDir := filepath.Join(wsDir, ".home")
-	if err := os.Mkdir(homeDir, 0777); err != nil {
-		t.Fatal(err)
-	}
-	return wsDir
+	return testbazel.MakeTempWorkspace(t, nil /*=contents*/)
 }
 
 func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
@@ -74,6 +66,7 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	if err != nil {
 		t.Fatal(err)
 	}
+	args = append(args, "--bazel_command="+bazelPath)
 
 	cmd := exec.Command(binPath, args...)
 	cmd.Dir = workDir
@@ -81,10 +74,6 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	// TODO: Make this closer to the real deployed runner setup.
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, env...)
-	cmd.Env = append(cmd.Env, []string{
-		fmt.Sprintf("BAZEL_COMMAND=%s", bazelPath),
-		fmt.Sprintf("HOME=%s", filepath.Join(workDir, ".home")),
-	}...)
 	outputBytes, err := cmd.CombinedOutput()
 	exitCode := 0
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/golang/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -204,6 +205,8 @@ func (q *PriorityTaskScheduler) handleTask() {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	ctx = tracing.ExtractProtoTraceMetadata(ctx, reservation.GetTraceMetadata())
+
 	q.trackTask(reservation, &cancel)
 
 	go func() {

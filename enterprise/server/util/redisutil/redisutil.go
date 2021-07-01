@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/go-redis/redis/extra/redisotel/v8"
 	"github.com/go-redis/redis/v8"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -46,7 +47,12 @@ func (c *HealthChecker) Check(ctx context.Context) error {
 }
 
 func NewClient(redisTarget string, checker interfaces.HealthChecker, healthCheckName string) *redis.Client {
-	rdb := redis.NewClient(TargetToOptions(redisTarget))
-	checker.AddHealthCheck(healthCheckName, &HealthChecker{rdb})
-	return rdb
+	return NewClientWithOpts(TargetToOptions(redisTarget), checker, healthCheckName)
+}
+
+func NewClientWithOpts(opts *redis.Options, checker interfaces.HealthChecker, healthCheckName string) *redis.Client {
+	redisClient := redis.NewClient(opts)
+	redisClient.AddHook(redisotel.NewTracingHook())
+	checker.AddHealthCheck(healthCheckName, &HealthChecker{Rdb: redisClient})
+	return redisClient
 }

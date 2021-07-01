@@ -1,6 +1,7 @@
 import React from "react";
-import { Subscription, fromEvent } from "rxjs";
+import { fromEvent, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
+import LinkButton from "../../../app/components/button/link_button";
 import format from "../../../app/format/format";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
@@ -26,6 +27,7 @@ interface Props {
   repo?: string;
   commit?: string;
   user?: User;
+  search?: URLSearchParams;
   hash: string;
 }
 
@@ -52,18 +54,24 @@ export default class HistoryComponent extends React.Component {
     ["#commits", invocation.AggType.COMMIT_SHA_AGGREGATION_TYPE],
   ]);
 
-  getBuilds(nextPage?: boolean) {
-    let request = new invocation.SearchInvocationRequest();
-    request.query = new invocation.InvocationQuery();
-    request.query.host = this.props.hostname;
-    request.query.user = this.props.username;
-    request.query.repoUrl = this.props.repo;
-    request.query.commitSha = this.props.commit;
-    request.query.groupId = this.props.user?.selectedGroup?.id;
-    request.pageToken = nextPage ? this.state.pageToken : "";
+  private isFilteredToWorkflows() {
+    return this.props.search?.get("workflows") === "true";
+  }
 
-    // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
-    request.count = 126;
+  getBuilds(nextPage?: boolean) {
+    let request = new invocation.SearchInvocationRequest({
+      query: new invocation.InvocationQuery({
+        host: this.props.hostname,
+        user: this.props.username,
+        repoUrl: this.props.repo,
+        commitSha: this.props.commit,
+        groupId: this.props.user?.selectedGroup?.id,
+        role: this.isFilteredToWorkflows() ? "CI_RUNNER" : "",
+      }),
+      pageToken: nextPage ? this.state.pageToken : "",
+      // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
+      count: 126,
+    });
 
     this.setState({
       ...this.state,
@@ -258,7 +266,9 @@ export default class HistoryComponent extends React.Component {
                 </span>
               )}
               {scope && <span>{scope}</span>}
-              {!this.props.username && !this.props.hostname && this.props.hash == "" && <span>Builds</span>}
+              {!this.props.username && !this.props.hostname && this.props.hash == "" && (
+                <>{this.isFilteredToWorkflows() ? <span>Workflow runs</span> : <span>Builds</span>}</>
+              )}
             </div>
             <div className="titles">
               <div className="title">
@@ -278,12 +288,17 @@ export default class HistoryComponent extends React.Component {
                     </a>
                   </span>
                 )}
-                {this.props.repo && (
+                {this.props.repo && !this.isFilteredToWorkflows() && (
                   <a target="_blank" href={this.getRepoUrl()}>
                     <span>Builds of {format.formatGitUrl(this.props.repo)}</span>
                     <a className="history-trends-button" href={`/trends/?repo=${this.props.repo}`}>
                       View trends
                     </a>
+                  </a>
+                )}
+                {this.props.repo && this.isFilteredToWorkflows() && (
+                  <a target="_blank" href={this.getRepoUrl()}>
+                    <span>Workflow runs of {format.formatGitUrl(this.props.repo)}</span>
                   </a>
                 )}
                 {this.props.commit && (
@@ -393,7 +408,30 @@ export default class HistoryComponent extends React.Component {
           </div>
         )}
         {this.state.invocations.length == 0 && this.state.loading && <div className="loading"></div>}
-        {this.state.invocations.length == 0 && !this.state.loading && (
+        {this.state.invocations.length == 0 && !this.state.loading && this.isFilteredToWorkflows() && (
+          <div className="container narrow">
+            <div className="empty-state history">
+              <h2>No workflow runs yet!</h2>
+              <p>
+                Push commits or send pull requests to{" "}
+                <a href={this.props.repo} target="_new" className="text-link">
+                  {format.formatGitUrl(this.props.repo)}
+                </a>{" "}
+                to trigger BuildBuddy workflows.
+              </p>
+              <p>
+                By default, BuildBuddy will run <code className="inline-code">bazel test //...</code> on pushes to your
+                main branch and on pull request branches.
+              </p>
+              <div>
+                <LinkButton href="https://docs.buildbuddy.io/docs/workflows-config" target="_new">
+                  Learn more
+                </LinkButton>
+              </div>
+            </div>
+          </div>
+        )}
+        {this.state.invocations.length == 0 && !this.state.loading && !this.isFilteredToWorkflows() && (
           <div className="container narrow">
             <div className="empty-state history">
               <h2>No builds found!</h2>

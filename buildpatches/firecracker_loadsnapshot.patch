@@ -1,0 +1,5607 @@
+diff --git a/BUILD.bazel b/BUILD.bazel
+index 7b3d40f..43a567e 100644
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+ go_library(
+     name = "firecracker-go-sdk",
+     srcs = [
++        "balloon.go",
+         "client_transports.go",
+         "command_builder.go",
+         "doc.go",
+@@ -47,6 +48,7 @@ go_library(
+ go_test(
+     name = "firecracker-go-sdk_test",
+     srcs = [
++        "balloon_test.go",
+         "benchmark_test.go",
+         "client_transports_test.go",
+         "command_builder_test.go",
+diff --git a/balloon.go b/balloon.go
+new file mode 100644
+index 0000000..c189f80
+--- /dev/null
++++ b/balloon.go
+@@ -0,0 +1,64 @@
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++//	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++package firecracker
++
++import (
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// BalloonDevice is a builder that will create a balloon used to set up
++// the firecracker microVM.
++type BalloonDevice struct {
++	balloon models.Balloon
++}
++
++type BalloonOpt func(*models.Balloon)
++
++// NewBalloonDevice will return a new BalloonDevice.
++func NewBalloonDevice(amountMib int64, deflateOnOom bool, opts ...BalloonOpt) BalloonDevice {
++	b := models.Balloon{
++		AmountMib:     &amountMib,
++		DeflateOnOom: &deflateOnOom,
++	}
++
++	for _, opt := range opts {
++		opt(&b)
++	}
++
++	return BalloonDevice{balloon: b}
++}
++
++// Build will return a new balloon
++func (b BalloonDevice) Build() models.Balloon {
++	return b.balloon
++}
++
++// WithStatsPollingIntervals is a functional option which sets the time in seconds between refreshing statistics.
++func WithStatsPollingIntervals(statsPollingIntervals int64) BalloonOpt {
++	return func(d *models.Balloon) {
++		d.StatsPollingIntervals = statsPollingIntervals
++	}
++}
++
++// UpdateAmountMiB sets the target size of the balloon
++func (b BalloonDevice) UpdateAmountMib(amountMib int64) BalloonDevice {
++	b.balloon.AmountMib = &amountMib
++	return b
++}
++
++// UpdateStatsPollingIntervals sets the time in seconds between refreshing statistics.
++// A non-zero value will enable the statistics. Defaults to 0.
++func (b BalloonDevice) UpdateStatsPollingIntervals(statsPollingIntervals int64) BalloonDevice {
++	b.balloon.StatsPollingIntervals = statsPollingIntervals
++	return b
++}
+diff --git a/balloon_test.go b/balloon_test.go
+new file mode 100644
+index 0000000..5bf0d3b
+--- /dev/null
++++ b/balloon_test.go
+@@ -0,0 +1,58 @@
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++//	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package firecracker
++
++import (
++	"reflect"
++	"testing"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++var (
++	expectedAmountMib              = int64(6)
++	expectedDeflateOnOom          = true
++	expectedStatsPollingIntervals = int64(1)
++
++	expectedBalloon = models.Balloon{
++		AmountMib:              &expectedAmountMib,
++		DeflateOnOom:          &expectedDeflateOnOom,
++		StatsPollingIntervals: expectedStatsPollingIntervals,
++	}
++)
++
++func TestNewBalloonDevice(t *testing.T) {
++	balloon := NewBalloonDevice(expectedAmountMib, expectedDeflateOnOom, WithStatsPollingIntervals(expectedStatsPollingIntervals)).Build()
++	if e, a := expectedBalloon, balloon; !reflect.DeepEqual(e, a) {
++		t.Errorf("expected balloon %v, but received %v", e, a)
++	}
++}
++
++func TestUpdateAmountMiB(t *testing.T) {
++	BalloonDevice := NewBalloonDevice(int64(1), expectedDeflateOnOom, WithStatsPollingIntervals(expectedStatsPollingIntervals))
++	balloon := BalloonDevice.UpdateAmountMib(expectedAmountMib).Build()
++
++	if e, a := expectedBalloon, balloon; !reflect.DeepEqual(e, a) {
++		t.Errorf("expected balloon %v, but received %v", e, a)
++	}
++}
++
++func TestUpdateStatsPollingIntervals(t *testing.T) {
++	BalloonDevice := NewBalloonDevice(expectedAmountMib, expectedDeflateOnOom)
++	balloon := BalloonDevice.UpdateStatsPollingIntervals(expectedStatsPollingIntervals).Build()
++
++	if e, a := expectedBalloon, balloon; !reflect.DeepEqual(e, a) {
++		t.Errorf("expected balloon %v, but received %v", e, a)
++	}
++}
+diff --git a/benchmark_test.go b/benchmark_test.go
+index 8ba130f..c830aa7 100644
+--- a/benchmark_test.go
++++ b/benchmark_test.go
+@@ -1,3 +1,15 @@
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++//	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
+ package firecracker
+ 
+ import (
+diff --git a/client/models/BUILD.bazel b/client/models/BUILD.bazel
+index c845e82..5fa01c9 100644
+--- a/client/models/BUILD.bazel
++++ b/client/models/BUILD.bazel
+@@ -3,6 +3,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
+ go_library(
+     name = "models",
+     srcs = [
++        "balloon.go",
++        "balloon_stats.go",
++        "balloon_stats_update.go",
++        "balloon_update.go",
+         "boot_source.go",
+         "cpu_template.go",
+         "drive.go",
+@@ -17,7 +21,10 @@ go_library(
+         "partial_drive.go",
+         "partial_network_interface.go",
+         "rate_limiter.go",
++        "snapshot_create_params.go",
++        "snapshot_load_params.go",
+         "token_bucket.go",
++        "vm.go",
+         "vsock.go",
+     ],
+     importpath = "github.com/firecracker-microvm/firecracker-go-sdk/client/models",
+diff --git a/client/models/balloon.go b/client/models/balloon.go
+new file mode 100644
+index 0000000..ef07d0d
+--- /dev/null
++++ b/client/models/balloon.go
+@@ -0,0 +1,97 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package models
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	strfmt "github.com/go-openapi/strfmt"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/swag"
++	"github.com/go-openapi/validate"
++)
++
++// Balloon Balloon device descriptor.
++// swagger:model Balloon
++type Balloon struct {
++
++	// Target balloon size in MiB.
++	// Required: true
++	AmountMib *int64 `json:"amount_mib"`
++
++	// Whether the balloon should deflate when the guest has memory pressure.
++	// Required: true
++	DeflateOnOom *bool `json:"deflate_on_oom"`
++
++	// Interval in seconds between refreshing statistics. A non-zero value will enable the statistics. Defaults to 0.
++	StatsPollingIntervals int64 `json:"stats_polling_interval_s,omitempty"`
++}
++
++// Validate validates this balloon
++func (m *Balloon) Validate(formats strfmt.Registry) error {
++	var res []error
++
++	if err := m.validateAmountMib(formats); err != nil {
++		res = append(res, err)
++	}
++
++	if err := m.validateDeflateOnOom(formats); err != nil {
++		res = append(res, err)
++	}
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
++
++func (m *Balloon) validateAmountMib(formats strfmt.Registry) error {
++
++	if err := validate.Required("amount_mib", "body", m.AmountMib); err != nil {
++		return err
++	}
++
++	return nil
++}
++
++func (m *Balloon) validateDeflateOnOom(formats strfmt.Registry) error {
++
++	if err := validate.Required("deflate_on_oom", "body", m.DeflateOnOom); err != nil {
++		return err
++	}
++
++	return nil
++}
++
++// MarshalBinary interface implementation
++func (m *Balloon) MarshalBinary() ([]byte, error) {
++	if m == nil {
++		return nil, nil
++	}
++	return swag.WriteJSON(m)
++}
++
++// UnmarshalBinary interface implementation
++func (m *Balloon) UnmarshalBinary(b []byte) error {
++	var res Balloon
++	if err := swag.ReadJSON(b, &res); err != nil {
++		return err
++	}
++	*m = res
++	return nil
++}
+diff --git a/client/models/balloon_stats.go b/client/models/balloon_stats.go
+new file mode 100644
+index 0000000..6395687
+--- /dev/null
++++ b/client/models/balloon_stats.go
+@@ -0,0 +1,158 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package models
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	strfmt "github.com/go-openapi/strfmt"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/swag"
++	"github.com/go-openapi/validate"
++)
++
++// BalloonStats Describes the balloon device statistics.
++// swagger:model BalloonStats
++type BalloonStats struct {
++
++	// Actual amount of memory (in MiB) the device is holding.
++	// Required: true
++	ActualMib *int64 `json:"actual_mib"`
++
++	// Actual number of pages the device is holding.
++	// Required: true
++	ActualPages *int64 `json:"actual_pages"`
++
++	// An estimate of how much memory is available (in bytes) for starting new applications, without pushing the system to swap.
++	AvailableMemory int64 `json:"available_memory,omitempty"`
++
++	// The amount of memory, in bytes, that can be quickly reclaimed without additional I/O. Typically these pages are used for caching files from disk.
++	DiskCaches int64 `json:"disk_caches,omitempty"`
++
++	// The amount of memory not being used for any purpose (in bytes).
++	FreeMemory int64 `json:"free_memory,omitempty"`
++
++	// The number of successful hugetlb page allocations in the guest.
++	HugetlbAllocations int64 `json:"hugetlb_allocations,omitempty"`
++
++	// The number of failed hugetlb page allocations in the guest.
++	HugetlbFailures int64 `json:"hugetlb_failures,omitempty"`
++
++	// The number of major page faults that have occurred.
++	MajorFaults int64 `json:"major_faults,omitempty"`
++
++	// The number of minor page faults that have occurred.
++	MinorFaults int64 `json:"minor_faults,omitempty"`
++
++	// The amount of memory that has been swapped in (in bytes).
++	SwapIn int64 `json:"swap_in,omitempty"`
++
++	// The amount of memory that has been swapped out to disk (in bytes).
++	SwapOut int64 `json:"swap_out,omitempty"`
++
++	// Target amount of memory (in MiB) the device aims to hold.
++	// Required: true
++	TargetMib *int64 `json:"target_mib"`
++
++	// Target number of pages the device aims to hold.
++	// Required: true
++	TargetPages *int64 `json:"target_pages"`
++
++	// The total amount of memory available (in bytes).
++	TotalMemory int64 `json:"total_memory,omitempty"`
++}
++
++// Validate validates this balloon stats
++func (m *BalloonStats) Validate(formats strfmt.Registry) error {
++	var res []error
++
++	if err := m.validateActualMib(formats); err != nil {
++		res = append(res, err)
++	}
++
++	if err := m.validateActualPages(formats); err != nil {
++		res = append(res, err)
++	}
++
++	if err := m.validateTargetMib(formats); err != nil {
++		res = append(res, err)
++	}
++
++	if err := m.validateTargetPages(formats); err != nil {
++		res = append(res, err)
++	}
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
++
++func (m *BalloonStats) validateActualMib(formats strfmt.Registry) error {
++
++	if err := validate.Required("actual_mib", "body", m.ActualMib); err != nil {
++		return err
++	}
++
++	return nil
++}
++
++func (m *BalloonStats) validateActualPages(formats strfmt.Registry) error {
++
++	if err := validate.Required("actual_pages", "body", m.ActualPages); err != nil {
++		return err
++	}
++
++	return nil
++}
++
++func (m *BalloonStats) validateTargetMib(formats strfmt.Registry) error {
++
++	if err := validate.Required("target_mib", "body", m.TargetMib); err != nil {
++		return err
++	}
++
++	return nil
++}
++
++func (m *BalloonStats) validateTargetPages(formats strfmt.Registry) error {
++
++	if err := validate.Required("target_pages", "body", m.TargetPages); err != nil {
++		return err
++	}
++
++	return nil
++}
++
++// MarshalBinary interface implementation
++func (m *BalloonStats) MarshalBinary() ([]byte, error) {
++	if m == nil {
++		return nil, nil
++	}
++	return swag.WriteJSON(m)
++}
++
++// UnmarshalBinary interface implementation
++func (m *BalloonStats) UnmarshalBinary(b []byte) error {
++	var res BalloonStats
++	if err := swag.ReadJSON(b, &res); err != nil {
++		return err
++	}
++	*m = res
++	return nil
++}
+diff --git a/client/models/balloon_stats_update.go b/client/models/balloon_stats_update.go
+new file mode 100644
+index 0000000..6f0c55a
+--- /dev/null
++++ b/client/models/balloon_stats_update.go
+@@ -0,0 +1,77 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package models
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	strfmt "github.com/go-openapi/strfmt"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/swag"
++	"github.com/go-openapi/validate"
++)
++
++// BalloonStatsUpdate Update the statistics polling interval. Statistics cannot be turned on/off after boot.
++// swagger:model BalloonStatsUpdate
++type BalloonStatsUpdate struct {
++
++	// Interval in seconds between refreshing statistics.
++	// Required: true
++	StatsPollingIntervals *int64 `json:"stats_polling_interval_s"`
++}
++
++// Validate validates this balloon stats update
++func (m *BalloonStatsUpdate) Validate(formats strfmt.Registry) error {
++	var res []error
++
++	if err := m.validateStatsPollingIntervals(formats); err != nil {
++		res = append(res, err)
++	}
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
++
++func (m *BalloonStatsUpdate) validateStatsPollingIntervals(formats strfmt.Registry) error {
++
++	if err := validate.Required("stats_polling_interval_s", "body", m.StatsPollingIntervals); err != nil {
++		return err
++	}
++
++	return nil
++}
++
++// MarshalBinary interface implementation
++func (m *BalloonStatsUpdate) MarshalBinary() ([]byte, error) {
++	if m == nil {
++		return nil, nil
++	}
++	return swag.WriteJSON(m)
++}
++
++// UnmarshalBinary interface implementation
++func (m *BalloonStatsUpdate) UnmarshalBinary(b []byte) error {
++	var res BalloonStatsUpdate
++	if err := swag.ReadJSON(b, &res); err != nil {
++		return err
++	}
++	*m = res
++	return nil
++}
+diff --git a/client/models/balloon_update.go b/client/models/balloon_update.go
+new file mode 100644
+index 0000000..e2b379f
+--- /dev/null
++++ b/client/models/balloon_update.go
+@@ -0,0 +1,77 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package models
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	strfmt "github.com/go-openapi/strfmt"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/swag"
++	"github.com/go-openapi/validate"
++)
++
++// BalloonUpdate Balloon device descriptor.
++// swagger:model BalloonUpdate
++type BalloonUpdate struct {
++
++	// Target balloon size in MiB.
++	// Required: true
++	AmountMib *int64 `json:"amount_mib"`
++}
++
++// Validate validates this balloon update
++func (m *BalloonUpdate) Validate(formats strfmt.Registry) error {
++	var res []error
++
++	if err := m.validateAmountMib(formats); err != nil {
++		res = append(res, err)
++	}
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
++
++func (m *BalloonUpdate) validateAmountMib(formats strfmt.Registry) error {
++
++	if err := validate.Required("amount_mib", "body", m.AmountMib); err != nil {
++		return err
++	}
++
++	return nil
++}
++
++// MarshalBinary interface implementation
++func (m *BalloonUpdate) MarshalBinary() ([]byte, error) {
++	if m == nil {
++		return nil, nil
++	}
++	return swag.WriteJSON(m)
++}
++
++// UnmarshalBinary interface implementation
++func (m *BalloonUpdate) UnmarshalBinary(b []byte) error {
++	var res BalloonUpdate
++	if err := swag.ReadJSON(b, &res); err != nil {
++		return err
++	}
++	*m = res
++	return nil
++}
+diff --git a/client/models/instance_info.go b/client/models/instance_info.go
+index 4589256..1c2c899 100644
+--- a/client/models/instance_info.go
++++ b/client/models/instance_info.go
+@@ -33,15 +33,16 @@ import (
+ type InstanceInfo struct {
+ 
+ 	// Application name.
+-	AppName string `json:"app_name,omitempty"`
++	// Required: true
++	AppName *string `json:"app_name"`
+ 
+ 	// MicroVM / instance ID.
+ 	// Required: true
+ 	ID *string `json:"id"`
+ 
+-	// The current detailed state of the Firecracker instance. This value is read-only for the control-plane.
++	// The current detailed state (Not started, Running, Paused) of the Firecracker instance. This value is read-only for the control-plane.
+ 	// Required: true
+-	// Enum: [Uninitialized Starting Running]
++	// Enum: [Not started Running Paused]
+ 	State *string `json:"state"`
+ 
+ 	// MicroVM hypervisor build version.
+@@ -53,6 +54,10 @@ type InstanceInfo struct {
+ func (m *InstanceInfo) Validate(formats strfmt.Registry) error {
+ 	var res []error
+ 
++	if err := m.validateAppName(formats); err != nil {
++		res = append(res, err)
++	}
++
+ 	if err := m.validateID(formats); err != nil {
+ 		res = append(res, err)
+ 	}
+@@ -71,6 +76,15 @@ func (m *InstanceInfo) Validate(formats strfmt.Registry) error {
+ 	return nil
+ }
+ 
++func (m *InstanceInfo) validateAppName(formats strfmt.Registry) error {
++
++	if err := validate.Required("app_name", "body", m.AppName); err != nil {
++		return err
++	}
++
++	return nil
++}
++
+ func (m *InstanceInfo) validateID(formats strfmt.Registry) error {
+ 
+ 	if err := validate.Required("id", "body", m.ID); err != nil {
+@@ -84,7 +98,7 @@ var instanceInfoTypeStatePropEnum []interface{}
+ 
+ func init() {
+ 	var res []string
+-	if err := json.Unmarshal([]byte(`["Uninitialized","Starting","Running"]`), &res); err != nil {
++	if err := json.Unmarshal([]byte(`["Not started","Running","Paused"]`), &res); err != nil {
+ 		panic(err)
+ 	}
+ 	for _, v := range res {
+@@ -94,14 +108,14 @@ func init() {
+ 
+ const (
+ 
+-	// InstanceInfoStateUninitialized captures enum value "Uninitialized"
+-	InstanceInfoStateUninitialized string = "Uninitialized"
+-
+-	// InstanceInfoStateStarting captures enum value "Starting"
+-	InstanceInfoStateStarting string = "Starting"
++	// InstanceInfoStateNotStarted captures enum value "Not started"
++	InstanceInfoStateNotStarted string = "Not started"
+ 
+ 	// InstanceInfoStateRunning captures enum value "Running"
+ 	InstanceInfoStateRunning string = "Running"
++
++	// InstanceInfoStatePaused captures enum value "Paused"
++	InstanceInfoStatePaused string = "Paused"
+ )
+ 
+ // prop value enum
+diff --git a/client/models/logger.go b/client/models/logger.go
+index 2ef77ad..d15cf68 100644
+--- a/client/models/logger.go
++++ b/client/models/logger.go
+@@ -32,7 +32,7 @@ import (
+ // swagger:model Logger
+ type Logger struct {
+ 
+-	// Set the level.
++	// Set the level. The possible values are case-insensitive.
+ 	// Enum: [Error Warning Info Debug]
+ 	Level *string `json:"level,omitempty"`
+ 
+diff --git a/client/models/machine_configuration.go b/client/models/machine_configuration.go
+index a35c5ad..8f93cbe 100644
+--- a/client/models/machine_configuration.go
++++ b/client/models/machine_configuration.go
+@@ -41,6 +41,9 @@ type MachineConfiguration struct {
+ 	// Required: true
+ 	MemSizeMib *int64 `json:"mem_size_mib"`
+ 
++	// Enable dirty page tracking. If this is enabled, then incremental guest memory snapshots can be created. These belong to diff snapshots, which contain, besides the microVM state, only the memory dirtied since a previous snapshot. Full snapshots each contain a full copy of the guest memory.
++	TrackDirtyPages bool `json:"track_dirty_pages,omitempty"`
++
+ 	// Number of vCPUs (either 1 or an even number)
+ 	// Required: true
+ 	// Maximum: 32
+diff --git a/client/models/partial_drive.go b/client/models/partial_drive.go
+index 94d9229..6c85ef7 100644
+--- a/client/models/partial_drive.go
++++ b/client/models/partial_drive.go
+@@ -35,8 +35,10 @@ type PartialDrive struct {
+ 	DriveID *string `json:"drive_id"`
+ 
+ 	// Host level path for the guest drive
+-	// Required: true
+-	PathOnHost *string `json:"path_on_host"`
++	PathOnHost string `json:"path_on_host,omitempty"`
++
++	// rate limiter
++	RateLimiter *RateLimiter `json:"rate_limiter,omitempty"`
+ }
+ 
+ // Validate validates this partial drive
+@@ -47,7 +49,7 @@ func (m *PartialDrive) Validate(formats strfmt.Registry) error {
+ 		res = append(res, err)
+ 	}
+ 
+-	if err := m.validatePathOnHost(formats); err != nil {
++	if err := m.validateRateLimiter(formats); err != nil {
+ 		res = append(res, err)
+ 	}
+ 
+@@ -66,10 +68,19 @@ func (m *PartialDrive) validateDriveID(formats strfmt.Registry) error {
+ 	return nil
+ }
+ 
+-func (m *PartialDrive) validatePathOnHost(formats strfmt.Registry) error {
++func (m *PartialDrive) validateRateLimiter(formats strfmt.Registry) error {
+ 
+-	if err := validate.Required("path_on_host", "body", m.PathOnHost); err != nil {
+-		return err
++	if swag.IsZero(m.RateLimiter) { // not required
++		return nil
++	}
++
++	if m.RateLimiter != nil {
++		if err := m.RateLimiter.Validate(formats); err != nil {
++			if ve, ok := err.(*errors.Validation); ok {
++				return ve.ValidateName("rate_limiter")
++			}
++			return err
++		}
+ 	}
+ 
+ 	return nil
+diff --git a/client/models/snapshot_create_params.go b/client/models/snapshot_create_params.go
+new file mode 100644
+index 0000000..79091ab
+--- /dev/null
++++ b/client/models/snapshot_create_params.go
+@@ -0,0 +1,150 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package models
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"encoding/json"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/swag"
++	"github.com/go-openapi/validate"
++)
++
++// SnapshotCreateParams snapshot create params
++// swagger:model SnapshotCreateParams
++type SnapshotCreateParams struct {
++
++	// Path to the file that will contain the guest memory.
++	// Required: true
++	MemFilePath *string `json:"mem_file_path"`
++
++	// Path to the file that will contain the microVM state.
++	// Required: true
++	SnapshotPath *string `json:"snapshot_path"`
++
++	// Type of snapshot to create. It is optional and by default, a full snapshot is created.
++	// Enum: [Full Diff]
++	SnapshotType string `json:"snapshot_type,omitempty"`
++
++	// The microVM version for which we want to create the snapshot. It is optional and it defaults to the current version.
++	Version string `json:"version,omitempty"`
++}
++
++// Validate validates this snapshot create params
++func (m *SnapshotCreateParams) Validate(formats strfmt.Registry) error {
++	var res []error
++
++	if err := m.validateMemFilePath(formats); err != nil {
++		res = append(res, err)
++	}
++
++	if err := m.validateSnapshotPath(formats); err != nil {
++		res = append(res, err)
++	}
++
++	if err := m.validateSnapshotType(formats); err != nil {
++		res = append(res, err)
++	}
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
++
++func (m *SnapshotCreateParams) validateMemFilePath(formats strfmt.Registry) error {
++
++	if err := validate.Required("mem_file_path", "body", m.MemFilePath); err != nil {
++		return err
++	}
++
++	return nil
++}
++
++func (m *SnapshotCreateParams) validateSnapshotPath(formats strfmt.Registry) error {
++
++	if err := validate.Required("snapshot_path", "body", m.SnapshotPath); err != nil {
++		return err
++	}
++
++	return nil
++}
++
++var snapshotCreateParamsTypeSnapshotTypePropEnum []interface{}
++
++func init() {
++	var res []string
++	if err := json.Unmarshal([]byte(`["Full","Diff"]`), &res); err != nil {
++		panic(err)
++	}
++	for _, v := range res {
++		snapshotCreateParamsTypeSnapshotTypePropEnum = append(snapshotCreateParamsTypeSnapshotTypePropEnum, v)
++	}
++}
++
++const (
++
++	// SnapshotCreateParamsSnapshotTypeFull captures enum value "Full"
++	SnapshotCreateParamsSnapshotTypeFull string = "Full"
++
++	// SnapshotCreateParamsSnapshotTypeDiff captures enum value "Diff"
++	SnapshotCreateParamsSnapshotTypeDiff string = "Diff"
++)
++
++// prop value enum
++func (m *SnapshotCreateParams) validateSnapshotTypeEnum(path, location string, value string) error {
++	if err := validate.Enum(path, location, value, snapshotCreateParamsTypeSnapshotTypePropEnum); err != nil {
++		return err
++	}
++	return nil
++}
++
++func (m *SnapshotCreateParams) validateSnapshotType(formats strfmt.Registry) error {
++
++	if swag.IsZero(m.SnapshotType) { // not required
++		return nil
++	}
++
++	// value enum
++	if err := m.validateSnapshotTypeEnum("snapshot_type", "body", m.SnapshotType); err != nil {
++		return err
++	}
++
++	return nil
++}
++
++// MarshalBinary interface implementation
++func (m *SnapshotCreateParams) MarshalBinary() ([]byte, error) {
++	if m == nil {
++		return nil, nil
++	}
++	return swag.WriteJSON(m)
++}
++
++// UnmarshalBinary interface implementation
++func (m *SnapshotCreateParams) UnmarshalBinary(b []byte) error {
++	var res SnapshotCreateParams
++	if err := swag.ReadJSON(b, &res); err != nil {
++		return err
++	}
++	*m = res
++	return nil
++}
+diff --git a/client/models/snapshot_load_params.go b/client/models/snapshot_load_params.go
+new file mode 100644
+index 0000000..2e4cf91
+--- /dev/null
++++ b/client/models/snapshot_load_params.go
+@@ -0,0 +1,100 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package models
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	strfmt "github.com/go-openapi/strfmt"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/swag"
++	"github.com/go-openapi/validate"
++)
++
++// SnapshotLoadParams snapshot load params
++// swagger:model SnapshotLoadParams
++type SnapshotLoadParams struct {
++
++	// Enable support for incremental (diff) snapshots by tracking dirty guest pages.
++	EnableDiffSnapshots bool `json:"enable_diff_snapshots,omitempty"`
++
++	// Path to the file that contains the guest memory to be loaded.
++	// Required: true
++	MemFilePath *string `json:"mem_file_path"`
++
++	// When set to true, the vm is also resumed if the snapshot load is successful.
++	ResumeVM bool `json:"resume_vm,omitempty"`
++
++	// Path to the file that contains the microVM state to be loaded.
++	// Required: true
++	SnapshotPath *string `json:"snapshot_path"`
++}
++
++// Validate validates this snapshot load params
++func (m *SnapshotLoadParams) Validate(formats strfmt.Registry) error {
++	var res []error
++
++	if err := m.validateMemFilePath(formats); err != nil {
++		res = append(res, err)
++	}
++
++	if err := m.validateSnapshotPath(formats); err != nil {
++		res = append(res, err)
++	}
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
++
++func (m *SnapshotLoadParams) validateMemFilePath(formats strfmt.Registry) error {
++
++	if err := validate.Required("mem_file_path", "body", m.MemFilePath); err != nil {
++		return err
++	}
++
++	return nil
++}
++
++func (m *SnapshotLoadParams) validateSnapshotPath(formats strfmt.Registry) error {
++
++	if err := validate.Required("snapshot_path", "body", m.SnapshotPath); err != nil {
++		return err
++	}
++
++	return nil
++}
++
++// MarshalBinary interface implementation
++func (m *SnapshotLoadParams) MarshalBinary() ([]byte, error) {
++	if m == nil {
++		return nil, nil
++	}
++	return swag.WriteJSON(m)
++}
++
++// UnmarshalBinary interface implementation
++func (m *SnapshotLoadParams) UnmarshalBinary(b []byte) error {
++	var res SnapshotLoadParams
++	if err := swag.ReadJSON(b, &res); err != nil {
++		return err
++	}
++	*m = res
++	return nil
++}
+diff --git a/client/models/vm.go b/client/models/vm.go
+new file mode 100644
+index 0000000..8ca5e71
+--- /dev/null
++++ b/client/models/vm.go
+@@ -0,0 +1,114 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package models
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"encoding/json"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/swag"
++	"github.com/go-openapi/validate"
++)
++
++// VM Defines the microVM running state. It is especially useful in the snapshotting context.
++// swagger:model Vm
++type VM struct {
++
++	// state
++	// Required: true
++	// Enum: [Paused Resumed]
++	State *string `json:"state"`
++}
++
++// Validate validates this Vm
++func (m *VM) Validate(formats strfmt.Registry) error {
++	var res []error
++
++	if err := m.validateState(formats); err != nil {
++		res = append(res, err)
++	}
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
++
++var vmTypeStatePropEnum []interface{}
++
++func init() {
++	var res []string
++	if err := json.Unmarshal([]byte(`["Paused","Resumed"]`), &res); err != nil {
++		panic(err)
++	}
++	for _, v := range res {
++		vmTypeStatePropEnum = append(vmTypeStatePropEnum, v)
++	}
++}
++
++const (
++
++	// VMStatePaused captures enum value "Paused"
++	VMStatePaused string = "Paused"
++
++	// VMStateResumed captures enum value "Resumed"
++	VMStateResumed string = "Resumed"
++)
++
++// prop value enum
++func (m *VM) validateStateEnum(path, location string, value string) error {
++	if err := validate.Enum(path, location, value, vmTypeStatePropEnum); err != nil {
++		return err
++	}
++	return nil
++}
++
++func (m *VM) validateState(formats strfmt.Registry) error {
++
++	if err := validate.Required("state", "body", m.State); err != nil {
++		return err
++	}
++
++	// value enum
++	if err := m.validateStateEnum("state", "body", *m.State); err != nil {
++		return err
++	}
++
++	return nil
++}
++
++// MarshalBinary interface implementation
++func (m *VM) MarshalBinary() ([]byte, error) {
++	if m == nil {
++		return nil, nil
++	}
++	return swag.WriteJSON(m)
++}
++
++// UnmarshalBinary interface implementation
++func (m *VM) UnmarshalBinary(b []byte) error {
++	var res VM
++	if err := swag.ReadJSON(b, &res); err != nil {
++		return err
++	}
++	*m = res
++	return nil
++}
+diff --git a/client/operations/BUILD.bazel b/client/operations/BUILD.bazel
+index 5ae284e..0973385 100644
+--- a/client/operations/BUILD.bazel
++++ b/client/operations/BUILD.bazel
+@@ -3,15 +3,27 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
+ go_library(
+     name = "operations",
+     srcs = [
++        "create_snapshot_parameters.go",
++        "create_snapshot_responses.go",
+         "create_sync_action_parameters.go",
+         "create_sync_action_responses.go",
++        "describe_balloon_config_parameters.go",
++        "describe_balloon_config_responses.go",
++        "describe_balloon_stats_parameters.go",
++        "describe_balloon_stats_responses.go",
+         "describe_instance_parameters.go",
+         "describe_instance_responses.go",
+         "get_machine_configuration_parameters.go",
+         "get_machine_configuration_responses.go",
+         "get_mmds_parameters.go",
+         "get_mmds_responses.go",
++        "load_snapshot_parameters.go",
++        "load_snapshot_responses.go",
+         "operations_client.go",
++        "patch_balloon_parameters.go",
++        "patch_balloon_responses.go",
++        "patch_balloon_stats_interval_parameters.go",
++        "patch_balloon_stats_interval_responses.go",
+         "patch_guest_drive_by_id_parameters.go",
+         "patch_guest_drive_by_id_responses.go",
+         "patch_guest_network_interface_by_id_parameters.go",
+@@ -20,6 +32,10 @@ go_library(
+         "patch_machine_configuration_responses.go",
+         "patch_mmds_parameters.go",
+         "patch_mmds_responses.go",
++        "patch_vm_parameters.go",
++        "patch_vm_responses.go",
++        "put_balloon_parameters.go",
++        "put_balloon_responses.go",
+         "put_guest_boot_source_parameters.go",
+         "put_guest_boot_source_responses.go",
+         "put_guest_drive_by_id_parameters.go",
+diff --git a/client/operations/create_snapshot_parameters.go b/client/operations/create_snapshot_parameters.go
+new file mode 100644
+index 0000000..cb3bab2
+--- /dev/null
++++ b/client/operations/create_snapshot_parameters.go
+@@ -0,0 +1,152 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"context"
++	"net/http"
++	"time"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/runtime"
++	cr "github.com/go-openapi/runtime/client"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// NewCreateSnapshotParams creates a new CreateSnapshotParams object
++// with the default values initialized.
++func NewCreateSnapshotParams() *CreateSnapshotParams {
++	var ()
++	return &CreateSnapshotParams{
++
++		timeout: cr.DefaultTimeout,
++	}
++}
++
++// NewCreateSnapshotParamsWithTimeout creates a new CreateSnapshotParams object
++// with the default values initialized, and the ability to set a timeout on a request
++func NewCreateSnapshotParamsWithTimeout(timeout time.Duration) *CreateSnapshotParams {
++	var ()
++	return &CreateSnapshotParams{
++
++		timeout: timeout,
++	}
++}
++
++// NewCreateSnapshotParamsWithContext creates a new CreateSnapshotParams object
++// with the default values initialized, and the ability to set a context for a request
++func NewCreateSnapshotParamsWithContext(ctx context.Context) *CreateSnapshotParams {
++	var ()
++	return &CreateSnapshotParams{
++
++		Context: ctx,
++	}
++}
++
++// NewCreateSnapshotParamsWithHTTPClient creates a new CreateSnapshotParams object
++// with the default values initialized, and the ability to set a custom HTTPClient for a request
++func NewCreateSnapshotParamsWithHTTPClient(client *http.Client) *CreateSnapshotParams {
++	var ()
++	return &CreateSnapshotParams{
++		HTTPClient: client,
++	}
++}
++
++/*CreateSnapshotParams contains all the parameters to send to the API endpoint
++for the create snapshot operation typically these are written to a http.Request
++*/
++type CreateSnapshotParams struct {
++
++	/*Body
++	  The configuration used for creating a snaphot.
++
++	*/
++	Body *models.SnapshotCreateParams
++
++	timeout    time.Duration
++	Context    context.Context
++	HTTPClient *http.Client
++}
++
++// WithTimeout adds the timeout to the create snapshot params
++func (o *CreateSnapshotParams) WithTimeout(timeout time.Duration) *CreateSnapshotParams {
++	o.SetTimeout(timeout)
++	return o
++}
++
++// SetTimeout adds the timeout to the create snapshot params
++func (o *CreateSnapshotParams) SetTimeout(timeout time.Duration) {
++	o.timeout = timeout
++}
++
++// WithContext adds the context to the create snapshot params
++func (o *CreateSnapshotParams) WithContext(ctx context.Context) *CreateSnapshotParams {
++	o.SetContext(ctx)
++	return o
++}
++
++// SetContext adds the context to the create snapshot params
++func (o *CreateSnapshotParams) SetContext(ctx context.Context) {
++	o.Context = ctx
++}
++
++// WithHTTPClient adds the HTTPClient to the create snapshot params
++func (o *CreateSnapshotParams) WithHTTPClient(client *http.Client) *CreateSnapshotParams {
++	o.SetHTTPClient(client)
++	return o
++}
++
++// SetHTTPClient adds the HTTPClient to the create snapshot params
++func (o *CreateSnapshotParams) SetHTTPClient(client *http.Client) {
++	o.HTTPClient = client
++}
++
++// WithBody adds the body to the create snapshot params
++func (o *CreateSnapshotParams) WithBody(body *models.SnapshotCreateParams) *CreateSnapshotParams {
++	o.SetBody(body)
++	return o
++}
++
++// SetBody adds the body to the create snapshot params
++func (o *CreateSnapshotParams) SetBody(body *models.SnapshotCreateParams) {
++	o.Body = body
++}
++
++// WriteToRequest writes these params to a swagger request
++func (o *CreateSnapshotParams) WriteToRequest(r runtime.ClientRequest, reg strfmt.Registry) error {
++
++	if err := r.SetTimeout(o.timeout); err != nil {
++		return err
++	}
++	var res []error
++
++	if o.Body != nil {
++		if err := r.SetBodyParam(o.Body); err != nil {
++			return err
++		}
++	}
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
+diff --git a/client/operations/create_snapshot_responses.go b/client/operations/create_snapshot_responses.go
+new file mode 100644
+index 0000000..3f897d3
+--- /dev/null
++++ b/client/operations/create_snapshot_responses.go
+@@ -0,0 +1,158 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"fmt"
++	"io"
++
++	"github.com/go-openapi/runtime"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// CreateSnapshotReader is a Reader for the CreateSnapshot structure.
++type CreateSnapshotReader struct {
++	formats strfmt.Registry
++}
++
++// ReadResponse reads a server response into the received o.
++func (o *CreateSnapshotReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (interface{}, error) {
++	switch response.Code() {
++	case 204:
++		result := NewCreateSnapshotNoContent()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return result, nil
++	case 400:
++		result := NewCreateSnapshotBadRequest()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return nil, result
++	default:
++		result := NewCreateSnapshotDefault(response.Code())
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		if response.Code()/100 == 2 {
++			return result, nil
++		}
++		return nil, result
++	}
++}
++
++// NewCreateSnapshotNoContent creates a CreateSnapshotNoContent with default headers values
++func NewCreateSnapshotNoContent() *CreateSnapshotNoContent {
++	return &CreateSnapshotNoContent{}
++}
++
++/*CreateSnapshotNoContent handles this case with default header values.
++
++Snapshot created
++*/
++type CreateSnapshotNoContent struct {
++}
++
++func (o *CreateSnapshotNoContent) Error() string {
++	return fmt.Sprintf("[PUT /snapshot/create][%d] createSnapshotNoContent ", 204)
++}
++
++func (o *CreateSnapshotNoContent) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	return nil
++}
++
++// NewCreateSnapshotBadRequest creates a CreateSnapshotBadRequest with default headers values
++func NewCreateSnapshotBadRequest() *CreateSnapshotBadRequest {
++	return &CreateSnapshotBadRequest{}
++}
++
++/*CreateSnapshotBadRequest handles this case with default header values.
++
++Snapshot cannot be created due to bad input
++*/
++type CreateSnapshotBadRequest struct {
++	Payload *models.Error
++}
++
++func (o *CreateSnapshotBadRequest) Error() string {
++	return fmt.Sprintf("[PUT /snapshot/create][%d] createSnapshotBadRequest  %+v", 400, o.Payload)
++}
++
++func (o *CreateSnapshotBadRequest) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *CreateSnapshotBadRequest) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
++
++// NewCreateSnapshotDefault creates a CreateSnapshotDefault with default headers values
++func NewCreateSnapshotDefault(code int) *CreateSnapshotDefault {
++	return &CreateSnapshotDefault{
++		_statusCode: code,
++	}
++}
++
++/*CreateSnapshotDefault handles this case with default header values.
++
++Internal server error
++*/
++type CreateSnapshotDefault struct {
++	_statusCode int
++
++	Payload *models.Error
++}
++
++// Code gets the status code for the create snapshot default response
++func (o *CreateSnapshotDefault) Code() int {
++	return o._statusCode
++}
++
++func (o *CreateSnapshotDefault) Error() string {
++	return fmt.Sprintf("[PUT /snapshot/create][%d] createSnapshot default  %+v", o._statusCode, o.Payload)
++}
++
++func (o *CreateSnapshotDefault) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *CreateSnapshotDefault) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
+diff --git a/client/operations/describe_balloon_config_parameters.go b/client/operations/describe_balloon_config_parameters.go
+new file mode 100644
+index 0000000..fa5f4cf
+--- /dev/null
++++ b/client/operations/describe_balloon_config_parameters.go
+@@ -0,0 +1,126 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"context"
++	"net/http"
++	"time"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/runtime"
++	cr "github.com/go-openapi/runtime/client"
++
++	strfmt "github.com/go-openapi/strfmt"
++)
++
++// NewDescribeBalloonConfigParams creates a new DescribeBalloonConfigParams object
++// with the default values initialized.
++func NewDescribeBalloonConfigParams() *DescribeBalloonConfigParams {
++
++	return &DescribeBalloonConfigParams{
++
++		timeout: cr.DefaultTimeout,
++	}
++}
++
++// NewDescribeBalloonConfigParamsWithTimeout creates a new DescribeBalloonConfigParams object
++// with the default values initialized, and the ability to set a timeout on a request
++func NewDescribeBalloonConfigParamsWithTimeout(timeout time.Duration) *DescribeBalloonConfigParams {
++
++	return &DescribeBalloonConfigParams{
++
++		timeout: timeout,
++	}
++}
++
++// NewDescribeBalloonConfigParamsWithContext creates a new DescribeBalloonConfigParams object
++// with the default values initialized, and the ability to set a context for a request
++func NewDescribeBalloonConfigParamsWithContext(ctx context.Context) *DescribeBalloonConfigParams {
++
++	return &DescribeBalloonConfigParams{
++
++		Context: ctx,
++	}
++}
++
++// NewDescribeBalloonConfigParamsWithHTTPClient creates a new DescribeBalloonConfigParams object
++// with the default values initialized, and the ability to set a custom HTTPClient for a request
++func NewDescribeBalloonConfigParamsWithHTTPClient(client *http.Client) *DescribeBalloonConfigParams {
++
++	return &DescribeBalloonConfigParams{
++		HTTPClient: client,
++	}
++}
++
++/*DescribeBalloonConfigParams contains all the parameters to send to the API endpoint
++for the describe balloon config operation typically these are written to a http.Request
++*/
++type DescribeBalloonConfigParams struct {
++	timeout    time.Duration
++	Context    context.Context
++	HTTPClient *http.Client
++}
++
++// WithTimeout adds the timeout to the describe balloon config params
++func (o *DescribeBalloonConfigParams) WithTimeout(timeout time.Duration) *DescribeBalloonConfigParams {
++	o.SetTimeout(timeout)
++	return o
++}
++
++// SetTimeout adds the timeout to the describe balloon config params
++func (o *DescribeBalloonConfigParams) SetTimeout(timeout time.Duration) {
++	o.timeout = timeout
++}
++
++// WithContext adds the context to the describe balloon config params
++func (o *DescribeBalloonConfigParams) WithContext(ctx context.Context) *DescribeBalloonConfigParams {
++	o.SetContext(ctx)
++	return o
++}
++
++// SetContext adds the context to the describe balloon config params
++func (o *DescribeBalloonConfigParams) SetContext(ctx context.Context) {
++	o.Context = ctx
++}
++
++// WithHTTPClient adds the HTTPClient to the describe balloon config params
++func (o *DescribeBalloonConfigParams) WithHTTPClient(client *http.Client) *DescribeBalloonConfigParams {
++	o.SetHTTPClient(client)
++	return o
++}
++
++// SetHTTPClient adds the HTTPClient to the describe balloon config params
++func (o *DescribeBalloonConfigParams) SetHTTPClient(client *http.Client) {
++	o.HTTPClient = client
++}
++
++// WriteToRequest writes these params to a swagger request
++func (o *DescribeBalloonConfigParams) WriteToRequest(r runtime.ClientRequest, reg strfmt.Registry) error {
++
++	if err := r.SetTimeout(o.timeout); err != nil {
++		return err
++	}
++	var res []error
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
+diff --git a/client/operations/describe_balloon_config_responses.go b/client/operations/describe_balloon_config_responses.go
+new file mode 100644
+index 0000000..caf402f
+--- /dev/null
++++ b/client/operations/describe_balloon_config_responses.go
+@@ -0,0 +1,170 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"fmt"
++	"io"
++
++	"github.com/go-openapi/runtime"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// DescribeBalloonConfigReader is a Reader for the DescribeBalloonConfig structure.
++type DescribeBalloonConfigReader struct {
++	formats strfmt.Registry
++}
++
++// ReadResponse reads a server response into the received o.
++func (o *DescribeBalloonConfigReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (interface{}, error) {
++	switch response.Code() {
++	case 200:
++		result := NewDescribeBalloonConfigOK()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return result, nil
++	case 400:
++		result := NewDescribeBalloonConfigBadRequest()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return nil, result
++	default:
++		result := NewDescribeBalloonConfigDefault(response.Code())
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		if response.Code()/100 == 2 {
++			return result, nil
++		}
++		return nil, result
++	}
++}
++
++// NewDescribeBalloonConfigOK creates a DescribeBalloonConfigOK with default headers values
++func NewDescribeBalloonConfigOK() *DescribeBalloonConfigOK {
++	return &DescribeBalloonConfigOK{}
++}
++
++/*DescribeBalloonConfigOK handles this case with default header values.
++
++The balloon device configuration
++*/
++type DescribeBalloonConfigOK struct {
++	Payload *models.Balloon
++}
++
++func (o *DescribeBalloonConfigOK) Error() string {
++	return fmt.Sprintf("[GET /balloon][%d] describeBalloonConfigOK  %+v", 200, o.Payload)
++}
++
++func (o *DescribeBalloonConfigOK) GetPayload() *models.Balloon {
++	return o.Payload
++}
++
++func (o *DescribeBalloonConfigOK) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Balloon)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
++
++// NewDescribeBalloonConfigBadRequest creates a DescribeBalloonConfigBadRequest with default headers values
++func NewDescribeBalloonConfigBadRequest() *DescribeBalloonConfigBadRequest {
++	return &DescribeBalloonConfigBadRequest{}
++}
++
++/*DescribeBalloonConfigBadRequest handles this case with default header values.
++
++Balloon device not configured.
++*/
++type DescribeBalloonConfigBadRequest struct {
++	Payload *models.Error
++}
++
++func (o *DescribeBalloonConfigBadRequest) Error() string {
++	return fmt.Sprintf("[GET /balloon][%d] describeBalloonConfigBadRequest  %+v", 400, o.Payload)
++}
++
++func (o *DescribeBalloonConfigBadRequest) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *DescribeBalloonConfigBadRequest) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
++
++// NewDescribeBalloonConfigDefault creates a DescribeBalloonConfigDefault with default headers values
++func NewDescribeBalloonConfigDefault(code int) *DescribeBalloonConfigDefault {
++	return &DescribeBalloonConfigDefault{
++		_statusCode: code,
++	}
++}
++
++/*DescribeBalloonConfigDefault handles this case with default header values.
++
++Internal Server Error
++*/
++type DescribeBalloonConfigDefault struct {
++	_statusCode int
++
++	Payload *models.Error
++}
++
++// Code gets the status code for the describe balloon config default response
++func (o *DescribeBalloonConfigDefault) Code() int {
++	return o._statusCode
++}
++
++func (o *DescribeBalloonConfigDefault) Error() string {
++	return fmt.Sprintf("[GET /balloon][%d] describeBalloonConfig default  %+v", o._statusCode, o.Payload)
++}
++
++func (o *DescribeBalloonConfigDefault) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *DescribeBalloonConfigDefault) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
+diff --git a/client/operations/describe_balloon_stats_parameters.go b/client/operations/describe_balloon_stats_parameters.go
+new file mode 100644
+index 0000000..1766ce7
+--- /dev/null
++++ b/client/operations/describe_balloon_stats_parameters.go
+@@ -0,0 +1,126 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"context"
++	"net/http"
++	"time"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/runtime"
++	cr "github.com/go-openapi/runtime/client"
++
++	strfmt "github.com/go-openapi/strfmt"
++)
++
++// NewDescribeBalloonStatsParams creates a new DescribeBalloonStatsParams object
++// with the default values initialized.
++func NewDescribeBalloonStatsParams() *DescribeBalloonStatsParams {
++
++	return &DescribeBalloonStatsParams{
++
++		timeout: cr.DefaultTimeout,
++	}
++}
++
++// NewDescribeBalloonStatsParamsWithTimeout creates a new DescribeBalloonStatsParams object
++// with the default values initialized, and the ability to set a timeout on a request
++func NewDescribeBalloonStatsParamsWithTimeout(timeout time.Duration) *DescribeBalloonStatsParams {
++
++	return &DescribeBalloonStatsParams{
++
++		timeout: timeout,
++	}
++}
++
++// NewDescribeBalloonStatsParamsWithContext creates a new DescribeBalloonStatsParams object
++// with the default values initialized, and the ability to set a context for a request
++func NewDescribeBalloonStatsParamsWithContext(ctx context.Context) *DescribeBalloonStatsParams {
++
++	return &DescribeBalloonStatsParams{
++
++		Context: ctx,
++	}
++}
++
++// NewDescribeBalloonStatsParamsWithHTTPClient creates a new DescribeBalloonStatsParams object
++// with the default values initialized, and the ability to set a custom HTTPClient for a request
++func NewDescribeBalloonStatsParamsWithHTTPClient(client *http.Client) *DescribeBalloonStatsParams {
++
++	return &DescribeBalloonStatsParams{
++		HTTPClient: client,
++	}
++}
++
++/*DescribeBalloonStatsParams contains all the parameters to send to the API endpoint
++for the describe balloon stats operation typically these are written to a http.Request
++*/
++type DescribeBalloonStatsParams struct {
++	timeout    time.Duration
++	Context    context.Context
++	HTTPClient *http.Client
++}
++
++// WithTimeout adds the timeout to the describe balloon stats params
++func (o *DescribeBalloonStatsParams) WithTimeout(timeout time.Duration) *DescribeBalloonStatsParams {
++	o.SetTimeout(timeout)
++	return o
++}
++
++// SetTimeout adds the timeout to the describe balloon stats params
++func (o *DescribeBalloonStatsParams) SetTimeout(timeout time.Duration) {
++	o.timeout = timeout
++}
++
++// WithContext adds the context to the describe balloon stats params
++func (o *DescribeBalloonStatsParams) WithContext(ctx context.Context) *DescribeBalloonStatsParams {
++	o.SetContext(ctx)
++	return o
++}
++
++// SetContext adds the context to the describe balloon stats params
++func (o *DescribeBalloonStatsParams) SetContext(ctx context.Context) {
++	o.Context = ctx
++}
++
++// WithHTTPClient adds the HTTPClient to the describe balloon stats params
++func (o *DescribeBalloonStatsParams) WithHTTPClient(client *http.Client) *DescribeBalloonStatsParams {
++	o.SetHTTPClient(client)
++	return o
++}
++
++// SetHTTPClient adds the HTTPClient to the describe balloon stats params
++func (o *DescribeBalloonStatsParams) SetHTTPClient(client *http.Client) {
++	o.HTTPClient = client
++}
++
++// WriteToRequest writes these params to a swagger request
++func (o *DescribeBalloonStatsParams) WriteToRequest(r runtime.ClientRequest, reg strfmt.Registry) error {
++
++	if err := r.SetTimeout(o.timeout); err != nil {
++		return err
++	}
++	var res []error
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
+diff --git a/client/operations/describe_balloon_stats_responses.go b/client/operations/describe_balloon_stats_responses.go
+new file mode 100644
+index 0000000..f9f2ad4
+--- /dev/null
++++ b/client/operations/describe_balloon_stats_responses.go
+@@ -0,0 +1,170 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"fmt"
++	"io"
++
++	"github.com/go-openapi/runtime"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// DescribeBalloonStatsReader is a Reader for the DescribeBalloonStats structure.
++type DescribeBalloonStatsReader struct {
++	formats strfmt.Registry
++}
++
++// ReadResponse reads a server response into the received o.
++func (o *DescribeBalloonStatsReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (interface{}, error) {
++	switch response.Code() {
++	case 200:
++		result := NewDescribeBalloonStatsOK()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return result, nil
++	case 400:
++		result := NewDescribeBalloonStatsBadRequest()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return nil, result
++	default:
++		result := NewDescribeBalloonStatsDefault(response.Code())
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		if response.Code()/100 == 2 {
++			return result, nil
++		}
++		return nil, result
++	}
++}
++
++// NewDescribeBalloonStatsOK creates a DescribeBalloonStatsOK with default headers values
++func NewDescribeBalloonStatsOK() *DescribeBalloonStatsOK {
++	return &DescribeBalloonStatsOK{}
++}
++
++/*DescribeBalloonStatsOK handles this case with default header values.
++
++The balloon device statistics
++*/
++type DescribeBalloonStatsOK struct {
++	Payload *models.BalloonStats
++}
++
++func (o *DescribeBalloonStatsOK) Error() string {
++	return fmt.Sprintf("[GET /balloon/statistics][%d] describeBalloonStatsOK  %+v", 200, o.Payload)
++}
++
++func (o *DescribeBalloonStatsOK) GetPayload() *models.BalloonStats {
++	return o.Payload
++}
++
++func (o *DescribeBalloonStatsOK) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.BalloonStats)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
++
++// NewDescribeBalloonStatsBadRequest creates a DescribeBalloonStatsBadRequest with default headers values
++func NewDescribeBalloonStatsBadRequest() *DescribeBalloonStatsBadRequest {
++	return &DescribeBalloonStatsBadRequest{}
++}
++
++/*DescribeBalloonStatsBadRequest handles this case with default header values.
++
++The balloon device statistics were not enabled when the device was configured.
++*/
++type DescribeBalloonStatsBadRequest struct {
++	Payload *models.Error
++}
++
++func (o *DescribeBalloonStatsBadRequest) Error() string {
++	return fmt.Sprintf("[GET /balloon/statistics][%d] describeBalloonStatsBadRequest  %+v", 400, o.Payload)
++}
++
++func (o *DescribeBalloonStatsBadRequest) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *DescribeBalloonStatsBadRequest) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
++
++// NewDescribeBalloonStatsDefault creates a DescribeBalloonStatsDefault with default headers values
++func NewDescribeBalloonStatsDefault(code int) *DescribeBalloonStatsDefault {
++	return &DescribeBalloonStatsDefault{
++		_statusCode: code,
++	}
++}
++
++/*DescribeBalloonStatsDefault handles this case with default header values.
++
++Internal Server Error
++*/
++type DescribeBalloonStatsDefault struct {
++	_statusCode int
++
++	Payload *models.Error
++}
++
++// Code gets the status code for the describe balloon stats default response
++func (o *DescribeBalloonStatsDefault) Code() int {
++	return o._statusCode
++}
++
++func (o *DescribeBalloonStatsDefault) Error() string {
++	return fmt.Sprintf("[GET /balloon/statistics][%d] describeBalloonStats default  %+v", o._statusCode, o.Payload)
++}
++
++func (o *DescribeBalloonStatsDefault) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *DescribeBalloonStatsDefault) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
+diff --git a/client/operations/load_snapshot_parameters.go b/client/operations/load_snapshot_parameters.go
+new file mode 100644
+index 0000000..b9630e7
+--- /dev/null
++++ b/client/operations/load_snapshot_parameters.go
+@@ -0,0 +1,152 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"context"
++	"net/http"
++	"time"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/runtime"
++	cr "github.com/go-openapi/runtime/client"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// NewLoadSnapshotParams creates a new LoadSnapshotParams object
++// with the default values initialized.
++func NewLoadSnapshotParams() *LoadSnapshotParams {
++	var ()
++	return &LoadSnapshotParams{
++
++		timeout: cr.DefaultTimeout,
++	}
++}
++
++// NewLoadSnapshotParamsWithTimeout creates a new LoadSnapshotParams object
++// with the default values initialized, and the ability to set a timeout on a request
++func NewLoadSnapshotParamsWithTimeout(timeout time.Duration) *LoadSnapshotParams {
++	var ()
++	return &LoadSnapshotParams{
++
++		timeout: timeout,
++	}
++}
++
++// NewLoadSnapshotParamsWithContext creates a new LoadSnapshotParams object
++// with the default values initialized, and the ability to set a context for a request
++func NewLoadSnapshotParamsWithContext(ctx context.Context) *LoadSnapshotParams {
++	var ()
++	return &LoadSnapshotParams{
++
++		Context: ctx,
++	}
++}
++
++// NewLoadSnapshotParamsWithHTTPClient creates a new LoadSnapshotParams object
++// with the default values initialized, and the ability to set a custom HTTPClient for a request
++func NewLoadSnapshotParamsWithHTTPClient(client *http.Client) *LoadSnapshotParams {
++	var ()
++	return &LoadSnapshotParams{
++		HTTPClient: client,
++	}
++}
++
++/*LoadSnapshotParams contains all the parameters to send to the API endpoint
++for the load snapshot operation typically these are written to a http.Request
++*/
++type LoadSnapshotParams struct {
++
++	/*Body
++	  The configuration used for loading a snaphot.
++
++	*/
++	Body *models.SnapshotLoadParams
++
++	timeout    time.Duration
++	Context    context.Context
++	HTTPClient *http.Client
++}
++
++// WithTimeout adds the timeout to the load snapshot params
++func (o *LoadSnapshotParams) WithTimeout(timeout time.Duration) *LoadSnapshotParams {
++	o.SetTimeout(timeout)
++	return o
++}
++
++// SetTimeout adds the timeout to the load snapshot params
++func (o *LoadSnapshotParams) SetTimeout(timeout time.Duration) {
++	o.timeout = timeout
++}
++
++// WithContext adds the context to the load snapshot params
++func (o *LoadSnapshotParams) WithContext(ctx context.Context) *LoadSnapshotParams {
++	o.SetContext(ctx)
++	return o
++}
++
++// SetContext adds the context to the load snapshot params
++func (o *LoadSnapshotParams) SetContext(ctx context.Context) {
++	o.Context = ctx
++}
++
++// WithHTTPClient adds the HTTPClient to the load snapshot params
++func (o *LoadSnapshotParams) WithHTTPClient(client *http.Client) *LoadSnapshotParams {
++	o.SetHTTPClient(client)
++	return o
++}
++
++// SetHTTPClient adds the HTTPClient to the load snapshot params
++func (o *LoadSnapshotParams) SetHTTPClient(client *http.Client) {
++	o.HTTPClient = client
++}
++
++// WithBody adds the body to the load snapshot params
++func (o *LoadSnapshotParams) WithBody(body *models.SnapshotLoadParams) *LoadSnapshotParams {
++	o.SetBody(body)
++	return o
++}
++
++// SetBody adds the body to the load snapshot params
++func (o *LoadSnapshotParams) SetBody(body *models.SnapshotLoadParams) {
++	o.Body = body
++}
++
++// WriteToRequest writes these params to a swagger request
++func (o *LoadSnapshotParams) WriteToRequest(r runtime.ClientRequest, reg strfmt.Registry) error {
++
++	if err := r.SetTimeout(o.timeout); err != nil {
++		return err
++	}
++	var res []error
++
++	if o.Body != nil {
++		if err := r.SetBodyParam(o.Body); err != nil {
++			return err
++		}
++	}
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
+diff --git a/client/operations/load_snapshot_responses.go b/client/operations/load_snapshot_responses.go
+new file mode 100644
+index 0000000..dfec0e2
+--- /dev/null
++++ b/client/operations/load_snapshot_responses.go
+@@ -0,0 +1,158 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"fmt"
++	"io"
++
++	"github.com/go-openapi/runtime"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// LoadSnapshotReader is a Reader for the LoadSnapshot structure.
++type LoadSnapshotReader struct {
++	formats strfmt.Registry
++}
++
++// ReadResponse reads a server response into the received o.
++func (o *LoadSnapshotReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (interface{}, error) {
++	switch response.Code() {
++	case 204:
++		result := NewLoadSnapshotNoContent()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return result, nil
++	case 400:
++		result := NewLoadSnapshotBadRequest()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return nil, result
++	default:
++		result := NewLoadSnapshotDefault(response.Code())
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		if response.Code()/100 == 2 {
++			return result, nil
++		}
++		return nil, result
++	}
++}
++
++// NewLoadSnapshotNoContent creates a LoadSnapshotNoContent with default headers values
++func NewLoadSnapshotNoContent() *LoadSnapshotNoContent {
++	return &LoadSnapshotNoContent{}
++}
++
++/*LoadSnapshotNoContent handles this case with default header values.
++
++Snapshot loaded
++*/
++type LoadSnapshotNoContent struct {
++}
++
++func (o *LoadSnapshotNoContent) Error() string {
++	return fmt.Sprintf("[PUT /snapshot/load][%d] loadSnapshotNoContent ", 204)
++}
++
++func (o *LoadSnapshotNoContent) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	return nil
++}
++
++// NewLoadSnapshotBadRequest creates a LoadSnapshotBadRequest with default headers values
++func NewLoadSnapshotBadRequest() *LoadSnapshotBadRequest {
++	return &LoadSnapshotBadRequest{}
++}
++
++/*LoadSnapshotBadRequest handles this case with default header values.
++
++Snapshot cannot be loaded due to bad input
++*/
++type LoadSnapshotBadRequest struct {
++	Payload *models.Error
++}
++
++func (o *LoadSnapshotBadRequest) Error() string {
++	return fmt.Sprintf("[PUT /snapshot/load][%d] loadSnapshotBadRequest  %+v", 400, o.Payload)
++}
++
++func (o *LoadSnapshotBadRequest) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *LoadSnapshotBadRequest) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
++
++// NewLoadSnapshotDefault creates a LoadSnapshotDefault with default headers values
++func NewLoadSnapshotDefault(code int) *LoadSnapshotDefault {
++	return &LoadSnapshotDefault{
++		_statusCode: code,
++	}
++}
++
++/*LoadSnapshotDefault handles this case with default header values.
++
++Internal server error
++*/
++type LoadSnapshotDefault struct {
++	_statusCode int
++
++	Payload *models.Error
++}
++
++// Code gets the status code for the load snapshot default response
++func (o *LoadSnapshotDefault) Code() int {
++	return o._statusCode
++}
++
++func (o *LoadSnapshotDefault) Error() string {
++	return fmt.Sprintf("[PUT /snapshot/load][%d] loadSnapshot default  %+v", o._statusCode, o.Payload)
++}
++
++func (o *LoadSnapshotDefault) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *LoadSnapshotDefault) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
+diff --git a/client/operations/operations_client.go b/client/operations/operations_client.go
+index fda6531..0058638 100644
+--- a/client/operations/operations_client.go
++++ b/client/operations/operations_client.go
+@@ -159,6 +159,36 @@ func (a *Client) PutMmdsConfig(params *PutMmdsConfigParams) (*PutMmdsConfigNoCon
+ 
+ }
+ 
++/*
++CreateSnapshot creates a full or diff snapshot post boot only
++
++Creates a snapshot of the microVM state. The microVM should be in the `Paused` state.
++*/
++func (a *Client) CreateSnapshot(params *CreateSnapshotParams) (*CreateSnapshotNoContent, error) {
++	// TODO: Validate the params before sending
++	if params == nil {
++		params = NewCreateSnapshotParams()
++	}
++
++	result, err := a.transport.Submit(&runtime.ClientOperation{
++		ID:                 "createSnapshot",
++		Method:             "PUT",
++		PathPattern:        "/snapshot/create",
++		ProducesMediaTypes: []string{"application/json"},
++		ConsumesMediaTypes: []string{"application/json"},
++		Schemes:            []string{"http"},
++		Params:             params,
++		Reader:             &CreateSnapshotReader{formats: a.formats},
++		Context:            params.Context,
++		Client:             params.HTTPClient,
++	})
++	if err != nil {
++		return nil, err
++	}
++	return result.(*CreateSnapshotNoContent), nil
++
++}
++
+ /*
+ CreateSyncAction creates a synchronous action
+ */
+@@ -187,6 +217,62 @@ func (a *Client) CreateSyncAction(params *CreateSyncActionParams) (*CreateSyncAc
+ 
+ }
+ 
++/*
++DescribeBalloonConfig returns the current balloon device configuration
++*/
++func (a *Client) DescribeBalloonConfig(params *DescribeBalloonConfigParams) (*DescribeBalloonConfigOK, error) {
++	// TODO: Validate the params before sending
++	if params == nil {
++		params = NewDescribeBalloonConfigParams()
++	}
++
++	result, err := a.transport.Submit(&runtime.ClientOperation{
++		ID:                 "describeBalloonConfig",
++		Method:             "GET",
++		PathPattern:        "/balloon",
++		ProducesMediaTypes: []string{"application/json"},
++		ConsumesMediaTypes: []string{"application/json"},
++		Schemes:            []string{"http"},
++		Params:             params,
++		Reader:             &DescribeBalloonConfigReader{formats: a.formats},
++		Context:            params.Context,
++		Client:             params.HTTPClient,
++	})
++	if err != nil {
++		return nil, err
++	}
++	return result.(*DescribeBalloonConfigOK), nil
++
++}
++
++/*
++DescribeBalloonStats returns the latest balloon device statistics only if enabled pre boot
++*/
++func (a *Client) DescribeBalloonStats(params *DescribeBalloonStatsParams) (*DescribeBalloonStatsOK, error) {
++	// TODO: Validate the params before sending
++	if params == nil {
++		params = NewDescribeBalloonStatsParams()
++	}
++
++	result, err := a.transport.Submit(&runtime.ClientOperation{
++		ID:                 "describeBalloonStats",
++		Method:             "GET",
++		PathPattern:        "/balloon/statistics",
++		ProducesMediaTypes: []string{"application/json"},
++		ConsumesMediaTypes: []string{"application/json"},
++		Schemes:            []string{"http"},
++		Params:             params,
++		Reader:             &DescribeBalloonStatsReader{formats: a.formats},
++		Context:            params.Context,
++		Client:             params.HTTPClient,
++	})
++	if err != nil {
++		return nil, err
++	}
++	return result.(*DescribeBalloonStatsOK), nil
++
++}
++
+ /*
+ DescribeInstance returns general information about an instance
+ */
+@@ -245,6 +331,96 @@ func (a *Client) GetMachineConfiguration(params *GetMachineConfigurationParams)
+ 
+ }
+ 
++/*
++LoadSnapshot loads a snapshot pre boot only
++
++Loads the microVM state from a snapshot. Only accepted on a fresh Firecracker process (before configuring any resource other than the Logger and Metrics).
++*/
++func (a *Client) LoadSnapshot(params *LoadSnapshotParams) (*LoadSnapshotNoContent, error) {
++	// TODO: Validate the params before sending
++	if params == nil {
++		params = NewLoadSnapshotParams()
++	}
++
++	result, err := a.transport.Submit(&runtime.ClientOperation{
++		ID:                 "loadSnapshot",
++		Method:             "PUT",
++		PathPattern:        "/snapshot/load",
++		ProducesMediaTypes: []string{"application/json"},
++		ConsumesMediaTypes: []string{"application/json"},
++		Schemes:            []string{"http"},
++		Params:             params,
++		Reader:             &LoadSnapshotReader{formats: a.formats},
++		Context:            params.Context,
++		Client:             params.HTTPClient,
++	})
++	if err != nil {
++		return nil, err
++	}
++	return result.(*LoadSnapshotNoContent), nil
++
++}
++
++/*
++PatchBalloon updates a balloon device
++
++Updates an existing balloon device, before or after machine startup. Will fail if update is not possible.
++*/
++func (a *Client) PatchBalloon(params *PatchBalloonParams) (*PatchBalloonNoContent, error) {
++	// TODO: Validate the params before sending
++	if params == nil {
++		params = NewPatchBalloonParams()
++	}
++
++	result, err := a.transport.Submit(&runtime.ClientOperation{
++		ID:                 "patchBalloon",
++		Method:             "PATCH",
++		PathPattern:        "/balloon",
++		ProducesMediaTypes: []string{"application/json"},
++		ConsumesMediaTypes: []string{"application/json"},
++		Schemes:            []string{"http"},
++		Params:             params,
++		Reader:             &PatchBalloonReader{formats: a.formats},
++		Context:            params.Context,
++		Client:             params.HTTPClient,
++	})
++	if err != nil {
++		return nil, err
++	}
++	return result.(*PatchBalloonNoContent), nil
++
++}
++
++/*
++PatchBalloonStatsInterval updates a balloon device statistics polling interval
++
++Updates an existing balloon device statistics interval, before or after machine startup. Will fail if update is not possible.
++*/
++func (a *Client) PatchBalloonStatsInterval(params *PatchBalloonStatsIntervalParams) (*PatchBalloonStatsIntervalNoContent, error) {
++	// TODO: Validate the params before sending
++	if params == nil {
++		params = NewPatchBalloonStatsIntervalParams()
++	}
++
++	result, err := a.transport.Submit(&runtime.ClientOperation{
++		ID:                 "patchBalloonStatsInterval",
++		Method:             "PATCH",
++		PathPattern:        "/balloon/statistics",
++		ProducesMediaTypes: []string{"application/json"},
++		ConsumesMediaTypes: []string{"application/json"},
++		Schemes:            []string{"http"},
++		Params:             params,
++		Reader:             &PatchBalloonStatsIntervalReader{formats: a.formats},
++		Context:            params.Context,
++		Client:             params.HTTPClient,
++	})
++	if err != nil {
++		return nil, err
++	}
++	return result.(*PatchBalloonStatsIntervalNoContent), nil
++
++}
++
+ /*
+ PatchGuestDriveByID updates the properties of a drive post boot only
+ 
+@@ -335,6 +511,66 @@ func (a *Client) PatchMachineConfiguration(params *PatchMachineConfigurationPara
+ 
+ }
+ 
++/*
++PatchVM updates the micro VM state
++
++Sets the desired state (Paused or Resumed) for the microVM.
++*/
++func (a *Client) PatchVM(params *PatchVMParams) (*PatchVMNoContent, error) {
++	// TODO: Validate the params before sending
++	if params == nil {
++		params = NewPatchVMParams()
++	}
++
++	result, err := a.transport.Submit(&runtime.ClientOperation{
++		ID:                 "patchVm",
++		Method:             "PATCH",
++		PathPattern:        "/vm",
++		ProducesMediaTypes: []string{"application/json"},
++		ConsumesMediaTypes: []string{"application/json"},
++		Schemes:            []string{"http"},
++		Params:             params,
++		Reader:             &PatchVMReader{formats: a.formats},
++		Context:            params.Context,
++		Client:             params.HTTPClient,
++	})
++	if err != nil {
++		return nil, err
++	}
++	return result.(*PatchVMNoContent), nil
++
++}
++
++/*
++PutBalloon creates or updates a balloon device
++
++Creates a new balloon device if one does not already exist, otherwise updates it, before machine startup. This will fail after machine startup. Will fail if update is not possible.
++*/
++func (a *Client) PutBalloon(params *PutBalloonParams) (*PutBalloonNoContent, error) {
++	// TODO: Validate the params before sending
++	if params == nil {
++		params = NewPutBalloonParams()
++	}
++
++	result, err := a.transport.Submit(&runtime.ClientOperation{
++		ID:                 "putBalloon",
++		Method:             "PUT",
++		PathPattern:        "/balloon",
++		ProducesMediaTypes: []string{"application/json"},
++		ConsumesMediaTypes: []string{"application/json"},
++		Schemes:            []string{"http"},
++		Params:             params,
++		Reader:             &PutBalloonReader{formats: a.formats},
++		Context:            params.Context,
++		Client:             params.HTTPClient,
++	})
++	if err != nil {
++		return nil, err
++	}
++	return result.(*PutBalloonNoContent), nil
++
++}
++
+ /*
+ PutGuestBootSource creates or updates the boot source pre boot only
+ 
+@@ -553,12 +789,20 @@ type ClientIface interface {
+ 	PatchMmds(params *PatchMmdsParams) (*PatchMmdsNoContent, error)
+ 	PutMmds(params *PutMmdsParams) (*PutMmdsNoContent, error)
+ 	PutMmdsConfig(params *PutMmdsConfigParams) (*PutMmdsConfigNoContent, error)
++	CreateSnapshot(params *CreateSnapshotParams) (*CreateSnapshotNoContent, error)
+ 	CreateSyncAction(params *CreateSyncActionParams) (*CreateSyncActionNoContent, error)
++	DescribeBalloonConfig(params *DescribeBalloonConfigParams) (*DescribeBalloonConfigOK, error)
++	DescribeBalloonStats(params *DescribeBalloonStatsParams) (*DescribeBalloonStatsOK, error)
+ 	DescribeInstance(params *DescribeInstanceParams) (*DescribeInstanceOK, error)
+ 	GetMachineConfiguration(params *GetMachineConfigurationParams) (*GetMachineConfigurationOK, error)
++	LoadSnapshot(params *LoadSnapshotParams) (*LoadSnapshotNoContent, error)
++	PatchBalloon(params *PatchBalloonParams) (*PatchBalloonNoContent, error)
++	PatchBalloonStatsInterval(params *PatchBalloonStatsIntervalParams) (*PatchBalloonStatsIntervalNoContent, error)
+ 	PatchGuestDriveByID(params *PatchGuestDriveByIDParams) (*PatchGuestDriveByIDNoContent, error)
+ 	PatchGuestNetworkInterfaceByID(params *PatchGuestNetworkInterfaceByIDParams) (*PatchGuestNetworkInterfaceByIDNoContent, error)
+ 	PatchMachineConfiguration(params *PatchMachineConfigurationParams) (*PatchMachineConfigurationNoContent, error)
++	PatchVM(params *PatchVMParams) (*PatchVMNoContent, error)
++	PutBalloon(params *PutBalloonParams) (*PutBalloonNoContent, error)
+ 	PutGuestBootSource(params *PutGuestBootSourceParams) (*PutGuestBootSourceNoContent, error)
+ 	PutGuestDriveByID(params *PutGuestDriveByIDParams) (*PutGuestDriveByIDNoContent, error)
+ 	PutGuestNetworkInterfaceByID(params *PutGuestNetworkInterfaceByIDParams) (*PutGuestNetworkInterfaceByIDNoContent, error)
+diff --git a/client/operations/patch_balloon_parameters.go b/client/operations/patch_balloon_parameters.go
+new file mode 100644
+index 0000000..86606a1
+--- /dev/null
++++ b/client/operations/patch_balloon_parameters.go
+@@ -0,0 +1,152 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"context"
++	"net/http"
++	"time"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/runtime"
++	cr "github.com/go-openapi/runtime/client"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// NewPatchBalloonParams creates a new PatchBalloonParams object
++// with the default values initialized.
++func NewPatchBalloonParams() *PatchBalloonParams {
++	var ()
++	return &PatchBalloonParams{
++
++		timeout: cr.DefaultTimeout,
++	}
++}
++
++// NewPatchBalloonParamsWithTimeout creates a new PatchBalloonParams object
++// with the default values initialized, and the ability to set a timeout on a request
++func NewPatchBalloonParamsWithTimeout(timeout time.Duration) *PatchBalloonParams {
++	var ()
++	return &PatchBalloonParams{
++
++		timeout: timeout,
++	}
++}
++
++// NewPatchBalloonParamsWithContext creates a new PatchBalloonParams object
++// with the default values initialized, and the ability to set a context for a request
++func NewPatchBalloonParamsWithContext(ctx context.Context) *PatchBalloonParams {
++	var ()
++	return &PatchBalloonParams{
++
++		Context: ctx,
++	}
++}
++
++// NewPatchBalloonParamsWithHTTPClient creates a new PatchBalloonParams object
++// with the default values initialized, and the ability to set a custom HTTPClient for a request
++func NewPatchBalloonParamsWithHTTPClient(client *http.Client) *PatchBalloonParams {
++	var ()
++	return &PatchBalloonParams{
++		HTTPClient: client,
++	}
++}
++
++/*PatchBalloonParams contains all the parameters to send to the API endpoint
++for the patch balloon operation typically these are written to a http.Request
++*/
++type PatchBalloonParams struct {
++
++	/*Body
++	  Balloon properties
++
++	*/
++	Body *models.BalloonUpdate
++
++	timeout    time.Duration
++	Context    context.Context
++	HTTPClient *http.Client
++}
++
++// WithTimeout adds the timeout to the patch balloon params
++func (o *PatchBalloonParams) WithTimeout(timeout time.Duration) *PatchBalloonParams {
++	o.SetTimeout(timeout)
++	return o
++}
++
++// SetTimeout adds the timeout to the patch balloon params
++func (o *PatchBalloonParams) SetTimeout(timeout time.Duration) {
++	o.timeout = timeout
++}
++
++// WithContext adds the context to the patch balloon params
++func (o *PatchBalloonParams) WithContext(ctx context.Context) *PatchBalloonParams {
++	o.SetContext(ctx)
++	return o
++}
++
++// SetContext adds the context to the patch balloon params
++func (o *PatchBalloonParams) SetContext(ctx context.Context) {
++	o.Context = ctx
++}
++
++// WithHTTPClient adds the HTTPClient to the patch balloon params
++func (o *PatchBalloonParams) WithHTTPClient(client *http.Client) *PatchBalloonParams {
++	o.SetHTTPClient(client)
++	return o
++}
++
++// SetHTTPClient adds the HTTPClient to the patch balloon params
++func (o *PatchBalloonParams) SetHTTPClient(client *http.Client) {
++	o.HTTPClient = client
++}
++
++// WithBody adds the body to the patch balloon params
++func (o *PatchBalloonParams) WithBody(body *models.BalloonUpdate) *PatchBalloonParams {
++	o.SetBody(body)
++	return o
++}
++
++// SetBody adds the body to the patch balloon params
++func (o *PatchBalloonParams) SetBody(body *models.BalloonUpdate) {
++	o.Body = body
++}
++
++// WriteToRequest writes these params to a swagger request
++func (o *PatchBalloonParams) WriteToRequest(r runtime.ClientRequest, reg strfmt.Registry) error {
++
++	if err := r.SetTimeout(o.timeout); err != nil {
++		return err
++	}
++	var res []error
++
++	if o.Body != nil {
++		if err := r.SetBodyParam(o.Body); err != nil {
++			return err
++		}
++	}
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
+diff --git a/client/operations/patch_balloon_responses.go b/client/operations/patch_balloon_responses.go
+new file mode 100644
+index 0000000..41e5a42
+--- /dev/null
++++ b/client/operations/patch_balloon_responses.go
+@@ -0,0 +1,158 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"fmt"
++	"io"
++
++	"github.com/go-openapi/runtime"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// PatchBalloonReader is a Reader for the PatchBalloon structure.
++type PatchBalloonReader struct {
++	formats strfmt.Registry
++}
++
++// ReadResponse reads a server response into the received o.
++func (o *PatchBalloonReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (interface{}, error) {
++	switch response.Code() {
++	case 204:
++		result := NewPatchBalloonNoContent()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return result, nil
++	case 400:
++		result := NewPatchBalloonBadRequest()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return nil, result
++	default:
++		result := NewPatchBalloonDefault(response.Code())
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		if response.Code()/100 == 2 {
++			return result, nil
++		}
++		return nil, result
++	}
++}
++
++// NewPatchBalloonNoContent creates a PatchBalloonNoContent with default headers values
++func NewPatchBalloonNoContent() *PatchBalloonNoContent {
++	return &PatchBalloonNoContent{}
++}
++
++/*PatchBalloonNoContent handles this case with default header values.
++
++Balloon device updated
++*/
++type PatchBalloonNoContent struct {
++}
++
++func (o *PatchBalloonNoContent) Error() string {
++	return fmt.Sprintf("[PATCH /balloon][%d] patchBalloonNoContent ", 204)
++}
++
++func (o *PatchBalloonNoContent) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	return nil
++}
++
++// NewPatchBalloonBadRequest creates a PatchBalloonBadRequest with default headers values
++func NewPatchBalloonBadRequest() *PatchBalloonBadRequest {
++	return &PatchBalloonBadRequest{}
++}
++
++/*PatchBalloonBadRequest handles this case with default header values.
++
++Balloon device cannot be updated due to bad input
++*/
++type PatchBalloonBadRequest struct {
++	Payload *models.Error
++}
++
++func (o *PatchBalloonBadRequest) Error() string {
++	return fmt.Sprintf("[PATCH /balloon][%d] patchBalloonBadRequest  %+v", 400, o.Payload)
++}
++
++func (o *PatchBalloonBadRequest) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *PatchBalloonBadRequest) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
++
++// NewPatchBalloonDefault creates a PatchBalloonDefault with default headers values
++func NewPatchBalloonDefault(code int) *PatchBalloonDefault {
++	return &PatchBalloonDefault{
++		_statusCode: code,
++	}
++}
++
++/*PatchBalloonDefault handles this case with default header values.
++
++Internal server error
++*/
++type PatchBalloonDefault struct {
++	_statusCode int
++
++	Payload *models.Error
++}
++
++// Code gets the status code for the patch balloon default response
++func (o *PatchBalloonDefault) Code() int {
++	return o._statusCode
++}
++
++func (o *PatchBalloonDefault) Error() string {
++	return fmt.Sprintf("[PATCH /balloon][%d] patchBalloon default  %+v", o._statusCode, o.Payload)
++}
++
++func (o *PatchBalloonDefault) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *PatchBalloonDefault) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
+diff --git a/client/operations/patch_balloon_stats_interval_parameters.go b/client/operations/patch_balloon_stats_interval_parameters.go
+new file mode 100644
+index 0000000..69e3792
+--- /dev/null
++++ b/client/operations/patch_balloon_stats_interval_parameters.go
+@@ -0,0 +1,152 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"context"
++	"net/http"
++	"time"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/runtime"
++	cr "github.com/go-openapi/runtime/client"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// NewPatchBalloonStatsIntervalParams creates a new PatchBalloonStatsIntervalParams object
++// with the default values initialized.
++func NewPatchBalloonStatsIntervalParams() *PatchBalloonStatsIntervalParams {
++	var ()
++	return &PatchBalloonStatsIntervalParams{
++
++		timeout: cr.DefaultTimeout,
++	}
++}
++
++// NewPatchBalloonStatsIntervalParamsWithTimeout creates a new PatchBalloonStatsIntervalParams object
++// with the default values initialized, and the ability to set a timeout on a request
++func NewPatchBalloonStatsIntervalParamsWithTimeout(timeout time.Duration) *PatchBalloonStatsIntervalParams {
++	var ()
++	return &PatchBalloonStatsIntervalParams{
++
++		timeout: timeout,
++	}
++}
++
++// NewPatchBalloonStatsIntervalParamsWithContext creates a new PatchBalloonStatsIntervalParams object
++// with the default values initialized, and the ability to set a context for a request
++func NewPatchBalloonStatsIntervalParamsWithContext(ctx context.Context) *PatchBalloonStatsIntervalParams {
++	var ()
++	return &PatchBalloonStatsIntervalParams{
++
++		Context: ctx,
++	}
++}
++
++// NewPatchBalloonStatsIntervalParamsWithHTTPClient creates a new PatchBalloonStatsIntervalParams object
++// with the default values initialized, and the ability to set a custom HTTPClient for a request
++func NewPatchBalloonStatsIntervalParamsWithHTTPClient(client *http.Client) *PatchBalloonStatsIntervalParams {
++	var ()
++	return &PatchBalloonStatsIntervalParams{
++		HTTPClient: client,
++	}
++}
++
++/*PatchBalloonStatsIntervalParams contains all the parameters to send to the API endpoint
++for the patch balloon stats interval operation typically these are written to a http.Request
++*/
++type PatchBalloonStatsIntervalParams struct {
++
++	/*Body
++	  Balloon properties
++
++	*/
++	Body *models.BalloonStatsUpdate
++
++	timeout    time.Duration
++	Context    context.Context
++	HTTPClient *http.Client
++}
++
++// WithTimeout adds the timeout to the patch balloon stats interval params
++func (o *PatchBalloonStatsIntervalParams) WithTimeout(timeout time.Duration) *PatchBalloonStatsIntervalParams {
++	o.SetTimeout(timeout)
++	return o
++}
++
++// SetTimeout adds the timeout to the patch balloon stats interval params
++func (o *PatchBalloonStatsIntervalParams) SetTimeout(timeout time.Duration) {
++	o.timeout = timeout
++}
++
++// WithContext adds the context to the patch balloon stats interval params
++func (o *PatchBalloonStatsIntervalParams) WithContext(ctx context.Context) *PatchBalloonStatsIntervalParams {
++	o.SetContext(ctx)
++	return o
++}
++
++// SetContext adds the context to the patch balloon stats interval params
++func (o *PatchBalloonStatsIntervalParams) SetContext(ctx context.Context) {
++	o.Context = ctx
++}
++
++// WithHTTPClient adds the HTTPClient to the patch balloon stats interval params
++func (o *PatchBalloonStatsIntervalParams) WithHTTPClient(client *http.Client) *PatchBalloonStatsIntervalParams {
++	o.SetHTTPClient(client)
++	return o
++}
++
++// SetHTTPClient adds the HTTPClient to the patch balloon stats interval params
++func (o *PatchBalloonStatsIntervalParams) SetHTTPClient(client *http.Client) {
++	o.HTTPClient = client
++}
++
++// WithBody adds the body to the patch balloon stats interval params
++func (o *PatchBalloonStatsIntervalParams) WithBody(body *models.BalloonStatsUpdate) *PatchBalloonStatsIntervalParams {
++	o.SetBody(body)
++	return o
++}
++
++// SetBody adds the body to the patch balloon stats interval params
++func (o *PatchBalloonStatsIntervalParams) SetBody(body *models.BalloonStatsUpdate) {
++	o.Body = body
++}
++
++// WriteToRequest writes these params to a swagger request
++func (o *PatchBalloonStatsIntervalParams) WriteToRequest(r runtime.ClientRequest, reg strfmt.Registry) error {
++
++	if err := r.SetTimeout(o.timeout); err != nil {
++		return err
++	}
++	var res []error
++
++	if o.Body != nil {
++		if err := r.SetBodyParam(o.Body); err != nil {
++			return err
++		}
++	}
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
+diff --git a/client/operations/patch_balloon_stats_interval_responses.go b/client/operations/patch_balloon_stats_interval_responses.go
+new file mode 100644
+index 0000000..87ca9a7
+--- /dev/null
++++ b/client/operations/patch_balloon_stats_interval_responses.go
+@@ -0,0 +1,158 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"fmt"
++	"io"
++
++	"github.com/go-openapi/runtime"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// PatchBalloonStatsIntervalReader is a Reader for the PatchBalloonStatsInterval structure.
++type PatchBalloonStatsIntervalReader struct {
++	formats strfmt.Registry
++}
++
++// ReadResponse reads a server response into the received o.
++func (o *PatchBalloonStatsIntervalReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (interface{}, error) {
++	switch response.Code() {
++	case 204:
++		result := NewPatchBalloonStatsIntervalNoContent()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return result, nil
++	case 400:
++		result := NewPatchBalloonStatsIntervalBadRequest()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return nil, result
++	default:
++		result := NewPatchBalloonStatsIntervalDefault(response.Code())
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		if response.Code()/100 == 2 {
++			return result, nil
++		}
++		return nil, result
++	}
++}
++
++// NewPatchBalloonStatsIntervalNoContent creates a PatchBalloonStatsIntervalNoContent with default headers values
++func NewPatchBalloonStatsIntervalNoContent() *PatchBalloonStatsIntervalNoContent {
++	return &PatchBalloonStatsIntervalNoContent{}
++}
++
++/*PatchBalloonStatsIntervalNoContent handles this case with default header values.
++
++Balloon statistics interval updated
++*/
++type PatchBalloonStatsIntervalNoContent struct {
++}
++
++func (o *PatchBalloonStatsIntervalNoContent) Error() string {
++	return fmt.Sprintf("[PATCH /balloon/statistics][%d] patchBalloonStatsIntervalNoContent ", 204)
++}
++
++func (o *PatchBalloonStatsIntervalNoContent) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	return nil
++}
++
++// NewPatchBalloonStatsIntervalBadRequest creates a PatchBalloonStatsIntervalBadRequest with default headers values
++func NewPatchBalloonStatsIntervalBadRequest() *PatchBalloonStatsIntervalBadRequest {
++	return &PatchBalloonStatsIntervalBadRequest{}
++}
++
++/*PatchBalloonStatsIntervalBadRequest handles this case with default header values.
++
++Balloon statistics interval cannot be updated due to bad input
++*/
++type PatchBalloonStatsIntervalBadRequest struct {
++	Payload *models.Error
++}
++
++func (o *PatchBalloonStatsIntervalBadRequest) Error() string {
++	return fmt.Sprintf("[PATCH /balloon/statistics][%d] patchBalloonStatsIntervalBadRequest  %+v", 400, o.Payload)
++}
++
++func (o *PatchBalloonStatsIntervalBadRequest) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *PatchBalloonStatsIntervalBadRequest) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
++
++// NewPatchBalloonStatsIntervalDefault creates a PatchBalloonStatsIntervalDefault with default headers values
++func NewPatchBalloonStatsIntervalDefault(code int) *PatchBalloonStatsIntervalDefault {
++	return &PatchBalloonStatsIntervalDefault{
++		_statusCode: code,
++	}
++}
++
++/*PatchBalloonStatsIntervalDefault handles this case with default header values.
++
++Internal server error
++*/
++type PatchBalloonStatsIntervalDefault struct {
++	_statusCode int
++
++	Payload *models.Error
++}
++
++// Code gets the status code for the patch balloon stats interval default response
++func (o *PatchBalloonStatsIntervalDefault) Code() int {
++	return o._statusCode
++}
++
++func (o *PatchBalloonStatsIntervalDefault) Error() string {
++	return fmt.Sprintf("[PATCH /balloon/statistics][%d] patchBalloonStatsInterval default  %+v", o._statusCode, o.Payload)
++}
++
++func (o *PatchBalloonStatsIntervalDefault) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *PatchBalloonStatsIntervalDefault) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
+diff --git a/client/operations/patch_vm_parameters.go b/client/operations/patch_vm_parameters.go
+new file mode 100644
+index 0000000..a2e52a9
+--- /dev/null
++++ b/client/operations/patch_vm_parameters.go
+@@ -0,0 +1,152 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"context"
++	"net/http"
++	"time"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/runtime"
++	cr "github.com/go-openapi/runtime/client"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// NewPatchVMParams creates a new PatchVMParams object
++// with the default values initialized.
++func NewPatchVMParams() *PatchVMParams {
++	var ()
++	return &PatchVMParams{
++
++		timeout: cr.DefaultTimeout,
++	}
++}
++
++// NewPatchVMParamsWithTimeout creates a new PatchVMParams object
++// with the default values initialized, and the ability to set a timeout on a request
++func NewPatchVMParamsWithTimeout(timeout time.Duration) *PatchVMParams {
++	var ()
++	return &PatchVMParams{
++
++		timeout: timeout,
++	}
++}
++
++// NewPatchVMParamsWithContext creates a new PatchVMParams object
++// with the default values initialized, and the ability to set a context for a request
++func NewPatchVMParamsWithContext(ctx context.Context) *PatchVMParams {
++	var ()
++	return &PatchVMParams{
++
++		Context: ctx,
++	}
++}
++
++// NewPatchVMParamsWithHTTPClient creates a new PatchVMParams object
++// with the default values initialized, and the ability to set a custom HTTPClient for a request
++func NewPatchVMParamsWithHTTPClient(client *http.Client) *PatchVMParams {
++	var ()
++	return &PatchVMParams{
++		HTTPClient: client,
++	}
++}
++
++/*PatchVMParams contains all the parameters to send to the API endpoint
++for the patch Vm operation typically these are written to a http.Request
++*/
++type PatchVMParams struct {
++
++	/*Body
++	  The microVM state
++
++	*/
++	Body *models.VM
++
++	timeout    time.Duration
++	Context    context.Context
++	HTTPClient *http.Client
++}
++
++// WithTimeout adds the timeout to the patch Vm params
++func (o *PatchVMParams) WithTimeout(timeout time.Duration) *PatchVMParams {
++	o.SetTimeout(timeout)
++	return o
++}
++
++// SetTimeout adds the timeout to the patch Vm params
++func (o *PatchVMParams) SetTimeout(timeout time.Duration) {
++	o.timeout = timeout
++}
++
++// WithContext adds the context to the patch Vm params
++func (o *PatchVMParams) WithContext(ctx context.Context) *PatchVMParams {
++	o.SetContext(ctx)
++	return o
++}
++
++// SetContext adds the context to the patch Vm params
++func (o *PatchVMParams) SetContext(ctx context.Context) {
++	o.Context = ctx
++}
++
++// WithHTTPClient adds the HTTPClient to the patch Vm params
++func (o *PatchVMParams) WithHTTPClient(client *http.Client) *PatchVMParams {
++	o.SetHTTPClient(client)
++	return o
++}
++
++// SetHTTPClient adds the HTTPClient to the patch Vm params
++func (o *PatchVMParams) SetHTTPClient(client *http.Client) {
++	o.HTTPClient = client
++}
++
++// WithBody adds the body to the patch Vm params
++func (o *PatchVMParams) WithBody(body *models.VM) *PatchVMParams {
++	o.SetBody(body)
++	return o
++}
++
++// SetBody adds the body to the patch Vm params
++func (o *PatchVMParams) SetBody(body *models.VM) {
++	o.Body = body
++}
++
++// WriteToRequest writes these params to a swagger request
++func (o *PatchVMParams) WriteToRequest(r runtime.ClientRequest, reg strfmt.Registry) error {
++
++	if err := r.SetTimeout(o.timeout); err != nil {
++		return err
++	}
++	var res []error
++
++	if o.Body != nil {
++		if err := r.SetBodyParam(o.Body); err != nil {
++			return err
++		}
++	}
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
+diff --git a/client/operations/patch_vm_responses.go b/client/operations/patch_vm_responses.go
+new file mode 100644
+index 0000000..2e9b2f6
+--- /dev/null
++++ b/client/operations/patch_vm_responses.go
+@@ -0,0 +1,158 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"fmt"
++	"io"
++
++	"github.com/go-openapi/runtime"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// PatchVMReader is a Reader for the PatchVM structure.
++type PatchVMReader struct {
++	formats strfmt.Registry
++}
++
++// ReadResponse reads a server response into the received o.
++func (o *PatchVMReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (interface{}, error) {
++	switch response.Code() {
++	case 204:
++		result := NewPatchVMNoContent()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return result, nil
++	case 400:
++		result := NewPatchVMBadRequest()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return nil, result
++	default:
++		result := NewPatchVMDefault(response.Code())
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		if response.Code()/100 == 2 {
++			return result, nil
++		}
++		return nil, result
++	}
++}
++
++// NewPatchVMNoContent creates a PatchVMNoContent with default headers values
++func NewPatchVMNoContent() *PatchVMNoContent {
++	return &PatchVMNoContent{}
++}
++
++/*PatchVMNoContent handles this case with default header values.
++
++Vm state updated
++*/
++type PatchVMNoContent struct {
++}
++
++func (o *PatchVMNoContent) Error() string {
++	return fmt.Sprintf("[PATCH /vm][%d] patchVmNoContent ", 204)
++}
++
++func (o *PatchVMNoContent) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	return nil
++}
++
++// NewPatchVMBadRequest creates a PatchVMBadRequest with default headers values
++func NewPatchVMBadRequest() *PatchVMBadRequest {
++	return &PatchVMBadRequest{}
++}
++
++/*PatchVMBadRequest handles this case with default header values.
++
++Vm state cannot be updated due to bad input
++*/
++type PatchVMBadRequest struct {
++	Payload *models.Error
++}
++
++func (o *PatchVMBadRequest) Error() string {
++	return fmt.Sprintf("[PATCH /vm][%d] patchVmBadRequest  %+v", 400, o.Payload)
++}
++
++func (o *PatchVMBadRequest) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *PatchVMBadRequest) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
++
++// NewPatchVMDefault creates a PatchVMDefault with default headers values
++func NewPatchVMDefault(code int) *PatchVMDefault {
++	return &PatchVMDefault{
++		_statusCode: code,
++	}
++}
++
++/*PatchVMDefault handles this case with default header values.
++
++Internal server error
++*/
++type PatchVMDefault struct {
++	_statusCode int
++
++	Payload *models.Error
++}
++
++// Code gets the status code for the patch Vm default response
++func (o *PatchVMDefault) Code() int {
++	return o._statusCode
++}
++
++func (o *PatchVMDefault) Error() string {
++	return fmt.Sprintf("[PATCH /vm][%d] patchVm default  %+v", o._statusCode, o.Payload)
++}
++
++func (o *PatchVMDefault) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *PatchVMDefault) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
+diff --git a/client/operations/put_balloon_parameters.go b/client/operations/put_balloon_parameters.go
+new file mode 100644
+index 0000000..f63048c
+--- /dev/null
++++ b/client/operations/put_balloon_parameters.go
+@@ -0,0 +1,152 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"context"
++	"net/http"
++	"time"
++
++	"github.com/go-openapi/errors"
++	"github.com/go-openapi/runtime"
++	cr "github.com/go-openapi/runtime/client"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// NewPutBalloonParams creates a new PutBalloonParams object
++// with the default values initialized.
++func NewPutBalloonParams() *PutBalloonParams {
++	var ()
++	return &PutBalloonParams{
++
++		timeout: cr.DefaultTimeout,
++	}
++}
++
++// NewPutBalloonParamsWithTimeout creates a new PutBalloonParams object
++// with the default values initialized, and the ability to set a timeout on a request
++func NewPutBalloonParamsWithTimeout(timeout time.Duration) *PutBalloonParams {
++	var ()
++	return &PutBalloonParams{
++
++		timeout: timeout,
++	}
++}
++
++// NewPutBalloonParamsWithContext creates a new PutBalloonParams object
++// with the default values initialized, and the ability to set a context for a request
++func NewPutBalloonParamsWithContext(ctx context.Context) *PutBalloonParams {
++	var ()
++	return &PutBalloonParams{
++
++		Context: ctx,
++	}
++}
++
++// NewPutBalloonParamsWithHTTPClient creates a new PutBalloonParams object
++// with the default values initialized, and the ability to set a custom HTTPClient for a request
++func NewPutBalloonParamsWithHTTPClient(client *http.Client) *PutBalloonParams {
++	var ()
++	return &PutBalloonParams{
++		HTTPClient: client,
++	}
++}
++
++/*PutBalloonParams contains all the parameters to send to the API endpoint
++for the put balloon operation typically these are written to a http.Request
++*/
++type PutBalloonParams struct {
++
++	/*Body
++	  Balloon properties
++
++	*/
++	Body *models.Balloon
++
++	timeout    time.Duration
++	Context    context.Context
++	HTTPClient *http.Client
++}
++
++// WithTimeout adds the timeout to the put balloon params
++func (o *PutBalloonParams) WithTimeout(timeout time.Duration) *PutBalloonParams {
++	o.SetTimeout(timeout)
++	return o
++}
++
++// SetTimeout adds the timeout to the put balloon params
++func (o *PutBalloonParams) SetTimeout(timeout time.Duration) {
++	o.timeout = timeout
++}
++
++// WithContext adds the context to the put balloon params
++func (o *PutBalloonParams) WithContext(ctx context.Context) *PutBalloonParams {
++	o.SetContext(ctx)
++	return o
++}
++
++// SetContext adds the context to the put balloon params
++func (o *PutBalloonParams) SetContext(ctx context.Context) {
++	o.Context = ctx
++}
++
++// WithHTTPClient adds the HTTPClient to the put balloon params
++func (o *PutBalloonParams) WithHTTPClient(client *http.Client) *PutBalloonParams {
++	o.SetHTTPClient(client)
++	return o
++}
++
++// SetHTTPClient adds the HTTPClient to the put balloon params
++func (o *PutBalloonParams) SetHTTPClient(client *http.Client) {
++	o.HTTPClient = client
++}
++
++// WithBody adds the body to the put balloon params
++func (o *PutBalloonParams) WithBody(body *models.Balloon) *PutBalloonParams {
++	o.SetBody(body)
++	return o
++}
++
++// SetBody adds the body to the put balloon params
++func (o *PutBalloonParams) SetBody(body *models.Balloon) {
++	o.Body = body
++}
++
++// WriteToRequest writes these params to a swagger request
++func (o *PutBalloonParams) WriteToRequest(r runtime.ClientRequest, reg strfmt.Registry) error {
++
++	if err := r.SetTimeout(o.timeout); err != nil {
++		return err
++	}
++	var res []error
++
++	if o.Body != nil {
++		if err := r.SetBodyParam(o.Body); err != nil {
++			return err
++		}
++	}
++
++	if len(res) > 0 {
++		return errors.CompositeValidationError(res...)
++	}
++	return nil
++}
+diff --git a/client/operations/put_balloon_responses.go b/client/operations/put_balloon_responses.go
+new file mode 100644
+index 0000000..f1ed3e3
+--- /dev/null
++++ b/client/operations/put_balloon_responses.go
+@@ -0,0 +1,158 @@
++// Code generated by go-swagger; DO NOT EDIT.
++
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++// 	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
++
++package operations
++
++// This file was generated by the swagger tool.
++// Editing this file might prove futile when you re-run the swagger generate command
++
++import (
++	"fmt"
++	"io"
++
++	"github.com/go-openapi/runtime"
++
++	strfmt "github.com/go-openapi/strfmt"
++
++	models "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
++)
++
++// PutBalloonReader is a Reader for the PutBalloon structure.
++type PutBalloonReader struct {
++	formats strfmt.Registry
++}
++
++// ReadResponse reads a server response into the received o.
++func (o *PutBalloonReader) ReadResponse(response runtime.ClientResponse, consumer runtime.Consumer) (interface{}, error) {
++	switch response.Code() {
++	case 204:
++		result := NewPutBalloonNoContent()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return result, nil
++	case 400:
++		result := NewPutBalloonBadRequest()
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		return nil, result
++	default:
++		result := NewPutBalloonDefault(response.Code())
++		if err := result.readResponse(response, consumer, o.formats); err != nil {
++			return nil, err
++		}
++		if response.Code()/100 == 2 {
++			return result, nil
++		}
++		return nil, result
++	}
++}
++
++// NewPutBalloonNoContent creates a PutBalloonNoContent with default headers values
++func NewPutBalloonNoContent() *PutBalloonNoContent {
++	return &PutBalloonNoContent{}
++}
++
++/*PutBalloonNoContent handles this case with default header values.
++
++Balloon device created/updated
++*/
++type PutBalloonNoContent struct {
++}
++
++func (o *PutBalloonNoContent) Error() string {
++	return fmt.Sprintf("[PUT /balloon][%d] putBalloonNoContent ", 204)
++}
++
++func (o *PutBalloonNoContent) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	return nil
++}
++
++// NewPutBalloonBadRequest creates a PutBalloonBadRequest with default headers values
++func NewPutBalloonBadRequest() *PutBalloonBadRequest {
++	return &PutBalloonBadRequest{}
++}
++
++/*PutBalloonBadRequest handles this case with default header values.
++
++Balloon device cannot be created/updated due to bad input
++*/
++type PutBalloonBadRequest struct {
++	Payload *models.Error
++}
++
++func (o *PutBalloonBadRequest) Error() string {
++	return fmt.Sprintf("[PUT /balloon][%d] putBalloonBadRequest  %+v", 400, o.Payload)
++}
++
++func (o *PutBalloonBadRequest) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *PutBalloonBadRequest) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
++
++// NewPutBalloonDefault creates a PutBalloonDefault with default headers values
++func NewPutBalloonDefault(code int) *PutBalloonDefault {
++	return &PutBalloonDefault{
++		_statusCode: code,
++	}
++}
++
++/*PutBalloonDefault handles this case with default header values.
++
++Internal server error
++*/
++type PutBalloonDefault struct {
++	_statusCode int
++
++	Payload *models.Error
++}
++
++// Code gets the status code for the put balloon default response
++func (o *PutBalloonDefault) Code() int {
++	return o._statusCode
++}
++
++func (o *PutBalloonDefault) Error() string {
++	return fmt.Sprintf("[PUT /balloon][%d] putBalloon default  %+v", o._statusCode, o.Payload)
++}
++
++func (o *PutBalloonDefault) GetPayload() *models.Error {
++	return o.Payload
++}
++
++func (o *PutBalloonDefault) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
++
++	o.Payload = new(models.Error)
++
++	// response payload
++	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
++		return err
++	}
++
++	return nil
++}
+diff --git a/drives.go b/drives.go
+index fa4787d..37063d9 100644
+--- a/drives.go
++++ b/drives.go
+@@ -1,3 +1,15 @@
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++//	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
+ package firecracker
+ 
+ import (
+diff --git a/drives_test.go b/drives_test.go
+index 7c2a974..158d02c 100644
+--- a/drives_test.go
++++ b/drives_test.go
+@@ -1,3 +1,15 @@
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++//	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
+ package firecracker
+ 
+ import (
+diff --git a/example_test.go b/example_test.go
+index a0d5985..ccfd973 100644
+--- a/example_test.go
++++ b/example_test.go
+@@ -1,3 +1,15 @@
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++//	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
+ package firecracker_test
+ 
+ import (
+diff --git a/fctesting/BUILD.bazel b/fctesting/BUILD.bazel
+index 5b8cbca..a8e0670 100644
+--- a/fctesting/BUILD.bazel
++++ b/fctesting/BUILD.bazel
+@@ -12,6 +12,7 @@ go_library(
+     deps = [
+         "//client/operations",
+         "@com_github_sirupsen_logrus//:go_default_library",
++        "@org_golang_x_sys//unix:go_default_library",
+     ],
+ )
+ 
+diff --git a/fctesting/firecracker_mock_client.go b/fctesting/firecracker_mock_client.go
+index fcef989..4f68b27 100644
+--- a/fctesting/firecracker_mock_client.go
++++ b/fctesting/firecracker_mock_client.go
+@@ -24,12 +24,20 @@ type MockClient struct {
+ 	PatchMmdsFn                      func(params *ops.PatchMmdsParams) (*ops.PatchMmdsNoContent, error)
+ 	PutMmdsFn                        func(params *ops.PutMmdsParams) (*ops.PutMmdsNoContent, error)
+ 	PutMmdsConfigFn                  func(params *ops.PutMmdsConfigParams) (*ops.PutMmdsConfigNoContent, error)
++	CreateSnapshotFn                 func(params *ops.CreateSnapshotParams) (*ops.CreateSnapshotNoContent, error)
+ 	CreateSyncActionFn               func(params *ops.CreateSyncActionParams) (*ops.CreateSyncActionNoContent, error)
++	DescribeBalloonConfigFn          func(params *ops.DescribeBalloonConfigParams) (*ops.DescribeBalloonConfigOK, error)
++	DescribeBalloonStatsFn           func(params *ops.DescribeBalloonStatsParams) (*ops.DescribeBalloonStatsOK, error)
+ 	DescribeInstanceFn               func(params *ops.DescribeInstanceParams) (*ops.DescribeInstanceOK, error)
+ 	GetMachineConfigurationFn        func(params *ops.GetMachineConfigurationParams) (*ops.GetMachineConfigurationOK, error)
++	LoadSnapshotFn                   func(params *ops.LoadSnapshotParams) (*ops.LoadSnapshotNoContent, error)
++	PatchBalloonFn                   func(params *ops.PatchBalloonParams) (*ops.PatchBalloonNoContent, error)
++	PatchBalloonStatsIntervalFn      func(params *ops.PatchBalloonStatsIntervalParams) (*ops.PatchBalloonStatsIntervalNoContent, error)
+ 	PatchGuestDriveByIDFn            func(params *ops.PatchGuestDriveByIDParams) (*ops.PatchGuestDriveByIDNoContent, error)
+ 	PatchGuestNetworkInterfaceByIDFn func(params *ops.PatchGuestNetworkInterfaceByIDParams) (*ops.PatchGuestNetworkInterfaceByIDNoContent, error)
+ 	PatchMachineConfigurationFn      func(params *ops.PatchMachineConfigurationParams) (*ops.PatchMachineConfigurationNoContent, error)
++	PatchVMFn                        func(params *ops.PatchVMParams) (*ops.PatchVMNoContent, error)
++	PutBalloonFn                     func(params *ops.PutBalloonParams) (*ops.PutBalloonNoContent, error)
+ 	PutGuestBootSourceFn             func(params *ops.PutGuestBootSourceParams) (*ops.PutGuestBootSourceNoContent, error)
+ 	PutGuestDriveByIDFn              func(params *ops.PutGuestDriveByIDParams) (*ops.PutGuestDriveByIDNoContent, error)
+ 	PutGuestNetworkInterfaceByIDFn   func(params *ops.PutGuestNetworkInterfaceByIDParams) (*ops.PutGuestNetworkInterfaceByIDNoContent, error)
+@@ -71,6 +79,14 @@ func (c *MockClient) PutMmdsConfig(params *ops.PutMmdsConfigParams) (*ops.PutMmd
+ 	return nil, nil
+ }
+ 
++func (c *MockClient) CreateSnapshot(params *ops.CreateSnapshotParams) (*ops.CreateSnapshotNoContent, error) {
++	if c.CreateSnapshotFn != nil {
++		return c.CreateSnapshotFn(params)
++	}
++
++	return nil, nil
++}
++
+ func (c *MockClient) CreateSyncAction(params *ops.CreateSyncActionParams) (*ops.CreateSyncActionNoContent, error) {
+ 	if c.CreateSyncActionFn != nil {
+ 		return c.CreateSyncActionFn(params)
+@@ -79,6 +95,22 @@ func (c *MockClient) CreateSyncAction(params *ops.CreateSyncActionParams) (*ops.
+ 	return nil, nil
+ }
+ 
++func (c *MockClient) DescribeBalloonConfig(params *ops.DescribeBalloonConfigParams) (*ops.DescribeBalloonConfigOK, error) {
++	if c.DescribeBalloonConfigFn != nil {
++		return c.DescribeBalloonConfigFn(params)
++	}
++
++	return nil, nil
++}
++
++func (c *MockClient) DescribeBalloonStats(params *ops.DescribeBalloonStatsParams) (*ops.DescribeBalloonStatsOK, error) {
++	if c.DescribeBalloonStatsFn != nil {
++		return c.DescribeBalloonStatsFn(params)
++	}
++
++	return nil, nil
++}
++
+ func (c *MockClient) DescribeInstance(params *ops.DescribeInstanceParams) (*ops.DescribeInstanceOK, error) {
+ 	if c.DescribeInstanceFn != nil {
+ 		return c.DescribeInstanceFn(params)
+@@ -95,6 +127,30 @@ func (c *MockClient) GetMachineConfiguration(params *ops.GetMachineConfiguration
+ 	return nil, nil
+ }
+ 
++func (c *MockClient) LoadSnapshot(params *ops.LoadSnapshotParams) (*ops.LoadSnapshotNoContent, error) {
++	if c.LoadSnapshotFn != nil {
++		return c.LoadSnapshotFn(params)
++	}
++
++	return nil, nil
++}
++
++func (c *MockClient) PatchBalloon(params *ops.PatchBalloonParams) (*ops.PatchBalloonNoContent, error) {
++	if c.PatchBalloonFn != nil {
++		return c.PatchBalloonFn(params)
++	}
++
++	return nil, nil
++}
++
++func (c *MockClient) PatchBalloonStatsInterval(params *ops.PatchBalloonStatsIntervalParams) (*ops.PatchBalloonStatsIntervalNoContent, error) {
++	if c.PatchBalloonStatsIntervalFn != nil {
++		return c.PatchBalloonStatsIntervalFn(params)
++	}
++
++	return nil, nil
++}
++
+ func (c *MockClient) PatchGuestDriveByID(params *ops.PatchGuestDriveByIDParams) (*ops.PatchGuestDriveByIDNoContent, error) {
+ 	if c.PatchGuestDriveByIDFn != nil {
+ 		return c.PatchGuestDriveByIDFn(params)
+@@ -119,6 +175,22 @@ func (c *MockClient) PatchMachineConfiguration(params *ops.PatchMachineConfigura
+ 	return nil, nil
+ }
+ 
++func (c *MockClient) PatchVM(params *ops.PatchVMParams) (*ops.PatchVMNoContent, error) {
++	if c.PatchVMFn != nil {
++		return c.PatchVMFn(params)
++	}
++
++	return nil, nil
++}
++
++func (c *MockClient) PutBalloon(params *ops.PutBalloonParams) (*ops.PutBalloonNoContent, error) {
++	if c.PutBalloonFn != nil {
++		return c.PutBalloonFn(params)
++	}
++
++	return nil, nil
++}
++
+ func (c *MockClient) PutGuestBootSource(params *ops.PutGuestBootSourceParams) (*ops.PutGuestBootSourceNoContent, error) {
+ 	if c.PutGuestBootSourceFn != nil {
+ 		return c.PutGuestBootSourceFn(params)
+diff --git a/fctesting/test_writer.go b/fctesting/test_writer.go
+index 2c5c1bd..86b5253 100644
+--- a/fctesting/test_writer.go
++++ b/fctesting/test_writer.go
+@@ -1,3 +1,15 @@
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++//	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
+ package fctesting
+ 
+ // TestWriter is used to mock out writing and/or do other things such as
+diff --git a/fctesting/utils.go b/fctesting/utils.go
+index 6a3c64f..b287ef9 100644
+--- a/fctesting/utils.go
++++ b/fctesting/utils.go
+@@ -14,9 +14,13 @@
+ package fctesting
+ 
+ import (
++	"fmt"
+ 	"os"
++	"os/user"
+ 	"testing"
+ 
++	"golang.org/x/sys/unix"
++
+ 	log "github.com/sirupsen/logrus"
+ )
+ 
+@@ -31,6 +35,23 @@ func init() {
+ 	}
+ }
+ 
++func RequiresKVM(t testing.TB) {
++	accessErr := unix.Access("/dev/kvm", unix.W_OK)
++	if accessErr != nil {
++		var name string
++		u, err := user.Current()
++		if err == nil {
++			name = u.Name
++		}
++
++		// On GitHub Actions, user.Current() doesn't return an error, but the name is "".
++		if name == "" {
++			name = fmt.Sprintf("uid=%d", os.Getuid())
++		}
++		t.Skipf("/dev/kvm is not writable from %s: %s", name, accessErr)
++	}
++}
++
+ // RequiresRoot will ensure that tests that require root access are actually
+ // root. In addition, this will skip root tests if the DISABLE_ROOT_TESTS is
+ // set to true
+diff --git a/fctesting/utils_test.go b/fctesting/utils_test.go
+index 3e3b08e..35f9dad 100644
+--- a/fctesting/utils_test.go
++++ b/fctesting/utils_test.go
+@@ -1,3 +1,15 @@
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++//	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
+ package fctesting
+ 
+ import (
+diff --git a/firecracker.go b/firecracker.go
+index 8f8c772..855c899 100644
+--- a/firecracker.go
++++ b/firecracker.go
+@@ -229,6 +229,59 @@ func (f *Client) PutGuestVsock(ctx context.Context, vsock *models.Vsock, opts ..
+ 	return f.client.Operations.PutGuestVsock(params)
+ }
+ 
++// PatchVMOpt is a functional option to be used for the
++// PatchVM API in setting any additional optional fields.
++type PatchVMOpt func(*ops.PatchVMParams)
++
++// PatchVM is a wrapper for the swagger generated client to make
++// calling of the API easier.
++func (f *Client) PatchVM(ctx context.Context, vm *models.VM, opts ...PatchVMOpt) (*ops.PatchVMNoContent, error) {
++	timeout, cancel := context.WithTimeout(ctx, time.Duration(f.firecrackerRequestTimeout)*time.Millisecond)
++	defer cancel()
++
++	params := ops.NewPatchVMParamsWithContext(timeout)
++	params.SetBody(vm)
++	for _, opt := range opts {
++		opt(params)
++	}
++
++	return f.client.Operations.PatchVM(params)
++}
++
++// CreateSnapshotOpt is a functional option to be used for the
++// CreateSnapshot API in setting any additional optional fields.
++type CreateSnapshotOpt func(*ops.CreateSnapshotParams)
++
++// CreateSnapshot is a wrapper for the swagger generated client to make
++// calling of the API easier.
++func (f *Client) CreateSnapshot(ctx context.Context, snapshotParams *models.SnapshotCreateParams, opts ...CreateSnapshotOpt) (*ops.CreateSnapshotNoContent, error) {
++	params := ops.NewCreateSnapshotParamsWithContext(ctx)
++	params.SetBody(snapshotParams)
++
++	for _, opt := range opts {
++		opt(params)
++	}
++
++	return f.client.Operations.CreateSnapshot(params)
++}
++
++// LoadSnapshotOpt is a functional option to be used for the
++// LoadSnapshot API in setting any additional optional fields.
++type LoadSnapshotOpt func(*ops.LoadSnapshotParams)
++
++// LoadSnapshot is a wrapper for the swagger generated client to make
++// calling of the API easier.
++func (f *Client) LoadSnapshot(ctx context.Context, snapshotParams *models.SnapshotLoadParams, opts ...LoadSnapshotOpt) (*ops.LoadSnapshotNoContent, error) {
++	params := ops.NewLoadSnapshotParamsWithContext(ctx)
++	params.SetBody(snapshotParams)
++
++	for _, opt := range opts {
++		opt(params)
++	}
++
++	return f.client.Operations.LoadSnapshot(params)
++}
++
+ // CreateSyncActionOpt is a functional option to be used for the
+ // CreateSyncAction API in setting any additional optional fields.
+ type CreateSyncActionOpt func(*ops.CreateSyncActionParams)
+@@ -296,6 +349,16 @@ func (f *Client) PatchMmds(ctx context.Context, metadata interface{}, opts ...Pa
+ 	return f.client.Operations.PatchMmds(params)
+ }
+ 
++// PutMmdsConfig is a wrapper for the swagger generated client to make calling of the
++// API easier.
++func (f *Client) PutMmdsConfig(ctx context.Context, config *models.MmdsConfig) (*ops.PutMmdsConfigNoContent, error) {
++	params := ops.NewPutMmdsConfigParams()
++	params.SetContext(ctx)
++	params.SetBody(config)
++
++	return f.client.Operations.PutMmdsConfig(params)
++}
++
+ // GetMachineConfigurationOpt  is a functional option to be used for the
+ // GetMachineConfiguration API in setting any additional optional fields.
+ type GetMachineConfigurationOpt func(*ops.GetMachineConfigurationParams)
+@@ -312,6 +375,22 @@ func (f *Client) GetMachineConfiguration(opts ...GetMachineConfigurationOpt) (*o
+ 	return f.client.Operations.GetMachineConfiguration(p)
+ }
+ 
++// DescribeInstanceOpt is a functional option to be used for the DescribeInstance API
++// for any additional optional fields
++type DescribeInstanceOpt func(*ops.DescribeInstanceParams)
++
++// GetInstanceInfo is a wrapper for the swagger generated client to make calling of
++// the API easier
++func (f *Client) GetInstanceInfo(ctx context.Context, opts ...DescribeInstanceOpt) (*ops.DescribeInstanceOK, error) {
++	params := ops.NewDescribeInstanceParams()
++	params.SetContext(ctx)
++	for _, opt := range opts {
++		opt(params)
++	}
++
++	return f.client.Operations.DescribeInstance(params)
++}
++
+ // PatchGuestDriveByIDOpt is a functional option to be used for the PutMmds API in setting
+ // any additional optional fields.
+ type PatchGuestDriveByIDOpt func(*ops.PatchGuestDriveByIDParams)
+@@ -324,7 +403,7 @@ func (f *Client) PatchGuestDriveByID(ctx context.Context, driveID, pathOnHost st
+ 
+ 	partialDrive := models.PartialDrive{
+ 		DriveID:    &driveID,
+-		PathOnHost: &pathOnHost,
++		PathOnHost: pathOnHost,
+ 	}
+ 	params.SetBody(&partialDrive)
+ 	params.DriveID = driveID
+@@ -335,3 +414,80 @@ func (f *Client) PatchGuestDriveByID(ctx context.Context, driveID, pathOnHost st
+ 
+ 	return f.client.Operations.PatchGuestDriveByID(params)
+ }
++
++// PutBalloonOpt is a functional option to be used for the
++// PutBalloon API in setting any additional optional fields.
++type PutBalloonOpt func(*ops.PutBalloonParams)
++
++// PutBalloonOpt is a wrapper for the swagger generated client to make
++// calling of the API easier.
++func (f *Client) PutBalloon(ctx context.Context, balloon *models.Balloon, opts ...PutBalloonOpt) (*ops.PutBalloonNoContent, error) {
++	timeout, cancel := context.WithTimeout(ctx, time.Duration(f.firecrackerRequestTimeout)*time.Millisecond)
++	defer cancel()
++
++	params := ops.NewPutBalloonParamsWithContext(timeout)
++	params.SetBody(balloon)
++	for _, opt := range opts {
++		opt(params)
++	}
++
++	return f.client.Operations.PutBalloon(params)
++}
++
++// DescribeBalloonConfig is a wrapper for the swagger generated client to make
++// calling of the API easier.
++func (f *Client) DescribeBalloonConfig(ctx context.Context) (*ops.DescribeBalloonConfigOK, error) {
++	params := ops.NewDescribeBalloonConfigParams()
++	params.SetContext(ctx)
++	params.SetTimeout(time.Duration(f.firecrackerRequestTimeout) * time.Millisecond)
++
++	return f.client.Operations.DescribeBalloonConfig(params)
++}
++
++// PatchBalloonOpt is a functional option to be used for the PatchBalloon API in setting
++// any additional optional fields.
++type PatchBalloonOpt func(*ops.PatchBalloonParams)
++
++// PatchBalloon is a wrapper for the swagger generated client to make calling of the
++// API easier.
++func (f *Client) PatchBalloon(ctx context.Context, ballonUpdate *models.BalloonUpdate, opts ...PatchBalloonOpt) (*ops.PatchBalloonNoContent, error) {
++	timeout, cancel := context.WithTimeout(ctx, time.Duration(f.firecrackerRequestTimeout)*time.Millisecond)
++	defer cancel()
++
++	params := ops.NewPatchBalloonParamsWithContext(timeout)
++	params.SetBody(ballonUpdate)
++	for _, opt := range opts {
++		opt(params)
++	}
++
++	return f.client.Operations.PatchBalloon(params)
++}
++
++// DescribeBalloonStats is a wrapper for the swagger generated client to make calling of the
++// API easier.
++func (f *Client) DescribeBalloonStats(ctx context.Context) (*ops.DescribeBalloonStatsOK, error) {
++	params := ops.NewDescribeBalloonStatsParams()
++	params.SetContext(ctx)
++	params.SetTimeout(time.Duration(f.firecrackerRequestTimeout) * time.Millisecond)
++
++	return f.client.Operations.DescribeBalloonStats(params)
++}
++
++// PatchBalloonStatsIntervalOpt is a functional option to be used for the PatchBalloonStatsInterval API in setting
++// any additional optional fields.
++type PatchBalloonStatsIntervalOpt func(*ops.PatchBalloonStatsIntervalParams)
++
++// PatchBalloonStatsInterval is a wrapper for the swagger generated client to make calling of the
++// API easier.
++func (f *Client) PatchBalloonStatsInterval(ctx context.Context, balloonStatsUpdate *models.BalloonStatsUpdate, opts ...PatchBalloonStatsIntervalOpt) (*ops.PatchBalloonStatsIntervalNoContent, error) {
++	timeout, cancel := context.WithTimeout(ctx, time.Duration(f.firecrackerRequestTimeout)*time.Millisecond)
++	defer cancel()
++
++	params := ops.NewPatchBalloonStatsIntervalParamsWithContext(timeout)
++	params.SetBody(balloonStatsUpdate)
++	for _, opt := range opts {
++		opt(params)
++	}
++
++	return f.client.Operations.PatchBalloonStatsInterval(params)
++}
+diff --git a/firecracker_test.go b/firecracker_test.go
+index c729a40..5043465 100644
+--- a/firecracker_test.go
++++ b/firecracker_test.go
+@@ -1,8 +1,19 @@
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++//	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
+ package firecracker
+ 
+ import (
+ 	"context"
+-	"os"
+ 	"path/filepath"
+ 	"testing"
+ 	"time"
+@@ -17,7 +28,8 @@ func TestClient(t *testing.T) {
+ 	}
+ 
+ 	ctx := context.Background()
+-	socketpath := filepath.Join(testDataPath, "test.socket")
++	socketpath, cleanup := makeSocketPath(t)
++	defer cleanup()
+ 
+ 	cmd := VMCommandBuilder{}.
+ 		WithBin(getFirecrackerBinaryPath()).
+@@ -32,7 +44,6 @@ func TestClient(t *testing.T) {
+ 		if err := cmd.Process.Kill(); err != nil {
+ 			t.Errorf("failed to kill process: %v", err)
+ 		}
+-		os.Remove(socketpath)
+ 	}()
+ 
+ 	drive := &models.Drive{
+diff --git a/handlers.go b/handlers.go
+index 27d361b..214d57f 100644
+--- a/handlers.go
++++ b/handlers.go
+@@ -30,9 +30,11 @@ const (
+ 	CreateNetworkInterfacesHandlerName = "fcinit.CreateNetworkInterfaces"
+ 	AddVsocksHandlerName               = "fcinit.AddVsocks"
+ 	SetMetadataHandlerName             = "fcinit.SetMetadata"
++	ConfigMmdsHandlerName              = "fcinit.ConfigMmds"
+ 	LinkFilesToRootFSHandlerName       = "fcinit.LinkFilesToRootFS"
+ 	SetupNetworkHandlerName            = "fcinit.SetupNetwork"
+ 	SetupKernelArgsHandlerName         = "fcinit.SetupKernelArgs"
++	CreateBalloonHandlerName           = "fcint.CreateBalloon"
+ 
+ 	ValidateCfgHandlerName        = "validate.Cfg"
+ 	ValidateJailerCfgHandlerName  = "validate.JailerCfg"
+@@ -63,7 +65,7 @@ var JailerConfigValidationHandler = Handler{
+ 			return nil
+ 		}
+ 
+-		hasRoot := false
++		hasRoot := m.Cfg.InitrdPath != ""
+ 		for _, drive := range m.Cfg.Drives {
+ 			if BoolValue(drive.IsRootDevice) {
+ 				hasRoot = true
+@@ -258,6 +260,26 @@ func NewSetMetadataHandler(metadata interface{}) Handler {
+ 	}
+ }
+ 
++// ConfigMmdsHandler is a named handler that puts the MMDS config into the
++// firecracker process.
++var ConfigMmdsHandler = Handler{
++	Name: ConfigMmdsHandlerName,
++	Fn: func(ctx context.Context, m *Machine) error {
++		return m.setMmdsConfig(ctx, m.Cfg.MmdsAddress)
++	},
++}
++
++// NewCreateBalloonHandler is a named handler that put a memory balloon into the
++// firecracker process.
++func NewCreateBalloonHandler(amountMib int64, deflateOnOom bool, StatsPollingIntervals int64) Handler {
++	return Handler{
++		Name: CreateBalloonHandlerName,
++		Fn: func(ctx context.Context, m *Machine) error {
++			return m.CreateBalloon(ctx, amountMib, deflateOnOom, StatsPollingIntervals)
++		},
++	}
++}
++
+ var defaultFcInitHandlerList = HandlerList{}.Append(
+ 	SetupNetworkHandler,
+ 	SetupKernelArgsHandler,
+diff --git a/handlers_test.go b/handlers_test.go
+index b057745..d8a05d4 100644
+--- a/handlers_test.go
++++ b/handlers_test.go
+@@ -1,8 +1,21 @@
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++//	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
+ package firecracker
+ 
+ import (
+ 	"context"
+ 	"fmt"
++	"net"
+ 	"os"
+ 	"path/filepath"
+ 	"reflect"
+@@ -515,6 +528,8 @@ func TestHandlers(t *testing.T) {
+ 		"foo": "bar",
+ 		"baz": "qux",
+ 	}
++	mmdsAddress := net.IPv4(169, 254, 169, 254)
++	mmdsConfig := &models.MmdsConfig{IPV4Address: String(mmdsAddress.String())}
+ 
+ 	cases := []struct {
+ 		Handler Handler
+@@ -619,6 +634,21 @@ func TestHandlers(t *testing.T) {
+ 			},
+ 			Config: Config{},
+ 		},
++		{
++			Handler: ConfigMmdsHandler,
++			Client: fctesting.MockClient{
++				PutMmdsConfigFn: func(params *ops.PutMmdsConfigParams) (*ops.PutMmdsConfigNoContent, error) {
++					called = ConfigMmdsHandlerName
++					if !reflect.DeepEqual(mmdsConfig, params.Body) {
++						return nil, fmt.Errorf("incorrect mmds config value: %v", params.Body)
++					}
++					return &ops.PutMmdsConfigNoContent{}, nil
++				},
++			},
++			Config: Config{
++				MmdsAddress: mmdsAddress,
++			},
++		},
+ 	}
+ 
+ 	ctx := context.Background()
+diff --git a/jailer.go b/jailer.go
+index 56d8926..dda2bb4 100644
+--- a/jailer.go
++++ b/jailer.go
+@@ -373,7 +373,7 @@ func LinkFilesHandler(kernelImageFileName string) Handler {
+ 
+ 			initrdFilename := ""
+ 			if m.Cfg.InitrdPath != "" {
+-				initrdFilename := filepath.Base(m.Cfg.InitrdPath)
++				initrdFilename = filepath.Base(m.Cfg.InitrdPath)
+ 				// copy initrd to root fs
+ 				if err := os.Link(
+ 					m.Cfg.InitrdPath,
+diff --git a/jailer_test.go b/jailer_test.go
+index f18e6eb..9a13e3b 100644
+--- a/jailer_test.go
++++ b/jailer_test.go
+@@ -1,3 +1,15 @@
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++//	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
+ package firecracker
+ 
+ import (
+diff --git a/machine.go b/machine.go
+index cae1caa..6326281 100644
+--- a/machine.go
++++ b/machine.go
+@@ -18,6 +18,7 @@ import (
+ 	"encoding/json"
+ 	"fmt"
+ 	"io"
++	"net"
+ 	"os"
+ 	"os/exec"
+ 	"os/signal"
+@@ -158,6 +159,11 @@ type Config struct {
+ 	//	2 : advanced filtering. This adds further checks on some of the
+ 	//			parameters of the allowed syscalls.
+ 	SeccompLevel SeccompLevelValue
++
++	// MmdsAddress is IPv4 address used by guest applications when issuing requests to MMDS.
++	// It is possible to use a valid IPv4 link-local address (169.254.0.0/16).
++	// If not provided, the default address (169.254.169.254) will be used.
++	MmdsAddress net.IP
+ }
+ 
+ // Validate will ensure that the required fields are set and that
+@@ -546,7 +552,7 @@ func (m *Machine) startVMM(ctx context.Context) error {
+ 	m.setupSignals()
+ 
+ 	// Wait for firecracker to initialize:
+-	err = m.waitForSocket(time.Duration(m.client.firecrackerInitTimeout)*time.Second, errCh)
++	err = m.WaitForSocket(time.Duration(m.client.firecrackerInitTimeout)*time.Second, errCh)
+ 	if err != nil {
+ 		err = errors.Wrapf(err, "Firecracker did not create API socket %s", m.Cfg.SocketPath)
+ 		m.fatalErr = err
+@@ -870,6 +876,19 @@ func (m *Machine) sendCtrlAltDel(ctx context.Context) error {
+ 	return err
+ }
+ 
++func (m *Machine) setMmdsConfig(ctx context.Context, address net.IP) error {
++	mmdsCfg := models.MmdsConfig{
++		IPV4Address: String(address.String()),
++	}
++	if _, err := m.client.PutMmdsConfig(ctx, &mmdsCfg); err != nil {
++		m.logger.Errorf("Setting mmds configuration failed: %s: %v", address, err)
++		return err
++	}
++
++	m.logger.Debug("SetMmdsConfig successful")
++	return nil
++}
++
+ // SetMetadata sets the machine's metadata for MDDS
+ func (m *Machine) SetMetadata(ctx context.Context, metadata interface{}) error {
+ 	if _, err := m.client.PutMmds(ctx, metadata); err != nil {
+@@ -927,6 +946,23 @@ func (m *Machine) UpdateGuestDrive(ctx context.Context, driveID, pathOnHost stri
+ 	return nil
+ }
+ 
++func (m *Machine) DescribeInstanceInfo(ctx context.Context) (models.InstanceInfo, error) {
++	var instanceInfo models.InstanceInfo
++	resp, err := m.client.GetInstanceInfo(ctx)
++	if err != nil {
++		m.logger.Errorf("Getting Instance Info: %s", err)
++		return instanceInfo, err
++	}
++
++	instanceInfo = *resp.Payload
++	if err != nil {
++		m.logger.Errorf("Getting Instance info failed parsing payload: %s", err)
++	}
++
++	m.logger.Printf("GetInstanceInfo successful")
++	return instanceInfo, err
++}
++
+ // refreshMachineConfiguration synchronizes our cached representation of the machine configuration
+ // with that reported by the Firecracker API
+ func (m *Machine) refreshMachineConfiguration() error {
+@@ -940,8 +976,8 @@ func (m *Machine) refreshMachineConfiguration() error {
+ 	return nil
+ }
+ 
+-// waitForSocket waits for the given file to exist
+-func (m *Machine) waitForSocket(timeout time.Duration, exitchan chan error) error {
++// WaitForSocket waits for the given file to exist
++func (m *Machine) WaitForSocket(timeout time.Duration, exitchan chan error) error {
+ 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+ 
+ 	ticker := time.NewTicker(10 * time.Millisecond)
+@@ -1002,3 +1038,141 @@ func (m *Machine) setupSignals() {
+ 		close(sigchan)
+ 	}()
+ }
++
++// PauseVM pauses the VM
++func (m *Machine) PauseVM(ctx context.Context, opts ...PatchVMOpt) error {
++	vm := &models.VM{
++		State: String(models.VMStatePaused),
++	}
++
++	if _, err := m.client.PatchVM(ctx, vm, opts...); err != nil {
++		m.logger.Errorf("failed to pause the VM: %v", err)
++		return err
++	}
++
++	m.logger.Debug("VM paused successfully")
++	return nil
++}
++
++// ResumeVM resumes the VM
++func (m *Machine) ResumeVM(ctx context.Context, opts ...PatchVMOpt) error {
++	vm := &models.VM{
++		State: String(models.VMStateResumed),
++	}
++
++	if _, err := m.client.PatchVM(ctx, vm, opts...); err != nil {
++		m.logger.Errorf("failed to resume the VM: %v", err)
++		return err
++	}
++
++	m.logger.Debug("VM resumed successfully")
++	return nil
++}
++
++// CreateSnapshot creates a snapshot of the VM
++func (m *Machine) CreateSnapshot(ctx context.Context, memFilePath, snapshotPath string, opts ...CreateSnapshotOpt) error {
++	snapshotParams := &models.SnapshotCreateParams{
++		MemFilePath:  String(memFilePath),
++		SnapshotPath: String(snapshotPath),
++	}
++
++	if _, err := m.client.CreateSnapshot(ctx, snapshotParams, opts...); err != nil {
++		m.logger.Errorf("failed to create a snapshot of the VM: %v", err)
++		return err
++	}
++
++	m.logger.Debug("snapshot created successfully")
++	return nil
++}
++
++// LoadSnapshot load a snapshot
++func (m *Machine) LoadSnapshot(ctx context.Context, memFilePath, snapshotPath string, opts ...LoadSnapshotOpt) error {
++	snapshotParams := &models.SnapshotLoadParams{
++		MemFilePath:  String(memFilePath),
++		SnapshotPath: String(snapshotPath),
++	}
++
++	if _, err := m.client.LoadSnapshot(ctx, snapshotParams, opts...); err != nil {
++		m.logger.Errorf("failed to load a snapshot for VM: %v", err)
++		return err
++	}
++
++	m.logger.Debug("snapshot created successfully")
++	return nil
++}
++
++// CreateBalloon creates a balloon device if one does not exist
++func (m *Machine) CreateBalloon(ctx context.Context, amountMib int64, deflateOnOom bool, statsPollingIntervals int64, opts ...PutBalloonOpt) error {
++	balloon := models.Balloon{
++		AmountMib:             &amountMib,
++		DeflateOnOom:          &deflateOnOom,
++		StatsPollingIntervals: statsPollingIntervals,
++	}
++	_, err := m.client.PutBalloon(ctx, &balloon, opts...)
++
++	if err != nil {
++		m.logger.Errorf("Create balloon device failed : %s", err)
++		return err
++	}
++
++	m.logger.Debug("Created balloon device successful")
++	return nil
++}
++
++// GetBalloonConfig gets the current balloon device configuration.
++func (m *Machine) GetBalloonConfig(ctx context.Context) (models.Balloon, error) {
++	var balloonConfig models.Balloon
++	resp, err := m.client.DescribeBalloonConfig(ctx)
++	if err != nil {
++		m.logger.Errorf("Getting balloonConfig: %s", err)
++		return balloonConfig, err
++	}
++
++	balloonConfig = *resp.Payload
++	m.logger.Debug("GetBalloonConfig successful")
++	return balloonConfig, err
++}
++
++// UpdateBalloon will update an existing balloon device, before or after machine startup
++func (m *Machine) UpdateBalloon(ctx context.Context, amountMib int64, opts ...PatchBalloonOpt) error {
++	ballonUpdate := models.BalloonUpdate{
++		AmountMib: &amountMib,
++	}
++	_, err := m.client.PatchBalloon(ctx, &ballonUpdate, opts...)
++	if err != nil {
++		m.logger.Errorf("Update balloon device failed : %s", err)
++		return err
++	}
++
++	m.logger.Debug("Update balloon device successful")
++	return nil
++}
++
++// GetBalloonStats gets the latest balloon device statistics, only if enabled pre-boot.
++func (m *Machine) GetBalloonStats(ctx context.Context) (models.BalloonStats, error) {
++	var balloonStats models.BalloonStats
++	resp, err := m.client.DescribeBalloonStats(ctx)
++	if err != nil {
++		m.logger.Errorf("Getting balloonStats: %s", err)
++		return balloonStats, err
++	}
++	balloonStats = *resp.Payload
++	m.logger.Debug("GetBalloonStats successful")
++	return balloonStats, nil
++}
++
++// UpdateBalloon will update a balloon device statistics polling interval.
++// Statistics cannot be turned on/off after boot.
++func (m *Machine) UpdateBalloonStats(ctx context.Context, statsPollingIntervals int64, opts ...PatchBalloonStatsIntervalOpt) error {
++	balloonStatsUpdate := models.BalloonStatsUpdate{
++		StatsPollingIntervals: &statsPollingIntervals,
++	}
++
++	if _, err := m.client.PatchBalloonStatsInterval(ctx, &balloonStatsUpdate, opts...); err != nil {
++		m.logger.Errorf("UpdateBalloonStats failed: %v", err)
++		return err
++	}
++
++	m.logger.Debug("UpdateBalloonStats successful")
++	return nil
++}
+diff --git a/machine_test.go b/machine_test.go
+index 5c2126c..17c0293 100644
+--- a/machine_test.go
++++ b/machine_test.go
+@@ -61,20 +61,42 @@ const (
+ 
+ var (
+ 	skipTuntap      bool
+-	testDataPath    = "./testdata"
++	testDataPath    = envOrDefault(testDataPathEnv, "./testdata")
+ 	testDataLogPath = filepath.Join(testDataPath, "logs")
+ 	testDataBin     = filepath.Join(testDataPath, "bin")
+ 
+ 	testRootfs = filepath.Join(testDataPath, "root-drive.img")
++
++	testBalloonMemory            = int64(10)
++	testBalloonNewMemory         = int64(6)
++	testBalloonDeflateOnOom      = true
++	testStatsPollingIntervals    = int64(1)
++	testNewStatsPollingIntervals = int64(6)
+ )
+ 
++func envOrDefault(k, empty string) string {
++	value := os.Getenv(k)
++	if value == "" {
++		return empty
++	}
++	return value
++}
++
++// Replace filesystem-unsafe characters (such as /) which are often seen in Go's test names
++var fsSafeTestName = strings.NewReplacer("/", "_")
++
++func makeSocketPath(tb testing.TB) (string, func()) {
++	tb.Helper()
++
++	dir, err := ioutil.TempDir("", fsSafeTestName.Replace(tb.Name()))
++	require.NoError(tb, err)
++
++	return filepath.Join(dir, "fc.sock"), func() { os.RemoveAll(dir) }
++}
++
+ func init() {
+ 	flag.BoolVar(&skipTuntap, "test.skip-tuntap", false, "Disables tests that require a tuntap device")
+ 
+-	if val := os.Getenv(testDataPathEnv); val != "" {
+-		testDataPath = val
+-	}
+-
+ 	if err := os.MkdirAll(testDataLogPath, 0777); err != nil {
+ 		panic(err)
+ 	}
+@@ -106,9 +128,7 @@ func TestNewMachine(t *testing.T) {
+ }
+ 
+ func TestJailerMicroVMExecution(t *testing.T) {
+-	if testing.Short() {
+-		t.Skip()
+-	}
++	fctesting.RequiresKVM(t)
+ 	fctesting.RequiresRoot(t)
+ 
+ 	logPath := filepath.Join(testDataLogPath, "TestJailerMicroVMExecution")
+@@ -268,26 +288,23 @@ func TestJailerMicroVMExecution(t *testing.T) {
+ }
+ 
+ func TestMicroVMExecution(t *testing.T) {
+-	if testing.Short() {
+-		t.Skip()
+-	}
++	fctesting.RequiresKVM(t)
+ 
+ 	var nCpus int64 = 2
+ 	cpuTemplate := models.CPUTemplate(models.CPUTemplateT2)
+ 	var memSz int64 = 256
+-	socketPath := filepath.Join(testDataPath, "TestMicroVMExecution.sock")
+-	logFifo := filepath.Join(testDataPath, "firecracker.log")
+-	metricsFifo := filepath.Join(testDataPath, "firecracker-metrics")
+-	capturedLog := filepath.Join(testDataPath, "writer.fifo")
++
++	dir, err := ioutil.TempDir("", t.Name())
++	require.NoError(t, err)
++	defer os.RemoveAll(dir)
++
++	socketPath := filepath.Join(dir, "TestMicroVMExecution.sock")
++	logFifo := filepath.Join(dir, "firecracker.log")
++	metricsFifo := filepath.Join(dir, "firecracker-metrics")
++	capturedLog := filepath.Join(dir, "writer.fifo")
+ 	fw, err := os.OpenFile(capturedLog, os.O_CREATE|os.O_RDWR, 0600)
+ 	require.NoError(t, err, "failed to open fifo writer file")
+-	defer func() {
+-		fw.Close()
+-		os.Remove(capturedLog)
+-		os.Remove(socketPath)
+-		os.Remove(logFifo)
+-		os.Remove(metricsFifo)
+-	}()
++	defer fw.Close()
+ 
+ 	vmlinuxPath := getVmlinuxPath(t)
+ 
+@@ -331,9 +348,11 @@ func TestMicroVMExecution(t *testing.T) {
+ 	defer vmmCancel()
+ 	exitchannel := make(chan error)
+ 	go func() {
+-		if err := m.startVMM(vmmCtx); err != nil {
++		err := m.startVMM(vmmCtx)
++		if err != nil {
++			exitchannel <- err
+ 			close(exitchannel)
+-			t.Fatalf("Failed to start VMM: %v", err)
++			return
+ 		}
+ 		defer m.StopVMM()
+ 
+@@ -356,8 +375,12 @@ func TestMicroVMExecution(t *testing.T) {
+ 	t.Run("TestAttachVsock", func(t *testing.T) { testAttachVsock(ctx, t, m) })
+ 	t.Run("SetMetadata", func(t *testing.T) { testSetMetadata(ctx, t, m) })
+ 	t.Run("UpdateMetadata", func(t *testing.T) { testUpdateMetadata(ctx, t, m) })
+-	t.Run("GetMetadata", func(t *testing.T) { testGetMetadata(ctx, t, m) }) // Should be after testSetMetadata and testUpdateMetadata
++	t.Run("GetMetadata", func(t *testing.T) { testGetMetadata(ctx, t, m) })         // Should be after testSetMetadata and testUpdateMetadata
++	t.Run("TestCreateBalloon", func(t *testing.T) { testCreateBalloon(ctx, t, m) }) // should be before the microVM is started(only pre-boot)
+ 	t.Run("TestStartInstance", func(t *testing.T) { testStartInstance(ctx, t, m) })
++	t.Run("TestGetInstanceInfo", func(t *testing.T) { testGetInstanceInfo(ctx, t, m) })
++	t.Run("TestGetBalloonConfig", func(t *testing.T) { testGetBalloonConfig(ctx, t, m) }) // should be after testCreateBalloon
++	t.Run("TestGetBalloonStats", func(t *testing.T) { testGetBalloonStats(ctx, t, m) })
+ 
+ 	// Let the VMM start and stabilize...
+ 	timer := time.NewTimer(5 * time.Second)
+@@ -365,6 +388,8 @@ func TestMicroVMExecution(t *testing.T) {
+ 	case <-timer.C:
+ 		t.Run("TestUpdateGuestDrive", func(t *testing.T) { testUpdateGuestDrive(ctx, t, m) })
+ 		t.Run("TestUpdateGuestNetworkInterface", func(t *testing.T) { testUpdateGuestNetworkInterface(ctx, t, m) })
++		t.Run("TestUpdateBalloon", func(t *testing.T) { testUpdateBalloon(ctx, t, m) })
++		t.Run("TestUpdateBalloonStats", func(t *testing.T) { testUpdateBalloonStats(ctx, t, m) })
+ 		t.Run("TestShutdown", func(t *testing.T) { testShutdown(ctx, t, m) })
+ 	case <-exitchannel:
+ 		// if we've already exited, there's no use waiting for the timer
+@@ -380,8 +405,11 @@ func TestMicroVMExecution(t *testing.T) {
+ }
+ 
+ func TestStartVMM(t *testing.T) {
+-	socketPath := filepath.Join("testdata", "TestStartVMM.sock")
+-	defer os.Remove(socketPath)
++	fctesting.RequiresKVM(t)
++
++	socketPath, cleanup := makeSocketPath(t)
++	defer cleanup()
++
+ 	cfg := Config{
+ 		SocketPath: socketPath,
+ 	}
+@@ -419,6 +447,8 @@ func TestStartVMM(t *testing.T) {
+ }
+ 
+ func TestLogAndMetrics(t *testing.T) {
++	fctesting.RequiresKVM(t)
++
+ 	tests := []struct {
+ 		logLevel string
+ 		quiet    bool
+@@ -431,7 +461,7 @@ func TestLogAndMetrics(t *testing.T) {
+ 		t.Run(test.logLevel, func(t *testing.T) {
+ 			out := testLogAndMetrics(t, test.logLevel)
+ 			if test.quiet {
+-				assert.Regexp(t, `^Running Firecracker v0\.\d+\.0`, out)
++				assert.Regexp(t, `^Running Firecracker v0\.\d+\.\d+`, out)
+ 				return
+ 			}
+ 
+@@ -505,8 +535,10 @@ func testLogAndMetrics(t *testing.T, logLevel string) string {
+ }
+ 
+ func TestStartVMMOnce(t *testing.T) {
+-	socketPath := filepath.Join("testdata", "TestStartVMMOnce.sock")
+-	defer os.Remove(socketPath)
++	fctesting.RequiresKVM(t)
++
++	socketPath, cleanup := makeSocketPath(t)
++	defer cleanup()
+ 
+ 	cfg := Config{
+ 		SocketPath:        socketPath,
+@@ -740,7 +772,8 @@ func TestWaitForSocket(t *testing.T) {
+ 	// 2. The expected file is not created within the deadline
+ 	// 3. The process responsible for creating the file exits
+ 	//    (indicated by an error published to exitchan)
+-	filename := "./test-create-file"
++	filename, cleanup := makeSocketPath(t)
++	defer cleanup()
+ 	errchan := make(chan error)
+ 
+ 	m := Machine{
+@@ -752,26 +785,27 @@ func TestWaitForSocket(t *testing.T) {
+ 		time.Sleep(50 * time.Millisecond)
+ 		_, err := os.Create(filename)
+ 		if err != nil {
+-			t.Fatalf("Unable to create test file %s: %s", filename, err)
++			t.Errorf("Unable to create test file %s: %s", filename, err)
++			return
+ 		}
+ 	}()
+ 
+ 	// Socket file created, HTTP request succeeded
+ 	m.client = NewClient(filename, fctesting.NewLogEntry(t), true, WithOpsClient(&okClient))
+-	if err := m.waitForSocket(500*time.Millisecond, errchan); err != nil {
++	if err := m.WaitForSocket(500*time.Millisecond, errchan); err != nil {
+ 		t.Errorf("waitForSocket returned unexpected error %s", err)
+ 	}
+ 
+ 	// Socket file exists, HTTP request failed
+ 	m.client = NewClient(filename, fctesting.NewLogEntry(t), true, WithOpsClient(&errClient))
+-	if err := m.waitForSocket(500*time.Millisecond, errchan); err != context.DeadlineExceeded {
++	if err := m.WaitForSocket(500*time.Millisecond, errchan); err != context.DeadlineExceeded {
+ 		t.Error("waitforSocket did not return an expected timeout error")
+ 	}
+ 
+-	os.Remove(filename)
++	cleanup()
+ 
+ 	// No socket file
+-	if err := m.waitForSocket(100*time.Millisecond, errchan); err != context.DeadlineExceeded {
++	if err := m.WaitForSocket(100*time.Millisecond, errchan); err != context.DeadlineExceeded {
+ 		t.Error("waitforSocket did not return an expected timeout error")
+ 	}
+ 
+@@ -782,7 +816,7 @@ func TestWaitForSocket(t *testing.T) {
+ 	}()
+ 
+ 	// Unexpected process exit
+-	if err := m.waitForSocket(100*time.Millisecond, errchan); err != chanErr {
++	if err := m.WaitForSocket(100*time.Millisecond, errchan); err != chanErr {
+ 		t.Error("waitForSocket did not properly detect program exit")
+ 	}
+ }
+@@ -817,6 +851,29 @@ func testGetMetadata(ctx context.Context, t *testing.T, m *Machine) {
+ 	}
+ }
+ 
++func testGetInstanceInfo(ctx context.Context, t *testing.T, m *Machine) {
++	instance, err := m.DescribeInstanceInfo(ctx)
++	if err != nil {
++		t.Error("failed to get instance info")
++	}
++
++	if instance.AppName == nil || *instance.AppName == "" {
++		t.Error("Invalid instance App name")
++	}
++
++	if instance.ID == nil || *instance.ID == "" {
++		t.Error("Invalid instance ID")
++	}
++
++	if instance.State == nil || *instance.State == "" {
++		t.Error("Invalid instance state")
++	}
++
++	if instance.VmmVersion == nil || *instance.VmmVersion == "" {
++		t.Error("Invalid VmmVersion")
++	}
++}
++
+ func TestLogFiles(t *testing.T) {
+ 	cfg := Config{
+ 		KernelImagePath: filepath.Join(testDataPath, "vmlinux"), SocketPath: filepath.Join(testDataPath, "socket-path"),
+@@ -887,7 +944,6 @@ func TestLogFiles(t *testing.T) {
+ 
+ 	if _, err := os.Stat(stdoutPath); os.IsNotExist(err) {
+ 		t.Errorf("expected log file to be present")
+-
+ 	}
+ 
+ 	if _, err := os.Stat(stderrPath); os.IsNotExist(err) {
+@@ -896,7 +952,11 @@ func TestLogFiles(t *testing.T) {
+ }
+ 
+ func TestCaptureFifoToFile(t *testing.T) {
+-	fifoPath := filepath.Join(testDataPath, "TestCaptureFifoToFile")
++	dir, err := ioutil.TempDir("", t.Name())
++	require.NoError(t, err)
++	defer os.RemoveAll(dir)
++
++	fifoPath := filepath.Join(dir, "TestCaptureFifoToFile")
+ 
+ 	if err := syscall.Mkfifo(fifoPath, 0700); err != nil {
+ 		t.Fatalf("Unexpected error during syscall.Mkfifo call: %v", err)
+@@ -949,7 +1009,11 @@ func TestCaptureFifoToFile(t *testing.T) {
+ }
+ 
+ func TestCaptureFifoToFile_nonblock(t *testing.T) {
+-	fifoPath := filepath.Join(testDataPath, "TestCaptureFifoToFile_nonblock")
++	dir, err := ioutil.TempDir("", t.Name())
++	require.NoError(t, err)
++	defer os.RemoveAll(dir)
++
++	fifoPath := filepath.Join(dir, "TestCaptureFifoToFile_nonblock")
+ 
+ 	if err := syscall.Mkfifo(fifoPath, 0700); err != nil {
+ 		t.Fatalf("Unexpected error during syscall.Mkfifo call: %v", err)
+@@ -1067,17 +1131,21 @@ func TestPID(t *testing.T) {
+ 		t.Errorf("expected an error, but received none")
+ 	}
+ 
++	dir, err := ioutil.TempDir("", t.Name())
++	require.NoError(t, err)
++	defer os.RemoveAll(dir)
++
+ 	var nCpus int64 = 2
+ 	cpuTemplate := models.CPUTemplate(models.CPUTemplateT2)
+ 	var memSz int64 = 256
+-	socketPath := filepath.Join(testDataPath, "TestPID.sock")
++	socketPath := filepath.Join(dir, "TestPID.sock")
+ 	defer os.Remove(socketPath)
+ 
+ 	vmlinuxPath := getVmlinuxPath(t)
+ 
+ 	rootfsBytes, err := ioutil.ReadFile(testRootfs)
+ 	require.NoError(t, err, "failed to read rootfs file")
+-	rootfsPath := filepath.Join(testDataPath, "TestPID.img")
++	rootfsPath := filepath.Join(dir, "TestPID.img")
+ 	err = ioutil.WriteFile(rootfsPath, rootfsBytes, 0666)
+ 	require.NoError(t, err, "failed to copy vm rootfs to %s", rootfsPath)
+ 
+@@ -1144,8 +1212,12 @@ func TestCaptureFifoToFile_leak(t *testing.T) {
+ 		exitCh: make(chan struct{}),
+ 	}
+ 
+-	fifoPath := filepath.Join(testDataPath, "TestCaptureFifoToFileLeak.fifo")
+-	err := syscall.Mkfifo(fifoPath, 0700)
++	dir, err := ioutil.TempDir("", t.Name())
++	require.NoError(t, err)
++	defer os.RemoveAll(dir)
++
++	fifoPath := filepath.Join(dir, "TestCaptureFifoToFileLeak.fifo")
++	err = syscall.Mkfifo(fifoPath, 0700)
+ 	require.NoError(t, err, "failed to make fifo")
+ 	defer os.Remove(fifoPath)
+ 
+@@ -1192,10 +1264,8 @@ func TestCaptureFifoToFile_leak(t *testing.T) {
+ 	}
+ }
+ 
+-// Replace filesystem-unsafe characters (such as /) which are often seen in Go's test names
+-var fsSafeTestName = strings.NewReplacer("/", "_")
+-
+ func TestWait(t *testing.T) {
++	fctesting.RequiresKVM(t)
+ 	fctesting.RequiresRoot(t)
+ 
+ 	cases := []struct {
+@@ -1243,8 +1313,8 @@ func TestWait(t *testing.T) {
+ 			ctx := context.Background()
+ 			vmContext, vmCancel := context.WithCancel(context.Background())
+ 
+-			socketPath := filepath.Join(testDataPath, fsSafeTestName.Replace(t.Name()))
+-			defer os.Remove(socketPath)
++			socketPath, cleanup := makeSocketPath(t)
++			defer cleanup()
+ 
+ 			// Tee logs for validation:
+ 			var logBuffer bytes.Buffer
+@@ -1374,7 +1444,8 @@ func createValidConfig(t *testing.T, socketPath string) Config {
+ }
+ 
+ func TestSignalForwarding(t *testing.T) {
+-	socketPath := filepath.Join(testDataPath, "TestSignalForwarding.sock")
++	socketPath, cleanup := makeSocketPath(t)
++	defer cleanup()
+ 
+ 	forwardedSignals := []os.Signal{
+ 		syscall.SIGUSR1,
+@@ -1476,3 +1547,227 @@ func TestSignalForwarding(t *testing.T) {
+ 
+ 	assert.ElementsMatch(t, forwardedSignals, receivedSignals)
+ }
++
++func TestPauseResume(t *testing.T) {
++	fctesting.RequiresKVM(t)
++	fctesting.RequiresRoot(t)
++
++	dir, err := ioutil.TempDir("", t.Name())
++	require.NoError(t, err)
++	defer os.RemoveAll(dir)
++
++	cases := []struct {
++		name  string
++		state func(m *Machine, ctx context.Context)
++	}{
++		{
++			name: "PauseVM",
++			state: func(m *Machine, ctx context.Context) {
++				err := m.PauseVM(ctx)
++				require.NoError(t, err)
++			},
++		},
++		{
++			name: "ResumeVM",
++			state: func(m *Machine, ctx context.Context) {
++				err := m.ResumeVM(ctx)
++				require.NoError(t, err)
++			},
++		},
++		{
++			name: "Consecutive PauseVM",
++			state: func(m *Machine, ctx context.Context) {
++				err := m.PauseVM(ctx)
++				require.NoError(t, err)
++
++				err = m.PauseVM(ctx)
++				require.NoError(t, err)
++			},
++		},
++		{
++			name: "Consecutive ResumeVM",
++			state: func(m *Machine, ctx context.Context) {
++				err := m.ResumeVM(ctx)
++				require.NoError(t, err)
++
++				err = m.ResumeVM(ctx)
++				require.NoError(t, err)
++			},
++		},
++		{
++			name: "ResumeVM PauseVM",
++			state: func(m *Machine, ctx context.Context) {
++				err := m.ResumeVM(ctx)
++				require.NoError(t, err)
++
++				err = m.PauseVM(ctx)
++				require.NoError(t, err)
++			},
++		},
++		{
++			name: "PauseVM ResumeVM",
++			state: func(m *Machine, ctx context.Context) {
++				err := m.PauseVM(ctx)
++				require.NoError(t, err)
++
++				err = m.ResumeVM(ctx)
++				require.NoError(t, err)
++			},
++		},
++	}
++
++	for _, c := range cases {
++		t.Run(c.name, func(t *testing.T) {
++			ctx := context.Background()
++
++			socketPath, cleanup := makeSocketPath(t)
++			defer cleanup()
++
++			// Tee logs for validation:
++			var logBuffer bytes.Buffer
++			machineLogger := logrus.New()
++			machineLogger.Out = io.MultiWriter(os.Stderr, &logBuffer)
++
++			cfg := createValidConfig(t, socketPath)
++			m, err := NewMachine(ctx, cfg, func(m *Machine) {
++				// Rewriting m.cmd partially wouldn't work since Cmd has
++				// some unexported members
++				args := m.cmd.Args[1:]
++				m.cmd = exec.Command(getFirecrackerBinaryPath(), args...)
++			}, WithLogger(logrus.NewEntry(machineLogger)))
++			require.NoError(t, err)
++
++			err = m.PauseVM(ctx)
++			require.Error(t, err, "PauseVM must fail before Start is called")
++
++			err = m.ResumeVM(ctx)
++			require.Error(t, err, "ResumeVM must fail before Start is called")
++
++			err = m.Start(ctx)
++			require.NoError(t, err)
++
++			c.state(m, ctx)
++
++			err = m.StopVMM()
++			require.NoError(t, err)
++
++			err = m.PauseVM(ctx)
++			require.Error(t, err, "PauseVM must fail after StopVMM is called")
++
++			err = m.ResumeVM(ctx)
++			require.Error(t, err, "ResumeVM must fail after StopVMM is called")
++		})
++	}
++}
++
++func TestCreateSnapshot(t *testing.T) {
++	fctesting.RequiresKVM(t)
++	fctesting.RequiresRoot(t)
++
++	dir, err := ioutil.TempDir("", t.Name())
++	require.NoError(t, err)
++	defer os.RemoveAll(dir)
++
++	cases := []struct {
++		name           string
++		createSnapshot func(m *Machine, ctx context.Context, memPath, snapPath string)
++	}{
++		{
++			name: "CreateSnapshot",
++			createSnapshot: func(m *Machine, ctx context.Context, memPath, snapPath string) {
++				err := m.PauseVM(ctx)
++				require.NoError(t, err)
++
++				err = m.CreateSnapshot(ctx, memPath, snapPath)
++				require.NoError(t, err)
++			},
++		},
++		{
++			name: "CreateSnapshot before pause",
++			createSnapshot: func(m *Machine, ctx context.Context, memPath, snapPath string) {
++				err := m.CreateSnapshot(ctx, memPath, snapPath)
++				require.Error(t, err)
++			},
++		},
++	}
++
++	for _, c := range cases {
++		t.Run(c.name, func(t *testing.T) {
++			ctx := context.Background()
++
++			socketPath := filepath.Join(dir, fsSafeTestName.Replace(t.Name()))
++			snapPath := socketPath + "SnapFile"
++			memPath := socketPath + "MemFile"
++			defer os.Remove(socketPath)
++			defer os.Remove(snapPath)
++			defer os.Remove(memPath)
++
++			// Tee logs for validation:
++			var logBuffer bytes.Buffer
++			machineLogger := logrus.New()
++			machineLogger.Out = io.MultiWriter(os.Stderr, &logBuffer)
++
++			cfg := createValidConfig(t, socketPath)
++			m, err := NewMachine(ctx, cfg, func(m *Machine) {
++				// Rewriting m.cmd partially wouldn't work since Cmd has
++				// some unexported members
++				args := m.cmd.Args[1:]
++				m.cmd = exec.Command(getFirecrackerBinaryPath(), args...)
++			}, WithLogger(logrus.NewEntry(machineLogger)))
++			require.NoError(t, err)
++
++			err = m.Start(ctx)
++			require.NoError(t, err)
++
++			c.createSnapshot(m, ctx, memPath, snapPath)
++
++			err = m.StopVMM()
++			require.NoError(t, err)
++		})
++	}
++}
++
++func testCreateBalloon(ctx context.Context, t *testing.T, m *Machine) {
++	if err := m.CreateBalloon(ctx, testBalloonMemory, testBalloonDeflateOnOom, testStatsPollingIntervals); err != nil {
++		t.Errorf("Create balloon device failed from testAttachBalloon: %s", err)
++	}
++}
++
++func testGetBalloonConfig(ctx context.Context, t *testing.T, m *Machine) {
++	expectedBalloonConfig := models.Balloon{
++		AmountMib:              &testBalloonMemory,
++		DeflateOnOom:          &testBalloonDeflateOnOom,
++		StatsPollingIntervals: testStatsPollingIntervals,
++	}
++
++	balloonConfig, err := m.GetBalloonConfig(ctx)
++	if err != nil {
++		t.Errorf("failed to get config: %s", err)
++	}
++	assert.Equal(t, expectedBalloonConfig, balloonConfig)
++}
++
++func testUpdateBalloon(ctx context.Context, t *testing.T, m *Machine) {
++	if err := m.UpdateBalloon(ctx, testBalloonNewMemory); err != nil {
++		t.Errorf("Updating balloon device failed from testUpdateBalloon: %s", err)
++	}
++}
++
++func testGetBalloonStats(ctx context.Context, t *testing.T, m *Machine) {
++	expectedBalloonStats := models.BalloonStats{
++		TargetMib: &testBalloonMemory,
++	}
++
++	balloonStat, err := m.GetBalloonStats(ctx)
++	if err != nil {
++		t.Errorf("failed to get balloon statistics: %s", err)
++	}
++
++	assert.Equal(t, expectedBalloonStats.TargetMib, balloonStat.TargetMib)
++}
++
++func testUpdateBalloonStats(ctx context.Context, t *testing.T, m *Machine) {
++	if err := m.UpdateBalloonStats(ctx, testNewStatsPollingIntervals); err != nil {
++		t.Errorf("Updating balloon staistics failed from testUpdateBalloonStats: %s", err)
++	}
++}
+diff --git a/network_test.go b/network_test.go
+index 6ab0c91..cdff014 100644
+--- a/network_test.go
++++ b/network_test.go
+@@ -255,7 +255,11 @@ func testNetworkMachineCNI(t *testing.T, useConfFile bool) {
+ 
+ 	cniBinPath := []string{"/opt/cni/bin", testDataBin}
+ 
+-	testCNIDir := filepath.Join(testDataPath, "TestCNI")
++	dir, err := ioutil.TempDir("", fsSafeTestName.Replace(t.Name()))
++	require.NoError(t, err)
++	defer os.RemoveAll(dir)
++
++	testCNIDir := filepath.Join(dir, "TestCNI")
+ 	os.RemoveAll(testCNIDir)
+ 	defer os.RemoveAll(testCNIDir)
+ 
+diff --git a/pointer_helpers.go b/pointer_helpers.go
+index 52d78df..fc6ba46 100644
+--- a/pointer_helpers.go
++++ b/pointer_helpers.go
+@@ -1,3 +1,15 @@
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++//	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
+ package firecracker
+ 
+ // BoolValue will return a boolean value. If the pointer is nil, then false
+diff --git a/utils.go b/utils.go
+index 54be369..9a51965 100644
+--- a/utils.go
++++ b/utils.go
+@@ -1,3 +1,15 @@
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++//	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
+ package firecracker
+ 
+ import (
+diff --git a/utils_test.go b/utils_test.go
+index f7c2d55..97ae576 100644
+--- a/utils_test.go
++++ b/utils_test.go
+@@ -1,3 +1,15 @@
++// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
++//
++// Licensed under the Apache License, Version 2.0 (the "License"). You may
++// not use this file except in compliance with the License. A copy of the
++// License is located at
++//
++//	http://aws.amazon.com/apache2.0/
++//
++// or in the "license" file accompanying this file. This file is distributed
++// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
++// express or implied. See the License for the specific language governing
++// permissions and limitations under the License.
+ package firecracker
+ 
+ import (

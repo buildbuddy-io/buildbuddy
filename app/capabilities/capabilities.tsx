@@ -22,25 +22,24 @@ export class Capabilities {
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
-    this.version = window.buildbuddyConfig && window.buildbuddyConfig.version;
-    this.auth =
-      window.buildbuddyConfig &&
-      window.buildbuddyConfig.configured_issuers &&
-      window.buildbuddyConfig.configured_issuers.length &&
-      window.buildbuddyConfig.configured_issuers[0];
-    this.github = window.buildbuddyConfig && window.buildbuddyConfig.github_enabled;
-    this.anonymous = window.buildbuddyConfig && window.buildbuddyConfig.anonymous_usage_enabled;
-    this.test = window.buildbuddyConfig && window.buildbuddyConfig.test_dashboard_enabled;
+
+    const config = (window.buildbuddyConfig || {}) as Record<string, any>;
+
+    this.version = config.version || "";
+    this.auth = config.configured_issuers?.[0] || "";
+    this.github = Boolean(config.github_enabled);
+    this.anonymous = Boolean(config.anonymous_usage_enabled);
+    this.test = Boolean(config.test_dashboard_enabled);
     this.enterprise = enterprise;
     this.createOrg = this.enterprise;
     this.invocationSharing = true;
     this.compareInvocations = true;
     this.deleteInvocation = true;
     this.manageApiKeys = true;
-    this.workflows = localStorage["workflows_enabled"] === "true";
-    this.executors = window.buildbuddyConfig && window.buildbuddyConfig.user_owned_executors_enabled;
-    this.userOwnedExecutors = window.buildbuddyConfig && window.buildbuddyConfig.user_owned_executors_enabled;
-    this.executorKeyCreation = window.buildbuddyConfig && window.buildbuddyConfig.executor_key_creation_enabled;
+    this.workflows = Boolean(config.workflows_enabled);
+    this.executors = Boolean(config.user_owned_executors_enabled);
+    this.userOwnedExecutors = Boolean(config.user_owned_executors_enabled);
+    this.executorKeyCreation = Boolean(config.executor_key_creation_enabled);
     this.paths = new Set(paths);
     if (window.gtag) {
       window.gtag("set", {
