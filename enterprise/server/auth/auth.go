@@ -727,7 +727,14 @@ func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, e
 }
 
 func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
-	return a.authenticatedUser(ctx)
+	// We don't return directly so that we can return a nil-interface instead of an interface holding a nil *Claims.
+	// Callers should be checking err before before accessing the user, but in case they don't this will prevent a nil
+	// dereference.
+	claims, err := a.authenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return claims, nil
 }
 
 func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
