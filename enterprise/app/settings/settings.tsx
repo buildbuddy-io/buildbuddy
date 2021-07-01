@@ -13,18 +13,32 @@ export interface SettingsProps {
   path: string;
 }
 
-type SettingsTabId = "org/details" | "org/github" | "org/api-keys" | "personal/preferences";
+enum TabId {
+  OrgDetails = "org/details",
+  OrgGitHub = "org/github",
+  OrgApiKeys = "org/api-keys",
+  PersonalPreferences = "personal/preferences",
+}
+
+const TAB_IDS = new Set<string>(Object.values(TabId));
+
+const DEFAULT_TAB = TabId.OrgDetails;
 
 export default class SettingsComponent extends React.Component<SettingsProps> {
   componentWillMount() {
     document.title = `Settings | BuildBuddy`;
   }
 
-  private getActiveTabId(): SettingsTabId {
+  private getActiveTabId(): TabId {
     if (this.props.path === "/settings" || this.props.path === "/settings/") {
-      return "org/details";
+      return DEFAULT_TAB;
     }
-    return this.props.path.substring("/settings/".length) as SettingsTabId;
+    const path = this.props.path.substring("/settings/".length);
+    if (!TAB_IDS.has(path)) {
+      return DEFAULT_TAB;
+    }
+    // Note: this cast is valid because we check TabId set membership above.
+    return path as TabId;
   }
 
   render() {
@@ -45,13 +59,13 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 <div className="settings-tab-group-subtitle">{this.props.user?.selectedGroupName()}</div>
               </div>
               <div className="settings-tab-group">
-                <SettingsTab id="org/details" activeTabId={activeTabId}>
+                <SettingsTab id={TabId.OrgDetails} activeTabId={activeTabId}>
                   Org details
                 </SettingsTab>
-                <SettingsTab id="org/github" activeTabId={activeTabId}>
+                <SettingsTab id={TabId.OrgGitHub} activeTabId={activeTabId}>
                   GitHub link
                 </SettingsTab>
-                <SettingsTab id="org/api-keys" activeTabId={activeTabId}>
+                <SettingsTab id={TabId.OrgApiKeys} activeTabId={activeTabId}>
                   API keys
                 </SettingsTab>
               </div>
@@ -60,7 +74,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 <div className="settings-tab-group-subtitle">{this.props.user?.displayUser?.name?.full}</div>
               </div>
               <div className="settings-tab-group">
-                <SettingsTab id="personal/preferences" activeTabId={activeTabId}>
+                <SettingsTab id={TabId.PersonalPreferences} activeTabId={activeTabId}>
                   Preferences
                 </SettingsTab>
               </div>
@@ -85,7 +99,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
               )}
               {capabilities.auth && this.props.user && (
                 <>
-                  {activeTabId === "org/details" && (
+                  {activeTabId === TabId.OrgDetails && (
                     <>
                       {
                         // Don't show the org name subtitle when the "edit org" form is present,
@@ -97,7 +111,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       {capabilities.createOrg && <EditOrgComponent user={this.props.user} />}
                     </>
                   )}
-                  {activeTabId === "org/github" && capabilities.github && (
+                  {activeTabId === TabId.OrgGitHub && capabilities.github && (
                     <>
                       <div className="settings-option-title">GitHub account link</div>
                       <div className="settings-option-description">
@@ -113,7 +127,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       )}
                     </>
                   )}
-                  {activeTabId === "org/api-keys" && capabilities.manageApiKeys && (
+                  {activeTabId === TabId.OrgApiKeys && capabilities.manageApiKeys && (
                     <>
                       <div className="settings-option-title">API keys</div>
                       <div className="settings-option-description">
@@ -133,8 +147,8 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
 }
 
 type SettingsTabProps = {
-  id: SettingsTabId;
-  activeTabId: SettingsTabId;
+  id: TabId;
+  activeTabId: TabId;
 };
 
 class SettingsTab extends React.Component<SettingsTabProps> {
