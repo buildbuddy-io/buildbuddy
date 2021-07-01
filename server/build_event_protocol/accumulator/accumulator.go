@@ -130,7 +130,7 @@ func (v *BEValues) setStringValue(fieldName, proposedValue string) bool {
 func (v *BEValues) handleStartedEvent(event *build_event_stream.BuildEvent) {
 	v.setStringValue(commandFieldName, event.GetStarted().Command)
 	v.setStringValue(patternFieldName, patternFromEvent(event))
-	v.buildStartTime = timeutil.UnixMillis(event.GetStarted().GetStartTimeMillis())
+	v.buildStartTime = timeutil.FromMillis(event.GetStarted().GetStartTimeMillis())
 }
 
 func (v *BEValues) populateWorkspaceInfoFromStructuredCommandLine(commandLine *command_line.CommandLine) {
