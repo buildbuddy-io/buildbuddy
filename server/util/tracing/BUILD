@@ -18,5 +18,6 @@ go_library(
         "@io_opentelemetry_go_otel_sdk//resource",
         "@io_opentelemetry_go_otel_sdk//trace",
         "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_google_grpc//metadata",
     ],
 )
