@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
@@ -66,6 +67,12 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		targetTracker:           target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		hasReceivedStartedEvent: false,
 		eventsBeforeStarted:     make([]*inpb.InvocationEvent, 0),
+		logWriter:               chunkstore.New(
+			b.env.GetBlobstore(),
+			&chunkstore.ChunkstoreOptions{
+				WriteBlockSize: (1 << 20) * 2,
+				WriteTimeoutDuration: 15 * time.Second,
+			}).Writer(ctx, iid + "/chunks/log/eventlog"),
 	}
 }
 
@@ -110,6 +117,7 @@ type EventChannel struct {
 	targetTracker           *target_tracker.TargetTracker
 	eventsBeforeStarted     []*inpb.InvocationEvent
 	hasReceivedStartedEvent bool
+	logWriter               io.WriteCloser
 }
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string, invocation *inpb.Invocation) error {
@@ -336,6 +344,14 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid string) error {
 	e.beValues.AddEvent(event.BuildEvent) // in-memory structure to hold common values we want from the event.
+
+	switch p := event.BuildEvent.Payload.(type) {
+	case *build_event_stream.BuildEvent_Progress:
+		e.logWriter.Write([]byte(p.Progress.Stderr))
+		p.Progress.Stderr = ""
+		e.logWriter.Write([]byte(p.Progress.Stdout))
+		p.Progress.Stdout = ""
+	}
 
 	if e.env.GetConfigurator().EnableTargetTracking() {
 		e.targetTracker.TrackTargetsForEvent(e.ctx, event.BuildEvent)
