@@ -22,7 +22,11 @@ enum TabId {
 
 const TAB_IDS = new Set<string>(Object.values(TabId));
 
-const DEFAULT_TAB = TabId.OrgDetails;
+function isTabId(id: string): id is TabId {
+  return TAB_IDS.has(id);
+}
+
+const DEFAULT_TAB_ID = TabId.OrgDetails;
 
 export default class SettingsComponent extends React.Component<SettingsProps> {
   componentWillMount() {
@@ -31,14 +35,13 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
 
   private getActiveTabId(): TabId {
     if (this.props.path === "/settings" || this.props.path === "/settings/") {
-      return DEFAULT_TAB;
+      return DEFAULT_TAB_ID;
     }
     const path = this.props.path.substring("/settings/".length);
-    if (!TAB_IDS.has(path)) {
-      return DEFAULT_TAB;
+    if (!isTabId(path)) {
+      return DEFAULT_TAB_ID;
     }
-    // Note: this cast is valid because we check TabId set membership above.
-    return path as TabId;
+    return path;
   }
 
   render() {
