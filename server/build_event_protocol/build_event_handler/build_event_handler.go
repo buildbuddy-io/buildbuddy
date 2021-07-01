@@ -347,10 +347,12 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
-		e.logWriter.Write([]byte(p.Progress.Stderr))
-		p.Progress.Stderr = ""
-		e.logWriter.Write([]byte(p.Progress.Stdout))
-		p.Progress.Stdout = ""
+		if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+			e.logWriter.Write([]byte(p.Progress.Stderr))
+			e.logWriter.Write([]byte(p.Progress.Stdout))
+			p.Progress.Stderr = ""
+			p.Progress.Stdout = ""
+		}
 	}
 
 	if e.env.GetConfigurator().EnableTargetTracking() {

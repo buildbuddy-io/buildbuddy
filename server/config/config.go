@@ -72,11 +72,12 @@ type DatabaseConfig struct {
 }
 
 type storageConfig struct {
-	Disk               DiskConfig  `yaml:"disk"`
-	GCS                GCSConfig   `yaml:"gcs"`
-	AwsS3              AwsS3Config `yaml:"aws_s3"`
-	TTLSeconds         int         `yaml:"ttl_seconds" usage:"The time, in seconds, to keep invocations before deletion"`
-	ChunkFileSizeBytes int         `yaml:"chunk_file_size_bytes" usage:"How many bytes to buffer in memory before flushing a chunk of build protocol data to disk."`
+	Disk                   DiskConfig  `yaml:"disk"`
+	GCS                    GCSConfig   `yaml:"gcs"`
+	AwsS3                  AwsS3Config `yaml:"aws_s3"`
+	TTLSeconds             int         `yaml:"ttl_seconds" usage:"The time, in seconds, to keep invocations before deletion"`
+	ChunkFileSizeBytes     int         `yaml:"chunk_file_size_bytes" usage:"How many bytes to buffer in memory before flushing a chunk of build protocol data to disk."`
+	EnableChunkedEventLogs bool        `yaml:"enable_chunked_event_logs" usage:"If true, Event logs will be stored separately from the invocation proto in chunks."`
 }
 
 type DiskConfig struct {
@@ -370,6 +371,10 @@ func NewConfigurator(configFilePath string) (*Configurator, error) {
 		fullConfigPath: configFilePath,
 		gc:             conf,
 	}, nil
+}
+
+func (c *Configurator) GetStorageEnableChunkedEventLogs() bool {
+	return c.gc.Storage.EnableChunkedEventLogs
 }
 
 func (c *Configurator) GetStorageTTLSeconds() int {
