@@ -67,12 +67,12 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		targetTracker:           target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		hasReceivedStartedEvent: false,
 		eventsBeforeStarted:     make([]*inpb.InvocationEvent, 0),
-		logWriter:               chunkstore.New(
+		logWriter: chunkstore.New(
 			b.env.GetBlobstore(),
 			&chunkstore.ChunkstoreOptions{
-				WriteBlockSize: (1 << 20) * 2,
+				WriteBlockSize:       (1 << 20) * 2,
 				WriteTimeoutDuration: 15 * time.Second,
-			}).Writer(ctx, iid + "/chunks/log/eventlog"),
+			}).Writer(ctx, iid+"/chunks/log/eventlog"),
 	}
 }
 

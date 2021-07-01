@@ -96,7 +96,7 @@ func ChunkName(blobName string, index uint16) string {
 func (c *Chunkstore) GetLastChunkIndex(ctx context.Context, blobName string) (uint16, error) {
 	index := uint16(0)
 	for index < math.MaxUint16 {
-		exists, err := c.ChunkExists(ctx, blobName, index + 1)
+		exists, err := c.ChunkExists(ctx, blobName, index+1)
 		if err != nil {
 			return 0, err
 		}
