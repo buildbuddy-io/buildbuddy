@@ -499,6 +499,11 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	if err != nil && !status.IsPermissionDeniedError(err) && !status.IsUnimplementedError(err) {
 		return nil, err
 	}
+	if props.RecycleRunner && err != nil {
+		return nil, status.InvalidArgumentError(
+			"runner recycling is not supported for anonymous builds " +
+				`(recycling was requested via platform property "recycle-runner=true")`)
+	}
 
 	instanceName := task.GetExecuteRequest().GetInstanceName()
 
@@ -509,12 +514,6 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	}
 
 	if props.RecycleRunner {
-		if user == nil {
-			return nil, status.InvalidArgumentError(
-				"runner recycling is not supported for anonymous builds " +
-					`(recycling was requested via platform property "recycle-runner=true")`)
-		}
-
 		r := p.take(&query{
 			User:           user,
 			ContainerImage: props.ContainerImage,
