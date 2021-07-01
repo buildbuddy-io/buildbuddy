@@ -819,9 +819,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_firecracker_microvm_firecracker_go_sdk",
         importpath = "github.com/firecracker-microvm/firecracker-go-sdk",
-        sum = "h1:hk28AO5ArAX9iHomi6axNLK+6+8gz1wi3ooNsUTlSFQ=",
-        patches = ["@%s//buildpatches:firecracker_loadsnapshot.patch" % workspace_name],
         patch_args = ["-p1", "-F", "3"],
+        patches = ["@%s//buildpatches:firecracker_loadsnapshot.patch" % workspace_name],
+        sum = "h1:hk28AO5ArAX9iHomi6axNLK+6+8gz1wi3ooNsUTlSFQ=",
         version = "v0.22.0",
     )
 
@@ -1042,6 +1042,19 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:myhdWhx5UHvLXZ7maUcP0uYxyijMT+smaNAhARBVc9s=",
         version = "v9.30.0+incompatible",
     )
+    go_repository(
+        name = "com_github_go_redis_redis_extra_rediscmd_v8",
+        importpath = "github.com/go-redis/redis/extra/rediscmd/v8",
+        sum = "h1:kjH+FAEz3G8gq8zDBgoLSCZj19Z1SK4dg/VtD3QE1IE=",
+        version = "v8.8.2",
+    )
+    go_repository(
+        name = "com_github_go_redis_redis_extra_redisotel_v8",
+        importpath = "github.com/go-redis/redis/extra/redisotel/v8",
+        sum = "h1:0JlrPvtN5SjIe5gTmAsvIAIqn9FEGaVJgGOFg63Djgk=",
+        version = "v8.10.0",
+    )
+
     go_repository(
         name = "com_github_go_redis_redis_v8",
         importpath = "github.com/go-redis/redis/v8",
