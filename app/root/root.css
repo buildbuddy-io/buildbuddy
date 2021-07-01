@@ -829,8 +829,8 @@ code .comment {
 }
 
 .role-badge {
-  border-radius: 12px;
-  padding: 0 8px;
+  border-radius: 14px;
+  padding: 2px 8px;
   flex-shrink: 0;
 }
 

@@ -217,7 +217,7 @@ export default class HistoryInvocationCardComponent extends React.Component {
                   {this.props.invocation.host}
                 </div>
               )}
-              {this.props.invocation.command && this.props.invocation.command != "workflow run" && (
+              {this.props.invocation.command && (
                 <div className="detail">
                   <img className="icon" src="/image/tool-regular.svg" />
                   {this.props.invocation.command}
