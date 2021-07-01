@@ -13,13 +13,13 @@ import (
 
 func TestChunkName(t *testing.T) {
 	e := "test_0000"
-	n := chunkName("test", 0)
+	n := ChunkName("test", 0)
 	if n != e {
 		t.Fatalf("Chunk name was not equal to expectation: %v should be %v", n, e)
 	}
 
 	e = "longertest_1a59"
-	n = chunkName("longertest", 6745)
+	n = ChunkName("longertest", 6745)
 	if n != e {
 		t.Fatalf("Chunk name was not equal to expectation: %v should be %v", n, e)
 	}

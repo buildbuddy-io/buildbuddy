@@ -2,6 +2,7 @@ syntax = "proto3";
 
 import "proto/api_key.proto";
 import "proto/bazel_config.proto";
+import "proto/eventlog.proto";
 import "proto/execution_stats.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
@@ -76,4 +77,8 @@ service BuildBuddyService {
   rpc ExecuteWorkflow(workflow.ExecuteWorkflowRequest)
       returns (workflow.ExecuteWorkflowResponse);
   rpc GetRepos(workflow.GetReposRequest) returns (workflow.GetReposResponse);
+
+  // Eventlog API
+  rpc GetEventLogChunk(eventlog.GetEventLogChunkRequest)
+      returns (eventlog.GetEventLogChunkResponse);
 }
