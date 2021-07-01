@@ -613,8 +613,8 @@ func (d *UserDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat) erro
 		WHERE 
 			u.created_at_usec >= ? AND
 			u.created_at_usec < ?`,
-		int64(timeutil.ToUsec(time.Now().Truncate(24*time.Hour).Add(-24*time.Hour))),
-		int64(timeutil.ToUsec(time.Now().Truncate(24*time.Hour))))
+		timeutil.ToUsec(time.Now().Truncate(24*time.Hour).Add(-24*time.Hour)),
+		timeutil.ToUsec(time.Now().Truncate(24*time.Hour)))
 
 	if err := counts.Take(stat).Error; err != nil {
 		return err
