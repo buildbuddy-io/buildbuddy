@@ -5,5 +5,4 @@ go_library(
     srcs = ["timeutil.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/timeutil",
     visibility = ["//visibility:public"],
-    deps = [],
 )
