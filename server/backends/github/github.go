@@ -28,8 +28,6 @@ const (
 	stateCookieName    = "Github-State-Token"
 	redirectCookieName = "Github-Redirect-Url"
 	groupIDCookieName  = "Github-Linked-Group-ID"
-
-	groupIDURLParam = "groupID"
 )
 
 // State represents a status value that GitHub's statuses API understands.
@@ -80,13 +78,11 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	groupID := r.URL.Query().Get(groupIDURLParam)
-
 	// If we don't have a state yet parameter, start oauth flow.
 	if r.FormValue("state") == "" {
 		state := fmt.Sprintf("%d", random.RandUint64())
 		setCookie(w, stateCookieName, state)
-		setCookie(w, groupIDCookieName, groupID)
+		setCookie(w, groupIDCookieName, r.FormValue("group_id"))
 		setCookie(w, redirectCookieName, r.FormValue("redirect_url"))
 
 		appURL := c.env.GetConfigurator().GetAppBuildBuddyURL()
@@ -106,8 +102,8 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
-	// Restore group ID from state.
-	groupID = getCookie(r, groupIDCookieName)
+	// Restore group ID from cookie.
+	groupID := getCookie(r, groupIDCookieName)
 
 	client := &http.Client{}
 	url := fmt.Sprintf(
