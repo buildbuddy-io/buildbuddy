@@ -125,7 +125,12 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                         <FilledButton className="settings-button success">GitHub account linked</FilledButton>
                       ) : (
                         <FilledButton className="settings-button settings-link-button">
-                          <a href="/auth/github/link/">Link GitHub account</a>
+                          <a
+                            href={`/auth/github/link/?groupID=${encodeURIComponent(
+                              this.props.user?.selectedGroup?.id
+                            )}`}>
+                            Link GitHub account
+                          </a>
                         </FilledButton>
                       )}
                     </>
