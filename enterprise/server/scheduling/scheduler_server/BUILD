@@ -21,6 +21,7 @@ go_library(
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
+        "//server/util/timeutil",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_prometheus_client_golang//prometheus",

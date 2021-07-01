@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis/v8"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
@@ -1020,7 +1021,7 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		taskID:          taskID,
 		metadata:        metadata,
 		serializedTask:  serializedTask,
-		queuedTimestamp: time.Unix(0, queuedAtUsec*1000),
+		queuedTimestamp: timeutil.FromUsec(queuedAtUsec),
 		attemptCount:    attemptCount,
 	}, nil
 }
