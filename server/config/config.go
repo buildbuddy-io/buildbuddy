@@ -51,7 +51,7 @@ type appConfig struct {
 	TraceServiceName          string   `yaml:"trace_service_name" usage:"Name of the service to associate with traces."`
 	TraceFraction             float64  `yaml:"trace_fraction" usage:"Fraction of requests to sample for tracing."`
 	TraceFractionOverrides    []string `yaml:"trace_fraction_overrides" usage:"Tracing fraction override based on name in format name=fraction."`
-	TraceDisableForced        bool     `yaml:"trace_disable_forced" usage:"If set, we will not honor the forced tracing header."`
+	IgnoreForcedTracingHeader bool     `yaml:"ignore_forced_tracing_header" usage:"If set, we will not honor the forced tracing header."`
 }
 
 type buildEventProxy struct {
@@ -629,6 +629,6 @@ func (c *Configurator) GetTraceFractionOverrides() []string {
 	return c.gc.App.TraceFractionOverrides
 }
 
-func (c *Configurator) GetTraceDisableForced() bool {
-	return c.gc.App.TraceDisableForced
+func (c *Configurator) GetIgnoreForcedTracingHeader() bool {
+	return c.gc.App.IgnoreForcedTracingHeader
 }

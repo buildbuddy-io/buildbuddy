@@ -35,10 +35,10 @@ type fractionSampler struct {
 	traceIDUpperBound          uint64
 	traceIDUpperBoundOverrides map[string]uint64
 	description                string
-	disableForcedTraces        bool
+	ignoreForcedTracingHeader  bool
 }
 
-func newFractionSampler(fraction float64, fractionOverrides map[string]float64, disableForcedTraces bool) *fractionSampler {
+func newFractionSampler(fraction float64, fractionOverrides map[string]float64, ignoreForcedTracingHeader bool) *fractionSampler {
 	configDescription := fmt.Sprintf("default=%f", fraction)
 	boundOverrides := make(map[string]uint64)
 	for n, f := range fractionOverrides {
@@ -50,12 +50,12 @@ func newFractionSampler(fraction float64, fractionOverrides map[string]float64, 
 		traceIDUpperBound:          uint64(fraction * math.MaxInt64),
 		traceIDUpperBoundOverrides: boundOverrides,
 		description:                fmt.Sprintf("FractionSampler(%s)", configDescription),
-		disableForcedTraces:        disableForcedTraces,
+		ignoreForcedTracingHeader:  ignoreForcedTracingHeader,
 	}
 }
 
 func (s *fractionSampler) checkForcedTrace(parameters sdktrace.SamplingParameters) bool {
-	if s.disableForcedTraces {
+	if s.ignoreForcedTracingHeader {
 		return false
 	}
 	md, ok := metadata.FromIncomingContext(parameters.ParentContext)
@@ -122,7 +122,7 @@ func Configure(configurator *config.Configurator) error {
 		}
 		fractionOverrides[name] = fraction
 	}
-	sampler := newFractionSampler(configurator.GetTraceFraction(), fractionOverrides, configurator.GetTraceDisableForced())
+	sampler := newFractionSampler(configurator.GetTraceFraction(), fractionOverrides, configurator.GetIgnoreForcedTracingHeader())
 
 	var resourceAttrs []attribute.KeyValue
 	if configurator.GetTraceServiceName() != "" {
