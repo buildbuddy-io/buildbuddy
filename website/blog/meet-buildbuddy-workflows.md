@@ -10,15 +10,15 @@ image: /img/workflows.png
 tags: [product]
 ---
 
-Traditional [CI systems](https://en.wikipedia.org/wiki/Continuous_integration) like Jenkins, Travis, CircleCI, and BuildKite are built around the concept of a pipeline. Pipelines allow you to specify a list of build/test steps to run for each commit or pull request to your repo. Pipelines are great because you can run many in parallel across multiple machines. Unfortunately, there are often dependencies between these pipelines, for example a build step that must be completed before a test step can begin. 
+Traditional [CI systems](https://en.wikipedia.org/wiki/Continuous_integration), like Jenkins, Travis, CircleCI, and BuildKite, are built around the concept of a pipeline. Pipelines allow you to specify a list of build/test steps to run for each commit or pull request to your repo. Pipelines are great because you can run many in parallel across multiple machines. Unfortunately, there are often dependencies between these pipelines, for example a build step that must be completed before a test step can begin. 
 
-Some tools, like [GitLab Pipelines](https://docs.gitlab.com/ee/ci/pipelines/) attempt to solve this problem by allowing you to specify dependencies between pipelines. This approach is better, but forces you to manually maintain the relationships between pipelines in a pile of YAML configuration files. As the number of dependencies grow, any sufficiently complex CI system [starts to resemble a build system](https://gregoryszorc.com/blog/2021/04/07/modern-ci-is-too-complex-and-misdirected/).
+Some tools, like [GitLab Pipelines](https://docs.gitlab.com/ee/ci/pipelines/), attempt to solve this problem by allowing you to specify dependencies between pipelines. This approach is better, but forces you to manually maintain the relationships between pipelines in a pile of YAML configuration files. As the number of dependencies grow, any sufficiently complex CI system [starts to resemble a build system](https://gregoryszorc.com/blog/2021/04/07/modern-ci-is-too-complex-and-misdirected/).
 
 None of these pipeline-based approaches are well suited for Bazel's approach to dependency management and remote build execution, which involves generating a [Directed Acyclic Graph](https://en.wikipedia.org/wiki/Directed_acyclic_graph) of all build and test actions. Bazel's approach allows for optimal parallelization and caching of these actions. It also enables rebuilding and retesting only affected targets, saving both engineering time and compute resources.
 
 ## Introducing a Bazel-focused CI Solution
 
-In today's [BuildBuddy v2.3 release](https://github.com/buildbuddy-io/buildbuddy/releases/tag/v2.3.0) which is now live on BuildBuddy Cloud, we're launching **BuildBuddy Workflows**. BuildBuddy Workflows is a Continuous Integration (CI) solution for Bazel repositories hosted on GitHub (with support for other providers coming soon).
+In today's [BuildBuddy v2.3 release](https://github.com/buildbuddy-io/buildbuddy/releases/tag/v2.3.0), which is now live on BuildBuddy Cloud, we're launching **BuildBuddy Workflows**. BuildBuddy Workflows is a Continuous Integration (CI) solution for Bazel repositories hosted on GitHub (with support for other providers coming soon).
 
 Like other CI solutions, Workflows give you the confidence that your code
 builds successfully and passes all tests before you merge pull requests or
@@ -32,7 +32,7 @@ integrated with BuildBuddy RBE and Remote Caching, they are ***really fast***.
 We've used BuildBuddy Workflows on our own repos for the past few
 months, comparing them side-by-side with our existing CI solution built on GitHub Actions with BuildBuddy RBE and Remote Caching enabled.
 
-By leveraging warm, hosted, Bazel processes as well as BuildBuddy's
+By leveraging warm, hosted, Bazel processes, as well as BuildBuddy's
 remote caching and execution, Workflows dramatically sped up our CI runs.
 Compared to our previous solution (which used BuildBuddy RBE and Remote Caching on GitHub Runners), we reduced the median duration by nearly **8X** &mdash; with most CI runs completing in just a few seconds.
 
