@@ -1103,7 +1103,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			}
 
 			// Prometheus: observe queue wait time.
-			ageInMillis := time.Since(task.queuedTimestamp) / time.Millisecond
+			ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
 			queueWaitTimeMs.Observe(float64(ageInMillis))
 			rsp.SerializedTask = task.serializedTask
 		}
