@@ -187,6 +187,7 @@ export default class EnterpriseRootComponent extends React.Component {
                     user={this.state.user}
                     denseModeEnabled={this.state.denseMode}
                     handleDenseModeToggled={this.handleToggleDenseClicked.bind(this)}
+                    path={this.state.path}
                   />
                 )}
                 {orgCreate && <CreateOrgComponent user={this.state.user} />}

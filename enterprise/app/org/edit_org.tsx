@@ -50,22 +50,22 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
 
     return (
       <>
-        {inviteLink && (
-          <div className="organization-invite-link-container">
-            <img src="/image/link.svg" />
-            <div className="invite-link-label">Invite link: </div>
-            <div className="invite-link">
-              <a href={`//${inviteLink}`} target="_blank">
-                {inviteLink}
-              </a>
-            </div>
-          </div>
-        )}
         <form
           autoComplete="off"
           className="organization-form organization-edit-form"
           onSubmit={this.onSubmit.bind(this)}>
           <div className="organization-details-title settings-option-title">Organization details</div>
+          {inviteLink && (
+            <div className="organization-invite-link-container">
+              <img src="/image/link.svg" />
+              <div className="invite-link-label">Invite link: </div>
+              <div className="invite-link">
+                <a href={`//${inviteLink}`} target="_blank">
+                  {inviteLink}
+                </a>
+              </div>
+            </div>
+          )}
           {this.renderFields()}
           <FilledButton
             disabled={!this.state.dirty || this.state.submitting}

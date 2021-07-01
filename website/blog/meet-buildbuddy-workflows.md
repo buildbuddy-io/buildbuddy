@@ -17,7 +17,7 @@ None of these pipeline-based approaches are well suited for Bazel's approach to 
 
 ## Introducing a Bazel-focused CI Solution
 
-In today's [BuildBuddy v2.3 release](https://github.com/buildbuddy-io/buildbuddy/releases/tag/v2.3) which is now live on BuildBuddy Cloud, we're launching **BuildBuddy Workflows**. BuildBuddy Workflows is a Continuous Integration (CI) solution for Bazel repositories hosted on GitHub (with support for other providers coming soon).
+In today's [BuildBuddy v2.3 release](https://github.com/buildbuddy-io/buildbuddy/releases/tag/v2.3.0) which is now live on BuildBuddy Cloud, we're launching **BuildBuddy Workflows**. BuildBuddy Workflows is a Continuous Integration (CI) solution for Bazel repositories hosted on GitHub (with support for other providers coming soon).
 
 Like other CI solutions, Workflows give you the confidence that your code
 builds successfully and passes all tests before you merge pull requests or
@@ -101,7 +101,7 @@ And the resulting output:
 ![Bazel query dependency graph visualization](images/query_graph.png)
 
 
-## Clickable RBE Actions
+### Clickable RBE Actions
 
 For actions executed with BuildBuddy Remote Build Execution, you can now click on individual actions to get the full set of command arguments, environment variables, execution metadata, output files, and more:
 

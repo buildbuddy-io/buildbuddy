@@ -450,30 +450,51 @@ func (p *Pool) hostBuildRoot() string {
 	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 }
 
-func (p *Pool) PullDefaultImage() {
-	if p.dockerClient != nil {
-		cfg := p.env.GetConfigurator().GetExecutorConfig()
-		c := docker.NewDockerContainer(
-			p.dockerClient, platform.DefaultContainerImage, p.hostBuildRoot(),
-			&docker.DockerOptions{
-				Socket:                  cfg.DockerSocket,
-				EnableSiblingContainers: cfg.DockerSiblingContainers,
-				UseHostNetwork:          cfg.DockerNetHost,
-				DockerMountMode:         cfg.DockerMountMode,
-			},
-		)
-		start := time.Now()
-		// Give the command (which triggers a container pull) up to 1 minute
-		// to succeed. In practice I saw clean pulls take about 30 seconds.
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-		defer cancel()
-		err := c.PullImageIfNecessary(ctx)
-		if err == nil {
-			log.Debugf("Pulled default image %q in %s", platform.DefaultContainerImage, time.Since(start))
-		} else {
-			log.Debugf("Error pulling default image %q: %s", platform.DefaultContainerImage, err)
-		}
+func (p *Pool) WarmupDefaultImage() {
+	if p.dockerClient == nil {
+		return
 	}
+	cfg := p.env.GetConfigurator().GetExecutorConfig()
+	c := docker.NewDockerContainer(
+		p.dockerClient, platform.DefaultContainerImage, p.hostBuildRoot(),
+		&docker.DockerOptions{
+			Socket:                  cfg.DockerSocket,
+			EnableSiblingContainers: cfg.DockerSiblingContainers,
+			UseHostNetwork:          cfg.DockerNetHost,
+			DockerMountMode:         cfg.DockerMountMode,
+		},
+	)
+	start := time.Now()
+	// Give the pull up to 1 minute to succeed and 1 minute to create a warm up container.
+	// In practice I saw clean pulls take about 30 seconds.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	err := c.PullImageIfNecessary(ctx)
+	if err != nil {
+		log.Warningf("Warm up: could not pull default image %q: %s", platform.DefaultContainerImage, err)
+		return
+	}
+	log.Infof("Warm up: pulled default image %q in %s", platform.DefaultContainerImage, time.Since(start))
+
+	tmpDir, err := os.MkdirTemp("", "buildbuddy-warmup-*")
+	if err != nil {
+		log.Warningf("Warm up: could not create temp directory: %s", err)
+		return
+	}
+	defer func() {
+		_ = os.Remove(tmpDir)
+	}()
+	err = c.Create(ctx, tmpDir)
+	if err != nil {
+		log.Warningf("Warm up: could not create warm up container: %s", err)
+		return
+	}
+	err = c.Remove(ctx)
+	if err != nil {
+		log.Warningf("Warm up: could not remove warm up container: %s", err)
+		return
+	}
+	log.Infof("Warm up finished for default image in %s.", time.Since(start))
 }
 
 // Get returns a runner that can be used to execute the given task. The caller
@@ -499,6 +520,11 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	if err != nil && !status.IsPermissionDeniedError(err) && !status.IsUnimplementedError(err) {
 		return nil, err
 	}
+	if props.RecycleRunner && err != nil {
+		return nil, status.InvalidArgumentError(
+			"runner recycling is not supported for anonymous builds " +
+				`(recycling was requested via platform property "recycle-runner=true")`)
+	}
 
 	instanceName := task.GetExecuteRequest().GetInstanceName()
 
@@ -509,12 +535,6 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	}
 
 	if props.RecycleRunner {
-		if user == nil {
-			return nil, status.InvalidArgumentError(
-				"runner recycling is not supported for anonymous builds " +
-					`(recycling was requested via platform property "recycle-runner=true")`)
-		}
-
 		r := p.take(&query{
 			User:           user,
 			ContainerImage: props.ContainerImage,
