@@ -5,12 +5,14 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
@@ -188,4 +190,27 @@ func InjectProtoTraceMetadata(ctx context.Context, metadata *tpb.Metadata, setMe
 func ExtractProtoTraceMetadata(ctx context.Context, metadata *tpb.Metadata) context.Context {
 	p := otel.GetTextMapPropagator()
 	return p.Extract(ctx, newTraceMetadataProtoCarrier(metadata, nil))
+}
+
+type HttpServeMux struct {
+	delegateMux    *http.ServeMux
+	tracingHandler http.Handler
+}
+
+func NewHttpServeMux() *HttpServeMux {
+	delegate := http.NewServeMux()
+	handler := otelhttp.NewHandler(delegate, "")
+	return &HttpServeMux{delegateMux: delegate, tracingHandler: handler}
+}
+
+func (m *HttpServeMux) Handle(pattern string, handler http.Handler) {
+	m.delegateMux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+		span := trace.SpanFromContext(r.Context())
+		span.SetName(fmt.Sprintf("%s %s", r.Method, pattern))
+		handler.ServeHTTP(w, r)
+	})
+}
+
+func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	m.tracingHandler.ServeHTTP(w, r)
 }
