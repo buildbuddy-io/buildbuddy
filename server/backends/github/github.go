@@ -102,8 +102,6 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
-	// Restore group ID from cookie.
-	groupID := getCookie(r, groupIDCookieName)
 
 	client := &http.Client{}
 	url := fmt.Sprintf(
@@ -141,6 +139,8 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	var accessTokenResponse GithubAccessTokenResponse
 	json.Unmarshal(body, &accessTokenResponse)
 
+	// Restore group ID from cookie.
+	groupID := getCookie(r, groupIDCookieName)
 	if err := perms.AuthorizeGroupAccess(r.Context(), c.env, groupID); err != nil {
 		log.Warningf("Group auth failed; not linking GitHub account: %s", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
