@@ -32,9 +32,7 @@ export default class SidebarComponent extends React.Component {
   async handleOrgClicked(groupId: string) {
     if (this.props.user?.selectedGroup?.id === groupId) return;
 
-    // TODO: loading state
-    await authService.setSelectedGroupId(groupId);
-    window.location.reload();
+    await authService.setSelectedGroupId(groupId, { reload: true });
   }
 
   isHomeSelected() {
