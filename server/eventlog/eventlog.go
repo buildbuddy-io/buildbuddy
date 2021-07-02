@@ -32,21 +32,21 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		}
 	}
 
-	resp := &elpb.GetEventLogChunkResponse{
+	rsp := &elpb.GetEventLogChunkResponse{
 		Chunk: &elpb.GetEventLogChunkResponse_Chunk{
 			ChunkId: fmt.Sprintf("%04x", intChunkId),
 		},
 	}
 	var err error
-	if resp.Chunk.Buffer, err = c.ReadChunk(ctx, req.InvocationId+"/chunks/log/eventlog", intChunkId); err != nil {
+	if rsp.Chunk.Buffer, err = c.ReadChunk(ctx, req.InvocationId+"/chunks/log/eventlog", intChunkId); err != nil {
 		return nil, err
 	}
 	if intChunkId > 0 {
-		resp.PreviousChunkId = fmt.Sprintf("%04x", intChunkId-1)
+		rsp.PreviousChunkId = fmt.Sprintf("%04x", intChunkId-1)
 	}
 	if intChunkId < math.MaxInt16 {
-		resp.NextChunkId = fmt.Sprintf("%04x", intChunkId+1)
+		rsp.NextChunkId = fmt.Sprintf("%04x", intChunkId+1)
 	}
 
-	return resp, nil
+	return rsp, nil
 }
