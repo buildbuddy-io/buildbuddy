@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:trace_go_proto",
         "//server/config",
+        "//server/interfaces",
         "//server/util/log",
         "//server/util/status",
         "@com_github_googlecloudplatform_opentelemetry_operations_go_exporter_trace//:trace",
