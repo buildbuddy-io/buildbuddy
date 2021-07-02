@@ -28,8 +28,8 @@ import (
 	"google.golang.org/grpc/peer"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	oidc "github.com/coreos/go-oidc"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	oidc "github.com/coreos/go-oidc"
 )
 
 const (

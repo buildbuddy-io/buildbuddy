@@ -36,10 +36,10 @@ import (
 	"google.golang.org/grpc/codes"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
-	gstatus "google.golang.org/grpc/status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
