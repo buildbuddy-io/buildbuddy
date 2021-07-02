@@ -19,6 +19,7 @@ go_library(
         "//server/util/disk",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/tracing",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_google_uuid//:uuid",
         "@com_github_prometheus_client_golang//prometheus",

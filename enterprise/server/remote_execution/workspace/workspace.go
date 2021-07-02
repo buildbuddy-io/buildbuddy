@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
@@ -94,6 +95,9 @@ func (ws *Workspace) CreateOutputDirs() error {
 
 // DownloadInputs downloads any missing inputs for the current action.
 func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	rootInstanceDigest := digest.NewInstanceNameDigest(
 		ws.task.GetAction().GetInputRootDigest(),
 		ws.task.GetExecuteRequest().GetInstanceName(),
@@ -118,6 +122,9 @@ func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo
 // UploadOutputs uploads any outputs created by the last executed command
 // as well as the command's stdout and stderr.
 func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) (*dirtools.TransferInfo, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	bsClient := ws.env.GetByteStreamClient()
 	instanceName := ws.task.GetExecuteRequest().GetInstanceName()
 

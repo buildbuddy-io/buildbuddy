@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -26,8 +28,9 @@ import (
 )
 
 const (
-	traceHeader           = "x-buildbuddy-trace"
-	forceTraceHeaderValue = "force"
+	traceHeader                   = "x-buildbuddy-trace"
+	forceTraceHeaderValue         = "force"
+	buildBuddyInstrumentationName = "buildbuddy.io"
 )
 
 // fractionSampler allows specifying a default sampling fraction as well as overrides based on the span name.
@@ -75,6 +78,7 @@ func (s *fractionSampler) ShouldSample(parameters sdktrace.SamplingParameters) s
 	if s.checkForcedTrace(parameters) {
 		return sdktrace.SamplingResult{
 			Decision:   sdktrace.RecordAndSample,
+			Attributes: parameters.Attributes,
 			Tracestate: psc.TraceState(),
 		}
 	}
@@ -91,6 +95,7 @@ func (s *fractionSampler) ShouldSample(parameters sdktrace.SamplingParameters) s
 	}
 	return sdktrace.SamplingResult{
 		Decision:   decision,
+		Attributes: parameters.Attributes,
 		Tracestate: psc.TraceState(),
 	}
 }
@@ -193,4 +198,21 @@ func InjectProtoTraceMetadata(ctx context.Context, metadata *tpb.Metadata, setMe
 func ExtractProtoTraceMetadata(ctx context.Context, metadata *tpb.Metadata) context.Context {
 	p := otel.GetTextMapPropagator()
 	return p.Extract(ctx, newTraceMetadataProtoCarrier(metadata, nil))
+}
+
+// StartSpan starts a new span named after the calling function.
+func StartSpan(ctx context.Context, opts ...trace.SpanOption) (context.Context, trace.Span) {
+	span := trace.SpanFromContext(ctx)
+	if !span.IsRecording() {
+		return ctx, span
+	}
+
+	rpc := make([]uintptr, 1)
+	n := runtime.Callers(2, rpc[:])
+	fn := ""
+	if n > 0 {
+		frame, _ := runtime.CallersFrames(rpc).Next()
+		fn = filepath.Base(frame.Function)
+	}
+	return otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, fn, opts...)
 }
