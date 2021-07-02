@@ -16,6 +16,7 @@ func GetEventLogPathFromInvocationId(invocationId string) string {
 	return invocationId + "/chunks/log/eventlog"
 }
 
+// Gets the chunk of the event log specified by the request from the blobstore and returns a response containing it
 func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEventLogChunkRequest) (*elpb.GetEventLogChunkResponse, error) {
 	if _, err := env.GetInvocationDB().LookupInvocation(ctx, req.GetInvocationId()); err != nil {
 		return nil, err
