@@ -5,8 +5,8 @@ exports_files(["vmlinux"])
 
 configure_make(
     name = "cpio",
-    lib_source = "@org_gnu_cpio//:all",
     configure_in_place = True,
+    lib_source = "@org_gnu_cpio//:all",
     out_binaries = ["cpio"],
 )
 
@@ -20,8 +20,7 @@ genrule(
     tags = ["manual"],
     tools = [
         "mkinitrd.sh",
-	":cpio"
+        ":cpio",
     ],
     visibility = ["//visibility:public"],
 )
-
