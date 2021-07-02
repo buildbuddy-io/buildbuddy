@@ -80,6 +80,8 @@ message Invocation {
 
   // Access control list for this invocation.
   acl.ACL acl = 20;
+
+  string lastChunkId = 21;
 }
 
 message InvocationEvent {
