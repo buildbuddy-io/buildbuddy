@@ -28,7 +28,6 @@ type Chunkstore struct {
 type ChunkstoreOptions struct {
 	WriteBlockSize       int
 	WriteTimeoutDuration time.Duration
-	LineBuffer           bool
 }
 
 func New(blobstore interfaces.Blobstore, co *ChunkstoreOptions) *Chunkstore {
