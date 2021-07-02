@@ -391,7 +391,6 @@ func (l *writeLoop) write() error {
 	if len(l.chunk) < l.chunkstore.writeBlockSize {
 		size = len(l.chunk)
 	}
-	fmt.Printf("Chunk size: %d, size: %d\n", len(l.chunk), size)
 	bytesWritten, err := l.chunkstore.writeChunk(l.ctx, l.blobName, l.chunkIndex, l.chunk[:size])
 	if bytesWritten > 0 {
 		fmt.Printf("bytesWritten: %d\n", bytesWritten)
