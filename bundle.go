@@ -17,6 +17,7 @@ import (
 var all embed.FS
 
 type aliasFS struct {
+	
 	embed.FS
 	remappedPaths map[string]string
 }

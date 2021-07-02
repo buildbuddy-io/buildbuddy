@@ -14,7 +14,8 @@ nogo(
         # "@org_golang_x_tools//go/analysis/passes/atomic:go_tool_library",
         "@org_golang_x_tools//go/analysis/passes/atomicalign:go_tool_library",
         # "@org_golang_x_tools//go/analysis/passes/bools:go_tool_library",
-        # "@org_golang_x_tools//go/analysis/passes/buildtag:go_tool_library",
+        # "@org_go
+        lang_x_tools//go/analysis/passes/buildtag:go_tool_library",
         "@org_golang_x_tools//go/analysis/passes/cgocall:go_tool_library",
         "@org_golang_x_tools//go/analysis/passes/composite:go_tool_library",
         "@org_golang_x_tools//go/analysis/passes/copylock:go_tool_library",
