@@ -197,9 +197,10 @@ type HttpServeMux struct {
 	tracingHandler http.Handler
 }
 
-func NewHttpServeMux() *HttpServeMux {
-	delegate := http.NewServeMux()
-	handler := otelhttp.NewHandler(delegate, "")
+func NewHttpServeMux(delegate *http.ServeMux) *HttpServeMux {
+	// By default otelhttp names all the spans with the passed operation name.
+	// We pass an empty name here since we override the span name in http handler.
+	handler := otelhttp.NewHandler(delegate, "" /* operation= */)
 	return &HttpServeMux{delegateMux: delegate, tracingHandler: handler}
 }
 

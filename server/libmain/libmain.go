@@ -364,7 +364,7 @@ func StartAndRunServices(env environment.Env) {
 		StartGRPCServiceOrDie(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
 	}
 
-	mux := tracing.NewHttpServeMux()
+	mux := tracing.NewHttpServeMux(http.NewServeMux())
 	// Register all of our HTTP handlers on the default mux.
 	mux.Handle("/", httpfilters.WrapExternalHandler(env, staticFileServer))
 	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
