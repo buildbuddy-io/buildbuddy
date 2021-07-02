@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
@@ -79,7 +80,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 			&chunkstore.ChunkstoreOptions{
 				WriteBlockSize:       defaultLogChunkSize,
 				WriteTimeoutDuration: defaultChunkTimeout,
-			}).Writer(ctx, iid+"/chunks/log/eventlog"),
+			}).Writer(ctx, eventlog.GetEventLogPathFromInvocationId(iid)),
 	}
 }
 
