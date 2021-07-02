@@ -117,11 +117,11 @@ func main() {
 	die(mkdirp("/overlay", 0755))
 	die(mount("/dev/vdb", "/overlay", "ext4", syscall.MS_RELATIME, ""))
 
-	die(mkdirp("/overlay/root", 0755))
-	die(mkdirp("/overlay/work", 0755))
+	die(mkdirp("/overlay/bbvmroot", 0755))
+	die(mkdirp("/overlay/bbvmwork", 0755))
 
 	die(mkdirp("/mnt", 0755))
-	die(mount("overlayfs:/overlay/root", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/overlay/root,workdir=/overlay/work"))
+	die(mount("overlayfs:/overlay/bbvmroot", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/overlay/bbvmroot,workdir=/overlay/bbvmwork"))
 
 	die(mkdirp("/mnt/dev", 0755))
 	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
