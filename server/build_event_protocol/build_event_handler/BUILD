@@ -18,6 +18,7 @@ go_library(
         "//server/build_event_protocol/event_parser",
         "//server/build_event_protocol/target_tracker",
         "//server/environment",
+        "//server/eventlog",
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/hit_tracker",

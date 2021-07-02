@@ -12,6 +12,10 @@ import (
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 )
 
+func GetEventLogPathFromInvocationId(invocationId string) string {
+	return invocationId + "/chunks/log/eventlog"
+}
+
 func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEventLogChunkRequest) (*elpb.GetEventLogChunkResponse, error) {
 	if _, err := env.GetInvocationDB().LookupInvocation(ctx, req.GetInvocationId()); err != nil {
 		return nil, err
@@ -38,7 +42,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		},
 	}
 	var err error
-	if rsp.Chunk.Buffer, err = c.ReadChunk(ctx, req.InvocationId+"/chunks/log/eventlog", intChunkId); err != nil {
+	if rsp.Chunk.Buffer, err = c.ReadChunk(ctx, GetEventLogPathFromInvocationId(req.InvocationId), intChunkId); err != nil {
 		return nil, err
 	}
 	if intChunkId > 0 {
