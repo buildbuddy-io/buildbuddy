@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"go.opentelemetry.io/otel"
@@ -98,7 +99,7 @@ func (s *fractionSampler) Description() string {
 	return s.description
 }
 
-func Configure(configurator *config.Configurator) error {
+func Configure(configurator *config.Configurator, healthChecker interfaces.HealthChecker) error {
 	if configurator.GetTraceFraction() <= 0 {
 		return nil
 	}
@@ -130,6 +131,10 @@ func Configure(configurator *config.Configurator) error {
 	}
 
 	bsp := sdktrace.NewBatchSpanProcessor(traceExporter)
+	healthChecker.RegisterShutdownFunction(func(ctx context.Context) error {
+		return bsp.Shutdown(ctx)
+	})
+
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSpanProcessor(bsp),
 		sdktrace.WithSampler(sdktrace.ParentBased(sampler)),

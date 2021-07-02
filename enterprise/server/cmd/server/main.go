@@ -143,7 +143,7 @@ func main() {
 	}
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	realEnv := libmain.GetConfiguredEnvironmentOrDie(configurator, healthChecker)
-	if err := tracing.Configure(configurator); err != nil {
+	if err := tracing.Configure(configurator, healthChecker); err != nil {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
 
