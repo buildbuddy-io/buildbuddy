@@ -45,10 +45,10 @@
   resolved "https://registry.yarnpkg.com/@bazel/buildifier/-/buildifier-3.5.0.tgz#afbee61d61543d0a0a28e2b29a5cbdb64c852953"
   integrity sha512-cbUS0/GMg57g6NIg6JekgmqVtuobYzW4aGHk7KzMS/bFZvxg6WY19JJ5UZSzGyAGDu2152oUTFbh4WN74Fz1+Q==
 
-"@bazel/esbuild@^3.3.0":
-  version "3.3.0"
-  resolved "https://registry.yarnpkg.com/@bazel/esbuild/-/esbuild-3.3.0.tgz#7fbe7e9511b925f6bdc12e45af312322b302ca88"
-  integrity sha512-0+sN0mbZHzI/NEvOU7VrdBymtKO+/+WAfcmubw89rECNoXiqgswYc9cjGVwrmiy+kWQuW9vNgIXuaqzG/ov6Aw==
+"@bazel/esbuild@^3.7.0":
+  version "3.7.0"
+  resolved "https://registry.yarnpkg.com/@bazel/esbuild/-/esbuild-3.7.0.tgz#1d59bba055afb0ca43bb626b595e2b3e2e89fcad"
+  integrity sha512-IWcK/7f17m5gMzbz+pzrgaalDDXQ/3xf2AVCllf8XUDay5HqbquL9dHy5xuZrM8Lap9hHmZGNAMmuV74x0HffQ==
 
 "@bazel/ibazel@^0.13.2":
   version "0.13.2"

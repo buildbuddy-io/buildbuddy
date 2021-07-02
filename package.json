@@ -9,7 +9,7 @@
   "devDependencies": {
     "@bazel/bazelisk": "^1.6.1",
     "@bazel/buildifier": "^3.4.0",
-    "@bazel/esbuild": "^3.3.0",
+    "@bazel/esbuild": "^3.7.0",
     "@bazel/ibazel": "^0.13.2",
     "@bazel/jasmine": "^3.3.0",
     "@bazel/labs": "^3.3.0",
