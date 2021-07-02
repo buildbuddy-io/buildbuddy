@@ -40,6 +40,13 @@ import (
 
 const (
 	defaultChunkFileSizeBytes = 1000 * 100 // 100KB
+
+	// Chunks will be flushed to blobstore when they reach this size.
+	defaultLogChunkSize = 2_000_000 // 2MB
+
+	// Chunks will also be flushed to blobstore after this much time
+	// passes with no new data being written.
+	defaultChunkTimeout = 15 * time.Second
 )
 
 type BuildEventHandler struct {
@@ -70,8 +77,8 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		logWriter: chunkstore.New(
 			b.env.GetBlobstore(),
 			&chunkstore.ChunkstoreOptions{
-				WriteBlockSize:       (1 << 20) * 2,
-				WriteTimeoutDuration: 15 * time.Second,
+				WriteBlockSize:       defaultLogChunkSize,
+				WriteTimeoutDuration: defaultChunkTimeout,
 			}).Writer(ctx, iid+"/chunks/log/eventlog"),
 	}
 }
