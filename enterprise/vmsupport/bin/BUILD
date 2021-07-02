@@ -1,4 +1,14 @@
+load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
 exports_files(["vmlinux"])
+
+configure_make(
+    name = "cpio",
+    lib_source = "@org_gnu_cpio//:all",
+    configure_in_place = True,
+    out_binaries = ["cpio"],
+)
 
 genrule(
     name = "mkinitrd",
@@ -8,6 +18,10 @@ genrule(
     outs = ["initrd.cpio"],
     cmd = "./$(location mkinitrd.sh) $(location //enterprise/server/cmd/goinit:goinit) \"$@\"",
     tags = ["manual"],
-    tools = ["mkinitrd.sh"],
+    tools = [
+        "mkinitrd.sh",
+	":cpio"
+    ],
     visibility = ["//visibility:public"],
 )
+
