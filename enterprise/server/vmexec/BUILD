@@ -8,6 +8,8 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//proto:vmexec_go_proto",
+        "//server/util/log",
         "//server/util/status",
+        "@org_golang_x_sys//unix",
     ],
 )
