@@ -35,6 +35,7 @@ import (
 )
 
 const (
+	// How long to wait for the VMM to listen on the firecracker socket.
 	firecrackerSocketWaitTimeout = 3 * time.Second
 )
 
@@ -85,16 +86,9 @@ func getStaticFilePath(fileName string, mode fs.FileMode) (string, error) {
 	return "", status.NotFoundErrorf("File %q not found in runfiles or bundle.", fileName)
 }
 
-// Remove this once the workspace and container images are deterministically named.
-func tempFileName(dir, pattern string) (string, error) {
-	f, err := os.CreateTemp(dir, pattern)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	return f.Name(), nil
-}
-
+// getOrCreateContainerImage will look for a cached filesystem of the specified
+// containerImage in the user's cache directory -- if none is found one will be
+// created and cached.
 func getOrCreateContainerImage(ctx context.Context, containerImage string) (string, error) {
 	userCacheDir, err := os.UserCacheDir()
 	if err != nil {
@@ -150,10 +144,12 @@ func convertContainerToExt4FS(ctx context.Context, containerImage string) (strin
 		return "", err
 	}
 
-	imageFile, err := tempFileName("", "containerfs-*.ext4")
+	f, err := os.CreateTemp("", "containerfs-*.ext4")
 	if err != nil {
 		return "", err
 	}
+	defer f.Close()
+	imageFile := f.Name()
 	if err := ext4.DirectoryToImageAutoSize(ctx, rootFSDir, imageFile); err != nil {
 		return "", err
 	}
@@ -182,9 +178,7 @@ type firecrackerContainer struct {
 }
 
 func NewContainer(ctx context.Context, containerImage, hostRootDir string) (*firecrackerContainer, error) {
-	log.Infof("NewContainer called with image: %q, rootDir: %q", containerImage, hostRootDir)
-
-	// Ensure our kernel and initrd exist. Warn if they don't.
+	// Ensure our kernel and initrd exist. Bail if they don't.
 	initStaticFiles()
 	if locateBinariesError != nil {
 		return nil, locateBinariesError
@@ -205,20 +199,6 @@ func nonCmdExit(err error) *interfaces.CommandResult {
 	return &interfaces.CommandResult{
 		Error:    err,
 		ExitCode: -2,
-	}
-}
-
-// uniqueSocketPath returns an unused socket path that can be used by another
-// program (firecracker, in this case).
-//
-// ex. uniqueSocketPath("/tmp/firecracker.sock") => /tmp/firecracker.sock-1231231
-func uniqueSocketPath(cleanSocketPath string) string {
-	for {
-		socketPath := fmt.Sprintf("%s-%d", cleanSocketPath, time.Now().UnixNano())
-		if exists, err := disk.FileExists(socketPath); err == nil && exists {
-			continue
-		}
-		return socketPath
 	}
 }
 
@@ -266,18 +246,25 @@ func initStaticFiles() {
 	})
 }
 
+// copyOutputsToWorkspace copies output files from the workspace filesystem
+// image to the local filesystem workdir. It will not overwrite existing files
+// and it will skip copying rootfs-overlay files. Callers should ensure that
+// data has already been synced to the workspace filesystem and the VM has
+// been paused before calling this.
 func (c *firecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error {
-	if c.workspaceFSPath == "" {
-		return status.FailedPreconditionError("workspacefs path not set")
+	if exists, err := disk.FileExists(c.workspaceFSPath); err != nil || !exists {
+		return status.FailedPreconditionErrorf("workspacefs path %q not found", c.workspaceFSPath)
 	}
-	if c.workDir == "" {
-		return status.FailedPreconditionError("workdir not set")
+	if exists, err := disk.FileExists(c.workDir); err != nil || !exists {
+		return status.FailedPreconditionErrorf("workDir path %q not found", c.workDir)
 	}
+
 	unpackDir, err := os.MkdirTemp("", "unpacked-workspacefs-*")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(unpackDir) // clean up
+
 	if err := ext4.ImageToDirectory(ctx, c.workspaceFSPath, unpackDir); err != nil {
 		return err
 	}
@@ -353,7 +340,6 @@ func (c *firecrackerContainer) Create(ctx context.Context, workDir string) error
 	c.fcSocket = filepath.Join(c.containerHome, "firecracker.sock")
 	c.vSocket = filepath.Join(c.containerHome, "v.sock")
 
-	log.Printf("fcSocket: %q, vSocket: %q", c.fcSocket, c.vSocket)
 	fcCfg, err := c.getConfig(ctx, c.fcSocket, c.vSocket, c.rootFSPath, c.workspaceFSPath)
 	if err != nil {
 		return err
@@ -394,6 +380,8 @@ func (c *firecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		return vsock.DialHostToGuest(ctx, c.vSocket, vsock.DefaultPort)
 	}
 
+	// These params are tuned for a fast-reconnect to the vmexec server
+	// running inside the VM.
 	backoffConfig := backoff.Config{
 		BaseDelay:  1.0 * time.Millisecond,
 		Multiplier: 1.6,
@@ -471,7 +459,6 @@ func (c *firecrackerContainer) PullImageIfNecessary(ctx context.Context) error {
 	}
 	rootFSPath, err := getOrCreateContainerImage(ctx, c.containerImage)
 	if err != nil {
-		log.Errorf("Error getting rootfs: %s", err)
 		return err
 	}
 	c.rootFSPath = rootFSPath
@@ -522,7 +509,7 @@ func (c *firecrackerContainer) Pause(ctx context.Context) error {
 	if err := c.machine.CreateSnapshot(ctx, c.memSnapshotPath, c.diskSnapshotPath); err != nil {
 		return err
 	}
-	log.Printf("CreateSnapshot took %s", time.Since(snapStart))
+	log.Debugf("CreateSnapshot took %s", time.Since(snapStart))
 
 	if err := c.machine.StopVMM(); err != nil {
 		return err
@@ -549,10 +536,6 @@ func (c *firecrackerContainer) Unpause(ctx context.Context) error {
 	if exists, err := disk.FileExists(c.diskSnapshotPath); err != nil || !exists {
 		return status.FailedPreconditionErrorf("disk snapshot %q not found", c.diskSnapshotPath)
 	}
-
-	// We create a new firecracker process and load the snapshot into it, creating a new
-	// machine.
-	log.Debugf("(unpause) fcSocket: %q, vSocket: %q", c.fcSocket, c.vSocket)
 
 	cfg := fcclient.Config{
 		SocketPath:        c.fcSocket,
