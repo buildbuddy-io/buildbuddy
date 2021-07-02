@@ -96,6 +96,7 @@ type Invocation struct {
 	Host         string `gorm:"index:host_index"`
 	RepoURL      string `gorm:"index:repo_url_index"`
 	CommitSHA    string `gorm:"index:commit_sha_index"`
+	LastChunkId  string
 	Model
 	DurationUsec                     int64
 	UploadThroughputBytesPerSecond   int64

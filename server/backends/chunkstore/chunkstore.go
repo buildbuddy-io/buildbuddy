@@ -332,40 +332,51 @@ func (c *Chunkstore) ReverseReader(ctx context.Context, blobName string) (*chunk
 }
 
 type writeResult struct {
-	err  error
-	size int
+	err            error
+	size           int
+	lastChunkIndex uint16
 }
 
-type chunkstoreWriter struct {
+type ChunkstoreWriter struct {
 	chunkstore         *Chunkstore
 	blobName           string
+	lastChunkIndex     uint16
 	writeChannel       chan []byte
 	writeResultChannel chan writeResult
 }
 
-func (w *chunkstoreWriter) readFromWriteResultChannel() (int, error) {
+func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
 	select {
 	case result, open := <-w.writeResultChannel:
 		if !open {
 			return 0, status.UnavailableErrorf("Error accessing %v: Already closed.", w.blobName)
 		}
+		w.lastChunkIndex = result.lastChunkIndex
 		return result.size, result.err
 	case <-time.After(w.chunkstore.writeTimeoutDuration):
 		return 0, status.DeadlineExceededErrorf("Error accessing %v: Deadline exceeded.", w.blobName)
 	}
 }
 
-func (w *chunkstoreWriter) Write(p []byte) (int, error) {
+func (w *ChunkstoreWriter) GetLastChunkIndex() (uint16, error) {
+	w.Write([]byte{})
+	if w.lastChunkIndex == math.MaxUint16 {
+		return 0, status.NotFoundError("No chunks have been written.")
+	}
+	return w.lastChunkIndex, nil
+}
+
+func (w *ChunkstoreWriter) Write(p []byte) (int, error) {
 	w.writeChannel <- p
 	return w.readFromWriteResultChannel()
 }
 
-func (w *chunkstoreWriter) Flush() (int, error) {
+func (w *ChunkstoreWriter) Flush() (int, error) {
 	w.writeChannel <- nil
 	return w.readFromWriteResultChannel()
 }
 
-func (w *chunkstoreWriter) Close() error {
+func (w *ChunkstoreWriter) Close() error {
 	close(w.writeChannel)
 	_, err := w.readFromWriteResultChannel()
 	return err
@@ -441,15 +452,15 @@ func (l *writeLoop) run() {
 		if l.timeout {
 			continue
 		}
-		l.writeResultChannel <- writeResult{size: l.bytesFlushed, err: l.writeError}
+		l.writeResultChannel <- writeResult{size: l.bytesFlushed, err: l.writeError, lastChunkIndex: l.chunkIndex - 1}
 		l.writeError = nil
 		l.bytesFlushed = 0
 	}
 	close(l.writeResultChannel)
 }
 
-func (c *Chunkstore) Writer(ctx context.Context, blobName string) *chunkstoreWriter {
-	writer := &chunkstoreWriter{
+func (c *Chunkstore) Writer(ctx context.Context, blobName string) *ChunkstoreWriter {
+	writer := &ChunkstoreWriter{
 		chunkstore:         c,
 		blobName:           blobName,
 		writeChannel:       make(chan []byte),

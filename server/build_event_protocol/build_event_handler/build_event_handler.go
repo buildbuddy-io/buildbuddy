@@ -125,7 +125,7 @@ type EventChannel struct {
 	targetTracker           *target_tracker.TargetTracker
 	eventsBeforeStarted     []*inpb.InvocationEvent
 	hasReceivedStartedEvent bool
-	logWriter               io.WriteCloser
+	logWriter               *chunkstore.ChunkstoreWriter
 }
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string, invocation *inpb.Invocation) error {
@@ -231,6 +231,9 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		InvocationId:     iid,
 		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
 	}
+	if lastChunkId, err := e.logWriter.GetLastChunkIndex(); err == nil {
+		invocation.LastChunkId = fmt.Sprintf("%04x", lastChunkId)
+	}
 	err := e.fillInvocationFromEvents(e.ctx, iid, invocation)
 	if err != nil {
 		return err
@@ -284,6 +287,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	iid := streamID.InvocationId
 
 	if isFinalEvent(event.OrderedBuildEvent) {
+		e.logWriter.Close()
 		return nil
 	}
 
@@ -485,6 +489,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
 		i.Perms = perms.OTHERS_READ
 	}
+	i.LastChunkId = p.LastChunkId
 	return i
 }
 
@@ -528,5 +533,6 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 		DownloadThroughputBytesPerSecond: i.DownloadThroughputBytesPerSecond,
 		UploadThroughputBytesPerSecond:   i.UploadThroughputBytesPerSecond,
 	}
+	out.LastChunkId = i.LastChunkId
 	return out
 }
