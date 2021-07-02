@@ -27,8 +27,9 @@ import (
 )
 
 const (
-	traceHeader           = "x-buildbuddy-trace"
-	forceTraceHeaderValue = "force"
+	traceHeader                   = "x-buildbuddy-trace"
+	forceTraceHeaderValue         = "force"
+	buildBuddyInstrumentationName = "buildbuddy.io"
 )
 
 // fractionSampler allows specifying a default sampling fraction as well as overrides based on the span name.
@@ -208,5 +209,5 @@ func StartSpan(ctx context.Context, opts ...trace.SpanOption) (context.Context, 
 		frame, _ := runtime.CallersFrames(rpc).Next()
 		fn = filepath.Base(frame.Function)
 	}
-	return otel.GetTracerProvider().Tracer("buildbuddy.io").Start(ctx, fn, opts...)
+	return otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, fn, opts...)
 }
