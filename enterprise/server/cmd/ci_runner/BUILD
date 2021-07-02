@@ -20,6 +20,7 @@ go_library(
         "//server/util/lockingbuffer",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/timeutil",
         "@com_github_go_git_go_git_v5//:go-git",
         "@com_github_go_git_go_git_v5//config",
         "@com_github_go_git_go_git_v5//plumbing",

@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
@@ -235,7 +236,7 @@ func RunAllActions(ctx context.Context, cfg *config.BuildBuddyConfig, im *initMe
 					Name: exitCodeName,
 					Code: int32(exitCode),
 				},
-				FinishTimeMillis: time.Now().UnixNano() / int64(time.Millisecond),
+				FinishTimeMillis: timeutil.ToMillis(time.Now()),
 			}},
 		})
 		elapsedTimeSeconds := float64(time.Since(startTime)) / float64(time.Second)
@@ -487,7 +488,7 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 		},
 		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
 			Uuid:            ar.bep.streamID.InvocationId,
-			StartTimeMillis: startTime.UnixNano() / int64(time.Millisecond),
+			StartTimeMillis: timeutil.ToMillis(startTime),
 		}},
 	}
 	if err := bep.Publish(startedEvent); err != nil {
@@ -597,7 +598,7 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 			}}},
 			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
 				ExitCode:        int32(exitCode),
-				StartTimeMillis: int64(float64(cmdStartTime.UnixNano()) / float64(time.Millisecond)),
+				StartTimeMillis: timeutil.ToMillis(cmdStartTime),
 				DurationMillis:  int64(float64(time.Since(cmdStartTime)) / float64(time.Millisecond)),
 			}},
 		}

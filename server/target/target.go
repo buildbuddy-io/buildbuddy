@@ -5,15 +5,16 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/golang/protobuf/ptypes"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
-	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 )
 
@@ -56,7 +57,7 @@ func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequ
 		return nil, err
 	}
 	startUsec := int64(0)
-	endUsec := int64(time.Now().UnixNano() / 1000)
+	endUsec := timeutil.ToUsec(time.Now())
 	if st := req.GetStartTimeUsec(); st != 0 {
 		startUsec = st
 	}
@@ -157,7 +158,7 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 				})
 			}
 
-			tsPb, _ := ptypes.TimestampProto(time.Unix(0, row.StartTimeUsec*int64(time.Microsecond)))
+			tsPb, _ := ptypes.TimestampProto(timeutil.FromUsec(row.StartTimeUsec))
 			statuses[targetID] = append(statuses[targetID], &trpb.TargetStatus{
 				InvocationId: row.InvocationID,
 				CommitSha:    row.CommitSHA,

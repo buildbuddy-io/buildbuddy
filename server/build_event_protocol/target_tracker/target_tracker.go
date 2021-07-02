@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -16,11 +17,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/sync/errgroup"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
-	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 )
 
 type targetClosure func(event *build_event_stream.BuildEvent)
@@ -390,7 +391,7 @@ func insertTargets(ctx context.Context, env environment.Env, targets []*tables.T
 		valueStrings := []string{}
 		valueArgs := []interface{}{}
 		for _, t := range chunk {
-			nowInt64 := int64(time.Now().UnixNano() / 1000)
+			nowUsec := timeutil.ToUsec(time.Now())
 			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?)")
 			valueArgs = append(valueArgs, t.RepoURL)
 			valueArgs = append(valueArgs, t.TargetID)
@@ -399,8 +400,8 @@ func insertTargets(ctx context.Context, env environment.Env, targets []*tables.T
 			valueArgs = append(valueArgs, t.Perms)
 			valueArgs = append(valueArgs, t.Label)
 			valueArgs = append(valueArgs, t.RuleType)
-			valueArgs = append(valueArgs, nowInt64)
-			valueArgs = append(valueArgs, nowInt64)
+			valueArgs = append(valueArgs, nowUsec)
+			valueArgs = append(valueArgs, nowUsec)
 		}
 		err := env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 			stmt := fmt.Sprintf("INSERT INTO Targets (repo_url, target_id, user_id, group_id, perms, label, rule_type, created_at_usec, updated_at_usec) VALUES %s", strings.Join(valueStrings, ","))
@@ -429,7 +430,7 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 		valueStrings := []string{}
 		valueArgs := []interface{}{}
 		for _, t := range chunk {
-			nowInt64 := int64(time.Now().UnixNano() / 1000)
+			nowUsec := timeutil.ToUsec(time.Now())
 			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?)")
 			valueArgs = append(valueArgs, t.TargetID)
 			valueArgs = append(valueArgs, t.InvocationPK)
@@ -438,8 +439,8 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 			valueArgs = append(valueArgs, t.Status)
 			valueArgs = append(valueArgs, t.StartTimeUsec)
 			valueArgs = append(valueArgs, t.DurationUsec)
-			valueArgs = append(valueArgs, nowInt64)
-			valueArgs = append(valueArgs, nowInt64)
+			valueArgs = append(valueArgs, nowUsec)
+			valueArgs = append(valueArgs, nowUsec)
 		}
 		err := env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 			stmt := fmt.Sprintf("INSERT INTO TargetStatuses (target_id, invocation_pk, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s", strings.Join(valueStrings, ","))
