@@ -5,6 +5,7 @@ exports_files(["vmlinux"])
 
 configure_make(
     name = "cpio",
+    autoconf = True,
     configure_in_place = True,
     lib_source = "@org_gnu_cpio//:all",
     out_binaries = ["cpio"],
