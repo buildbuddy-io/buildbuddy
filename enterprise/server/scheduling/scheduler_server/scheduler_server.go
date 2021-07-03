@@ -1095,7 +1095,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 				os:      task.metadata.GetOs(),
 				arch:    task.metadata.GetArch(),
 				pool:    task.metadata.GetPool(),
-				groupID: task.metadata.GetGroupId(),
+				groupID: task.metadata.GetExecutorGroupId(),
 			}
 			nodePool, ok := s.getPool(key)
 			if ok {
@@ -1147,7 +1147,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	os := enqueueRequest.GetSchedulingMetadata().GetOs()
 	arch := enqueueRequest.GetSchedulingMetadata().GetArch()
 	pool := enqueueRequest.GetSchedulingMetadata().GetPool()
-	groupID := enqueueRequest.GetSchedulingMetadata().GetGroupId()
+	groupID := enqueueRequest.GetSchedulingMetadata().GetExecutorGroupId()
 
 	key := nodePoolKey{os: os, arch: arch, pool: pool, groupID: groupID}
 

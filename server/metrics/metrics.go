@@ -308,11 +308,13 @@ var (
 	/// )
 	/// ```
 
-	RemoteExecutionQueueLength = promauto.NewGauge(prometheus.GaugeOpts{
+	RemoteExecutionQueueLength = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "queue_length",
 		Help:      "Number of actions currently waiting in the executor queue.",
+	}, []string{
+		GroupID,
 	})
 
 	/// #### Examples
