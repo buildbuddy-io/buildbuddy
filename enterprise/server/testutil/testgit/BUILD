@@ -9,9 +9,8 @@ go_library(
     deps = [
         "//server/interfaces",
         "//server/testutil/testfs",
+        "//server/testutil/testshell",
         "//server/util/status",
-        "@com_github_go_git_go_git_v5//:go-git",
-        "@com_github_go_git_go_git_v5//plumbing/object",
         "@com_github_stretchr_testify//require",
     ],
 )

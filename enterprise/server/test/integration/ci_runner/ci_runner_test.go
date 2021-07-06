@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testgit"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -154,10 +155,16 @@ func makeGitRepo(t *testing.T, contents map[string]string) (path, commitSHA stri
 	return testgit.MakeTempRepo(t, contents)
 }
 
-func copyGitRepo(t *testing.T, path string) string {
-	copyPath := testfs.MakeTempDir(t)
-	bash(t, path, fmt.Sprintf(`cp -r * %q/ && cp -r .git %q/`, copyPath, copyPath))
-	return copyPath
+func firstInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation {
+	bbService := app.BuildBuddyServiceClient(t)
+	resp, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
+		Lookup: &inpb.InvocationLookup{
+			InvocationId: res.InvocationIDs[0],
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(resp.Invocation), "couldn't find runner invocation in DB")
+	return resp.Invocation[0]
 }
 
 func TestCIRunner_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testing.T) {
@@ -179,15 +186,7 @@ func TestCIRunner_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testin
 
 	checkRunnerResult(t, result)
 
-	bbService := app.BuildBuddyServiceClient(t)
-	res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
-		Lookup: &inpb.InvocationLookup{
-			InvocationId: result.InvocationIDs[0],
-		},
-	})
-	require.NoError(t, err)
-	require.Equal(t, 1, len(res.Invocation), "couldn't find runner invocation in DB")
-	runnerInvocation := res.Invocation[0]
+	runnerInvocation := firstInvocation(t, app, result)
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
@@ -212,15 +211,7 @@ func TestCIRunner_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsToBES(t
 
 	checkRunnerResult(t, result)
 
-	bbService := app.BuildBuddyServiceClient(t)
-	res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
-		Lookup: &inpb.InvocationLookup{
-			InvocationId: result.InvocationIDs[0],
-		},
-	})
-	require.NoError(t, err)
-	require.Equal(t, 1, len(res.Invocation), "couldn't find runner invocation in DB")
-	runnerInvocation := res.Invocation[0]
+	runnerInvocation := firstInvocation(t, app, result)
 	assert.Contains(
 		t, runnerInvocation.ConsoleBuffer,
 		"Executed 2 out of 2 tests: 1 test passes and 1 fails locally.",
@@ -255,15 +246,7 @@ func TestCIRunner_ReusedWorkspaceWithTestAllAction_CanReuseWorkspace(t *testing.
 
 	checkRunnerResult(t, result)
 
-	bbService := app.BuildBuddyServiceClient(t)
-	res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
-		Lookup: &inpb.InvocationLookup{
-			InvocationId: result.InvocationIDs[0],
-		},
-	})
-	require.NoError(t, err)
-	require.Equal(t, 1, len(res.Invocation), "couldn't find runner invocation in DB")
-	runnerInvocation := res.Invocation[0]
+	runnerInvocation := firstInvocation(t, app, result)
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
@@ -274,7 +257,6 @@ func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
-	bbService := app.BuildBuddyServiceClient(t)
 
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
@@ -292,14 +274,7 @@ func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 
 		checkRunnerResult(t, result)
 
-		res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
-			Lookup: &inpb.InvocationLookup{
-				InvocationId: result.InvocationIDs[0],
-			},
-		})
-		require.NoError(t, err)
-		require.Equal(t, 1, len(res.Invocation), "couldn't find runner invocation in DB")
-		runnerInvocation := res.Invocation[0]
+		runnerInvocation := firstInvocation(t, app, result)
 		// Since our workflow just runs `bazel version`, we should be able to see its
 		// output in the action logs.
 		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
@@ -318,7 +293,7 @@ func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
 	wsPath := makeRunnerWorkspace(t)
 
 	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithTestsAndBuildBuddyYAML)
-	pushedRepoPath := copyGitRepo(t, targetRepoPath)
+	pushedRepoPath := testgit.MakeTempRepoCopy(t, targetRepoPath)
 
 	// Push one commit to the target repo (to get ahead of the pushed repo),
 	// and one commit to the pushed repo (compatible with the target repo).
@@ -359,15 +334,7 @@ func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
 
 	checkRunnerResult(t, result)
 
-	bbService := app.BuildBuddyServiceClient(t)
-	res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
-		Lookup: &inpb.InvocationLookup{
-			InvocationId: result.InvocationIDs[0],
-		},
-	})
-	require.NoError(t, err)
-	require.Equal(t, 1, len(res.Invocation), "couldn't find runner invocation in DB")
-	runnerInvocation := res.Invocation[0]
+	runnerInvocation := firstInvocation(t, app, result)
 	// We should be able to see both of the changes we made, since they should
 	// be merged together.
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Hello from target repo")
@@ -381,7 +348,7 @@ func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *tes
 	wsPath := makeRunnerWorkspace(t)
 
 	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithTestsAndBuildBuddyYAML)
-	pushedRepoPath := copyGitRepo(t, targetRepoPath)
+	pushedRepoPath := testgit.MakeTempRepoCopy(t, targetRepoPath)
 
 	// Push one commit to the target repo (to get ahead of the pushed repo),
 	// and one commit to the pushed repo (compatible with the target repo).
@@ -415,18 +382,8 @@ func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *tes
 
 	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 
-	bbService := app.BuildBuddyServiceClient(t)
-	res, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
-		Lookup: &inpb.InvocationLookup{
-			InvocationId: result.InvocationIDs[0],
-		},
-	})
-	require.NoError(t, err)
-	require.Equal(t, 1, len(res.Invocation), "couldn't find runner invocation in DB")
-	runnerInvocation := res.Invocation[0]
-	// We should be able to see both of the changes we made, since they should
-	// be merged together.
-	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Action failed: Merge conflict (feature -> master)")
+	runnerInvocation := firstInvocation(t, app, result)
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, `Action failed: Merge conflict (merging branch "feature" into "master")`)
 	if t.Failed() {
 		t.Log(runnerInvocation.ConsoleBuffer)
 	}

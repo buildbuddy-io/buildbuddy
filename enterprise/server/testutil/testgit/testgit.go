@@ -2,18 +2,18 @@ package testgit
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -50,14 +50,6 @@ func (p *FakeProvider) UnregisterWebhook(ctx context.Context, accessToken, repoU
 	return nil
 }
 
-func bash(t testing.TB, workDir string, script string) string {
-	cmd := exec.Command("/usr/bin/env", "bash", "-e", "-c", script)
-	cmd.Dir = workDir
-	b, err := cmd.CombinedOutput()
-	require.NoError(t, err, "script %q failed: %s", script, string(b))
-	return string(b)
-}
-
 // MakeTempRepo initializes a Git repository with the given file contents, and
 // creates an initial commit of those files. Contents are specified as a map of
 // file paths to file contents. Parent directories are created automatically.
@@ -75,13 +67,21 @@ func MakeTempRepo(t testing.TB, contents map[string]string) (path, commitSHA str
 			}
 		}
 	}
-	bash(t, path, `
+	testshell.Run(t, path, `
 		git init
 		git add .
-		git config --local user.name "Test"
-		git config --local user.email "test@buildbuddy.io"
+		git config user.name "Test"
+		git config user.email "test@buildbuddy.io"
 		git commit -m "Initial commit"
 	`)
-	headCommitSHA := strings.TrimSpace(bash(t, path, `git rev-parse HEAD`))
+	headCommitSHA := strings.TrimSpace(testshell.Run(t, path, `git rev-parse HEAD`))
 	return path, headCommitSHA
+}
+
+// CopyRepo makes a copy of the git repo at the given path, and cleans up the
+// copy after the test is complete.
+func MakeTempRepoCopy(t testing.TB, path string) string {
+	copyPath := testfs.MakeTempDir(t)
+	testshell.Run(t, path, fmt.Sprintf(`cp -r * %q/ && cp -r .git %q/`, copyPath, copyPath))
+	return copyPath
 }

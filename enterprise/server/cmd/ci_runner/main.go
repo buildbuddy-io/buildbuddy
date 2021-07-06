@@ -83,14 +83,12 @@ const (
 var (
 	besBackend    = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
 	besResultsURL = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
-	repoURL       = flag.String("repo_url", "", "URL of the Git repo to check out.")
+	triggerEvent  = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	pushedRepoURL = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
 	pushedBranch  = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
 	commitSHA     = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
-	triggerEvent  = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	targetRepoURL = flag.String("target_repo_url", "", "URL of the target repo.")
 	targetBranch  = flag.String("target_branch", "", "Branch to check action triggers against.")
-	mergeRef      = flag.String("merge_ref", "", "The merge ref to check out (for pull request events only).")
 	workflowID    = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 	actionName    = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	invocationID  = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
@@ -555,12 +553,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 			Item: []*bespb.WorkspaceStatus_Item{
 				{Key: "BUILD_USER", Value: ar.username},
 				{Key: "BUILD_HOST", Value: ar.hostname},
-				{Key: "REPO_URL", Value: *repoURL},
+				{Key: "REPO_URL", Value: *pushedRepoURL},
 				{Key: "COMMIT_SHA", Value: *commitSHA},
 				{Key: "GIT_BRANCH", Value: *pushedBranch},
 				{Key: "GIT_TREE_STATUS", Value: "Clean"},
-				// TODO: Consider parsing the `.bazelrc` and running the user's actual workspace
-				// status command that they've configured for bazel.
 			},
 		}},
 	}
@@ -569,7 +565,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 	}
 
 	if ws.mergeConflict {
-		return fmt.Errorf("Merge conflict (%s -> %s)", *pushedBranch, *targetBranch)
+		return fmt.Errorf("Merge conflict (merging branch %q into %q)", *pushedBranch, *targetBranch)
 	}
 
 	// Flush whenever the log buffer fills past a certain threshold.

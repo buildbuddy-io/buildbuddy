@@ -14,6 +14,7 @@ go_test(
     deps = [
         "//enterprise/server/testutil/testgit",
         "//proto:invocation_go_proto",
+        "//server/testutil/app",
         "//server/testutil/buildbuddy",
         "//server/testutil/testbazel",
         "//server/testutil/testfs",

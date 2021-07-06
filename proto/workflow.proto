@@ -131,14 +131,24 @@ message ExecuteWorkflowRequest {
   // Ex. "e782592faf56da05cc0a243220689135e807958f"
   string commit_sha = 4;
 
+  reserved 5;
+
+  // URL of the pushed repo.
+  // Ex. "https://github.com/some-user/acme"
+  string pushed_repo_url = 6;
+
   // Branch corresponding to the SHA to be checked out.
   // Ex. "cool-feature"
-  string branch = 5;
+  string pushed_branch = 7;
 
-  // Ref corresponding to the commit to be fetched from the remote and checked
-  // out.
-  // Ex: "pull/123/merge", "heads/main".
-  string merge_ref = 6;
+  // URL of the target repo.
+  // Ex. "https://github.com/acme-inc/acme"
+  string target_repo_url = 8;
+
+  // For pull requests, the branch into which the pushed branch is being merged.
+  // For push events this should be set equal to the pushed branch.
+  // Ex. "main"
+  string target_branch = 9;
 }
 
 message ExecuteWorkflowResponse {

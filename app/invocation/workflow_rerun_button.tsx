@@ -24,17 +24,19 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
     this.subscription?.unsubscribe();
 
     this.setState({ isLoading: true });
+
+    const configuredEvent = this.props.model.workflowConfigured;
+
     this.subscription = from<Promise<workflow.ExecuteWorkflowResponse>>(
       rpcService.service.executeWorkflow(
         new workflow.ExecuteWorkflowRequest({
-          workflowId: this.props.model.workflowConfigured.workflowId,
-          actionName: this.props.model.workflowConfigured.actionName,
-          // Workspace status event is controlled by the CI runner
-          // (not the workspace status command), so commit and branch
-          // should always be available.
-          commitSha: this.props.model.getCommit(),
-          branch: this.props.model.getBranch(),
-          // mergeRef: this.props.model.workflowConfigured.mergeRef,
+          workflowId: configuredEvent.workflowId,
+          actionName: configuredEvent.actionName,
+          pushedRepoUrl: configuredEvent.pushedRepoUrl,
+          pushedBranch: configuredEvent.pushedBranch,
+          commitSha: configuredEvent.commitSha,
+          targetRepoUrl: configuredEvent.targetRepoUrl,
+          targetBranch: configuredEvent.targetBranch,
         })
       )
     ).subscribe(
