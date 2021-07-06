@@ -92,8 +92,8 @@ body {
     display: none;
   }
 
-  .dense .main,
-  .main {
+  .dense .root-main,
+  .root-main {
     overflow: visible;
   }
 }

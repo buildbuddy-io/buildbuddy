@@ -71,6 +71,10 @@ export default class SidebarComponent extends React.Component {
     return this.props.path === "/workflows/";
   }
 
+  isCodeSelected() {
+    return this.props.path === "/code/";
+  }
+
   isSettingsSelected() {
     return this.props.path.startsWith("/docs/setup/");
   }
@@ -116,6 +120,10 @@ export default class SidebarComponent extends React.Component {
 
   navigateToWorkflows() {
     this.isWorkflowsSelected() ? this.refreshCurrentPage() : router.navigateToWorkflows();
+  }
+
+  navigateToCode() {
+    this.isCodeSelected() ? this.refreshCurrentPage() : router.navigateToCode();
   }
 
   render() {
@@ -176,6 +184,13 @@ export default class SidebarComponent extends React.Component {
               className={`sidebar-item ${this.isWorkflowsSelected() ? "selected" : ""}`}
               onClick={this.navigateToWorkflows.bind(this)}>
               <img src="/image/play-circle-white.svg" /> Workflows
+            </div>
+          )}
+          {capabilities.code && (
+            <div
+              className={`sidebar-item ${this.isCodeSelected() ? "selected" : ""}`}
+              onClick={this.navigateToCode.bind(this)}>
+              <img src="/image/code-white.svg" /> Code
             </div>
           )}
           <div

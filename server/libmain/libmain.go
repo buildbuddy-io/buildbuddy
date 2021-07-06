@@ -84,6 +84,7 @@ var (
 		"/trends/",
 		"/workflows/",
 		"/executors/",
+		"/code/",
 	}
 )
 

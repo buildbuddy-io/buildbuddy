@@ -19,6 +19,7 @@ export class Capabilities {
   action: boolean;
   userOwnedExecutors: boolean;
   executorKeyCreation: boolean;
+  code: boolean;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
@@ -40,6 +41,7 @@ export class Capabilities {
     this.executors = Boolean(config.user_owned_executors_enabled);
     this.userOwnedExecutors = Boolean(config.user_owned_executors_enabled);
     this.executorKeyCreation = Boolean(config.executor_key_creation_enabled);
+    this.code = Boolean(config.code_editor_enabled);
     this.paths = new Set(paths);
     if (window.gtag) {
       window.gtag("set", {

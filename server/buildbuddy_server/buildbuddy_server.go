@@ -174,6 +174,7 @@ func makeGroups(grps []*tables.Group) []*grpb.Group {
 			Name:                   g.Name,
 			OwnedDomain:            g.OwnedDomain,
 			GithubLinked:           g.GithubToken != "",
+			GithubToken:            g.GithubToken,
 			UrlIdentifier:          urlIdentifier,
 			SharingEnabled:         g.SharingEnabled,
 			UseGroupOwnedExecutors: g.UseGroupOwnedExecutors,

@@ -52,6 +52,7 @@ type appConfig struct {
 	TraceFraction             float64  `yaml:"trace_fraction" usage:"Fraction of requests to sample for tracing."`
 	TraceFractionOverrides    []string `yaml:"trace_fraction_overrides" usage:"Tracing fraction override based on name in format name=fraction."`
 	IgnoreForcedTracingHeader bool     `yaml:"ignore_forced_tracing_header" usage:"If set, we will not honor the forced tracing header."`
+	CodeEditorEnabled         bool     `yaml:"code_editor_enabled" usage:"If set, code editor functionality will be enabled."`
 }
 
 type buildEventProxy struct {
@@ -456,6 +457,10 @@ func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {
 
 func (c *Configurator) GetDefaultToDenseMode() bool {
 	return c.gc.App.DefaultToDenseMode
+}
+
+func (c *Configurator) GetCodeEditorEnabled() bool {
+	return c.gc.App.CodeEditorEnabled
 }
 
 func (c *Configurator) GetGRPCMaxRecvMsgSizeBytes() int {
