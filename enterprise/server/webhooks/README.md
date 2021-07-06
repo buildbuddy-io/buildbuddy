@@ -34,7 +34,7 @@ which contains webhook payloads. To generate (or re-generate) test data:
    to the event, for example: `pull_request.json`. You may need to convert the payload from
    URL-encoded form data to JSON. For this, you can use Chrome's devtools and run:
    ```js
-   console.log(decodeURIComponent(`<PASTE-PAYLOAD-HERE>`));
+   console.log(decodeURIComponent(`<PASTE-PAYLOAD-HERE>`.replace(/^payload=/, "")));
    ```
 8. Anonymize the data: use find-and-replace and set the commit author's full name to `Test` and their
    email to `test@buildbuddy.io`.
