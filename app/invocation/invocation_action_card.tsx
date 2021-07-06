@@ -128,7 +128,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
       },
       {
         name: "Initializing",
-        color: "#2196F3",
+        color: "#673AB7",
         start: metadata.workerStartTimestamp,
       },
       {
@@ -138,7 +138,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
       },
       {
         name: "Preparing runner",
-        color: "#2196F3",
+        color: "#673AB7",
         start: metadata.inputFetchCompletedTimestamp,
       },
       {
@@ -148,7 +148,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
       },
       {
         name: "Preparing for upload",
-        color: "#2196F3",
+        color: "#673AB7",
         start: metadata.executionCompletedTimestamp,
       },
       {
