@@ -2,16 +2,13 @@ package executor_handle
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/golang/protobuf/proto"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -30,7 +27,6 @@ type ExecutorHandle interface {
 	ID() executorID
 	GroupID() string
 	RecvRegistration() (*scpb.ExecutionNode, error)
-	SupportsTaskStreaming() bool
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
 }
 
@@ -40,77 +36,6 @@ func executorIDFromContext(ctx context.Context) (executorID, error) {
 		return "", status.FailedPreconditionError("peer info not in context")
 	}
 	return executorID(p.Addr.String()), nil
-}
-
-type registrationOnlyExecutorHandle struct {
-	stream scpb.Scheduler_RegisterNodeServer
-
-	id      executorID
-	groupID string
-
-	mu       sync.Mutex
-	nodeAddr string
-}
-
-func NewRegistrationOnlyExecutorHandle(stream scpb.Scheduler_RegisterNodeServer, groupID string) (*registrationOnlyExecutorHandle, error) {
-	id, err := executorIDFromContext(stream.Context())
-	if err != nil {
-		return nil, err
-	}
-	return &registrationOnlyExecutorHandle{stream: stream, id: id, groupID: groupID}, nil
-}
-
-func (h *registrationOnlyExecutorHandle) SupportsTaskStreaming() bool {
-	return false
-}
-
-func (h *registrationOnlyExecutorHandle) ID() executorID {
-	return h.id
-}
-
-func (h *registrationOnlyExecutorHandle) GroupID() string {
-	return h.groupID
-}
-
-func (h *registrationOnlyExecutorHandle) RecvRegistration() (*scpb.ExecutionNode, error) {
-	req, err := h.stream.Recv()
-	if err != nil {
-		return nil, err
-	}
-	node := &scpb.ExecutionNode{
-		Host:                  req.GetNodeAddress().GetHost(),
-		Port:                  req.GetNodeAddress().GetPort(),
-		AssignableMemoryBytes: req.GetAssignableMemoryBytes(),
-		AssignableMilliCpu:    req.GetAssignableMilliCpu(),
-		Os:                    req.GetOs(),
-		Arch:                  req.GetArch(),
-		Pool:                  req.GetPool(),
-		ExecutorId:            req.GetExecutorId(),
-	}
-
-	h.mu.Lock()
-	h.nodeAddr = fmt.Sprintf("grpc://%s:%d", req.GetNodeAddress().GetHost(), req.GetNodeAddress().GetPort())
-	h.mu.Unlock()
-
-	return node, nil
-}
-
-func (h *registrationOnlyExecutorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
-	h.mu.Lock()
-	nodeAddr := h.nodeAddr
-	h.mu.Unlock()
-
-	if nodeAddr == "" {
-		return nil, status.FailedPreconditionErrorf("nodeAddr is not set")
-	}
-
-	conn, err := grpc_client.DialTargetWithOptions(nodeAddr, true, grpc.WithTimeout(EnqueueTaskReservationTimeout), grpc.WithBlock())
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	client := scpb.NewQueueExecutorClient(conn)
-	return client.EnqueueTaskReservation(ctx, req)
 }
 
 // enqueueTaskReservationRequest represents a request to be sent via a work stream and a channel for the reply once one
@@ -144,10 +69,6 @@ func NewRegistrationAndTasksExecutorHandle(stream scpb.Scheduler_RegisterAndStre
 	}
 	h.startTaskReservationStreamer()
 	return h, nil
-}
-
-func (h *registrationAndTasksExecutorHandle) SupportsTaskStreaming() bool {
-	return true
 }
 
 func (h *registrationAndTasksExecutorHandle) ID() executorID {
