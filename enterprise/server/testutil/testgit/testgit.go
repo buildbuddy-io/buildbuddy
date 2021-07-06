@@ -69,9 +69,9 @@ func MakeTempRepo(t testing.TB, contents map[string]string) (path, commitSHA str
 	}
 	testshell.Run(t, path, `
 		git init
-		git add .
 		git config user.name "Test"
 		git config user.email "test@buildbuddy.io"
+		git add .
 		git commit -m "Initial commit"
 	`)
 	headCommitSHA := strings.TrimSpace(testshell.Run(t, path, `git rev-parse HEAD`))
