@@ -30,7 +30,7 @@ which contains webhook payloads. To generate (or re-generate) test data:
 7. Visit your local `ngrok` proxy at http://localhost:4040 -- it should show the complete HTTP
    requests of the webhook payloads sent by the Git provider. Note the `Event` header (e.g.
    `X-Github-Event: pull_request`), which indicates the type of event. Copy the raw request body of
-   the request into a `.txt` file under the `test_data` folder, and give it a name corresponding
-   to the event, for example: `pull_request.txt`.
+   the request into a `.json` file under the `test_data` folder, and give it a name corresponding
+   to the event, for example: `pull_request.json`.
 8. Anonymize the data: use find-and-replace and set the commit author's full name to `Test` and their
    email to `test@buildbuddy.io`.
