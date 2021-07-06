@@ -585,10 +585,11 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 }
 
 func (p *Pool) newContainer(props *platform.Properties) container.CommandContainer {
+	var ctr container.CommandContainer
 	switch p.containerType() {
 	case platform.DockerContainerType:
 		cfg := p.env.GetConfigurator().GetExecutorConfig()
-		return docker.NewDockerContainer(
+		ctr = docker.NewDockerContainer(
 			p.dockerClient, props.ContainerImage, p.hostBuildRoot(),
 			&docker.DockerOptions{
 				Socket:                  cfg.DockerSocket,
@@ -599,10 +600,11 @@ func (p *Pool) newContainer(props *platform.Properties) container.CommandContain
 			},
 		)
 	case platform.ContainerdContainerType:
-		return containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
+		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
 	default:
-		return bare.NewBareCommandContainer()
+		ctr = bare.NewBareCommandContainer()
 	}
+	return container.NewTracedCommandContainer(ctr)
 }
 
 // query specifies a set of search criteria for runners within a pool.

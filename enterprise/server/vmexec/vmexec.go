@@ -9,7 +9,9 @@ import (
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sys/unix"
 
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 )
@@ -44,6 +46,9 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 		return nil, status.UnimplementedError("Vsock stderr not implemented")
 	}
 
+	// TODO(tylerw): use syncfs or something better here.
+	defer unix.Sync()
+
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
@@ -55,6 +60,7 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 	x.reapMutex.RLock()
 	defer x.reapMutex.RUnlock()
 
+	log.Debugf("Running command in VM: %q", cmd.String())
 	rsp := &vmxpb.ExecResponse{}
 	err := cmd.Run()
 	exitCode, err := commandutil.ExitCode(ctx, cmd, err)

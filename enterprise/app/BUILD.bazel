@@ -14,7 +14,9 @@ esbuild(
         "--resolve-extensions=.mjs,.js",
     ],
     define = ["process.env.NODE_ENV=\"production\""],
-    entry_point = "app.tsx",
+    entry_points = [
+        "app.tsx",
+    ],
     minify = select({
         ":fastbuild": False,
         "//conditions:default": True,

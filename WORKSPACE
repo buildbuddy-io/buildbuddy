@@ -111,6 +111,34 @@ load(
 
 _go_image_repos()
 
+# rules_foreign_cc
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "rules_foreign_cc",
+    sha256 = "e14a159c452a68a97a7c59fa458033cc91edb8224516295b047a95555140af5f",
+    strip_prefix = "rules_foreign_cc-0.4.0",
+    url = "https://github.com/bazelbuild/rules_foreign_cc/archive/0.4.0.tar.gz",
+)
+
+load("@rules_foreign_cc//foreign_cc:repositories.bzl", "rules_foreign_cc_dependencies")
+
+# This sets up some common toolchains for building targets. For more details, please see
+# https://bazelbuild.github.io/rules_foreign_cc/0.4.0/flatten.html#rules_foreign_cc_dependencies
+rules_foreign_cc_dependencies()
+
+all_content = """filegroup(name = "all", srcs = glob(["**"]), visibility = ["//visibility:public"])"""
+
+# CPIO
+
+http_archive(
+    name = "org_gnu_cpio",
+    build_file_content = all_content,
+    sha256 = "e87470d9c984317f658567c03bfefb6b0c829ff17dbf6b0de48d71a4c8f3db88",
+    strip_prefix = "cpio-2.13",
+    url = "https://ftp.gnu.org/gnu/cpio/cpio-2.13.tar.gz",
+)
+
 # Kubernetes
 
 http_archive(

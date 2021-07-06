@@ -8,5 +8,8 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/util/tracing",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_trace//:trace",
     ],
 )

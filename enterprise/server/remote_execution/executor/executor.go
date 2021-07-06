@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -142,18 +143,20 @@ func parseTimeout(timeout *durationpb.Duration, maxDuration time.Duration) (time
 	return requestDuration, nil
 }
 
-func (s *Executor) ExecuteTaskAndStreamResults(task *repb.ExecutionTask, stream operation.StreamLike) error {
+func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.ExecutionTask, stream operation.StreamLike) error {
 	// From here on in we use these liberally, so check that they are setup properly
 	// in the environment.
 	if s.env.GetActionCacheClient() == nil || s.env.GetByteStreamClient() == nil || s.env.GetContentAddressableStorageClient() == nil {
 		return status.FailedPreconditionError("No connection to cache backend.")
 	}
 
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	req := task.GetExecuteRequest()
 	taskID := task.GetExecutionId()
 	adInstanceDigest := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
 
-	ctx := stream.Context()
 	acClient := s.env.GetActionCacheClient()
 
 	stateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest)
