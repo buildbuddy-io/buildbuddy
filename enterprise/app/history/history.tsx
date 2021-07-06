@@ -274,7 +274,7 @@ export default class HistoryComponent extends React.Component {
               <div className="title">
                 {this.props.username && (
                   <span>
-                    <span>{format.sentenceCase(this.props.username)}'s builds</span>
+                    <span>{this.props.username}'s builds</span>
                     <a className="history-trends-button" href={`/trends/?user=${this.props.username}`}>
                       View trends
                     </a>
@@ -315,7 +315,7 @@ export default class HistoryComponent extends React.Component {
                   !this.props.username &&
                   !this.props.repo &&
                   !this.props.commit &&
-                  `${format.sentenceCase(this.props.user?.selectedGroupName() || "User")}'s ${viewType}`}
+                  `${this.props.user?.selectedGroupName() || "User"}'s ${viewType}`}
               </div>
             </div>
             {!scope &&
