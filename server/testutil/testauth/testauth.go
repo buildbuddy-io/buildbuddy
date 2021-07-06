@@ -153,15 +153,15 @@ func (a *TestAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 }
 
 func (a *TestAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/", 301)
+	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
 func (a *TestAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/", 301)
+	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
 func (a *TestAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/", 301)
+	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
 func (a *TestAuthenticator) ParseAPIKeyFromString(input string) string {
