@@ -742,7 +742,7 @@ func (ws *workspace) setup(ctx context.Context) error {
 		if err := os.Chdir(repoDirName); err != nil {
 			return status.WrapError(err, "cd")
 		}
-		err := ws.fetchAndMergeBranches(ctx)
+		err := ws.sync(ctx)
 		if err == nil {
 			return nil
 		}
@@ -770,10 +770,13 @@ func (ws *workspace) setup(ctx context.Context) error {
 		return status.WrapErrorf(err, "cd %q", repoDirName)
 	}
 	ws.log.WriteString("Cloning git repo.\n")
-	return ws.setupNewGitRepo(ctx)
+	if err := git(ctx, &ws.log, "init"); err != nil {
+		return err
+	}
+	return ws.sync(ctx)
 }
 
-func (ws *workspace) fetchAndMergeBranches(ctx context.Context) error {
+func (ws *workspace) sync(ctx context.Context) error {
 	// Setup config before we do anything.
 	if err := ws.config(ctx); err != nil {
 		return err
@@ -865,13 +868,6 @@ func isRemoteAlreadyExists(err error) bool {
 }
 func isBranchNotFound(err error) bool {
 	return getExitCode(err) == 1
-}
-
-func (ws *workspace) setupNewGitRepo(ctx context.Context) error {
-	if err := git(ctx, &ws.log, "init"); err != nil {
-		return err
-	}
-	return ws.fetchAndMergeBranches(ctx)
 }
 
 func git(ctx context.Context, out io.Writer, args ...string) error {

@@ -2,7 +2,6 @@ package ci_runner_test
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,14 +77,6 @@ type result struct {
 
 func makeRunnerWorkspace(t *testing.T) string {
 	return testbazel.MakeTempWorkspace(t, nil /*=contents*/)
-}
-
-func bash(t *testing.T, workDir string, script string) string {
-	cmd := exec.Command("/usr/bin/env", "bash", "-e", "-c", script)
-	cmd.Dir = workDir
-	b, err := cmd.CombinedOutput()
-	require.NoError(t, err, "script %q failed: %s", script, string(b))
-	return string(b)
 }
 
 func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
@@ -297,18 +288,18 @@ func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
 
 	// Push one commit to the target repo (to get ahead of the pushed repo),
 	// and one commit to the pushed repo (compatible with the target repo).
-	bash(t, targetRepoPath, `
+	testshell.Run(t, targetRepoPath, `
 		printf 'echo "Hello from target repo" && exit 0\n' > pass.sh
 		git add pass.sh
 		git commit -m "Update pass.sh"
 	`)
-	bash(t, pushedRepoPath, `
+	testshell.Run(t, pushedRepoPath, `
 		git checkout -b feature
 		printf 'echo "Goodbye from pushed repo" && exit 1\n' > fail.sh
 		git add fail.sh
 		git commit -m "Update fail.sh"
 	`)
-	commitSHA := strings.TrimSpace(bash(t, pushedRepoPath, `git rev-parse HEAD`))
+	commitSHA := strings.TrimSpace(testshell.Run(t, pushedRepoPath, `git rev-parse HEAD`))
 
 	runnerFlags := []string{
 		"--trigger_event=push",
@@ -352,18 +343,18 @@ func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *tes
 
 	// Push one commit to the target repo (to get ahead of the pushed repo),
 	// and one commit to the pushed repo (compatible with the target repo).
-	bash(t, targetRepoPath, `
+	testshell.Run(t, targetRepoPath, `
 		printf 'echo "Hello from target repo" && exit 0\n' > pass.sh
 		git add pass.sh
 		git commit -m "Update pass.sh"
 	`)
-	bash(t, pushedRepoPath, `
+	testshell.Run(t, pushedRepoPath, `
 		git checkout -b feature
 		printf 'echo "CONFLICTING EDIT!!!" && exit 0\n' > pass.sh
 		git add pass.sh
 		git commit -m "Update pass.sh"
 	`)
-	commitSHA := strings.TrimSpace(bash(t, pushedRepoPath, `git rev-parse HEAD`))
+	commitSHA := strings.TrimSpace(testshell.Run(t, pushedRepoPath, `git rev-parse HEAD`))
 
 	runnerFlags := []string{
 		"--trigger_event=push",
