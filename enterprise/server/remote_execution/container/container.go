@@ -2,9 +2,13 @@ package container
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -20,13 +24,6 @@ type Stats struct {
 
 // CommandContainer provides an execution environment for commands.
 type CommandContainer interface {
-	// Run the given command within the container and remove the container after
-	// it is done executing.
-	//
-	// It is approximately the same as calling PullImageIfNecessary, Create,
-	// Exec, then Remove.
-	Run(ctx context.Context, command *repb.Command, workingDir string) *interfaces.CommandResult
-
 	// PullImageIfNecessary pulls the container image if it is not already
 	// available locally.
 	PullImageIfNecessary(ctx context.Context) error
@@ -55,4 +52,63 @@ type CommandContainer interface {
 
 	// Stats returns the current resource usage of this container.
 	Stats(ctx context.Context) (*Stats, error)
+}
+
+// TracedCommandContainer is a wrapper that creates tracing spans for all CommandContainer methods.
+type TracedCommandContainer struct {
+	delegate CommandContainer
+	implAttr attribute.KeyValue
+}
+
+func (t *TracedCommandContainer) startSpan(ctx context.Context) (context.Context, trace.Span) {
+	return tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+}
+
+func (t *TracedCommandContainer) PullImageIfNecessary(ctx context.Context) error {
+	ctx, span := t.startSpan(ctx)
+	defer span.End()
+	return t.delegate.PullImageIfNecessary(ctx)
+}
+
+func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) error {
+	ctx, span := t.startSpan(ctx)
+	defer span.End()
+	return t.delegate.Create(ctx, workingDir)
+}
+
+func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+	ctx, span := t.startSpan(ctx)
+	defer span.End()
+	return t.delegate.Exec(ctx, command, stdin, stdout)
+}
+
+func (t *TracedCommandContainer) Unpause(ctx context.Context) error {
+	ctx, span := t.startSpan(ctx)
+	defer span.End()
+	return t.delegate.Unpause(ctx)
+}
+
+func (t *TracedCommandContainer) Pause(ctx context.Context) error {
+	ctx, span := t.startSpan(ctx)
+	defer span.End()
+	return t.delegate.Pause(ctx)
+}
+
+func (t *TracedCommandContainer) Remove(ctx context.Context) error {
+	ctx, span := t.startSpan(ctx)
+	defer span.End()
+	return t.delegate.Remove(ctx)
+}
+
+func (t *TracedCommandContainer) Stats(ctx context.Context) (*Stats, error) {
+	ctx, span := t.startSpan(ctx)
+	defer span.End()
+	return t.delegate.Stats(ctx)
+}
+
+func NewTracedCommandContainer(delegate CommandContainer) *TracedCommandContainer {
+	return &TracedCommandContainer{
+		delegate: delegate,
+		implAttr: attribute.String("container.impl", fmt.Sprintf("%T", delegate)),
+	}
 }

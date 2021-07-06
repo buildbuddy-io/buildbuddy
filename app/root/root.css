@@ -824,6 +824,25 @@ code .comment {
   margin-left: 0;
 }
 
+.titles .role-badge {
+  margin-right: 8px;
+}
+
+.role-badge {
+  border-radius: 14px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+
+.role-badge.CI_RUNNER {
+  background: #263238;
+  color: white;
+}
+
+.role-badge.CI {
+  background: #cfd8dc;
+}
+
 .empty-state .button {
   width: 100%;
   padding: 24px 64px;

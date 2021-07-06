@@ -222,12 +222,13 @@ func main() {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
 	}
-	if err := tracing.Configure(configurator); err != nil {
-		log.Fatalf("Could not configure tracing: %s", err)
-	}
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	localListener = bufconn.Listen(1024 * 1024 * 10 /* 10MB buffer? Seems ok. */)
+
+	if err := tracing.Configure(configurator, healthChecker); err != nil {
+		log.Fatalf("Could not configure tracing: %s", err)
+	}
 
 	env := GetConfiguredEnvironmentOrDie(configurator, healthChecker)
 

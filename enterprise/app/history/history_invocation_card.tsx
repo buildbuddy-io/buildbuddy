@@ -132,27 +132,23 @@ export default class HistoryInvocationCardComponent extends React.Component {
 
     if (this.isInProgress()) {
       return this.props.invocation?.user
-        ? format.sentenceCase(
-            `${this.props.invocation.user}'s in progress ${
-              this.props.invocation.command || "build"
-            } ${format.truncateList(this.props.invocation.pattern)}...`
-          )
+        ? `${this.props.invocation.user}'s in progress ${
+            this.props.invocation.command || "build"
+          } ${format.truncateList(this.props.invocation.pattern)}...`
         : "In progress build...";
     }
 
     if (this.isDisconnected()) {
       return this.props.invocation?.user
-        ? format.sentenceCase(
-            `${this.props.invocation.user}'s disconnected ${
-              this.props.invocation.command || "build"
-            } ${format.truncateList(this.props.invocation.pattern)}`
-          )
+        ? `${this.props.invocation.user}'s disconnected ${
+            this.props.invocation.command || "build"
+          } ${format.truncateList(this.props.invocation.pattern)}`
         : "Disconnected build";
     }
 
-    return `${format.sentenceCase(this.props.invocation.user || "Unknown user")}'s ${
-      this.props.invocation.command
-    } ${format.truncateList(this.props.invocation.pattern)}`;
+    return `${this.props.invocation.user || "Unknown user"}'s ${this.props.invocation.command} ${format.truncateList(
+      this.props.invocation.pattern
+    )}`;
   }
 
   getDuration() {
@@ -164,6 +160,8 @@ export default class HistoryInvocationCardComponent extends React.Component {
   }
 
   render() {
+    const roleLabel = format.formatRole(this.props.invocation.role);
+
     return (
       <div
         key={this.props.invocation.invocationId}
@@ -182,6 +180,7 @@ export default class HistoryInvocationCardComponent extends React.Component {
           )}
           <div className="titles">
             <div className="title">{this.getTitle()}</div>
+            {roleLabel && <div className={`role-badge ${this.props.invocation.role}`}>{roleLabel}</div>}
             <div className="subtitle">{format.formatTimestampUsec(this.props.invocation.createdAtUsec)}</div>
           </div>
           {!this.props.hover && (

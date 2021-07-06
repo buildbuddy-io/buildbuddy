@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/prometheus/client_golang/prometheus"
@@ -56,7 +57,7 @@ const (
 
 func timestampToMicros(tsPb *tspb.Timestamp) int64 {
 	ts, _ := ptypes.Timestamp(tsPb)
-	return ts.UnixNano() / 1000
+	return timeutil.ToUsec(ts)
 }
 
 func fillExecutionFromSummary(summary *espb.ExecutionSummary, execution *tables.Execution) {

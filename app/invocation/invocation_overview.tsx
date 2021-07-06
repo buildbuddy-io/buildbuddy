@@ -59,6 +59,7 @@ export default class InvocationOverviewComponent extends React.Component {
   render() {
     const ownerGroup = this.props.model.findOwnerGroup(this.props.user?.groups);
     const isBazelInvocation = this.props.model.isBazelInvocation();
+    const roleLabel = format.formatRole(this.props.model.getRole());
 
     return (
       <div className="container">
@@ -81,13 +82,14 @@ export default class InvocationOverviewComponent extends React.Component {
         <div className="titles">
           {isBazelInvocation && (
             <div className="title" title={this.props.model.getAllPatterns()}>
-              {format.sentenceCase(this.props.model.getUser(true))} {this.props.model.getCommand()}{" "}
+              {this.props.model.getUser(/*possessive=*/ true)} {this.props.model.getCommand()}{" "}
               {this.props.model.getPattern()}
             </div>
           )}
           {this.props.model.workflowConfigured && (
             <div className="title">{this.props.model.workflowConfigured.actionName}</div>
           )}
+          {roleLabel && <div className={`role-badge ${this.props.model.getRole()}`}>{roleLabel}</div>}
           <div className="subtitle">
             {this.props.model.getStartDate()} at {this.props.model.getStartTime()}
           </div>

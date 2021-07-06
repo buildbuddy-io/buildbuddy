@@ -170,13 +170,6 @@ func (r *CommandRunner) PrepareForTask(task *repb.ExecutionTask) error {
 }
 
 func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
-	if !r.PlatformProperties.RecycleRunner {
-		// If the container is not recyclable, then use `Run` to walk through
-		// the entire container lifecycle in a single step.
-		// TODO: Remove this `Run` method and call lifecycle methods directly.
-		return r.Container.Run(ctx, command, r.Workspace.Path())
-	}
-
 	// Get the container to "ready" state so that we can exec commands in it.
 	switch r.state {
 	case initial:
@@ -188,11 +181,7 @@ func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfa
 		}
 		r.state = ready
 		break
-	case paused:
-		if err := r.Container.Unpause(ctx); err != nil {
-			return commandutil.ErrorResult(err)
-		}
-		r.state = ready
+	case ready:
 		break
 	default:
 		return commandutil.ErrorResult(status.FailedPreconditionErrorf("unexpected runner state %d; this should never happen", r.state))
@@ -207,14 +196,14 @@ func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfa
 
 func (r *CommandRunner) Remove(ctx context.Context) error {
 	errs := []error{}
-	if err := r.Workspace.Remove(); err != nil {
-		errs = append(errs, err)
-	}
 	if s := r.state; s != initial && s != removed {
 		r.state = removed
 		if err := r.Container.Remove(ctx); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if err := r.Workspace.Remove(); err != nil {
+		errs = append(errs, err)
 	}
 	if len(errs) > 0 {
 		return errSlice(errs)
@@ -267,7 +256,8 @@ type Pool struct {
 
 	mu             sync.RWMutex // protects(isShuttingDown), protects(runners)
 	isShuttingDown bool
-	runners        []*CommandRunner
+	// runners holds all runners managed by the pool.
+	runners []*CommandRunner
 }
 
 func NewPool(env environment.Env) (*Pool, error) {
@@ -337,8 +327,15 @@ func (p *Pool) containerType() platform.ContainerType {
 	return platform.BareContainerType
 }
 
-// Add adds the given runner into the pool, evicting older runners if needed.
-// If an error is returned, the runner was not successfully added to the pool.
+func (p *Pool) shuttingDown() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.isShuttingDown
+}
+
+// Add pauses the runner so that it may later be returned from Get.
+// If an error is returned, the runner was not successfully added to the pool,
+// and should be removed.
 func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
 	if err := p.add(ctx, r); err != nil {
 		metrics.RunnerPoolFailedRecycleAttempts.With(prometheus.Labels{
@@ -350,9 +347,12 @@ func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
 }
 
 func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
-	// TODO: once CommandContainer lifecycle methods are available, enforce that
-	// the runner's CommandContainer is paused, and return a
-	// FailedPreconditionError if not.
+	if p.shuttingDown() {
+		return &labeledError{
+			status.UnavailableError("pool is shutting down; new runners cannot be added."),
+			"pool_shutting_down",
+		}
+	}
 
 	if r.state != ready {
 		return &labeledError{
@@ -366,7 +366,6 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 			"pause_failed",
 		}
 	}
-	r.state = paused
 
 	stats, err := r.Container.Stats(ctx)
 	if err != nil {
@@ -398,23 +397,33 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.isShuttingDown {
-		return &labeledError{
-			status.UnavailableError("pool is shutting down; cannot add new runners"),
-			"pool_shutting_down",
-		}
-	}
-
-	if len(p.runners) == p.maxRunnerCount {
-		if len(p.runners) == 0 {
+	if p.pausedRunnerCount() >= p.maxRunnerCount {
+		if p.maxRunnerCount <= 0 {
 			return &labeledError{
-				status.InternalError("pool max runner count is 0; this should never happen"),
+				status.InternalError("pool max runner count is <= 0; this should never happen"),
 				"max_runner_count_zero",
 			}
 		}
-		// Evict the first and oldest runner to make room for the new one.
-		r := p.runners[0]
-		p.runners = p.runners[1:]
+		// Evict the oldest (first) paused runner to make room for the new one.
+		// Note the two conditionals above imply that
+		// p.pausedRunnerCount() >= p.maxRunnerCount > 0, so there's now at least
+		// 1 paused runner in the list that can be evicted.
+		evictIndex := -1
+		for i, r := range p.runners {
+			if r.state == paused {
+				evictIndex = i
+				break
+			}
+		}
+		if evictIndex == -1 {
+			return &labeledError{
+				status.InternalError("could not find runner to evict; this should never happen"),
+				"evict_failed",
+			}
+		}
+
+		r := p.runners[evictIndex]
+		p.runners = append(p.runners[:evictIndex], p.runners[evictIndex+1:]...)
 
 		metrics.RunnerPoolEvictions.Inc()
 		metrics.RunnerPoolCount.Dec()
@@ -424,16 +433,22 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 		r.RemoveInBackground()
 	}
 
+	// Shift this runner to the end of the list since we want to keep the list
+	// sorted in increasing order of `Add` timestamp (per our LRU eviction policy).
+	p.remove(r)
 	p.runners = append(p.runners, r)
 
-	// Cache these values so we don't need to recompute them when updating metrics
-	// upon removal.
+	// Cache resource usage values so we don't need to recompute them when
+	// updating metrics upon removal.
 	r.memoryUsageBytes = stats.MemoryUsageBytes
 	r.diskUsageBytes = du
 
 	metrics.RunnerPoolDiskUsageBytes.Add(float64(r.diskUsageBytes))
 	metrics.RunnerPoolMemoryUsageBytes.Add(float64(r.memoryUsageBytes))
 	metrics.RunnerPoolCount.Inc()
+
+	// Officially mark this runner paused and ready for reuse.
+	r.state = paused
 
 	return nil
 }
@@ -535,13 +550,16 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	}
 
 	if props.RecycleRunner {
-		r := p.take(&query{
+		r, err := p.take(ctx, &query{
 			User:           user,
 			ContainerImage: props.ContainerImage,
 			WorkflowID:     props.WorkflowID,
 			InstanceName:   instanceName,
 			WorkerKey:      workerKey,
 		})
+		if err != nil {
+			return nil, err
+		}
 		if r != nil {
 			log.Info("Reusing workspace for task.")
 			r.PlatformProperties = props
@@ -554,21 +572,24 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		return nil, err
 	}
 	ctr := p.newContainer(props)
-	return &CommandRunner{
+	r := &CommandRunner{
 		ACL:                ACLForUser(user),
 		PlatformProperties: props,
 		InstanceName:       instanceName,
 		WorkerKey:          workerKey,
 		Container:          ctr,
 		Workspace:          ws,
-	}, nil
+	}
+	p.runners = append(p.runners, r)
+	return r, nil
 }
 
 func (p *Pool) newContainer(props *platform.Properties) container.CommandContainer {
+	var ctr container.CommandContainer
 	switch p.containerType() {
 	case platform.DockerContainerType:
 		cfg := p.env.GetConfigurator().GetExecutorConfig()
-		return docker.NewDockerContainer(
+		ctr = docker.NewDockerContainer(
 			p.dockerClient, props.ContainerImage, p.hostBuildRoot(),
 			&docker.DockerOptions{
 				Socket:                  cfg.DockerSocket,
@@ -579,10 +600,11 @@ func (p *Pool) newContainer(props *platform.Properties) container.CommandContain
 			},
 		)
 	case platform.ContainerdContainerType:
-		return containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
+		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
 	default:
-		return bare.NewBareCommandContainer()
+		ctr = bare.NewBareCommandContainer()
 	}
+	return container.NewTracedCommandContainer(ctr)
 }
 
 // query specifies a set of search criteria for runners within a pool.
@@ -608,14 +630,16 @@ type query struct {
 	InstanceName string
 }
 
-// take takes any runner matching the given query out of the pool. If no
-// matching runners are found, `nil` is returned.
-func (p *Pool) take(q *query) *CommandRunner {
+// take finds the most recently used runner in the pool that matches the given
+// query. If one is found, it is unpaused and returned.
+func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	for i, r := range p.runners {
-		if r.PlatformProperties.ContainerImage != q.ContainerImage ||
+	for i := len(p.runners) - 1; i >= 0; i-- {
+		r := p.runners[i]
+		if r.state != paused ||
+			r.PlatformProperties.ContainerImage != q.ContainerImage ||
 			r.PlatformProperties.WorkflowID != q.WorkflowID ||
 			r.WorkerKey != q.WorkerKey ||
 			r.InstanceName != q.InstanceName {
@@ -625,7 +649,10 @@ func (p *Pool) take(q *query) *CommandRunner {
 			continue
 		}
 
-		p.runners = append(p.runners[:i], p.runners[i+1:]...)
+		if err := r.Container.Unpause(ctx); err != nil {
+			return nil, err
+		}
+		r.state = ready
 
 		metrics.RunnerPoolCount.Dec()
 		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
@@ -634,21 +661,45 @@ func (p *Pool) take(q *query) *CommandRunner {
 			metrics.RecycleRunnerRequestStatusLabel: hitStatusLabel,
 		}).Inc()
 
-		return r
+		return r, nil
 	}
 
 	metrics.RecycleRunnerRequests.With(prometheus.Labels{
 		metrics.RecycleRunnerRequestStatusLabel: missStatusLabel,
 	}).Inc()
 
-	return nil
+	return nil, nil
 }
 
-// Size returns the current number of paused runners in the pool.
-func (p *Pool) Size() int {
+// RunnerCount returns the total number of runners in the pool.
+func (p *Pool) RunnerCount() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return len(p.runners)
+}
+
+// PausedRunnerCount returns the current number of paused runners in the pool.
+func (p *Pool) PausedRunnerCount() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.pausedRunnerCount()
+}
+
+// ActiveRunnerCount returns the number of non-paused runners in the pool.
+func (p *Pool) ActiveRunnerCount() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return len(p.runners) - p.pausedRunnerCount()
+}
+
+func (p *Pool) pausedRunnerCount() int {
+	n := 0
+	for _, r := range p.runners {
+		if r.state == paused {
+			n++
+		}
+	}
+	return n
 }
 
 // Shutdown removes all runners from the pool and prevents new ones from
@@ -656,12 +707,12 @@ func (p *Pool) Size() int {
 func (p *Pool) Shutdown(ctx context.Context) error {
 	p.mu.Lock()
 	p.isShuttingDown = true
-	pooledRunners := p.runners
+	runners := p.runners
 	p.runners = nil
 	p.mu.Unlock()
 
 	errs := []error{}
-	for _, r := range pooledRunners {
+	for _, r := range runners {
 		if err := r.RemoveWithTimeout(ctx); err != nil {
 			errs = append(errs, err)
 		}
@@ -670,6 +721,24 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 		return status.InternalErrorf("failed to shut down runner pool: %s", errSlice(errs))
 	}
 	return nil
+}
+
+func (p *Pool) remove(r *CommandRunner) {
+	for i := range p.runners {
+		if p.runners[i] == r {
+			// Not using the "swap with last element" trick here because we need to
+			// preserve ordering.
+			p.runners = append(p.runners[:i], p.runners[i+1:]...)
+			break
+		}
+	}
+}
+
+func (p *Pool) finalize(r *CommandRunner) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.remove(r)
+	r.RemoveInBackground()
 }
 
 // TryRecycle either adds r back to the pool if appropriate, or removes it,
@@ -681,14 +750,15 @@ func (p *Pool) TryRecycle(r *CommandRunner, finishedCleanly bool) {
 	recycled := false
 	defer func() {
 		if !recycled {
-			r.RemoveInBackground()
+			p.finalize(r)
 		}
 	}()
 
 	if !r.PlatformProperties.RecycleRunner || !finishedCleanly || r.doNotReuse {
 		return
 	}
-	// Clean the workspace once before adding it to the pool.
+	// Clean the workspace once before adding it to the pool (to save on disk
+	// space).
 	if err := r.Workspace.Clean(); err != nil {
 		log.Errorf("Failed to clean workspace: %s", err)
 		return

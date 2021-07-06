@@ -3,7 +3,6 @@ package execution_service
 import (
 	"context"
 	"sort"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -11,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/golang/protobuf/ptypes"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -61,7 +61,7 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 }
 
 func timestampProto(timeInUsec int64) *timestamppb.Timestamp {
-	if tp, err := ptypes.TimestampProto(time.Unix(0, timeInUsec*1000)); err == nil {
+	if tp, err := ptypes.TimestampProto(timeutil.FromUsec(timeInUsec)); err == nil {
 		return tp
 	}
 	return nil

@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
@@ -49,19 +50,35 @@ func GRPCShutdownFunc(grpcServer *grpc.Server) func(ctx context.Context) error {
 	}
 }
 
-func extractInvocationID(ctx context.Context) []attribute.KeyValue {
-	if iid := bazel_request.GetInvocationID(ctx); iid != "" {
-		return []attribute.KeyValue{attribute.String("invocation_id", iid)}
+func propagateInvocationIDToSpan(ctx context.Context) {
+	invocationId := bazel_request.GetInvocationID(ctx)
+	if invocationId == "" {
+		return
 	}
-	return nil
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("invocation_id", invocationId))
+}
+
+func propagateInvocationIDToSpanUnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+		propagateInvocationIDToSpan(ctx)
+		return handler(ctx, req)
+	}
+}
+
+func propagateInvocationIDToSpanStreamServerInterceptor() grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		propagateInvocationIDToSpan(stream.Context())
+		return handler(srv, stream)
+	}
 }
 
 func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 	return []grpc.ServerOption{
 		filters.GetUnaryInterceptor(env),
 		filters.GetStreamInterceptor(env),
-		grpc.ChainUnaryInterceptor(otelgrpc.UnaryServerInterceptor(otelgrpc.WithContextAttrExtractor(extractInvocationID))),
-		grpc.ChainStreamInterceptor(otelgrpc.StreamServerInterceptor(otelgrpc.WithContextAttrExtractor(extractInvocationID))),
+		grpc.ChainUnaryInterceptor(otelgrpc.UnaryServerInterceptor(), propagateInvocationIDToSpanUnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(otelgrpc.StreamServerInterceptor(), propagateInvocationIDToSpanStreamServerInterceptor()),
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.MaxRecvMsgSize(env.GetConfigurator().GetGRPCMaxRecvMsgSizeBytes()),

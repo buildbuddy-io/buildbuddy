@@ -10,6 +10,7 @@ go_library(
         "//proto:user_id_go_proto",
         "//server/util/log",
         "//server/util/random",
+        "//server/util/timeutil",
         "@io_gorm_gorm//:gorm",
     ],
 )

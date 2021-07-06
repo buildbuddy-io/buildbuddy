@@ -20,7 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/dgrijalva/jwt-go"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc/credentials"
@@ -813,7 +813,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	if authError != "" {
 		authErrorDesc := r.URL.Query().Get("error_desc")
 		authErrorDescription := r.URL.Query().Get("error_description")
-		log.Printf("Authenticator returned error: %s (%s %s)", authError, authErrorDesc, authErrorDescription)
+		log.Warningf("Authenticator returned error: %s (%s %s)", authError, authErrorDesc, authErrorDescription)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
@@ -855,11 +855,12 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 
 	refreshToken, ok := oauth2Token.Extra("refresh_token").(string)
 	if ok {
+		expireTime := time.Unix(0, oauth2Token.Expiry.UnixNano())
 		tt := &tables.Token{
 			SubID:        ut.GetSubID(),
 			AccessToken:  oauth2Token.AccessToken,
 			RefreshToken: refreshToken,
-			ExpiryUsec:   oauth2Token.Expiry.UnixNano() / 1000,
+			ExpiryUsec:   timeutil.ToUsec(expireTime),
 		}
 		if authDB := a.env.GetAuthDB(); authDB != nil {
 			if err := authDB.InsertOrUpdateUserToken(ctx, ut.GetSubID(), tt); err != nil {

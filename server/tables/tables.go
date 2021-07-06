@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"gorm.io/gorm"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -70,17 +71,16 @@ type Model struct {
 }
 
 // Timestamps are hard and differing sql implementations do... a lot. Too much.
-// So, we handle this in go-code and set these to time.Now().UnixNano and store
-// as int64.
+// So, we handle this in go-code and set as the timestamp in microseconds.
 func (m *Model) BeforeCreate(tx *gorm.DB) (err error) {
-	nowInt64 := int64(time.Now().UnixNano() / 1000)
-	m.CreatedAtUsec = nowInt64
-	m.UpdatedAtUsec = nowInt64
+	nowUsec := timeutil.ToUsec(time.Now())
+	m.CreatedAtUsec = nowUsec
+	m.UpdatedAtUsec = nowUsec
 	return nil
 }
 
 func (m *Model) BeforeUpdate(tx *gorm.DB) (err error) {
-	m.UpdatedAtUsec = int64(time.Now().UnixNano() / 1000)
+	m.UpdatedAtUsec = timeutil.ToUsec(time.Now())
 	return nil
 }
 
@@ -236,8 +236,8 @@ type Token struct {
 	// The subscriber ID, a concatenated string of the
 	// auth Issuer ID and the subcriber ID string.
 	SubID        string `gorm:"primaryKey"`
-	AccessToken  string
-	RefreshToken string
+	AccessToken  string `gorm:"size:4096"`
+	RefreshToken string `gorm:"size:4096"`
 	Model
 	ExpiryUsec int64
 }
@@ -430,7 +430,7 @@ type Workflow struct {
 	GroupID     string `gorm:"index:workflow_group_id"`
 	Name        string
 	Username    string
-	AccessToken string
+	AccessToken string `gorm:"size:4096"`
 	WebhookID   string `gorm:"uniqueIndex:workflow_webhook_id_index"`
 	Model
 	Perms int `gorm:"index:workflow_perms"`

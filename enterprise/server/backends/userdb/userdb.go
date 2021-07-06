@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -612,8 +613,8 @@ func (d *UserDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat) erro
 		WHERE 
 			u.created_at_usec >= ? AND
 			u.created_at_usec < ?`,
-		int64(time.Now().Truncate(24*time.Hour).Add(-24*time.Hour).UnixNano()/1000),
-		int64(time.Now().Truncate(24*time.Hour).UnixNano()/1000))
+		timeutil.ToUsec(time.Now().Truncate(24*time.Hour).Add(-24*time.Hour)),
+		timeutil.ToUsec(time.Now().Truncate(24*time.Hour)))
 
 	if err := counts.Take(stat).Error; err != nil {
 		return err

@@ -124,6 +124,17 @@ export function formatCommitHash(commit: string) {
   return commit?.substring(0, 6);
 }
 
+export function formatRole(role: string): string | null {
+  if (role === "CI_RUNNER") {
+    return "Workflow";
+  }
+  if (role === "CI") {
+    return "CI";
+  }
+  // Don't render unknown roles for now.
+  return null;
+}
+
 export function formatWithCommas(num: number | Long) {
   return (+num).toLocaleString("en-US");
 }
@@ -142,5 +153,6 @@ export default {
   formatTimestamp,
   formatGitUrl,
   formatCommitHash,
+  formatRole,
   formatWithCommas,
 };

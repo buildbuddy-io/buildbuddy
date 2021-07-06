@@ -70,9 +70,9 @@ Now that the environment is configured, we can download and install the BuildBud
 
 ### Download the BuildBuddy executor
 
-The latest BuildBuddy executor binary can be downloaded with:
+The BuildBuddy executor binary can be downloaded with (make sure to update the version number to the [lastest release](https://github.com/buildbuddy-io/buildbuddy/releases)):
 ```
-curl -fSL https://storage.googleapis.com/buildbuddy-tools/binaries/buildbuddy-executor -o buildbuddy-executor
+curl -fSL https://github.com/buildbuddy-io/buildbuddy/releases/download/v2.3.0/executor-enterprise-darwin-amd64 -o buildbuddy-executor
 ```
 
 ### Make the executor executable

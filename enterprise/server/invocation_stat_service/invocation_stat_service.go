@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
@@ -111,7 +112,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 		q.AddWhereClause(fmt.Sprintf("(%s)", roleQuery), roleArgs...)
 	}
 
-	q.AddWhereClause(`updated_at_usec > ?`, time.Now().Add(-lookbackWindowDays).UnixNano()/1000)
+	q.AddWhereClause(`updated_at_usec > ?`, timeutil.ToUsec(time.Now().Add(-lookbackWindowDays)))
 	q.AddWhereClause(`group_id = ?`, groupID)
 	q.SetGroupBy("name")
 	q.SetOrderBy("MAX(updated_at_usec)" /*ascending=*/, false)

@@ -131,7 +131,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.Exec
 		q.log.Warningf("Error opening publish operation stream: %s", err)
 		return err
 	}
-	if err := q.exec.ExecuteTaskAndStreamResults(execTask, clientStream); err != nil {
+	if err := q.exec.ExecuteTaskAndStreamResults(ctx, execTask, clientStream); err != nil {
 		q.log.Warningf("ExecuteTaskAndStreamResults error %q: %s", execTask.GetExecutionId(), err.Error())
 		return err
 	}
