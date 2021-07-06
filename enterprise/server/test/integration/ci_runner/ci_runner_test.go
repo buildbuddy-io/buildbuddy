@@ -289,13 +289,13 @@ func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
 	// Push one commit to the target repo (to get ahead of the pushed repo),
 	// and one commit to the pushed repo (compatible with the target repo).
 	testshell.Run(t, targetRepoPath, `
-		printf 'echo "Hello from target repo" && exit 0\n' > pass.sh
+		printf 'echo NONCONFLICTING_EDIT_1 && exit 0\n' > pass.sh
 		git add pass.sh
 		git commit -m "Update pass.sh"
 	`)
 	testshell.Run(t, pushedRepoPath, `
 		git checkout -b feature
-		printf 'echo "Goodbye from pushed repo" && exit 1\n' > fail.sh
+		printf 'echo NONCONFLICTING_EDIT_2 && exit 1\n' > fail.sh
 		git add fail.sh
 		git commit -m "Update fail.sh"
 	`)
@@ -328,8 +328,8 @@ func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
 	runnerInvocation := firstInvocation(t, app, result)
 	// We should be able to see both of the changes we made, since they should
 	// be merged together.
-	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Hello from target repo")
-	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Goodbye from pushed repo")
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "NONCONFLICTING_EDIT_1")
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, "NONCONFLICTING_EDIT_2")
 	if t.Failed() {
 		t.Log(runnerInvocation.ConsoleBuffer)
 	}
@@ -344,13 +344,13 @@ func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *tes
 	// Push one commit to the target repo (to get ahead of the pushed repo),
 	// and one commit to the pushed repo (compatible with the target repo).
 	testshell.Run(t, targetRepoPath, `
-		printf 'echo "Hello from target repo" && exit 0\n' > pass.sh
+		printf 'echo "CONFLICTING_EDIT_1" && exit 0\n' > pass.sh
 		git add pass.sh
 		git commit -m "Update pass.sh"
 	`)
 	testshell.Run(t, pushedRepoPath, `
 		git checkout -b feature
-		printf 'echo "CONFLICTING EDIT!!!" && exit 0\n' > pass.sh
+		printf 'echo "CONFLICTING_EDIT_2" && exit 0\n' > pass.sh
 		git add pass.sh
 		git commit -m "Update pass.sh"
 	`)
