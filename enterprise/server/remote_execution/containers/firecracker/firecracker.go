@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,8 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/backoff"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -376,38 +373,12 @@ func (c *firecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		ExitCode:           commandutil.NoExitCode,
 	}
 
-	bufDialer := func(ctx context.Context, _ string) (net.Conn, error) {
-		return vsock.DialHostToGuest(ctx, c.vSocket, vsock.DefaultPort)
-	}
-
-	// These params are tuned for a fast-reconnect to the vmexec server
-	// running inside the VM.
-	backoffConfig := backoff.Config{
-		BaseDelay:  1.0 * time.Millisecond,
-		Multiplier: 1.6,
-		Jitter:     0.2,
-		MaxDelay:   10 * time.Second,
-	}
-	connectParams := grpc.ConnectParams{
-		Backoff:           backoffConfig,
-		MinConnectTimeout: 10 * time.Second,
-	}
-
-	dialOptions := []grpc.DialOption{
-		grpc.WithContextDialer(bufDialer),
-		grpc.WithInsecure(),
-		grpc.WithBlock(),
-		grpc.WithConnectParams(connectParams),
-	}
-
-	connectionStart := time.Now()
-	conn, err := grpc.DialContext(ctx, "vsock", dialOptions...)
+	conn, err := vsock.SimpleGRPCDial(ctx, c.vSocket)
 	if err != nil {
 		result.Error = err
 		return result
 	}
 	defer conn.Close()
-	log.Debugf("Connected after %s", time.Since(connectionStart))
 
 	execClient := vmxpb.NewExecClient(conn)
 	execRequest := &vmxpb.ExecRequest{

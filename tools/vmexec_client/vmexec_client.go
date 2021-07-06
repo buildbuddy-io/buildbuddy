@@ -10,7 +10,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"google.golang.org/grpc"
 
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 )
@@ -22,24 +21,15 @@ var (
 	workingDirectory = flag.String("working_directory", "/", "Working directory to run command from")
 )
 
-func bufDialer(ctx context.Context, _ string) (net.Conn, error) {
-	return vsock.DialHostToGuest(ctx, *sock, vsock.DefaultPort)
-}
-
 func main() {
 	ctx := context.Background()
 	flag.Parse()
 
-	dialOptions := []grpc.DialOption{
-		grpc.WithContextDialer(bufDialer),
-		grpc.WithInsecure(),
-	}
-	conn, err := grpc.DialContext(ctx, "vsock", dialOptions...)
+	conn, err := vsock.SimpleGRPCDial(ctx, *sock)
 	if err != nil {
-		log.Fatalf("Error dialing: %s", err)
+		log.Fatalf("Error connecting to client: %s", err)
 	}
 	defer conn.Close()
-	log.Printf("Connected to client")
 
 	execClient := vmxpb.NewExecClient(conn)
 	rsp, err := execClient.Exec(ctx, &vmxpb.ExecRequest{
