@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"flag"
-	"net"
 	"os"
 	"strings"
 

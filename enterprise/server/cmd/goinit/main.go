@@ -34,7 +34,7 @@ var (
 	path      = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
 	port      = flag.Uint("port", vsock.DefaultPort, "The vsock port number to listen on")
 	debugMode = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
-	logLevel  = flag.String("logLevel", "info", "The loglevel to emit logs at")
+	logLevel  = flag.String("log_level", "info", "The loglevel to emit logs at")
 )
 
 // die logs the provided error if it is not nil and then terminates the program.

@@ -108,9 +108,9 @@ func isTemporary(err error) bool {
 	return err != nil && ok && tempErr.Temporary()
 }
 
-// DialHostToGuest connects to the specified VSock socketPath and port and returns a
+// dialHostToGuest connects to the specified VSock socketPath and port and returns a
 // new net.Conn or error if unable to connect.
-func DialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.Conn, error) {
+func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.Conn, error) {
 	var d net.Dialer
 	raddr := net.UnixAddr{Name: socketPath, Net: "unix"}
 	conn, err := d.DialContext(ctx, "unix", raddr.String())
@@ -144,7 +144,7 @@ func DialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.C
 // N.B. Callers are responsible for closing the returned connection.
 func SimpleGRPCDial(ctx context.Context, socketPath string) (*grpc.ClientConn, error) {
 	bufDialer := func(ctx context.Context, _ string) (net.Conn, error) {
-		return DialHostToGuest(ctx, socketPath, DefaultPort)
+		return dialHostToGuest(ctx, socketPath, DefaultPort)
 	}
 
 	// These params are tuned for a fast-reconnect to the vmexec server
