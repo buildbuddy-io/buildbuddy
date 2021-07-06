@@ -13,40 +13,6 @@ message NodeAddress {
   int32 port = 2;
 }
 
-// TODO: Switch over the the ExecutionNodes proto
-message RegisterNodeRequest {
-  NodeAddress node_address = 1;
-
-  // The node's assignable memory.
-  int64 assignable_memory_bytes = 2;
-
-  // The node's assignable CPU.
-  int64 assignable_milli_cpu = 3;
-
-  // Matching constraints.
-  repeated string constraints = 4;
-
-  // The node's operating system.
-  string os = 5;
-
-  // The node's cpu architecture.
-  string arch = 6;
-
-  // The node pool in which to register the node.
-  string pool = 7;
-
-  // Unique ID that identifies this executor instance within a node pool. It is
-  // set once when the executor binary starts and preserved for the lifetime of
-  // the executor. Each executor generates its own ID on startup.
-  //
-  // Ex. "34c5cf7e-b3b1-4e20-b43c-3e196b30d983"
-  string executor_id = 8;
-}
-
-message RegisterNodeResponse {
-  // Intentionally left blank.
-}
-
 message LeaseTaskRequest {
   // The task for which to request a lease. If successful, a LeaseTaskResponse
   // will be returned containing the serialized task and duration of the lease.
@@ -160,10 +126,6 @@ message RegisterAndStreamWorkResponse {
 }
 
 service Scheduler {
-  // Deprecated. Being replaced by RegisterAndStreamWork which allows task
-  // reservations to be sent via the stream.
-  rpc RegisterNode(stream RegisterNodeRequest) returns (RegisterNodeResponse) {}
-
   rpc RegisterAndStreamWork(stream RegisterAndStreamWorkRequest)
       returns (stream RegisterAndStreamWorkResponse) {}
 

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"net/http"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
@@ -200,19 +202,42 @@ func ExtractProtoTraceMetadata(ctx context.Context, metadata *tpb.Metadata) cont
 	return p.Extract(ctx, newTraceMetadataProtoCarrier(metadata, nil))
 }
 
+type HttpServeMux struct {
+	delegateMux    *http.ServeMux
+	tracingHandler http.Handler
+}
+
+func NewHttpServeMux(delegate *http.ServeMux) *HttpServeMux {
+	// By default otelhttp names all the spans with the passed operation name.
+	// We pass an empty name here since we override the span name in http handler.
+	handler := otelhttp.NewHandler(delegate, "" /* operation= */)
+	return &HttpServeMux{delegateMux: delegate, tracingHandler: handler}
+}
+
+func (m *HttpServeMux) Handle(pattern string, handler http.Handler) {
+	m.delegateMux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+		span := trace.SpanFromContext(r.Context())
+		span.SetName(fmt.Sprintf("%s %s", r.Method, pattern))
+		handler.ServeHTTP(w, r)
+	})
+}
+
+func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	m.tracingHandler.ServeHTTP(w, r)
+}
+
 // StartSpan starts a new span named after the calling function.
 func StartSpan(ctx context.Context, opts ...trace.SpanOption) (context.Context, trace.Span) {
-	span := trace.SpanFromContext(ctx)
+	ctx, span := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, "unknown_go_function", opts...)
 	if !span.IsRecording() {
 		return ctx, span
 	}
 
 	rpc := make([]uintptr, 1)
 	n := runtime.Callers(2, rpc[:])
-	fn := ""
 	if n > 0 {
 		frame, _ := runtime.CallersFrames(rpc).Next()
-		fn = filepath.Base(frame.Function)
+		span.SetName(filepath.Base(frame.Function))
 	}
-	return otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, fn, opts...)
+	return ctx, span
 }

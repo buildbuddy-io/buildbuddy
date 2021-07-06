@@ -488,6 +488,18 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		return nil, status.FailedPreconditionError("Missing task router in env")
 	}
 
+	ownHostname, err := resources.GetMyHostname()
+	if err != nil {
+		return nil, status.UnknownErrorf("Could not determine own hostname: %s", err)
+	}
+	ownPort := options.LocalPortOverride
+	if ownPort == 0 {
+		ownPort, err = resources.GetMyPort()
+		if err != nil {
+			return nil, status.UnknownErrorf("Could not determine own port: %s", err)
+		}
+	}
+
 	s := &SchedulerServer{
 		env:                          env,
 		pools:                        make(map[nodePoolKey]*nodePool),
@@ -497,20 +509,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		shuttingDown:                 shuttingDown,
 		enableUserOwnedExecutors:     enableUserOwnedExecutors,
 		requireExecutorAuthorization: requireExecutorAuthorization,
-	}
-	ownHostname, err := resources.GetMyHostname()
-	if err != nil {
-		log.Warningf("Could not determine own hostname: %s", err)
-	}
-	ownPort := options.LocalPortOverride
-	if ownPort == 0 {
-		ownPort, err = resources.GetMyPort()
-		if err != nil {
-			log.Warningf("Could not determine own port: %s", err)
-		}
-	}
-	if ownHostname != "" && ownPort != 0 {
-		s.ownHostPort = fmt.Sprintf("%s:%d", ownHostname, ownPort)
+		ownHostPort:                  fmt.Sprintf("%s:%d", ownHostname, ownPort),
 	}
 	return s, nil
 }
@@ -616,16 +615,6 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 		return false, err
 	}
 
-	schedulerAddr := ""
-	// If the executor supports task streaming, record the scheduler instance to which it's connected so that requests
-	// can be routed the appropriate scheduler.
-	if executorHandle.SupportsTaskStreaming() {
-		if s.ownHostPort == "" {
-			return false, status.FailedPreconditionError("executor supports task streaming but scheduler address is not known")
-		}
-		schedulerAddr = s.ownHostPort
-	}
-
 	permissions := 0
 	if s.requireExecutorAuthorization {
 		permissions = perms.GROUP_WRITE | perms.GROUP_READ
@@ -645,7 +634,7 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 		OS:                    node.GetOs(),
 		Arch:                  node.GetArch(),
 		Pool:                  node.GetPool(),
-		SchedulerHostPort:     schedulerAddr,
+		SchedulerHostPort:     s.ownHostPort,
 		GroupID:               groupID,
 		Version:               node.GetVersion(),
 		Perms:                 permissions,
@@ -742,19 +731,6 @@ func (s *SchedulerServer) authorizeExecutor(ctx context.Context) (string, error)
 	return user.GetGroupID(), nil
 }
 
-func (s *SchedulerServer) RegisterNode(stream scpb.Scheduler_RegisterNodeServer) error {
-	groupID, err := s.authorizeExecutor(stream.Context())
-	if err != nil {
-		return err
-	}
-
-	handle, err := executor_handle.NewRegistrationOnlyExecutorHandle(stream, groupID)
-	if err != nil {
-		return err
-	}
-	return s.processExecutorStream(stream.Context(), handle)
-}
-
 func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAndStreamWorkServer) error {
 	groupID, err := s.authorizeExecutor(stream.Context())
 	if err != nil {
@@ -802,23 +778,8 @@ func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle executor_
 		reqs = append(reqs, req)
 	}
 
-	if handle.SupportsTaskStreaming() {
-		for _, req := range reqs {
-			if _, err = handle.EnqueueTaskReservation(ctx, req); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	conn, err := grpc_client.DialTargetWithOptions(node.GetAddr(), true, grpc.WithTimeout(executor_handle.EnqueueTaskReservationTimeout), grpc.WithBlock())
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	client := scpb.NewQueueExecutorClient(conn)
 	for _, req := range reqs {
-		if _, err = client.EnqueueTaskReservation(ctx, req); err != nil {
+		if _, err = handle.EnqueueTaskReservation(ctx, req); err != nil {
 			return err
 		}
 	}
@@ -1227,32 +1188,22 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		// that the scheduler can prefer this node for the probe.
 		enqueueRequest.ExecutorId = node.GetExecutorID()
 
-		scheduleLocally := opts.alwaysScheduleLocally
-		if !scheduleLocally && node.GetSchedulerURI() == "" {
-			scheduleLocally = true
-		}
-
 		enqueueStart := time.Now()
-		if scheduleLocally {
-			if node.handle != nil {
-				_, err := node.handle.EnqueueTaskReservation(ctx, enqueueRequest)
-				if err != nil {
-					continue
-				}
-			} else {
-				// This fallback can be removed once we rollout changes to always enqueuing via handle.
-				conn, err := grpc_client.DialTargetWithOptions(node.GetAddr(), true, grpc.WithTimeout(executor_handle.EnqueueTaskReservationTimeout), grpc.WithBlock())
-				if err != nil {
-					continue
-				}
-				client := scpb.NewQueueExecutorClient(conn)
-				_, err = client.EnqueueTaskReservation(ctx, enqueueRequest)
-				conn.Close()
-				if err != nil {
-					continue
-				}
+		if opts.alwaysScheduleLocally {
+			if node.handle == nil {
+				log.Errorf("nil handle for a local executor %q", node.GetExecutorID())
+				continue
+			}
+			_, err := node.handle.EnqueueTaskReservation(ctx, enqueueRequest)
+			if err != nil {
+				continue
 			}
 		} else {
+			if node.GetSchedulerURI() == "" {
+				log.Errorf("node %q has no scheduler URI", node.GetExecutorID())
+				continue
+			}
+
 			schedulerClient, err := s.schedulerClientCache.get(node.GetSchedulerURI())
 			if err != nil {
 				log.Warningf("Could not get SchedulerClient for %q: %s", node.GetSchedulerURI(), err)

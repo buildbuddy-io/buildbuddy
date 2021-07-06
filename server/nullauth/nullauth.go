@@ -28,15 +28,15 @@ func (a *NullAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 }
 
 func (a *NullAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/", 301)
+	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
 func (a *NullAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/", 301)
+	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
 func (a *NullAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/", 301)
+	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
 func (a *NullAuthenticator) ParseAPIKeyFromString(input string) string {

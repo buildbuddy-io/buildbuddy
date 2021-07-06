@@ -3428,6 +3428,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",
         sum = "h1:Q3C9yzW6I9jqEc8sawxzxZmY48fs9u220KXq6d5s3XU=",
         version = "v0.20.0",
+        build_directives = [
+            "gazelle:resolve go go.opentelemetry.io/otel/semconv @io_opentelemetry_go_otel//semconv:go_default_library",
+        ],
     )
 
     go_repository(
