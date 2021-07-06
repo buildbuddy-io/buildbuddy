@@ -54,7 +54,7 @@ function getExecutionStatus(execution: execution_stats.Execution): ExecutionStat
         image: "/image/x-circle.svg",
       };
     }
-    return { name: "Completed", image: "/image/complete.svg" };
+    return { name: "Succeeded", image: "/image/complete.svg" };
   }
 
   return STATUSES_BY_STAGE[execution.stage];
