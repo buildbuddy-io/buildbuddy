@@ -815,15 +815,17 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if err := git(ctx, &ws.log, "checkout", "--force", "--track", ref); err != nil {
 		return err
 	}
-	// Merge the target branch so that the workflow can pick up changes in the
-	// target branch not yet incorporated into the pushed branch.
-	targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-	if err := git(ctx, &ws.log, "merge", targetRef); err != nil {
-		// Make note of the merge conflict and abort. We'll run all actions and each
-		// one will just fail with the merge conflict error.
-		ws.mergeConflict = true
-		if err := git(ctx, &ws.log, "merge", "--abort"); err != nil {
-			return err
+	// Merge the target branch (if different from the pushed branch) so that the
+	// workflow can pick up any changes not yet incorporated into the pushed branch.
+	if *pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch {
+		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
+		if err := git(ctx, &ws.log, "merge", targetRef); err != nil {
+			// Make note of the merge conflict and abort. We'll run all actions and each
+			// one will just fail with the merge conflict error.
+			ws.mergeConflict = true
+			if err := git(ctx, &ws.log, "merge", "--abort"); err != nil {
+				return err
+			}
 		}
 	}
 
