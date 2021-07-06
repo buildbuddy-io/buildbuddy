@@ -17,7 +17,7 @@ func webhookRequest(t *testing.T, eventType string, payload []byte) *http.Reques
 		t.Fatal(err)
 	}
 	req.Header.Add("X-Github-Event", eventType)
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Content-Type", "application/json")
 	return req
 }
 
@@ -28,12 +28,13 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, &interfaces.WebhookData{
-		EventName:    "push",
-		PushedBranch: "main",
-		TargetBranch: "main",
-		RepoURL:      "https://github.com/test/hello_bb_ci.git",
-		IsTrusted:    true,
-		SHA:          "258044d28288d5f6f1c5928b0e22580296fec666",
+		EventName:     "push",
+		PushedRepoURL: "https://github.com/test/hello_bb_ci.git",
+		PushedBranch:  "main",
+		SHA:           "258044d28288d5f6f1c5928b0e22580296fec666",
+		TargetRepoURL: "https://github.com/test/hello_bb_ci.git",
+		TargetBranch:  "main",
+		IsTrusted:     true,
 	}, data)
 }
 
@@ -44,12 +45,13 @@ func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, &interfaces.WebhookData{
-		EventName:    "pull_request",
-		PushedBranch: "pr-1613157046",
-		TargetBranch: "main",
-		RepoURL:      "https://github.com/test/hello_bb_ci.git",
-		IsTrusted:    true,
-		SHA:          "21006e203e433034cd4d82859d28d3bc1dbdf9f7",
+		EventName:     "pull_request",
+		PushedRepoURL: "https://github.com/test/hello_bb_ci.git",
+		PushedBranch:  "pr-1613157046",
+		SHA:           "21006e203e433034cd4d82859d28d3bc1dbdf9f7",
+		TargetRepoURL: "https://github.com/test/hello_bb_ci.git",
+		TargetBranch:  "main",
+		IsTrusted:     true,
 	}, data)
 }
 

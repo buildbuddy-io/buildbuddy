@@ -1,0 +1,201 @@
+{
+  "pullrequest": {
+    "rendered": {
+      "description": {
+        "raw": "* Prevent against wiping changes in the repo\r\n* Show branch in create\\_pr\r\n* Actually use REMOTE\r\n* Update timestamp to 1614450472\r\n\r\n‌",
+        "markup": "markdown",
+        "html": "<ul>\n<li>Prevent against wiping changes in the repo</li>\n<li>Show branch in create_pr</li>\n<li>Actually use REMOTE</li>\n<li>Update timestamp to <a href=\"https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/commits/1614450472\" rel=\"nofollow\" class=\"ap-connect-link\">1614450472</a></li>\n</ul>\n<p>‌</p>",
+        "type": "rendered"
+      },
+      "title": {
+        "raw": "Test 1614450472",
+        "markup": "markdown",
+        "html": "<p>Test <a href=\"https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/commits/1614450472\" rel=\"nofollow\" class=\"ap-connect-link\">1614450472</a></p>",
+        "type": "rendered"
+      }
+    },
+    "type": "pullrequest",
+    "description": "* Prevent against wiping changes in the repo\r\n* Show branch in create\\_pr\r\n* Actually use REMOTE\r\n* Update timestamp to 1614450472\r\n\r\n‌",
+    "links": {
+      "decline": {
+        "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/pullrequests/2/decline"
+      },
+      "diffstat": {
+        "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/diffstat/buildbuddy/buildbuddy-ci-playground:a4822151d5d2%0Df3307f36e35d?from_pullrequest_id=2"
+      },
+      "commits": {
+        "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/pullrequests/2/commits"
+      },
+      "self": {
+        "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/pullrequests/2"
+      },
+      "comments": {
+        "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/pullrequests/2/comments"
+      },
+      "merge": {
+        "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/pullrequests/2/merge"
+      },
+      "html": { "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/pull-requests/2" },
+      "activity": {
+        "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/pullrequests/2/activity"
+      },
+      "request-changes": {
+        "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/pullrequests/2/request-changes"
+      },
+      "diff": {
+        "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/diff/buildbuddy/buildbuddy-ci-playground:a4822151d5d2%0Df3307f36e35d?from_pullrequest_id=2"
+      },
+      "approve": {
+        "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/pullrequests/2/approve"
+      },
+      "statuses": {
+        "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/pullrequests/2/statuses"
+      }
+    },
+    "title": "Test 1614450472",
+    "close_source_branch": false,
+    "reviewers": [],
+    "id": 2,
+    "destination": {
+      "commit": {
+        "hash": "f3307f36e35d",
+        "type": "commit",
+        "links": {
+          "self": {
+            "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/commit/f3307f36e35d"
+          },
+          "html": { "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/commits/f3307f36e35d" }
+        }
+      },
+      "repository": {
+        "links": {
+          "self": { "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground" },
+          "html": { "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground" },
+          "avatar": { "href": "https://bytebucket.org/ravatar/%7Bc3dd6cc9-c8e3-47ce-9471-86065058ee1f%7D?ts=default" }
+        },
+        "type": "repository",
+        "name": "buildbuddy-ci-playground",
+        "full_name": "buildbuddy/buildbuddy-ci-playground",
+        "uuid": "{c3dd6cc9-c8e3-47ce-9471-86065058ee1f}"
+      },
+      "branch": { "name": "main" }
+    },
+    "created_on": "2021-02-27T18:32:19.955380+00:00",
+    "summary": {
+      "raw": "* Prevent against wiping changes in the repo\r\n* Show branch in create\\_pr\r\n* Actually use REMOTE\r\n* Update timestamp to 1614450472\r\n\r\n‌",
+      "markup": "markdown",
+      "html": "<ul>\n<li>Prevent against wiping changes in the repo</li>\n<li>Show branch in create_pr</li>\n<li>Actually use REMOTE</li>\n<li>Update timestamp to <a href=\"https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/commits/1614450472\" rel=\"nofollow\" class=\"ap-connect-link\">1614450472</a></li>\n</ul>\n<p>‌</p>",
+      "type": "rendered"
+    },
+    "source": {
+      "commit": {
+        "hash": "a4822151d5d2",
+        "type": "commit",
+        "links": {
+          "self": {
+            "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/commit/a4822151d5d2"
+          },
+          "html": { "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/commits/a4822151d5d2" }
+        }
+      },
+      "repository": {
+        "links": {
+          "self": { "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground" },
+          "html": { "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground" },
+          "avatar": { "href": "https://bytebucket.org/ravatar/%7Bc3dd6cc9-c8e3-47ce-9471-86065058ee1f%7D?ts=default" }
+        },
+        "type": "repository",
+        "name": "buildbuddy-ci-playground",
+        "full_name": "buildbuddy/buildbuddy-ci-playground",
+        "uuid": "{c3dd6cc9-c8e3-47ce-9471-86065058ee1f}"
+      },
+      "branch": { "name": "test-1614450472" }
+    },
+    "comment_count": 0,
+    "state": "OPEN",
+    "task_count": 0,
+    "participants": [],
+    "reason": "",
+    "updated_on": "2021-02-27T18:32:59.862984+00:00",
+    "author": {
+      "display_name": "Test",
+      "uuid": "{0cc3a8ab-9405-400d-9bf9-ebfd456a170b}",
+      "links": {
+        "self": { "href": "https://api.bitbucket.org/2.0/users/%7B0cc3a8ab-9405-400d-9bf9-ebfd456a170b%7D" },
+        "html": { "href": "https://bitbucket.org/%7B0cc3a8ab-9405-400d-9bf9-ebfd456a170b%7D/" },
+        "avatar": {
+          "href": "https://secure.gravatar.com/avatar/450a41fbcc0c2eb69be0f207c0d0d070?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FBD-6.png"
+        }
+      },
+      "nickname": "Test",
+      "type": "user",
+      "account_id": "5e73cde35e755d0cd4258254"
+    },
+    "merge_commit": null,
+    "closed_by": null
+  },
+  "repository": {
+    "scm": "git",
+    "website": null,
+    "uuid": "{c3dd6cc9-c8e3-47ce-9471-86065058ee1f}",
+    "links": {
+      "self": { "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground" },
+      "html": { "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground" },
+      "avatar": { "href": "https://bytebucket.org/ravatar/%7Bc3dd6cc9-c8e3-47ce-9471-86065058ee1f%7D?ts=default" }
+    },
+    "project": {
+      "links": {
+        "self": { "href": "https://api.bitbucket.org/2.0/workspaces/buildbuddy/projects/TEST" },
+        "html": { "href": "https://bitbucket.org/buildbuddy/workspace/projects/TEST" },
+        "avatar": { "href": "https://bitbucket.org/account/user/buildbuddy/projects/TEST/avatar/32?ts=1613704872" }
+      },
+      "type": "project",
+      "name": "Test",
+      "key": "TEST",
+      "uuid": "{7cf0fc30-3abc-49ff-881a-c23b9efeed20}"
+    },
+    "full_name": "buildbuddy/buildbuddy-ci-playground",
+    "owner": {
+      "display_name": "Test",
+      "uuid": "{0cc3a8ab-9405-400d-9bf9-ebfd456a170b}",
+      "links": {
+        "self": { "href": "https://api.bitbucket.org/2.0/users/%7B0cc3a8ab-9405-400d-9bf9-ebfd456a170b%7D" },
+        "html": { "href": "https://bitbucket.org/%7B0cc3a8ab-9405-400d-9bf9-ebfd456a170b%7D/" },
+        "avatar": {
+          "href": "https://secure.gravatar.com/avatar/450a41fbcc0c2eb69be0f207c0d0d070?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FBD-6.png"
+        }
+      },
+      "nickname": "Test",
+      "type": "user",
+      "account_id": "5e73cde35e755d0cd4258254"
+    },
+    "workspace": {
+      "slug": "buildbuddy",
+      "type": "workspace",
+      "name": "Test",
+      "links": {
+        "self": { "href": "https://api.bitbucket.org/2.0/workspaces/buildbuddy" },
+        "html": { "href": "https://bitbucket.org/buildbuddy/" },
+        "avatar": { "href": "https://bitbucket.org/workspaces/buildbuddy/avatar/?ts=1613704812" }
+      },
+      "uuid": "{0cc3a8ab-9405-400d-9bf9-ebfd456a170b}"
+    },
+    "type": "repository",
+    "is_private": true,
+    "name": "buildbuddy-ci-playground"
+  },
+  "actor": {
+    "display_name": "Test",
+    "uuid": "{0cc3a8ab-9405-400d-9bf9-ebfd456a170b}",
+    "links": {
+      "self": { "href": "https://api.bitbucket.org/2.0/users/%7B0cc3a8ab-9405-400d-9bf9-ebfd456a170b%7D" },
+      "html": { "href": "https://bitbucket.org/%7B0cc3a8ab-9405-400d-9bf9-ebfd456a170b%7D/" },
+      "avatar": {
+        "href": "https://secure.gravatar.com/avatar/450a41fbcc0c2eb69be0f207c0d0d070?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FBD-6.png"
+      }
+    },
+    "nickname": "Test",
+    "type": "user",
+    "account_id": "5e73cde35e755d0cd4258254"
+  }
+}

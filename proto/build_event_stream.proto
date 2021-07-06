@@ -800,10 +800,7 @@ message WorkflowConfigured {
   // Example: "Test all targets"
   string action_name = 2;
 
-  // Branch associated with the trigger event that caused the action to be
-  // executed.
-  // Example: "main"
-  string action_trigger_branch = 3;
+  reserved 3;
 
   // Webhook event name that triggered the action. Can be one of "push" or
   // "pull_request".
@@ -827,6 +824,21 @@ message WorkflowConfigured {
 
   // Bazel commands invoked by the workflow action.
   repeated InvocationMetadata invocation = 5;
+
+  // The repo that was pushed in order to trigger the worflow.
+  // Ex: "https://github.com/some-user/acme"
+  string pushed_repo_url = 6;
+
+  string pushed_branch = 7;
+
+  string commit_sha = 8;
+
+  // The repo into which the pushed branch is being merged (for PRs),
+  // or the pushed_repo_url (for push events).
+  // Ex: "https://github.com/acme-inc/acme"
+  string target_repo_url = 9;
+
+  string target_branch = 10;
 }
 
 // Event describing a workflow command that completed.

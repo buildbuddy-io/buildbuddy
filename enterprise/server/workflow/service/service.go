@@ -308,11 +308,8 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if req.GetWorkflowId() == "" {
 		return nil, status.InvalidArgumentError("Missing workflow_id")
 	}
-	if req.GetCommitSha() == "" {
-		return nil, status.InvalidArgumentError("Missing commit_sha")
-	}
-	if req.GetBranch() == "" {
-		return nil, status.InvalidArgumentError("Missing branch")
+	if req.GetCheckoutRef() == "" {
+		return nil, status.InvalidArgumentError("Missing checkout_ref")
 	}
 	if req.GetActionName() == "" {
 		return nil, status.InvalidArgumentError("Missing action_name")
@@ -348,11 +345,9 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	// workflow execution, since there are no webhooks involved when executing a
 	// workflow manually.
 	wd := &interfaces.WebhookData{
-		PushedBranch: req.GetBranch(),
-		TargetBranch: req.GetBranch(),
-		RepoURL:      wf.RepoURL,
-		SHA:          req.GetCommitSha(),
-		IsTrusted:    true,
+		RepoURL:     wf.RepoURL,
+		CheckoutRef: req.GetCheckoutRef(),
+		IsTrusted:   true,
 	}
 	invocationUUID, err := guuid.NewRandom()
 	if err != nil {

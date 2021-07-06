@@ -134,6 +134,11 @@ message ExecuteWorkflowRequest {
   // Branch corresponding to the SHA to be checked out.
   // Ex. "cool-feature"
   string branch = 5;
+
+  // Ref corresponding to the commit to be fetched from the remote and checked
+  // out.
+  // Ex: "pull/123/merge", "heads/main".
+  string merge_ref = 6;
 }
 
 message ExecuteWorkflowResponse {

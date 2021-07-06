@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,9 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-
-	git "github.com/go-git/go-git/v5"
-	gitobject "github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -51,6 +50,14 @@ func (p *FakeProvider) UnregisterWebhook(ctx context.Context, accessToken, repoU
 	return nil
 }
 
+func bash(t testing.TB, workDir string, script string) string {
+	cmd := exec.Command("/usr/bin/env", "bash", "-e", "-c", script)
+	cmd.Dir = workDir
+	b, err := cmd.CombinedOutput()
+	require.NoError(t, err, "script %q failed: %s", script, string(b))
+	return string(b)
+}
+
 // MakeTempRepo initializes a Git repository with the given file contents, and
 // creates an initial commit of those files. Contents are specified as a map of
 // file paths to file contents. Parent directories are created automatically.
@@ -68,25 +75,13 @@ func MakeTempRepo(t testing.TB, contents map[string]string) (path, commitSHA str
 			}
 		}
 	}
-	repo, err := git.PlainInit(path, false /*=bare*/)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tree, err := repo.Worktree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := tree.AddGlob("*"); err != nil {
-		t.Fatal(err)
-	}
-	hash, err := tree.Commit("Initial commit", &git.CommitOptions{
-		Author: &gitobject.Signature{
-			Name:  "Test",
-			Email: "test@buildbuddy.io",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path, hash.String()
+	bash(t, path, `
+		git init
+		git add .
+		git config --local user.name "Test"
+		git config --local user.email "test@buildbuddy.io"
+		git commit -m "Initial commit"
+	`)
+	headCommitSHA := strings.TrimSpace(bash(t, path, `git rev-parse HEAD`))
+	return path, headCommitSHA
 }

@@ -34,6 +34,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
           // should always be available.
           commitSha: this.props.model.getCommit(),
           branch: this.props.model.getBranch(),
+          // mergeRef: this.props.model.workflowConfigured.mergeRef,
         })
       )
     ).subscribe(
