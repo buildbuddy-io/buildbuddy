@@ -85,7 +85,8 @@ message SchedulingMetadata {
   string arch = 3;
   string pool = 4;
   // Group ID that owns the executors on which the task is to be executed.
-  // May be different from the Group ID of the user that issued the Execute request.
+  // May be different from the Group ID of the user that issued the Execute
+  // request.
   string executor_group_id = 5;
   // Group ID of the user that issued the Execute request.
   string task_group_id = 6;
