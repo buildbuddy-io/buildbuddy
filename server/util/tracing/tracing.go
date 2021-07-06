@@ -216,3 +216,11 @@ func StartSpan(ctx context.Context, opts ...trace.SpanOption) (context.Context, 
 	}
 	return otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, fn, opts...)
 }
+
+func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
+	span := trace.SpanFromContext(ctx)
+	if !span.IsRecording() {
+		return
+	}
+	span.SetAttributes(attribute.String(key, value))
+}
