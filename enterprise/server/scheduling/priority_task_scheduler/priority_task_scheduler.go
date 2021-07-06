@@ -55,10 +55,10 @@ func newTaskQueue() *taskQueue {
 	}
 }
 
-func (p *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
+func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
 	taskGroupID := req.GetSchedulingMetadata().GetTaskGroupId()
 	var pq *groupPriorityQueue
-	if el, ok := p.pqByGroupID[taskGroupID]; ok {
+	if el, ok := t.pqByGroupID[taskGroupID]; ok {
 		pq, ok = el.Value.(*groupPriorityQueue)
 		if !ok {
 			// Why would this ever happen?
@@ -70,22 +70,22 @@ func (p *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
 			PriorityQueue: priority_queue.NewPriorityQueue(),
 			groupID:       taskGroupID,
 		}
-		el := p.pqs.PushBack(pq)
-		p.pqByGroupID[taskGroupID] = el
-		if p.currentPQ == nil {
-			p.currentPQ = el
+		el := t.pqs.PushBack(pq)
+		t.pqByGroupID[taskGroupID] = el
+		if t.currentPQ == nil {
+			t.currentPQ = el
 		}
 	}
 	pq.Push(req)
-	p.numTasks++
+	t.numTasks++
 	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: taskGroupID}).Set(float64(pq.Len()))
 }
 
-func (p *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
-	if p.currentPQ == nil {
+func (t *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
+	if t.currentPQ == nil {
 		return nil
 	}
-	pqEl := p.currentPQ
+	pqEl := t.currentPQ
 	pq, ok := pqEl.Value.(*groupPriorityQueue)
 	if !ok {
 		// Why would this ever happen?
@@ -94,24 +94,24 @@ func (p *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
 	}
 	req := pq.Pop()
 
-	p.currentPQ = p.currentPQ.Next()
+	t.currentPQ = t.currentPQ.Next()
 	if pq.Len() == 0 {
-		p.pqs.Remove(pqEl)
-		delete(p.pqByGroupID, pq.groupID)
+		t.pqs.Remove(pqEl)
+		delete(t.pqByGroupID, pq.groupID)
 	}
-	if p.currentPQ == nil {
-		p.currentPQ = p.pqs.Front()
+	if t.currentPQ == nil {
+		t.currentPQ = t.pqs.Front()
 	}
-	p.numTasks--
+	t.numTasks--
 	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: req.GetSchedulingMetadata().GetTaskGroupId()}).Set(float64(pq.Len()))
 	return req
 }
 
-func (p *taskQueue) Peek() *scpb.EnqueueTaskReservationRequest {
-	if p.currentPQ == nil {
+func (t *taskQueue) Peek() *scpb.EnqueueTaskReservationRequest {
+	if t.currentPQ == nil {
 		return nil
 	}
-	pq, ok := p.currentPQ.Value.(*groupPriorityQueue)
+	pq, ok := t.currentPQ.Value.(*groupPriorityQueue)
 	if !ok {
 		// Why would this ever happen?
 		log.Error("not a *groupPriorityQueue!??!")
@@ -120,8 +120,8 @@ func (p *taskQueue) Peek() *scpb.EnqueueTaskReservationRequest {
 	return pq.Peek()
 }
 
-func (p *taskQueue) Len() int {
-	return p.numTasks
+func (t *taskQueue) Len() int {
+	return t.numTasks
 }
 
 type Options struct {
