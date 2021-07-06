@@ -319,7 +319,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
-	taskGroupID := "ANON"
+	taskGroupID := interfaces.AuthAnonymousUser
 	if user, err := perms.AuthenticatedUser(ctx, s.env); err == nil {
 		taskGroupID = user.GetGroupID()
 	}
@@ -440,7 +440,7 @@ func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
 	if a := s.env.GetAuthenticator(); a != nil {
 		user, err := a.AuthenticatedUser(ctx)
 		if err != nil {
-			return "ANON"
+			return interfaces.AuthAnonymousUser
 		}
 		return user.GetGroupID()
 	}

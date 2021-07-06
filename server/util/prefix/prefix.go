@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
@@ -32,7 +33,7 @@ func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (s
 		return "", status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 	}
 
-	return addPrefix("ANON", key), nil
+	return addPrefix(interfaces.AuthAnonymousUser, key), nil
 }
 
 func AttachUserPrefixToContext(ctx context.Context, env environment.Env) (context.Context, error) {
