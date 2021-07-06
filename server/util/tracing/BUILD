@@ -12,6 +12,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "@com_github_googlecloudplatform_opentelemetry_operations_go_exporter_trace//:trace",
+        "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//propagation",
