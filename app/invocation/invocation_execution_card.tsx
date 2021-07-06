@@ -1,11 +1,11 @@
 import React from "react";
 import format from "../format/format";
-import capabilities from "../capabilities/capabilities";
 import InvocationModel from "./invocation_model";
 import router from "../router/router";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import Select, { Option } from "../components/select/select";
-
+import { build } from "../../proto/remote_execution_ts_proto";
+import { google } from "../../proto/grpc_code_ts_proto";
 import rpcService from "../service/rpc_service";
 
 interface Props {
@@ -20,13 +20,45 @@ interface State {
   direction: "asc" | "desc";
 }
 
-const stages = {
-  0: { name: "Starting", image: "/image/running.svg", class: "rotating" },
-  1: { name: "Cache check", image: "/image/cache-check.svg", class: "" },
-  2: { name: "Queued", image: "/image/queued.svg", class: "" },
-  3: { name: "Executing", image: "/image/running.svg", class: "rotating" },
-  4: { name: "Completed", image: "/image/complete.svg", class: "" },
+const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage;
+
+type ExecutionStatus = {
+  name: string;
+  image: string;
+  className?: string;
 };
+
+const STATUSES_BY_STAGE: Record<number, ExecutionStatus> = {
+  [ExecutionStage.Value.UNKNOWN]: { name: "Starting", image: "/image/running.svg", className: "rotating" },
+  [ExecutionStage.Value.CACHE_CHECK]: { name: "Cache check", image: "/image/cache-check.svg" },
+  [ExecutionStage.Value.QUEUED]: { name: "Queued", image: "/image/queued.svg" },
+  [ExecutionStage.Value.EXECUTING]: { name: "Executing", image: "/image/running.svg", className: "rotating" },
+  // COMPLETED is not included here because it depends on the gRPC status and exit code.
+};
+
+const GRPC_STATUS_LABEL_BY_CODE: Record<number, string> = Object.fromEntries(
+  Object.entries(google.rpc.Code).map(([name, value]) => [value, name])
+);
+
+function getExecutionStatus(execution: execution_stats.Execution): ExecutionStatus {
+  if (execution.stage === ExecutionStage.Value.COMPLETED) {
+    if (execution.status.code !== 0) {
+      return {
+        name: `Error (${GRPC_STATUS_LABEL_BY_CODE[execution.status.code] || "UNKNOWN"})`,
+        image: "/image/alert-circle.svg",
+      };
+    }
+    if (execution.exitCode !== 0) {
+      return {
+        name: `Failed (exit code ${execution.exitCode})`,
+        image: "/image/x-circle.svg",
+      };
+    }
+    return { name: "Completed", image: "/image/complete.svg" };
+  }
+
+  return STATUSES_BY_STAGE[execution.stage];
+}
 
 export default class ExecutionCardComponent extends React.Component {
   props: Props;
@@ -168,6 +200,14 @@ export default class ExecutionCardComponent extends React.Component {
       case "action":
         return second?.actionDigest?.hash.localeCompare(first?.actionDigest?.hash);
       default:
+        // Within COMPLETED actions, sort first by gRPC code (OK, DEADLINE_EXCEEDED, etc.)
+        // then by exit code.
+        if (first.stage === ExecutionStage.Value.COMPLETED && first.stage === second.stage) {
+          if (second.status.code !== first.status.code) {
+            return second.status.code - first.status.code;
+          }
+          return second.exitCode - first.exitCode;
+        }
         return second.stage - first.stage;
     }
   }
@@ -214,8 +254,7 @@ export default class ExecutionCardComponent extends React.Component {
     let completedCount = 0;
     let incompleteCount = 0;
     for (let execution of this.state.executions) {
-      // Completed
-      if (execution.stage == 4) {
+      if (execution.stage === ExecutionStage.Value.COMPLETED) {
         completedCount++;
       } else {
         incompleteCount++;
@@ -278,42 +317,41 @@ export default class ExecutionCardComponent extends React.Component {
             </div>
           </div>
           <div className="invocation-execution-table">
-            {this.state.executions.sort(this.sort.bind(this)).map((execution, index) => (
-              <div
-                key={index}
-                className="invocation-execution-row clickable"
-                onClick={this.handleActionDigestClick.bind(this, execution)}>
-                <div className="invocation-execution-row-image">
-                  <img
-                    className={stages[execution.stage].class}
-                    src={stages[execution.stage].image}
-                    alt={stages[execution.stage].name}
-                  />
-                </div>
-                <div>
-                  <div className="invocation-execution-row-digest">
-                    {stages[execution.stage].name} {execution?.actionDigest?.hash}/{execution?.actionDigest?.sizeBytes}
+            {this.state.executions.sort(this.sort.bind(this)).map((execution, index) => {
+              const status = getExecutionStatus(execution);
+              return (
+                <div
+                  key={index}
+                  className="invocation-execution-row clickable"
+                  onClick={this.handleActionDigestClick.bind(this, execution)}>
+                  <div className="invocation-execution-row-image">
+                    <img className={status.className} src={status.image} alt="" />
                   </div>
-                  <div>{execution.commandSnippet}</div>
-                  <div className="invocation-execution-row-stats">
-                    <div>Worker: {execution?.executedActionMetadata?.worker}</div>
-                    <div>Total duration: {format.durationUsec(this.totalDuration(execution))}</div>
-                    <div>Queued duration: {format.durationUsec(this.queuedDuration(execution))}</div>
-                    <div>
-                      File download duration: {format.durationUsec(this.downloadDuration(execution))} (
-                      {format.bytes(execution?.ioStats?.fileDownloadSizeBytes)} across{" "}
-                      {execution?.ioStats?.fileDownloadCount} files)
+                  <div>
+                    <div className="invocation-execution-row-digest">
+                      {status.name} {execution?.actionDigest?.hash}/{execution?.actionDigest?.sizeBytes}
                     </div>
-                    <div>Execution duration: {format.durationUsec(this.executionDuration(execution))}</div>
-                    <div>
-                      File upload duration: {format.durationUsec(this.uploadDuration(execution))} (
-                      {format.bytes(execution?.ioStats?.fileUploadSizeBytes)} across{" "}
-                      {execution?.ioStats?.fileUploadCount} files)
+                    <div>{execution.commandSnippet}</div>
+                    <div className="invocation-execution-row-stats">
+                      <div>Worker: {execution?.executedActionMetadata?.worker}</div>
+                      <div>Total duration: {format.durationUsec(this.totalDuration(execution))}</div>
+                      <div>Queued duration: {format.durationUsec(this.queuedDuration(execution))}</div>
+                      <div>
+                        File download duration: {format.durationUsec(this.downloadDuration(execution))} (
+                        {format.bytes(execution?.ioStats?.fileDownloadSizeBytes)} across{" "}
+                        {execution?.ioStats?.fileDownloadCount} files)
+                      </div>
+                      <div>Execution duration: {format.durationUsec(this.executionDuration(execution))}</div>
+                      <div>
+                        File upload duration: {format.durationUsec(this.uploadDuration(execution))} (
+                        {format.bytes(execution?.ioStats?.fileUploadSizeBytes)} across{" "}
+                        {execution?.ioStats?.fileUploadCount} files)
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

@@ -79,7 +79,8 @@ func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
 			Code:    in.StatusCode,
 			Message: in.StatusMessage,
 		},
-		Stage: repb.ExecutionStage_Value(in.Stage),
+		ExitCode: in.ExitCode,
+		Stage:    repb.ExecutionStage_Value(in.Stage),
 		IoStats: &espb.IOStats{
 			FileDownloadCount:        in.FileDownloadCount,
 			FileDownloadSizeBytes:    in.FileDownloadSizeBytes,
