@@ -15,6 +15,5 @@ go_library(
         "//enterprise/server/util/vsock",
         "//proto:vmexec_go_proto",
         "//server/util/log",
-        "@org_golang_google_grpc//:go_default_library",
     ],
 )
