@@ -17,7 +17,6 @@ go_test(
         "//server/testutil/app",
         "//server/testutil/buildbuddy",
         "//server/testutil/testbazel",
-        "//server/testutil/testfs",
         "//server/testutil/testshell",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
