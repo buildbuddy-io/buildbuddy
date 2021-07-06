@@ -29,12 +29,13 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, &interfaces.WebhookData{
-		EventName:    "push",
-		PushedBranch: "main",
-		TargetBranch: "main",
-		RepoURL:      "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground",
-		IsTrusted:    true,
-		SHA:          "f3307f36e35d1820c78b642cc8dfec6bf28a6230",
+		EventName:     "push",
+		PushedRepoURL: "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground",
+		PushedBranch:  "main",
+		SHA:           "f3307f36e35d1820c78b642cc8dfec6bf28a6230",
+		TargetRepoURL: "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground",
+		TargetBranch:  "main",
+		IsTrusted:     true,
 	}, data)
 }
 
@@ -45,11 +46,12 @@ func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, &interfaces.WebhookData{
-		EventName:    "pull_request",
-		PushedBranch: "test-1614450472",
-		TargetBranch: "main",
-		RepoURL:      "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground",
-		IsTrusted:    true,
-		SHA:          "a4822151d5d2",
+		EventName:     "pull_request",
+		PushedRepoURL: "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground",
+		PushedBranch:  "test-1614450472",
+		SHA:           "a4822151d5d2",
+		TargetRepoURL: "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground",
+		TargetBranch:  "main",
+		IsTrusted:     true,
 	}, data)
 }
