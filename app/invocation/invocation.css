@@ -1,3 +1,30 @@
+.action-timeline {
+  display: flex;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 4px 0;
+}
+
+.action-timeline .timeline-event {
+  color: white;
+  display: flex;
+  align-items: center;
+  width: 0;
+}
+
+.action-timeline .timeline-event-label {
+  width: 100%;
+  padding: 2px 4px;
+  box-sizing: border-box;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.action-timeline .event-name {
+  font-weight: 600;
+}
+
 .action-line {
   margin-top: 32px;
   padding-top: 32px;
@@ -29,6 +56,7 @@
   width: 20%;
   flex-grow: 0;
   flex-shrink: 0;
+  word-break: break-word;
   text-align: right;
   margin-right: 16px;
   font-weight: 700;

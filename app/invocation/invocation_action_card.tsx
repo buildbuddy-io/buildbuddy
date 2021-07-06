@@ -117,6 +117,74 @@ export default class ActionCardComponent extends React.Component<Props, State> {
     return address;
   }
 
+  private renderTimeline() {
+    const metadata = this.state.actionResult.executionMetadata;
+    type TimelineEvent = { name: string; color: string; start: any };
+    const events: TimelineEvent[] = [
+      {
+        name: "Queued",
+        color: "#607D8B",
+        start: metadata.queuedTimestamp,
+      },
+      {
+        name: "Initializing",
+        color: "#2196F3",
+        start: metadata.workerStartTimestamp,
+      },
+      {
+        name: "Downloading inputs",
+        color: "#FF6F00",
+        start: metadata.inputFetchStartTimestamp,
+      },
+      {
+        name: "Preparing runner",
+        color: "#2196F3",
+        start: metadata.inputFetchCompletedTimestamp,
+      },
+      {
+        name: "Executing",
+        color: "#1E88E5",
+        start: metadata.executionStartTimestamp,
+      },
+      {
+        name: "Preparing for upload",
+        color: "#2196F3",
+        start: metadata.executionCompletedTimestamp,
+      },
+      {
+        name: "Uploading outputs",
+        color: "#FF6F00",
+        start: metadata.outputUploadStartTimestamp,
+      },
+    ];
+    const startTimestamp = metadata.queuedTimestamp;
+    const endTimestamp = metadata.outputUploadCompletedTimestamp;
+    const totalDuration = durationSeconds(startTimestamp, endTimestamp);
+
+    return (
+      <>
+        <div className="action-timeline">
+          {events.map((event, i) => {
+            const next = events[i + 1];
+            const duration = durationSeconds(event.start, next?.start || endTimestamp);
+            const weight = duration / totalDuration;
+            return (
+              <div
+                className="timeline-event"
+                title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
+                style={{ flex: `${weight} 0 0`, backgroundColor: event.color }}>
+                <div className="timeline-event-label">
+                  <span className="event-name">{event.name}</span> ({format.compactDurationSec(duration)},{" "}
+                  {(weight * 100).toFixed(0)}%)
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+
   render() {
     return (
       <div>
@@ -198,6 +266,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                           <div className="metadata-title">Executor ID</div>
                           <div className="metadata-detail">{this.state.actionResult.executionMetadata.executorId}</div>
                           <div className="metadata-title">Timeline</div>
+                          {this.renderTimeline()}
                           <div className="metadata-detail">
                             Queued @ {format.formatTimestamp(this.state.actionResult.executionMetadata.queuedTimestamp)}
                           </div>
@@ -237,7 +306,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                               this.state.actionResult.executionMetadata.outputUploadCompletedTimestamp
                             )}
                           </div>
-                          <div className="metadata-info">
+                          <div className="metadata-detail">
                             Worker Completed @{" "}
                             {format.formatTimestamp(this.state.actionResult.executionMetadata.workerCompletedTimestamp)}
                           </div>
@@ -284,4 +353,12 @@ export default class ActionCardComponent extends React.Component<Props, State> {
       </div>
     );
   }
+}
+
+function durationSeconds(t1: any, t2: any): number {
+  return timestampToUnixSeconds(t2) - timestampToUnixSeconds(t1);
+}
+
+function timestampToUnixSeconds(timestamp: any): number {
+  return timestamp.seconds + timestamp.nanos / 1e9;
 }
