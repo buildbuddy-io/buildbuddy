@@ -162,26 +162,24 @@ export default class ActionCardComponent extends React.Component<Props, State> {
     const totalDuration = durationSeconds(startTimestamp, endTimestamp);
 
     return (
-      <>
-        <div className="action-timeline">
-          {events.map((event, i) => {
-            const next = events[i + 1];
-            const duration = durationSeconds(event.start, next?.start || endTimestamp);
-            const weight = duration / totalDuration;
-            return (
-              <div
-                className="timeline-event"
-                title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
-                style={{ flex: `${weight} 0 0`, backgroundColor: event.color }}>
-                <div className="timeline-event-label">
-                  <span className="event-name">{event.name}</span> ({format.compactDurationSec(duration)},{" "}
-                  {(weight * 100).toFixed(0)}%)
-                </div>
+      <div className="action-timeline">
+        {events.map((event, i) => {
+          const next = events[i + 1];
+          const duration = durationSeconds(event.start, next?.start || endTimestamp);
+          const weight = duration / totalDuration;
+          return (
+            <div
+              className="timeline-event"
+              title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
+              style={{ flex: `${weight} 0 0`, backgroundColor: event.color }}>
+              <div className="timeline-event-label">
+                <span className="event-name">{event.name}</span> ({format.compactDurationSec(duration)},{" "}
+                {(weight * 100).toFixed(0)}%)
               </div>
-            );
-          })}
-        </div>
-      </>
+            </div>
+          );
+        })}
+      </div>
     );
   }
 
