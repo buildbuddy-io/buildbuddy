@@ -52,6 +52,8 @@ export default class TrendsChartComponent extends React.Component {
   props: Props;
 
   render() {
+    const hasSecondaryAxis = this.props.extractSecondaryValue && this.props.separateAxis;
+
     return (
       <div className="trend-chart">
         <div className="trend-chart-title">{this.props.title}</div>
@@ -61,9 +63,9 @@ export default class TrendsChartComponent extends React.Component {
             <Legend />
             <XAxis dataKey={this.props.extractLabel} />
             <YAxis yAxisId="primary" />
-            {this.props.extractSecondaryValue && this.props.separateAxis && (
-              <YAxis yAxisId="secondary" orientation="right" />
-            )}
+            {/* If no secondary axis should be shown, render an invisible one
+                so that right-padding is consistent across all charts. */}
+            <YAxis yAxisId="secondary" orientation="right" height={hasSecondaryAxis ? undefined : 0} />
             <Tooltip
               content={
                 <TrendsChartTooltip
