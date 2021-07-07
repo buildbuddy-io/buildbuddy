@@ -303,7 +303,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	os := defaultPlatformOSValue
 	arch := defaultPlatformArchValue
-	groupID, pool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx)
+	executorGroupID, pool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -319,12 +319,18 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
+	taskGroupID := interfaces.AuthAnonymousUser
+	if user, err := perms.AuthenticatedUser(ctx, s.env); err == nil {
+		taskGroupID = user.GetGroupID()
+	}
+
 	schedulingMetadata := &scpb.SchedulingMetadata{
-		Os:       os,
-		Arch:     arch,
-		Pool:     pool,
-		TaskSize: taskSize,
-		GroupId:  groupID,
+		Os:              os,
+		Arch:            arch,
+		Pool:            pool,
+		TaskSize:        taskSize,
+		ExecutorGroupId: executorGroupID,
+		TaskGroupId:     taskGroupID,
 	}
 	scheduleReq := &scpb.ScheduleTaskRequest{
 		TaskId:         executionID,
@@ -434,8 +440,7 @@ func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
 	if a := s.env.GetAuthenticator(); a != nil {
 		user, err := a.AuthenticatedUser(ctx)
 		if err != nil {
-			log.Warningf("Could not determine groupID for metrics: %s", err)
-			return "unknown"
+			return interfaces.AuthAnonymousUser
 		}
 		return user.GetGroupID()
 	}
