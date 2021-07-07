@@ -4,6 +4,7 @@ go_test(
     name = "remote_cache_test",
     srcs = ["remote_cache_test.go"],
     shard_count = 4,
+    tags = ["manual"],
     deps = [
         "//enterprise/server/auth",
         "//enterprise/server/backends/userdb",
