@@ -24,7 +24,7 @@ interface State {
   filterOnlyCI: boolean;
 }
 
-export default class TrendsComponent extends React.Component {
+export default class TrendsComponent extends React.Component<Props> {
   props: Props;
 
   state: State = {

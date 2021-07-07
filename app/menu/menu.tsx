@@ -57,6 +57,14 @@ export default class MenuComponent extends React.Component {
     router.navigateToCreateOrg();
   }
 
+  private gitHubLinkUrl(): string {
+    const params = new URLSearchParams({
+      group_id: this.props.user?.selectedGroup?.id,
+      redirect_url: window.location.href,
+    });
+    return `/auth/github/link/?${params}`;
+  }
+
   render() {
     return (
       <div>
@@ -129,7 +137,7 @@ export default class MenuComponent extends React.Component {
                     this.props.user &&
                     !this.props.user.selectedGroup.githubLinked && (
                       <li onClick={this.dismissMenu.bind(this)}>
-                        <a href="/auth/github/link/">Link GitHub Account</a>
+                        <a href={this.gitHubLinkUrl()}>Link GitHub Account</a>
                       </li>
                     )}
                   {capabilities.auth && !this.props.user && <li onClick={this.handleLoginClicked.bind(this)}>Login</li>}

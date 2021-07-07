@@ -48,6 +48,14 @@ class Router {
     this.navigateTo(Path.workflowsPath);
   }
 
+  navigateToCode() {
+    if (!capabilities.canNavigateToPath(Path.codePath)) {
+      alert(`Code is not available in ${capabilities.name}`);
+      return;
+    }
+    this.navigateTo(Path.codePath);
+  }
+
   navigateToSettings() {
     if (!capabilities.canNavigateToPath(Path.settingsPath)) {
       alert(`Settings are not available in ${capabilities.name}`);
@@ -251,6 +259,7 @@ export class Path {
   static executorsPath = "/executors/";
   static tapPath = "/tests/";
   static workflowsPath = "/workflows/";
+  static codePath = "/code/";
 }
 
 export default new Router();
