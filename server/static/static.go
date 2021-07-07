@@ -106,6 +106,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 		UserOwnedExecutorsEnabled:  userOwnedExecutorsEnabled,
 		ExecutorKeyCreationEnabled: executorKeyCreationEnabled,
 		WorkflowsEnabled:           workflowsEnabled,
+		CodeEditorEnabled:          env.GetConfigurator().GetCodeEditorEnabled(),
 	}
 	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendTemplateData{
 		Config:           &config,

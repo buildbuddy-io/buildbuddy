@@ -39,7 +39,7 @@ interface Stat {
 const MIN_OPACITY = 0.1;
 const DAYS_OF_DATA_TO_FETCH = 7;
 
-export default class TapComponent extends React.Component {
+export default class TapComponent extends React.Component<Props> {
   props: Props;
 
   state: State = {
