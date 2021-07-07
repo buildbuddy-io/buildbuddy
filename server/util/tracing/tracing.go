@@ -10,11 +10,13 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"go.opentelemetry.io/contrib/detectors/gcp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -30,6 +32,7 @@ import (
 )
 
 const (
+	resourceDetectionTimeout      = 5 * time.Second
 	traceHeader                   = "x-buildbuddy-trace"
 	forceTraceHeaderValue         = "force"
 	buildBuddyInstrumentationName = "buildbuddy.io"
@@ -147,10 +150,20 @@ func Configure(configurator *config.Configurator, healthChecker interfaces.Healt
 		return bsp.Shutdown(ctx)
 	})
 
+	ctx, cancel := context.WithTimeout(context.Background(), resourceDetectionTimeout)
+	defer cancel()
+	res, err := resource.New(ctx,
+		resource.WithDetectors(&gcp.GKE{}, &gcp.GKE{}),
+		resource.WithAttributes(resourceAttrs...))
+	if err == nil {
+		log.Warningf("Could not automatically detect resource information for tracing: %s", err)
+		res = resource.NewWithAttributes(resourceAttrs...)
+	}
+
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSpanProcessor(bsp),
 		sdktrace.WithSampler(sdktrace.ParentBased(sampler)),
-		sdktrace.WithResource(resource.NewWithAttributes(resourceAttrs...)))
+		sdktrace.WithResource(res))
 	otel.SetTracerProvider(tp)
 	propagator := propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{})
 	otel.SetTextMapPropagator(propagator)
