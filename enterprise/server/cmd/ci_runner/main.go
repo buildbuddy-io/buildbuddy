@@ -92,8 +92,9 @@ var (
 	actionName    = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	invocationID  = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 
-	bazelCommand = flag.String("bazel_command", bazeliskBinaryName, "Bazel command to use.")
-	debug        = flag.Bool("debug", false, "Print additional debug information in the action logs.")
+	bazelCommand      = flag.String("bazel_command", bazeliskBinaryName, "Bazel command to use.")
+	bazelStartupFlags = flag.String("bazel_startup_flags", "", "Startup flags to pass to bazel. The value can include spaces and will be properly tokenized.")
+	debug             = flag.Bool("debug", false, "Print additional debug information in the action logs.")
 
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
@@ -582,7 +583,7 @@ func (ar *actionRunner) Run(ctx context.Context, startTime time.Time) error {
 		// BuildBuddy invocation URL for each bazel_command that is executed.
 		args = append(args, fmt.Sprintf("--invocation_id=%s", iid))
 
-		runErr := runCommand(ctx, *bazelCommand, args /*env=*/, nil, ar.log)
+		runErr := runCommand(ctx, *bazelCommand, args, nil /*=env*/, ar.log)
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
 			ar.log.Printf("%s(command exited with code %d)%s", ansiGray, exitCode, ansiReset)
@@ -702,7 +703,11 @@ func bazelArgs(cmd string) ([]string, error) {
 	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName {
 		tokens = tokens[1:]
 	}
-	return tokens, nil
+	startupFlags, err := shlex.Split(*bazelStartupFlags)
+	if err != nil {
+		return nil, err
+	}
+	return append(startupFlags, tokens...), nil
 }
 
 func ensureHomeDir() error {
