@@ -3425,12 +3425,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp",
-        importpath = "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",
-        sum = "h1:Q3C9yzW6I9jqEc8sawxzxZmY48fs9u220KXq6d5s3XU=",
-        version = "v0.20.0",
         build_directives = [
             "gazelle:resolve go go.opentelemetry.io/otel/semconv @io_opentelemetry_go_otel//semconv:go_default_library",
         ],
+        importpath = "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",
+        sum = "h1:Q3C9yzW6I9jqEc8sawxzxZmY48fs9u220KXq6d5s3XU=",
+        version = "v0.20.0",
     )
 
     go_repository(
@@ -3458,6 +3458,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:SEfJImgKQ5TP2aTJwN08qhS8oFlYWr/neECGsyuxKWg=",
         version = "v1.0.0-RC1",
     )
+    go_repository(
+        name = "io_opentelemetry_go_otel_exporters_trace_jaeger",
+        importpath = "go.opentelemetry.io/otel/exporters/trace/jaeger",
+        sum = "h1:FoclOadJNul1vUiKnZU0sKFWOZtZQq3jUzSbrX2jwNM=",
+        version = "v0.20.0",
+    )
+
     go_repository(
         name = "io_opentelemetry_go_otel_internal_metric",
         importpath = "go.opentelemetry.io/otel/internal/metric",

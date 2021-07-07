@@ -18,8 +18,8 @@ require (
 	github.com/elastic/gosigar v0.11.0
 	github.com/firecracker-microvm/firecracker-go-sdk v0.22.0
 	github.com/go-git/go-git/v5 v5.2.0
-	github.com/go-redis/redis/v8 v8.10.0
 	github.com/go-redis/redis/extra/redisotel/v8 v8.10.0
+	github.com/go-redis/redis/v8 v8.10.0
 	github.com/gofrs/uuid v3.3.0+incompatible // indirect
 	github.com/golang/protobuf v1.5.2
 	github.com/google/go-cmp v0.5.6
@@ -45,6 +45,7 @@ require (
 	github.com/whilp/git-urls v1.0.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.20.0
 	go.opentelemetry.io/otel v0.20.0
+	go.opentelemetry.io/otel/exporters/trace/jaeger v0.20.0 // indirect
 	go.opentelemetry.io/otel/sdk v0.20.0
 	go.opentelemetry.io/otel/trace v0.20.0
 	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2

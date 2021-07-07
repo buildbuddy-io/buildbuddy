@@ -48,6 +48,7 @@ type appConfig struct {
 	LogEnableGCPLoggingFormat bool     `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
 	LogErrorStackTraces       bool     `yaml:"log_error_stack_traces" usage:"If true, stack traces will be printed for errors that have them."`
 	TraceProjectID            string   `yaml:"trace_project_id" usage:"Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP."`
+	TraceJaegerCollector      string   `yaml:"trace_jaeger_collector" usage:"Address of the Jager collector endpoint where traces will be sent."`
 	TraceServiceName          string   `yaml:"trace_service_name" usage:"Name of the service to associate with traces."`
 	TraceFraction             float64  `yaml:"trace_fraction" usage:"Fraction of requests to sample for tracing."`
 	TraceFractionOverrides    []string `yaml:"trace_fraction_overrides" usage:"Tracing fraction override based on name in format name=fraction."`
@@ -612,8 +613,8 @@ func (c *Configurator) GetOrgConfig() *OrgConfig {
 	return nil
 }
 
-func (c *Configurator) GetProjectID() string {
-	return c.gc.App.TraceProjectID
+func (c *Configurator) GetTraceJaegerCollector() string {
+	return c.gc.App.TraceJaegerCollector
 }
 
 func (c *Configurator) GetTraceServiceName() string {

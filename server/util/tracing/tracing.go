@@ -18,13 +18,13 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/trace/jaeger"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/metadata"
 
-	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -111,7 +111,12 @@ func Configure(configurator *config.Configurator, healthChecker interfaces.Healt
 		return nil
 	}
 
-	traceExporter, err := texporter.NewExporter(texporter.WithProjectID(configurator.GetProjectID()))
+	collector := configurator.GetTraceJaegerCollector()
+	if collector == "" {
+		return status.InvalidArgumentErrorf("Tracing enabled but Jaeger collector endpoint is not set.")
+	}
+
+	traceExporter, err := jaeger.NewRawExporter(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(collector)))
 	if err != nil {
 		log.Warningf("Could not initialize Cloud Trace exporter: %s", err)
 		return nil
