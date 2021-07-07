@@ -223,7 +223,6 @@ func (ws *workspace) RunAllActions(ctx context.Context, cfg *config.BuildBuddyCo
 			ar.log.Printf(string(b))
 		}
 
-		// If there are merge conflicts, don't bother running the actions.
 		if err := ar.Run(ctx, ws, startTime); err != nil {
 			ar.log.Printf(aurora.Sprintf(aurora.Red("\nAction failed: %s"), status.Message(err)))
 			exitCode = getExitCode(err)
