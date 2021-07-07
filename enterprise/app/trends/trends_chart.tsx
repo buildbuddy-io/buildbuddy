@@ -64,7 +64,8 @@ export default class TrendsChartComponent extends React.Component {
             <XAxis dataKey={this.props.extractLabel} />
             <YAxis yAxisId="primary" />
             {/* If no secondary axis should be shown, render an invisible one
-                so that right-padding is consistent across all charts. */}
+                by setting height="0" so that right-padding is consistent across
+                all charts. */}
             <YAxis yAxisId="secondary" orientation="right" height={hasSecondaryAxis ? undefined : 0} />
             <Tooltip
               content={
