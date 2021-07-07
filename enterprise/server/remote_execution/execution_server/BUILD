@@ -28,6 +28,7 @@ go_library(
         "//server/util/prefix",
         "//server/util/status",
         "//server/util/timeutil",
+        "//server/util/tracing",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_prometheus_client_golang//prometheus",
