@@ -121,16 +121,15 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 		}
 		branch := strings.TrimPrefix(v["Ref"], "refs/heads/")
 		return &interfaces.WebhookData{
-			EventName:    webhook_data.EventName.Push,
-			PushedBranch: branch,
-			TargetBranch: branch,
-			RepoURL:      v["Repo.CloneURL"],
+			EventName:     webhook_data.EventName.Push,
+			PushedRepoURL: v["Repo.CloneURL"],
+			PushedBranch:  branch,
+			SHA:           v["HeadCommit.ID"],
+			TargetRepoURL: v["Repo.CloneURL"],
+			TargetBranch:  branch,
 			// The push handler will not receive events from forked repositories,
 			// so if a commit was pushed to this repo then it is trusted.
 			IsTrusted: true,
-			// For some reason, "HeadCommit.SHA" is nil, but ID has the commit SHA,
-			// so we use that instead.
-			SHA: v["HeadCommit.ID"],
 		}, nil
 
 	case *gh.PullRequestEvent:
@@ -138,10 +137,11 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 			event,
 			"Action",
 			"PullRequest.Base.Ref",
-			"PullRequest.Head.Repo.CloneURL",
-			"PullRequest.Head.Repo.Fork",
+			"PullRequest.Base.Repo.CloneURL",
 			"PullRequest.Head.Ref",
 			"PullRequest.Head.SHA",
+			"PullRequest.Head.Repo.CloneURL",
+			"PullRequest.Head.Repo.Fork",
 		)
 		if err != nil {
 			return nil, err
@@ -151,12 +151,13 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 			return nil, nil
 		}
 		return &interfaces.WebhookData{
-			EventName:    webhook_data.EventName.PullRequest,
-			PushedBranch: v["PullRequest.Head.Ref"],
-			TargetBranch: v["PullRequest.Base.Ref"],
-			RepoURL:      v["PullRequest.Head.Repo.CloneURL"],
-			IsTrusted:    v["PullRequest.Head.Repo.Fork"] == "false",
-			SHA:          v["PullRequest.Head.SHA"],
+			EventName:     webhook_data.EventName.PullRequest,
+			PushedRepoURL: v["PullRequest.Head.Repo.CloneURL"],
+			PushedBranch:  v["PullRequest.Head.Ref"],
+			SHA:           v["PullRequest.Head.SHA"],
+			TargetRepoURL: v["PullRequest.Base.Repo.CloneURL"],
+			TargetBranch:  v["PullRequest.Base.Ref"],
+			IsTrusted:     v["PullRequest.Head.Repo.Fork"] == "false",
 		}, nil
 
 	default:

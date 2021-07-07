@@ -6,7 +6,7 @@ go_test(
     data = [
         "//enterprise/server/cmd/ci_runner",
     ],
-    shard_count = 4,
+    shard_count = 6,
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
@@ -14,9 +14,11 @@ go_test(
     deps = [
         "//enterprise/server/testutil/testgit",
         "//proto:invocation_go_proto",
+        "//server/testutil/app",
         "//server/testutil/buildbuddy",
         "//server/testutil/testbazel",
         "//server/testutil/testfs",
+        "//server/testutil/testshell",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

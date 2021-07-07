@@ -51,10 +51,11 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 		}
 		branch := v["Push.Changes.0.New.Name"]
 		return &interfaces.WebhookData{
-			EventName:    webhook_data.EventName.Push,
-			PushedBranch: branch,
-			TargetBranch: branch,
-			RepoURL:      v["Repository.Links.HTML.Href"],
+			EventName:     webhook_data.EventName.Push,
+			PushedRepoURL: v["Repository.Links.HTML.Href"],
+			PushedBranch:  branch,
+			TargetRepoURL: v["Repository.Links.HTML.Href"],
+			TargetBranch:  branch,
 			// The push handler will not receive events from forked repositories,
 			// so if a commit was pushed to this repo then it is trusted.
 			IsTrusted: true,
@@ -67,24 +68,26 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 		}
 		v, err := fieldgetter.ExtractValues(
 			payload,
+			"PullRequest.Destination.Repository.UUID",
+			"PullRequest.Destination.Repository.Links.HTML.Href",
 			"PullRequest.Destination.Branch.Name",
+			"PullRequest.Source.Repository.UUID",
+			"PullRequest.Source.Repository.Links.HTML.Href",
 			"PullRequest.Source.Branch.Name",
 			"PullRequest.Source.Commit.Hash",
-			"PullRequest.Source.Repository.Links.HTML.Href",
-			"PullRequest.Source.Repository.UUID",
-			"PullRequest.Destination.Repository.UUID",
 		)
 		if err != nil {
 			return nil, err
 		}
 		isFork := v["PullRequest.Source.Repository.UUID"] != v["PullRequest.Destination.Repository.UUID"]
 		return &interfaces.WebhookData{
-			EventName:    webhook_data.EventName.PullRequest,
-			PushedBranch: v["PullRequest.Source.Branch.Name"],
-			TargetBranch: v["PullRequest.Destination.Branch.Name"],
-			RepoURL:      v["PullRequest.Source.Repository.Links.HTML.Href"],
-			IsTrusted:    !isFork,
-			SHA:          v["PullRequest.Source.Commit.Hash"],
+			EventName:     webhook_data.EventName.PullRequest,
+			PushedRepoURL: v["PullRequest.Source.Repository.Links.HTML.Href"],
+			PushedBranch:  v["PullRequest.Source.Branch.Name"],
+			SHA:           v["PullRequest.Source.Commit.Hash"],
+			TargetRepoURL: v["PullRequest.Destination.Repository.Links.HTML.Href"],
+			TargetBranch:  v["PullRequest.Destination.Branch.Name"],
+			IsTrusted:     !isFork,
 		}, nil
 	default:
 		log.Printf("Ignoring webhook event: %s", eventName)

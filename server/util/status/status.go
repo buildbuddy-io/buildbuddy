@@ -200,7 +200,7 @@ func UnauthenticatedErrorf(format string, a ...interface{}) error {
 
 // Wrap adds additional context to an error, preserving the underlying status code.
 func WrapError(err error, msg string) error {
-	return makeStatusError(status.Code(err), fmt.Sprintf("%s: %s", msg, message(err)))
+	return makeStatusError(status.Code(err), fmt.Sprintf("%s: %s", msg, Message(err)))
 }
 
 // Wrapf is the "Printf" version of `Wrap`.
@@ -208,9 +208,9 @@ func WrapErrorf(err error, format string, a ...interface{}) error {
 	return WrapError(err, fmt.Sprintf(format, a...))
 }
 
-// message extracts the error message from a given error, which for gRPC errors
+// Message extracts the error message from a given error, which for gRPC errors
 // is just the "desc" part of the error.
-func message(err error) string {
+func Message(err error) string {
 	if err == nil {
 		return ""
 	}
