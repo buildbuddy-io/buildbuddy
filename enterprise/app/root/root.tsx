@@ -19,6 +19,7 @@ import SidebarComponent from "../sidebar/sidebar";
 const TapComponent = React.lazy(() => import("../tap/tap"));
 const TrendsComponent = React.lazy(() => import("../trends/trends"));
 const CodeComponent = React.lazy(() => import("../code/code"));
+// TODO(siggisim): lazy load all components that make sense more gracefully.
 
 import ExecutorsComponent from "../executors/executors";
 
@@ -128,11 +129,12 @@ export default class EnterpriseRootComponent extends React.Component {
       (fallback && !capabilities.auth);
     let login = fallback && !setup && !this.state.loading && !this.state.user;
     let home = fallback && !setup && !this.state.loading && this.state.user;
-    let sidebar = !!this.state.user;
+    let sidebar = !!this.state.user && !code;
+    let menu = !sidebar && !code && !this.state.loading;
 
     return (
       <div className={`root ${this.state.denseMode ? "dense" : ""} ${sidebar ? "left" : ""} ${login ? "dark" : ""}`}>
-        {!sidebar && !this.state.loading && (
+        {menu && (
           <MenuComponent
             user={this.state.user}
             showHamburger={!this.state.user && !!invocationId}
@@ -142,7 +144,7 @@ export default class EnterpriseRootComponent extends React.Component {
           </MenuComponent>
         )}
         <div className="page">
-          {sidebar && !code && (
+          {sidebar && (
             <SidebarComponent
               path={this.state.path}
               hash={this.state.hash}

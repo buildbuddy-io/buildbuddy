@@ -76,7 +76,7 @@ export default class CodeComponent extends React.Component<Props> {
     this.fetchCode();
 
     this.subscription = rpcService.events.subscribe({
-      next: (name) => name == "refresh" && this.fetchCode(),
+      next: (name) => name === "refresh" && this.fetchCode(),
     });
   }
   handleWindowResize() {
@@ -97,7 +97,7 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   handleContentChanged() {
-    if (this.state.originalFileContents == this.editor.getValue()) {
+    if (this.state.originalFileContents === this.editor.getValue()) {
       this.state.changes.delete(this.state.currentFilePath);
       this.state.pathToIncludeChanges.delete(this.state.currentFilePath);
     } else if (this.state.currentFilePath) {
@@ -146,8 +146,9 @@ export default class CodeComponent extends React.Component<Props> {
   // TODO(siggisim): Support renaming files
   // TODO(siggisim): Support right click file context menus
   // TODO(siggisim): Support tabs
+  // TODO(siggisim): Remove the use of all `any` types
   handleFileClicked(node: any, fullPath: string) {
-    if (node.type == "tree") {
+    if (node.type === "tree") {
       if (this.state.treeShaToExpanded.get(node.sha)) {
         this.state.treeShaToExpanded.set(node.sha, false);
         this.setState({ treeShaToExpanded: this.state.treeShaToExpanded });
