@@ -307,6 +307,7 @@ type Execution struct {
 	OutputUploadCompletedTimestampUsec int64
 
 	StatusCode   int32
+	ExitCode     int32
 	CachedResult bool
 }
 

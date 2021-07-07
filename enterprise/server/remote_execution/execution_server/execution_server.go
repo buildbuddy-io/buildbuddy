@@ -181,6 +181,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		if executeResponse := operation.ExtractExecuteResponse(op); executeResponse != nil {
 			execution.StatusCode = executeResponse.GetStatus().GetCode()
 			execution.StatusMessage = trimStatus(executeResponse.GetStatus().GetMessage())
+			execution.ExitCode = executeResponse.GetResult().GetExitCode()
 			if details := executeResponse.GetStatus().GetDetails(); details != nil && len(details) > 0 {
 				serializedDetails, err := proto.Marshal(details[0])
 				if err == nil {

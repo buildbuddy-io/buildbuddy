@@ -640,6 +640,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "grpc_code_ts_proto",
+    proto = "@go_googleapis//google/rpc:code_proto",
+)
+
+ts_proto_library(
     name = "cache_ts_proto",
     proto = ":cache_proto",
 )
