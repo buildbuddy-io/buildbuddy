@@ -343,12 +343,17 @@ type ChunkstoreWriter struct {
 	lastChunkIndex     uint16
 	writeChannel       chan []byte
 	writeResultChannel chan writeResult
+	closed             bool
 }
 
 func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
 	select {
 	case result, open := <-w.writeResultChannel:
 		if !open {
+			if !w.closed {
+				close(w.writeChannel)
+				w.closed = true
+			}
 			return 0, status.UnavailableErrorf("Error accessing %v: Already closed.", w.blobName)
 		}
 		w.lastChunkIndex = result.lastChunkIndex
@@ -367,18 +372,24 @@ func (w *ChunkstoreWriter) GetLastChunkIndex() (uint16, error) {
 }
 
 func (w *ChunkstoreWriter) Write(p []byte) (int, error) {
+	if w.closed {
+		return 0, nil
+	}
 	w.writeChannel <- p
 	return w.readFromWriteResultChannel()
 }
 
 func (w *ChunkstoreWriter) Flush() (int, error) {
-	w.writeChannel <- nil
-	return w.readFromWriteResultChannel()
+	return w.Write(nil)
 }
 
 func (w *ChunkstoreWriter) Close() error {
+	if w.closed {
+		return nil
+	}
 	close(w.writeChannel)
 	_, err := w.readFromWriteResultChannel()
+	w.closed = true
 	return err
 }
 
@@ -404,7 +415,6 @@ func (l *writeLoop) write() error {
 	}
 	bytesWritten, err := l.chunkstore.writeChunk(l.ctx, l.blobName, l.chunkIndex, l.chunk[:size])
 	if bytesWritten > 0 {
-		fmt.Printf("bytesWritten: %d\n", bytesWritten)
 		l.bytesFlushed += size
 		l.chunk = l.chunk[size:]
 		l.chunkIndex++
