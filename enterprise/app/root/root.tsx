@@ -133,7 +133,10 @@ export default class EnterpriseRootComponent extends React.Component {
     let menu = !sidebar && !code && !this.state.loading;
 
     return (
-      <div className={`root ${this.state.denseMode ? "dense" : ""} ${sidebar ? "left" : ""} ${login ? "dark" : ""}`}>
+      <div
+        className={`root ${this.state.denseMode ? "dense" : ""} ${sidebar || code ? "left" : ""} ${
+          login ? "dark" : ""
+        }`}>
         {menu && (
           <MenuComponent
             user={this.state.user}
