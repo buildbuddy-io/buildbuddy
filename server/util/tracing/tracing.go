@@ -153,7 +153,7 @@ func Configure(configurator *config.Configurator, healthChecker interfaces.Healt
 	ctx, cancel := context.WithTimeout(context.Background(), resourceDetectionTimeout)
 	defer cancel()
 	res, err := resource.New(ctx,
-		resource.WithDetectors(&gcp.GKE{}, &gcp.GKE{}),
+		resource.WithDetectors(&gcp.GKE{}, &gcp.GCE{}),
 		resource.WithAttributes(resourceAttrs...))
 	if err == nil {
 		log.Warningf("Could not automatically detect resource information for tracing: %s", err)
