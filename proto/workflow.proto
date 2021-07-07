@@ -133,7 +133,7 @@ message ExecuteWorkflowRequest {
 
   reserved 5;
 
-  // URL of the pushed repo.
+  // URL of the repo the commit was pushed to.
   // Ex. "https://github.com/some-user/acme"
   string pushed_repo_url = 6;
 
@@ -141,7 +141,7 @@ message ExecuteWorkflowRequest {
   // Ex. "cool-feature"
   string pushed_branch = 7;
 
-  // URL of the target repo.
+  // URL of the repo the commit will be merged into.
   // Ex. "https://github.com/acme-inc/acme"
   string target_repo_url = 8;
 

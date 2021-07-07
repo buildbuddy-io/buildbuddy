@@ -67,21 +67,25 @@ func MakeTempRepo(t testing.TB, contents map[string]string) (path, commitSHA str
 			}
 		}
 	}
-	testshell.Run(t, path, `
-		git init
-		git config user.name "Test"
-		git config user.email "test@buildbuddy.io"
-		git add .
-		git commit -m "Initial commit"
-	`)
+	testshell.Run(t, path, `git init`)
+	configure(t, path)
+	testshell.Run(t, path, `git add . && git commit -m "Initial commit"`)
 	headCommitSHA := strings.TrimSpace(testshell.Run(t, path, `git rev-parse HEAD`))
 	return path, headCommitSHA
 }
 
-// CopyRepo makes a copy of the git repo at the given path, and cleans up the
-// copy after the test is complete.
-func MakeTempRepoCopy(t testing.TB, path string) string {
+// MakeTempRepoClone makes a clone of the git repo at the given path, and cleans
+// up the copy after the test is complete.
+func MakeTempRepoClone(t testing.TB, path string) string {
 	copyPath := testfs.MakeTempDir(t)
-	testshell.Run(t, path, fmt.Sprintf(`cp -r * %q/ && cp -r .git %q/`, copyPath, copyPath))
+	testshell.Run(t, copyPath, fmt.Sprintf(`git clone file://%q .`, path))
+	configure(t, copyPath)
 	return copyPath
+}
+
+func configure(t testing.TB, repoPath string) {
+	testshell.Run(t, repoPath, `
+		git config user.name "Test"
+		git config user.email "test@buildbuddy.io"
+	`)
 }

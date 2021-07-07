@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"flag"
 	"fmt"
 	"io"
@@ -44,6 +43,7 @@ const (
 	actionsConfigPath = "buildbuddy.yaml"
 
 	defaultGitRemoteName = "origin"
+	forkGitRemoteName    = "fork"
 
 	// Env vars set by workflow runner
 	// NOTE: These env vars are not populated for non-private repos.
@@ -103,13 +103,13 @@ var (
 )
 
 type workspace struct {
-	// Whether the pushed branch could not be cleanly merged into the targt
-	// branch.
-	mergeConflict bool
-
 	// Whether the workspace setup phase duration and logs were reported as part
 	// of any action's logs yet.
 	reportedInitMetrics bool
+
+	// An error that occurred while setting up the workspace, which should be
+	// reported for all action logs instead of actually executing the action.
+	setupError error
 
 	// The start time of the setup phase.
 	startTime time.Time
@@ -224,7 +224,7 @@ func (ws *workspace) RunAllActions(ctx context.Context, cfg *config.BuildBuddyCo
 
 		// If there are merge conflicts, don't bother running the actions.
 		if err := ar.Run(ctx, ws, startTime); err != nil {
-			ar.log.Printf(aurora.Sprintf(aurora.Red("\nAction failed: %s"), err))
+			ar.log.Printf(aurora.Sprintf(aurora.Red("\nAction failed: %s"), status.Message(err)))
 			exitCode = getExitCode(err)
 			// TODO: More descriptive exit code names, so people have a better
 			// sense of what happened without even needing to open the invocation.
@@ -515,8 +515,11 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}},
 		Payload: &bespb.BuildEvent_WorkflowConfigured{WorkflowConfigured: wfc},
 	}
-	// If there was a merge conflict, we won't be invoking any bazel commands.
-	if !ws.mergeConflict {
+	// If the triggering commit merges cleanly with the target branch, the runner
+	// will execute the configured bazel commands. Otherwise, the runner will
+	// exit early without running those commands and does not need to create
+	// invocation streams for them.
+	if ws.setupError == nil {
 		for _, bazelCmd := range ar.action.BazelCommands {
 			iid := newUUID()
 			wfc.Invocation = append(wfc.Invocation, &bespb.WorkflowConfigured_InvocationMetadata{
@@ -564,8 +567,8 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 		return nil
 	}
 
-	if ws.mergeConflict {
-		return fmt.Errorf("Merge conflict (merging branch %q into %q)", *pushedBranch, *targetBranch)
+	if ws.setupError != nil {
+		return ws.setupError
 	}
 
 	// Flush whenever the log buffer fills past a certain threshold.
@@ -782,17 +785,20 @@ func (ws *workspace) sync(ctx context.Context) error {
 		return err
 	}
 
-	// Fetch pushed and target branch from their respective repos.
-	// TODO: Fetch from remotes in parallel
+	// Fetch the pushed and target branches from their respective remotes.
+	// "base" here is referring to the repo on which the workflow is configured.
+	// "fork" is referring to the forked repo, if the runner was triggered by a
+	// PR from a fork (forkBranches will be empty otherwise).
 	baseBranches := []string{*targetBranch}
 	forkBranches := []string{}
-	if *pushedRepoURL == *targetRepoURL {
-		if *pushedBranch != *targetBranch {
-			baseBranches = append(baseBranches, *pushedBranch)
-		}
-	} else {
+	// Add the pushed branch to the appropriate list corresponding to the remote
+	// to be fetched (base or fork).
+	if isPushedBranchInFork := *pushedRepoURL != *targetRepoURL; isPushedBranchInFork {
 		forkBranches = append(forkBranches, *pushedBranch)
+	} else if *pushedBranch != *targetBranch {
+		baseBranches = append(baseBranches, *pushedBranch)
 	}
+	// TODO: Fetch from remotes in parallel
 	if err := ws.fetch(ctx, *targetRepoURL, baseBranches); err != nil {
 		return err
 	}
@@ -802,6 +808,11 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if err := git(ctx, &ws.log, "clean", "-d" /*directories*/, "--force"); err != nil {
 		return err
 	}
+	// Create a local ref for the target branch. This is necessary because
+	// `git fetch` only fetches commits reachable from local refs, and we want to
+	// fetch all common commits between the target branch and the pushed branch.
+	// Otherwise we would get a "no common commits" warning and the merge will
+	// fail.
 	// Check out anything other than *pushedBranch so that we can delete it.
 	if err := git(ctx, &ws.log, "checkout", *commitSHA); err != nil {
 		return err
@@ -811,8 +822,8 @@ func (ws *workspace) sync(ctx context.Context) error {
 		return err
 	}
 	// Checkout the branch locally.
-	ref := fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
-	if err := git(ctx, &ws.log, "checkout", "--force", "--track", ref); err != nil {
+	remotePushedBranchRef := fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
+	if err := git(ctx, &ws.log, "checkout", "--force", "--track", remotePushedBranchRef); err != nil {
 		return err
 	}
 	// Merge the target branch (if different from the pushed branch) so that the
@@ -820,12 +831,16 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if *pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch {
 		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 		if err := git(ctx, &ws.log, "merge", targetRef); err != nil {
+			errMsg := err.Output
+			if err := git(ctx, &ws.log, "merge", "--abort"); err != nil {
+				errMsg += "\n" + err.Output
+			}
 			// Make note of the merge conflict and abort. We'll run all actions and each
 			// one will just fail with the merge conflict error.
-			ws.mergeConflict = true
-			if err := git(ctx, &ws.log, "merge", "--abort"); err != nil {
-				return err
-			}
+			ws.setupError = status.FailedPreconditionErrorf(
+				"Merge conflict between branches %q and %q.\n\n%s",
+				*pushedBranch, *targetBranch, errMsg,
+			)
 		}
 	}
 
@@ -833,14 +848,14 @@ func (ws *workspace) sync(ctx context.Context) error {
 }
 
 func (ws *workspace) config(ctx context.Context) error {
-	cfg := map[string]string{
-		"user.email":          "ci-runner@buildbuddy.io",
-		"user.name":           "BuildBuddy",
-		"advice.detachedHead": "false",
+	cfg := [][]string{
+		{"user.email", "ci-runner@buildbuddy.io"},
+		{"user.name", "BuildBuddy"},
+		{"advice.detachedHead", "false"},
 	}
-	for k, v := range cfg {
-		if err := git(ctx, io.Discard, "config", k, v); err != nil {
-			return status.WrapError(err, "git config")
+	for _, kv := range cfg {
+		if err := git(ctx, &ws.log, "config", kv[0], kv[1]); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -856,25 +871,37 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 	}
 	remoteName := gitRemoteName(remoteURL)
 	if err := git(ctx, &ws.log, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
-		return status.WrapError(err, "git remote add")
+		return err
 	}
 	fetchArgs := append([]string{"fetch", "--force", remoteName}, branches...)
 	if err := git(ctx, &ws.log, fetchArgs...); err != nil {
-		return status.WrapError(err, "git fetch")
+		return err
 	}
 	return nil
 }
 
-func isRemoteAlreadyExists(err error) bool {
-	return getExitCode(err) == 128
-}
-func isBranchNotFound(err error) bool {
-	return getExitCode(err) == 1
+type gitError struct {
+	error
+	Output string
 }
 
-func git(ctx context.Context, out io.Writer, args ...string) error {
+func isRemoteAlreadyExists(err error) bool {
+	gitErr, ok := err.(*gitError)
+	return ok && strings.Contains(gitErr.Output, "already exists")
+}
+func isBranchNotFound(err error) bool {
+	gitErr, ok := err.(*gitError)
+	return ok && strings.Contains(gitErr.Output, "not found")
+}
+
+func git(ctx context.Context, out io.Writer, args ...string) *gitError {
+	var buf bytes.Buffer
+	w := io.MultiWriter(out, &buf)
 	printCommandLine(out, "git", args...)
-	return runCommand(ctx, "git", args, map[string]string{} /*=env*/, out)
+	if err := runCommand(ctx, "git", args, map[string]string{} /*=env*/, w); err != nil {
+		return &gitError{err, string(buf.Bytes())}
+	}
+	return nil
 }
 
 func invocationURL(invocationID string) string {
@@ -932,8 +959,7 @@ func gitRemoteName(repoURL string) string {
 	if repoURL == *targetRepoURL {
 		return defaultGitRemoteName
 	}
-	shaHex := fmt.Sprintf("%x", sha256.Sum256([]byte(repoURL)))
-	return fmt.Sprintf("fork-%s", shaHex[:8])
+	return forkGitRemoteName
 }
 
 func matchesAnyTrigger(action *config.Action, event, branch string) bool {

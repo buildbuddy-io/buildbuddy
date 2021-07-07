@@ -829,8 +829,12 @@ message WorkflowConfigured {
   // Ex: "https://github.com/some-user/acme"
   string pushed_repo_url = 6;
 
+  // The branch that was pushed in order to trigger the workflow.
+  // Ex: "feature"
   string pushed_branch = 7;
 
+  // The commit SHA of the pushed branch.
+  // Ex: "a051dad04f8b07fb3514585bdb66a8f15a37328e"
   string commit_sha = 8;
 
   // The repo into which the pushed branch is being merged (for PRs),
@@ -838,6 +842,8 @@ message WorkflowConfigured {
   // Ex: "https://github.com/acme-inc/acme"
   string target_repo_url = 9;
 
+  // The branch into which the pushed branch is being merged (for PRs),
+  // or the pushed_branch (for push events).
   string target_branch = 10;
 }
 

@@ -146,8 +146,11 @@ func makeGitRepo(t *testing.T, contents map[string]string) (path, commitSHA stri
 	return testgit.MakeTempRepo(t, contents)
 }
 
-func firstInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation {
+func singleInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation {
 	bbService := app.BuildBuddyServiceClient(t)
+	if !assert.Equal(t, 1, len(res.InvocationIDs)) {
+		require.FailNowf(t, "Runner did not output invocation IDs", "output: %s", res.Output)
+	}
 	resp, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
 		Lookup: &inpb.InvocationLookup{
 			InvocationId: res.InvocationIDs[0],
@@ -177,7 +180,7 @@ func TestCIRunner_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testin
 
 	checkRunnerResult(t, result)
 
-	runnerInvocation := firstInvocation(t, app, result)
+	runnerInvocation := singleInvocation(t, app, result)
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
@@ -202,7 +205,7 @@ func TestCIRunner_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsToBES(t
 
 	checkRunnerResult(t, result)
 
-	runnerInvocation := firstInvocation(t, app, result)
+	runnerInvocation := singleInvocation(t, app, result)
 	assert.Contains(
 		t, runnerInvocation.ConsoleBuffer,
 		"Executed 2 out of 2 tests: 1 test passes and 1 fails locally.",
@@ -237,7 +240,7 @@ func TestCIRunner_ReusedWorkspaceWithTestAllAction_CanReuseWorkspace(t *testing.
 
 	checkRunnerResult(t, result)
 
-	runnerInvocation := firstInvocation(t, app, result)
+	runnerInvocation := singleInvocation(t, app, result)
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
@@ -265,7 +268,7 @@ func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 
 		checkRunnerResult(t, result)
 
-		runnerInvocation := firstInvocation(t, app, result)
+		runnerInvocation := singleInvocation(t, app, result)
 		// Since our workflow just runs `bazel version`, we should be able to see its
 		// output in the action logs.
 		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
@@ -284,7 +287,7 @@ func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
 	wsPath := makeRunnerWorkspace(t)
 
 	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithTestsAndBuildBuddyYAML)
-	pushedRepoPath := testgit.MakeTempRepoCopy(t, targetRepoPath)
+	pushedRepoPath := testgit.MakeTempRepoClone(t, targetRepoPath)
 
 	// Push one commit to the target repo (to get ahead of the pushed repo),
 	// and one commit to the pushed repo (compatible with the target repo).
@@ -302,7 +305,7 @@ func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
 	commitSHA := strings.TrimSpace(testshell.Run(t, pushedRepoPath, `git rev-parse HEAD`))
 
 	runnerFlags := []string{
-		"--trigger_event=push",
+		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + pushedRepoPath,
 		"--pushed_branch=feature",
 		"--commit_sha=" + commitSHA,
@@ -325,7 +328,7 @@ func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
 
 	checkRunnerResult(t, result)
 
-	runnerInvocation := firstInvocation(t, app, result)
+	runnerInvocation := singleInvocation(t, app, result)
 	// We should be able to see both of the changes we made, since they should
 	// be merged together.
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "NONCONFLICTING_EDIT_1")
@@ -339,7 +342,7 @@ func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *tes
 	wsPath := makeRunnerWorkspace(t)
 
 	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithTestsAndBuildBuddyYAML)
-	pushedRepoPath := testgit.MakeTempRepoCopy(t, targetRepoPath)
+	pushedRepoPath := testgit.MakeTempRepoClone(t, targetRepoPath)
 
 	// Push one commit to the target repo (to get ahead of the pushed repo),
 	// and one commit to the pushed repo (compatible with the target repo).
@@ -357,7 +360,7 @@ func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *tes
 	commitSHA := strings.TrimSpace(testshell.Run(t, pushedRepoPath, `git rev-parse HEAD`))
 
 	runnerFlags := []string{
-		"--trigger_event=push",
+		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + pushedRepoPath,
 		"--pushed_branch=feature",
 		"--commit_sha=" + commitSHA,
@@ -373,8 +376,8 @@ func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *tes
 
 	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 
-	runnerInvocation := firstInvocation(t, app, result)
-	assert.Contains(t, runnerInvocation.ConsoleBuffer, `Action failed: Merge conflict (merging branch "feature" into "master")`)
+	runnerInvocation := singleInvocation(t, app, result)
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, `Action failed: Merge conflict between branches "feature" and "master"`)
 	if t.Failed() {
 		t.Log(runnerInvocation.ConsoleBuffer)
 	}
