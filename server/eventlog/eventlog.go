@@ -58,5 +58,6 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		rsp.NextChunkId = fmt.Sprintf("%04x", intChunkId+1)
 	}
 
+	print(rsp)
 	return rsp, nil
 }
