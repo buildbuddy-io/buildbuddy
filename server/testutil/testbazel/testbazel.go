@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/stretchr/testify/require"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
@@ -37,32 +39,35 @@ func Clean(ctx context.Context, t *testing.T, workspaceDir string) *bazel.Invoca
 	return Invoke(ctx, t, workspaceDir, "clean")
 }
 
-func MakeTempWorkspace(t *testing.T, contents map[string]string) string {
-	workspaceDir, err := ioutil.TempDir("/tmp", "bazel-workspace-*")
-	if err != nil {
-		t.Fatal(err)
+// shutdown runs `bazel shutdown` within the given workspace.
+func shutdown(ctx context.Context, t *testing.T, workspaceDir string) {
+	start := time.Now()
+	defer func() {
+		log.Infof("bazel shutdown completed in %s", time.Since(start))
+	}()
+	if shutdownResult := Invoke(ctx, t, workspaceDir, "shutdown"); shutdownResult.Error != nil {
+		t.Fatal(shutdownResult.Error)
 	}
+}
+
+func MakeTempWorkspace(t *testing.T, contents map[string]string) string {
+	workspaceDir, err := ioutil.TempDir("", "bazel-workspace-*")
+	require.NoError(t, err, "failed to create bazel workspace dir")
 	t.Cleanup(func() {
 		// Run Bazel shutdown so that the server process associated with the temp
-		// workspace doesn't stick around. We specify --max_idle_secs=5 above but
-		// we want to shut the server down ASAP so that high test volume doesn't
-		// cause tons of idle server processes to be running.
-		if shutdownResult := Invoke(context.Background(), t, workspaceDir, "shutdown"); shutdownResult.Error != nil {
-			t.Fatal(shutdownResult.Error)
-		}
+		// workspace doesn't stick around. The bazel server eventually shuts down
+		// automatically, but we want to shut the server down ASAP so that high test
+		// volume doesn't cause tons of idle server processes to be running.
+		shutdown(context.Background(), t, workspaceDir)
 		err := os.RemoveAll(workspaceDir)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err, "failed to remove test workspace")
 	})
 	for path, fileContents := range contents {
 		fullPath := filepath.Join(workspaceDir, path)
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0777); err != nil {
-			t.Fatal(err)
-		}
-		if err := ioutil.WriteFile(fullPath, []byte(fileContents), 0777); err != nil {
-			t.Fatal(err)
-		}
+		err = os.MkdirAll(filepath.Dir(fullPath), 0777)
+		require.NoError(t, err, "failed to create bazel workspace contents")
+		err = ioutil.WriteFile(fullPath, []byte(fileContents), 0777)
+		require.NoError(t, err, "failed to create bazel workspace contents")
 	}
 	return workspaceDir
 }

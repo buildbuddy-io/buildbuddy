@@ -16,6 +16,7 @@ go_test(
         "//proto:invocation_go_proto",
         "//server/testutil/buildbuddy",
         "//server/testutil/testbazel",
+        "//server/testutil/testfs",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
