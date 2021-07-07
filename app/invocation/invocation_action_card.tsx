@@ -1,7 +1,7 @@
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
-import { google, build } from "../../proto/remote_execution_ts_proto";
+import { build } from "../../proto/remote_execution_ts_proto";
 import rpcService from "../service/rpc_service";
 
 interface Props {
@@ -119,11 +119,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
 
   private renderTimeline() {
     const metadata = this.state.actionResult.executionMetadata;
-    type TimelineEvent = {
-      name: string;
-      color: string;
-      start: google.protobuf.ITimestamp;
-    };
+    type TimelineEvent = { name: string; color: string; start: any };
     const events: TimelineEvent[] = [
       {
         name: "Queued",
@@ -193,7 +189,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
         <div className="card">
           <img className="icon" src="/image/info.svg" />
           <div className="content">
-            <div className="title">Action details</div>
+            <div className="title">Action details </div>
             <div className="details">
               {this.state.action && (
                 <div>
@@ -357,10 +353,10 @@ export default class ActionCardComponent extends React.Component<Props, State> {
   }
 }
 
-function durationSeconds(t1: google.protobuf.ITimestamp, t2: google.protobuf.ITimestamp): number {
+function durationSeconds(t1: any, t2: any): number {
   return timestampToUnixSeconds(t2) - timestampToUnixSeconds(t1);
 }
 
-function timestampToUnixSeconds(timestamp: google.protobuf.ITimestamp): number {
-  return Number(timestamp.seconds) + Number(timestamp.nanos) / 1e9;
+function timestampToUnixSeconds(timestamp: any): number {
+  return timestamp.seconds + timestamp.nanos / 1e9;
 }
