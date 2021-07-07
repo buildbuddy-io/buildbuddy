@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -75,10 +76,6 @@ type result struct {
 	ExitCode int
 }
 
-func makeRunnerWorkspace(t *testing.T) string {
-	return testbazel.MakeTempWorkspace(t, nil /*=contents*/)
-}
-
 func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
 	binPath, err := bazelgo.Runfile("enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
 	if err != nil {
@@ -88,14 +85,14 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	if err != nil {
 		t.Fatal(err)
 	}
-	args = append(args, "--bazel_command="+bazelPath)
+	args = append(args, []string{
+		"--bazel_command=" + bazelPath,
+		"--bazel_startup_flags=--max_idle_secs=5 --noblock_for_lock",
+	}...)
 
 	cmd := exec.Command(binPath, args...)
 	cmd.Dir = workDir
-	// Use the same environment, including PATH, as this dev machine for now.
-	// TODO: Make this closer to the real deployed runner setup.
-	cmd.Env = os.Environ()
-	cmd.Env = append(cmd.Env, env...)
+	cmd.Env = env
 	outputBytes, err := cmd.CombinedOutput()
 	exitCode := 0
 	if err != nil {
@@ -162,7 +159,7 @@ func singleInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation 
 }
 
 func TestCIRunner_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testing.T) {
-	wsPath := makeRunnerWorkspace(t)
+	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
 		"--trigger_event=push",
@@ -187,8 +184,9 @@ func TestCIRunner_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testin
 }
 
 func TestCIRunner_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsToBES(t *testing.T) {
-	wsPath := makeRunnerWorkspace(t)
+	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithTestsAndNoBuildBuddyYAML)
+
 	runnerFlags := []string{
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
@@ -213,8 +211,8 @@ func TestCIRunner_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsToBES(t
 	)
 }
 
-func TestCIRunner_ReusedWorkspaceWithTestAllAction_CanReuseWorkspace(t *testing.T) {
-	wsPath := makeRunnerWorkspace(t)
+func TestCIRunner_ReusedWorkspaceWithBazelVersionAction_CanReuseWorkspace(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
 		"--trigger_event=push",
@@ -247,7 +245,7 @@ func TestCIRunner_ReusedWorkspaceWithTestAllAction_CanReuseWorkspace(t *testing.
 }
 
 func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
-	wsPath := makeRunnerWorkspace(t)
+	wsPath := testfs.MakeTempDir(t)
 
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
@@ -284,7 +282,7 @@ func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 }
 
 func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
-	wsPath := makeRunnerWorkspace(t)
+	wsPath := testfs.MakeTempDir(t)
 
 	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithTestsAndBuildBuddyYAML)
 	pushedRepoPath := testgit.MakeTempRepoClone(t, targetRepoPath)
@@ -339,7 +337,7 @@ func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
 }
 
 func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *testing.T) {
-	wsPath := makeRunnerWorkspace(t)
+	wsPath := testfs.MakeTempDir(t)
 
 	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithTestsAndBuildBuddyYAML)
 	pushedRepoPath := testgit.MakeTempRepoClone(t, targetRepoPath)

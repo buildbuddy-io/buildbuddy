@@ -40,4 +40,7 @@ message FrontendConfig {
 
   // Whether workflows are enabled.
   bool workflows_enabled = 9;
+
+  // Whether code editor is enabled.
+  bool code_editor_enabled = 10;
 }

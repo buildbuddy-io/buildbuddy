@@ -5,29 +5,34 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"net/http"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"go.opentelemetry.io/contrib/detectors/gcp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/trace/jaeger"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/metadata"
 
-	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 const (
+	resourceDetectionTimeout      = 5 * time.Second
 	traceHeader                   = "x-buildbuddy-trace"
 	forceTraceHeaderValue         = "force"
 	buildBuddyInstrumentationName = "buildbuddy.io"
@@ -109,7 +114,12 @@ func Configure(configurator *config.Configurator, healthChecker interfaces.Healt
 		return nil
 	}
 
-	traceExporter, err := texporter.NewExporter(texporter.WithProjectID(configurator.GetProjectID()))
+	collector := configurator.GetTraceJaegerCollector()
+	if collector == "" {
+		return status.InvalidArgumentErrorf("Tracing enabled but Jaeger collector endpoint is not set.")
+	}
+
+	traceExporter, err := jaeger.NewRawExporter(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(collector)))
 	if err != nil {
 		log.Warningf("Could not initialize Cloud Trace exporter: %s", err)
 		return nil
@@ -140,10 +150,20 @@ func Configure(configurator *config.Configurator, healthChecker interfaces.Healt
 		return bsp.Shutdown(ctx)
 	})
 
+	ctx, cancel := context.WithTimeout(context.Background(), resourceDetectionTimeout)
+	defer cancel()
+	res, err := resource.New(ctx,
+		resource.WithDetectors(&gcp.GKE{}, &gcp.GCE{}),
+		resource.WithAttributes(resourceAttrs...))
+	if err == nil {
+		log.Warningf("Could not automatically detect resource information for tracing: %s", err)
+		res = resource.NewWithAttributes(resourceAttrs...)
+	}
+
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSpanProcessor(bsp),
 		sdktrace.WithSampler(sdktrace.ParentBased(sampler)),
-		sdktrace.WithResource(resource.NewWithAttributes(resourceAttrs...)))
+		sdktrace.WithResource(res))
 	otel.SetTracerProvider(tp)
 	propagator := propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{})
 	otel.SetTextMapPropagator(propagator)
@@ -200,19 +220,50 @@ func ExtractProtoTraceMetadata(ctx context.Context, metadata *tpb.Metadata) cont
 	return p.Extract(ctx, newTraceMetadataProtoCarrier(metadata, nil))
 }
 
+type HttpServeMux struct {
+	delegateMux    *http.ServeMux
+	tracingHandler http.Handler
+}
+
+func NewHttpServeMux(delegate *http.ServeMux) *HttpServeMux {
+	// By default otelhttp names all the spans with the passed operation name.
+	// We pass an empty name here since we override the span name in http handler.
+	handler := otelhttp.NewHandler(delegate, "" /* operation= */)
+	return &HttpServeMux{delegateMux: delegate, tracingHandler: handler}
+}
+
+func (m *HttpServeMux) Handle(pattern string, handler http.Handler) {
+	m.delegateMux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+		span := trace.SpanFromContext(r.Context())
+		span.SetName(fmt.Sprintf("%s %s", r.Method, pattern))
+		handler.ServeHTTP(w, r)
+	})
+}
+
+func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	m.tracingHandler.ServeHTTP(w, r)
+}
+
 // StartSpan starts a new span named after the calling function.
 func StartSpan(ctx context.Context, opts ...trace.SpanOption) (context.Context, trace.Span) {
-	span := trace.SpanFromContext(ctx)
+	ctx, span := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, "unknown_go_function", opts...)
 	if !span.IsRecording() {
 		return ctx, span
 	}
 
 	rpc := make([]uintptr, 1)
 	n := runtime.Callers(2, rpc[:])
-	fn := ""
 	if n > 0 {
 		frame, _ := runtime.CallersFrames(rpc).Next()
-		fn = filepath.Base(frame.Function)
+		span.SetName(filepath.Base(frame.Function))
 	}
-	return otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, fn, opts...)
+	return ctx, span
+}
+
+func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
+	span := trace.SpanFromContext(ctx)
+	if !span.IsRecording() {
+		return
+	}
+	span.SetAttributes(attribute.String(key, value))
 }

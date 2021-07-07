@@ -297,7 +297,7 @@ func TestAsyncLoading(t *testing.T) {
 	maxSizeBytes := int64(100_000_000) // 100MB
 	rootDir := getTmpDir(t)
 	ctx := getAnonContext(t)
-	anonPath := filepath.Join(rootDir, "ANON")
+	anonPath := filepath.Join(rootDir, interfaces.AuthAnonymousUser)
 	if err := disk.EnsureDirectoryExists(anonPath); err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +400,7 @@ func TestZeroLengthFiles(t *testing.T) {
 	maxSizeBytes := int64(100_000_000) // 100MB
 	rootDir := getTmpDir(t)
 	ctx := getAnonContext(t)
-	anonPath := filepath.Join(rootDir, "ANON")
+	anonPath := filepath.Join(rootDir, interfaces.AuthAnonymousUser)
 	if err := disk.EnsureDirectoryExists(anonPath); err != nil {
 		t.Fatal(err)
 	}

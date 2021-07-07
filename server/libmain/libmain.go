@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -83,6 +84,7 @@ var (
 		"/trends/",
 		"/workflows/",
 		"/executors/",
+		"/code/",
 	}
 )
 
@@ -363,7 +365,7 @@ func StartAndRunServices(env environment.Env) {
 		StartGRPCServiceOrDie(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
 	}
 
-	mux := http.NewServeMux()
+	mux := tracing.NewHttpServeMux(http.NewServeMux())
 	// Register all of our HTTP handlers on the default mux.
 	mux.Handle("/", httpfilters.WrapExternalHandler(env, staticFileServer))
 	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))

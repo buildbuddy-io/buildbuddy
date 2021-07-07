@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/prometheus/client_golang/prometheus"
@@ -181,6 +182,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		if executeResponse := operation.ExtractExecuteResponse(op); executeResponse != nil {
 			execution.StatusCode = executeResponse.GetStatus().GetCode()
 			execution.StatusMessage = trimStatus(executeResponse.GetStatus().GetMessage())
+			execution.ExitCode = executeResponse.GetResult().GetExitCode()
 			if details := executeResponse.GetStatus().GetDetails(); details != nil && len(details) > 0 {
 				serializedDetails, err := proto.Marshal(details[0])
 				if err == nil {
@@ -275,6 +277,9 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if err != nil {
 		return "", err
 	}
+
+	tracing.AddStringAttributeToCurrentSpan(ctx, "task_id", executionID)
+
 	invocationID := bazel_request.GetInvocationID(ctx)
 
 	if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
@@ -303,7 +308,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	os := defaultPlatformOSValue
 	arch := defaultPlatformArchValue
-	groupID, pool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx)
+	executorGroupID, pool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -319,12 +324,18 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
+	taskGroupID := interfaces.AuthAnonymousUser
+	if user, err := perms.AuthenticatedUser(ctx, s.env); err == nil {
+		taskGroupID = user.GetGroupID()
+	}
+
 	schedulingMetadata := &scpb.SchedulingMetadata{
-		Os:       os,
-		Arch:     arch,
-		Pool:     pool,
-		TaskSize: taskSize,
-		GroupId:  groupID,
+		Os:              os,
+		Arch:            arch,
+		Pool:            pool,
+		TaskSize:        taskSize,
+		ExecutorGroupId: executorGroupID,
+		TaskGroupId:     taskGroupID,
 	}
 	scheduleReq := &scpb.ScheduleTaskRequest{
 		TaskId:         executionID,
@@ -434,8 +445,7 @@ func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
 	if a := s.env.GetAuthenticator(); a != nil {
 		user, err := a.AuthenticatedUser(ctx)
 		if err != nil {
-			log.Warningf("Could not determine groupID for metrics: %s", err)
-			return "unknown"
+			return interfaces.AuthAnonymousUser
 		}
 		return user.GetGroupID()
 	}

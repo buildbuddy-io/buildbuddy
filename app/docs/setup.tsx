@@ -5,12 +5,15 @@ import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
 import SetupCodeComponent from "./setup_code";
 
+interface Props {
+}
+
 interface State {
   menuExpanded: boolean;
   bazelConfigResponse: bazel_config.GetBazelConfigResponse;
 }
 
-export default class SetupComponent extends React.Component {
+export default class SetupComponent extends React.Component<Props> {
   state: State = {
     menuExpanded: false,
     bazelConfigResponse: null,

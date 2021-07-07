@@ -236,8 +236,8 @@ type Token struct {
 	// The subscriber ID, a concatenated string of the
 	// auth Issuer ID and the subcriber ID string.
 	SubID        string `gorm:"primaryKey"`
-	AccessToken  string
-	RefreshToken string
+	AccessToken  string `gorm:"size:4096"`
+	RefreshToken string `gorm:"size:4096"`
 	Model
 	ExpiryUsec int64
 }
@@ -307,6 +307,7 @@ type Execution struct {
 	OutputUploadCompletedTimestampUsec int64
 
 	StatusCode   int32
+	ExitCode     int32
 	CachedResult bool
 }
 
@@ -430,7 +431,7 @@ type Workflow struct {
 	GroupID     string `gorm:"index:workflow_group_id"`
 	Name        string
 	Username    string
-	AccessToken string
+	AccessToken string `gorm:"size:4096"`
 	WebhookID   string `gorm:"uniqueIndex:workflow_webhook_id_index"`
 	Model
 	Perms int `gorm:"index:workflow_perms"`

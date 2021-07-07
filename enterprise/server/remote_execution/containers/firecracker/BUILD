@@ -25,8 +25,6 @@ go_library(
         "@com_github_firecracker_microvm_firecracker_go_sdk//client/models",
         "@com_github_sirupsen_logrus//:logrus",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
-        "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//backoff",
     ],
 )
 

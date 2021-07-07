@@ -71,7 +71,7 @@ def ts_proto_library(name, proto, **kwargs):
         # https://github.com/protobufjs/protobuf.js/tree/6.8.8#pbjs-for-javascript
         args = [
             "--target=static-module",
-            "--wrap=default",
+            "--wrap=es6",
             "--strict-long",  # Force usage of Long type with int64 fields
             "--out=$@",
             "$(execpaths %s)" % proto_target,

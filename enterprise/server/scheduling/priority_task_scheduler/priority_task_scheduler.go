@@ -1,6 +1,7 @@
 package priority_task_scheduler
 
 import (
+	"container/list"
 	"context"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/golang/protobuf/proto"
+	"github.com/prometheus/client_golang/prometheus"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -28,6 +30,100 @@ const (
 
 var shuttingDownLogOnce sync.Once
 
+type groupPriorityQueue struct {
+	*priority_queue.PriorityQueue
+	groupID string
+}
+
+type taskQueue struct {
+	// List of *groupPriorityQueue items.
+	pqs *list.List
+	// Map to allow quick lookup of a specific *groupPriorityQueue element in the pqs list.
+	pqByGroupID map[string]*list.Element
+	// The *groupPriorityQueue element from which the next task will be obtained.
+	// Will be nil when there are no tasks remaining.
+	currentPQ *list.Element
+	// Number of tasks across all queues.
+	numTasks int
+}
+
+func newTaskQueue() *taskQueue {
+	return &taskQueue{
+		pqs:         list.New(),
+		pqByGroupID: make(map[string]*list.Element),
+		currentPQ:   nil,
+	}
+}
+
+func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
+	taskGroupID := req.GetSchedulingMetadata().GetTaskGroupId()
+	var pq *groupPriorityQueue
+	if el, ok := t.pqByGroupID[taskGroupID]; ok {
+		pq, ok = el.Value.(*groupPriorityQueue)
+		if !ok {
+			// Why would this ever happen?
+			log.Error("not a *groupPriorityQueue!??!")
+			return
+		}
+	} else {
+		pq = &groupPriorityQueue{
+			PriorityQueue: priority_queue.NewPriorityQueue(),
+			groupID:       taskGroupID,
+		}
+		el := t.pqs.PushBack(pq)
+		t.pqByGroupID[taskGroupID] = el
+		if t.currentPQ == nil {
+			t.currentPQ = el
+		}
+	}
+	pq.Push(req)
+	t.numTasks++
+	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: taskGroupID}).Set(float64(pq.Len()))
+}
+
+func (t *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
+	if t.currentPQ == nil {
+		return nil
+	}
+	pqEl := t.currentPQ
+	pq, ok := pqEl.Value.(*groupPriorityQueue)
+	if !ok {
+		// Why would this ever happen?
+		log.Error("not a *groupPriorityQueue!??!")
+		return nil
+	}
+	req := pq.Pop()
+
+	t.currentPQ = t.currentPQ.Next()
+	if pq.Len() == 0 {
+		t.pqs.Remove(pqEl)
+		delete(t.pqByGroupID, pq.groupID)
+	}
+	if t.currentPQ == nil {
+		t.currentPQ = t.pqs.Front()
+	}
+	t.numTasks--
+	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: req.GetSchedulingMetadata().GetTaskGroupId()}).Set(float64(pq.Len()))
+	return req
+}
+
+func (t *taskQueue) Peek() *scpb.EnqueueTaskReservationRequest {
+	if t.currentPQ == nil {
+		return nil
+	}
+	pq, ok := t.currentPQ.Value.(*groupPriorityQueue)
+	if !ok {
+		// Why would this ever happen?
+		log.Error("not a *groupPriorityQueue!??!")
+		return nil
+	}
+	return pq.Peek()
+}
+
+func (t *taskQueue) Len() int {
+	return t.numTasks
+}
+
 type Options struct {
 	RAMBytesCapacityOverride  int64
 	CPUMillisCapacityOverride int64
@@ -37,7 +133,7 @@ type PriorityTaskScheduler struct {
 	env           environment.Env
 	log           log.Logger
 	shuttingDown  bool
-	pq            *priority_queue.PriorityQueue
+	q             *taskQueue
 	exec          *executor.Executor
 	newTaskSignal chan struct{}
 
@@ -64,7 +160,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 	qes := &PriorityTaskScheduler{
 		env:                   env,
 		log:                   sublog,
-		pq:                    priority_queue.NewPriorityQueue(),
+		q:                     newTaskQueue(),
 		exec:                  exec,
 		newTaskSignal:         make(chan struct{}, 1),
 		activeTaskCancelFuncs: make(map[*context.CancelFunc]struct{}, 0),
@@ -103,7 +199,9 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 }
 
 func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
-	q.pq.Push(req)
+	q.mu.Lock()
+	q.q.Enqueue(req)
+	q.mu.Unlock()
 	q.log.Infof("Added task %+v to pq.", req)
 	q.newTaskSignal <- struct{}{}
 	return &scpb.EnqueueTaskReservationResponse{}, nil
@@ -168,7 +266,7 @@ func (q *PriorityTaskScheduler) canFitAnotherTask(res *scpb.EnqueueTaskReservati
 	willFit := knownRAMremaining >= res.GetTaskSize().GetEstimatedMemoryBytes() && knownCPUremaining >= res.GetTaskSize().GetEstimatedMilliCpu()
 
 	if willFit {
-		q.log.Infof("ram remaining: %d, cpu remaining: %d, tasks running: %d, q depth: %d", knownRAMremaining, knownCPUremaining, len(q.activeTaskCancelFuncs), q.pq.Len())
+		q.log.Infof("ram remaining: %d, cpu remaining: %d, tasks running: %d, q depth: %d", knownRAMremaining, knownCPUremaining, len(q.activeTaskCancelFuncs), q.q.Len())
 		if res.GetTaskSize().GetEstimatedMemoryBytes() == 0 {
 			q.log.Warningf("Scheduling another unknown size task. THIS SHOULD NOT HAPPEN! res: %+v", res)
 		} else {
@@ -190,16 +288,15 @@ func (q *PriorityTaskScheduler) handleTask() {
 		return
 	}
 
-	qLen := q.pq.Len()
-	metrics.RemoteExecutionQueueLength.Set(float64(qLen))
+	qLen := q.q.Len()
 	if qLen == 0 {
 		return
 	}
-	nextTask := q.pq.Peek()
+	nextTask := q.q.Peek()
 	if nextTask == nil || !q.canFitAnotherTask(nextTask) {
 		return
 	}
-	reservation := q.pq.Pop()
+	reservation := q.q.Dequeue()
 	if reservation == nil {
 		q.log.Warningf("reservation is nil")
 		return

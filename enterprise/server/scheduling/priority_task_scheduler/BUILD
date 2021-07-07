@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "priority_task_scheduler",
@@ -18,7 +18,18 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "priority_task_scheduler_test",
+    srcs = ["priority_task_scheduler_test.go"],
+    embed = [":priority_task_scheduler"],
+    deps = [
+        "//proto:scheduler_go_proto",
+        "@com_github_stretchr_testify//require",
     ],
 )

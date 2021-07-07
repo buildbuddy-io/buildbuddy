@@ -77,7 +77,7 @@ export default class RootComponent extends React.Component {
           denseModeEnabled={this.state.denseMode}
           handleDenseModeToggled={this.handleToggleDenseClicked.bind(this)}
         />
-        <div className="main">
+        <div className="root-main">
           <div className="content">
             {invocationId && (
               <InvocationComponent

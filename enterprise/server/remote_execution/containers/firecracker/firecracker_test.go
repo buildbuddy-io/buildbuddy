@@ -37,7 +37,7 @@ func makeWorkDir(t *testing.T, rootDir string) string {
 	return workDir
 }
 
-func DISABLEDTestFirecrackerRun(t *testing.T) {
+func TestFirecrackerRun(t *testing.T) {
 	rootDir := makeRootDir(t)
 	workDir := makeWorkDir(t, rootDir)
 

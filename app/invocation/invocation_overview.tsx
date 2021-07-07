@@ -82,7 +82,7 @@ export default class InvocationOverviewComponent extends React.Component {
         <div className="titles">
           {isBazelInvocation && (
             <div className="title" title={this.props.model.getAllPatterns()}>
-              {format.sentenceCase(this.props.model.getUser(true))} {this.props.model.getCommand()}{" "}
+              {this.props.model.getUser(/*possessive=*/ true)} {this.props.model.getCommand()}{" "}
               {this.props.model.getPattern()}
             </div>
           )}
