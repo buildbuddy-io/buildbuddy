@@ -12,6 +12,5 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_golang_protobuf//proto:go_default_library",
-        "@org_golang_google_grpc//peer",
     ],
 )
