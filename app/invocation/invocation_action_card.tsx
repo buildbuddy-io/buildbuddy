@@ -119,53 +119,66 @@ export default class ActionCardComponent extends React.Component<Props, State> {
 
   private renderTimeline() {
     const metadata = this.state.actionResult.executionMetadata;
-    type TimelineEvent = { name: string; color: string; start: any };
+
+    type TimelineEvent = { name: string; color: string; timestamp: any } | { timestamp: any };
     const events: TimelineEvent[] = [
       {
         name: "Queued",
         color: "#607D8B",
-        start: metadata.queuedTimestamp,
+        timestamp: metadata.queuedTimestamp,
       },
       {
         name: "Initializing",
         color: "#673AB7",
-        start: metadata.workerStartTimestamp,
+        timestamp: metadata.workerStartTimestamp,
       },
       {
         name: "Downloading inputs",
         color: "#FF6F00",
-        start: metadata.inputFetchStartTimestamp,
+        timestamp: metadata.inputFetchStartTimestamp,
       },
       {
         name: "Preparing runner",
         color: "#673AB7",
-        start: metadata.inputFetchCompletedTimestamp,
+        timestamp: metadata.inputFetchCompletedTimestamp,
       },
       {
         name: "Executing",
         color: "#1E88E5",
-        start: metadata.executionStartTimestamp,
+        timestamp: metadata.executionStartTimestamp,
       },
       {
         name: "Preparing for upload",
         color: "#673AB7",
-        start: metadata.executionCompletedTimestamp,
+        timestamp: metadata.executionCompletedTimestamp,
       },
       {
         name: "Uploading outputs",
         color: "#FF6F00",
-        start: metadata.outputUploadStartTimestamp,
+        timestamp: metadata.outputUploadStartTimestamp,
       },
+      // End marker -- not actually rendered.
+      { timestamp: metadata.outputUploadCompletedTimestamp },
     ];
-    const startTimestamp = metadata.queuedTimestamp;
-    const endTimestamp = metadata.outputUploadCompletedTimestamp;
-    const totalDuration = durationSeconds(startTimestamp, endTimestamp);
+
+    // Make sure that we've actually received the metadata. This will not be sent
+    // until the action is completed.
+    // The metadata should include all timestamps, so either all timestamps should
+    // be null or none of them should be null, but check all of them for good measure.
+    for (const event of events) {
+      if (!event.timestamp) return null;
+    }
+
+    const totalDuration = durationSeconds(events[0].timestamp, events[events.length - 1].timestamp);
 
     return (
       <div className="action-timeline">
         {events.map((event, i) => {
+          // Don't render the end marker.
+          if (!("name" in event)) return null;
+
           const next = events[i + 1];
-          const duration = durationSeconds(event.start, next?.start || endTimestamp);
+          const duration = durationSeconds(event.timestamp, next.timestamp);
           const weight = duration / totalDuration;
           return (
             <div
