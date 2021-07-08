@@ -141,10 +141,10 @@ func (en *executionNode) GetSchedulerURI() string {
 
 func (en *executionNode) String() string {
 	if en.handle != nil {
-		return fmt.Sprintf("connected executor(%s)", en.handle.ID())
+		return fmt.Sprintf("connected executor(%s)", en.executorID)
 	}
 	if en.schedulerHostPort != "" {
-		return fmt.Sprintf("scheduler(%s)", en.schedulerHostPort)
+		return fmt.Sprintf("executor(%s) @ scheduler(%s)", en.executorID, en.schedulerHostPort)
 	}
 	return fmt.Sprintf("executor(%s:%d)", en.host, en.port)
 }
@@ -268,7 +268,7 @@ func (np *nodePool) AddConnectedExecutor(id string, handle executor_handle.Execu
 	np.mu.Lock()
 	defer np.mu.Unlock()
 	for _, e := range np.connectedExecutors {
-		if e.handle.ID() == handle.ID() {
+		if e.executorID == id {
 			return false
 		}
 	}
@@ -279,11 +279,11 @@ func (np *nodePool) AddConnectedExecutor(id string, handle executor_handle.Execu
 	return true
 }
 
-func (np *nodePool) RemoveConnectedExecutor(handle executor_handle.ExecutorHandle) bool {
+func (np *nodePool) RemoveConnectedExecutor(id string, handle executor_handle.ExecutorHandle) bool {
 	np.mu.Lock()
 	defer np.mu.Unlock()
 	for i, e := range np.connectedExecutors {
-		if e.handle.ID() == handle.ID() {
+		if e.executorID == id {
 			np.connectedExecutors[i] = np.connectedExecutors[len(np.connectedExecutors)-1]
 			np.connectedExecutors = np.connectedExecutors[:len(np.connectedExecutors)-1]
 			return true
@@ -551,11 +551,11 @@ func (s *SchedulerServer) RemoveConnectedExecutor(ctx context.Context, handle ex
 	}
 	pool, ok := s.getPool(nodePoolKey)
 	if ok {
-		if !pool.RemoveConnectedExecutor(handle) {
-			log.Warningf("Executor %q not in pool %+v", handle.ID(), nodePoolKey)
+		if !pool.RemoveConnectedExecutor(node.GetExecutorId(), handle) {
+			log.Warningf("Executor %q not in pool %+v", node.GetExecutorId(), nodePoolKey)
 		}
 	} else {
-		log.Warningf("Tried to remove executor %q for unknown pool %+v", handle.ID(), nodePoolKey)
+		log.Warningf("Tried to remove executor %q for unknown pool %+v", node.GetExecutorId(), nodePoolKey)
 	}
 
 	// Don't use the stream context since we want to do cleanup when stream context is cancelled.
@@ -737,10 +737,7 @@ func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAn
 		return err
 	}
 
-	handle, err := executor_handle.NewRegistrationAndTasksExecutorHandle(stream, groupID)
-	if err != nil {
-		return err
-	}
+	handle := executor_handle.NewRegistrationAndTasksExecutorHandle(stream, groupID)
 	return s.processExecutorStream(stream.Context(), handle)
 }
 
