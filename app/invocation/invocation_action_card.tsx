@@ -260,9 +260,9 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                   </div>
                 )}
               </div>
-              <div className="action-line">
-                <div className="action-title">Result details</div>
-                {this.state.actionResult && (
+              {this.state.actionResult && (
+                <div className="action-line">
+                  <div className="action-title">Result details</div>
                   <div>
                     <div className="action-section">
                       <div className="action-property-title">Exit Code</div>
@@ -356,8 +356,8 @@ export default class ActionCardComponent extends React.Component<Props, State> {
                       )}
                     </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
