@@ -9,6 +9,5 @@ go_library(
         "//proto:eventlog_go_proto",
         "//server/backends/chunkstore",
         "//server/environment",
-        "//server/util/status",
     ],
 )
