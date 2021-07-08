@@ -107,6 +107,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 		ExecutorKeyCreationEnabled: executorKeyCreationEnabled,
 		WorkflowsEnabled:           workflowsEnabled,
 		CodeEditorEnabled:          env.GetConfigurator().GetCodeEditorEnabled(),
+		ChunkedEventLogsEnabled:    env.GetConfigurator().GetStorageEnableChunkedEventLogs(),
 	}
 	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendTemplateData{
 		Config:           &config,

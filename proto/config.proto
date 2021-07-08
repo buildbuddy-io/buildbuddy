@@ -43,4 +43,7 @@ message FrontendConfig {
 
   // Whether code editor is enabled.
   bool code_editor_enabled = 10;
+
+  // Whether code editor is enabled.
+  bool chunked_event_logs_enabled = 11;
 }
