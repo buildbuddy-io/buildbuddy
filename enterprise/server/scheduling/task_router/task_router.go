@@ -158,7 +158,7 @@ func (tr *taskRouter) routingKey(ctx context.Context, cmd *repb.Command, remoteI
 	if u, err := perms.AuthenticatedUser(ctx, tr.env); err == nil {
 		parts = append(parts, u.GetGroupID())
 	} else {
-		parts = append(parts, "ANON")
+		parts = append(parts, interfaces.AuthAnonymousUser)
 	}
 
 	if remoteInstanceName != "" {

@@ -8,12 +8,10 @@ go_library(
     deps = [
         "//proto:scheduler_go_proto",
         "//proto:trace_go_proto",
-        "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_golang_protobuf//proto:go_default_library",
-        "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//peer",
     ],
 )

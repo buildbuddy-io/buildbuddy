@@ -50,6 +50,9 @@ type UserInfo interface {
 // Authenticator constants
 const (
 	AuthContextUserErrorKey = "auth.error"
+
+	// AuthAnonymousUser is the identifier for unauthenticated users in installations that allow anonymous users.
+	AuthAnonymousUser = "ANON"
 )
 
 type Authenticator interface {
@@ -335,7 +338,6 @@ type FileCache interface {
 }
 
 type SchedulerService interface {
-	RegisterNode(stream scpb.Scheduler_RegisterNodeServer) error
 	RegisterAndStreamWork(stream scpb.Scheduler_RegisterAndStreamWorkServer) error
 	LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)

@@ -104,6 +104,9 @@ message Execution {
   // A snippet of the command that ran as part of this execution.
   // Ex. /usr/bin/gcc foo.cc -o foo
   string command_snippet = 7;
+
+  // The exit code of the command. Should be ignored if status != OK.
+  int32 exit_code = 8;
 }
 
 message ExecutionLookup {

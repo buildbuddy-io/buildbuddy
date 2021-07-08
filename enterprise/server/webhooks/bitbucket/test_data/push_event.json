@@ -1,0 +1,245 @@
+{
+  "push": {
+    "changes": [
+      {
+        "forced": false,
+        "old": {
+          "name": "main",
+          "links": {
+            "commits": {
+              "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/commits/main"
+            },
+            "self": {
+              "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/refs/branches/main"
+            },
+            "html": { "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/branch/main" }
+          },
+          "default_merge_strategy": "merge_commit",
+          "merge_strategies": ["merge_commit", "squash", "fast_forward"],
+          "type": "branch",
+          "target": {
+            "rendered": {},
+            "hash": "511112476fd8a34ce29b2a51becbf0ea11cd0bc6",
+            "links": {
+              "self": {
+                "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/commit/511112476fd8a34ce29b2a51becbf0ea11cd0bc6"
+              },
+              "html": {
+                "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/commits/511112476fd8a34ce29b2a51becbf0ea11cd0bc6"
+              }
+            },
+            "author": { "raw": "Test <test@buildbuddy.io>", "type": "author" },
+            "summary": {
+              "raw": "Update timestamp to 1614374199.\n",
+              "markup": "markdown",
+              "html": "<p>Update timestamp to <a href=\"https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/commits/1614374199\" rel=\"nofollow\" class=\"ap-connect-link\">1614374199</a>.</p>",
+              "type": "rendered"
+            },
+            "parents": [
+              {
+                "hash": "cc8a46ea4de28c76d94b6678eca8cfb7f59f7b17",
+                "type": "commit",
+                "links": {
+                  "self": {
+                    "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/commit/cc8a46ea4de28c76d94b6678eca8cfb7f59f7b17"
+                  },
+                  "html": {
+                    "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/commits/cc8a46ea4de28c76d94b6678eca8cfb7f59f7b17"
+                  }
+                }
+              }
+            ],
+            "date": "2021-02-26T21:16:39+00:00",
+            "message": "Update timestamp to 1614374199.\n",
+            "type": "commit",
+            "properties": {}
+          }
+        },
+        "links": {
+          "commits": {
+            "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/commits?include=f3307f36e35d1820c78b642cc8dfec6bf28a6230&exclude=511112476fd8a34ce29b2a51becbf0ea11cd0bc6"
+          },
+          "html": {
+            "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/branches/compare/f3307f36e35d1820c78b642cc8dfec6bf28a6230..511112476fd8a34ce29b2a51becbf0ea11cd0bc6"
+          },
+          "diff": {
+            "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/diff/f3307f36e35d1820c78b642cc8dfec6bf28a6230..511112476fd8a34ce29b2a51becbf0ea11cd0bc6"
+          }
+        },
+        "created": false,
+        "commits": [
+          {
+            "rendered": {},
+            "hash": "f3307f36e35d1820c78b642cc8dfec6bf28a6230",
+            "links": {
+              "self": {
+                "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/commit/f3307f36e35d1820c78b642cc8dfec6bf28a6230"
+              },
+              "comments": {
+                "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/commit/f3307f36e35d1820c78b642cc8dfec6bf28a6230/comments"
+              },
+              "patch": {
+                "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/patch/f3307f36e35d1820c78b642cc8dfec6bf28a6230"
+              },
+              "html": {
+                "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/commits/f3307f36e35d1820c78b642cc8dfec6bf28a6230"
+              },
+              "diff": {
+                "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/diff/f3307f36e35d1820c78b642cc8dfec6bf28a6230"
+              },
+              "approve": {
+                "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/commit/f3307f36e35d1820c78b642cc8dfec6bf28a6230/approve"
+              },
+              "statuses": {
+                "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/commit/f3307f36e35d1820c78b642cc8dfec6bf28a6230/statuses"
+              }
+            },
+            "author": { "raw": "Test <test@buildbuddy.io>", "type": "author" },
+            "summary": {
+              "raw": "Update timestamp to 1614447644.\n",
+              "markup": "markdown",
+              "html": "<p>Update timestamp to <a href=\"https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/commits/1614447644\" rel=\"nofollow\" class=\"ap-connect-link\">1614447644</a>.</p>",
+              "type": "rendered"
+            },
+            "parents": [
+              {
+                "hash": "511112476fd8a34ce29b2a51becbf0ea11cd0bc6",
+                "type": "commit",
+                "links": {
+                  "self": {
+                    "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/commit/511112476fd8a34ce29b2a51becbf0ea11cd0bc6"
+                  },
+                  "html": {
+                    "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/commits/511112476fd8a34ce29b2a51becbf0ea11cd0bc6"
+                  }
+                }
+              }
+            ],
+            "date": "2021-02-27T17:40:44+00:00",
+            "message": "Update timestamp to 1614447644.\n",
+            "type": "commit",
+            "properties": {}
+          }
+        ],
+        "truncated": false,
+        "closed": false,
+        "new": {
+          "name": "main",
+          "links": {
+            "commits": {
+              "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/commits/main"
+            },
+            "self": {
+              "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/refs/branches/main"
+            },
+            "html": { "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/branch/main" }
+          },
+          "default_merge_strategy": "merge_commit",
+          "merge_strategies": ["merge_commit", "squash", "fast_forward"],
+          "type": "branch",
+          "target": {
+            "rendered": {},
+            "hash": "f3307f36e35d1820c78b642cc8dfec6bf28a6230",
+            "links": {
+              "self": {
+                "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/commit/f3307f36e35d1820c78b642cc8dfec6bf28a6230"
+              },
+              "html": {
+                "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/commits/f3307f36e35d1820c78b642cc8dfec6bf28a6230"
+              }
+            },
+            "author": { "raw": "Test <test@buildbuddy.io>", "type": "author" },
+            "summary": {
+              "raw": "Update timestamp to 1614447644.\n",
+              "markup": "markdown",
+              "html": "<p>Update timestamp to <a href=\"https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/commits/1614447644\" rel=\"nofollow\" class=\"ap-connect-link\">1614447644</a>.</p>",
+              "type": "rendered"
+            },
+            "parents": [
+              {
+                "hash": "511112476fd8a34ce29b2a51becbf0ea11cd0bc6",
+                "type": "commit",
+                "links": {
+                  "self": {
+                    "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground/commit/511112476fd8a34ce29b2a51becbf0ea11cd0bc6"
+                  },
+                  "html": {
+                    "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground/commits/511112476fd8a34ce29b2a51becbf0ea11cd0bc6"
+                  }
+                }
+              }
+            ],
+            "date": "2021-02-27T17:40:44+00:00",
+            "message": "Update timestamp to 1614447644.\n",
+            "type": "commit",
+            "properties": {}
+          }
+        }
+      }
+    ]
+  },
+  "actor": {
+    "display_name": "Test",
+    "uuid": "{0cc3a8ab-9405-400d-9bf9-ebfd456a170b}",
+    "links": {
+      "self": { "href": "https://api.bitbucket.org/2.0/users/%7B0cc3a8ab-9405-400d-9bf9-ebfd456a170b%7D" },
+      "html": { "href": "https://bitbucket.org/%7B0cc3a8ab-9405-400d-9bf9-ebfd456a170b%7D/" },
+      "avatar": {
+        "href": "https://secure.gravatar.com/avatar/450a41fbcc0c2eb69be0f207c0d0d070?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FBD-6.png"
+      }
+    },
+    "nickname": "Test",
+    "type": "user",
+    "account_id": "5e73cde35e755d0cd4258254"
+  },
+  "repository": {
+    "scm": "git",
+    "website": null,
+    "uuid": "{c3dd6cc9-c8e3-47ce-9471-86065058ee1f}",
+    "links": {
+      "self": { "href": "https://api.bitbucket.org/2.0/repositories/buildbuddy/buildbuddy-ci-playground" },
+      "html": { "href": "https://bitbucket.org/buildbuddy/buildbuddy-ci-playground" },
+      "avatar": { "href": "https://bytebucket.org/ravatar/%7Bc3dd6cc9-c8e3-47ce-9471-86065058ee1f%7D?ts=default" }
+    },
+    "project": {
+      "links": {
+        "self": { "href": "https://api.bitbucket.org/2.0/workspaces/buildbuddy/projects/TEST" },
+        "html": { "href": "https://bitbucket.org/buildbuddy/workspace/projects/TEST" },
+        "avatar": { "href": "https://bitbucket.org/account/user/buildbuddy/projects/TEST/avatar/32?ts=1613704872" }
+      },
+      "type": "project",
+      "name": "Test",
+      "key": "TEST",
+      "uuid": "{7cf0fc30-3abc-49ff-881a-c23b9efeed20}"
+    },
+    "full_name": "buildbuddy/buildbuddy-ci-playground",
+    "owner": {
+      "display_name": "Test",
+      "uuid": "{0cc3a8ab-9405-400d-9bf9-ebfd456a170b}",
+      "links": {
+        "self": { "href": "https://api.bitbucket.org/2.0/users/%7B0cc3a8ab-9405-400d-9bf9-ebfd456a170b%7D" },
+        "html": { "href": "https://bitbucket.org/%7B0cc3a8ab-9405-400d-9bf9-ebfd456a170b%7D/" },
+        "avatar": {
+          "href": "https://secure.gravatar.com/avatar/450a41fbcc0c2eb69be0f207c0d0d070?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FBD-6.png"
+        }
+      },
+      "nickname": "Test",
+      "type": "user",
+      "account_id": "5e73cde35e755d0cd4258254"
+    },
+    "workspace": {
+      "slug": "buildbuddy",
+      "type": "workspace",
+      "name": "Test",
+      "links": {
+        "self": { "href": "https://api.bitbucket.org/2.0/workspaces/buildbuddy" },
+        "html": { "href": "https://bitbucket.org/buildbuddy/" },
+        "avatar": { "href": "https://bitbucket.org/workspaces/buildbuddy/avatar/?ts=1613704812" }
+      },
+      "uuid": "{0cc3a8ab-9405-400d-9bf9-ebfd456a170b}"
+    },
+    "type": "repository",
+    "is_private": true,
+    "name": "buildbuddy-ci-playground"
+  }
+}

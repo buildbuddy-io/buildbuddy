@@ -60,48 +60,44 @@ type TracedCommandContainer struct {
 	implAttr attribute.KeyValue
 }
 
-func (t *TracedCommandContainer) startSpan(ctx context.Context) (context.Context, trace.Span) {
-	return tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
-}
-
 func (t *TracedCommandContainer) PullImageIfNecessary(ctx context.Context) error {
-	ctx, span := t.startSpan(ctx)
+	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 	return t.delegate.PullImageIfNecessary(ctx)
 }
 
 func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) error {
-	ctx, span := t.startSpan(ctx)
+	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 	return t.delegate.Create(ctx, workingDir)
 }
 
 func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
-	ctx, span := t.startSpan(ctx)
+	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 	return t.delegate.Exec(ctx, command, stdin, stdout)
 }
 
 func (t *TracedCommandContainer) Unpause(ctx context.Context) error {
-	ctx, span := t.startSpan(ctx)
+	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 	return t.delegate.Unpause(ctx)
 }
 
 func (t *TracedCommandContainer) Pause(ctx context.Context) error {
-	ctx, span := t.startSpan(ctx)
+	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 	return t.delegate.Pause(ctx)
 }
 
 func (t *TracedCommandContainer) Remove(ctx context.Context) error {
-	ctx, span := t.startSpan(ctx)
+	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 	return t.delegate.Remove(ctx)
 }
 
 func (t *TracedCommandContainer) Stats(ctx context.Context) (*Stats, error) {
-	ctx, span := t.startSpan(ctx)
+	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 	return t.delegate.Stats(ctx)
 }

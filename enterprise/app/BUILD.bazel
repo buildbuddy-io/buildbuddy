@@ -12,6 +12,9 @@ esbuild(
     name = "app_bundle",
     args = [
         "--resolve-extensions=.mjs,.js",
+        "--loader:.ttf=binary",
+        "--loader:.css=binary",
+        "--external:@octokit/webhooks",
     ],
     define = ["process.env.NODE_ENV=\"production\""],
     entry_points = [
@@ -54,6 +57,8 @@ genrule(
         "//enterprise/app/tap:tap.css",
         "//enterprise/app/trends:trends.css",
         "//enterprise/app/root:root.css",
+        "//enterprise/app/code:code.css",
+        "//enterprise/app/code:monaco.css",
         "//enterprise/app/executors:executors.css",
         "//app:style.css",
     ],

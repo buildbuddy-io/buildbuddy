@@ -17,7 +17,7 @@ func webhookRequest(t *testing.T, eventType string, payload []byte) *http.Reques
 		t.Fatal(err)
 	}
 	req.Header.Add("X-Github-Event", eventType)
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Content-Type", "application/json")
 	return req
 }
 

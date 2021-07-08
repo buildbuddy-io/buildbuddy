@@ -9,10 +9,14 @@ import (
 	"os"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sys/unix"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 
 	libVsock "github.com/mdlayher/vsock"
 )
@@ -104,9 +108,9 @@ func isTemporary(err error) bool {
 	return err != nil && ok && tempErr.Temporary()
 }
 
-// DialHostToGuest connects to the specified VSock socketPath and port and returns a
+// dialHostToGuest connects to the specified VSock socketPath and port and returns a
 // new net.Conn or error if unable to connect.
-func DialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.Conn, error) {
+func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.Conn, error) {
 	var d net.Dialer
 	raddr := net.UnixAddr{Name: socketPath, Net: "unix"}
 	conn, err := d.DialContext(ctx, "unix", raddr.String())
@@ -130,5 +134,44 @@ func DialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.C
 	if !strings.HasPrefix(rsp, "OK ") {
 		return nil, status.InternalErrorf("HostDial failed: didn't receive 'OK' after CONNECT, got %q", rsp)
 	}
+	return conn, nil
+}
+
+// SimpleGRPCDial internally calls DialHostToGuest and then sets up a gRPC
+// connection. The DialOptions used have been optimized for fast connection over
+// a vsock. This method WILL BLOCK until a connection is made or a timeout is
+// hit.
+// N.B. Callers are responsible for closing the returned connection.
+func SimpleGRPCDial(ctx context.Context, socketPath string) (*grpc.ClientConn, error) {
+	bufDialer := func(ctx context.Context, _ string) (net.Conn, error) {
+		return dialHostToGuest(ctx, socketPath, DefaultPort)
+	}
+
+	// These params are tuned for a fast-reconnect to the vmexec server
+	// running inside the VM.
+	backoffConfig := backoff.Config{
+		BaseDelay:  1.0 * time.Millisecond,
+		Multiplier: 1.6,
+		Jitter:     0.2,
+		MaxDelay:   10 * time.Second,
+	}
+	connectParams := grpc.ConnectParams{
+		Backoff:           backoffConfig,
+		MinConnectTimeout: 10 * time.Second,
+	}
+
+	dialOptions := []grpc.DialOption{
+		grpc.WithContextDialer(bufDialer),
+		grpc.WithInsecure(),
+		grpc.WithBlock(),
+		grpc.WithConnectParams(connectParams),
+	}
+
+	connectionStart := time.Now()
+	conn, err := grpc.DialContext(ctx, "vsock", dialOptions...)
+	if err != nil {
+		return nil, err
+	}
+	log.Debugf("Connected after %s", time.Since(connectionStart))
 	return conn, nil
 }

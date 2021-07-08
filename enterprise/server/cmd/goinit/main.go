@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
@@ -25,8 +26,6 @@ import (
 )
 
 const (
-	logLevel = "debug"
-
 	commonMountFlags = syscall.MS_NODEV | syscall.MS_NOEXEC | syscall.MS_NOSUID
 	cgroupMountFlags = syscall.MS_NODEV | syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_RELATIME
 )
@@ -35,6 +34,7 @@ var (
 	path      = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
 	port      = flag.Uint("port", vsock.DefaultPort, "The vsock port number to listen on")
 	debugMode = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
+	logLevel  = flag.String("log_level", "info", "The loglevel to emit logs at")
 )
 
 // die logs the provided error if it is not nil and then terminates the program.
@@ -87,11 +87,12 @@ func reapChildren(ctx context.Context, reapMutex *sync.RWMutex) {
 // This is mostly cribbed from github.com/superfly/init-snapshot
 // which was very helpful <3!
 func main() {
+	start := time.Now()
 	rootContext := context.Background()
 
 	// setup logging
 	opts := log.Opts{
-		Level: logLevel,
+		Level: *logLevel,
 	}
 	if err := log.Configure(opts); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
@@ -229,18 +230,19 @@ func main() {
 			return c2.Run()
 		})
 	}
-	log.Infof("Starting vm exec listener on vsock port: %d", *port)
 	eg.Go(func() error {
 		listener, err := vsock.NewGuestListener(ctx, uint32(*port))
 		if err != nil {
 			return err
 		}
+		log.Infof("Starting vm exec listener on vsock port: %d", *port)
 		server := grpc.NewServer()
 		vmService := vmexec.NewServer(&reapMutex)
 		vmxpb.RegisterExecServer(server, vmService)
 		return server.Serve(listener)
 	})
 
+	log.Printf("Finished init in %s", time.Since(start))
 	if err := eg.Wait(); err != nil {
 		log.Errorf("Init errgroup finished with err: %s", err)
 	}
