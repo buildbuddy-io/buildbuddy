@@ -115,9 +115,12 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	if r.options.EnableSiblingContainers {
 		binds = append(binds, fmt.Sprintf("%s:%s%s", r.options.Socket, r.options.Socket, mountMode))
 	}
+	// Run an init process to reap zombies.
+	runInit := true
 	return &dockercontainer.HostConfig{
 		NetworkMode: networkMode,
 		Binds:       binds,
+		Init:        &runInit,
 	}
 }
 
