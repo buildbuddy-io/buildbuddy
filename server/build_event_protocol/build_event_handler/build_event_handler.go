@@ -362,8 +362,9 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 		if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
 			e.logWriter.Write([]byte(p.Progress.Stderr))
 			e.logWriter.Write([]byte(p.Progress.Stdout))
-			p.Progress.Stderr = ""
-			p.Progress.Stdout = ""
+			// For now, write logs to both chunks and the invocation proto
+			// p.Progress.Stderr = ""
+			// p.Progress.Stdout = ""
 		}
 	}
 
