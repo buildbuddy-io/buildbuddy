@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/golang/protobuf/proto"
-	"google.golang.org/grpc/peer"
 
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
@@ -20,22 +19,10 @@ const (
 	EnqueueTaskReservationTimeout = 100 * time.Millisecond
 )
 
-type executorID string
-
 type ExecutorHandle interface {
-	// TODO: Remove and use ID sent as part of the registration instead.
-	ID() executorID
 	GroupID() string
 	RecvRegistration() (*scpb.ExecutionNode, error)
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
-}
-
-func executorIDFromContext(ctx context.Context) (executorID, error) {
-	p, ok := peer.FromContext(ctx)
-	if !ok {
-		return "", status.FailedPreconditionError("peer info not in context")
-	}
-	return executorID(p.Addr.String()), nil
 }
 
 // enqueueTaskReservationRequest represents a request to be sent via a work stream and a channel for the reply once one
@@ -47,7 +34,6 @@ type enqueueTaskReservationRequest struct {
 
 type registrationAndTasksExecutorHandle struct {
 	stream  scpb.Scheduler_RegisterAndStreamWorkServer
-	id      executorID
 	groupID string
 
 	mu       sync.RWMutex
@@ -56,23 +42,14 @@ type registrationAndTasksExecutorHandle struct {
 }
 
 func NewRegistrationAndTasksExecutorHandle(stream scpb.Scheduler_RegisterAndStreamWorkServer, groupID string) (*registrationAndTasksExecutorHandle, error) {
-	id, err := executorIDFromContext(stream.Context())
-	if err != nil {
-		return nil, err
-	}
 	h := &registrationAndTasksExecutorHandle{
 		stream:   stream,
-		id:       id,
 		groupID:  groupID,
 		requests: make(chan enqueueTaskReservationRequest, 10),
 		replies:  make(map[string]chan<- *scpb.EnqueueTaskReservationResponse),
 	}
 	h.startTaskReservationStreamer()
 	return h, nil
-}
-
-func (h *registrationAndTasksExecutorHandle) ID() executorID {
-	return h.id
 }
 
 func (h *registrationAndTasksExecutorHandle) GroupID() string {
