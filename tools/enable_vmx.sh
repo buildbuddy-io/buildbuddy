@@ -4,7 +4,8 @@ set -o nounset
 set -o pipefail
 
 # adapted from https://issuetracker.google.com/issues/110507927#comment22
-
+# this script clones a GCE instance template and enables nested virtualization
+# on it.
 # ex template url: "https://www.googleapis.com/compute/v1/projects/flame-build/global/instanceTemplates/gke-dev-nv8eh-c2-pool-fad3284d"
 # template url as $1
 
