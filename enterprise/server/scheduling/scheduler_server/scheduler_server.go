@@ -737,10 +737,7 @@ func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAn
 		return err
 	}
 
-	handle, err := executor_handle.NewRegistrationAndTasksExecutorHandle(stream, groupID)
-	if err != nil {
-		return err
-	}
+	handle := executor_handle.NewRegistrationAndTasksExecutorHandle(stream, groupID)
 	return s.processExecutorStream(stream.Context(), handle)
 }
 

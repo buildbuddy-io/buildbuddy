@@ -41,7 +41,7 @@ type registrationAndTasksExecutorHandle struct {
 	replies  map[string]chan<- *scpb.EnqueueTaskReservationResponse
 }
 
-func NewRegistrationAndTasksExecutorHandle(stream scpb.Scheduler_RegisterAndStreamWorkServer, groupID string) (*registrationAndTasksExecutorHandle, error) {
+func NewRegistrationAndTasksExecutorHandle(stream scpb.Scheduler_RegisterAndStreamWorkServer, groupID string) *registrationAndTasksExecutorHandle {
 	h := &registrationAndTasksExecutorHandle{
 		stream:   stream,
 		groupID:  groupID,
@@ -49,7 +49,7 @@ func NewRegistrationAndTasksExecutorHandle(stream scpb.Scheduler_RegisterAndStre
 		replies:  make(map[string]chan<- *scpb.EnqueueTaskReservationResponse),
 	}
 	h.startTaskReservationStreamer()
-	return h, nil
+	return h
 }
 
 func (h *registrationAndTasksExecutorHandle) GroupID() string {
