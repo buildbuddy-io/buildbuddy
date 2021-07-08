@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
@@ -55,14 +56,16 @@ func Start(t *testing.T) string {
 	if err != nil {
 		assert.FailNowf(t, "redis binary could not be started", err.Error())
 	}
+	var killed atomic.Value
+	killed.Store(false)
 	go func() {
-		err := cmd.Wait()
-		if err != nil {
+		if err := cmd.Wait(); err != nil && killed.Load() != true {
 			log.Warningf("redis server did not exit cleanly: %v", err)
 		}
 	}()
 	t.Cleanup(func() {
 		log.Info("Shutting down Redis server.")
+		killed.Store(true)
 		cancel()
 	})
 	return fmt.Sprintf("localhost:%d", redisPort)
