@@ -163,8 +163,8 @@ export default class ActionCardComponent extends React.Component<Props, State> {
 
     // Make sure that we've actually received the metadata. This will not be sent
     // until the action is completed.
-    // Either all timestamps should be non-null or none of them should be non-null,
-    // but check all of them for good measure.
+    // The metadata should include all timestamps, so either all timestamps should
+    // be null or none of them should be null, but check all of them for good measure.
     for (const event of events) {
       if (!event.timestamp) return null;
     }
