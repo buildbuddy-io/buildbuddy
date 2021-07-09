@@ -67,6 +67,12 @@ type TracedCommandContainer struct {
 	implAttr attribute.KeyValue
 }
 
+func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string) *interfaces.CommandResult {
+	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer span.End()
+	return t.delegate.Run(ctx, command, workingDir)
+}
+
 func (t *TracedCommandContainer) PullImageIfNecessary(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
