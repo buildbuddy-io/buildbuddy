@@ -158,7 +158,7 @@ interface Props {
 }
 
 interface State {
-  userOwnedExecutorsEnabled: boolean;
+  userOwnedExecutorsSupported: boolean;
   nodes: scheduler.IExecutionNode[];
   executorKeys: api_key.IApiKey[];
   loading: FetchType[];
@@ -168,7 +168,7 @@ interface State {
 
 export default class ExecutorsComponent extends React.Component<Props, State> {
   state: State = {
-    userOwnedExecutorsEnabled: false,
+    userOwnedExecutorsSupported: false,
     nodes: [],
     executorKeys: [],
     loading: [],
@@ -228,8 +228,8 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
 
     try {
       const response = await rpcService.service.getExecutionNodes({});
-      this.setState({ nodes: response.executionNode, userOwnedExecutorsEnabled: response.userOwnedExecutorsEnabled });
-      if (response.userOwnedExecutorsEnabled) {
+      this.setState({ nodes: response.executionNode, userOwnedExecutorsSupported: response.userOwnedExecutorsSupported });
+      if (response.userOwnedExecutorsSupported) {
         await this.fetchApiKeys();
         await this.fetchBazelConfig();
       }
@@ -345,8 +345,8 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
         {this.state.loading.length > 0 && <div className="loading"></div>}
         {this.state.loading.length == 0 && this.state.error == null && (
           <div className="container">
-            {this.state.userOwnedExecutorsEnabled && this.renderWithGroupOwnedExecutorsEnabled()}
-            {!this.state.userOwnedExecutorsEnabled && this.renderWithoutGroupOwnedExecutorsEnabled()}
+            {this.state.userOwnedExecutorsSupported && this.renderWithGroupOwnedExecutorsEnabled()}
+            {!this.state.userOwnedExecutorsSupported && this.renderWithoutGroupOwnedExecutorsEnabled()}
           </div>
         )}
       </div>

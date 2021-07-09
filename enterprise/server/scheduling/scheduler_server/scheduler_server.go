@@ -1356,8 +1356,8 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 	}
 
 	return &scpb.GetExecutionNodesResponse{
-		ExecutionNode:             executionNodes,
-		UserOwnedExecutorsEnabled: userOwnedExecutorsEnabled,
+		ExecutionNode:               executionNodes,
+		UserOwnedExecutorsSupported: userOwnedExecutorsEnabled,
 	}, nil
 }
 
