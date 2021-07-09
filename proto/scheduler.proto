@@ -194,4 +194,5 @@ message GetExecutionNodesResponse {
   context.ResponseContext response_context = 1;
 
   repeated ExecutionNode execution_node = 2;
+  bool user_owned_executors_enabled = 3;
 }

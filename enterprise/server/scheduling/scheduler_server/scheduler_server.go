@@ -1349,8 +1349,15 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		executionNodes = append(executionNodes, node)
 	}
 
+	userOwnedExecutorsEnabled := s.enableUserOwnedExecutors
+	// Don't report user owned executors as being enabled for the shared executor group ID (i.e. the BuildBuddy group)
+	if userOwnedExecutorsEnabled && groupID == s.env.GetConfigurator().GetRemoteExecutionConfig().SharedExecutorPoolGroupID {
+		userOwnedExecutorsEnabled = false
+	}
+
 	return &scpb.GetExecutionNodesResponse{
-		ExecutionNode: executionNodes,
+		ExecutionNode:             executionNodes,
+		UserOwnedExecutorsEnabled: userOwnedExecutorsEnabled,
 	}, nil
 }
 
