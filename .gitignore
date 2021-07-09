@@ -28,6 +28,9 @@ bazel-*
 # Node dependencies
 node_modules
 
+# Yarn logs
+yarn-error.log
+
 # User specific .bazelrc
 user.bazelrc
 
