@@ -118,18 +118,12 @@ func init() {
 }
 
 type executionNode struct {
-	host       string
-	port       int32
 	executorID string
 	// Optional host:port of the scheduler to which the executor is connected. Only set for executors connecting using
 	// the "task streaming" API.
 	schedulerHostPort string
 	// Optional handle for locally connected executor that can be used to enqueue task reservations.
 	handle executor_handle.ExecutorHandle
-}
-
-func (en *executionNode) GetAddr() string {
-	return fmt.Sprintf("grpc://%s:%d", en.host, en.port)
 }
 
 func (en *executionNode) GetSchedulerURI() string {
@@ -143,10 +137,7 @@ func (en *executionNode) String() string {
 	if en.handle != nil {
 		return fmt.Sprintf("connected executor(%s)", en.executorID)
 	}
-	if en.schedulerHostPort != "" {
-		return fmt.Sprintf("executor(%s) @ scheduler(%s)", en.executorID, en.schedulerHostPort)
-	}
-	return fmt.Sprintf("executor(%s:%d)", en.host, en.port)
+	return fmt.Sprintf("executor(%s) @ scheduler(%s)", en.executorID, en.schedulerHostPort)
 }
 
 func (en *executionNode) GetExecutorID() string {
@@ -232,8 +223,6 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 			return nil, err
 		}
 		node := &executionNode{
-			host:              en.Host,
-			port:              en.Port,
 			executorID:        en.ExecutorID,
 			schedulerHostPort: en.SchedulerHostPort,
 		}
@@ -596,13 +585,8 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle execu
 	addr := fmt.Sprintf("%s:%d", node.GetHost(), node.GetPort())
 	log.Infof("Scheduler: registered worker node: %q %+v", addr, nodePoolKey)
 
-	en := &executionNode{
-		host:       node.GetHost(),
-		port:       node.GetPort(),
-		executorID: node.GetExecutorId(),
-	}
 	go func() {
-		if err := s.assignWorkToNode(ctx, handle, en, nodePoolKey); err != nil {
+		if err := s.assignWorkToNode(ctx, handle, nodePoolKey); err != nil {
 			log.Warningf("Failed to assign work to new node: %s", err.Error())
 		}
 	}()
@@ -757,7 +741,7 @@ func (s *SchedulerServer) GetAllExecutionNodes(ctx context.Context) ([]tables.Ex
 	return dbNodes, nil
 }
 
-func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle executor_handle.ExecutorHandle, node *executionNode, nodePoolKey nodePoolKey) error {
+func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle executor_handle.ExecutorHandle, nodePoolKey nodePoolKey) error {
 	tasks, err := s.sampleUnclaimedTasks(ctx, tasksToEnqueueOnJoin, nodePoolKey)
 	if err != nil {
 		return err
