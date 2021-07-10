@@ -21,6 +21,10 @@ func NewBareCommandContainer() container.CommandContainer {
 	return &bareCommandContainer{}
 }
 
+func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string) *interfaces.CommandResult {
+	return commandutil.Run(ctx, command, workDir)
+}
+
 func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error {
 	c.WorkDir = workDir
 	return nil
@@ -28,7 +32,7 @@ func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error
 
 func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	// TODO(siggisim): Wire up stdin/stdout to support persistent workers on bare commands.
-	return commandutil.Run(ctx, cmd, c.WorkDir)
+	return c.Run(ctx, cmd, c.WorkDir)
 }
 
 func (c *bareCommandContainer) PullImageIfNecessary(ctx context.Context) error { return nil }
