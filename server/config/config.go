@@ -214,6 +214,7 @@ type RemoteExecutionConfig struct {
 	RequireExecutorAuthorization  bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
 	EnableUserOwnedExecutors      bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
 	EnableExecutorKeyCreation     bool   `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
+	UseRedisForExecutorPools      bool   `yaml:"use_redis_for_executor_pools" usage:"If enabled, executor pool information will be read from Redis instead of database."`
 }
 
 type ExecutorConfig struct {

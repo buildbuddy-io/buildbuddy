@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "proto/acl.proto";
 import "proto/context.proto";
 import "proto/trace.proto";
 
@@ -196,3 +197,12 @@ message GetExecutionNodesResponse {
   repeated ExecutionNode execution_node = 2;
   bool user_owned_executors_supported = 3;
 }
+
+// Persisted information about connected executors.
+message RegisteredExecutionNode {
+  ExecutionNode registration = 1;
+  string scheduler_host_port = 2;
+  string group_id = 3;
+  acl.ACL acl = 4;
+}
+
