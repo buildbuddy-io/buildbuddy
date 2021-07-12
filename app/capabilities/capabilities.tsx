@@ -38,7 +38,7 @@ export class Capabilities {
     this.deleteInvocation = true;
     this.manageApiKeys = true;
     this.workflows = Boolean(config.workflows_enabled);
-    this.executors = Boolean(config.user_owned_executors_enabled);
+    this.executors = Boolean(config.remote_execution_enabled);
     this.userOwnedExecutors = Boolean(config.user_owned_executors_enabled);
     this.executorKeyCreation = Boolean(config.executor_key_creation_enabled);
     this.code = Boolean(config.code_editor_enabled);
