@@ -23,6 +23,7 @@ go_library(
         "//server/ssl",
         "//server/tables",
         "//server/target",
+        "//server/util/apikey",
         "//server/util/capabilities",
         "//server/util/log",
         "//server/util/perms",

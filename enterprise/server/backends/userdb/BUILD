@@ -11,6 +11,7 @@ go_library(
         "//proto:telemetry_go_proto",
         "//server/environment",
         "//server/tables",
+        "//server/util/apikey",
         "//server/util/capabilities",
         "//server/util/db",
         "//server/util/log",

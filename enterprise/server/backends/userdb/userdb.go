@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/apikey"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -48,8 +49,8 @@ var (
 )
 
 func newAPIKeyToken() string {
-	// NB: Keep in sync with BuildBuddyServer#redactAPIKeys, which relies on this exact impl.
-	return randomToken(20)
+	// NB: apikey.RedactAll relies on this exact impl.
+	return randomToken(apikey.GeneratedAPIKeyLength)
 }
 
 func singleUserGroup(u *tables.User) (*tables.Group, error) {
@@ -62,7 +63,7 @@ func singleUserGroup(u *tables.User) (*tables.Group, error) {
 }
 
 func randomToken(length int) string {
-	// NB: Keep in sync with BuildBuddyServer#redactAPIKeys, which relies on this exact impl.
+	// NB: apikey.RedactAll relies on this exact impl.
 	token, err := random.RandomString(length)
 	if err != nil {
 		token = "bUiLdBuDdy"

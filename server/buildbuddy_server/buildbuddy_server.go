@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -16,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
+	"github.com/buildbuddy-io/buildbuddy/server/util/apikey"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -54,43 +54,10 @@ func NewBuildBuddyServer(env environment.Env, sslService *ssl.SSLService) (*Buil
 	}, nil
 }
 
-func (s *BuildBuddyServer) getConfiguredAPIKey() string {
-	if apiConfig := s.env.GetConfigurator().GetAPIConfig(); apiConfig != nil {
-		return apiConfig.APIKey
-	}
-	return ""
-}
-
 func (s *BuildBuddyServer) redactAPIKeys(ctx context.Context, rsp *inpb.GetInvocationResponse) error {
 	proto.DiscardUnknown(rsp)
 	txt := proto.MarshalTextString(rsp)
-
-	// NB: this implementation depends on the way we generate API keys
-	// (20 alphanumeric characters).
-
-	// Replace x-buildbuddy-api-key header.
-	pat := regexp.MustCompile("x-buildbuddy-api-key=[[:alnum:]]{20}")
-	txt = pat.ReplaceAllLiteralString(txt, "x-buildbuddy-api-key=<REDACTED>")
-
-	// Replace sequences that look like API keys immediately followed by '@',
-	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
-	// or "bes_backend=$API_KEY@domain.com".
-
-	// Here we match 20 alphanum chars occurring at the start of a line.
-	pat = regexp.MustCompile("^[[:alnum:]]{20}@")
-	txt = pat.ReplaceAllLiteralString(txt, "<REDACTED>@")
-	// Here we match 20 alphanum chars anywhere in the line, preceded by a non-
-	// alphanum char (to ensure the match is exactly 20 alphanum chars long).
-	pat = regexp.MustCompile("([^[:alnum:]])[[:alnum:]]{20}@")
-	txt = pat.ReplaceAllString(txt, "$1<REDACTED>@")
-
-	// Replace the literal API key in the configuration, which does not need
-	// to conform to the way we generate API keys.
-	configuredKey := s.getConfiguredAPIKey()
-	if configuredKey != "" {
-		txt = strings.ReplaceAll(txt, configuredKey, "<REDACTED>")
-	}
-
+	txt = apikey.RedactAll(s.env, txt)
 	return proto.UnmarshalText(txt, rsp)
 }
 
