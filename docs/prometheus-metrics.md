@@ -4,16 +4,6 @@ title: Prometheus Metrics
 sidebar_label: Prometheus Metrics
 ---
 
-<!---
-
-============================
-GENERATED FILE - DO NOT EDIT
-============================
-
-Run `python3 server/metrics/generate_docs.py` to re-generate.
-
--->
-
 BuildBuddy exposes [Prometheus](https://prometheus.io) metrics that allow monitoring the
 [four golden signals](https://landing.google.com/sre/sre-book/chapters/monitoring-distributed-systems/):
 latency, traffic, errors, and saturation.
