@@ -46,8 +46,6 @@ export default class ArtifactsCardComponent extends React.Component {
           )
       );
 
-    if (true) return <></>;
-
     return (
       <div className="card artifacts">
         <img className="icon" src="/image/arrow-down-circle.svg" />
