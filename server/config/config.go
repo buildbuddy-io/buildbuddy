@@ -80,8 +80,21 @@ type storageConfig struct {
 	EnableChunkedEventLogs bool        `yaml:"enable_chunked_event_logs" usage:"If true, Event logs will be stored separately from the invocation proto in chunks."`
 }
 
+type DiskCachePartition struct {
+	ID      string `yaml:"id" usage:"The ID of the partition."`
+	MaxSize string `yaml:"max_size" usage:"Maximum size of the partition in SI units, e.g. 100GiB."`
+}
+
+type DiskCachePartitionMapping struct {
+	GroupID     string `yaml:"group_id" usage:"The Group ID to which this mapping applies."`
+	Prefix      string `yaml:"prefix" usage:"The remote instance name prefix used to select this partition."`
+	PartitionID string `yaml:"partition_id" usage:"The partition to use if the Group ID and prefix match."`
+}
+
 type DiskConfig struct {
-	RootDirectory string `yaml:"root_directory" usage:"The root directory to store all blobs in, if using disk based storage."`
+	RootDirectory     string                      `yaml:"root_directory" usage:"The root directory to store all blobs in, if using disk based storage."`
+	Partitions        []DiskCachePartition        `yaml:"partitions"`
+	PartitionMappings []DiskCachePartitionMapping `yaml:"partition_mappings"`
 }
 
 type GCSConfig struct {
@@ -313,10 +326,15 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value) {
 		default:
 			// We know this is not flag compatible and it's here for
 			// long-term support reasons, so don't warn about it.
-			if fqFieldName != "auth.oauth_providers" {
-				log.Printf("Skipping flag: --%s, kind: %s", fqFieldName, f.Type().Kind())
+			if fqFieldName == "auth.oauth_providers" {
+				continue
 			}
-			continue
+			// Not supported via flags.
+			if fqFieldName == "storage.disk.partitions" || fqFieldName == "storage.disk.partition_mappings" ||
+				fqFieldName == "cache.disk.partitions" || fqFieldName == "cache.disk.partition_mappings" {
+				continue
+			}
+			log.Warningf("Skipping flag: --%s, kind: %s", fqFieldName, f.Type().Kind())
 		}
 	}
 }

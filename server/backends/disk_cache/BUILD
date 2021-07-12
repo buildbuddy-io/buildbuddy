@@ -7,6 +7,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//server/config",
+        "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/util/disk",
@@ -15,6 +17,7 @@ go_library(
         "//server/util/prefix",
         "//server/util/status",
         "//server/util/statusz",
+        "@com_github_docker_go_units//:go-units",
         "@org_golang_x_sync//errgroup",
     ],
 )
@@ -25,6 +28,8 @@ go_test(
     deps = [
         ":disk_cache",
         "//proto:remote_execution_go_proto",
+        "//server/config",
+        "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/testutil/testauth",
@@ -33,6 +38,7 @@ go_test(
         "//server/util/disk",
         "//server/util/prefix",
         "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
     ],
 )
