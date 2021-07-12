@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -19,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -29,15 +32,14 @@ var (
 )
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
+	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
 	return te
 }
 
-func getAnonContext(t *testing.T) context.Context {
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+func getAnonContext(t *testing.T, env environment.Env) context.Context {
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -64,7 +66,8 @@ func getTmpDir(t *testing.T) string {
 func TestGetSet(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := getTmpDir(t)
-	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
+	te := getTestEnv(t, emptyUserMap)
+	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +75,7 @@ func TestGetSet(t *testing.T) {
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
 	for _, testSize := range testSizes {
-		ctx := getAnonContext(t)
+		ctx := getAnonContext(t, te)
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
 		// Set() the bytes in the cache.
 		err := dc.Set(ctx, d, buf)
@@ -105,11 +108,12 @@ func randomDigests(t *testing.T, sizes ...int64) map[*repb.Digest][]byte {
 func TestMultiGetSet(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := getTmpDir(t)
-	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
+	te := getTestEnv(t, emptyUserMap)
+	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := getAnonContext(t)
+	ctx := getAnonContext(t, te)
 	digests := randomDigests(t, 10, 20, 11, 30, 40)
 	if err := dc.SetMulti(ctx, digests); err != nil {
 		t.Fatalf("Error multi-setting digests: %s", err.Error())
@@ -140,7 +144,8 @@ func TestMultiGetSet(t *testing.T) {
 func TestReadWrite(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := getTmpDir(t)
-	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
+	te := getTestEnv(t, emptyUserMap)
+	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +153,7 @@ func TestReadWrite(t *testing.T) {
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
 	for _, testSize := range testSizes {
-		ctx := getAnonContext(t)
+		ctx := getAnonContext(t, te)
 		d, r := testdigest.NewRandomDigestReader(t, testSize)
 		// Use Writer() to set the bytes in the cache.
 		wc, err := dc.Writer(ctx, d)
@@ -176,11 +181,12 @@ func TestReadWrite(t *testing.T) {
 func TestSizeLimit(t *testing.T) {
 	maxSizeBytes := int64(1000) // 1000 bytes
 	rootDir := getTmpDir(t)
-	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
+	te := getTestEnv(t, emptyUserMap)
+	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := getAnonContext(t)
+	ctx := getAnonContext(t, te)
 	digestBufs := randomDigests(t, 400, 400, 400)
 	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
 	for d, buf := range digestBufs {
@@ -213,11 +219,12 @@ func TestSizeLimit(t *testing.T) {
 func TestLRU(t *testing.T) {
 	maxSizeBytes := int64(1000) // 1000 bytes
 	rootDir := getTmpDir(t)
-	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
+	te := getTestEnv(t, emptyUserMap)
+	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := getAnonContext(t)
+	ctx := getAnonContext(t, te)
 	digestBufs := randomDigests(t, 400, 400)
 	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
 	for d, buf := range digestBufs {
@@ -266,11 +273,12 @@ func TestLRU(t *testing.T) {
 func TestFileAtomicity(t *testing.T) {
 	maxSizeBytes := int64(100_000_000) // 100MB
 	rootDir := getTmpDir(t)
-	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
+	te := getTestEnv(t, emptyUserMap)
+	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := getAnonContext(t)
+	ctx := getAnonContext(t, te)
 
 	eg, gctx := errgroup.WithContext(ctx)
 	d, buf := testdigest.NewRandomDigestBuf(t, 100000)
@@ -296,7 +304,8 @@ func TestFileAtomicity(t *testing.T) {
 func TestAsyncLoading(t *testing.T) {
 	maxSizeBytes := int64(100_000_000) // 100MB
 	rootDir := getTmpDir(t)
-	ctx := getAnonContext(t)
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
 	anonPath := filepath.Join(rootDir, interfaces.AuthAnonymousUser)
 	if err := disk.EnsureDirectoryExists(anonPath); err != nil {
 		t.Fatal(err)
@@ -315,7 +324,7 @@ func TestAsyncLoading(t *testing.T) {
 	}
 	// Create a new disk cache (this will start async processing of
 	// the data we just wrote above ^)
-	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,9 +366,10 @@ func TestAsyncLoading(t *testing.T) {
 
 func TestJanitorThread(t *testing.T) {
 	maxSizeBytes := int64(10_000_000) // 10MB
-	ctx := getAnonContext(t)
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
 	rootDir := getTmpDir(t)
-	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +386,7 @@ func TestJanitorThread(t *testing.T) {
 
 	// Make a new disk cache with a smaller size. The
 	// janitor should clean extra data up, oldest first.
-	dc, err = disk_cache.NewDiskCache(rootDir, maxSizeBytes/2) // 5MB
+	dc, err = disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes/2) // 5MB
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +409,8 @@ func TestJanitorThread(t *testing.T) {
 func TestZeroLengthFiles(t *testing.T) {
 	maxSizeBytes := int64(100_000_000) // 100MB
 	rootDir := getTmpDir(t)
-	ctx := getAnonContext(t)
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
 	anonPath := filepath.Join(rootDir, interfaces.AuthAnonymousUser)
 	if err := disk.EnsureDirectoryExists(anonPath); err != nil {
 		t.Fatal(err)
@@ -421,7 +432,7 @@ func TestZeroLengthFiles(t *testing.T) {
 
 	// Create a new disk cache (this will start async processing of
 	// the data we just wrote above ^)
-	dc, err := disk_cache.NewDiskCache(rootDir, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,5 +451,108 @@ func TestZeroLengthFiles(t *testing.T) {
 	}
 	if !exists {
 		t.Fatalf("%q was not found in cache.", goodDigest.GetHash())
+	}
+}
+
+func TestNonDefaultPartition(t *testing.T) {
+	maxSizeBytes := int64(100_000_000) // 100MB
+	rootDir := getTmpDir(t)
+
+	// First API key is from a group that is not mapped to a custom partition.
+	testAPIKey1 := "AK1111"
+	testGroup1 := "GR1234"
+	// Second API key is for a group mapped to the "other" custom partition.
+	testAPIKey2 := "AK2222"
+	testGroup2 := "GR7890"
+	testUsers := testauth.TestUsers(testAPIKey1, testGroup1, testAPIKey2, testGroup2)
+	te := getTestEnv(t, testUsers)
+
+	otherPartitionID := "other"
+	otherPartitionPrefix := "myteam/"
+	diskConfig := &config.DiskConfig{
+		RootDirectory: rootDir,
+		Partitions: []config.DiskCachePartition{
+			{
+				ID:      "default",
+				MaxSize: "10MiB",
+			},
+			{
+				ID:      otherPartitionID,
+				MaxSize: "10MiB",
+			},
+		},
+		PartitionMappings: []config.DiskCachePartitionMapping{
+			{
+				GroupID:     testGroup2,
+				Prefix:      otherPartitionPrefix,
+				PartitionID: otherPartitionID,
+			},
+		},
+	}
+
+	dc, err := disk_cache.NewDiskCache(te, diskConfig, maxSizeBytes)
+	require.NoError(t, err)
+
+	// Anonymous user on default partition.
+	{
+		ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+
+		err = dc.Set(ctx, d, buf)
+		require.NoError(t, err)
+
+		userRoot := filepath.Join(rootDir, interfaces.AuthAnonymousUser)
+		dPath := filepath.Join(userRoot, d.GetHash())
+		require.FileExists(t, dPath)
+	}
+
+	// Authenticated user on default partition.
+	{
+		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey1)
+		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
+		require.NoError(t, err)
+		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+
+		err = dc.Set(ctx, d, buf)
+		require.NoError(t, err)
+
+		userRoot := filepath.Join(rootDir, testGroup1)
+		dPath := filepath.Join(userRoot, d.GetHash())
+		require.FileExists(t, dPath)
+	}
+
+	// Authenticated user with group ID that matches custom partition, but without a matching instance name prefix.
+	// Data should go to the default partition.
+	{
+		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey2)
+		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
+		require.NoError(t, err)
+		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+
+		c := dc.WithRemoteInstanceName(ctx, "nonmatchingprefix/")
+		err = c.Set(ctx, d, buf)
+		require.NoError(t, err)
+
+		userRoot := filepath.Join(rootDir, testGroup2)
+		dPath := filepath.Join(userRoot, d.GetHash())
+		require.FileExists(t, dPath)
+	}
+
+	// Authenticated user with group ID that matches custom partition and instance name prefix that matches non-default
+	// partition.
+	// Data should go to the matching partition.
+	{
+		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey2)
+		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
+		require.NoError(t, err)
+		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+
+		c := dc.WithRemoteInstanceName(ctx, otherPartitionPrefix+"hello")
+		err = c.Set(ctx, d, buf)
+		require.NoError(t, err)
+
+		userRoot := filepath.Join(rootDir, otherPartitionID, testGroup2)
+		dPath := filepath.Join(userRoot, d.GetHash())
+		require.FileExists(t, dPath)
 	}
 }

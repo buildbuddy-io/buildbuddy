@@ -196,7 +196,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		cache = c
 	} else if configurator.GetCacheDiskConfig() != nil {
 		diskConfig := configurator.GetCacheDiskConfig()
-		c, err := disk_cache.NewDiskCache(diskConfig.RootDirectory, configurator.GetCacheMaxSizeBytes())
+		c, err := disk_cache.NewDiskCache(realEnv, diskConfig, configurator.GetCacheMaxSizeBytes())
 		if err != nil {
 			log.Fatalf("Error configuring cache: %s", err)
 		}

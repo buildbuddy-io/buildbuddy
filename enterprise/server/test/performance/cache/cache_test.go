@@ -12,6 +12,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -87,7 +89,7 @@ func getMemoryCache(t testing.TB) interfaces.Cache {
 	return mc
 }
 
-func getDiskCache(t testing.TB) interfaces.Cache {
+func getDiskCache(t testing.TB, env environment.Env) interfaces.Cache {
 	testRootDir, err := ioutil.TempDir("/tmp", "diskcache_test_*")
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +100,7 @@ func getDiskCache(t testing.TB) interfaces.Cache {
 			t.Fatal(err)
 		}
 	})
-	dc, err := disk_cache.NewDiskCache(testRootDir, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(env, &config.DiskConfig{RootDirectory: testRootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +108,7 @@ func getDiskCache(t testing.TB) interfaces.Cache {
 }
 
 func getDistributedDiskCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache {
-	dc := getDiskCache(t)
+	dc := getDiskCache(t, te)
 	listenAddr := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	conf := distributed.CacheConfig{
 		ListenAddr:         listenAddr,
@@ -204,7 +206,7 @@ func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
 	time.Sleep(100 * time.Millisecond)
 	return []*namedCache{
 		{getMemoryCache(b), "Memory"},
-		{getDiskCache(b), "Disk"},
+		{getDiskCache(b, te), "Disk"},
 		{dc, "DDisk"},
 	}
 }
