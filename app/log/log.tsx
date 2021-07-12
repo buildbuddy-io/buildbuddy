@@ -16,7 +16,7 @@ export interface Fetcher {
 
 const SCROLL_TOP_THRESHOLD_PX = 512;
 
-export default class Log extends React.Component<LogProps> {
+export class Log extends React.Component<LogProps> {
   constructor(props: LogProps) {
     super(props);
   }

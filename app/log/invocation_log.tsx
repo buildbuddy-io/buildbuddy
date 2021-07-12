@@ -4,7 +4,7 @@ import { eventlog } from "../../proto/eventlog_ts_proto";
 import rpcService from "../service/rpc_service";
 import errorService from "../errors/error_service";
 import { BuildBuddyError } from "../util/errors";
-import Log from "./log";
+import SimpleLazyLog from "./simple_lazylog";
 import FAKE_FETCHER from "./fake_fetcher";
 
 export type InvocationLogProps = {
@@ -92,9 +92,13 @@ export default class InvocationLog extends React.Component<InvocationLogProps, S
     }
   }
 
-  hasMoreContents() {
+  hasPreviousChunk(): boolean {
+    return Boolean(this.state.previousChunkId);
+  }
+
+  hasNextChunk(): boolean {
     // TODO: Return whether the invocation is done
-    return true;
+    return Boolean(this.state.nextChunkId);
   }
 
   render() {
@@ -109,14 +113,15 @@ export default class InvocationLog extends React.Component<InvocationLogProps, S
           borderRadius: 4,
           boxShadow: "0 1px 3px rgba(0, 0, 0, 0.12)",
         }}>
-        <Log
+        {<SimpleLazyLog initialValue={FAKE_FETCHER.initialLines().join("\n")} fetcher={FAKE_FETCHER} />}
+        {/* <Log
           dark
           initialLines={FAKE_FETCHER.initialLines()}
           fetcher={FAKE_FETCHER}
           tailPollIntervalMs={100}
           // initialLines={this.state.lines}
           // fetcher={this}
-        />
+        /> */}
       </div>
     );
   }

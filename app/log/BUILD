@@ -30,7 +30,10 @@ ts_library(
 
 ts_library(
     name = "log",
-    srcs = ["log.tsx"],
+    srcs = [
+        "log.tsx",
+        "simple_lazylog.tsx",
+    ],
     deps = [
         "//app/auth",
         "//app/capabilities",
@@ -39,6 +42,8 @@ ts_library(
         "//app/service",
         "//proto:user_ts_proto",
         "@npm//@types/react",
+        "@npm//@types/react-lazylog",
         "@npm//react",
+        "@npm//react-lazylog",
     ],
 )
