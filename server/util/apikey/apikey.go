@@ -15,12 +15,9 @@ const (
 	apiKeyRedactionMarker = "<REDACTED>"
 )
 
+// RedactAll replaces all occurrences of API keys in the UTF-8 encoded text
+// with redaction markers.
 func RedactAll(env environment.Env, text string) string {
-	fmt.Printf("API key length: %d\n", len([]byte(text)))
-
-	// NB: this implementation depends on the way we generate API keys
-	// (20 alphanumeric characters).
-
 	// Replace x-buildbuddy-api-key header.
 	pat := regexp.MustCompile(fmt.Sprintf("x-buildbuddy-api-key=[[:alnum:]]{%d}", GeneratedAPIKeyLength))
 	text = pat.ReplaceAllLiteralString(text, fmt.Sprintf("x-buildbuddy-api-key=%s", apiKeyRedactionMarker))
