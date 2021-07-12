@@ -16,6 +16,8 @@ const (
 )
 
 func RedactAll(env environment.Env, text string) string {
+	fmt.Printf("API key length: %d\n", len([]byte(text)))
+
 	// NB: this implementation depends on the way we generate API keys
 	// (20 alphanumeric characters).
 
@@ -43,7 +45,7 @@ func RedactAll(env environment.Env, text string) string {
 // alphanumeric characters followed by "@" and replace the 20 chars with
 // the replacement string.
 func redactAPIKeyBasicAuth(text, replacement string) string {
-	out := make([]byte, 0, len(text))
+	out := make([]byte, 0, len([]byte(text)))
 	alnumCount := 0
 	for _, b := range []byte(text) {
 		// NOTE: in UTF-8, all non-ASCII characters start with 1 in the highest bit
