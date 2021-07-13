@@ -329,11 +329,6 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value) {
 			if fqFieldName == "auth.oauth_providers" {
 				continue
 			}
-			// Not supported via flags.
-			if fqFieldName == "storage.disk.partitions" || fqFieldName == "storage.disk.partition_mappings" ||
-				fqFieldName == "cache.disk.partitions" || fqFieldName == "cache.disk.partition_mappings" {
-				continue
-			}
 			log.Warningf("Skipping flag: --%s, kind: %s", fqFieldName, f.Type().Kind())
 		}
 	}
