@@ -9,5 +9,7 @@ go_library(
         "//proto:eventlog_go_proto",
         "//server/backends/chunkstore",
         "//server/environment",
+        "//server/interfaces",
+        "@com_github_leaanthony_go_ansi_parser//:go_default_library",
     ],
 )
