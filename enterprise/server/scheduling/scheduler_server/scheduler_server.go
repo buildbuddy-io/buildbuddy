@@ -118,7 +118,7 @@ func init() {
 }
 
 type executionNode struct {
-	executorID string
+	executorID            string
 	assignableMemoryBytes int64
 	assignableMilliCpu    int64
 	// Optional host:port of the scheduler to which the executor is connected. Only set for executors connecting using
@@ -225,8 +225,8 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 			return nil, err
 		}
 		node := &executionNode{
-			executorID:        en.ExecutorID,
-			schedulerHostPort: en.SchedulerHostPort,
+			executorID:            en.ExecutorID,
+			schedulerHostPort:     en.SchedulerHostPort,
 			assignableMemoryBytes: en.AssignableMemoryBytes,
 			assignableMilliCpu:    en.AssignableMilliCPU,
 		}
@@ -254,7 +254,7 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int
 	if err := np.RefreshNodes(ctx); err != nil {
 		return 0, err
 	}
-	if len(np.nodes) == 0  {
+	if len(np.nodes) == 0 {
 		return 0, status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", np.key.pool, np.key.os, np.key.arch)
 	}
 
@@ -262,7 +262,7 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int
 	for _, node := range np.nodes {
 		if node.assignableMemoryBytes >= taskSize.GetEstimatedMemoryBytes() && node.assignableMilliCpu >= taskSize.GetEstimatedMilliCpu() {
 			fitCount++
-		}	
+		}
 	}
 
 	if fitCount == 0 {
