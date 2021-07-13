@@ -473,12 +473,12 @@ func TestNonDefaultPartition(t *testing.T) {
 		RootDirectory: rootDir,
 		Partitions: []config.DiskCachePartition{
 			{
-				ID:      "default",
-				MaxSize: "10MiB",
+				ID:           "default",
+				MaxSizeBytes: 10_000_000,
 			},
 			{
-				ID:      otherPartitionID,
-				MaxSize: "10MiB",
+				ID:           otherPartitionID,
+				MaxSizeBytes: 10_000_000,
 			},
 		},
 		PartitionMappings: []config.DiskCachePartitionMapping{
@@ -529,7 +529,8 @@ func TestNonDefaultPartition(t *testing.T) {
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 
-		c := dc.WithRemoteInstanceName(ctx, "nonmatchingprefix/")
+		c, err := dc.WithRemoteInstanceName(ctx, "nonmatchingprefix/")
+		require.NoError(t, err)
 		err = c.Set(ctx, d, buf)
 		require.NoError(t, err)
 
@@ -547,7 +548,8 @@ func TestNonDefaultPartition(t *testing.T) {
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 
-		c := dc.WithRemoteInstanceName(ctx, otherPartitionPrefix+"hello")
+		c, err := dc.WithRemoteInstanceName(ctx, otherPartitionPrefix+"hello")
+		require.NoError(t, err)
 		err = c.Set(ctx, d, buf)
 		require.NoError(t, err)
 
