@@ -19,6 +19,12 @@ export default class ExecutorCardComponent extends React.Component<Props> {
             </div>
           </div>
           <div className="executor-section">
+            <div className="executor-section-title">ID:</div>
+            <div>
+              {this.props.node.executorId}
+            </div>
+          </div>
+          <div className="executor-section">
             <div className="executor-section-title">Assignable Memory:</div>
             <div>{format.bytes(+this.props.node.assignableMemoryBytes)}</div>
           </div>

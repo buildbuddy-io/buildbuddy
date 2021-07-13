@@ -19,7 +19,7 @@ export default class ArtifactsCardComponent extends React.Component {
     numPages: 1,
   };
 
-  handleArtifactClicked(outputUri: string, outputFilename: string, invocationId: string, event: MouseEvent) {
+  handleArtifactClicked(outputUri: string, outputFilename: string, event: MouseEvent) {
     event.preventDefault();
     if (!outputUri) return false;
 
@@ -30,7 +30,7 @@ export default class ArtifactsCardComponent extends React.Component {
     }
   }
 
-  handleMoreArtifactClicked() {
+  handleMoreArtifactsClicked() {
     this.setState({ ...this.state, numPages: this.state.numPages + 1 });
   }
 
@@ -79,7 +79,7 @@ export default class ArtifactsCardComponent extends React.Component {
             )}
           </div>
           {this.props.pageSize && targets.length > this.state.numPages * this.props.pageSize && !!this.state.numPages && (
-            <div className="more" onClick={this.handleMoreArtifactClicked.bind(this)}>
+            <div className="more" onClick={this.handleMoreArtifactsClicked.bind(this)}>
               See more artifacts
             </div>
           )}

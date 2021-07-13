@@ -72,6 +72,7 @@ def ts_proto_library(name, proto, **kwargs):
         args = [
             "--target=static-module",
             "--wrap=es6",
+            "--root=%s" % name,
             "--strict-long",  # Force usage of Long type with int64 fields
             "--out=$@",
             "$(execpaths %s)" % proto_target,

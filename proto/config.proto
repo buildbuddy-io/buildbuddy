@@ -46,4 +46,7 @@ message FrontendConfig {
 
   // Whether code editor is enabled.
   bool chunked_event_logs_enabled = 11;
+
+  // Whether remote execution is enabled.
+  bool remote_execution_enabled = 12;
 }

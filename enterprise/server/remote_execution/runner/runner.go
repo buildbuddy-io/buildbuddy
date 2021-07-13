@@ -170,6 +170,13 @@ func (r *CommandRunner) PrepareForTask(task *repb.ExecutionTask) error {
 }
 
 func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+	if !r.PlatformProperties.RecycleRunner {
+		// If the container is not recyclable, then use `Run` to walk through
+		// the entire container lifecycle in a single step.
+		// TODO: Remove this `Run` method and call lifecycle methods directly.
+		return r.Container.Run(ctx, command, r.Workspace.Path())
+	}
+
 	// Get the container to "ready" state so that we can exec commands in it.
 	switch r.state {
 	case initial:
