@@ -3,6 +3,11 @@
 
 set -e
 
+# Replacement for GNU realpath (not available on Mac)
+realpath() {
+  [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
+}
+
 NODE=$(realpath "${1?}")
 shift
 PRETTIER=$(realpath "${1?}")
