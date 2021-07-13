@@ -18,8 +18,8 @@ import SettingsComponent from "../settings/settings";
 import SidebarComponent from "../sidebar/sidebar";
 import TapComponent from "../tap/tap";
 import TrendsComponent from "../trends/trends";
-const CodeComponent = React.lazy(() => import("../code/code"));
-// TODO(siggisim): lazy load all components that make sense more gracefully.
+// TODO(siggisim): Re-enable the code component once we have better code splitting.
+// const CodeComponent = React.lazy(() => import("../code/code"));
 
 import ExecutorsComponent from "../executors/executors";
 
@@ -225,12 +225,12 @@ export default class EnterpriseRootComponent extends React.Component {
                 {workflows && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                 {code && (
                   <Suspense fallback={<div className="loading" />}>
-                    <CodeComponent
+                    {/* <CodeComponent
                       path={this.state.path}
                       user={this.state.user}
                       search={this.state.search}
                       hash={this.state.hash}
-                    />
+                    /> */}
                   </Suspense>
                 )}
                 {setup && (

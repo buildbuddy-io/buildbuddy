@@ -21,7 +21,7 @@ const (
 )
 
 var (
-	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js", "Absolute URL path of the app JS entry point")
+	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle.js", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
 )
 

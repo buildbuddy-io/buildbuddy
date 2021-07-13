@@ -19,7 +19,7 @@ ts_library(
         "//app/menu",
         "//app/router",
         "//app/service",
-        "//enterprise/app/code",
+        # "//enterprise/app/code",
         "//enterprise/app/executors",
         "//enterprise/app/history",
         "//enterprise/app/login",
