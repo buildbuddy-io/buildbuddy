@@ -17,7 +17,6 @@ go_library(
         "//server/util/prefix",
         "//server/util/status",
         "//server/util/statusz",
-        "@com_github_docker_go_units//:go-units",
         "@org_golang_x_sync//errgroup",
     ],
 )

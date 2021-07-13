@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/docker/go-units"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -58,11 +57,6 @@ func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSize
 	partitions := make(map[string]*partition)
 	var defaultPartition *partition
 	for _, pc := range config.Partitions {
-		maxSizeBytes, err := units.FromHumanSize(pc.MaxSize)
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("Maximum size %q for partition %q is invalid: %s", pc.MaxSize, pc.ID, err)
-		}
-
 		rootDir := config.RootDirectory
 		if pc.ID != defaultPartitionID {
 			if pc.ID == "" {
@@ -71,7 +65,7 @@ func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSize
 			rootDir = filepath.Join(rootDir, pc.ID)
 		}
 
-		p, err := newPartition(pc.ID, rootDir, maxSizeBytes)
+		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes)
 		if err != nil {
 			return nil, err
 		}
