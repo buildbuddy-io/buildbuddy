@@ -34,20 +34,111 @@ const (
 	// janitorCheckPeriod is how often the janitor thread will wake up to
 	// check the cache size.
 	janitorCheckPeriod = 100 * time.Millisecond
+
+	defaultPartition = "default"
 )
+
+// DiskCache stores data on disk as files.
+// It is broken up into partitions which are independent and maintain their own LRUs.
+type DiskCache struct {
+	partition *partition
+	prefix    string
+}
+
+func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
+	p, err := newPartition(defaultPartition, rootDir, maxSizeBytes)
+	if err != nil {
+		return nil, err
+	}
+	c := &DiskCache{
+		partition: p,
+	}
+	statusz.AddSection("disk_cache", "On disk LRU cache", c)
+	return c, nil
+}
+
+func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
+	newPrefix := filepath.Join(append(filepath.SplitList(c.prefix), prefix)...)
+	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
+		newPrefix += "/"
+	}
+
+	return &DiskCache{
+		prefix:    newPrefix,
+		partition: c.partition,
+	}
+}
+
+func (c *DiskCache) Statusz(ctx context.Context) string {
+	return c.partition.Statusz(ctx)
+}
+
+func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+	return c.partition.contains(ctx, c.prefix, d)
+}
+
+func (c *DiskCache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
+	return c.partition.containsMulti(ctx, c.prefix, digests)
+}
+
+func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return c.partition.get(ctx, c.prefix, d)
+}
+
+func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	return c.partition.getMulti(ctx, c.prefix, digests)
+}
+
+func (c *DiskCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+	return c.partition.set(ctx, c.prefix, d, data)
+}
+
+func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	return c.partition.setMulti(ctx, c.prefix, kvs)
+}
+
+func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
+	return c.partition.delete(ctx, c.prefix, d)
+}
+
+func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+	return c.partition.reader(ctx, c.prefix, d, offset)
+}
+
+func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+	return c.partition.writer(ctx, c.prefix, d)
+}
 
 // We keep a record (in memory) of file atime (Last Access Time) and size, and
 // when our cache reaches maxSize we remove the oldest files. Rather than
 // serialize this ledger, we regenerate it from scratch on startup by looking
 // at the filesystem.
-type DiskCache struct {
-	l            *lru.LRU
-	mu           *sync.RWMutex
-	fileChannel  chan *fileRecord
+type partition struct {
+	id           string
+	mu           sync.RWMutex
 	rootDir      string
-	prefix       string
-	diskIsMapped *bool
+	lru          *lru.LRU
+	fileChannel  chan *fileRecord
+	diskIsMapped bool
 	lastGCTime   time.Time
+}
+
+func newPartition(id string, rootDir string, maxSizeBytes int64) (*partition, error) {
+	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: evictFn, SizeFn: sizeFn})
+	if err != nil {
+		return nil, err
+	}
+	c := &partition{
+		id:          id,
+		lru:         l,
+		rootDir:     rootDir,
+		fileChannel: make(chan *fileRecord),
+	}
+	if err := c.initializeCache(); err != nil {
+		return nil, err
+	}
+	c.startJanitor()
+	return c, nil
 }
 
 type fileRecord struct {
@@ -93,91 +184,51 @@ func makeRecord(fullPath string, info os.FileInfo) *fileRecord {
 	}
 }
 
-func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
-	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: evictFn, SizeFn: sizeFn})
-	if err != nil {
-		return nil, err
-	}
-	notMappedBool := false
-	c := &DiskCache{
-		l:            l,
-		rootDir:      rootDir,
-		mu:           &sync.RWMutex{},
-		fileChannel:  make(chan *fileRecord),
-		diskIsMapped: &notMappedBool,
-	}
-	if err := c.initializeCache(); err != nil {
-		return nil, err
-	}
-	c.startJanitor()
-	statusz.AddSection("disk_cache", "On disk LRU cache", c)
-	return c, nil
-}
-
-func (c *DiskCache) Statusz(ctx context.Context) string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (p *partition) Statusz(ctx context.Context) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	buf := ""
-	buf += fmt.Sprintf("<div>Root directory: %s</div>", c.rootDir)
-	percentFull := float64(c.l.Size()) / float64(c.l.MaxSize()) * 100.0
-	buf += fmt.Sprintf("<div>Capacity: %d / %d (%2.2f%% full)</div>", c.l.Size(), c.l.MaxSize(), percentFull)
+	buf += fmt.Sprintf("<div>Partition %q</div>", p.id)
+	buf += fmt.Sprintf("<div>Root directory: %s</div>", p.rootDir)
+	percentFull := float64(p.lru.Size()) / float64(p.lru.MaxSize()) * 100.0
+	buf += fmt.Sprintf("<div>Capacity: %d / %d (%2.2f%% full)</div>", p.lru.Size(), p.lru.MaxSize(), percentFull)
 	var oldestItem time.Time
-	if _, v, ok := c.l.GetOldest(); ok {
+	if _, v, ok := p.lru.GetOldest(); ok {
 		if fr, ok := v.(*fileRecord); ok {
 			oldestItem = time.Unix(0, fr.lastUse)
 		}
 	}
-	buf += fmt.Sprintf("<div>%d items (oldest: %s)</div>", c.l.Len(), oldestItem.Format("Jan 02, 2006 15:04:05 PST"))
-	buf += fmt.Sprintf("<div>Mapped into LRU: %t</div>", *c.diskIsMapped)
-	buf += fmt.Sprintf("<div>GC Last run: %s</div>", c.lastGCTime.Format("Jan 02, 2006 15:04:05 PST"))
+	buf += fmt.Sprintf("<div>%d items (oldest: %s)</div>", p.lru.Len(), oldestItem.Format("Jan 02, 2006 15:04:05 PST"))
+	buf += fmt.Sprintf("<div>Mapped into LRU: %t</div>", p.diskIsMapped)
+	buf += fmt.Sprintf("<div>GC Last run: %s</div>", p.lastGCTime.Format("Jan 02, 2006 15:04:05 PST"))
 	return buf
 }
 
-func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	newPrefix := filepath.Join(append(filepath.SplitList(c.prefix), prefix)...)
-	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
-		newPrefix += "/"
-	}
-
-	return &DiskCache{
-		l:            c.l,
-		rootDir:      c.rootDir,
-		mu:           c.mu,
-		prefix:       newPrefix,
-		fileChannel:  c.fileChannel,
-		diskIsMapped: c.diskIsMapped,
-		lastGCTime:   c.lastGCTime,
-	}
-}
-
-func (c *DiskCache) reduceCacheSize(targetSize int64) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.l.Size() < targetSize {
+func (p *partition) reduceCacheSize(targetSize int64) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.lru.Size() < targetSize {
 		return false
 	}
-	_, value, ok := c.l.RemoveOldest()
+	_, value, ok := p.lru.RemoveOldest()
 	if !ok {
 		return false // should never happen
 	}
 	if f, ok := value.(*fileRecord); ok {
 		log.Debugf("Delete thread removed item from cache. Last use was: %d", f.lastUse)
 	}
-	c.lastGCTime = time.Now()
+	p.lastGCTime = time.Now()
 	return true
 }
 
-func (c *DiskCache) startJanitor() {
-	targetSize := int64(float64(c.l.MaxSize()) * janitorCutoffThreshold)
+func (p *partition) startJanitor() {
+	targetSize := int64(float64(p.lru.MaxSize()) * janitorCutoffThreshold)
 	go func() {
 		for {
 			select {
 			case <-time.After(janitorCheckPeriod):
 				for {
-					if !c.reduceCacheSize(targetSize) {
+					if !p.reduceCacheSize(targetSize) {
 						break
 					}
 				}
@@ -186,8 +237,8 @@ func (c *DiskCache) startJanitor() {
 	}()
 }
 
-func (c *DiskCache) initializeCache() error {
-	if err := disk.EnsureDirectoryExists(c.rootDir); err != nil {
+func (p *partition) initializeCache() error {
+	if err := disk.EnsureDirectoryExists(p.rootDir); err != nil {
 		return err
 	}
 
@@ -196,7 +247,7 @@ func (c *DiskCache) initializeCache() error {
 		records := make([]*fileRecord, 0)
 		inFlightRecords := make([]*fileRecord, 0)
 		go func() {
-			for record := range c.fileChannel {
+			for record := range p.fileChannel {
 				inFlightRecords = append(inFlightRecords, record)
 			}
 		}()
@@ -217,35 +268,35 @@ func (c *DiskCache) initializeCache() error {
 			}
 			return nil
 		}
-		if err := filepath.WalkDir(c.rootDir, walkFn); err != nil {
+		if err := filepath.WalkDir(p.rootDir, walkFn); err != nil {
 			log.Warningf("Error walking disk directory: %s", err)
 		}
 
 		// Sort entries by ascending ATime.
 		sort.Slice(records, func(i, j int) bool { return records[i].lastUse < records[j].lastUse })
 
-		c.mu.Lock()
+		p.mu.Lock()
 		// Populate our LRU with everything we scanned from disk.
 		for _, record := range records {
-			c.l.Add(record.key, record)
+			p.lru.Add(record.key, record)
 		}
 		// Add in-flight records to the LRU. These were new files
 		// touched during the loading phase, so we assume they are new
 		// enough to just add to the top of the LRU without sorting.
-		close(c.fileChannel)
+		close(p.fileChannel)
 		for _, record := range inFlightRecords {
-			c.l.Add(record.key, record)
+			p.lru.Add(record.key, record)
 		}
-		*c.diskIsMapped = true
-		c.mu.Unlock()
+		p.diskIsMapped = true
+		p.mu.Unlock()
 
-		log.Debugf("DiskCache: statd %d files in %s", len(records), time.Since(start))
-		log.Infof("Finished initializing disk cache at %q. Current size: %d (max: %d) bytes", c.rootDir, c.l.Size(), c.l.MaxSize())
+		log.Debugf("DiskCache partition %q: statd %d files in %s", p.id, len(records), time.Since(start))
+		log.Infof("Finished initializing disk cache partition %q at %q. Current size: %d (max: %d) bytes", p.id, p.rootDir, p.lru.Size(), p.lru.MaxSize())
 	}()
 	return nil
 }
 
-func (c *DiskCache) key(ctx context.Context, d *repb.Digest) (string, error) {
+func (p *partition) key(ctx context.Context, cachePrefix string, d *repb.Digest) (string, error) {
 	hash, err := digest.Validate(d)
 	if err != nil {
 		return "", err
@@ -255,13 +306,13 @@ func (c *DiskCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 		return "", err
 	}
 
-	return filepath.Join(c.rootDir, userPrefix+c.prefix+hash), nil
+	return filepath.Join(p.rootDir, userPrefix+cachePrefix+hash), nil
 }
 
 // Adds a single file, using the provided path, to the LRU.
 // NB: Callers are responsible for locking the LRU before calling this function.
-func (c *DiskCache) addFileToLRUIfExists(k string) bool {
-	if *c.diskIsMapped {
+func (p *partition) addFileToLRUIfExists(k string) bool {
+	if p.diskIsMapped {
 		return false
 	}
 	info, err := os.Stat(k)
@@ -271,15 +322,15 @@ func (c *DiskCache) addFileToLRUIfExists(k string) bool {
 			return false
 		}
 		record := makeRecord(k, info)
-		c.fileChannel <- record
-		c.l.Add(record.key, record)
+		p.fileChannel <- record
+		p.lru.Add(record.key, record)
 		return true
 	}
 	return false
 }
 
-func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	k, err := c.key(ctx, d)
+func (p *partition) contains(ctx context.Context, prefix string, d *repb.Digest) (bool, error) {
+	k, err := p.key(ctx, prefix, d)
 	if err != nil {
 		return false, err
 	}
@@ -296,20 +347,20 @@ func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) 
 	// [ActionResult][build.bazel.remote.execution.v2.ActionResult] and will be
 	// for some period of time afterwards. The TTLs of the referenced blobs SHOULD be increased
 	// if necessary and applicable.
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	_, ok := c.l.Get(k)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	_, ok := p.lru.Get(k)
 
-	if !ok && !*c.diskIsMapped {
+	if !ok && !p.diskIsMapped {
 		// OK if we're here it means the disk contents are still being loaded
 		// into the LRU. But we still need to return an answer! So we'll go
 		// check the FS, and if the file is there we'll add it to the LRU.
-		ok = c.addFileToLRUIfExists(k)
+		ok = p.addFileToLRUIfExists(k)
 	}
 	return ok, nil
 }
 
-func (c *DiskCache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
+func (p *partition) containsMulti(ctx context.Context, prefix string, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest]bool, len(digests))
 	eg, ctx := errgroup.WithContext(ctx)
@@ -317,7 +368,7 @@ func (c *DiskCache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (
 	for _, d := range digests {
 		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
-				exists, err := c.Contains(ctx, d)
+				exists, err := p.contains(ctx, prefix, d)
 				// NotFoundError is never returned from contains above, so
 				// we don't check for it.
 				if err != nil {
@@ -339,28 +390,28 @@ func (c *DiskCache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (
 	return foundMap, nil
 }
 
-func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	k, err := c.key(ctx, d)
+func (p *partition) get(ctx context.Context, prefix string, d *repb.Digest) ([]byte, error) {
+	k, err := p.key(ctx, prefix, d)
 	if err != nil {
 		return nil, err
 	}
 	buf, err := disk.ReadFile(ctx, k)
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if err != nil {
-		c.l.Remove(k) // remove it just in case
+		p.lru.Remove(k) // remove it just in case
 		return nil, status.NotFoundErrorf("DiskCache missing file: %s", err)
 	}
 
-	if c.l.Contains(k) {
-		c.l.Get(k) // mark the file as used.
-	} else if !*c.diskIsMapped {
-		c.addFileToLRUIfExists(k)
+	if p.lru.Contains(k) {
+		p.lru.Get(k) // mark the file as used.
+	} else if !p.diskIsMapped {
+		p.addFileToLRUIfExists(k)
 	}
 	return buf, nil
 }
 
-func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (p *partition) getMulti(ctx context.Context, prefix string, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest][]byte, len(digests))
 	eg, ctx := errgroup.WithContext(ctx)
@@ -368,7 +419,7 @@ func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*
 	for _, d := range digests {
 		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
-				data, err := c.Get(ctx, d)
+				data, err := p.get(ctx, prefix, d)
 				if status.IsNotFoundError(err) {
 					return nil
 				}
@@ -391,8 +442,8 @@ func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*
 	return foundMap, nil
 }
 
-func (c *DiskCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	k, err := c.key(ctx, d)
+func (p *partition) set(ctx context.Context, prefix string, d *repb.Digest, data []byte) error {
+	k, err := p.key(ctx, prefix, d)
 	if err != nil {
 		return err
 	}
@@ -401,9 +452,9 @@ func (c *DiskCache) Set(ctx context.Context, d *repb.Digest, data []byte) error 
 		// If we had an error writing the file, just return that.
 		return err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.l.Add(k, &fileRecord{
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.lru.Add(k, &fileRecord{
 		key:       k,
 		sizeBytes: int64(n),
 		lastUse:   time.Now().UnixNano(),
@@ -412,40 +463,40 @@ func (c *DiskCache) Set(ctx context.Context, d *repb.Digest, data []byte) error 
 
 }
 
-func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (p *partition) setMulti(ctx context.Context, prefix string, kvs map[*repb.Digest][]byte) error {
 	for d, data := range kvs {
-		if err := c.Set(ctx, d, data); err != nil {
+		if err := p.set(ctx, prefix, d, data); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := c.key(ctx, d)
+func (p *partition) delete(ctx context.Context, prefix string, d *repb.Digest) error {
+	k, err := p.key(ctx, prefix, d)
 	if err != nil {
 		return err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.l.Remove(k)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.lru.Remove(k)
 	return nil
 }
 
-func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
-	k, err := c.key(ctx, d)
+func (p *partition) reader(ctx context.Context, prefix string, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+	k, err := p.key(ctx, prefix, d)
 	if err != nil {
 		return nil, err
 	}
 	// Can't specify length because this might be ActionCache
 	r, err := disk.FileReader(ctx, k, offset, 0)
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if err != nil {
-		c.l.Remove(k) // remove it just in case
+		p.lru.Remove(k) // remove it just in case
 		return nil, status.NotFoundErrorf("DiskCache missing file: %s", err)
 	} else {
-		c.l.Get(k) // mark the file as used.
+		p.lru.Get(k) // mark the file as used.
 	}
 	return r, nil
 }
@@ -471,8 +522,8 @@ func (d *dbWriteOnClose) Close() error {
 	return d.closeFn(d.bytesWritten)
 }
 
-func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
-	k, err := c.key(ctx, d)
+func (p *partition) writer(ctx context.Context, prefix string, d *repb.Digest) (io.WriteCloser, error) {
+	k, err := p.key(ctx, prefix, d)
 	if err != nil {
 		return nil, err
 	}
@@ -484,9 +535,9 @@ func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser,
 	return &dbWriteOnClose{
 		WriteCloser: writeCloser,
 		closeFn: func(totalBytesWritten int64) error {
-			c.mu.Lock()
-			defer c.mu.Unlock()
-			c.l.Add(k, &fileRecord{
+			p.mu.Lock()
+			defer p.mu.Unlock()
+			p.lru.Add(k, &fileRecord{
 				key:       k,
 				sizeBytes: totalBytesWritten,
 				lastUse:   time.Now().UnixNano(),
@@ -494,12 +545,4 @@ func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser,
 			return nil
 		},
 	}, nil
-}
-
-func (c *DiskCache) Start() error {
-	return nil
-}
-
-func (c *DiskCache) Stop() error {
-	return nil
 }
