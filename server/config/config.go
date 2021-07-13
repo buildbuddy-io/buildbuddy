@@ -81,14 +81,14 @@ type storageConfig struct {
 }
 
 type DiskCachePartition struct {
-	ID           string `yaml:"id" usage:"The ID of the partition."`
-	MaxSizeBytes int64  `yaml:"max_size" usage:"Maximum size of the partition."`
+	ID           string `yaml:"id" json:"id" usage:"The ID of the partition."`
+	MaxSizeBytes int64  `yaml:"max_size" json:"max_size_bytes "usage:"Maximum size of the partition."`
 }
 
 type DiskCachePartitionMapping struct {
-	GroupID     string `yaml:"group_id" usage:"The Group ID to which this mapping applies."`
-	Prefix      string `yaml:"prefix" usage:"The remote instance name prefix used to select this partition."`
-	PartitionID string `yaml:"partition_id" usage:"The partition to use if the Group ID and prefix match."`
+	GroupID     string `yaml:"group_id" json:"group_id" usage:"The Group ID to which this mapping applies."`
+	Prefix      string `yaml:"prefix" json:"prefix" usage:"The remote instance name prefix used to select this partition."`
+	PartitionID string `yaml:"partition_id" json:"partition_id" usage:"The partition to use if the Group ID and prefix match."`
 }
 
 type DiskConfig struct {
