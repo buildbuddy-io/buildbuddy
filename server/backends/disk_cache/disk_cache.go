@@ -106,31 +106,30 @@ func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
 	}
 }
 
-func (c *DiskCache) WithRemoteInstanceName(ctx context.Context, remoteInstanceName string) interfaces.Cache {
+func (c *DiskCache) WithRemoteInstanceName(ctx context.Context, remoteInstanceName string) (interfaces.Cache, error) {
 	auth := c.env.GetAuthenticator()
 	if auth == nil {
-		return c
+		return c, nil
 	}
 	user, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
-		return c
+		return c, nil
 	}
 	for _, m := range c.partitionMappings {
 		if m.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, m.Prefix) {
 			p, ok := c.partitions[m.PartitionID]
 			if !ok {
-				log.Warningf("Mapping to unknown partition %q", m.PartitionID)
-				continue
+				return nil, status.NotFoundErrorf("Mapping to unknown partition %q", m.PartitionID)
 			}
 			return &DiskCache{
 				env:        c.env,
 				prefix:     c.prefix,
 				partition:  p,
 				partitions: c.partitions,
-			}
+			}, nil
 		}
 	}
-	return c
+	return c, nil
 }
 
 func (c *DiskCache) Statusz(ctx context.Context) string {
