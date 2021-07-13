@@ -1,0 +1,45 @@
+.log {
+  height: 100%;
+  overflow-y: scroll;
+}
+
+.light-log {
+  --color: black;
+  --background-color: white;
+  --scrollbar-track-color: #eceff1;
+  --scrollbar-thumb-color: #b0bec5;
+}
+
+.dark-log {
+  --color: white;
+  --background-color: black;
+  --scrollbar-track-color: #263238;
+  --scrollbar-thumb-color: #cfd8dc;
+}
+
+.log .log-lines {
+  margin: 0;
+  padding: 12px;
+}
+
+.log-line {
+  white-space: pre-wrap;
+}
+
+.log::-webkit-scrollbar {
+  width: 12px;
+}
+
+.log::-webkit-scrollbar-track {
+  background: var(--scrollbar-track-color);
+}
+
+.log::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--scrollbar-thumb-color);
+}
+
+.log {
+  background: var(--background-color);
+  color: var(--color);
+}

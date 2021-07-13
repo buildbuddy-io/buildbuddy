@@ -49,6 +49,7 @@ genrule(
         "//app/alert:alert.css",
         "//app/compare:compare.css",
         "//app/invocation:invocation.css",
+        "//app/log:log.css",
         "//app/components/button:button.css",
         "//app/components/dialog:dialog.css",
         "//app/components/input:input.css",

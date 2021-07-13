@@ -18,10 +18,7 @@ func GetEventLogPathFromInvocationId(invocationId string) string {
 
 // Gets the chunk of the event log specified by the request from the blobstore and returns a response containing it
 func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEventLogChunkRequest) (*elpb.GetEventLogChunkResponse, error) {
-	inv, err := env.GetInvocationDB().LookupInvocation(ctx, req.GetInvocationId())
-	if err != nil {
-		return nil, err
-	}
+	// TODO: Check permissions
 
 	c := chunkstore.New(env.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
 	var intChunkId uint16
@@ -31,16 +28,12 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 			return nil, err
 		}
 		intChunkId = uint16(n)
-	} else if len(inv.LastChunkId) > 0 {
-		n, err := strconv.ParseUint(inv.LastChunkId, 16, 16)
+	} else {
+		lastChunkID, err := c.GetLastChunkIndex(ctx, GetEventLogPathFromInvocationId(req.GetInvocationId()))
 		if err != nil {
 			return nil, err
 		}
-		intChunkId = uint16(n)
-	} else {
-		return &elpb.GetEventLogChunkResponse{
-			NextChunkId: fmt.Sprintf("%04x", 0),
-		}, nil
+		intChunkId = lastChunkID
 	}
 
 	rsp := &elpb.GetEventLogChunkResponse{
@@ -48,6 +41,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 			ChunkId: fmt.Sprintf("%04x", intChunkId),
 		},
 	}
+	var err error
 	if rsp.Chunk.Buffer, err = c.ReadChunk(ctx, GetEventLogPathFromInvocationId(req.InvocationId), intChunkId); err != nil {
 		return nil, err
 	}

@@ -43,11 +43,11 @@ const (
 	defaultChunkFileSizeBytes = 1000 * 100 // 100KB
 
 	// Chunks will be flushed to blobstore when they reach this size.
-	defaultLogChunkSize = 2_000_000 // 2MB
+	defaultLogChunkSize = 5e3 // 5KB
 
 	// Chunks will also be flushed to blobstore after this much time
 	// passes with no new data being written.
-	defaultChunkTimeout = 15 * time.Second
+	defaultChunkTimeout = 300 * time.Millisecond
 )
 
 type BuildEventHandler struct {
