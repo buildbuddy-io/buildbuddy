@@ -109,6 +109,14 @@ type AwsS3Config struct {
 	Region             string `yaml:"region" usage:"The AWS region."`
 	Bucket             string `yaml:"bucket" usage:"The AWS S3 bucket to store files in."`
 	CredentialsProfile string `yaml:"credentials_profile" usage:"A custom credentials profile to use."`
+
+	// Useful for configuring MinIO: https://docs.min.io/docs/how-to-use-aws-sdk-for-go-with-minio-server.html
+	Endpoint                string `yaml:"endpoint" usage:"The AWS endpoint to use, useful for configuring the use of MinIO."`
+	StaticCredentialsID     string `yaml:"static_credentials_id" usage:"Static credentials ID to use, useful for configuring the use of MinIO."`
+	StaticCredentialsSecret string `yaml:"static_credentials_secret" usage:"Static credentials secret to use, useful for configuring the use of MinIO."`
+	StaticCredentialsToken  string `yaml:"static_credentials_token" usage:"Static credentials token to use, useful for configuring the use of MinIO."`
+	DisableSSL              bool   `yaml:"disable_ssl" usage:"Disables the use of SSL, useful for configuring the use of MinIO."`
+	S3ForcePathStyle        bool   `yaml:"s3_force_path_style" usage:"Force path style urls for objects, useful for configuring the use of MinIO."`
 }
 
 type integrationsConfig struct {
@@ -131,6 +139,14 @@ type S3CacheConfig struct {
 	Bucket             string `yaml:"bucket" usage:"The AWS S3 bucket to store files in."`
 	CredentialsProfile string `yaml:"credentials_profile" usage:"A custom credentials profile to use."`
 	TTLDays            int64  `yaml:"ttl_days" usage:"The period after which cache files should be TTLd. Disabled if 0."`
+
+	// Useful for configuring MinIO: https://docs.min.io/docs/how-to-use-aws-sdk-for-go-with-minio-server.html
+	Endpoint                string `yaml:"endpoint" usage:"The AWS endpoint to use, useful for configuring the use of MinIO."`
+	StaticCredentialsID     string `yaml:"static_credentials_id" usage:"Static credentials ID to use, useful for configuring the use of MinIO."`
+	StaticCredentialsSecret string `yaml:"static_credentials_secret" usage:"Static credentials secret to use, useful for configuring the use of MinIO."`
+	StaticCredentialsToken  string `yaml:"static_credentials_token" usage:"Static credentials token to use, useful for configuring the use of MinIO."`
+	DisableSSL              bool   `yaml:"disable_ssl" usage:"Disables the use of SSL, useful for configuring the use of MinIO."`
+	S3ForcePathStyle        bool   `yaml:"s3_force_path_style" usage:"Force path style urls for objects, useful for configuring the use of MinIO."`
 }
 
 type DistributedCacheConfig struct {

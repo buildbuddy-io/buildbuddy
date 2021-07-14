@@ -52,9 +52,16 @@ func NewS3Cache(awsConfig *config.S3CacheConfig) (*S3Cache, error) {
 		creds = credentials.NewSharedCredentials("", awsConfig.CredentialsProfile)
 	}
 
+	if awsConfig.StaticCredentialsID != "" && awsConfig.StaticCredentialsSecret != "" {
+		creds = credentials.NewStaticCredentials(awsConfig.StaticCredentialsID, awsConfig.StaticCredentialsSecret, awsConfig.StaticCredentialsToken)
+	}
+
 	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(awsConfig.Region),
-		Credentials: creds,
+		Region:           aws.String(awsConfig.Region),
+		Credentials:      creds,
+		Endpoint:         aws.String(awsConfig.Endpoint),
+		DisableSSL:       aws.Bool(awsConfig.DisableSSL),
+		S3ForcePathStyle: aws.Bool(awsConfig.S3ForcePathStyle),
 	})
 	if err != nil {
 		return nil, err
