@@ -272,7 +272,7 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int
 	return fitCount, nil
 }
 
-func (np *nodePool) AddConnectedExecutor(id string, handle executor_handle.ExecutorHandle) bool {
+func (np *nodePool) AddConnectedExecutor(id string, mem int64, cpu int64, handle executor_handle.ExecutorHandle) bool {
 	np.mu.Lock()
 	defer np.mu.Unlock()
 	for _, e := range np.connectedExecutors {
@@ -281,8 +281,10 @@ func (np *nodePool) AddConnectedExecutor(id string, handle executor_handle.Execu
 		}
 	}
 	np.connectedExecutors = append(np.connectedExecutors, &executionNode{
-		executorID: id,
-		handle:     handle,
+		executorID:            id,
+		handle:                handle,
+		assignableMemoryBytes: mem,
+		assignableMilliCpu:    cpu,
 	})
 	return true
 }
@@ -597,7 +599,7 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle execu
 	}
 
 	pool := s.getOrCreatePool(nodePoolKey)
-	newExecutor := pool.AddConnectedExecutor(node.GetExecutorId(), handle)
+	newExecutor := pool.AddConnectedExecutor(node.GetExecutorId(), node.GetAssignableMemoryBytes(), node.GetAssignableMilliCpu(), handle)
 	if !newExecutor {
 		return nil
 	}
