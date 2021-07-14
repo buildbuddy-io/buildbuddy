@@ -64,13 +64,13 @@ storage:
   chunk_file_size_bytes: 3000000  # 3 MB
   aws_s3:
     region: "us-west-2"
-    bucket: "buddybuild-bucket"
+    bucket: "buildbuddy-bucket"
     credentials_profile: "other-profile"
 cache:
   redis_target: "my-redis.local:6379"
   s3:
     region: "us-west-2"
-    bucket: "buddybuild-bucket"
+    bucket: "buildbuddy-bucket"
     credentials_profile: "other-profile"
     ttl_days: 30
 ```
