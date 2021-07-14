@@ -20,7 +20,7 @@ export class Capabilities {
   userOwnedExecutors: boolean;
   executorKeyCreation: boolean;
   code: boolean;
-  logStreaming: boolean;
+  chunkedEventLogs: boolean;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
@@ -43,7 +43,7 @@ export class Capabilities {
     this.userOwnedExecutors = Boolean(config.user_owned_executors_enabled);
     this.executorKeyCreation = Boolean(config.executor_key_creation_enabled);
     this.code = Boolean(config.code_editor_enabled);
-    this.logStreaming = Boolean(config.chunked_event_logs_enabled);
+    this.chunkedEventLogs = Boolean(config.chunked_event_logs_enabled);
     this.paths = new Set(paths);
     if (window.gtag) {
       window.gtag("set", {

@@ -52,7 +52,7 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
   }
 
   private isLogStreamingEnabled() {
-    return capabilities.logStreaming && this.props.model.invocations[0]?.lastChunkId;
+    return capabilities.chunkedEventLogs && this.props.model.invocations[0]?.lastChunkId;
   }
 
   private isInvocationComplete() {
