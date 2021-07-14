@@ -10,6 +10,6 @@ go_library(
         "//server/backends/chunkstore",
         "//server/environment",
         "//server/interfaces",
-        "@com_github_leaanthony_go_ansi_parser//:go_default_library",
+        "@com_github_leaanthony_go_ansi_parser//:go-ansi-parser",
     ],
 )
