@@ -9,10 +9,13 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -35,23 +38,55 @@ const (
 	// check the cache size.
 	janitorCheckPeriod = 100 * time.Millisecond
 
-	defaultPartition = "default"
+	defaultPartitionID = "default"
 )
 
 // DiskCache stores data on disk as files.
 // It is broken up into partitions which are independent and maintain their own LRUs.
 type DiskCache struct {
+	env               environment.Env
+	partitions        map[string]*partition
+	partitionMappings []config.DiskCachePartitionMapping
+	// The currently selected partition. Initialized to the default partition.
+	// WithRemoteInstanceName can create a new cache accessor with a different selected partition.
 	partition *partition
 	prefix    string
 }
 
-func NewDiskCache(rootDir string, maxSizeBytes int64) (*DiskCache, error) {
-	p, err := newPartition(defaultPartition, rootDir, maxSizeBytes)
-	if err != nil {
-		return nil, err
+func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSizeBytes int64) (*DiskCache, error) {
+	partitions := make(map[string]*partition)
+	var defaultPartition *partition
+	for _, pc := range config.Partitions {
+		rootDir := config.RootDirectory
+		if pc.ID != defaultPartitionID {
+			if pc.ID == "" {
+				return nil, status.InvalidArgumentError("Non-default partition %q must have a valid ID")
+			}
+			rootDir = filepath.Join(rootDir, pc.ID)
+		}
+
+		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes)
+		if err != nil {
+			return nil, err
+		}
+		partitions[pc.ID] = p
+		if pc.ID == defaultPartitionID {
+			defaultPartition = p
+		}
 	}
+	if defaultPartition == nil {
+		p, err := newPartition(defaultPartitionID, config.RootDirectory, defaultMaxSizeBytes)
+		if err != nil {
+			return nil, err
+		}
+		defaultPartition = p
+	}
+
 	c := &DiskCache{
-		partition: p,
+		env:               env,
+		partitions:        partitions,
+		partitionMappings: config.PartitionMappings,
+		partition:         defaultPartition,
 	}
 	statusz.AddSection("disk_cache", "On disk LRU cache", c)
 	return c, nil
@@ -64,13 +99,47 @@ func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
 	}
 
 	return &DiskCache{
-		prefix:    newPrefix,
-		partition: c.partition,
+		env:               c.env,
+		prefix:            newPrefix,
+		partition:         c.partition,
+		partitions:        c.partitions,
+		partitionMappings: c.partitionMappings,
 	}
 }
 
+func (c *DiskCache) WithRemoteInstanceName(ctx context.Context, remoteInstanceName string) (interfaces.Cache, error) {
+	auth := c.env.GetAuthenticator()
+	if auth == nil {
+		return c, nil
+	}
+	user, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return c, nil
+	}
+	for _, m := range c.partitionMappings {
+		if m.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, m.Prefix) {
+			p, ok := c.partitions[m.PartitionID]
+			if !ok {
+				return nil, status.NotFoundErrorf("Mapping to unknown partition %q", m.PartitionID)
+			}
+			return &DiskCache{
+				env:               c.env,
+				prefix:            c.prefix,
+				partition:         p,
+				partitions:        c.partitions,
+				partitionMappings: c.partitionMappings,
+			}, nil
+		}
+	}
+	return c, nil
+}
+
 func (c *DiskCache) Statusz(ctx context.Context) string {
-	return c.partition.Statusz(ctx)
+	buf := ""
+	for _, p := range c.partitions {
+		buf += p.Statusz(ctx)
+	}
+	return buf
 }
 
 func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
@@ -187,7 +256,7 @@ func makeRecord(fullPath string, info os.FileInfo) *fileRecord {
 func (p *partition) Statusz(ctx context.Context) string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	buf := ""
+	buf := "<br>"
 	buf += fmt.Sprintf("<div>Partition %q</div>", p.id)
 	buf += fmt.Sprintf("<div>Root directory: %s</div>", p.rootDir)
 	percentFull := float64(p.lru.Size()) / float64(p.lru.MaxSize()) * 100.0
