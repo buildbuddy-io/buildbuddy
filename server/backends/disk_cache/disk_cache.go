@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -328,6 +329,12 @@ func (p *partition) initializeCache() error {
 			if !d.IsDir() {
 				info, err := d.Info()
 				if err != nil {
+					// File disappeared since the directory entries were read.
+					// We handle streamed writes by writing to a temp file & then renaming it so it's possible that
+					// we can come across some temp files that disappear.
+					if os.IsNotExist(err) {
+						return nil
+					}
 					return err
 				}
 				if info.Size() == 0 {
@@ -339,7 +346,7 @@ func (p *partition) initializeCache() error {
 			return nil
 		}
 		if err := filepath.WalkDir(p.rootDir, walkFn); err != nil {
-			log.Warningf("Error walking disk directory: %s", err)
+			alert.UnexpectedEvent("disk_cache_error_walking_directory", "err: %s", err)
 		}
 
 		// Sort entries by ascending ATime.
