@@ -601,7 +601,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 		runErr := runCommand(ctx, *bazelCommand, args, nil /*=env*/, ar.log)
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
-			ar.log.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
+			ar.log.Printf("%s[BUILDBUDDY] (command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
 		}
 
 		runDebugCommand(ar.log, `ls -la`)
@@ -746,7 +746,7 @@ func (ws *workspace) setup(ctx context.Context) error {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
 	}
 	if repoDirInfo != nil {
-		ws.log.WriteString("Syncing existing git repo.\n")
+		writeCommandSummary(&ws.log, "Syncing existing repo...")
 		if err := os.Chdir(repoDirName); err != nil {
 			return status.WrapError(err, "cd")
 		}
@@ -762,7 +762,7 @@ func (ws *workspace) setup(ctx context.Context) error {
 				"Deleting and initializing from scratch. Error: %s",
 			err,
 		)
-		ws.log.WriteString("Failed to sync existing git repo.\n")
+		writeCommandSummary(&ws.log, "Failed to sync existing git repo. Deleting repo and trying again.")
 		if err := os.Chdir(".."); err != nil {
 			return status.WrapError(err, "cd")
 		}
@@ -777,7 +777,6 @@ func (ws *workspace) setup(ctx context.Context) error {
 	if err := os.Chdir(repoDirName); err != nil {
 		return status.WrapErrorf(err, "cd %q", repoDirName)
 	}
-	writeCommandSummary(&ws.log, "Cloning git repo...")
 	if err := git(ctx, &ws.log, "init"); err != nil {
 		return err
 	}
@@ -921,7 +920,7 @@ func git(ctx context.Context, out io.Writer, args ...string) *gitError {
 
 func writeCommandSummary(out io.Writer, format string, args ...interface{}) {
 	io.WriteString(out, ansiGray)
-	io.WriteString(out, "> ")
+	io.WriteString(out, "[BUILDBUDDY] ")
 	io.WriteString(out, fmt.Sprintf(format, args...))
 	io.WriteString(out, ansiReset)
 	io.WriteString(out, "\n")
