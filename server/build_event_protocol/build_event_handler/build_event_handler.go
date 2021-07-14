@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
@@ -41,13 +42,6 @@ import (
 
 const (
 	defaultChunkFileSizeBytes = 1000 * 100 // 100KB
-
-	// Chunks will be flushed to blobstore when they reach this size.
-	defaultLogChunkSize = 2_000_000 // 2MB
-
-	// Chunks will also be flushed to blobstore after this much time
-	// passes with no new data being written.
-	defaultChunkTimeout = 15 * time.Second
 )
 
 type BuildEventHandler struct {
@@ -75,12 +69,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		targetTracker:           target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		hasReceivedStartedEvent: false,
 		eventsBeforeStarted:     make([]*inpb.InvocationEvent, 0),
-		logWriter: chunkstore.New(
-			b.env.GetBlobstore(),
-			&chunkstore.ChunkstoreOptions{
-				WriteBlockSize:       defaultLogChunkSize,
-				WriteTimeoutDuration: defaultChunkTimeout,
-			}).Writer(ctx, eventlog.GetEventLogPathFromInvocationId(iid)),
+		logWriter:               eventlog.NewEventLogWriter(ctx, b.env.GetBlobstore(), iid),
 	}
 }
 
@@ -125,7 +114,7 @@ type EventChannel struct {
 	targetTracker           *target_tracker.TargetTracker
 	eventsBeforeStarted     []*inpb.InvocationEvent
 	hasReceivedStartedEvent bool
-	logWriter               *chunkstore.ChunkstoreWriter
+	logWriter               *eventlog.EventLogWriter
 }
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string, invocation *inpb.Invocation) error {
@@ -171,6 +160,9 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 	err := e.fillInvocationFromEvents(ctx, iid, invocation)
 	if err != nil {
 		return err
+	}
+	if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+		invocation.LastChunkId = chunkstore.ChunkIndexAsString(e.logWriter.GetLastChunkIndex())
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
@@ -231,12 +223,12 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		InvocationId:     iid,
 		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
 	}
-	if lastChunkId, err := e.logWriter.GetLastChunkIndex(); err == nil {
-		invocation.LastChunkId = fmt.Sprintf("%04x", lastChunkId)
-	}
 	err := e.fillInvocationFromEvents(e.ctx, iid, invocation)
 	if err != nil {
 		return err
+	}
+	if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+		invocation.LastChunkId = chunkstore.ChunkIndexAsString(e.logWriter.GetLastChunkIndex())
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
@@ -330,6 +322,9 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			}
 		}
 
+		if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+			ti.LastChunkId = chunkstore.ChunkIndexAsString(e.logWriter.GetLastChunkIndex())
+		}
 		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
 			return err
 		}
@@ -360,8 +355,10 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
-			e.logWriter.Write([]byte(p.Progress.Stderr))
-			e.logWriter.Write([]byte(p.Progress.Stdout))
+			screenWriter := terminal.NewScreenWriter()
+			screenWriter.Write([]byte(p.Progress.Stderr))
+			screenWriter.Write([]byte(p.Progress.Stdout))
+			e.logWriter.Write(screenWriter.RenderAsANSI())
 			// For now, write logs to both chunks and the invocation proto
 			// p.Progress.Stderr = ""
 			// p.Progress.Stdout = ""
@@ -409,6 +406,9 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 	err := e.fillInvocationFromEvents(ctx, invocationID, invocationProto)
 	if err != nil {
 		return err
+	}
+	if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+		invocationProto.LastChunkId = chunkstore.ChunkIndexAsString(e.logWriter.GetLastChunkIndex())
 	}
 	ti = tableInvocationFromProto(invocationProto, ti.BlobID)
 	if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
