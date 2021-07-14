@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
@@ -354,8 +355,10 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
-			e.logWriter.Write([]byte(p.Progress.Stderr))
-			e.logWriter.Write([]byte(p.Progress.Stdout))
+			screenWriter := terminal.NewScreenWriter()
+			screenWriter.Write([]byte(p.Progress.Stderr))
+			screenWriter.Write([]byte(p.Progress.Stdout))
+			e.logWriter.Write(screenWriter.RenderAsANSI())
 			// For now, write logs to both chunks and the invocation proto
 			// p.Progress.Stderr = ""
 			// p.Progress.Stdout = ""
