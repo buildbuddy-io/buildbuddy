@@ -18,6 +18,7 @@ export default class InvocationModel {
   targets: build_event_stream.BuildEvent[] = [];
   succeeded: build_event_stream.BuildEvent[] = [];
   failed: build_event_stream.BuildEvent[] = [];
+  skipped: build_event_stream.BuildEvent[] = [];
   fetchEventURLs: string[] = [];
   succeededTest: build_event_stream.BuildEvent[] = [];
   failedTest: build_event_stream.BuildEvent[] = [];
@@ -123,8 +124,7 @@ export default class InvocationModel {
           model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         }
         if (buildEvent.unstructuredCommandLine) {
-          model.unstructuredCommandLine =
-            buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+          model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
         }
       }
     }
@@ -146,6 +146,10 @@ export default class InvocationModel {
         model.succeeded.push(buildEvent as build_event_stream.BuildEvent);
       } else {
         model.failed.push(buildEvent as build_event_stream.BuildEvent);
+      }
+
+      if (buildEvent.aborted && buildEvent.aborted.reason.toString().toLowerCase() == "skipped") {
+        model.skipped.push(buildEvent as build_event_stream.BuildEvent);
       }
     }
 

@@ -83,7 +83,7 @@ export default class TargetsComponent extends React.Component {
 
         {!!this.props.model.succeeded.length && this.props.mode != "failing" && (
           <TargetsCardComponent
-            buildEvents={this.props.model.succeeded}
+            buildEvents={this.props.model.succeeded.concat(this.props.model.skipped)}
             className="card-success"
             iconPath="/image/check-circle.svg"
             presentVerb={`${this.props.model.succeeded.length == 1 ? "target" : "targets"}`}
