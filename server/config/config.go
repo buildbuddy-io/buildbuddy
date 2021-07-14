@@ -1,12 +1,14 @@
 package config
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"reflect"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"gopkg.in/yaml.v2"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -80,8 +82,21 @@ type storageConfig struct {
 	EnableChunkedEventLogs bool        `yaml:"enable_chunked_event_logs" usage:"If true, Event logs will be stored separately from the invocation proto in chunks."`
 }
 
+type DiskCachePartition struct {
+	ID           string `yaml:"id" json:"id" usage:"The ID of the partition."`
+	MaxSizeBytes int64  `yaml:"max_size" json:"max_size_bytes" usage:"Maximum size of the partition."`
+}
+
+type DiskCachePartitionMapping struct {
+	GroupID     string `yaml:"group_id" json:"group_id" usage:"The Group ID to which this mapping applies."`
+	Prefix      string `yaml:"prefix" json:"prefix" usage:"The remote instance name prefix used to select this partition."`
+	PartitionID string `yaml:"partition_id" json:"partition_id" usage:"The partition to use if the Group ID and prefix match."`
+}
+
 type DiskConfig struct {
-	RootDirectory string `yaml:"root_directory" usage:"The root directory to store all blobs in, if using disk based storage."`
+	RootDirectory     string                      `yaml:"root_directory" usage:"The root directory to store all blobs in, if using disk based storage."`
+	Partitions        []DiskCachePartition        `yaml:"partitions"`
+	PartitionMappings []DiskCachePartitionMapping `yaml:"partition_mappings"`
 }
 
 type GCSConfig struct {
@@ -94,6 +109,14 @@ type AwsS3Config struct {
 	Region             string `yaml:"region" usage:"The AWS region."`
 	Bucket             string `yaml:"bucket" usage:"The AWS S3 bucket to store files in."`
 	CredentialsProfile string `yaml:"credentials_profile" usage:"A custom credentials profile to use."`
+
+	// Useful for configuring MinIO: https://docs.min.io/docs/how-to-use-aws-sdk-for-go-with-minio-server.html
+	Endpoint                string `yaml:"endpoint" usage:"The AWS endpoint to use, useful for configuring the use of MinIO."`
+	StaticCredentialsID     string `yaml:"static_credentials_id" usage:"Static credentials ID to use, useful for configuring the use of MinIO."`
+	StaticCredentialsSecret string `yaml:"static_credentials_secret" usage:"Static credentials secret to use, useful for configuring the use of MinIO."`
+	StaticCredentialsToken  string `yaml:"static_credentials_token" usage:"Static credentials token to use, useful for configuring the use of MinIO."`
+	DisableSSL              bool   `yaml:"disable_ssl" usage:"Disables the use of SSL, useful for configuring the use of MinIO."`
+	S3ForcePathStyle        bool   `yaml:"s3_force_path_style" usage:"Force path style urls for objects, useful for configuring the use of MinIO."`
 }
 
 type integrationsConfig struct {
@@ -116,6 +139,14 @@ type S3CacheConfig struct {
 	Bucket             string `yaml:"bucket" usage:"The AWS S3 bucket to store files in."`
 	CredentialsProfile string `yaml:"credentials_profile" usage:"A custom credentials profile to use."`
 	TTLDays            int64  `yaml:"ttl_days" usage:"The period after which cache files should be TTLd. Disabled if 0."`
+
+	// Useful for configuring MinIO: https://docs.min.io/docs/how-to-use-aws-sdk-for-go-with-minio-server.html
+	Endpoint                string `yaml:"endpoint" usage:"The AWS endpoint to use, useful for configuring the use of MinIO."`
+	StaticCredentialsID     string `yaml:"static_credentials_id" usage:"Static credentials ID to use, useful for configuring the use of MinIO."`
+	StaticCredentialsSecret string `yaml:"static_credentials_secret" usage:"Static credentials secret to use, useful for configuring the use of MinIO."`
+	StaticCredentialsToken  string `yaml:"static_credentials_token" usage:"Static credentials token to use, useful for configuring the use of MinIO."`
+	DisableSSL              bool   `yaml:"disable_ssl" usage:"Disables the use of SSL, useful for configuring the use of MinIO."`
+	S3ForcePathStyle        bool   `yaml:"s3_force_path_style" usage:"Force path style urls for objects, useful for configuring the use of MinIO."`
 }
 
 type DistributedCacheConfig struct {
@@ -277,6 +308,37 @@ func (i *stringSliceFlag) Set(values string) error {
 	return nil
 }
 
+type structSliceFlag struct {
+	dstSlice   reflect.Value
+	structType reflect.Type
+}
+
+func (f *structSliceFlag) String() string {
+	if *f == (structSliceFlag{}) {
+		return "[]"
+	}
+
+	var l []string
+	for i := 0; i < f.dstSlice.Len(); i++ {
+		b, err := json.Marshal(f.dstSlice.Index(i).Interface())
+		if err != nil {
+			alert.UnexpectedEvent("config_cannot_marshal_struct", "err: %s", err)
+			continue
+		}
+		l = append(l, string(b))
+	}
+	return "[" + strings.Join(l, ",") + "]"
+}
+
+func (f *structSliceFlag) Set(value string) error {
+	dst := reflect.New(f.structType)
+	if err := json.Unmarshal([]byte(value), dst.Interface()); err != nil {
+		return err
+	}
+	f.dstSlice.Set(reflect.Append(f.dstSlice, dst.Elem()))
+	return nil
+}
+
 func defineFlagsForMembers(parentStructNames []string, T reflect.Value) {
 	typeOfT := T.Type()
 	for i := 0; i < T.NumField(); i++ {
@@ -308,15 +370,19 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value) {
 					flag.Var(&sf, fqFieldName, docString)
 				}
 				continue
+			} else if f.Type().Elem().Kind() == reflect.Struct {
+				sf := structSliceFlag{f, f.Type().Elem()}
+				flag.Var(&sf, fqFieldName, docString)
+				continue
 			}
 			fallthrough
 		default:
 			// We know this is not flag compatible and it's here for
 			// long-term support reasons, so don't warn about it.
-			if fqFieldName != "auth.oauth_providers" {
-				log.Printf("Skipping flag: --%s, kind: %s", fqFieldName, f.Type().Kind())
+			if fqFieldName == "auth.oauth_providers" {
+				continue
 			}
-			continue
+			log.Warningf("Skipping flag: --%s, kind: %s", fqFieldName, f.Type().Kind())
 		}
 	}
 }

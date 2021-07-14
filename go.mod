@@ -14,6 +14,7 @@ require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/docker/docker v20.10.7+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
+	github.com/docker/go-units v0.4.0
 	github.com/elastic/gosigar v0.11.0
 	github.com/firecracker-microvm/firecracker-go-sdk v0.22.0
 	github.com/go-git/go-git/v5 v5.2.0

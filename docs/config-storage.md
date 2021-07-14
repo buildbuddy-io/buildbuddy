@@ -67,7 +67,22 @@ storage:
   aws_s3:
     # required
     region: "us-west-2"
-    bucket: "buddybuild-bucket"
+    bucket: "buildbuddy-bucket"
     # optional
     credentials_profile: "other-profile"
+```
+
+
+### Minio
+
+```
+storage:
+  aws_s3:
+    static_credentials_id: "YOUR_MINIO_ACCESS_KEY"
+    static_credentials_secret: "YOUR_MINIO_SECRET"
+    endpoint: "http://localhost:9000"
+    disable_ssl: true
+    s3_force_path_style: true
+    region: "us-east-1"
+    bucket: "buildbuddy-storage-bucket"
 ```

@@ -18,7 +18,8 @@ import SettingsComponent from "../settings/settings";
 import SidebarComponent from "../sidebar/sidebar";
 import TapComponent from "../tap/tap";
 import TrendsComponent from "../trends/trends";
-const CodeComponent = React.lazy(() => import("../code/code"));
+// TODO(siggisim): Re-enable once we have a better way to serve chunks during a rollout.
+// const CodeComponent = React.lazy(() => import("../code/code"));
 // TODO(siggisim): lazy load all components that make sense more gracefully.
 
 import ExecutorsComponent from "../executors/executors";
@@ -225,12 +226,12 @@ export default class EnterpriseRootComponent extends React.Component {
                 {workflows && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                 {code && (
                   <Suspense fallback={<div className="loading" />}>
-                    <CodeComponent
+                    {/* <CodeComponent
                       path={this.state.path}
                       user={this.state.user}
                       search={this.state.search}
                       hash={this.state.hash}
-                    />
+                    /> */}
                   </Suspense>
                 )}
                 {setup && (

@@ -89,8 +89,11 @@ const (
 	/// Reason for a runner not being added to the runner pool.
 	RunnerPoolFailedRecycleReason = "reason"
 
-	// GroupID associated with the request.
+	/// GroupID associated with the request.
 	GroupID = "group_id"
+
+	/// EventName is the name used to identify the type of an unexpected event.
+	EventName = "name"
 )
 
 const (
@@ -1035,5 +1038,15 @@ var (
 	}, []string{
 		CacheTierLabel,
 		CacheBackendLabel,
+	})
+
+	/// ### Misc metrics
+
+	UnexpectedEvent = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Name:      "unexpected_event",
+		Help:      "Counter for unexpected events.",
+	}, []string{
+		EventName,
 	})
 )

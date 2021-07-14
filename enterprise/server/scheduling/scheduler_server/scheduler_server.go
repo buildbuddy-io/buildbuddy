@@ -118,7 +118,9 @@ func init() {
 }
 
 type executionNode struct {
-	executorID string
+	executorID            string
+	assignableMemoryBytes int64
+	assignableMilliCpu    int64
 	// Optional host:port of the scheduler to which the executor is connected. Only set for executors connecting using
 	// the "task streaming" API.
 	schedulerHostPort string
@@ -223,8 +225,10 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 			return nil, err
 		}
 		node := &executionNode{
-			executorID:        en.ExecutorID,
-			schedulerHostPort: en.SchedulerHostPort,
+			executorID:            en.ExecutorID,
+			schedulerHostPort:     en.SchedulerHostPort,
+			assignableMemoryBytes: en.AssignableMemoryBytes,
+			assignableMilliCpu:    en.AssignableMilliCPU,
 		}
 		executionNodes = append(executionNodes, node)
 	}
@@ -246,14 +250,29 @@ func (np *nodePool) RefreshNodes(ctx context.Context) error {
 	return nil
 }
 
-func (np *nodePool) NodeCount(ctx context.Context) (int, error) {
+func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int, error) {
 	if err := np.RefreshNodes(ctx); err != nil {
 		return 0, err
 	}
-	return len(np.nodes), nil
+	if len(np.nodes) == 0 {
+		return 0, status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", np.key.pool, np.key.os, np.key.arch)
+	}
+
+	fitCount := 0
+	for _, node := range np.nodes {
+		if node.assignableMemoryBytes >= taskSize.GetEstimatedMemoryBytes() && node.assignableMilliCpu >= taskSize.GetEstimatedMilliCpu() {
+			fitCount++
+		}
+	}
+
+	if fitCount == 0 {
+		return 0, status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q can fit a task with %d milli-cpu and %d bytes of memory.", np.key.pool, np.key.os, np.key.arch, taskSize.GetEstimatedMilliCpu(), taskSize.GetEstimatedMemoryBytes())
+	}
+
+	return fitCount, nil
 }
 
-func (np *nodePool) AddConnectedExecutor(id string, handle executor_handle.ExecutorHandle) bool {
+func (np *nodePool) AddConnectedExecutor(id string, mem int64, cpu int64, handle executor_handle.ExecutorHandle) bool {
 	np.mu.Lock()
 	defer np.mu.Unlock()
 	for _, e := range np.connectedExecutors {
@@ -262,8 +281,10 @@ func (np *nodePool) AddConnectedExecutor(id string, handle executor_handle.Execu
 		}
 	}
 	np.connectedExecutors = append(np.connectedExecutors, &executionNode{
-		executorID: id,
-		handle:     handle,
+		executorID:            id,
+		handle:                handle,
+		assignableMemoryBytes: mem,
+		assignableMilliCpu:    cpu,
 	})
 	return true
 }
@@ -578,7 +599,7 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle execu
 	}
 
 	pool := s.getOrCreatePool(nodePoolKey)
-	newExecutor := pool.AddConnectedExecutor(node.GetExecutorId(), handle)
+	newExecutor := pool.AddConnectedExecutor(node.GetExecutorId(), node.GetAssignableMemoryBytes(), node.GetAssignableMilliCpu(), handle)
 	if !newExecutor {
 		return nil
 	}
@@ -1096,9 +1117,9 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	log.Infof("Enqueue task reservations for task %q with pool key %+v.", enqueueRequest.GetTaskId(), key)
 
 	nodeBalancer := s.getOrCreatePool(key)
-	nodeCount, _ := nodeBalancer.NodeCount(ctx)
-	if nodeCount == 0 {
-		return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
+	nodeCount, err := nodeBalancer.NodeCount(ctx, enqueueRequest.GetTaskSize())
+	if err != nil {
+		return err
 	}
 
 	nodeBalancer.unclaimedTasks.addTask(enqueueRequest.GetTaskId())
