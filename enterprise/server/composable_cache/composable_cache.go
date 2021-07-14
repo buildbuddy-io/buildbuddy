@@ -51,7 +51,7 @@ func (c *composableCache) WithIsolation(ctx context.Context, cacheType interface
 	return &composableCache{
 		inner: newInner,
 		outer: newOuter,
-		mode: c.mode,
+		mode:  c.mode,
 	}, nil
 }
 

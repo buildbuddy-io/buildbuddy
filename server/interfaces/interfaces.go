@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
@@ -139,8 +140,10 @@ func (t CacheType) Prefix() string {
 		return "ac"
 	case CASCacheType:
 		return ""
+	default:
+		alert.UnexpectedEvent("unknown_cache_type", "type: %v", t)
+		return "unknown"
 	}
-	return "unknown"
 }
 
 // Similar to a blobstore, a cache allows for reading and writing data, but
