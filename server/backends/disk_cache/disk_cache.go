@@ -99,10 +99,11 @@ func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
 	}
 
 	return &DiskCache{
-		env:        c.env,
-		prefix:     newPrefix,
-		partition:  c.partition,
-		partitions: c.partitions,
+		env:               c.env,
+		prefix:            newPrefix,
+		partition:         c.partition,
+		partitions:        c.partitions,
+		partitionMappings: c.partitionMappings,
 	}
 }
 
@@ -122,10 +123,11 @@ func (c *DiskCache) WithRemoteInstanceName(ctx context.Context, remoteInstanceNa
 				return nil, status.NotFoundErrorf("Mapping to unknown partition %q", m.PartitionID)
 			}
 			return &DiskCache{
-				env:        c.env,
-				prefix:     c.prefix,
-				partition:  p,
-				partitions: c.partitions,
+				env:               c.env,
+				prefix:            c.prefix,
+				partition:         p,
+				partitions:        c.partitions,
+				partitionMappings: c.partitionMappings,
 			}, nil
 		}
 	}
