@@ -215,11 +215,12 @@ func (ws *workspace) RunAllActions(ctx context.Context, cfg *config.BuildBuddyCo
 		// Include the repo's download time as part of the first invocation.
 		if !ws.reportedInitMetrics {
 			ws.reportedInitMetrics = true
-			ar.log.Printf("Fetched Git repository in %s\n", startTime.Sub(ws.startTime))
-			startTime = ws.startTime
 			// Print the setup logs to the first action's logs.
 			b, _ := io.ReadAll(&ws.log)
 			ws.log.Reset()
+			ar.log.Printf("[BUILDBUDDY] Setup completed in %s", startTime.Sub(ws.startTime))
+			startTime = ws.startTime
+			ar.log.Printf("[BUILDBUDDY] Setup logs:")
 			ar.log.Printf(string(b))
 		}
 
@@ -469,7 +470,7 @@ func runDebugCommand(out io.Writer, script string) {
 }
 
 func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.Time) error {
-	ar.log.Printf("Running action: %s", ar.action.Name)
+	ar.log.Printf("[BUILDBUDDY] Running action %q", ar.action.Name)
 
 	// Only print this to the local logs -- it's mostly useful for development purposes.
 	log.Infof("Invocation URL:  %s", invocationURL(ar.bep.streamID.InvocationId))
@@ -776,7 +777,7 @@ func (ws *workspace) setup(ctx context.Context) error {
 	if err := os.Chdir(repoDirName); err != nil {
 		return status.WrapErrorf(err, "cd %q", repoDirName)
 	}
-	ws.log.WriteString("Cloning git repo.\n")
+	writeCommandSummary(&ws.log, "Cloning git repo...")
 	if err := git(ctx, &ws.log, "init"); err != nil {
 		return err
 	}
@@ -809,20 +810,22 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if err := ws.fetch(ctx, *pushedRepoURL, forkBranches); err != nil {
 		return err
 	}
+	// Clean up in case a previous workflow made a mess.
 	if err := git(ctx, &ws.log, "clean", "-d" /*directories*/, "--force"); err != nil {
 		return err
 	}
-	// Create a local ref for the target branch. This is necessary because
-	// `git fetch` only fetches commits reachable from local refs, and we want to
-	// fetch all common commits between the target branch and the pushed branch.
-	// Otherwise we would get a "no common commits" warning and the merge will
-	// fail.
-	// Check out anything other than *pushedBranch so that we can delete it.
-	if err := git(ctx, &ws.log, "checkout", *commitSHA); err != nil {
+	if err := git(ctx, &ws.log, "clean", "-X" /*ignored files*/, "--force"); err != nil {
 		return err
 	}
-	// Delete the pushed branch ref if it already exists.
-	if err := git(ctx, &ws.log, "branch", "--delete", "--force", *pushedBranch); err != nil && !isBranchNotFound(err) {
+	// Check out anything other than *pushedBranch so that we can delete it if
+	// it already exists. We know *commitSHA exists, so let's go with that.
+	// Don't show the command since this is sort of a hairy implementation detail.
+	if err := git(ctx, io.Discard, "checkout", *commitSHA); err != nil {
+		return err
+	}
+	// Delete the pushed branch ref if it already exists. Again don't show the
+	// logs since this is sort of hairy.
+	if err := git(ctx, io.Discard, "branch", "--delete", "--force", *pushedBranch); err != nil && !isBranchNotFound(err) {
 		return err
 	}
 	// Checkout the branch locally.
@@ -857,8 +860,10 @@ func (ws *workspace) config(ctx context.Context) error {
 		{"user.name", "BuildBuddy"},
 		{"advice.detachedHead", "false"},
 	}
+	writeCommandSummary(&ws.log, "Configuring repository...")
 	for _, kv := range cfg {
-		if err := git(ctx, &ws.log, "config", kv[0], kv[1]); err != nil {
+		// Don't show the config output.
+		if err := git(ctx, io.Discard, "config", kv[0], kv[1]); err != nil {
 			return err
 		}
 	}
@@ -874,8 +879,11 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 		return err
 	}
 	remoteName := gitRemoteName(remoteURL)
-	if err := git(ctx, &ws.log, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
-		return err
+	writeCommandSummary(&ws.log, "Configuring remote %q...", remoteName)
+	// Don't show `git remote add` command or the error message since the URL may
+	// contain the git token.
+	if err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
+		return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
 	}
 	fetchArgs := append([]string{"fetch", "--force", remoteName}, branches...)
 	if err := git(ctx, &ws.log, fetchArgs...); err != nil {
@@ -906,6 +914,14 @@ func git(ctx context.Context, out io.Writer, args ...string) *gitError {
 		return &gitError{err, string(buf.Bytes())}
 	}
 	return nil
+}
+
+func writeCommandSummary(out io.Writer, format string, args ...interface{}) {
+	io.WriteString(out, ansiGray)
+	io.WriteString(out, "> ")
+	io.WriteString(out, fmt.Sprintf(format, args...))
+	io.WriteString(out, ansiReset)
+	io.WriteString(out, "\n")
 }
 
 func invocationURL(invocationID string) string {
