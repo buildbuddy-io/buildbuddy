@@ -4,14 +4,14 @@
         <title>BuildBuddy Blog</title>
         <link>https://docs.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Mon, 12 Jul 2021 20:54:42 GMT</lastBuildDate>
+        <lastBuildDate>Wed, 14 Jul 2021 14:38:09 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <item>
             <title><![CDATA[index]]></title>
             <link>https://docs.buildbuddy.io/blog/index</link>
             <guid>index</guid>
-            <pubDate>Mon, 12 Jul 2021 20:54:42 GMT</pubDate>
+            <pubDate>Wed, 14 Jul 2021 14:38:09 GMT</pubDate>
             <description><![CDATA[Not found!]]></description>
         </item>
     </channel>
