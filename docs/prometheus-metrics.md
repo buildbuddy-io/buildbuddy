@@ -4,16 +4,6 @@ title: Prometheus Metrics
 sidebar_label: Prometheus Metrics
 ---
 
-<!--
-
-============================
-GENERATED FILE - DO NOT EDIT
-============================
-
-Run `python3 server/metrics/generate_docs.py` to re-generate.
-
--->
-
 BuildBuddy exposes [Prometheus](https://prometheus.io) metrics that allow monitoring the
 [four golden signals](https://landing.google.com/sre/sre-book/chapters/monitoring-distributed-systems/):
 latency, traffic, errors, and saturation.
@@ -814,4 +804,3 @@ Number of retries required to fulfill each `contains(key)` request to the cache 
 
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
-

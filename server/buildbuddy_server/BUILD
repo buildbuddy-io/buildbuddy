@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:api_key_go_proto",
         "//proto:bazel_config_go_proto",
+        "//proto:eventlog_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:group_go_proto",
         "//proto:invocation_go_proto",
@@ -18,6 +19,7 @@ go_library(
         "//server/build_event_protocol/build_event_handler",
         "//server/bytestream",
         "//server/environment",
+        "//server/eventlog",
         "//server/ssl",
         "//server/tables",
         "//server/target",

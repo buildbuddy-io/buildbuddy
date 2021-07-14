@@ -206,6 +206,7 @@ proto_library(
     deps = [
         ":api_key_proto",
         ":bazel_config_proto",
+        ":eventlog_proto",
         ":execution_stats_proto",
         ":group_proto",
         ":invocation_proto",
@@ -435,6 +436,7 @@ go_proto_library(
     deps = [
         ":api_key_go_proto",
         ":bazel_config_go_proto",
+        ":eventlog_go_proto",
         ":execution_stats_go_proto",
         ":group_go_proto",
         ":invocation_go_proto",

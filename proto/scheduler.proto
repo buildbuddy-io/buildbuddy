@@ -38,10 +38,10 @@ message LeaseTaskResponse {
 }
 
 message TaskSize {
-  // The node's assignable memory.
+  // The tasks's estimated memory usage.
   int64 estimated_memory_bytes = 1;
 
-  // The node's assignable CPU.
+  // The task's estimated cpu usage.
   int64 estimated_milli_cpu = 2;
 }
 
@@ -194,4 +194,5 @@ message GetExecutionNodesResponse {
   context.ResponseContext response_context = 1;
 
   repeated ExecutionNode execution_node = 2;
+  bool user_owned_executors_supported = 3;
 }

@@ -1,24 +1,25 @@
 import React, { Suspense } from "react";
 import authService, { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
-const CompareInvocationsComponent = React.lazy(() => import("../../../app/compare/compare_invocations"));
-const SetupComponent = React.lazy(() => import("../../../app/docs/setup"));
+import CompareInvocationsComponent from "../../../app/compare/compare_invocations";
+import SetupComponent from "../../../app/docs/setup";
 import AlertComponent from "../../../app/alert/alert";
 import faviconService from "../../../app/favicon/favicon";
 import FooterComponent from "../../../app/footer/footer";
 import WorkflowsComponent from "../workflows/workflows";
-const InvocationComponent = React.lazy(() => import("../../../app/invocation/invocation"));
+import InvocationComponent from "../../../app/invocation/invocation";
 import MenuComponent from "../../../app/menu/menu";
 import router, { Path } from "../../../app/router/router";
 import HistoryComponent from "../history/history";
 import LoginComponent from "../login/login";
 import CreateOrgComponent from "../org/create_org";
 import JoinOrgComponent from "../org/join_org";
-const SettingsComponent = React.lazy(() => import("../settings/settings"));
+import SettingsComponent from "../settings/settings";
 import SidebarComponent from "../sidebar/sidebar";
-const TapComponent = React.lazy(() => import("../tap/tap"));
-const TrendsComponent = React.lazy(() => import("../trends/trends"));
-const CodeComponent = React.lazy(() => import("../code/code"));
+import TapComponent from "../tap/tap";
+import TrendsComponent from "../trends/trends";
+// TODO(siggisim): Re-enable once we have a better way to serve chunks during a rollout.
+// const CodeComponent = React.lazy(() => import("../code/code"));
 // TODO(siggisim): lazy load all components that make sense more gracefully.
 
 import ExecutorsComponent from "../executors/executors";
@@ -225,12 +226,12 @@ export default class EnterpriseRootComponent extends React.Component {
                 {workflows && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                 {code && (
                   <Suspense fallback={<div className="loading" />}>
-                    <CodeComponent
+                    {/* <CodeComponent
                       path={this.state.path}
                       user={this.state.user}
                       search={this.state.search}
                       hash={this.state.hash}
-                    />
+                    /> */}
                   </Suspense>
                 )}
                 {setup && (

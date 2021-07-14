@@ -155,7 +155,7 @@ func Configure(configurator *config.Configurator, healthChecker interfaces.Healt
 	res, err := resource.New(ctx,
 		resource.WithDetectors(&gcp.GKE{}, &gcp.GCE{}),
 		resource.WithAttributes(resourceAttrs...))
-	if err == nil {
+	if err != nil {
 		log.Warningf("Could not automatically detect resource information for tracing: %s", err)
 		res = resource.NewWithAttributes(resourceAttrs...)
 	}

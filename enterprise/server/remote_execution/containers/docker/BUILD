@@ -30,7 +30,6 @@ go_test(
         ":docker",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
-        "//server/testutil/testfs",
         "@com_github_docker_docker//client:go_default_library",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

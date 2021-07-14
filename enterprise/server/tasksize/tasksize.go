@@ -2,6 +2,8 @@ package tasksize
 
 import (
 	"log"
+	"strconv"
+	"strings"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -9,6 +11,10 @@ import (
 
 const (
 	testSizeEnvVar = "TEST_SIZE"
+	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
+	estimatedComputeUnitsPropertyKey = "EstimatedComputeUnits"
+	computeUnitsToMilliCPU           = 1000      // 1 BCU = 1000 milli-CPU
+	computeUnitsToRAMBytes           = 2.5 * 1e9 // 1 BCU = 2.5GB of memory
 
 	// This is the default resource estimate for a task that we can't
 	// otherwise determine the size for.
@@ -50,6 +56,15 @@ func Estimate(cmd *repb.Command) *scpb.TaskSize {
 			break
 		}
 	}
+	for _, property := range cmd.GetPlatform().GetProperties() {
+		if strings.ToLower(property.Name) == strings.ToLower(estimatedComputeUnitsPropertyKey) {
+			if bcus, err := strconv.ParseInt(property.Value, 10, 64); err == nil && bcus > 0 {
+				cpuEstimate = bcus * computeUnitsToMilliCPU
+				memEstimate = bcus * computeUnitsToRAMBytes
+			}
+		}
+	}
+
 	return &scpb.TaskSize{
 		EstimatedMemoryBytes: memEstimate,
 		EstimatedMilliCpu:    cpuEstimate,

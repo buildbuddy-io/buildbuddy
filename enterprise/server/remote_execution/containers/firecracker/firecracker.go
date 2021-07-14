@@ -120,27 +120,40 @@ func getOrCreateContainerImage(ctx context.Context, containerImage string) (stri
 // NB: We use docker because it's already installed - but podman can also be
 // used interchangeably and does not require root access.
 func convertContainerToExt4FS(ctx context.Context, containerImage string) (string, error) {
-	rootFSDir, err := os.MkdirTemp("", "containerfs-*")
+	// Make a temp directory to work in. Delete it when this fuction returns.
+	rootUnpackDir, err := os.MkdirTemp("", "container-unpack-*")
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(rootFSDir)
+	defer os.RemoveAll(rootUnpackDir)
 
-	if err := exec.CommandContext(ctx, "docker", "pull", containerImage).Run(); err != nil {
-		return "", err
-	}
-	cmd := exec.CommandContext(ctx, "docker", "create", containerImage)
-	cidBytes, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", err
-	}
-	containerID := strings.TrimSuffix(string(cidBytes), "\n")
-
-	cmd = exec.CommandContext(ctx, "docker", "cp", fmt.Sprintf("%s:/", containerID), rootFSDir)
-	if err := cmd.Run(); err != nil {
+	// Make a directory to download the OCI image to.
+	ociImageDir := filepath.Join(rootUnpackDir, "image")
+	if err := disk.EnsureDirectoryExists(ociImageDir); err != nil {
 		return "", err
 	}
 
+	// in CLI-form, the commands below do this:
+	// skopeo copy docker://alpine:lotest oci:/tmp/image_unpack:latest
+	// umoci unpack --rootless --image /tmp/image_unpack /tmp/bundle
+	// /tmp/bundle/rootfs/ has the goods
+	dockerImageRef := fmt.Sprintf("docker://%s", containerImage)
+	ociOutputRef := fmt.Sprintf("oci:%s:latest", ociImageDir)
+	if out, err := exec.CommandContext(ctx, "skopeo", "copy", dockerImageRef, ociOutputRef).CombinedOutput(); err != nil {
+		return "", status.InternalErrorf("skopeo copy error: %q: %s", string(out), err)
+	}
+
+	// Make a directory to unpack the bundle to.
+	bundleOutputDir := filepath.Join(rootUnpackDir, "bundle")
+	if err := disk.EnsureDirectoryExists(bundleOutputDir); err != nil {
+		return "", err
+	}
+	if out, err := exec.CommandContext(ctx, "umoci", "unpack", "--rootless", "--image", ociImageDir, bundleOutputDir).CombinedOutput(); err != nil {
+		return "", status.InternalErrorf("umoci unpack error: %q: %s", string(out), err)
+	}
+
+	// Take the rootfs and write it into an ext4 image.
+	rootFSDir := filepath.Join(bundleOutputDir, "rootfs")
 	f, err := os.CreateTemp("", "containerfs-*.ext4")
 	if err != nil {
 		return "", err

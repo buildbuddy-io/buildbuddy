@@ -118,18 +118,14 @@ func init() {
 }
 
 type executionNode struct {
-	host       string
-	port       int32
-	executorID string
+	executorID            string
+	assignableMemoryBytes int64
+	assignableMilliCpu    int64
 	// Optional host:port of the scheduler to which the executor is connected. Only set for executors connecting using
 	// the "task streaming" API.
 	schedulerHostPort string
 	// Optional handle for locally connected executor that can be used to enqueue task reservations.
 	handle executor_handle.ExecutorHandle
-}
-
-func (en *executionNode) GetAddr() string {
-	return fmt.Sprintf("grpc://%s:%d", en.host, en.port)
 }
 
 func (en *executionNode) GetSchedulerURI() string {
@@ -141,12 +137,9 @@ func (en *executionNode) GetSchedulerURI() string {
 
 func (en *executionNode) String() string {
 	if en.handle != nil {
-		return fmt.Sprintf("connected executor(%s)", en.handle.ID())
+		return fmt.Sprintf("connected executor(%s)", en.executorID)
 	}
-	if en.schedulerHostPort != "" {
-		return fmt.Sprintf("scheduler(%s)", en.schedulerHostPort)
-	}
-	return fmt.Sprintf("executor(%s:%d)", en.host, en.port)
+	return fmt.Sprintf("executor(%s) @ scheduler(%s)", en.executorID, en.schedulerHostPort)
 }
 
 func (en *executionNode) GetExecutorID() string {
@@ -232,10 +225,10 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 			return nil, err
 		}
 		node := &executionNode{
-			host:              en.Host,
-			port:              en.Port,
-			executorID:        en.ExecutorID,
-			schedulerHostPort: en.SchedulerHostPort,
+			executorID:            en.ExecutorID,
+			schedulerHostPort:     en.SchedulerHostPort,
+			assignableMemoryBytes: en.AssignableMemoryBytes,
+			assignableMilliCpu:    en.AssignableMilliCPU,
 		}
 		executionNodes = append(executionNodes, node)
 	}
@@ -257,33 +250,50 @@ func (np *nodePool) RefreshNodes(ctx context.Context) error {
 	return nil
 }
 
-func (np *nodePool) NodeCount(ctx context.Context) (int, error) {
+func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int, error) {
 	if err := np.RefreshNodes(ctx); err != nil {
 		return 0, err
 	}
-	return len(np.nodes), nil
+	if len(np.nodes) == 0 {
+		return 0, status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", np.key.pool, np.key.os, np.key.arch)
+	}
+
+	fitCount := 0
+	for _, node := range np.nodes {
+		if node.assignableMemoryBytes >= taskSize.GetEstimatedMemoryBytes() && node.assignableMilliCpu >= taskSize.GetEstimatedMilliCpu() {
+			fitCount++
+		}
+	}
+
+	if fitCount == 0 {
+		return 0, status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q can fit a task with %d milli-cpu and %d bytes of memory.", np.key.pool, np.key.os, np.key.arch, taskSize.GetEstimatedMilliCpu(), taskSize.GetEstimatedMemoryBytes())
+	}
+
+	return fitCount, nil
 }
 
-func (np *nodePool) AddConnectedExecutor(id string, handle executor_handle.ExecutorHandle) bool {
+func (np *nodePool) AddConnectedExecutor(id string, mem int64, cpu int64, handle executor_handle.ExecutorHandle) bool {
 	np.mu.Lock()
 	defer np.mu.Unlock()
 	for _, e := range np.connectedExecutors {
-		if e.handle.ID() == handle.ID() {
+		if e.executorID == id {
 			return false
 		}
 	}
 	np.connectedExecutors = append(np.connectedExecutors, &executionNode{
-		executorID: id,
-		handle:     handle,
+		executorID:            id,
+		handle:                handle,
+		assignableMemoryBytes: mem,
+		assignableMilliCpu:    cpu,
 	})
 	return true
 }
 
-func (np *nodePool) RemoveConnectedExecutor(handle executor_handle.ExecutorHandle) bool {
+func (np *nodePool) RemoveConnectedExecutor(id string, handle executor_handle.ExecutorHandle) bool {
 	np.mu.Lock()
 	defer np.mu.Unlock()
 	for i, e := range np.connectedExecutors {
-		if e.handle.ID() == handle.ID() {
+		if e.executorID == id {
 			np.connectedExecutors[i] = np.connectedExecutors[len(np.connectedExecutors)-1]
 			np.connectedExecutors = np.connectedExecutors[:len(np.connectedExecutors)-1]
 			return true
@@ -551,11 +561,11 @@ func (s *SchedulerServer) RemoveConnectedExecutor(ctx context.Context, handle ex
 	}
 	pool, ok := s.getPool(nodePoolKey)
 	if ok {
-		if !pool.RemoveConnectedExecutor(handle) {
-			log.Warningf("Executor %q not in pool %+v", handle.ID(), nodePoolKey)
+		if !pool.RemoveConnectedExecutor(node.GetExecutorId(), handle) {
+			log.Warningf("Executor %q not in pool %+v", node.GetExecutorId(), nodePoolKey)
 		}
 	} else {
-		log.Warningf("Tried to remove executor %q for unknown pool %+v", handle.ID(), nodePoolKey)
+		log.Warningf("Tried to remove executor %q for unknown pool %+v", node.GetExecutorId(), nodePoolKey)
 	}
 
 	// Don't use the stream context since we want to do cleanup when stream context is cancelled.
@@ -589,20 +599,15 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle execu
 	}
 
 	pool := s.getOrCreatePool(nodePoolKey)
-	newExecutor := pool.AddConnectedExecutor(node.GetExecutorId(), handle)
+	newExecutor := pool.AddConnectedExecutor(node.GetExecutorId(), node.GetAssignableMemoryBytes(), node.GetAssignableMilliCpu(), handle)
 	if !newExecutor {
 		return nil
 	}
 	addr := fmt.Sprintf("%s:%d", node.GetHost(), node.GetPort())
 	log.Infof("Scheduler: registered worker node: %q %+v", addr, nodePoolKey)
 
-	en := &executionNode{
-		host:       node.GetHost(),
-		port:       node.GetPort(),
-		executorID: node.GetExecutorId(),
-	}
 	go func() {
-		if err := s.assignWorkToNode(ctx, handle, en, nodePoolKey); err != nil {
+		if err := s.assignWorkToNode(ctx, handle, nodePoolKey); err != nil {
 			log.Warningf("Failed to assign work to new node: %s", err.Error())
 		}
 	}()
@@ -737,10 +742,7 @@ func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAn
 		return err
 	}
 
-	handle, err := executor_handle.NewRegistrationAndTasksExecutorHandle(stream, groupID)
-	if err != nil {
-		return err
-	}
+	handle := executor_handle.NewRegistrationAndTasksExecutorHandle(stream, groupID)
 	return s.processExecutorStream(stream.Context(), handle)
 }
 
@@ -760,7 +762,7 @@ func (s *SchedulerServer) GetAllExecutionNodes(ctx context.Context) ([]tables.Ex
 	return dbNodes, nil
 }
 
-func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle executor_handle.ExecutorHandle, node *executionNode, nodePoolKey nodePoolKey) error {
+func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle executor_handle.ExecutorHandle, nodePoolKey nodePoolKey) error {
 	tasks, err := s.sampleUnclaimedTasks(ctx, tasksToEnqueueOnJoin, nodePoolKey)
 	if err != nil {
 		return err
@@ -1115,9 +1117,9 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	log.Infof("Enqueue task reservations for task %q with pool key %+v.", enqueueRequest.GetTaskId(), key)
 
 	nodeBalancer := s.getOrCreatePool(key)
-	nodeCount, _ := nodeBalancer.NodeCount(ctx)
-	if nodeCount == 0 {
-		return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
+	nodeCount, err := nodeBalancer.NodeCount(ctx, enqueueRequest.GetTaskSize())
+	if err != nil {
+		return err
 	}
 
 	nodeBalancer.unclaimedTasks.addTask(enqueueRequest.GetTaskId())
@@ -1352,8 +1354,15 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		executionNodes = append(executionNodes, node)
 	}
 
+	userOwnedExecutorsEnabled := s.enableUserOwnedExecutors
+	// Don't report user owned executors as being enabled for the shared executor group ID (i.e. the BuildBuddy group)
+	if userOwnedExecutorsEnabled && groupID == s.env.GetConfigurator().GetRemoteExecutionConfig().SharedExecutorPoolGroupID {
+		userOwnedExecutorsEnabled = false
+	}
+
 	return &scpb.GetExecutionNodesResponse{
-		ExecutionNode: executionNodes,
+		ExecutionNode:               executionNodes,
+		UserOwnedExecutorsSupported: userOwnedExecutorsEnabled,
 	}, nil
 }
 

@@ -158,6 +158,7 @@ interface Props {
 }
 
 interface State {
+  userOwnedExecutorsSupported: boolean;
   nodes: scheduler.IExecutionNode[];
   executorKeys: api_key.IApiKey[];
   loading: FetchType[];
@@ -167,6 +168,7 @@ interface State {
 
 export default class ExecutorsComponent extends React.Component<Props, State> {
   state: State = {
+    userOwnedExecutorsSupported: false,
     nodes: [],
     executorKeys: [],
     loading: [],
@@ -226,7 +228,11 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
 
     try {
       const response = await rpcService.service.getExecutionNodes({});
-      this.setState({ nodes: response.executionNode });
+      this.setState({ nodes: response.executionNode, userOwnedExecutorsSupported: response.userOwnedExecutorsSupported });
+      if (response.userOwnedExecutorsSupported) {
+        await this.fetchApiKeys();
+        await this.fetchBazelConfig();
+      }
     } catch (e) {
       this.setState({ error: BuildBuddyError.parse(e) });
     } finally {
@@ -259,10 +265,6 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
 
   fetch() {
     this.fetchExecutors();
-    if (capabilities.userOwnedExecutors) {
-      this.fetchApiKeys();
-      this.fetchBazelConfig();
-    }
   }
 
   // "bring your own runners" is enabled for the installation (i.e. BuildBuddy Cloud deployment).
@@ -343,8 +345,8 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
         {this.state.loading.length > 0 && <div className="loading"></div>}
         {this.state.loading.length == 0 && this.state.error == null && (
           <div className="container">
-            {capabilities.userOwnedExecutors && this.renderWithGroupOwnedExecutorsEnabled()}
-            {!capabilities.userOwnedExecutors && this.renderWithoutGroupOwnedExecutorsEnabled()}
+            {this.state.userOwnedExecutorsSupported && this.renderWithGroupOwnedExecutorsEnabled()}
+            {!this.state.userOwnedExecutorsSupported && this.renderWithoutGroupOwnedExecutorsEnabled()}
           </div>
         )}
       </div>

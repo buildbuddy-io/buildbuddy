@@ -9,11 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
@@ -39,6 +41,13 @@ import (
 
 const (
 	defaultChunkFileSizeBytes = 1000 * 100 // 100KB
+
+	// Chunks will be flushed to blobstore when they reach this size.
+	defaultLogChunkSize = 2_000_000 // 2MB
+
+	// Chunks will also be flushed to blobstore after this much time
+	// passes with no new data being written.
+	defaultChunkTimeout = 15 * time.Second
 )
 
 type BuildEventHandler struct {
@@ -66,6 +75,12 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		targetTracker:           target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		hasReceivedStartedEvent: false,
 		eventsBeforeStarted:     make([]*inpb.InvocationEvent, 0),
+		logWriter: chunkstore.New(
+			b.env.GetBlobstore(),
+			&chunkstore.ChunkstoreOptions{
+				WriteBlockSize:       defaultLogChunkSize,
+				WriteTimeoutDuration: defaultChunkTimeout,
+			}).Writer(ctx, eventlog.GetEventLogPathFromInvocationId(iid)),
 	}
 }
 
@@ -110,6 +125,7 @@ type EventChannel struct {
 	targetTracker           *target_tracker.TargetTracker
 	eventsBeforeStarted     []*inpb.InvocationEvent
 	hasReceivedStartedEvent bool
+	logWriter               *chunkstore.ChunkstoreWriter
 }
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string, invocation *inpb.Invocation) error {
@@ -215,6 +231,9 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		InvocationId:     iid,
 		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
 	}
+	if lastChunkId, err := e.logWriter.GetLastChunkIndex(); err == nil {
+		invocation.LastChunkId = fmt.Sprintf("%04x", lastChunkId)
+	}
 	err := e.fillInvocationFromEvents(e.ctx, iid, invocation)
 	if err != nil {
 		return err
@@ -268,6 +287,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	iid := streamID.InvocationId
 
 	if isFinalEvent(event.OrderedBuildEvent) {
+		e.logWriter.Close()
 		return nil
 	}
 
@@ -336,6 +356,17 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid string) error {
 	e.beValues.AddEvent(event.BuildEvent) // in-memory structure to hold common values we want from the event.
+
+	switch p := event.BuildEvent.Payload.(type) {
+	case *build_event_stream.BuildEvent_Progress:
+		if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+			e.logWriter.Write([]byte(p.Progress.Stderr))
+			e.logWriter.Write([]byte(p.Progress.Stdout))
+			// For now, write logs to both chunks and the invocation proto
+			// p.Progress.Stderr = ""
+			// p.Progress.Stdout = ""
+		}
+	}
 
 	if e.env.GetConfigurator().EnableTargetTracking() {
 		e.targetTracker.TrackTargetsForEvent(e.ctx, event.BuildEvent)
@@ -459,6 +490,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
 		i.Perms = perms.OTHERS_READ
 	}
+	i.LastChunkId = p.LastChunkId
 	return i
 }
 
@@ -502,5 +534,6 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 		DownloadThroughputBytesPerSecond: i.DownloadThroughputBytesPerSecond,
 		UploadThroughputBytesPerSecond:   i.UploadThroughputBytesPerSecond,
 	}
+	out.LastChunkId = i.LastChunkId
 	return out
 }

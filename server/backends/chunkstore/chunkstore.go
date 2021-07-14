@@ -47,7 +47,7 @@ func New(blobstore interfaces.Blobstore, co *ChunkstoreOptions) *Chunkstore {
 }
 
 func (c *Chunkstore) BlobExists(ctx context.Context, blobName string) (bool, error) {
-	return c.chunkExists(ctx, blobName, 0)
+	return c.ChunkExists(ctx, blobName, 0)
 }
 
 func (c *Chunkstore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
@@ -76,7 +76,7 @@ func (c *Chunkstore) WriteBlob(ctx context.Context, blobName string, data []byte
 func (c *Chunkstore) DeleteBlob(ctx context.Context, blobName string) error {
 	index := uint16(0)
 	for {
-		if exists, err := c.chunkExists(ctx, blobName, index); err != nil {
+		if exists, err := c.ChunkExists(ctx, blobName, index); err != nil {
 			return err
 		} else if !exists {
 			return nil
@@ -88,24 +88,39 @@ func (c *Chunkstore) DeleteBlob(ctx context.Context, blobName string) error {
 	}
 }
 
-func chunkName(blobName string, index uint16) string {
+func ChunkName(blobName string, index uint16) string {
 	return blobName + "_" + fmt.Sprintf("%04x", index)
 }
 
-func (c *Chunkstore) chunkExists(ctx context.Context, blobName string, index uint16) (bool, error) {
-	return c.internalBlobstore.BlobExists(ctx, chunkName(blobName, index))
+func (c *Chunkstore) GetLastChunkIndex(ctx context.Context, blobName string) (uint16, error) {
+	index := uint16(0)
+	for index < math.MaxUint16 {
+		exists, err := c.ChunkExists(ctx, blobName, index+1)
+		if err != nil {
+			return 0, err
+		}
+		if !exists {
+			break
+		}
+		index++
+	}
+	return index, nil
 }
 
-func (c *Chunkstore) readChunk(ctx context.Context, blobName string, index uint16) ([]byte, error) {
-	return c.internalBlobstore.ReadBlob(ctx, chunkName(blobName, index))
+func (c *Chunkstore) ChunkExists(ctx context.Context, blobName string, index uint16) (bool, error) {
+	return c.internalBlobstore.BlobExists(ctx, ChunkName(blobName, index))
+}
+
+func (c *Chunkstore) ReadChunk(ctx context.Context, blobName string, index uint16) ([]byte, error) {
+	return c.internalBlobstore.ReadBlob(ctx, ChunkName(blobName, index))
 }
 
 func (c *Chunkstore) writeChunk(ctx context.Context, blobName string, index uint16, data []byte) (int, error) {
-	return c.internalBlobstore.WriteBlob(ctx, chunkName(blobName, index), data)
+	return c.internalBlobstore.WriteBlob(ctx, ChunkName(blobName, index), data)
 }
 
 func (c *Chunkstore) deleteChunk(ctx context.Context, blobName string, index uint16) error {
-	return c.internalBlobstore.DeleteBlob(ctx, chunkName(blobName, index))
+	return c.internalBlobstore.DeleteBlob(ctx, ChunkName(blobName, index))
 }
 
 type chunkstoreReader struct {
@@ -168,21 +183,21 @@ func (r *chunkstoreReader) copyToReadBuffer(p []byte) int {
 }
 
 func (r *chunkstoreReader) nextChunkExists() (bool, error) {
-	return r.chunkstore.chunkExists(r.ctx, r.blobName, r.nextChunkIndex())
+	return r.chunkstore.ChunkExists(r.ctx, r.blobName, r.nextChunkIndex())
 }
 
 func (r *chunkstoreReader) getNextChunk() error {
 	if exists, err := r.nextChunkExists(); err != nil {
 		return err
 	} else if !exists {
-		return status.NotFoundErrorf("Opening %v: Couldn't find blob.", chunkName(r.blobName, r.nextChunkIndex()))
+		return status.NotFoundErrorf("Opening %v: Couldn't find blob.", ChunkName(r.blobName, r.nextChunkIndex()))
 	}
 	r.chunkIndex = r.nextChunkIndex()
 	// Decrementing the chunk offset by the length of the chunk instead
 	// of zeroing it. This is important for the Seek operation.
 	r.chunkOff -= len(r.chunk)
 	var err error
-	r.chunk, err = r.chunkstore.readChunk(r.ctx, r.blobName, r.chunkIndex)
+	r.chunk, err = r.chunkstore.ReadChunk(r.ctx, r.blobName, r.chunkIndex)
 	return err
 }
 
@@ -298,7 +313,7 @@ func (c *Chunkstore) Reader(ctx context.Context, blobName string) *chunkstoreRea
 func (c *Chunkstore) ReverseReader(ctx context.Context, blobName string) (*chunkstoreReader, error) {
 	chunkIndex := uint16(0)
 	for {
-		if exists, err := c.chunkExists(ctx, blobName, chunkIndex); err != nil {
+		if exists, err := c.ChunkExists(ctx, blobName, chunkIndex); err != nil {
 			return nil, err
 		} else if !exists {
 			break
@@ -317,42 +332,64 @@ func (c *Chunkstore) ReverseReader(ctx context.Context, blobName string) (*chunk
 }
 
 type writeResult struct {
-	err  error
-	size int
+	err            error
+	size           int
+	lastChunkIndex uint16
 }
 
-type chunkstoreWriter struct {
+type ChunkstoreWriter struct {
 	chunkstore         *Chunkstore
 	blobName           string
+	lastChunkIndex     uint16
 	writeChannel       chan []byte
 	writeResultChannel chan writeResult
+	closed             bool
 }
 
-func (w *chunkstoreWriter) readFromWriteResultChannel() (int, error) {
+func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
 	select {
 	case result, open := <-w.writeResultChannel:
 		if !open {
+			if !w.closed {
+				close(w.writeChannel)
+				w.closed = true
+			}
 			return 0, status.UnavailableErrorf("Error accessing %v: Already closed.", w.blobName)
 		}
+		w.lastChunkIndex = result.lastChunkIndex
 		return result.size, result.err
 	case <-time.After(w.chunkstore.writeTimeoutDuration):
 		return 0, status.DeadlineExceededErrorf("Error accessing %v: Deadline exceeded.", w.blobName)
 	}
 }
 
-func (w *chunkstoreWriter) Write(p []byte) (int, error) {
+func (w *ChunkstoreWriter) GetLastChunkIndex() (uint16, error) {
+	w.Write([]byte{})
+	if w.lastChunkIndex == math.MaxUint16 {
+		return 0, status.NotFoundError("No chunks have been written.")
+	}
+	return w.lastChunkIndex, nil
+}
+
+func (w *ChunkstoreWriter) Write(p []byte) (int, error) {
+	if w.closed {
+		return 0, nil
+	}
 	w.writeChannel <- p
 	return w.readFromWriteResultChannel()
 }
 
-func (w *chunkstoreWriter) Flush() (int, error) {
-	w.writeChannel <- nil
-	return w.readFromWriteResultChannel()
+func (w *ChunkstoreWriter) Flush() (int, error) {
+	return w.Write(nil)
 }
 
-func (w *chunkstoreWriter) Close() error {
+func (w *ChunkstoreWriter) Close() error {
+	if w.closed {
+		return nil
+	}
 	close(w.writeChannel)
 	_, err := w.readFromWriteResultChannel()
+	w.closed = true
 	return err
 }
 
@@ -377,9 +414,9 @@ func (l *writeLoop) write() error {
 		size = len(l.chunk)
 	}
 	bytesWritten, err := l.chunkstore.writeChunk(l.ctx, l.blobName, l.chunkIndex, l.chunk[:size])
-	l.bytesFlushed += bytesWritten
-	l.chunk = l.chunk[bytesWritten:]
 	if bytesWritten > 0 {
+		l.bytesFlushed += size
+		l.chunk = l.chunk[size:]
 		l.chunkIndex++
 	}
 	if err != nil {
@@ -425,15 +462,15 @@ func (l *writeLoop) run() {
 		if l.timeout {
 			continue
 		}
-		l.writeResultChannel <- writeResult{size: l.bytesFlushed, err: l.writeError}
+		l.writeResultChannel <- writeResult{size: l.bytesFlushed, err: l.writeError, lastChunkIndex: l.chunkIndex - 1}
 		l.writeError = nil
 		l.bytesFlushed = 0
 	}
 	close(l.writeResultChannel)
 }
 
-func (c *Chunkstore) Writer(ctx context.Context, blobName string) *chunkstoreWriter {
-	writer := &chunkstoreWriter{
+func (c *Chunkstore) Writer(ctx context.Context, blobName string) *ChunkstoreWriter {
+	writer := &ChunkstoreWriter{
 		chunkstore:         c,
 		blobName:           blobName,
 		writeChannel:       make(chan []byte),
