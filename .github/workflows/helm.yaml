@@ -1,4 +1,4 @@
-name: "release"
+name: "Update Helm Version"
 
 on:
   release:
@@ -36,7 +36,7 @@ jobs:
 
     - name: Commit
       run: |
-        cd ../buildbuddy-internal
+        cd ../buildbuddy-helm
         git config --local user.email "releasebot@buildbuddy.io"
         git config --local user.name "BuildBuddy Release Bot"
 
@@ -58,8 +58,8 @@ jobs:
         github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
         branch: master
 
-    - name: Sleep for 2 minute
-      run: sleep 120s
+    - name: Sleep for 1 minute
+      run: sleep 60s
       shell: bash
 
     - name: Bump Enterprise Version
@@ -68,24 +68,26 @@ jobs:
 
         export APP_TAG_NAME="${{ github.event.release.tag_name }}"
         export APP_VERSION_NUMBER=${APP_TAG_NAME#*v}
+        export EXECUTOR_VERSION_NUMBER=$(sed -rn 's/version: ([0-9\.]+) # Chart version/\1/gp' charts/buildbuddy-executor/Chart.yaml)
 
         sed -ri 's/version: 0.0.([0-9]+) # Chart version/echo "version: 0.0.$((\1+1)) # Chart version"/ge' charts/buildbuddy-enterprise/Chart.yaml
         sed -ri "s/appVersion: ([0-9]+).([0-9]+).([0-9]+) # Version of deployed app/appVersion: $APP_VERSION_NUMBER # Version of deployed app/g" charts/buildbuddy-enterprise/Chart.yaml
         sed -ri "s/(.*)image\.tag(.*)enterprise-v([0-9]+).([0-9]+).([0-9]+)/\1image.tag\2enterprise-v$APP_VERSION_NUMBER/g" charts/buildbuddy-enterprise/README.md
         sed -ri "s/  tag(.*)enterprise-v([0-9]+).([0-9]+).([0-9]+)/  tag\1enterprise-v$APP_VERSION_NUMBER/g" charts/buildbuddy-enterprise/values.yaml
-        sed -ri 's/    version: 0.0.([0-9]+) # Executor chart version/echo "    version: 0.0.$((\1+1)) # Executor chart version"/ge' charts/buildbuddy-enterprise/requirements.yaml
+        sed -ri "s/version: 0.0.([0-9]+) # Executor chart version/version: $EXECUTOR_VERSION_NUMBER # Executor chart version/g" charts/buildbuddy-enterprise/requirements.yaml
 
         helm dep update charts/buildbuddy-enterprise
 
     - name: Commit
       run: |
-        cd ../buildbuddy-internal
+        cd ../buildbuddy-helm
         git config --local user.email "releasebot@buildbuddy.io"
         git config --local user.name "BuildBuddy Release Bot"
 
         git add charts/buildbuddy-enterprise/Chart.yaml
         git add charts/buildbuddy-enterprise/README.md
         git add charts/buildbuddy-enterprise/values.yaml
+        git add charts/buildbuddy-enterprise/charts/*
 
         git commit -m "Bumping Enterprise to ${{ github.event.release.tag_name }}" -a
 
