@@ -16,11 +16,12 @@ message GetEventLogChunkRequest {
   // Optionally specify the chunk to be returned; gets the last chunk if empty
   string chunk_id = 3;
 
-	// Specify fewest lines that may be returned, additional chunks will be read to meet this requirement
-	int32 min_lines = 4;
+  // Specify fewest lines that may be returned, additional chunks will be read
+  // to meet this requirement
+  int32 min_lines = 4;
 
-	// Specify direction to read to satisfy the minimum line count
-	bool read_backward = 5;
+  // Specify direction to read to satisfy the minimum line count
+  bool read_backward = 5;
 }
 
 message GetEventLogChunkResponse {

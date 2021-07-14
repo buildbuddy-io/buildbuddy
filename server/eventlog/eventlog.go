@@ -55,7 +55,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	rsp := &elpb.GetEventLogChunkResponse{
 		Chunk: &elpb.GetEventLogChunkResponse_Chunk{
 			ChunkId: chunkstore.ChunkIndexAsString(intChunkId),
-			Lines: make([][]byte, 0),
+			Lines:   make([][]byte, 0),
 		},
 	}
 	if intChunkId < math.MaxInt16-1 {
@@ -92,7 +92,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 			rsp.Chunk.ChunkId = ""
 			rsp.PreviousChunkId = chunkstore.ChunkIndexAsString(intChunkId - 1)
 		} else {
-			if intChunkId == math.MaxInt16 - 1 {
+			if intChunkId == math.MaxInt16-1 {
 				rsp.NextChunkId = ""
 				break
 			}
