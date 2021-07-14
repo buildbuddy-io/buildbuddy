@@ -1,12 +1,14 @@
 package config
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"reflect"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"gopkg.in/yaml.v2"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -290,6 +292,37 @@ func (i *stringSliceFlag) Set(values string) error {
 	return nil
 }
 
+type structSliceFlag struct {
+	dstSlice   reflect.Value
+	structType reflect.Type
+}
+
+func (f *structSliceFlag) String() string {
+	if *f == (structSliceFlag{}) {
+		return "[]"
+	}
+
+	var l []string
+	for i := 0; i < f.dstSlice.Len(); i++ {
+		b, err := json.Marshal(f.dstSlice.Index(i).Interface())
+		if err != nil {
+			alert.UnexpectedEvent("config_cannot_marshal_struct", "err: %s", err)
+			continue
+		}
+		l = append(l, string(b))
+	}
+	return "[" + strings.Join(l, ",") + "]"
+}
+
+func (f *structSliceFlag) Set(value string) error {
+	dst := reflect.New(f.structType)
+	if err := json.Unmarshal([]byte(value), dst.Interface()); err != nil {
+		return err
+	}
+	f.dstSlice.Set(reflect.Append(f.dstSlice, dst.Elem()))
+	return nil
+}
+
 func defineFlagsForMembers(parentStructNames []string, T reflect.Value) {
 	typeOfT := T.Type()
 	for i := 0; i < T.NumField(); i++ {
@@ -320,6 +353,10 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value) {
 					sf := stringSliceFlag(slice)
 					flag.Var(&sf, fqFieldName, docString)
 				}
+				continue
+			} else if f.Type().Elem().Kind() == reflect.Struct {
+				sf := structSliceFlag{f, f.Type().Elem()}
+				flag.Var(&sf, fqFieldName, docString)
 				continue
 			}
 			fallthrough
