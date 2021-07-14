@@ -245,6 +245,23 @@ func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
 	return &clone
 }
 
+func (c *Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+	newLocal, err := c.local.WithIsolation(ctx, cacheType, remoteInstanceName)
+	if err != nil {
+		return nil, err
+	}
+
+	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
+	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
+		newPrefix += "/"
+	}
+	clone := *c
+	// TODO(vadim): include cache type & remote instance name in distributed disk RPCs.
+	clone.prefix = newPrefix
+	clone.local = newLocal
+	return &clone, nil
+}
+
 // peers returns the ordered slice of replicationFactor peers responsible for
 // this key. They should be tried in order.
 func (c *Cache) peers(d *repb.Digest) *peerset.PeerSet {

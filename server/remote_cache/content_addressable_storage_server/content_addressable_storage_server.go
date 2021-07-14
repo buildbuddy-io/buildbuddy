@@ -46,8 +46,8 @@ func NewContentAddressableStorageServer(env environment.Env) (*ContentAddressabl
 	}, nil
 }
 
-func (s *ContentAddressableStorageServer) getCache(instanceName string) interfaces.Cache {
-	return namespace.CASCache(s.cache, instanceName)
+func (s *ContentAddressableStorageServer) getCache(ctx context.Context, instanceName string) (interfaces.Cache, error) {
+	return namespace.CASCache(ctx, s.cache, instanceName)
 }
 
 // Determine if blobs are present in the CAS.
@@ -62,7 +62,10 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	cache := s.getCache(req.GetInstanceName())
+	cache, err := s.getCache(ctx, req.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
 	digestsToLookup := make([]*repb.Digest, 0, len(req.GetBlobDigests()))
 	for _, d := range req.GetBlobDigests() {
 		if d.GetHash() == digest.EmptySha256 {
@@ -132,7 +135,10 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		return rsp, nil
 	}
 
-	cache := s.getCache(req.GetInstanceName())
+	cache, err := s.getCache(ctx, req.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
 	rsp.Responses = make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(req.Requests))
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
@@ -218,7 +224,10 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	if err != nil {
 		return nil, err
 	}
-	cache := s.getCache(req.GetInstanceName())
+	cache, err := s.getCache(ctx, req.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
 	cacheRequest := make([]*repb.Digest, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
@@ -437,7 +446,10 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if err != nil {
 		return err
 	}
-	cache := s.getCache(req.GetInstanceName())
+	cache, err := s.getCache(ctx, req.GetInstanceName())
+	if err != nil {
+		return err
+	}
 	rootDir, err := s.fetchDir(ctx, cache, req.GetRootDigest())
 	if err != nil {
 		return err

@@ -221,12 +221,18 @@ func readProtoFromCache(ctx context.Context, cache interfaces.Cache, d *digest.I
 }
 
 func ReadProtoFromCAS(ctx context.Context, cache interfaces.Cache, d *digest.InstanceNameDigest, out proto.Message) error {
-	cas := namespace.CASCache(cache, d.GetInstanceName())
+	cas, err := namespace.CASCache(ctx, cache, d.GetInstanceName())
+	if err != nil {
+		return err
+	}
 	return readProtoFromCache(ctx, cas, d, out)
 }
 
 func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.InstanceNameDigest, out proto.Message) error {
-	ac := namespace.ActionCache(cache, d.GetInstanceName())
+	ac, err := namespace.ActionCache(ctx, cache, d.GetInstanceName())
+	if err != nil {
+		return err
+	}
 	return readProtoFromCache(ctx, ac, d, out)
 }
 
@@ -251,7 +257,10 @@ func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadS
 }
 
 func UploadBytesToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in io.ReadSeeker) (*repb.Digest, error) {
-	cas := namespace.CASCache(cache, instanceName)
+	cas, err := namespace.CASCache(ctx, cache, instanceName)
+	if err != nil {
+		return nil, err
+	}
 	return UploadBytesToCache(ctx, cas, in)
 }
 
@@ -266,12 +275,18 @@ func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, instanceNam
 
 func UploadBlobToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, blob []byte) (*repb.Digest, error) {
 	reader := bytes.NewReader(blob)
-	cas := namespace.CASCache(cache, instanceName)
+	cas, err := namespace.CASCache(ctx, cache, instanceName)
+	if err != nil {
+		return nil, err
+	}
 	return UploadBytesToCache(ctx, cas, reader)
 }
 
 func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
-	cas := namespace.CASCache(cache, instanceName)
+	cas, err := namespace.CASCache(ctx, cache, instanceName)
+	if err != nil {
+		return nil, err
+	}
 	return uploadProtoToCache(ctx, cas, instanceName, in)
 }
 
@@ -503,6 +518,9 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 }
 
 func UploadProtoToAC(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
-	ac := namespace.ActionCache(cache, instanceName)
+	ac, err := namespace.ActionCache(ctx, cache, instanceName)
+	if err != nil {
+		return nil, err
+	}
 	return uploadProtoToCache(ctx, ac, instanceName, in)
 }
