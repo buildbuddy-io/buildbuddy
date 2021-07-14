@@ -107,7 +107,7 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
   }
 
   private getConsoleBuffer() {
-    if (this.isLogStreamingEnabled()) {
+    if (!this.isLogStreamingEnabled()) {
       return this.props.model.consoleBuffer || "";
     }
 
