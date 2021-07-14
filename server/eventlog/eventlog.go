@@ -22,7 +22,7 @@ const (
 
 	// Chunks will also be flushed to blobstore after this much time
 	// passes with no new data being written.
-	defaultChunkTimeout = 15 * time.Second
+	defaultChunkTimeout = 300 * time.Millisecond
 )
 
 func GetEventLogPathFromInvocationId(invocationId string) string {
@@ -81,7 +81,8 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		rsp.Chunk.Lines = append(lines, rsp.Chunk.Lines...)
 		if len(rsp.Chunk.Lines) >= int(req.MinLines) {
 			break
-		} else if req.ReadBackward {
+		} else if req.ReadBackward || req.ChunkId == "" {
+			// If the client specified a backwards Read or the client requested the tail of the log
 			if intChunkId == 0 {
 				rsp.PreviousChunkId = ""
 				break
