@@ -80,6 +80,7 @@ func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSize
 			return nil, err
 		}
 		defaultPartition = p
+		partitions[defaultPartitionID] = p
 	}
 
 	c := &DiskCache{
