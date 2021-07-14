@@ -816,23 +816,13 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if err := git(ctx, &ws.log, "clean", "-X" /*ignored files*/, "--force"); err != nil {
 		return err
 	}
-	writeCommandSummary(&ws.log, "Deleting branch %q if it already exists...", *pushedBranch)
-	// Check out anything other than *pushedBranch so that we can delete it (this
-	// makes checking out the branch in subsequent steps simpler).
-	// We know *commitSHA exists, so let's go with that.
-	// Don't show the command since this is sort of a hairy implementation
-	// detail.
-	if err := git(ctx, io.Discard, "checkout", *commitSHA); err != nil {
+	// Create the branch if it doesn't already exist, then update it to point to
+	// the pushed branch tip.
+	if err := git(ctx, &ws.log, "checkout", "-B", *pushedBranch); err != nil {
 		return err
 	}
-	// Delete the pushed branch ref if it already exists. Again don't show the
-	// logs since this is sort of hairy.
-	if err := git(ctx, io.Discard, "branch", "--delete", "--force", *pushedBranch); err != nil && !isBranchNotFound(err) {
-		return err
-	}
-	// Checkout the branch locally.
 	remotePushedBranchRef := fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
-	if err := git(ctx, &ws.log, "checkout", "--force", "--track", remotePushedBranchRef); err != nil {
+	if err := git(ctx, &ws.log, "reset", "--hard", remotePushedBranchRef); err != nil {
 		return err
 	}
 	// Merge the target branch (if different from the pushed branch) so that the
@@ -883,7 +873,7 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 	remoteName := gitRemoteName(remoteURL)
 	writeCommandSummary(&ws.log, "Configuring remote %q...", remoteName)
 	// Don't show `git remote add` command or the error message since the URL may
-	// contain the git token.
+	// contain the repo access token.
 	if err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
 		return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
 	}
