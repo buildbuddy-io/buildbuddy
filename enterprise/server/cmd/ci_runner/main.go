@@ -817,9 +817,12 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if err := git(ctx, &ws.log, "clean", "-X" /*ignored files*/, "--force"); err != nil {
 		return err
 	}
-	// Check out anything other than *pushedBranch so that we can delete it if
-	// it already exists. We know *commitSHA exists, so let's go with that.
-	// Don't show the command since this is sort of a hairy implementation detail.
+	writeCommandSummary(&ws.log, "Deleting branch %q if it already exists...", *pushedBranch)
+	// Check out anything other than *pushedBranch so that we can delete it (this
+	// makes checking out the branch in subsequent steps simpler).
+	// We know *commitSHA exists, so let's go with that.
+	// Don't show the command since this is sort of a hairy implementation
+	// detail.
 	if err := git(ctx, io.Discard, "checkout", *commitSHA); err != nil {
 		return err
 	}
