@@ -22,7 +22,7 @@ const (
 
 	// Chunks will also be flushed to blobstore after this much time
 	// passes with no new data being written.
-	defaultChunkTimeout = 300 * time.Millisecond
+	defaultChunkTimeout = 15 * time.Second
 )
 
 func GetEventLogPathFromInvocationId(invocationId string) string {
