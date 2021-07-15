@@ -187,7 +187,7 @@ export default class InvocationOverviewComponent extends React.Component {
           )}
           {this.props.model.getBuildkiteUrl() && (
             <div className="detail clickable" onClick={this.handleBuildkiteClicked.bind(this)}>
-              <img className="icon" src="/image/buildkite.svg" />
+              <img className="icon buildkite" src="/image/buildkite.svg" />
               Buildkite
             </div>
           )}

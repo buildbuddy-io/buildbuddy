@@ -254,6 +254,10 @@ button {
   margin-right: 8px;
 }
 
+.shelf .details img.buildkite {
+  opacity: 1;
+}
+
 .shelf .details img:first-of-type {
   margin-left: 0;
 }
