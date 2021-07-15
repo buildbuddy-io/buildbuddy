@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 # If ~/go/bin exists, make sure we respect it
 export PATH="$PATH:$HOME/go/bin"
 
-gazelle=$([[ "$1" == '-g' ]] || [[ "$1" == '--gazelle' ]] && echo 1 || echo 0)
+gazelle=$([[ "${1:-}" == '-g' ]] || [[ "${1:-}" == '--gazelle' ]] && echo 1 || echo 0)
 
 c_yellow="\x1b[33m"
 c_reset="\x1b[0m"
