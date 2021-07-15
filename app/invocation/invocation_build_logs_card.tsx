@@ -120,7 +120,8 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
 
         // At this point, we successfully fetched a chunk and the invocation is either
         // still in progress, or completed while we were making our last request.
-        // Greedily fetch the next chunk.
+        // In both cases, there are still potentially more chunks to fetch, so greedily
+        // try to fetch another chunk.
         this.fetchTail();
       });
   }
