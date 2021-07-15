@@ -444,9 +444,17 @@ button {
 }
 
 .card.dark {
-  /* background-color: #263238; */
   background-color: #222;
   color: #fff;
+}
+
+.card.light-terminal {
+  background-color: #fafafa;
+  box-shadow: 0px 1px 4px rgba(0, 0, 0, 0.2), 0px 1px 6px rgba(0, 0, 0, 0.1);
+}
+
+.card.light-terminal:hover {
+  box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.2), 0px 1px 10px rgba(0, 0, 0, 0.1);
 }
 
 .grid-block:hover .card-hover {
@@ -898,6 +906,18 @@ code .comment {
   font-size: 14px;
   font-family: "Source Code Pro", monospace;
   color: #fff;
+}
+
+.light-terminal .terminal-line {
+  color: #222;
+}
+
+.light-terminal .terminal-line:hover {
+  background-color: #fafafa;
+}
+
+.light-terminal .react-lazylog {
+  background-color: #fafafa;
 }
 
 .inline-code {

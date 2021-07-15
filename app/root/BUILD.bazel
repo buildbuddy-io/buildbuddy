@@ -17,6 +17,7 @@ ts_library(
         "//app/footer",
         "//app/invocation",
         "//app/menu",
+        "//app/preferences",
         "//app/router",
         "//app/service",
         "//proto:user_ts_proto",
