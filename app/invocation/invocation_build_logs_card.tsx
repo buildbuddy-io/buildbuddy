@@ -118,10 +118,9 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
         // This should rarely happen (if ever) but check for it just to be safe.
         if (!nextChunkId) return;
 
-        // At this point, we successfully fetched a chunk and the invocation is either
-        // still in progress, or completed while we were making our last request.
-        // In both cases, there are still potentially more chunks to fetch, so greedily
-        // try to fetch another chunk.
+        // At this point, we successfully fetched a chunk. Immediately request the next
+        // chunk to avoid unnecessarily delaying the logs from being displayed in case
+        // more chunks are already available.
         this.fetchTail();
       });
   }
