@@ -94,7 +94,6 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
       })
       .catch((e) => {
         rpcError = BuildBuddyError.parse(e);
-        console.warn({ rpcError });
       })
       .finally(() => {
         // NotFound / OutOfRange errors just mean the next chunk has not yet been written
