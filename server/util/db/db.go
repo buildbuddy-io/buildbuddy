@@ -44,7 +44,8 @@ const (
 )
 
 var (
-	autoMigrateDB = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
+	autoMigrateDB        = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
+	autoMigrateDBAndExit = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
 )
 
 type DBHandle struct {
@@ -114,22 +115,21 @@ func (dbh *DBHandle) ReadRow(out interface{}, where ...interface{}) error {
 }
 
 func maybeRunMigrations(dialect string, gdb *gorm.DB) error {
-	if *autoMigrateDB {
-		postAutoMigrateFuncs, err := tables.PreAutoMigrate(gdb)
-		if err != nil {
+	if !*autoMigrateDB && !*autoMigrateDBAndExit {
+		return nil
+	}
+	postAutoMigrateFuncs, err := tables.PreAutoMigrate(gdb)
+	if err != nil {
+		return err
+	}
+	gdb.AutoMigrate(tables.GetAllTables()...)
+	for _, f := range postAutoMigrateFuncs {
+		if err := f(); err != nil {
 			return err
 		}
-		gdb.AutoMigrate(tables.GetAllTables()...)
-		if postAutoMigrateFuncs != nil {
-			for _, f := range postAutoMigrateFuncs {
-				if err := f(); err != nil {
-					return err
-				}
-			}
-		}
-		if err := tables.PostAutoMigrate(gdb); err != nil {
-			return err
-		}
+	}
+	if err := tables.PostAutoMigrate(gdb); err != nil {
+		return err
 	}
 	return nil
 }
@@ -360,7 +360,15 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 	go statsRecorder.poll(statsPollInterval)
 
 	if err := maybeRunMigrations(dialect, primaryDB); err != nil {
+		if *autoMigrateDBAndExit {
+			log.Fatalf("Database auto-migration failed: %s", err)
+		}
+
 		return nil, err
+	}
+	if *autoMigrateDBAndExit {
+		log.Infof("Database migration completed. Exiting due to --auto_migrate_db_and_exit.")
+		os.Exit(0)
 	}
 
 	dbh := &DBHandle{
