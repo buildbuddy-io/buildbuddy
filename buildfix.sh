@@ -28,7 +28,7 @@ fi
 
 echo "Formatting frontend and markup files with prettier..."
 if which node prettier &>/dev/null; then
-  BUILD_WORKSPACE_PATH="$(pwd)" ./tools/prettier/prettier.sh "$(which node)" "$(which prettier)" --write
+  BUILD_WORKSPACE_DIRECTORY="$(pwd)" ./tools/prettier/prettier.sh "$(which node)" "$(which prettier)" --write
 else
   bazel run //tools/prettier:fix
 fi
