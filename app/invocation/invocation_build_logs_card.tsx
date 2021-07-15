@@ -82,15 +82,12 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
       )
       .then((response) => {
         console.log(response);
-        if (response.chunk?.lines) {
-          let consoleBuffer = this.state.consoleBuffer;
-          for (const line of response.chunk.lines) {
-            consoleBuffer += String.fromCharCode(...line) + "\n";
-          }
-          this.setState({ consoleBuffer });
+        let consoleBuffer = this.state.consoleBuffer;
+        for (const line of response.chunk?.lines || []) {
+          consoleBuffer += String.fromCharCode(...line) + "\n";
         }
         nextChunkId = response.nextChunkId;
-        this.setState({ nextChunkId });
+        this.setState({ consoleBuffer, nextChunkId });
       })
       .catch((e) => {
         rpcError = BuildBuddyError.parse(e);
