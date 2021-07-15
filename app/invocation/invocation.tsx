@@ -199,11 +199,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <InvocationFilterComponent hash={activeTab} search={this.props.search} />
           )}
 
-          {(activeTab === "all" || activeTab == "log") &&
-            this.state.model.aborted?.aborted.description &&
-            this.state.model.aborted.aborted.reason.toString().toLowerCase() != "skipped" && (
-              <ErrorCardComponent model={this.state.model} />
-            )}
+          {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted.description && (
+            <ErrorCardComponent model={this.state.model} />
+          )}
 
           {this.state.model.workflowConfigured && (activeTab === "all" || activeTab === "commands") && (
             <WorkflowCommands model={this.state.model} />
