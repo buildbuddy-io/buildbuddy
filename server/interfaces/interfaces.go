@@ -130,7 +130,8 @@ type Blobstore interface {
 type CacheType int
 
 const (
-	ActionCacheType CacheType = iota
+	UnknownCacheType CacheType = iota
+	ActionCacheType
 	CASCacheType
 )
 

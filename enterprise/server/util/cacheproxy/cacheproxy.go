@@ -138,6 +138,28 @@ func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.Distribut
 	return client, nil
 }
 
+func ProtoCacheTypeToCacheType(cacheType dcpb.Isolation_CacheType) (interfaces.CacheType, error) {
+	switch cacheType {
+	case dcpb.Isolation_CAS_CACHE:
+		return interfaces.CASCacheType, nil
+	case dcpb.Isolation_ACTION_CACHE:
+		return interfaces.ActionCacheType, nil
+	default:
+		return interfaces.UnknownCacheType, status.InvalidArgumentErrorf("unknown cache type %v", cacheType)
+	}
+}
+
+func (c *CacheProxy) getCache(ctx context.Context, prefix string, isolation *dcpb.Isolation) (interfaces.Cache, error) {
+	if isolation.GetCacheType() != dcpb.Isolation_UNKNOWN_TYPE {
+		ct, err := ProtoCacheTypeToCacheType(isolation.GetCacheType())
+		if err != nil {
+			return nil, err
+		}
+		return c.cache.WithIsolation(ctx, ct, isolation.GetRemoteInstanceName())
+	}
+	return c.cache.WithPrefix(prefix), nil
+}
+
 func (c *CacheProxy) ContainsMulti(ctx context.Context, req *dcpb.ContainsMultiRequest) (*dcpb.ContainsMultiResponse, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, c.env)
 	if err != nil {
@@ -147,7 +169,11 @@ func (c *CacheProxy) ContainsMulti(ctx context.Context, req *dcpb.ContainsMultiR
 	for _, k := range req.GetKey() {
 		digests = append(digests, digestFromKey(k))
 	}
-	found, err := c.cache.WithPrefix(req.GetPrefix()).ContainsMulti(ctx, digests)
+	cache, err := c.getCache(ctx, req.GetPrefix(), req.GetIsolation())
+	if err != nil {
+		return nil, err
+	}
+	found, err := cache.ContainsMulti(ctx, digests)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +196,11 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 	for _, k := range req.GetKey() {
 		digests = append(digests, digestFromKey(k))
 	}
-	found, err := c.cache.WithPrefix(req.GetPrefix()).GetMulti(ctx, digests)
+	cache, err := c.getCache(ctx, req.GetPrefix(), req.GetIsolation())
+	if err != nil {
+		return nil, err
+	}
+	found, err := cache.GetMulti(ctx, digests)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +235,11 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	}
 	up, _ := prefix.UserPrefixFromContext(ctx)
 	d := digestFromKey(req.GetKey())
-	reader, err := c.cache.WithPrefix(req.GetPrefix()).Reader(ctx, d, req.GetOffset())
+	cache, err := c.getCache(ctx, req.GetPrefix(), req.GetIsolation())
+	if err != nil {
+		return err
+	}
+	reader, err := cache.Reader(ctx, d, req.GetOffset())
 	if err != nil {
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", req.GetPrefix()+d.GetHash(), up, err)
 		return err
@@ -247,7 +281,11 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		}
 		if writeCloser == nil {
 			d := digestFromKey(req.GetKey())
-			wc, err := c.cache.WithPrefix(req.GetPrefix()).Writer(ctx, d)
+			cache, err := c.getCache(ctx, req.GetPrefix(), req.GetIsolation())
+			if err != nil {
+				return err
+			}
+			wc, err := cache.Writer(ctx, d)
 			if err != nil {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", req.GetPrefix()+d.GetHash(), up, err)
 				return err
