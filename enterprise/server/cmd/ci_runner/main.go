@@ -557,10 +557,16 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 			Item: []*bespb.WorkspaceStatus_Item{
 				{Key: "BUILD_USER", Value: ar.username},
 				{Key: "BUILD_HOST", Value: ar.hostname},
-				{Key: "REPO_URL", Value: *pushedRepoURL},
-				{Key: "COMMIT_SHA", Value: *commitSHA},
 				{Key: "GIT_BRANCH", Value: *pushedBranch},
 				{Key: "GIT_TREE_STATUS", Value: "Clean"},
+				// Note: COMMIT_SHA may not actually reflect the current state of the
+				// repo since we merge the target branch before running the workflow;
+				// we set this for the purpose of reporting statuses to GitHub.
+				{Key: "COMMIT_SHA", Value: *commitSHA},
+				// REPO_URL is used to report statuses, so always set it to the
+				// target repo URL (which should be the same URL on which the workflow
+				// is configured).
+				{Key: "REPO_URL", Value: *targetRepoURL},
 			},
 		}},
 	}
