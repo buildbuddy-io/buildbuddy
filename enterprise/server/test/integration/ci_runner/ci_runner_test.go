@@ -158,7 +158,7 @@ func singleInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation 
 	return resp.Invocation[0]
 }
 
-func TestCIRunner_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testing.T) {
+func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
@@ -183,7 +183,7 @@ func TestCIRunner_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testin
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 }
 
-func TestCIRunner_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsToBES(t *testing.T) {
+func TestCIRunner_Push_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsToBES(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithTestsAndNoBuildBuddyYAML)
 
@@ -211,7 +211,7 @@ func TestCIRunner_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsToBES(t
 	)
 }
 
-func TestCIRunner_ReusedWorkspaceWithBazelVersionAction_CanReuseWorkspace(t *testing.T) {
+func TestCIRunner_Push_ReusedWorkspaceWithBazelVersionAction_CanReuseWorkspace(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
@@ -244,7 +244,7 @@ func TestCIRunner_ReusedWorkspaceWithBazelVersionAction_CanReuseWorkspace(t *tes
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 }
 
-func TestCIRunner_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
+func TestCIRunner_Push_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 
 	// Start the app so the runner can use it as the BES backend.
@@ -379,4 +379,57 @@ func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *tes
 	if t.Failed() {
 		t.Log(runnerInvocation.ConsoleBuffer)
 	}
+}
+
+func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
+	pushedRepoPath := testgit.MakeTempRepoClone(t, targetRepoPath)
+
+	// Make a commit to the "forked" repository so that the merge is nontrivial.
+	testshell.Run(t, pushedRepoPath, `
+		git checkout -b feature
+		touch feature.sh
+		git add feature.sh
+		git commit -m "Add feature.sh"
+	`)
+	commitSHA := strings.TrimSpace(testshell.Run(t, pushedRepoPath, `git rev-parse HEAD`))
+
+	runnerFlags := []string{
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + pushedRepoPath,
+		"--pushed_branch=feature",
+		"--commit_sha=" + commitSHA,
+		"--target_repo_url=file://" + targetRepoPath,
+		"--target_branch=master",
+		// Disable clean checkout fallback for this test since we expect to sync
+		// without errors.
+		"--fallback_to_clean_checkout=false",
+	}
+
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	run := func() {
+		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+		checkRunnerResult(t, result)
+
+		runnerInvocation := singleInvocation(t, app, result)
+		// Since our workflow just runs `bazel version`, we should be able to see its
+		// output in the action logs.
+		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
+	}
+
+	run()
+
+	// Make a destructive change to the runner workspace and make sure it
+	// can recover.
+	if err := os.RemoveAll(filepath.Join(wsPath, ".git/refs")); err != nil {
+		t.Fatal(err)
+	}
+
+	run()
 }

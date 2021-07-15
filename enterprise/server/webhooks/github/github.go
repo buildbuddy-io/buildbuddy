@@ -141,7 +141,6 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 			"PullRequest.Head.Ref",
 			"PullRequest.Head.SHA",
 			"PullRequest.Head.Repo.CloneURL",
-			"PullRequest.Head.Repo.Fork",
 		)
 		if err != nil {
 			return nil, err
@@ -150,6 +149,7 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 		if !(v["Action"] == "opened" || v["Action"] == "synchronize") {
 			return nil, nil
 		}
+		isFork := v["PullRequest.Base.Repo.CloneURL"] != v["PullRequest.Head.Repo.CloneURL"]
 		return &interfaces.WebhookData{
 			EventName:     webhook_data.EventName.PullRequest,
 			PushedRepoURL: v["PullRequest.Head.Repo.CloneURL"],
@@ -157,7 +157,7 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 			SHA:           v["PullRequest.Head.SHA"],
 			TargetRepoURL: v["PullRequest.Base.Repo.CloneURL"],
 			TargetBranch:  v["PullRequest.Base.Ref"],
-			IsTrusted:     v["PullRequest.Head.Repo.Fork"] == "false",
+			IsTrusted:     !isFork,
 		}, nil
 
 	default:
