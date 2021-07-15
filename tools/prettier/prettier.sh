@@ -40,7 +40,7 @@ paths=("$(
     done
 )")
 
-if [[ ${#paths[@]} -eq 0 ]]; then
+if [[ -z "${paths[*]}" ]]; then
   exit 0
 fi
 
