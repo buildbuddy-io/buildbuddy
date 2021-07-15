@@ -73,8 +73,8 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
           invocationId: invocation.invocationId,
           chunkId: this.state.nextChunkId,
           ...(isFirstRequest && {
-            // For the first request, fetch a large amount of lines from the
-            // log history.
+            // For the first request, fetch a large amount of lines starting from
+            // the tail and reading backward.
             minLines: MAX_INITIAL_LINES,
             readBackward: true,
           }),
