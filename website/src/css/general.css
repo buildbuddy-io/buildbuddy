@@ -27,6 +27,7 @@
 
 html:root {
   --aa-primary-color-rgb: 0, 0, 0;
+  --aa-selected-color-rgb: 176, 190, 197;
 }
 
 html body[data-theme="dark"] {
