@@ -1,4 +1,4 @@
-export type ErrorCode = "Unknown" | "NotFound" | "PermissionDenied";
+export type ErrorCode = "Unknown" | "NotFound" | "OutOfRange" | "PermissionDenied";
 
 export class BuildBuddyError extends Error {
   constructor(public code: ErrorCode, public description: string) {
