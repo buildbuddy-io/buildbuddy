@@ -20,6 +20,14 @@ spec:
     spec:
       nodeSelector:
         cloud.google.com/gke-nodepool: default-pool
+      initContainers:
+        - name: migrate-db
+          image: gcr.io/flame-build/buildbuddy-app-dev:server-image
+          imagePullPolicy: Always
+          args:
+            - "--config_file=config/buildbuddy.dev.yaml"
+            - "--database.log_queries"
+            - "--auto_migrate_db_and_exit"
       containers:
         - name: buildbuddy-app
           image: gcr.io/flame-build/buildbuddy-app-dev:server_image

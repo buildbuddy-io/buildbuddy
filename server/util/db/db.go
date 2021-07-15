@@ -6,8 +6,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 	"time"
+
+	golog "log"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/prometheus/client_golang/prometheus"
@@ -193,7 +196,17 @@ func openDB(configurator *config.Configurator, dialect string, connString string
 	}
 
 	var l logger.Interface
-	l = sqlLogger{Interface: logger.Default, logLevel: logger.Warn}
+	// This is the same as logger.Default, but with colors turned off (since the
+	// output may not support colors) and sending output to stderr (to be
+	// consistent with the rest of our logs).
+	gormLogger := logger.New(
+		golog.New(os.Stderr, "\r\n", golog.LstdFlags),
+		logger.Config{
+			SlowThreshold: 200 * time.Millisecond,
+			LogLevel:      logger.Warn,
+			Colorful:      false,
+		})
+	l = sqlLogger{Interface: gormLogger, logLevel: logger.Warn}
 	if configurator.GetDatabaseConfig().LogQueries {
 		l = l.LogMode(logger.Info)
 	}

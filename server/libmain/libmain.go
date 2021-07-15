@@ -68,6 +68,8 @@ var (
 	gRPCSPort      = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 
+	autoMigrateDBAndExit = flag.Bool("auto_migrate_db_and_exit", false, "Auto-migrate the DB and exit (do not actually run the app). Implies --auto_migrate_db.")
+
 	staticDirectory = flag.String("static_directory", "", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "", "the directory containing app binary files to host")
 
@@ -151,9 +153,18 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}
+	if *autoMigrateDBAndExit {
+		if err := flag.Set("auto_migrate_db", "true"); err != nil {
+			log.Fatalf("Failed to enable --auto_migrate_db flag (implied by --auto_migrate_db_and_exit): %s", err)
+		}
+	}
 	dbHandle, err := db.GetConfiguredDatabase(configurator, healthChecker)
 	if err != nil {
 		log.Fatalf("Error configuring database: %s", err)
+	}
+	if *autoMigrateDBAndExit {
+		log.Infof("Successfully auto-migrated database; exiting due to --auto_migrate_db_and_exit flag.")
+		os.Exit(0)
 	}
 
 	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
