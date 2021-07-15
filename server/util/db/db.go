@@ -118,6 +118,7 @@ func maybeRunMigrations(dialect string, gdb *gorm.DB) error {
 	if !*autoMigrateDB && !*autoMigrateDBAndExit {
 		return nil
 	}
+	log.Infof("Auto-migrating DB")
 	postAutoMigrateFuncs, err := tables.PreAutoMigrate(gdb)
 	if err != nil {
 		return err
