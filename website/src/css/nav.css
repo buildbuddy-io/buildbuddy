@@ -75,10 +75,10 @@ html[data-theme="dark"] .blog-sidebar {
 }
 
 .aa-DetachedSearchButton {
-  /* padding-right: 32px !important; */
   border-radius: 32px !important;
   cursor: pointer;
   padding-right: 8px;
+  background: transparent !important;
 }
 
 .aa-Form {
