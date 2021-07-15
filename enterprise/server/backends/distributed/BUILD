@@ -11,9 +11,11 @@ go_library(
     deps = [
         "//enterprise/server/util/cacheproxy",
         "//enterprise/server/util/heartbeat",
+        "//proto:distributed_cache_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/util/alert",
         "//server/util/background",
         "//server/util/consistent_hash",
         "//server/util/log",
