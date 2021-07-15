@@ -3,6 +3,7 @@ import format from "../format/format";
 import InvocationModel from "./invocation_model";
 import { build } from "../../proto/remote_execution_ts_proto";
 import rpcService from "../service/rpc_service";
+import { Action } from "rxjs/internal/scheduler/Action";
 
 interface Props {
   model: InvocationModel;
@@ -15,6 +16,8 @@ interface State {
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   command?: build.bazel.remote.execution.v2.Command;
   error?: string;
+  inputRoot?: build.bazel.remote.execution.v2.Directory;
+  inputFiles?: build.bazel.remote.execution.v2.IFileNode[];
 }
 
 export default class InvocationActionCardComponent extends React.Component<Props, State> {
@@ -44,6 +47,49 @@ export default class InvocationActionCardComponent extends React.Component<Props
           error: "Error loading action profile. Make sure your cache is correctly configured.",
         });
       });
+  }
+
+  fetchInputRoot(rootDigest: build.bazel.remote.execution.v2.IDigest) {
+    let inputRootFile =
+      "bytestream://" + this.getCacheAddress() + "/blobs/" + rootDigest.hash + "/" + rootDigest.sizeBytes;
+    rpcService
+      .fetchBytestreamFile(inputRootFile, this.props.model.getId(), "arraybuffer")
+      .then((root_buff: any) => {
+        let tempRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(root_buff));
+        let files = [] as build.bazel.remote.execution.v2.IFileNode[];
+        files = this.unravelInputRoot(tempRoot, files);
+        console.log(files.length);
+        this.setState({
+          ...this.state,
+          inputRoot: tempRoot,
+          inputFiles: files,
+        });
+      })
+      .catch(() => {
+        console.error("Error loading bytestream inputRoot profile!");
+        this.setState({
+          ...this.state,
+          error: "Error loading action profile. Make sure your cache is correctly configured.",
+        });
+      });
+  }
+
+  fetchDirectory(digest: build.bazel.remote.execution.v2.IDigest): build.bazel.remote.execution.v2.Directory {
+    let dir_file = "bytestream://" + this.getCacheAddress() + "/blobs/" + digest.hash + "/" + digest.sizeBytes;
+    let dir = null;
+    rpcService
+      .fetchBytestreamFile(dir_file, this.props.model.getId(), "arraybuffer")
+      .then((dir_buff: any) => {
+        dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(dir_buff));
+      })
+      .catch(() => {
+        console.error("Error loading directory!");
+        this.setState({
+          ...this.state,
+          error: "Error loading directory profile. Make sure your cache is correctly configured.",
+        });
+      });
+    return dir;
   }
 
   fetchActionResult() {
@@ -83,6 +129,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           ...this.state,
           command: build.bazel.remote.execution.v2.Command.decode(temp_array),
         });
+        this.fetchInputRoot(action.inputRootDigest);
       })
       .catch(() => {
         console.error("Error loading bytestream command profile!");
@@ -115,6 +162,19 @@ export default class InvocationActionCardComponent extends React.Component<Props
       address = address + "/" + this.props.model.optionsMap.get("remote_instance_name");
     }
     return address;
+  }
+
+  unravelInputRoot(
+    root: build.bazel.remote.execution.v2.Directory,
+    files: build.bazel.remote.execution.v2.IFileNode[]
+  ): build.bazel.remote.execution.v2.IFileNode[] {
+    if (root.directories) {
+      for (var dir of root.directories) {
+        return files.concat(this.unravelInputRoot(this.fetchDirectory(dir.digest), files));
+      }
+    } else {
+      return root.files;
+    }
   }
 
   private renderTimeline() {
@@ -230,6 +290,22 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       <div>
                         {this.state.action.outputNodeProperties.map((outputNodeProperty) => (
                           <div className="output-node">{outputNodeProperty}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div>Default</div>
+                    )}
+                  </div>
+                  <div className="action-section">
+                    <div
+                      title="List of required supported NodeProperty [build.bazel.remote.execution.v2.NodeProperty] keys."
+                      className="action-property-title">
+                      Input Files
+                    </div>
+                    {this.state.inputFiles.length ? (
+                      <div>
+                        {this.state.inputFiles.map((file) => (
+                          <div className="output-node">{file.name}</div>
                         ))}
                       </div>
                     ) : (
