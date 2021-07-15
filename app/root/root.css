@@ -1020,6 +1020,10 @@ code .comment {
   align-self: center;
 }
 
+.purple {
+  color: #7d0552;
+}
+
 .target-status-icon {
   display: none;
 }

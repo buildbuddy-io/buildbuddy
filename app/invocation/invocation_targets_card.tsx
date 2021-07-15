@@ -12,6 +12,7 @@ interface Props {
   pageSize: number;
   filter: string;
   className: string;
+  skipped: boolean;
 }
 
 interface State {
@@ -62,7 +63,7 @@ export default class TargetsCardComponent extends React.Component {
                       this.props.model.configuredMap.get(target.id.targetCompleted.label)?.buildEvent.configured
                         .testSize
                     )}`}
-                    className="clickable target">
+                    className={`clickable target${this.props.skipped ? " purple" : ""}`}>
                     <img className="target-status-icon" src={this.props.iconPath} /> {target.id.targetCompleted.label}
                   </div>
                   <div>{this.props.model.getRuntime(target.id.targetCompleted.label)}</div>
