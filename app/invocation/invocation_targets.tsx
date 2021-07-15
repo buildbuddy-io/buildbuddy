@@ -83,11 +83,23 @@ export default class TargetsComponent extends React.Component {
 
         {!!this.props.model.succeeded.length && this.props.mode != "failing" && (
           <TargetsCardComponent
-            buildEvents={this.props.model.succeeded.concat(this.props.model.skipped)}
+            buildEvents={this.props.model.succeeded}
             className="card-success"
             iconPath="/image/check-circle.svg"
             presentVerb={`${this.props.model.succeeded.length == 1 ? "target" : "targets"}`}
             pastVerb={`${this.props.model.succeeded.length == 1 ? "target" : "targets"} built successfully`}
+            model={this.props.model}
+            filter={this.props.filter}
+            pageSize={this.props.pageSize}
+          />
+        )}
+        {this.props.model.skipped.length && (
+          <TargetsCardComponent
+            buildEvents={this.props.model.skipped}
+            className="card-neutral"
+            iconPath="/image/info.svg"
+            presentVerb={`${this.props.model.skipped.length == 1 ? "target" : "targets"}`}
+            pastVerb={`${this.props.model.skipped.length == 1 ? "target" : "targets"} skipped`}
             model={this.props.model}
             filter={this.props.filter}
             pageSize={this.props.pageSize}

@@ -94,7 +94,8 @@ export default class InvocationModel {
         if (buildEvent.started) model.started = buildEvent.started as build_event_stream.BuildStarted;
         if (buildEvent.expanded) model.expanded = buildEvent as build_event_stream.BuildEvent;
         if (buildEvent.finished) model.finished = buildEvent.finished as build_event_stream.BuildFinished;
-        if (buildEvent.aborted) model.aborted = buildEvent as build_event_stream.BuildEvent;
+        if (buildEvent.aborted && buildEvent.aborted.reason.toString().toLowerCase() != "skipped")
+          model.aborted = buildEvent as build_event_stream.BuildEvent;
         if (buildEvent.buildToolLogs) model.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         if (buildEvent.workspaceStatus) {
           model.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
