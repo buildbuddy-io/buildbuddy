@@ -29,7 +29,9 @@ var (
 		"buildbuddy.yaml": `
 actions:
   - name: "Show bazel version"
-    triggers: { push: { branches: [ master ] } }
+    triggers:
+      push: { branches: [ master ] }
+      pull_request: { branches: [ master ] }
     bazel_commands: [ version ]
 `,
 	}
@@ -119,8 +121,8 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 }
 
 func checkRunnerResult(t *testing.T, res *result) {
-	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, 1, len(res.InvocationIDs))
+	assert.Equal(t, 0, res.ExitCode, "runner returned exit code %d", res.ExitCode)
+	assert.Equal(t, 1, len(res.InvocationIDs), "no invocation IDs found in runner output")
 	if res.ExitCode != 0 || len(res.InvocationIDs) != 1 {
 		t.Logf("runner output:\n===\n%s\n===\n", res.Output)
 		t.FailNow()

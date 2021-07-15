@@ -118,11 +118,15 @@ type workspace struct {
 	// log contains logs from the workspace setup phase (cloning the git repo and
 	// deciding which actions to run), which are reported as part of the first
 	// action's logs.
-	log bytes.Buffer
+	log    io.Writer
+	logBuf bytes.Buffer
 }
 
 func main() {
 	ws := &workspace{startTime: time.Now()}
+	// Write setup logs to the current task's stderr (to make debugging easier),
+	// and also to a buffer to be flushed to the first workflow action's logs.
+	ws.log = io.MultiWriter(os.Stderr, &ws.logBuf)
 
 	flag.Parse()
 
@@ -144,10 +148,10 @@ func main() {
 		fatal(status.WrapError(err, "ensure PATH"))
 	}
 	if err := ws.setup(ctx); err != nil {
-		fatal(status.WrapErrorf(err, "failed to set up git repo. Setup log:\n===\n%s", string(ws.log.Bytes())))
+		fatal(status.WrapError(err, "failed to set up git repo"))
 	}
-	runDebugCommand(&ws.log, `pwd`)
-	runDebugCommand(&ws.log, `ls -la`)
+	runDebugCommand(ws.log, `pwd`)
+	runDebugCommand(ws.log, `ls -la`)
 	cfg, err := readConfig()
 	if err != nil {
 		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
@@ -216,8 +220,8 @@ func (ws *workspace) RunAllActions(ctx context.Context, cfg *config.BuildBuddyCo
 		if !ws.reportedInitMetrics {
 			ws.reportedInitMetrics = true
 			// Print the setup logs to the first action's logs.
-			b, _ := io.ReadAll(&ws.log)
-			ws.log.Reset()
+			b, _ := io.ReadAll(&ws.logBuf)
+			ws.logBuf.Reset()
 			ar.log.Printf("[BUILDBUDDY] Setup completed in %s", startTime.Sub(ws.startTime))
 			startTime = ws.startTime
 			ar.log.Printf("[BUILDBUDDY] Setup logs:")
@@ -752,7 +756,7 @@ func (ws *workspace) setup(ctx context.Context) error {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
 	}
 	if repoDirInfo != nil {
-		writeCommandSummary(&ws.log, "Syncing existing repo...")
+		writeCommandSummary(ws.log, "Syncing existing repo...")
 		if err := os.Chdir(repoDirName); err != nil {
 			return status.WrapError(err, "cd")
 		}
@@ -768,7 +772,7 @@ func (ws *workspace) setup(ctx context.Context) error {
 				"Deleting and initializing from scratch. Error: %s",
 			err,
 		)
-		writeCommandSummary(&ws.log, "Failed to sync existing git repo. Deleting repo and trying again.")
+		writeCommandSummary(ws.log, "Failed to sync existing git repo. Deleting repo and trying again.")
 		if err := os.Chdir(".."); err != nil {
 			return status.WrapError(err, "cd")
 		}
@@ -783,7 +787,7 @@ func (ws *workspace) setup(ctx context.Context) error {
 	if err := os.Chdir(repoDirName); err != nil {
 		return status.WrapErrorf(err, "cd %q", repoDirName)
 	}
-	if err := git(ctx, &ws.log, "init"); err != nil {
+	if err := git(ctx, ws.log, "init"); err != nil {
 		return err
 	}
 	return ws.sync(ctx)
@@ -816,28 +820,28 @@ func (ws *workspace) sync(ctx context.Context) error {
 		return err
 	}
 	// Clean up in case a previous workflow made a mess.
-	if err := git(ctx, &ws.log, "clean", "-d" /*directories*/, "--force"); err != nil {
+	if err := git(ctx, ws.log, "clean", "-d" /*directories*/, "--force"); err != nil {
 		return err
 	}
-	if err := git(ctx, &ws.log, "clean", "-X" /*ignored files*/, "--force"); err != nil {
+	if err := git(ctx, ws.log, "clean", "-X" /*ignored files*/, "--force"); err != nil {
 		return err
 	}
 	// Create the branch if it doesn't already exist, then update it to point to
 	// the pushed branch tip.
-	if err := git(ctx, &ws.log, "checkout", "-B", *pushedBranch); err != nil {
+	if err := git(ctx, ws.log, "checkout", "-B", *pushedBranch); err != nil {
 		return err
 	}
 	remotePushedBranchRef := fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
-	if err := git(ctx, &ws.log, "reset", "--hard", remotePushedBranchRef); err != nil {
+	if err := git(ctx, ws.log, "reset", "--hard", remotePushedBranchRef); err != nil {
 		return err
 	}
 	// Merge the target branch (if different from the pushed branch) so that the
 	// workflow can pick up any changes not yet incorporated into the pushed branch.
 	if *pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch {
 		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-		if err := git(ctx, &ws.log, "merge", targetRef); err != nil {
+		if err := git(ctx, ws.log, "merge", targetRef); err != nil && !isAlreadyUpToDate(err) {
 			errMsg := err.Output
-			if err := git(ctx, &ws.log, "merge", "--abort"); err != nil {
+			if err := git(ctx, ws.log, "merge", "--abort"); err != nil {
 				errMsg += "\n" + err.Output
 			}
 			// Make note of the merge conflict and abort. We'll run all actions and each
@@ -858,7 +862,7 @@ func (ws *workspace) config(ctx context.Context) error {
 		{"user.name", "BuildBuddy"},
 		{"advice.detachedHead", "false"},
 	}
-	writeCommandSummary(&ws.log, "Configuring repository...")
+	writeCommandSummary(ws.log, "Configuring repository...")
 	for _, kv := range cfg {
 		// Don't show the config output.
 		if err := git(ctx, io.Discard, "config", kv[0], kv[1]); err != nil {
@@ -877,14 +881,14 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 		return err
 	}
 	remoteName := gitRemoteName(remoteURL)
-	writeCommandSummary(&ws.log, "Configuring remote %q...", remoteName)
+	writeCommandSummary(ws.log, "Configuring remote %q...", remoteName)
 	// Don't show `git remote add` command or the error message since the URL may
 	// contain the repo access token.
 	if err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
 		return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
 	}
 	fetchArgs := append([]string{"fetch", "--force", remoteName}, branches...)
-	if err := git(ctx, &ws.log, fetchArgs...); err != nil {
+	if err := git(ctx, ws.log, fetchArgs...); err != nil {
 		return err
 	}
 	return nil
@@ -902,6 +906,10 @@ func isRemoteAlreadyExists(err error) bool {
 func isBranchNotFound(err error) bool {
 	gitErr, ok := err.(*gitError)
 	return ok && strings.Contains(gitErr.Output, "not found")
+}
+func isAlreadyUpToDate(err error) bool {
+	gitErr, ok := err.(*gitError)
+	return ok && strings.Contains(gitErr.Output, "up to date")
 }
 
 func git(ctx context.Context, out io.Writer, args ...string) *gitError {
