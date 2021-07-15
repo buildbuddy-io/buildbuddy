@@ -76,7 +76,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   fetchDirectory(digest: build.bazel.remote.execution.v2.IDigest): build.bazel.remote.execution.v2.Directory {
     let dir_file = "bytestream://" + this.getCacheAddress() + "/blobs/" + digest.hash + "/" + digest.sizeBytes;
-    let dir: build.bazel.remote.execution.v2.Directory;
+    var dir: build.bazel.remote.execution.v2.Directory;
     rpcService
       .fetchBytestreamFile(dir_file, this.props.model.getId(), "arraybuffer")
       .then((dir_buff: any) => {
@@ -176,6 +176,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (root.directories) {
       console.log(root.directories.length);
       for (var dir of root.directories) {
+        console.log(this.fetchDirectory(dir.digest));
         return files.concat(this.unravelInputRoot(this.fetchDirectory(dir.digest), files));
       }
     } else {
@@ -303,7 +304,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       <div>Default</div>
                     )}
                   </div>
-                  <div className="action-section">
+                  {/* <div className="action-section">
                     <div
                       title="List of required supported NodeProperty [build.bazel.remote.execution.v2.NodeProperty] keys."
                       className="action-property-title">
@@ -318,7 +319,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     ) : (
                       <div>Default</div>
                     )}
-                  </div>
+                  </div> */}
                 </div>
               )}
               <div className="action-line">
