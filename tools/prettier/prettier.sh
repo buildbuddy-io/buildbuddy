@@ -44,4 +44,4 @@ if [[ ${#paths[@]} -eq 0 ]]; then
   exit 0
 fi
 
-"$NODE" "$PRETTIER" "$@"
+"$NODE" "$PRETTIER" "$@" "${paths[@]}"
