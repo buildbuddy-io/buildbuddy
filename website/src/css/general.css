@@ -1,4 +1,4 @@
-:root {
+html:root {
   --ifm-color-primary: #263238;
   --ifm-color-primary-dark: #37474f;
   --ifm-color-primary-darker: #455a64;
@@ -23,6 +23,8 @@
   --ifm-toc-border-color: transparent;
 
   --ifm-footer-padding-vertical: 96px;
+
+  --aa-primary-color-rgb: 0, 0, 0;
 }
 
 a {

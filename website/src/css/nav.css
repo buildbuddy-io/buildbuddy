@@ -7,10 +7,22 @@
   font-weight: 600;
 }
 
-@media (max-width: 650px) {
+@media (max-width: 996px) {
   .sign-up {
     display: none;
   }
+
+  .navbar-sidebar .sign-up {
+    display: block;
+  }
+}
+
+.aa-DetachedSearchButton {
+  border: none !important;
+}
+
+.aa-DetachedSearchButtonPlaceholder {
+  display: none;
 }
 
 .sign-up:hover {
@@ -60,4 +72,25 @@ html[data-theme="dark"] .menu {
 
 html[data-theme="dark"] .blog-sidebar {
   border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.aa-DetachedSearchButton {
+  /* padding-right: 32px !important; */
+  border-radius: 32px !important;
+  cursor: pointer;
+  padding-right: 8px;
+}
+
+.aa-Form {
+  border-radius: 32px !important;
+  margin: 8px !important;
+}
+
+.aa-Form:focus-within {
+  box-shadow: rgba(38, 50, 56, 0.1) 0 0 0 2px, inset rgba(38, 50, 56, 0.1) 0 0 0 2px !important;
+}
+
+.dsla-search-wrapper,
+.aa-DetachedSearchButtonIcon {
+  cursor: pointer !important;
 }
