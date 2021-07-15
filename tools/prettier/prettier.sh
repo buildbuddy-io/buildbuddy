@@ -30,7 +30,18 @@ cd "${BUILD_WORKSPACE_DIRECTORY?}"
 # and the current branch, so that we only run the lint check on files added
 # in this branch.
 
-git merge-base HEAD refs/remotes/origin/master |
-  xargs git diff --name-only --diff-filter=AMRCT |
-  grep -P '\.(js|jsx|ts|tsx|html|css|yaml|json|md|xml)$' |
-  xargs --no-run-if-empty "$NODE" "$PRETTIER" "$@"
+paths=("$(
+  git merge-base HEAD refs/remotes/origin/master |
+    xargs git diff --name-only --diff-filter=AMRCT |
+    while read -r path; do
+      if [[ "$path" =~ \.(js|jsx|ts|tsx|html|css|yaml|json|md|xml)$ ]]; then
+        echo "$path"
+      fi
+    done
+)")
+
+if [[ ${#paths[@]} -eq 0 ]]; then
+  exit 0
+fi
+
+"$NODE" "$PRETTIER" "$@"

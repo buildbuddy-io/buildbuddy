@@ -21,7 +21,10 @@ gofmt -w .
 
 if which clang-format &>/dev/null; then
   echo "Formatting .proto files..."
-  git ls-files --exclude-standard | grep '\.proto$' | xargs -d '\n' --no-run-if-empty clang-format -i --style=Google
+  protos=("$(git ls-files --exclude-standard | grep '\.proto$')")
+  if [ ${#protos[@]} -gt 0 ]; then
+    clang-format -i --style=Google "${protos[@]}"
+  fi
 else
   echo -e "${c_yellow}WARNING: Missing clang-format tool; will not format proto files.${c_reset}"
 fi
