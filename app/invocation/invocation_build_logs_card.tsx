@@ -44,7 +44,7 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
 
   componentDidMount() {
     if (this.isLogStreamingEnabled()) {
-      this.pollTail();
+      this.fetchTail();
     }
   }
 
@@ -61,7 +61,7 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
     return invocation?.invocationStatus === InvocationStatus.COMPLETE_INVOCATION_STATUS;
   }
 
-  private pollTail() {
+  private fetchTail() {
     const invocation = this.props.model.invocations[0];
     let rpcError: BuildBuddyError | null = null;
     let nextChunkId = "";
@@ -110,7 +110,7 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
 
           // Wait some time since new chunks are unlikely to be written since we last made
           // our request.
-          window.setTimeout(() => this.pollTail(), POLL_TAIL_INTERVAL_MS);
+          window.setTimeout(() => this.fetchTail(), POLL_TAIL_INTERVAL_MS);
           return;
         }
 
@@ -127,7 +127,7 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
         // At this point, we successfully fetched a chunk and the invocation is either
         // still in progress, or completed while we were making our last request.
         // Greedily fetch the next chunk.
-        this.pollTail();
+        this.fetchTail();
       });
   }
 
