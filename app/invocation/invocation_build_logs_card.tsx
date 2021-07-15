@@ -19,8 +19,8 @@ interface State {
   fetchedFirstChunk?: boolean;
 }
 
-const POLL_TAIL_INTERVAL_MS = 1000;
-const MAX_INITIAL_LINES = 10000;
+const POLL_TAIL_INTERVAL_MS = 1_000;
+const MAX_INITIAL_LINES = 100_000;
 
 const InvocationStatus = invocation.Invocation.InvocationStatus;
 
@@ -43,8 +43,8 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
   }
 
   componentDidMount() {
-    if (this.isLogStreamingEnabled()) {
-      this.fetchTail();
+    if (this.shouldFetchFromEventLog()) {
+      this.fetchTail(/*isFirstRequest=*/ true);
     }
   }
 
@@ -52,7 +52,7 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
     window.clearTimeout(this.pollTailTimeout);
   }
 
-  private isLogStreamingEnabled() {
+  private shouldFetchFromEventLog() {
     return capabilities.chunkedEventLogs && Boolean(this.props.model.invocations[0]?.lastChunkId);
   }
 
@@ -61,7 +61,7 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
     return invocation?.invocationStatus === InvocationStatus.COMPLETE_INVOCATION_STATUS;
   }
 
-  private fetchTail() {
+  private fetchTail(isFirstRequest = false) {
     const invocation = this.props.model.invocations[0];
     let rpcError: BuildBuddyError | null = null;
     let nextChunkId = "";
@@ -72,10 +72,12 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
         new eventlog.GetEventLogChunkRequest({
           invocationId: invocation.invocationId,
           chunkId: this.state.nextChunkId,
-          // For the first request, fetch a large amount of lines.
-          // Subsequent requests will just
-          minLines: this.state.fetchedFirstChunk ? 0 : MAX_INITIAL_LINES,
-          readBackward: !this.state.fetchedFirstChunk,
+          ...(isFirstRequest && {
+            // For the first request, fetch a large amount of lines from the
+            // log history.
+            minLines: MAX_INITIAL_LINES,
+            readBackward: true,
+          }),
         })
       )
       .then((response) => {
@@ -95,10 +97,6 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
         console.warn({ rpcError });
       })
       .finally(() => {
-        if (!this.state.fetchedFirstChunk) {
-          this.setState({ fetchedFirstChunk: true });
-        }
-
         // NotFound / OutOfRange errors just mean the next chunk has not yet been written
         // and that we should continue polling.
         if (rpcError?.code === "NotFound" || rpcError?.code === "OutOfRange") {
@@ -132,7 +130,7 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
   }
 
   private getConsoleBuffer() {
-    if (!this.isLogStreamingEnabled()) {
+    if (!this.shouldFetchFromEventLog()) {
       return this.props.model.consoleBuffer || "";
     }
 
