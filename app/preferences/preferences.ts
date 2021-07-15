@@ -8,16 +8,16 @@ const terminalThemeLightValue = "LIGHT";
 declare var window: any;
 
 export default class UserPreferences {
-
   handlePreferencesChanged: () => void;
 
   constructor(handlePreferencesChanged: () => void) {
     this.handlePreferencesChanged = handlePreferencesChanged;
   }
 
-  denseModeEnabled = viewModeKey in window.localStorage
-    ? window.localStorage.getItem(viewModeKey) == denseModeValue
-    : window.buildbuddyConfig && window.buildbuddyConfig.default_to_dense_mode;
+  denseModeEnabled =
+    viewModeKey in window.localStorage
+      ? window.localStorage.getItem(viewModeKey) == denseModeValue
+      : window.buildbuddyConfig && window.buildbuddyConfig.default_to_dense_mode;
   lightTerminalEnabled = window.localStorage.getItem(terminalThemeKey) == terminalThemeLightValue || false;
 
   toggleDenseMode() {
