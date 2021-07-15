@@ -76,18 +76,23 @@ export default class ActionCardComponent extends React.Component<Props, State> {
 
   fetchDirectory(digest: build.bazel.remote.execution.v2.IDigest): build.bazel.remote.execution.v2.Directory {
     let dir_file = "bytestream://" + this.getCacheAddress() + "/blobs/" + digest.hash + "/" + digest.sizeBytes;
-    let dir = null;
+    let dir: build.bazel.remote.execution.v2.Directory;
     rpcService
       .fetchBytestreamFile(dir_file, this.props.model.getId(), "arraybuffer")
       .then((dir_buff: any) => {
+        console.log(dir_buff);
         dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(dir_buff));
+        console.log(dir.toJSON());
+        return dir;
       })
       .catch(() => {
         console.error("Error loading directory!");
+        dir = null;
         this.setState({
           ...this.state,
           error: "Error loading directory profile. Make sure your cache is correctly configured.",
         });
+        return dir;
       });
     return dir;
   }
@@ -169,10 +174,12 @@ export default class ActionCardComponent extends React.Component<Props, State> {
     files: build.bazel.remote.execution.v2.IFileNode[]
   ): build.bazel.remote.execution.v2.IFileNode[] {
     if (root.directories) {
+      console.log(root.directories.length);
       for (var dir of root.directories) {
         return files.concat(this.unravelInputRoot(this.fetchDirectory(dir.digest), files));
       }
     } else {
+      console.log("else " + dir.name);
       return root.files;
     }
   }
