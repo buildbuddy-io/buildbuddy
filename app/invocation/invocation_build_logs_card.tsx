@@ -100,8 +100,8 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
         // NotFound / OutOfRange errors just mean the next chunk has not yet been written
         // and that we should continue polling.
         if (rpcError?.code === "NotFound" || rpcError?.code === "OutOfRange") {
-          // If we failed to fetch any new chunks on a completed invocation, that
-          // means there are no new chunks to be written, so stop polling.
+          // If the tail chunk of a completed invocation was not found, no new
+          // chunks should be written, so stop polling.
           // Note: this relies on the server not writing any new chunks after an
           // invocation is marked complete.
           if (wasCompleteBeforeMakingRequest) return;
