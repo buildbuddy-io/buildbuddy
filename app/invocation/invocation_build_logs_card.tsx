@@ -108,7 +108,7 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
 
           // Wait some time since new chunks are unlikely to be written since we last made
           // our request.
-          window.setTimeout(() => this.fetchTail(), POLL_TAIL_INTERVAL_MS);
+          this.pollTailTimeout = window.setTimeout(() => this.fetchTail(), POLL_TAIL_INTERVAL_MS);
           return;
         }
 
