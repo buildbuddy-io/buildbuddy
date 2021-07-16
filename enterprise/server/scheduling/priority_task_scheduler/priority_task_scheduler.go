@@ -138,6 +138,7 @@ type PriorityTaskScheduler struct {
 	exec          *executor.Executor
 	newTaskSignal chan struct{}
 	rootContext   context.Context
+	rootCancel    context.CancelFunc
 
 	mu                    sync.Mutex
 	activeTaskCancelFuncs map[*context.CancelFunc]struct{}
@@ -167,60 +168,64 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 		exec:                  exec,
 		newTaskSignal:         make(chan struct{}, 1),
 		rootContext:           rootContext,
+		rootCancel:            rootCancel,
 		activeTaskCancelFuncs: make(map[*context.CancelFunc]struct{}, 0),
 		shuttingDown:          false,
 		ramBytesCapacity:      ramBytesCapacity,
 		cpuMillisCapacity:     cpuMillisCapacity,
 	}
 
-	// This func ensures that we don't attempt to claim work that was
-	// enqueued but not started yet, allowing another executor a chance
-	// to complete it. This is client-side "graceful" stop -- we stop
-	// processing queued work as soon as we receive a shutdown signal, but
-	// permit in-progress work to continue, up until just before the
-	// shutdown timeout, at which point we hard-cancel it.
-	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		qes.mu.Lock()
-		qes.shuttingDown = true
-		qes.mu.Unlock()
-		log.Debug("PriorityTaskScheduler received shutdown signal")
-
-		deadline, ok := ctx.Deadline()
-		if !ok {
-			alert.UnexpectedEvent("no_deadline_on_shutdownfunc_context")
-			rootCancel()
-		}
-		delay := deadline.Sub(time.Now()) - time.Second
-		ctx, cancel := context.WithTimeout(ctx, delay)
-
-		// Start a goroutine that will:
-		//   - log success on graceful shutdown
-		//   - cancel root context after delay has passed
-		go func() {
-			select {
-			case <-ctx.Done():
-				log.Infof("Graceful stop of executor succeeded.")
-			case <-time.After(delay):
-				log.Warningf("Hard-stopping executor!")
-				rootCancel()
-			}
-		}()
-
-		// Wait for all active tasks to finish.
-		for {
-			qes.mu.Lock()
-			activeTasks := len(qes.activeTaskCancelFuncs)
-			qes.mu.Unlock()
-			if activeTasks == 0 {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		cancel()
-		return nil
-	})
-
+	env.GetHealthChecker().RegisterShutdownFunction(qes.Shutdown)
 	return qes
+}
+
+// Shutdown ensures that we don't attempt to claim work that was
+// enqueued but not started yet, allowing another executor a chance
+// to complete it. This is client-side "graceful" stop -- we stop
+// processing queued work as soon as we receive a shutdown signal, but
+// permit in-progress work to continue, up until just before the
+// shutdown timeout, at which point we hard-cancel it.
+func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
+	q.mu.Lock()
+	q.shuttingDown = true
+	q.mu.Unlock()
+	log.Debug("PriorityTaskScheduler received shutdown signal")
+
+	// Compute a deadline that is 1 second before our hard-kill
+	// deadline: that is when we'll cancel our own root context.
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		alert.UnexpectedEvent("no_deadline_on_shutdownfunc_context")
+		q.rootCancel()
+	}
+	delay := deadline.Sub(time.Now()) - time.Second
+	ctx, cancel := context.WithTimeout(ctx, delay)
+
+	// Start a goroutine that will:
+	//   - log success on graceful shutdown
+	//   - cancel root context after delay has passed
+	go func() {
+		select {
+		case <-ctx.Done():
+			log.Infof("Graceful stop of executor succeeded.")
+		case <-time.After(delay):
+			log.Warningf("Hard-stopping executor!")
+			q.rootCancel()
+		}
+	}()
+
+	// Wait for all active tasks to finish.
+	for {
+		q.mu.Lock()
+		activeTasks := len(q.activeTaskCancelFuncs)
+		q.mu.Unlock()
+		if activeTasks == 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	cancel()
+	return nil
 }
 
 func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
