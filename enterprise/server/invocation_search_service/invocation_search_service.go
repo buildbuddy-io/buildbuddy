@@ -152,6 +152,7 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 		q.SetOrderBy("created_at_usec", sort.Ascending)
 	case inpb.InvocationSort_UPDATED_AT_USEC_SORT_FIELD:
 		q.SetOrderBy("updated_at_usec", sort.Ascending)
+	default:
 	}
 
 	limitSize := defaultLimitSize
