@@ -114,11 +114,8 @@ func (dbh *DBHandle) ReadRow(out interface{}, where ...interface{}) error {
 	return err
 }
 
-func maybeRunMigrations(dialect string, gdb *gorm.DB) error {
-	if !*autoMigrateDB && !*autoMigrateDBAndExit {
-		return nil
-	}
-	log.Infof("Auto-migrating DB")
+func runMigrations(dialect string, gdb *gorm.DB) error {
+	log.Info("Auto-migrating DB")
 	postAutoMigrateFuncs, err := tables.PreAutoMigrate(gdb)
 	if err != nil {
 		return err
@@ -360,16 +357,17 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 	}
 	go statsRecorder.poll(statsPollInterval)
 
-	if err := maybeRunMigrations(dialect, primaryDB); err != nil {
-		if *autoMigrateDBAndExit {
+	if *autoMigrateDBAndExit {
+		if err := runMigrations(dialect, primaryDB); err != nil {
 			log.Fatalf("Database auto-migration failed: %s", err)
 		}
-
-		return nil, err
-	}
-	if *autoMigrateDBAndExit {
 		log.Infof("Database migration completed. Exiting due to --auto_migrate_db_and_exit.")
 		os.Exit(0)
+	}
+	if *autoMigrateDB {
+		if err := runMigrations(dialect, primaryDB); err != nil {
+			return nil, err
+		}
 	}
 
 	dbh := &DBHandle{
