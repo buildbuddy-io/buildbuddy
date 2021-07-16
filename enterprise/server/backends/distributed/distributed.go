@@ -340,7 +340,22 @@ func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, prefix string, iso
 	if exists, err := c.cacheProxy.RemoteContains(ctx, dest, prefix, isolation, d); err == nil && exists {
 		return nil
 	}
-	r, err := c.local.WithPrefix(prefix).Reader(ctx, d, 0)
+
+	var localCache interfaces.Cache
+	if isolation.GetCacheType() != dcpb.Isolation_UNKNOWN_TYPE {
+		cacheType, err := cacheproxy.ProtoCacheTypeToCacheType(isolation.GetCacheType())
+		if err != nil {
+			return err
+		}
+		ic, err := c.local.WithIsolation(ctx, cacheType, isolation.GetRemoteInstanceName())
+		if err != nil {
+			return err
+		}
+		localCache = ic
+	} else {
+		localCache = c.local.WithPrefix(prefix)
+	}
+	r, err := localCache.Reader(ctx, d, 0)
 	if err != nil {
 		return err
 	}
