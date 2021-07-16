@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/check"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -32,5 +32,5 @@ func UnexpectedEvent(name string, msgAndArgs ...interface{}) {
 			logMsg += "<invalid args to UnexpectedEvent>"
 		}
 	}
-	log.Warning(logMsg)
+	check.DebugFail(logMsg)
 }
