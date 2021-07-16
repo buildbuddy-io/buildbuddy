@@ -534,6 +534,10 @@ func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) string {
 }
 
 func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
+	if _, ok := ctx.Value(APIKeyHeader).(string); ok {
+		log.Warningf("Overwriting existing value of %q in context.", APIKeyHeader)
+	}
+	ctx = context.WithValue(ctx, APIKeyHeader, apiKey)
 	claims, err := a.claimsFromAPIKey(ctx, apiKey)
 	return authContextFromClaims(ctx, claims, err)
 }

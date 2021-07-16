@@ -173,7 +173,9 @@ func (a *TestAuthenticator) ParseAPIKeyFromString(input string) string {
 }
 
 func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
-	return context.WithValue(ctx, testAuthenticationHeader, a.testUsers[apiKey])
+	ctx = context.WithValue(ctx, APIKeyHeader, apiKey)
+	ctx = context.WithValue(ctx, testAuthenticationHeader, a.testUsers[apiKey])
+	return ctx
 }
 
 func (a *TestAuthenticator) WithAuthenticatedUser(ctx context.Context, userID string) (context.Context, error) {
