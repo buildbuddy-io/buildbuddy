@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 
+	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -111,7 +112,7 @@ func TestReader(t *testing.T) {
 		}
 
 		// Remote-read the random bytes back.
-		r, err := c.RemoteReader(ctx, peer, prefix, d, 0)
+		r, err := c.RemoteReader(ctx, peer, prefix, &dcpb.Isolation{}, d, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -161,7 +162,7 @@ func TestWriter(t *testing.T) {
 		readSeeker.Seek(0, 0)
 
 		// Remote-write the random bytes to the cache (with a prefix).
-		wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, d)
+		wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, &dcpb.Isolation{}, d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -233,7 +234,7 @@ func TestWriteAlreadyExists(t *testing.T) {
 	prefix := ""
 
 	// Remote-write the random bytes to the cache (with a prefix).
-	wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, d)
+	wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, &dcpb.Isolation{}, d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +252,7 @@ func TestWriteAlreadyExists(t *testing.T) {
 
 	// Reset readSeeker.
 	readSeeker.Seek(0, 0)
-	wc, err = c.RemoteWriter(ctx, peer, noHandoff, prefix, d)
+	wc, err = c.RemoteWriter(ctx, peer, noHandoff, prefix, &dcpb.Isolation{}, d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +312,7 @@ func TestContains(t *testing.T) {
 		}
 
 		// Ensure key exists.
-		ok, err := c.RemoteContains(ctx, peer, prefix, d)
+		ok, err := c.RemoteContains(ctx, peer, prefix, &dcpb.Isolation{}, d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -326,7 +327,7 @@ func TestContains(t *testing.T) {
 		}
 
 		// Ensure it no longer exists.
-		ok, err = c.RemoteContains(ctx, peer, prefix, d)
+		ok, err = c.RemoteContains(ctx, peer, prefix, &dcpb.Isolation{}, d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -378,7 +379,7 @@ func TestOversizeBlobs(t *testing.T) {
 		readSeeker = bytes.NewReader(buf.Bytes())
 
 		// Remote-write the random bytes to the cache (with a prefix).
-		wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, d)
+		wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, &dcpb.Isolation{}, d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -400,7 +401,7 @@ func TestOversizeBlobs(t *testing.T) {
 		}
 
 		// Remote-read the random bytes back.
-		r, err := c.RemoteReader(ctx, peer, prefix, d, 0)
+		r, err := c.RemoteReader(ctx, peer, prefix, &dcpb.Isolation{}, d, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -457,7 +458,7 @@ func TestContainsMulti(t *testing.T) {
 		}
 
 		// Ensure key exists.
-		foundMap, err := c.RemoteContainsMulti(ctx, peer, prefix, digests)
+		foundMap, err := c.RemoteContainsMulti(ctx, peer, prefix, &dcpb.Isolation{}, digests)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -516,7 +517,7 @@ func TestGetMulti(t *testing.T) {
 		}
 
 		// Ensure key exists.
-		gotMap, err := c.RemoteGetMulti(ctx, peer, prefix, digests)
+		gotMap, err := c.RemoteGetMulti(ctx, peer, prefix, &dcpb.Isolation{}, digests)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -557,7 +558,7 @@ func TestEmptyRead(t *testing.T) {
 	}
 
 	// Remote-read the random bytes back.
-	_, err = c.RemoteReader(ctx, peer, prefix, d, 0)
+	_, err = c.RemoteReader(ctx, peer, prefix, &dcpb.Isolation{}, d, 0)
 	if err != io.EOF {
 		t.Fatal(err)
 	}
