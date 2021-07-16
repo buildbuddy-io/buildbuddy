@@ -179,17 +179,16 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 	return qes
 }
 
-// Shutdown ensures that we don't attempt to claim work that was
-// enqueued but not started yet, allowing another executor a chance
-// to complete it. This is client-side "graceful" stop -- we stop
-// processing queued work as soon as we receive a shutdown signal, but
-// permit in-progress work to continue, up until just before the
-// shutdown timeout, at which point we hard-cancel it.
+// Shutdown ensures that we don't attempt to claim work that was enqueued but
+// not started yet, allowing another executor a chance to complete it. This is
+// client-side "graceful" stop -- we stop processing queued work as soon as we
+// receive a shutdown signal, but permit in-progress work to continue, up until
+// just before the shutdown timeout, at which point we hard-cancel it.
 func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
+	log.Debug("PriorityTaskScheduler received shutdown signal")
 	q.mu.Lock()
 	q.shuttingDown = true
 	q.mu.Unlock()
-	log.Debug("PriorityTaskScheduler received shutdown signal")
 
 	// Compute a deadline that is 1 second before our hard-kill
 	// deadline: that is when we'll cancel our own root context.
