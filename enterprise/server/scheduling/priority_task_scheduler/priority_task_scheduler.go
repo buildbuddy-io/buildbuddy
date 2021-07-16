@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -186,6 +187,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 
 		deadline, ok := ctx.Deadline()
 		if !ok {
+			alert.UnexpectedEvent("no_deadline_on_shutdownfunc_context")
 			rootCancel()
 		}
 		delay := deadline.Sub(time.Now()) - time.Second
