@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -136,6 +137,8 @@ type PriorityTaskScheduler struct {
 	q             *taskQueue
 	exec          *executor.Executor
 	newTaskSignal chan struct{}
+	rootContext   context.Context
+	rootCancel    context.CancelFunc
 
 	mu                    sync.Mutex
 	activeTaskCancelFuncs map[*context.CancelFunc]struct{}
@@ -157,45 +160,71 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 		cpuMillisCapacity = int64(float64(resources.GetAllocatedCPUMillis()) * .80)
 	}
 
+	rootContext, rootCancel := context.WithCancel(context.Background())
 	qes := &PriorityTaskScheduler{
 		env:                   env,
 		log:                   sublog,
 		q:                     newTaskQueue(),
 		exec:                  exec,
 		newTaskSignal:         make(chan struct{}, 1),
+		rootContext:           rootContext,
+		rootCancel:            rootCancel,
 		activeTaskCancelFuncs: make(map[*context.CancelFunc]struct{}, 0),
 		shuttingDown:          false,
 		ramBytesCapacity:      ramBytesCapacity,
 		cpuMillisCapacity:     cpuMillisCapacity,
 	}
-	// This func ensures that we don't attempt to "claim" work that was enqueued
-	// but not started yet, ensuring that someone else will have a chance to get it.
-	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		qes.mu.Lock()
-		defer qes.mu.Unlock()
-		qes.shuttingDown = true
-		log.Debug("PriorityTaskScheduler received shutdown signal")
-		return nil
-	})
 
-	// This func ensures that we finish tasks we've already claimed before shutting
-	// down -- or at least we try to until we hit the shutdown timeout.
-	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		log.Debug("PriorityTaskScheduler received shutdown signal, waiting for cancels")
-		for {
-			qes.mu.Lock()
-			activeTasks := len(qes.activeTaskCancelFuncs)
-			qes.mu.Unlock()
-			if activeTasks == 0 {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		log.Debug("PriorityTaskScheduler all cancels finished!")
-		return nil
-	})
-
+	env.GetHealthChecker().RegisterShutdownFunction(qes.Shutdown)
 	return qes
+}
+
+// Shutdown ensures that we don't attempt to claim work that was enqueued but
+// not started yet, allowing another executor a chance to complete it. This is
+// client-side "graceful" stop -- we stop processing queued work as soon as we
+// receive a shutdown signal, but permit in-progress work to continue, up until
+// just before the shutdown timeout, at which point we hard-cancel it.
+func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
+	log.Debug("PriorityTaskScheduler received shutdown signal")
+	q.mu.Lock()
+	q.shuttingDown = true
+	q.mu.Unlock()
+
+	// Compute a deadline that is 1 second before our hard-kill
+	// deadline: that is when we'll cancel our own root context.
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		alert.UnexpectedEvent("no_deadline_on_shutdownfunc_context")
+		q.rootCancel()
+	}
+	delay := deadline.Sub(time.Now()) - time.Second
+	ctx, cancel := context.WithTimeout(ctx, delay)
+
+	// Start a goroutine that will:
+	//   - log success on graceful shutdown
+	//   - cancel root context after delay has passed
+	go func() {
+		select {
+		case <-ctx.Done():
+			log.Infof("Graceful stop of executor succeeded.")
+		case <-time.After(delay):
+			log.Warningf("Hard-stopping executor!")
+			q.rootCancel()
+		}
+	}()
+
+	// Wait for all active tasks to finish.
+	for {
+		q.mu.Lock()
+		activeTasks := len(q.activeTaskCancelFuncs)
+		q.mu.Unlock()
+		if activeTasks == 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	cancel()
+	return nil
 }
 
 func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
@@ -301,7 +330,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 		q.log.Warningf("reservation is nil")
 		return
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(q.rootContext)
 	ctx = tracing.ExtractProtoTraceMetadata(ctx, reservation.GetTraceMetadata())
 
 	q.trackTask(reservation, &cancel)
