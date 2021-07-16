@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cacheproxy"
-	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
@@ -22,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
+	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 

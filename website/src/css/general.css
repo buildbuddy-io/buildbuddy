@@ -25,6 +25,21 @@
   --ifm-footer-padding-vertical: 96px;
 }
 
+html:root {
+  --aa-primary-color-rgb: 0, 0, 0;
+  --aa-selected-color-rgb: 176, 190, 197;
+}
+
+html body[data-theme="dark"] {
+  --aa-primary-color-rgb: 255, 255, 255;
+  --aa-background-color-rgb: 0, 0, 0;
+  --aa-input-border-color-rgb: 255, 255, 255;
+  --aa-input-border-color-alpha: 0.1;
+  --aa-text-color-rgb: 255, 255, 255;
+  --aa-muted-color-rgb: 255, 255, 255;
+  --aa-selected-color-rgb: 80, 80, 80;
+}
+
 a {
   text-decoration: none;
 }

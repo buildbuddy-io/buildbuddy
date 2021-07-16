@@ -10,6 +10,7 @@ import rpcService from "../service/rpc_service";
 interface Props {
   testResult: invocation.InvocationEvent;
   invocationId: string;
+  dark: boolean;
 }
 
 interface State {
@@ -92,12 +93,12 @@ export default class TargetTestLogCardComponent extends React.Component {
   render() {
     return (
       <div
-        className={`card ${this.state.cacheEnabled && "dark"} ${
+        className={`card ${this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")} ${
           this.props.testResult.buildEvent.testResult.status == build_event_stream.TestStatus.PASSED
             ? "card-success"
             : "card-failure"
         }`}>
-        <img className="icon" src="/image/log-circle-light.svg" />
+        <img className="icon" src={this.props.dark ? "/image/log-circle-light.svg" : "/image/log-circle.svg"} />
         <div className="content">
           <div className="title">Test log</div>
           <div className="test-subtitle">
