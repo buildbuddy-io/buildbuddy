@@ -39,7 +39,8 @@ const (
 	// check the cache size.
 	janitorCheckPeriod = 100 * time.Millisecond
 
-	defaultPartitionID = "default"
+	defaultPartitionID       = "default"
+	partitionDirectoryPrefix = "PT"
 )
 
 // DiskCache stores data on disk as files.
@@ -63,7 +64,7 @@ func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSize
 			if pc.ID == "" {
 				return nil, status.InvalidArgumentError("Non-default partition %q must have a valid ID")
 			}
-			rootDir = filepath.Join(rootDir, pc.ID)
+			rootDir = filepath.Join(rootDir, partitionDirectoryPrefix+pc.ID)
 		}
 
 		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes)
@@ -340,23 +341,31 @@ func (p *partition) initializeCache() error {
 			if err != nil {
 				return err
 			}
-			if !d.IsDir() {
-				info, err := d.Info()
-				if err != nil {
-					// File disappeared since the directory entries were read.
-					// We handle streamed writes by writing to a temp file & then renaming it so it's possible that
-					// we can come across some temp files that disappear.
-					if os.IsNotExist(err) {
-						return nil
-					}
-					return err
+			if d.IsDir() {
+				// Originally there was just one "partition" with its contents under the root directory.
+				// Additional partition directories live under the root as well and they need to be ignored
+				// when initializing the default partition.
+				if strings.HasPrefix(d.Name(), partitionDirectoryPrefix) {
+					return filepath.SkipDir
 				}
-				if info.Size() == 0 {
-					log.Debugf("Skipping 0 length file: %q", path)
+				return nil
+			}
+
+			info, err := d.Info()
+			if err != nil {
+				// File disappeared since the directory entries were read.
+				// We handle streamed writes by writing to a temp file & then renaming it so it's possible that
+				// we can come across some temp files that disappear.
+				if os.IsNotExist(err) {
 					return nil
 				}
-				records = append(records, makeRecord(path, info))
+				return err
 			}
+			if info.Size() == 0 {
+				log.Debugf("Skipping 0 length file: %q", path)
+				return nil
+			}
+			records = append(records, makeRecord(path, info))
 			return nil
 		}
 		if err := filepath.WalkDir(p.rootDir, walkFn); err != nil {

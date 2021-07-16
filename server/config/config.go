@@ -84,7 +84,7 @@ type storageConfig struct {
 
 type DiskCachePartition struct {
 	ID           string `yaml:"id" json:"id" usage:"The ID of the partition."`
-	MaxSizeBytes int64  `yaml:"max_size" json:"max_size_bytes" usage:"Maximum size of the partition."`
+	MaxSizeBytes int64  `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
 }
 
 type DiskCachePartitionMapping struct {
