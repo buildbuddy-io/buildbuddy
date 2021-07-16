@@ -181,8 +181,8 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 	// shutdown timeout, at which point we hard-cancel it.
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		qes.mu.Lock()
-		defer qes.mu.Unlock()
 		qes.shuttingDown = true
+		qes.mu.Unlock()
 		log.Debug("PriorityTaskScheduler received shutdown signal")
 
 		deadline, ok := ctx.Deadline()
@@ -191,7 +191,11 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 			rootCancel()
 		}
 		delay := deadline.Sub(time.Now()) - time.Second
+		ctx, cancel := context.WithTimeout(ctx, delay)
 
+		// Start a goroutine that will:
+		//   - log success on graceful shutdown
+		//   - cancel root context after delay has passed
 		go func() {
 			select {
 			case <-ctx.Done():
@@ -201,6 +205,18 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 				rootCancel()
 			}
 		}()
+
+		// Wait for all active tasks to finish.
+		for {
+			qes.mu.Lock()
+			activeTasks := len(qes.activeTaskCancelFuncs)
+			qes.mu.Unlock()
+			if activeTasks == 0 {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		cancel()
 		return nil
 	})
 
