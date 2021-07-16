@@ -21,7 +21,10 @@ gofmt -w .
 
 if which clang-format &>/dev/null; then
   echo "Formatting .proto files..."
-  protos=("$(git ls-files --exclude-standard | grep '\.proto$')")
+  protos=()
+  while read -r proto; do
+    protos+=("$proto")
+  done < <(git ls-files --exclude-standard | grep '\.proto$')
   if [ ${#protos[@]} -gt 0 ]; then
     clang-format -i --style=Google "${protos[@]}"
   fi
