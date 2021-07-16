@@ -40,7 +40,7 @@ const (
 	janitorCheckPeriod = 100 * time.Millisecond
 
 	defaultPartitionID       = "default"
-	partitionDirectoryPrefix = "PT"
+	PartitionDirectoryPrefix = "PT"
 )
 
 // DiskCache stores data on disk as files.
@@ -64,7 +64,7 @@ func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSize
 			if pc.ID == "" {
 				return nil, status.InvalidArgumentError("Non-default partition %q must have a valid ID")
 			}
-			rootDir = filepath.Join(rootDir, partitionDirectoryPrefix+pc.ID)
+			rootDir = filepath.Join(rootDir, PartitionDirectoryPrefix+pc.ID)
 		}
 
 		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes)
@@ -345,7 +345,7 @@ func (p *partition) initializeCache() error {
 				// Originally there was just one "partition" with its contents under the root directory.
 				// Additional partition directories live under the root as well and they need to be ignored
 				// when initializing the default partition.
-				if strings.HasPrefix(d.Name(), partitionDirectoryPrefix) {
+				if strings.HasPrefix(d.Name(), PartitionDirectoryPrefix) {
 					return filepath.SkipDir
 				}
 				return nil

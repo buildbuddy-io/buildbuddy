@@ -555,7 +555,7 @@ func TestNonDefaultPartition(t *testing.T) {
 		err = c.Set(ctx, d, buf)
 		require.NoError(t, err)
 
-		userRoot := filepath.Join(rootDir, otherPartitionID, testGroup2)
+		userRoot := filepath.Join(rootDir, disk_cache.PartitionDirectoryPrefix+otherPartitionID, testGroup2)
 		dPath := filepath.Join(userRoot, instanceName, d.GetHash())
 		require.FileExists(t, dPath)
 	}
