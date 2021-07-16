@@ -30,7 +30,7 @@ cd "${BUILD_WORKSPACE_DIRECTORY?}"
 # and the current branch, so that we only run the lint check on files added
 # in this branch.
 
-paths=("$(
+function paths_to_format() {
   git merge-base HEAD refs/remotes/origin/master |
     xargs git diff --name-only --diff-filter=AMRCT |
     while read -r path; do
@@ -38,7 +38,12 @@ paths=("$(
         echo "$path"
       fi
     done
-)")
+}
+
+paths=()
+while read -r path; do
+  paths+=("$path")
+done < <(paths_to_format)
 
 if [[ -z "${paths[*]}" ]]; then
   exit 0

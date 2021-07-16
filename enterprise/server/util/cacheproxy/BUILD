@@ -30,6 +30,7 @@ go_test(
     srcs = ["cacheproxy_test.go"],
     deps = [
         ":cacheproxy",
+        "//proto:distributed_cache_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",

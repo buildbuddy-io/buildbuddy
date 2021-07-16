@@ -69,6 +69,19 @@ func (m *MemoryCache) WithPrefix(prefix string) interfaces.Cache {
 	}
 }
 
+func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
+	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
+		newPrefix += "/"
+	}
+
+	return &MemoryCache{
+		l:      m.l,
+		lock:   m.lock,
+		prefix: newPrefix,
+	}, nil
+}
+
 func (m *MemoryCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	k, err := m.key(ctx, d)
 	if err != nil {

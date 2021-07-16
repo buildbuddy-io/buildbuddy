@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
@@ -126,6 +127,25 @@ type Blobstore interface {
 	DeleteBlob(ctx context.Context, blobName string) error
 }
 
+type CacheType int
+
+const (
+	ActionCacheType CacheType = iota
+	CASCacheType
+)
+
+func (t CacheType) Prefix() string {
+	switch t {
+	case ActionCacheType:
+		return "ac"
+	case CASCacheType:
+		return ""
+	default:
+		alert.UnexpectedEvent("unknown_cache_type", "type: %v", t)
+		return "unknown"
+	}
+}
+
 // Similar to a blobstore, a cache allows for reading and writing data, but
 // additionally it is responsible for deleting data that is past TTL to keep to
 // a manageable size.
@@ -137,6 +157,9 @@ type Cache interface {
 	// currently set prefix -- so this is a relative operation, not an
 	// absolute one.
 	WithPrefix(prefix string) Cache
+	// WithIsolation returns a cache accessor that guarantees that data for a given cacheType and
+	// remoteInstanceCombination is isolated from any other cacheType and remoteInstanceName combination.
+	WithIsolation(ctx context.Context, cacheType CacheType, remoteInstanceName string) (Cache, error)
 
 	// Normal cache-like operations.
 	Contains(ctx context.Context, d *repb.Digest) (bool, error)

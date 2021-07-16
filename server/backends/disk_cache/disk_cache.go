@@ -109,14 +109,14 @@ func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
 	}
 }
 
-func (c *DiskCache) WithRemoteInstanceName(ctx context.Context, remoteInstanceName string) (interfaces.Cache, error) {
+func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string) (*partition, error) {
 	auth := c.env.GetAuthenticator()
 	if auth == nil {
-		return c, nil
+		return c.partition, nil
 	}
 	user, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
-		return c, nil
+		return c.partition, nil
 	}
 	for _, m := range c.partitionMappings {
 		if m.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, m.Prefix) {
@@ -124,16 +124,30 @@ func (c *DiskCache) WithRemoteInstanceName(ctx context.Context, remoteInstanceNa
 			if !ok {
 				return nil, status.NotFoundErrorf("Mapping to unknown partition %q", m.PartitionID)
 			}
-			return &DiskCache{
-				env:               c.env,
-				prefix:            c.prefix,
-				partition:         p,
-				partitions:        c.partitions,
-				partitionMappings: c.partitionMappings,
-			}, nil
+			return p, nil
 		}
 	}
-	return c, nil
+	return c.partition, nil
+}
+
+func (c *DiskCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+	p, err := c.getPartition(ctx, remoteInstanceName)
+	if err != nil {
+		return nil, err
+	}
+
+	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
+	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
+		newPrefix += "/"
+	}
+
+	return &DiskCache{
+		env:               c.env,
+		prefix:            newPrefix,
+		partition:         p,
+		partitions:        c.partitions,
+		partitionMappings: c.partitionMappings,
+	}, nil
 }
 
 func (c *DiskCache) Statusz(ctx context.Context) string {
