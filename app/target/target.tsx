@@ -22,6 +22,7 @@ interface Props {
   testResultEvents: invocation.InvocationEvent[];
   testSummaryEvent: invocation.InvocationEvent;
   actionEvents: invocation.InvocationEvent[];
+  dark: boolean;
 }
 
 export default class TargetComponent extends React.Component {
@@ -220,12 +221,20 @@ export default class TargetComponent extends React.Component {
             .filter((value, index) => `#${index + 1}` == (this.props.hash || "#1"))
             .map((result) => (
               <span>
-                <TargetTestDocumentCardComponent invocationId={this.props.invocationId} testResult={result} />
-                <TargetTestLogCardComponent invocationId={this.props.invocationId} testResult={result} />
+                <TargetTestDocumentCardComponent
+                  dark={this.props.dark}
+                  invocationId={this.props.invocationId}
+                  testResult={result}
+                />
+                <TargetTestLogCardComponent
+                  dark={this.props.dark}
+                  invocationId={this.props.invocationId}
+                  testResult={result}
+                />
               </span>
             ))}
           {actionEvents.map((action) => (
-            <ActionCardComponent invocationId={this.props.invocationId} action={action} />
+            <ActionCardComponent dark={this.props.dark} invocationId={this.props.invocationId} action={action} />
           ))}
           <TargetArtifactsCardComponent
             invocationId={this.props.invocationId}

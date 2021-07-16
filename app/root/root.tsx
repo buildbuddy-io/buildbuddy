@@ -10,10 +10,7 @@ import { User } from "../auth/auth_service";
 import faviconService from "../favicon/favicon";
 import CompareInvocationsComponent from "../compare/compare_invocations";
 import AlertComponent from "../alert/alert";
-
-const viewModeKey = "VIEW_MODE";
-const denseModeValue = "DENSE";
-const comfyModeValue = "COMFY";
+import UserPreferences from "../preferences/preferences";
 
 declare var window: any;
 
@@ -22,7 +19,7 @@ interface State {
   hash: string;
   path: string;
   search: URLSearchParams;
-  denseMode: boolean;
+  preferences: UserPreferences;
 }
 
 export default class RootComponent extends React.Component {
@@ -31,10 +28,7 @@ export default class RootComponent extends React.Component {
     hash: window.location.hash,
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
-    denseMode:
-      viewModeKey in window.localStorage
-        ? window.localStorage.getItem(viewModeKey) == denseModeValue
-        : window.buildbuddyConfig && window.buildbuddyConfig.default_to_dense_mode,
+    preferences: new UserPreferences(this.handlePreferencesChanged.bind(this)),
   };
 
   componentWillMount() {
@@ -59,10 +53,8 @@ export default class RootComponent extends React.Component {
     capabilities.didNavigateToPath();
   }
 
-  handleToggleDenseClicked() {
-    let newDenseMode = !this.state.denseMode;
-    this.setState({ ...this.state, denseMode: newDenseMode });
-    window.localStorage.setItem(viewModeKey, newDenseMode ? denseModeValue : comfyModeValue);
+  handlePreferencesChanged() {
+    this.setState({ ...this.state, preferences: this.state.preferences });
   }
 
   render() {
@@ -70,13 +62,8 @@ export default class RootComponent extends React.Component {
     let compareInvocationIds = router.getInvocationIdsForCompare(this.state.path);
     let showSetup = !invocationId && !compareInvocationIds;
     return (
-      <div className={this.state.denseMode ? "dense root" : "root"}>
-        <MenuComponent
-          user={this.state.user}
-          showHamburger={true}
-          denseModeEnabled={this.state.denseMode}
-          handleDenseModeToggled={this.handleToggleDenseClicked.bind(this)}
-        />
+      <div className={this.state.preferences.denseModeEnabled ? "dense root" : "root"}>
+        <MenuComponent user={this.state.user} showHamburger={true} preferences={this.state.preferences} />
         <div className="root-main">
           <div className="content">
             {invocationId && (
@@ -85,7 +72,7 @@ export default class RootComponent extends React.Component {
                 key={invocationId}
                 hash={this.state.hash}
                 search={this.state.search}
-                denseMode={this.state.denseMode}
+                preferences={this.state.preferences}
                 user={null}
               />
             )}

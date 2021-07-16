@@ -5,11 +5,11 @@ import FilledButton from "../../../app/components/button/button";
 import ApiKeysComponent from "../api_keys/api_keys";
 import EditOrgComponent from "../org/edit_org";
 import router from "../../../app/router/router";
+import UserPreferences from "../../../app/preferences/preferences";
 
 export interface SettingsProps {
   user: User;
-  denseModeEnabled: boolean;
-  handleDenseModeToggled: VoidFunction;
+  preferences: UserPreferences;
   path: string;
 }
 
@@ -97,15 +97,18 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   <div className="settings-option-description">
                     Dense mode packs more information density into the BuildBuddy UI.
                   </div>
-                  {this.props.denseModeEnabled ? (
-                    <FilledButton className="settings-button" onClick={this.props.handleDenseModeToggled.bind(this)}>
-                      Disable dense mode
-                    </FilledButton>
-                  ) : (
-                    <FilledButton className="settings-button" onClick={this.props.handleDenseModeToggled.bind(this)}>
-                      Enable dense mode
-                    </FilledButton>
-                  )}
+                  <FilledButton className="settings-button" onClick={() => this.props.preferences.toggleDenseMode()}>
+                    {this.props.preferences.denseModeEnabled ? "Disable" : "Enable"} dense mode
+                  </FilledButton>
+                  <div className="settings-option-title">Log viewer theme</div>
+                  <div className="settings-option-description">
+                    The log viewer theme allows you to switch between a light and dark log viewer.
+                  </div>
+                  <FilledButton
+                    className="settings-button"
+                    onClick={() => this.props.preferences.toggleLightTerminal()}>
+                    Switch to {this.props.preferences.lightTerminalEnabled ? "dark" : "light"} log viewer theme
+                  </FilledButton>
                 </>
               )}
               {capabilities.auth && this.props.user && (
