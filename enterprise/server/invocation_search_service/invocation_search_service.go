@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -152,7 +153,8 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 		q.SetOrderBy("created_at_usec", sort.Ascending)
 	case inpb.InvocationSort_UPDATED_AT_USEC_SORT_FIELD:
 		q.SetOrderBy("updated_at_usec", sort.Ascending)
-	default:
+	case inpb.InvocationSort_UNKNOWN_SORT_FIELD:
+		alert.UnexpectedEvent("invocation_search_no_sort_order")
 	}
 
 	limitSize := defaultLimitSize
