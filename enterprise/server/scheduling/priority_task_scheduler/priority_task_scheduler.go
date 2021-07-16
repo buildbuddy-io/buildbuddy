@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_leaser"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -153,11 +154,11 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 
 	ramBytesCapacity := options.RAMBytesCapacityOverride
 	if ramBytesCapacity == 0 {
-		ramBytesCapacity = int64(float64(resources.GetAllocatedRAMBytes()) * .80)
+		ramBytesCapacity = int64(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio)
 	}
 	cpuMillisCapacity := options.CPUMillisCapacityOverride
 	if cpuMillisCapacity == 0 {
-		cpuMillisCapacity = int64(float64(resources.GetAllocatedCPUMillis()) * .80)
+		cpuMillisCapacity = int64(float64(resources.GetAllocatedCPUMillis()) * tasksize.MaxResourceCapacityRatio)
 	}
 
 	rootContext, rootCancel := context.WithCancel(context.Background())
