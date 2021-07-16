@@ -120,7 +120,9 @@ func runMigrations(dialect string, gdb *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-	gdb.AutoMigrate(tables.GetAllTables()...)
+	if err := gdb.AutoMigrate(tables.GetAllTables()...); err != nil {
+		return err
+	}
 	for _, f := range postAutoMigrateFuncs {
 		if err := f(); err != nil {
 			return err
@@ -203,7 +205,8 @@ func openDB(configurator *config.Configurator, dialect string, connString string
 		logger.Config{
 			SlowThreshold: 200 * time.Millisecond,
 			LogLevel:      logger.Warn,
-			Colorful:      false,
+			// Disable log colors when structured logging is enabled.
+			Colorful: !configurator.GetAppEnableStructuredLogging(),
 		})
 	l = sqlLogger{Interface: gormLogger, logLevel: logger.Warn}
 	if configurator.GetDatabaseConfig().LogQueries {
