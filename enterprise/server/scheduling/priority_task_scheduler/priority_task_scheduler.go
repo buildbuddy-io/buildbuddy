@@ -190,13 +190,15 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 		}
 		delay := deadline.Sub(time.Now()) - time.Second
 
-		select {
-		case <-ctx.Done():
-			log.Infof("Graceful stop of executor succeeded.")
-		case <-time.After(delay):
-			log.Warningf("Hard-stopping executor!")
-			rootCancel()
-		}
+		go func() {
+			select {
+			case <-ctx.Done():
+				log.Infof("Graceful stop of executor succeeded.")
+			case <-time.After(delay):
+				log.Warningf("Hard-stopping executor!")
+				rootCancel()
+			}
+		}()
 		return nil
 	})
 
