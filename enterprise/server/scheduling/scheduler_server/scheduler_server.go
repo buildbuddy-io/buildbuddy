@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/executor_handle"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -82,9 +83,6 @@ const (
 
 	// How often we revalidate credentials for an open registration stream.
 	checkRegistrationCredentialsInterval = 5 * time.Minute
-
-	// The fraction of an executor's allocatable resources to make available for task sizing.
-	maxResourceCapacityFraction = 0.8
 )
 
 var (
@@ -263,8 +261,8 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int
 
 	fitCount := 0
 	for _, node := range np.nodes {
-		if int64(float64(node.assignableMemoryBytes)*maxResourceCapacityFraction) >= taskSize.GetEstimatedMemoryBytes() &&
-			int64(float64(node.assignableMilliCpu)*maxResourceCapacityFraction) >= taskSize.GetEstimatedMilliCpu() {
+		if int64(float64(node.assignableMemoryBytes)*tasksize.MaxResourceCapacityRatio) >= taskSize.GetEstimatedMemoryBytes() &&
+			int64(float64(node.assignableMilliCpu)*tasksize.MaxResourceCapacityRatio) >= taskSize.GetEstimatedMilliCpu() {
 			fitCount++
 		}
 	}

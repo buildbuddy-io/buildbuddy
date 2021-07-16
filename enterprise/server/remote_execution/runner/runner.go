@@ -67,9 +67,6 @@ const (
 	// Memory usage estimate multiplier for pooled runners, relative to the
 	// default memory estimate for execution tasks.
 	runnerMemUsageEstimateMultiplierBytes = 6.5
-	// The maximum fraction of allocated RAM that can be allocated to pooled
-	// runners.
-	runnerAllocatedRAMFractionBytes = 0.8
 
 	// Label assigned to runner pool request count metric for fulfilled requests.
 	hitStatusLabel = "hit"
@@ -787,7 +784,7 @@ func (p *Pool) TryRecycle(r *CommandRunner, finishedCleanly bool) {
 }
 
 func (p *Pool) setLimits(cfg *config.RunnerPoolConfig) {
-	totalRAMBytes := int64(float64(resources.GetAllocatedRAMBytes()) * runnerAllocatedRAMFractionBytes)
+	totalRAMBytes := int64(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio)
 	estimatedRAMBytes := int64(float64(tasksize.DefaultMemEstimate) * runnerMemUsageEstimateMultiplierBytes)
 
 	count := cfg.MaxRunnerCount
