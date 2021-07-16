@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	golog "log"
+
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/gorm"
@@ -45,12 +47,6 @@ var (
 	autoMigrateDB        = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
 	autoMigrateDBAndExit = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
 )
-
-type infoLogger struct{}
-
-func (*infoLogger) Printf(format string, args ...interface{}) {
-	log.Infof(format, args...)
-}
 
 type DBHandle struct {
 	*gorm.DB
@@ -201,8 +197,9 @@ func openDB(configurator *config.Configurator, dialect string, connString string
 	// This is the same as logger.Default, but with colors turned off (since the
 	// output may not support colors) and sending output to stderr (to be
 	// consistent with the rest of our logs).
+	// TODO: Have all logs written to zerolog instead.
 	gormLogger := logger.New(
-		&infoLogger{},
+		golog.New(os.Stderr, "\r\n", golog.LstdFlags),
 		logger.Config{
 			SlowThreshold: 200 * time.Millisecond,
 			LogLevel:      logger.Warn,
