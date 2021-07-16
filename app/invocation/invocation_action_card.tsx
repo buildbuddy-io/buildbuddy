@@ -17,7 +17,7 @@ interface State {
   error?: string;
 }
 
-export default class ActionCardComponent extends React.Component<Props, State> {
+export default class InvocationActionCardComponent extends React.Component<Props, State> {
   state: State = {};
   componentDidMount() {
     this.fetchAction();
