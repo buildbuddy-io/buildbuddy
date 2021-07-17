@@ -284,9 +284,9 @@ func (p *partition) Statusz(ctx context.Context) string {
 			oldestItem = time.Unix(0, fr.lastUse)
 		}
 	}
-	buf += fmt.Sprintf("<div>%d items (oldest: %s)</div>", p.lru.Len(), oldestItem.Format("Jan 02, 2006 15:04:05 PST"))
+	buf += fmt.Sprintf("<div>%d items (oldest: %s)</div>", p.lru.Len(), oldestItem.Format("Jan 02, 2006 15:04:05 MST"))
 	buf += fmt.Sprintf("<div>Mapped into LRU: %t</div>", p.diskIsMapped)
-	buf += fmt.Sprintf("<div>GC Last run: %s</div>", p.lastGCTime.Format("Jan 02, 2006 15:04:05 PST"))
+	buf += fmt.Sprintf("<div>GC Last run: %s</div>", p.lastGCTime.Format("Jan 02, 2006 15:04:05 MST"))
 	return buf
 }
 
