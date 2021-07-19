@@ -23,6 +23,7 @@ go_library(
         "//server/metrics",
         "//server/remote_cache/hit_tracker",
         "//server/tables",
+        "//server/util/invocationutil",
         "//server/util/log",
         "//server/util/perms",
         "//server/util/protofile",
