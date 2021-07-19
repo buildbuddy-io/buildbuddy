@@ -562,6 +562,10 @@ func (c *firecrackerContainer) Unpause(ctx context.Context) error {
 	return nil
 }
 
+func (c *firecrackerContainer) Wait(ctx context.Context) error {
+	return c.machine.Wait(ctx)
+}
+
 func (c *firecrackerContainer) Stats(ctx context.Context) (*container.Stats, error) {
 	return &container.Stats{}, nil
 }
