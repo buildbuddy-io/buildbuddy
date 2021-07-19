@@ -469,19 +469,24 @@ func (p *Pool) hostBuildRoot() string {
 	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 }
 
+func (p *Pool) dockerOptions() *docker.DockerOptions {
+	cfg := p.env.GetConfigurator().GetExecutorConfig()
+	return &docker.DockerOptions{
+		Socket:                  cfg.DockerSocket,
+		EnableSiblingContainers: cfg.DockerSiblingContainers,
+		UseHostNetwork:          cfg.DockerNetHost,
+		DockerMountMode:         cfg.DockerMountMode,
+		InheritUserIDs:          cfg.DockerInheritUserIDs,
+	}
+}
+
 func (p *Pool) WarmupDefaultImage() {
 	if p.dockerClient == nil {
 		return
 	}
-	cfg := p.env.GetConfigurator().GetExecutorConfig()
 	c := docker.NewDockerContainer(
 		p.dockerClient, platform.DefaultContainerImage, p.hostBuildRoot(),
-		&docker.DockerOptions{
-			Socket:                  cfg.DockerSocket,
-			EnableSiblingContainers: cfg.DockerSiblingContainers,
-			UseHostNetwork:          cfg.DockerNetHost,
-			DockerMountMode:         cfg.DockerMountMode,
-		},
+		p.dockerOptions(),
 	)
 	start := time.Now()
 	// Give the pull up to 1 minute to succeed and 1 minute to create a warm up container.
@@ -592,17 +597,10 @@ func (p *Pool) newContainer(props *platform.Properties) container.CommandContain
 	var ctr container.CommandContainer
 	switch p.containerType() {
 	case platform.DockerContainerType:
-		cfg := p.env.GetConfigurator().GetExecutorConfig()
+		opts := p.dockerOptions()
+		opts.ForceRoot = props.DockerForceRoot
 		ctr = docker.NewDockerContainer(
-			p.dockerClient, props.ContainerImage, p.hostBuildRoot(),
-			&docker.DockerOptions{
-				Socket:                  cfg.DockerSocket,
-				EnableSiblingContainers: cfg.DockerSiblingContainers,
-				UseHostNetwork:          cfg.DockerNetHost,
-				DockerMountMode:         cfg.DockerMountMode,
-				ForceRoot:               props.DockerForceRoot,
-			},
-		)
+			p.dockerClient, props.ContainerImage, p.hostBuildRoot(), opts)
 	case platform.ContainerdContainerType:
 		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
 	default:
