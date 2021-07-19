@@ -15,7 +15,7 @@ const (
 	RedactionFlagAPIKey = 1 << iota
 )
 
-func RedactAPIKey(ctx context.Context, env environment.Env, event *bespb.BuildEvent) error {
+func APIKey(ctx context.Context, env environment.Env, event *bespb.BuildEvent) error {
 	proto.DiscardUnknown(event)
 
 	apiKey, ok := ctx.Value("x-buildbuddy-api-key").(string)
@@ -31,7 +31,7 @@ func RedactAPIKey(ctx context.Context, env environment.Env, event *bespb.BuildEv
 	return proto.UnmarshalText(txt, event)
 }
 
-func RedactAPIKeysWithSlowRegexp(ctx context.Context, env environment.Env, event *bespb.BuildEvent) error {
+func APIKeysWithSlowRegexp(ctx context.Context, env environment.Env, event *bespb.BuildEvent) error {
 	proto.DiscardUnknown(event)
 	txt := proto.MarshalTextString(event)
 
@@ -54,9 +54,9 @@ func RedactAPIKeysWithSlowRegexp(ctx context.Context, env environment.Env, event
 	pat = regexp.MustCompile("([^[:alnum:]])[[:alnum:]]{20}@")
 	txt = pat.ReplaceAllString(txt, "$1<REDACTED>@")
 
-	// Replace the literal API key in the configuration, which does not need
-	// to conform to the way we generate API keys.
-	configuredKey := getConfiguredAPIKey(env)
+	// Replace the literal API key set up via the BuildBuddy config, which does not
+	// need to conform to the way we generate API keys.
+	configuredKey := getAPIKeyFromBuildBuddyConfig(env)
 	if configuredKey != "" {
 		txt = strings.ReplaceAll(txt, configuredKey, "<REDACTED>")
 	}
@@ -69,7 +69,9 @@ func RedactAPIKeysWithSlowRegexp(ctx context.Context, env environment.Env, event
 	return proto.UnmarshalText(txt, event)
 }
 
-func getConfiguredAPIKey(env environment.Env) string {
+// Returns the API key hard-coded in the BuildBuddy config file / config flags,
+// or "" if there is no key configured.
+func getAPIKeyFromBuildBuddyConfig(env environment.Env) string {
 	if apiConfig := env.GetConfigurator().GetAPIConfig(); apiConfig != nil {
 		return apiConfig.APIKey
 	}

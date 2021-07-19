@@ -365,7 +365,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid string) error {
 	if *enableOptimizedRedaction {
-		if err := redact.RedactAPIKey(e.ctx, e.env, event.BuildEvent); err != nil {
+		if err := redact.APIKey(e.ctx, e.env, event.BuildEvent); err != nil {
 			return err
 		}
 	}
@@ -469,7 +469,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			return nil, err
 		}
 		if !*enableOptimizedRedaction || ti.RedactionFlags&redact.RedactionFlagAPIKey == 0 {
-			if err := redact.RedactAPIKeysWithSlowRegexp(ctx, env, event.BuildEvent); err != nil {
+			if err := redact.APIKeysWithSlowRegexp(ctx, env, event.BuildEvent); err != nil {
 				return nil, err
 			}
 		}

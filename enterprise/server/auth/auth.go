@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -28,8 +29,8 @@ import (
 	"google.golang.org/grpc/peer"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	oidc "github.com/coreos/go-oidc"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
 const (
@@ -535,7 +536,7 @@ func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) string {
 
 func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
 	if _, ok := ctx.Value(APIKeyHeader).(string); ok {
-		log.Warningf("Overwriting existing value of %q in context.", APIKeyHeader)
+		alert.UnexpectedEvent("overwrite_api_key", "Overwriting existing value of %q in context.", APIKeyHeader)
 	}
 	ctx = context.WithValue(ctx, APIKeyHeader, apiKey)
 	claims, err := a.claimsFromAPIKey(ctx, apiKey)
