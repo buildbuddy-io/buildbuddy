@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	shortFormatTargetLength = 50
-	listSeparator           = ", "
+	patternCharCountLimit = 50
+	listSeparator         = ", "
 )
 
 // ShortFormatPatterns formats a list of patterns for display in the UI.
@@ -21,7 +21,7 @@ func ShortFormatPatterns(patterns []string) string {
 	charCount := 0
 	for i, pattern := range patterns {
 		patternLength := len(pattern) + len(listSeparator)
-		if i == 0 || charCount+patternLength < shortFormatTargetLength {
+		if i == 0 || charCount+patternLength < patternCharCountLimit {
 			displayedPatterns = append(displayedPatterns, pattern)
 			charCount += patternLength
 		}
