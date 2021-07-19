@@ -99,12 +99,6 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	if err := c.Unpause(ctx); err != nil {
 		t.Fatalf("unable to unpause container: %s", err)
 	}
-	if err := c.Pause(ctx); err != nil {
-		t.Fatalf("unable to pause container: %s", err)
-	}
-	if err := c.Unpause(ctx); err != nil {
-		t.Fatalf("unable to unpause container: %s", err)
-	}
 
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
