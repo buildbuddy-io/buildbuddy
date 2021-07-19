@@ -41,6 +41,8 @@ const (
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 3 * time.Second
 
+	jailerDirectoryCreationTimeout = 1 * time.Second
+
 	// The firecracker socket path (will be relative to the chroot).
 	firecrackerSocketPath = "/run/fc.sock"
 
@@ -73,6 +75,10 @@ const (
 	// any issue. If more than this many VMs were active on a single host at
 	// once -- it would cause an error.
 	maxVMSPerHost = 1000
+
+	// Workspace slack space is how much extra space will be allocated in the
+	// workspace disk image beyond the size of the existing files.
+	workspaceSlackBytes = 1e9
 )
 
 var (
@@ -449,6 +455,25 @@ func (c *firecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	return walkErr
 }
 
+func (c *firecrackerContainer) setupNetworking(ctx context.Context) error {
+	if err := networking.CreateNetNamespace(ctx, c.id); err != nil {
+		return err
+	}
+	if err := networking.CreateTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
+		return err
+	}
+	if err := networking.ConfigureTapInNamespace(ctx, c.id, tapDeviceName, tapAddr); err != nil {
+		return err
+	}
+	if err := networking.BringUpTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
+		return err
+	}
+	if err := networking.SetupVethPair(ctx, c.id, vmIP, c.vmIdx); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Run the given command within the container and remove the container after
 // it is done executing.
 //
@@ -490,7 +515,7 @@ func (c *firecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		return err
 	}
 	wsPath := filepath.Join(containerHome, "workspacefs.ext4")
-	if err := ext4.DirectoryToImage(ctx, c.actionWorkingDir, wsPath, workspaceSizeBytes+1e9); err != nil {
+	if err := ext4.DirectoryToImage(ctx, c.actionWorkingDir, wsPath, workspaceSizeBytes+workspaceSlackBytes); err != nil {
 		return err
 	}
 	c.workspaceFSPath = wsPath
@@ -502,21 +527,11 @@ func (c *firecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	if err != nil {
 		return err
 	}
-	if err := networking.CreateNetNamespace(ctx, c.id); err != nil {
+
+	if err := c.setupNetworking(ctx); err != nil {
 		return err
 	}
-	if err := networking.CreateTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
-		return err
-	}
-	if err := networking.ConfigureTapInNamespace(ctx, c.id, tapDeviceName, tapAddr); err != nil {
-		return err
-	}
-	if err := networking.BringUpTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
-		return err
-	}
-	if err := networking.SetupVethPair(ctx, c.id, vmIP, c.vmIdx); err != nil {
-		return err
-	}
+
 	cmd := fcclient.NewJailerCommandBuilder().
 		WithBin(jailerBinPath).
 		WithChrootBaseDir(c.jailerRoot).
@@ -537,7 +552,7 @@ func (c *firecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		fcclient.WithProcessRunner(cmd),
 	}
 	// Wait for the jailer directory to be created
-	waitUntilExists(ctx, time.Second, c.getChroot())
+	waitUntilExists(ctx, jailerDirectoryCreationTimeout, c.getChroot())
 
 	m, err := fcclient.NewMachine(ctx, *fcCfg, machineOpts...)
 	if err != nil {
@@ -660,6 +675,9 @@ func (c *firecrackerContainer) Remove(ctx context.Context) error {
 	if err := networking.RemoveNetNamespace(ctx, c.id); err != nil {
 		log.Errorf("Error removing net namespace: %s", err)
 	}
+	if err := os.RemoveAll(filepath.Dir(c.workspaceFSPath)); err != nil {
+		log.Errorf("Error removing workspace fs: %s", err)
+	}
 	return nil
 }
 
@@ -743,21 +761,10 @@ func (c *firecrackerContainer) Unpause(ctx context.Context) error {
 		},
 	}
 
-	if err := networking.CreateNetNamespace(ctx, c.id); err != nil {
+	if err := c.setupNetworking(ctx); err != nil {
 		return err
 	}
-	if err := networking.CreateTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
-		return err
-	}
-	if err := networking.ConfigureTapInNamespace(ctx, c.id, tapDeviceName, tapAddr); err != nil {
-		return err
-	}
-	if err := networking.BringUpTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
-		return err
-	}
-	if err := networking.SetupVethPair(ctx, c.id, vmIP, c.vmIdx); err != nil {
-		return err
-	}
+
 	cmd := fcclient.NewJailerCommandBuilder().
 		WithBin(jailerBinPath).
 		WithChrootBaseDir(c.jailerRoot).
@@ -784,7 +791,7 @@ func (c *firecrackerContainer) Unpause(ctx context.Context) error {
 	}
 
 	// Wait for the jailer directory to be created
-	waitUntilExists(ctx, time.Second, c.getChroot())
+	waitUntilExists(ctx, jailerDirectoryCreationTimeout, c.getChroot())
 
 	requiredFiles := []string{
 		kernelImagePath,
@@ -820,6 +827,8 @@ func (c *firecrackerContainer) Unpause(ctx context.Context) error {
 	return nil
 }
 
+// Wait waits until the underlying VM exits. It returns an error if one is
+// encountered while waiting.
 func (c *firecrackerContainer) Wait(ctx context.Context) error {
 	return c.machine.Wait(ctx)
 }
