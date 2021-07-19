@@ -345,7 +345,7 @@ func (p *partition) initializeCache() error {
 				// Originally there was just one "partition" with its contents under the root directory.
 				// Additional partition directories live under the root as well and they need to be ignored
 				// when initializing the default partition.
-				if strings.HasPrefix(d.Name(), PartitionDirectoryPrefix) {
+				if p.id == defaultPartitionID && strings.HasPrefix(d.Name(), PartitionDirectoryPrefix) {
 					return filepath.SkipDir
 				}
 				return nil
