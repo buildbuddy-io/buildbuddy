@@ -25,12 +25,14 @@ import (
 	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerclient "github.com/docker/docker/client"
+	units "github.com/docker/go-units"
 	gstatus "google.golang.org/grpc/status"
 )
 
 var (
 	dockerDaemonErrorCode        = 125
 	containerFinalizationTimeout = 10 * time.Second
+	defaultDockerUlimit          = int64(65535)
 )
 
 type DockerOptions struct {
@@ -229,6 +231,11 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	return &dockercontainer.HostConfig{
 		NetworkMode: networkMode,
 		Binds:       binds,
+		Resources: dockercontainer.Resources{
+			Ulimits: []*units.Ulimit{
+				&units.Ulimit{Name: "nofile", Soft: defaultDockerUlimit, Hard: defaultDockerUlimit},
+			},
+		},
 	}
 }
 
