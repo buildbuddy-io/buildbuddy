@@ -1,5 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+# gazelle:resolve go github.com/docker/go-units @com_github_docker_docker//vendor/github.com/docker/go-units:go_default_library
 go_library(
     name = "docker",
     srcs = ["docker.go"],
