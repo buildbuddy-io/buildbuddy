@@ -13,6 +13,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// runCommand runs the provided command, prepending sudo if the calling user is
+// not already root.
 func runCommand(ctx context.Context, args ...string) error {
 	// If we're not running as root, use sudo.
 	if unix.Getuid() != 0 {
@@ -27,6 +29,8 @@ func runCommand(ctx context.Context, args ...string) error {
 	return nil
 }
 
+// namespace prepends the provided command with 'ip netns exec "netNamespace"'
+// so that the provided command is run inside the network namespace.
 func namespace(netNamespace string, args ...string) []string {
 	return append([]string{"ip", "netns", "exec", netNamespace}, args...)
 }
