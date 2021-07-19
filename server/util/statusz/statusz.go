@@ -44,8 +44,8 @@ const templateContents = `<!DOCTYPE html>
   <h1>Status for {{.BinaryName}}</h1>
   <div class="header">
     <div>
-      <div>Started at {{.StartTime.Format "Jan 02, 2006 15:04:05 PST" }}</div>
-      <div>Current time {{.CurrentTime.Format "Jan 02, 2006 15:04:05 PST" }}</div>
+      <div>Started at {{.StartTime.Format "Jan 02, 2006 15:04:05 MST" }}</div>
+      <div>Current time {{.CurrentTime.Format "Jan 02, 2006 15:04:05 MST" }}</div>
       <div>App Version {{.AppVersion}} ({{.Commit}})</div>
       <div>Go Version {{.GoVersion}}</div>
     </div>
