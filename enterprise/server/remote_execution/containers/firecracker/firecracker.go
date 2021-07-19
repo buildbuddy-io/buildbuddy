@@ -36,7 +36,7 @@ import (
 
 const (
 	// How long to wait for the VMM to listen on the firecracker socket.
-	firecrackerSocketWaitTimeout = 30 * time.Second
+	firecrackerSocketWaitTimeout = 3 * time.Second
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 3 * time.Second
@@ -306,7 +306,7 @@ func (c *firecrackerContainer) newID() error {
 	if err != nil {
 		return err
 	}
-	log.Printf("Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u.String(), vmIdx)
+	log.Debugf("Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u.String(), vmIdx)
 	c.id = u.String()
 
 	c.vmIdx = vmIdx
@@ -315,13 +315,6 @@ func (c *firecrackerContainer) newID() error {
 		vmIdx = 0
 	}
 
-	return nil
-}
-
-func (c *firecrackerContainer) cleanupNets(ctx context.Context) error {
-	if c.id == "" || c.vmIdx == 0 {
-		return nil
-	}
 	return nil
 }
 
@@ -502,8 +495,8 @@ func (c *firecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	}
 	c.workspaceFSPath = wsPath
 
-	log.Printf("c.containerFSPath: %q", c.containerFSPath)
-	log.Printf("c.workspaceFSPath: %q", c.workspaceFSPath)
+	log.Debugf("c.containerFSPath: %q", c.containerFSPath)
+	log.Debugf("c.workspaceFSPath: %q", c.workspaceFSPath)
 
 	fcCfg, err := c.getConfig(ctx, c.containerFSPath, c.workspaceFSPath)
 	if err != nil {
