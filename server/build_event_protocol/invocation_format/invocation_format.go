@@ -6,8 +6,13 @@ import (
 )
 
 const (
+	// The character limit for invocation patterns after which we will truncate
+	// and show "and <N> more".
 	patternCharLimit = 50
-	listSeparator    = ", "
+
+	// The separator used to join invocation patterns when displaying them to the
+	// user.
+	listSeparator = ", "
 )
 
 // ShortFormatPatterns formats a list of patterns for display in the UI.
