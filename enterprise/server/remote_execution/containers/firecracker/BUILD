@@ -1,6 +1,4 @@
-load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
 go_library(
     name = "firecracker",
@@ -20,7 +18,6 @@ go_library(
         "//enterprise/server/util/vsock",
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",
-        "//server/environment",
         "//server/interfaces",
         "//server/util/disk",
         "//server/util/log",
@@ -47,19 +44,4 @@ go_test(
         "//server/util/disk",
         "@com_github_stretchr_testify//assert",
     ],
-)
-
-container_image(
-    name = "base_image",
-    base = "@executor_image//image:dockerfile_image.tar",
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
-
-go_image(
-    name = "firecracker_test_image",
-    testonly = 1,
-    base = ":base_image",
-    binary = ":firecracker_test",
-    visibility = ["//visibility:public"],
 )
