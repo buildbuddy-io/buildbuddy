@@ -8,6 +8,8 @@ import { invocation } from "../../proto/invocation_ts_proto";
 import { IconType } from "../favicon/favicon";
 import format from "../format/format";
 
+export const InvocationStatus = invocation.Invocation.InvocationStatus;
+
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 
 export default class InvocationModel {
@@ -123,8 +125,7 @@ export default class InvocationModel {
           model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         }
         if (buildEvent.unstructuredCommandLine) {
-          model.unstructuredCommandLine =
-            buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+          model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
         }
       }
     }
@@ -482,5 +483,13 @@ export default class InvocationModel {
 
   isQuery() {
     return this.getCommand() == "query";
+  }
+
+  getLastChunkId(): string {
+    return this.invocations[0]?.lastChunkId || "";
+  }
+
+  isComplete(): boolean {
+    return this.invocations[0]?.status === InvocationStatus.COMPLETE_INVOCATION_STATUS;
   }
 }

@@ -19,10 +19,9 @@ interface State {
   fetchedFirstChunk?: boolean;
 }
 
-const POLL_TAIL_INTERVAL_MS = 1_000;
-const MAX_INITIAL_LINES = 100_000;
-
-const InvocationStatus = invocation.Invocation.InvocationStatus;
+const POLL_TAIL_INTERVAL_MS = 3_000;
+// How many lines to request from the server on each chunk request.
+const MIN_LINES = 100_000;
 
 export default class BuildLogsCardComponent extends React.Component<Props, State> {
   state: State = {
@@ -32,15 +31,6 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
   };
 
   private pollTailTimeout: number | null = null;
-
-  constructor(props: Props) {
-    super(props);
-
-    const invocation = props.model.invocations[0];
-    if (!invocation) {
-      console.error("BuildLogsCard: invocation model is missing invocation");
-    }
-  }
 
   componentDidMount() {
     if (this.shouldFetchFromEventLog()) {
@@ -56,32 +46,21 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
     return capabilities.chunkedEventLogs && Boolean(this.props.model.invocations[0]?.lastChunkId);
   }
 
-  private isInvocationComplete() {
-    const invocation = this.props.model.invocations[0];
-    return invocation?.invocationStatus === InvocationStatus.COMPLETE_INVOCATION_STATUS;
-  }
-
   private fetchTail(isFirstRequest = false) {
-    const invocation = this.props.model.invocations[0];
-    let rpcError: BuildBuddyError | null = null;
+    let rpcError: BuildBuddyError;
     let nextChunkId = "";
-    const wasCompleteBeforeMakingRequest = this.isInvocationComplete();
+    const wasCompleteBeforeMakingRequest = this.props.model.isComplete();
 
     rpcService.service
       .getEventLogChunk(
         new eventlog.GetEventLogChunkRequest({
-          invocationId: invocation.invocationId,
+          invocationId: this.props.model.getId(),
           chunkId: this.state.nextChunkId,
-          ...(isFirstRequest && {
-            // For the first request, fetch a large amount of lines starting from
-            // the tail and reading backward.
-            minLines: MAX_INITIAL_LINES,
-            readBackward: true,
-          }),
+          minLines: MIN_LINES,
+          readBackward: isFirstRequest,
         })
       )
       .then((response) => {
-        console.log(response);
         let consoleBuffer = this.state.consoleBuffer;
         for (const line of response.chunk?.lines || []) {
           consoleBuffer += String.fromCharCode(...line) + "\n";
