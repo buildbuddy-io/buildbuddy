@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"time"
 
@@ -38,6 +39,7 @@ type DockerOptions struct {
 	UseHostNetwork          bool
 	ForceRoot               bool
 	DockerMountMode         string
+	InheritUserIDs          bool
 }
 
 // dockerCommandContainer containerizes a command's execution using a Docker container.
@@ -86,11 +88,15 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
-	containerCfg := r.containerConfig(
+	containerCfg, err := r.containerConfig(
 		command.GetArguments(),
 		commandutil.EnvStringList(command),
 		workDir,
 	)
+	if err != nil {
+		result.Error = err
+		return result
+	}
 	createResponse, err := r.client.ContainerCreate(
 		ctx,
 		containerCfg,
@@ -168,22 +174,33 @@ func wrapDockerErr(err error, contextMsg string) error {
 	return gstatus.Errorf(errCode(err), "%s: %s", contextMsg, errMsg(err))
 }
 
-func (r *dockerCommandContainer) getUser() string {
+func (r *dockerCommandContainer) getUser() (string, error) {
 	if r.options.ForceRoot {
-		return "root"
+		return "root", nil
 	}
-	return ""
+	if r.options.InheritUserIDs {
+		user, err := user.Current()
+		if err != nil {
+			return "", status.InternalErrorf("Failed to get user: %s", err)
+		}
+		return fmt.Sprintf("%s:%s", user.Uid, user.Gid), nil
+	}
+	return "", nil
 }
 
-func (r *dockerCommandContainer) containerConfig(args, env []string, workDir string) *dockercontainer.Config {
+func (r *dockerCommandContainer) containerConfig(args, env []string, workDir string) (*dockercontainer.Config, error) {
+	u, err := r.getUser()
+	if err != nil {
+		return nil, err
+	}
 	return &dockercontainer.Config{
 		Image:      r.image,
 		Hostname:   "localhost",
 		Env:        env,
 		Cmd:        args,
 		WorkingDir: workDir,
-		User:       r.getUser(),
-	}
+		User:       u,
+	}, nil
 }
 
 func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.HostConfig {
@@ -284,11 +301,15 @@ func (r *dockerCommandContainer) create(ctx context.Context, workDir string) err
 		return status.UnavailableErrorf("failed to generate docker container name: %s", err)
 	}
 
+	containerConfig, err := r.containerConfig([]string{"sleep", "infinity"}, []string{}, workDir)
+	if err != nil {
+		return err
+	}
 	createResponse, err := r.client.ContainerCreate(
 		ctx,
 		// Top-level container process just sleeps forever so that the container
 		// stays alive until explicitly killed.
-		r.containerConfig([]string{"sleep", "infinity"}, []string{}, workDir),
+		containerConfig,
 		r.hostConfig(workDir),
 		/*networkingConfig=*/ nil,
 		/*platform=*/ nil,
@@ -320,6 +341,11 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
 	}
+	u, err := r.getUser()
+	if err != nil {
+		result.Error = err
+		return result
+	}
 	cfg := dockertypes.ExecConfig{
 		Cmd:          command.GetArguments(),
 		Env:          commandutil.EnvStringList(command),
@@ -327,7 +353,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		AttachStdout: true,
 		AttachStderr: true,
 		AttachStdin:  stdin != nil,
-		User:         r.getUser(),
+		User:         u,
 	}
 	exec, err := r.client.ContainerExecCreate(ctx, r.id, cfg)
 	if err != nil {
