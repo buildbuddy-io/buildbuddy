@@ -67,9 +67,6 @@ const (
 	// Memory usage estimate multiplier for pooled runners, relative to the
 	// default memory estimate for execution tasks.
 	runnerMemUsageEstimateMultiplierBytes = 6.5
-	// The maximum fraction of allocated RAM that can be allocated to pooled
-	// runners.
-	runnerAllocatedRAMFractionBytes = 0.8
 
 	// Label assigned to runner pool request count metric for fulfilled requests.
 	hitStatusLabel = "hit"
@@ -472,19 +469,24 @@ func (p *Pool) hostBuildRoot() string {
 	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 }
 
+func (p *Pool) dockerOptions() *docker.DockerOptions {
+	cfg := p.env.GetConfigurator().GetExecutorConfig()
+	return &docker.DockerOptions{
+		Socket:                  cfg.DockerSocket,
+		EnableSiblingContainers: cfg.DockerSiblingContainers,
+		UseHostNetwork:          cfg.DockerNetHost,
+		DockerMountMode:         cfg.DockerMountMode,
+		InheritUserIDs:          cfg.DockerInheritUserIDs,
+	}
+}
+
 func (p *Pool) WarmupDefaultImage() {
 	if p.dockerClient == nil {
 		return
 	}
-	cfg := p.env.GetConfigurator().GetExecutorConfig()
 	c := docker.NewDockerContainer(
 		p.dockerClient, platform.DefaultContainerImage, p.hostBuildRoot(),
-		&docker.DockerOptions{
-			Socket:                  cfg.DockerSocket,
-			EnableSiblingContainers: cfg.DockerSiblingContainers,
-			UseHostNetwork:          cfg.DockerNetHost,
-			DockerMountMode:         cfg.DockerMountMode,
-		},
+		p.dockerOptions(),
 	)
 	start := time.Now()
 	// Give the pull up to 1 minute to succeed and 1 minute to create a warm up container.
@@ -595,17 +597,10 @@ func (p *Pool) newContainer(props *platform.Properties) container.CommandContain
 	var ctr container.CommandContainer
 	switch p.containerType() {
 	case platform.DockerContainerType:
-		cfg := p.env.GetConfigurator().GetExecutorConfig()
+		opts := p.dockerOptions()
+		opts.ForceRoot = props.DockerForceRoot
 		ctr = docker.NewDockerContainer(
-			p.dockerClient, props.ContainerImage, p.hostBuildRoot(),
-			&docker.DockerOptions{
-				Socket:                  cfg.DockerSocket,
-				EnableSiblingContainers: cfg.DockerSiblingContainers,
-				UseHostNetwork:          cfg.DockerNetHost,
-				DockerMountMode:         cfg.DockerMountMode,
-				ForceRoot:               props.DockerForceRoot,
-			},
-		)
+			p.dockerClient, props.ContainerImage, p.hostBuildRoot(), opts)
 	case platform.ContainerdContainerType:
 		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
 	default:
@@ -787,7 +782,7 @@ func (p *Pool) TryRecycle(r *CommandRunner, finishedCleanly bool) {
 }
 
 func (p *Pool) setLimits(cfg *config.RunnerPoolConfig) {
-	totalRAMBytes := int64(float64(resources.GetAllocatedRAMBytes()) * runnerAllocatedRAMFractionBytes)
+	totalRAMBytes := int64(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio)
 	estimatedRAMBytes := int64(float64(tasksize.DefaultMemEstimate) * runnerMemUsageEstimateMultiplierBytes)
 
 	count := cfg.MaxRunnerCount

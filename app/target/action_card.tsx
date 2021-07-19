@@ -10,6 +10,7 @@ import rpcService from "../service/rpc_service";
 interface Props {
   action: invocation.InvocationEvent;
   invocationId: string;
+  dark: boolean;
 }
 
 interface State {
@@ -113,10 +114,10 @@ export default class ActionCardComponent extends React.Component {
       <div>
         {this.props.action?.buildEvent?.action?.stderr?.uri && (
           <div
-            className={`card ${this.state.cacheEnabled && "dark"} ${
+            className={`card ${this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")} ${
               this.props.action.buildEvent.action.success ? "card-success" : "card-failure"
             }`}>
-            <img className="icon" src="/image/log-circle-light.svg" />
+            <img className="icon" src={this.props.dark ? "/image/log-circle-light.svg" : "/image/log-circle.svg"} />
             <div className="content">
               <div className="title">Error Log</div>
               <div className="test-subtitle">{this.getStatusTitle(this.props.action.buildEvent.action.success)}</div>
@@ -152,8 +153,8 @@ export default class ActionCardComponent extends React.Component {
         )}
 
         {this.props.action?.buildEvent?.action?.stdout?.uri && (
-          <div className={`card ${this.state.cacheEnabled && "dark"}`}>
-            <img className="icon" src="/image/log-circle-light.svg" />
+          <div className={`card ${this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")}`}>
+            <img className="icon" src={this.props.dark ? "/image/log-circle-light.svg" : "/image/log-circle.svg"} />
             <div className="content">
               <div className="title">Log</div>
               {!this.state.cacheEnabled && (

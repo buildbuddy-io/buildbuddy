@@ -32,6 +32,10 @@
   padding: 16px 32px;
 }
 
+.settings .settings-button {
+  margin-bottom: 32px;
+}
+
 .settings .settings-link-button {
   padding: 0;
 }

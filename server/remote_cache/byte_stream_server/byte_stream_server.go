@@ -43,8 +43,8 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	}, nil
 }
 
-func (s *ByteStreamServer) getCache(instanceName string) interfaces.Cache {
-	return namespace.CASCache(s.cache, instanceName)
+func (s *ByteStreamServer) getCache(ctx context.Context, instanceName string) (interfaces.Cache, error) {
+	return namespace.CASCache(ctx, s.cache, instanceName)
 }
 
 func minInt64(a, b int64) int64 {
@@ -95,7 +95,10 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-	cache := s.getCache(instanceName)
+	cache, err := s.getCache(ctx, instanceName)
+	if err != nil {
+		return err
+	}
 	if d.GetHash() == digest.EmptySha256 {
 		ht.TrackEmptyHit()
 		return nil
@@ -184,7 +187,10 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if err != nil {
 		return nil, err
 	}
-	cache := s.getCache(instanceName)
+	cache, err := s.getCache(ctx, instanceName)
+	if err != nil {
+		return nil, err
+	}
 
 	ws := &writeState{
 		activeResourceName: req.ResourceName,

@@ -6,8 +6,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 	"time"
+
+	golog "log"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/prometheus/client_golang/prometheus"
@@ -41,7 +44,8 @@ const (
 )
 
 var (
-	autoMigrateDB = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
+	autoMigrateDB        = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
+	autoMigrateDBAndExit = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
 )
 
 type DBHandle struct {
@@ -110,23 +114,22 @@ func (dbh *DBHandle) ReadRow(out interface{}, where ...interface{}) error {
 	return err
 }
 
-func maybeRunMigrations(dialect string, gdb *gorm.DB) error {
-	if *autoMigrateDB {
-		postAutoMigrateFuncs, err := tables.PreAutoMigrate(gdb)
-		if err != nil {
+func runMigrations(dialect string, gdb *gorm.DB) error {
+	log.Info("Auto-migrating DB")
+	postAutoMigrateFuncs, err := tables.PreAutoMigrate(gdb)
+	if err != nil {
+		return err
+	}
+	if err := gdb.AutoMigrate(tables.GetAllTables()...); err != nil {
+		return err
+	}
+	for _, f := range postAutoMigrateFuncs {
+		if err := f(); err != nil {
 			return err
 		}
-		gdb.AutoMigrate(tables.GetAllTables()...)
-		if postAutoMigrateFuncs != nil {
-			for _, f := range postAutoMigrateFuncs {
-				if err := f(); err != nil {
-					return err
-				}
-			}
-		}
-		if err := tables.PostAutoMigrate(gdb); err != nil {
-			return err
-		}
+	}
+	if err := tables.PostAutoMigrate(gdb); err != nil {
+		return err
 	}
 	return nil
 }
@@ -193,7 +196,19 @@ func openDB(configurator *config.Configurator, dialect string, connString string
 	}
 
 	var l logger.Interface
-	l = sqlLogger{Interface: logger.Default, logLevel: logger.Warn}
+	// This is the same as logger.Default, but with colors turned off (since the
+	// output may not support colors) and sending output to stderr (to be
+	// consistent with the rest of our logs).
+	// TODO: Have all logs written to zerolog instead.
+	gormLogger := logger.New(
+		golog.New(os.Stderr, "\r\n", golog.LstdFlags),
+		logger.Config{
+			SlowThreshold: 200 * time.Millisecond,
+			LogLevel:      logger.Warn,
+			// Disable log colors when structured logging is enabled.
+			Colorful: !configurator.GetAppEnableStructuredLogging(),
+		})
+	l = sqlLogger{Interface: gormLogger, logLevel: logger.Warn}
 	if configurator.GetDatabaseConfig().LogQueries {
 		l = l.LogMode(logger.Info)
 	}
@@ -346,8 +361,17 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 	}
 	go statsRecorder.poll(statsPollInterval)
 
-	if err := maybeRunMigrations(dialect, primaryDB); err != nil {
-		return nil, err
+	if *autoMigrateDBAndExit {
+		if err := runMigrations(dialect, primaryDB); err != nil {
+			log.Fatalf("Database auto-migration failed: %s", err)
+		}
+		log.Infof("Database migration completed. Exiting due to --auto_migrate_db_and_exit.")
+		os.Exit(0)
+	}
+	if *autoMigrateDB {
+		if err := runMigrations(dialect, primaryDB); err != nil {
+			return nil, err
+		}
 	}
 
 	dbh := &DBHandle{

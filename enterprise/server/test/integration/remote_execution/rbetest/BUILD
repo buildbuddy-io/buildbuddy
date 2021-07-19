@@ -21,6 +21,7 @@ go_library(
         "//enterprise/server/testutil/testredis",
         "//proto:api_key_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:context_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",

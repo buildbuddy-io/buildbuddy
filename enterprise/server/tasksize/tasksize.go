@@ -20,6 +20,9 @@ const (
 	// otherwise determine the size for.
 	DefaultMemEstimate = int64(400 * 1e6)
 	DefaultCPUEstimate = int64(600)
+
+	// The fraction of an executor's allocatable resources to make available for task sizing.
+	MaxResourceCapacityRatio = 0.8
 )
 
 func testSize(testSize string) (int64, int64) {

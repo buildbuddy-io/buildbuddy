@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/executor_handle"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -260,7 +261,8 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int
 
 	fitCount := 0
 	for _, node := range np.nodes {
-		if node.assignableMemoryBytes >= taskSize.GetEstimatedMemoryBytes() && node.assignableMilliCpu >= taskSize.GetEstimatedMilliCpu() {
+		if int64(float64(node.assignableMemoryBytes)*tasksize.MaxResourceCapacityRatio) >= taskSize.GetEstimatedMemoryBytes() &&
+			int64(float64(node.assignableMilliCpu)*tasksize.MaxResourceCapacityRatio) >= taskSize.GetEstimatedMilliCpu() {
 			fitCount++
 		}
 	}
@@ -744,22 +746,6 @@ func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAn
 
 	handle := executor_handle.NewRegistrationAndTasksExecutorHandle(stream, groupID)
 	return s.processExecutorStream(stream.Context(), handle)
-}
-
-// GetAllExecutionNodes returns all registered execution nodes.
-func (s *SchedulerServer) GetAllExecutionNodes(ctx context.Context) ([]tables.ExecutionNode, error) {
-	db := s.env.GetDBHandle()
-	if db == nil {
-		return nil, status.FailedPreconditionError("database not configured")
-	}
-
-	var dbNodes []tables.ExecutionNode
-	res := db.WithContext(ctx).Find(&dbNodes)
-	if res.Error != nil {
-		return nil, status.InternalErrorf("could not fetch nodes: %v", res.Error)
-	}
-
-	return dbNodes, nil
 }
 
 func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle executor_handle.ExecutorHandle, nodePoolKey nodePoolKey) error {
