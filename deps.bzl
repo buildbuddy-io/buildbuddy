@@ -2309,9 +2309,18 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "com_github_nishanths_exhaustive",
+        build_directives = [
+            "gazelle:map_kind go_library go_tool_library @io_bazel_rules_go//go:def.bzl",
+            "gazelle:resolve go golang.org/x/tools/go/analysis @org_golang_x_tools//go/analysis:go_tool_library",
+            "gazelle:resolve go golang.org/x/tools/go/analysis/passes/inspect @org_golang_x_tools//go/analysis/passes/inspect:go_tool_library",
+            "gazelle:resolve go golang.org/x/tools/go/ast/inspector @org_golang_x_tools//go/ast/inspector:go_tool_library",
+            "gazelle:resolve go golang.org/x/tools/go/ast/astutil @org_golang_x_tools//go/ast/astutil:go_tool_library",
+        ],
         importpath = "github.com/nishanths/exhaustive",
-        sum = "h1:eMV1t2NQRc3r1k3guWiv/zEeqZZP6kPvpUfy6byfL1g=",
-        version = "v0.0.0-20200811152831-6cf413ae40e0",
+        patch_args = ["-p1"],
+        patches = ["@%s//buildpatches:com_github_nishanths_exhaustive" % workspace_name],
+        sum = "h1:+ANTMqRNrqwInnP9aszg/0jDo+zbXa4x66U19Bx/oTk=",
+        version = "v0.2.3",
     )
     go_repository(
         name = "com_github_nishanths_predeclared",
@@ -3042,8 +3051,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_yuin_goldmark",
         importpath = "github.com/yuin/goldmark",
-        sum = "h1:ruQGxdhGHe7FWOJPT0mKs5+pD2Xs1Bm/kdGlHO04FmM=",
-        version = "v1.2.1",
+        sum = "h1:dPmz1Snjq0kmkz159iL7S6WzdahUTHnHB5M56WFVifs=",
+        version = "v1.3.5",
     )
     go_repository(
         name = "com_github_yvasiyarov_go_metrics",
@@ -3641,14 +3650,14 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_mod",
         importpath = "golang.org/x/mod",
-        sum = "h1:Kvvh58BN8Y9/lBi7hTekvtMpm07eUZ0ck5pRHpsMWrY=",
-        version = "v0.4.1",
+        sum = "h1:Gz96sIWK3OalVv/I/qNygP42zyoKp3xptRVCWRFEBvo=",
+        version = "v0.4.2",
     )
     go_repository(
         name = "org_golang_x_net",
         importpath = "golang.org/x/net",
-        sum = "h1:b0LrWgu8+q7z4J+0Y3Umo5q1dL7NXBkKBWkaVkAq17E=",
-        version = "v0.0.0-20210316092652-d523dce5a7f4",
+        sum = "h1:4nGaVu0QrbjT/AK2PRLuQfQuh6DJve+pELhqTdAj3x0=",
+        version = "v0.0.0-20210405180319-a5a99cb37ef4",
     )
 
     go_repository(
@@ -3667,8 +3676,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_sys",
         importpath = "golang.org/x/sys",
-        sum = "h1:dXfMednGJh/SUUFjTLsWJz3P+TQt9qnR11GgeI3vWKs=",
-        version = "v0.0.0-20210426230700-d19ff857e887",
+        sum = "h1:F1jZWGFhYfh0Ci55sIpILtKKK8p3i2/krTr0H1rg74I=",
+        version = "v0.0.0-20210630005230-0f9fa26af87c",
     )
     go_repository(
         name = "org_golang_x_term",
@@ -3694,8 +3703,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_tools",
         importpath = "golang.org/x/tools",
-        sum = "h1:po9/4sTYwZU9lPhi1tOrb4hCv3qrhiQ77LZfGa2OjwY=",
-        version = "v0.1.0",
+        sum = "h1:cVngSRcfgyZCzys3KYOpCFa+4dqX/Oub9tAq00ttGVs=",
+        version = "v0.1.4",
     )
 
     go_repository(

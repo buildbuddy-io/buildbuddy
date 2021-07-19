@@ -23,6 +23,12 @@
       "/enterprise/server/": "Enterprise server code"
     }
   },
+  "exhaustive": {
+    "only_files": {
+      "/server/": "Server code",
+      "/enterprise/server/": "Enterprise server code"
+    }
+  },
   "fieldalignment": {
     "only_files": {
       "/server/": "Server code",

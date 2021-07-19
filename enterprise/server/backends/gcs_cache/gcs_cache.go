@@ -125,6 +125,21 @@ func (g *GCSCache) WithPrefix(prefix string) interfaces.Cache {
 	}
 }
 
+func (g *GCSCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
+	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
+		newPrefix += "/"
+	}
+
+	return &GCSCache{
+		gcsClient:    g.gcsClient,
+		bucketHandle: g.bucketHandle,
+		projectID:    g.projectID,
+		ttlInDays:    g.ttlInDays,
+		prefix:       newPrefix,
+	}, nil
+}
+
 func (g *GCSCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	k, err := g.key(ctx, d)
 	if err != nil {
