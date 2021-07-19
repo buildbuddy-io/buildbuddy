@@ -50,6 +50,7 @@ import (
 	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -59,6 +60,7 @@ import (
 
 const (
 	ExecutorAPIKey = "EXECUTOR_API_KEY"
+	ExecutorGroup  = "GR123"
 
 	testCommandBinaryRunfilePath = "enterprise/server/test/integration/remote_execution/command/testcommand_/testcommand"
 	testCommandBinaryName        = "testcommand"
@@ -590,8 +592,8 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 func (r *Env) newTestAuthenticator() *testauth.TestAuthenticator {
 	users := testauth.TestUsers(r.UserID1, r.GroupID1)
 	users[ExecutorAPIKey] = &testauth.TestUser{
-		GroupID:       "GR123",
-		AllowedGroups: []string{"GR123"},
+		GroupID:       ExecutorGroup,
+		AllowedGroups: []string{ExecutorGroup},
 		Capabilities:  []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY},
 	}
 	return testauth.NewTestAuthenticator(users)
@@ -615,18 +617,23 @@ func (r *Env) waitForExecutorRegistration() {
 
 	nodesByHostIp := make(map[string]bool)
 	deadline := time.Now().Add(defaultWaitTimeout)
-	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithDeadline(context.Background(), deadline)
-		defer cancel()
 
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	ctx = r.WithUserID(ctx, ExecutorAPIKey)
+
+	for time.Now().Before(deadline) {
 		nodesByHostIp = make(map[string]bool)
 
-		// Doesn't matter which server we query.
-		nodes, err := r.buildBuddyServers[0].schedulerServer.GetAllExecutionNodes(ctx)
-		if err != nil {
-			assert.FailNowf(r.t, "could not fetch registered execution nodes", err.Error())
+		client := r.GetBuildBuddyServiceClient()
+		req := &scpb.GetExecutionNodesRequest{
+			RequestContext: &ctxpb.RequestContext{
+				GroupId: ExecutorGroup,
+			},
 		}
-		for _, node := range nodes {
+		nodes, err := client.GetExecutionNodes(ctx, req)
+		require.NoError(r.t, err)
+		for _, node := range nodes.GetExecutionNode() {
 			nodesByHostIp[fmt.Sprintf("%s:%d", node.Host, node.Port)] = true
 		}
 		if reflect.DeepEqual(expectedNodesByHostIp, nodesByHostIp) {

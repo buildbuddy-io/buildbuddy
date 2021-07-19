@@ -748,22 +748,6 @@ func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAn
 	return s.processExecutorStream(stream.Context(), handle)
 }
 
-// GetAllExecutionNodes returns all registered execution nodes.
-func (s *SchedulerServer) GetAllExecutionNodes(ctx context.Context) ([]tables.ExecutionNode, error) {
-	db := s.env.GetDBHandle()
-	if db == nil {
-		return nil, status.FailedPreconditionError("database not configured")
-	}
-
-	var dbNodes []tables.ExecutionNode
-	res := db.WithContext(ctx).Find(&dbNodes)
-	if res.Error != nil {
-		return nil, status.InternalErrorf("could not fetch nodes: %v", res.Error)
-	}
-
-	return dbNodes, nil
-}
-
 func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle executor_handle.ExecutorHandle, nodePoolKey nodePoolKey) error {
 	tasks, err := s.sampleUnclaimedTasks(ctx, tasksToEnqueueOnJoin, nodePoolKey)
 	if err != nil {
