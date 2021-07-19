@@ -1,9 +1,9 @@
-package invocationutil_test
+package invocation_format_test
 
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/invocationutil"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -17,6 +17,6 @@ func TestShortFormatPatterns(t *testing.T) {
 		{[]string{"//some", "//short", "//patterns"}, "//some, //short, //patterns"},
 		{[]string{"//some", "//short", "//patterns", "//and/a/very/long/pattern/that/will/most/definitely/exceed/target/length"}, "//some, //short, //patterns and 1 more"},
 	} {
-		assert.Equal(t, testCase.expected, invocationutil.ShortFormatPatterns(testCase.patterns))
+		assert.Equal(t, testCase.expected, invocation_format.ShortFormatPatterns(testCase.patterns))
 	}
 }

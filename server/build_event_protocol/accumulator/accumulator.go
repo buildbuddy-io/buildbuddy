@@ -6,7 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
-	"github.com/buildbuddy-io/buildbuddy/server/util/invocationutil"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -191,7 +191,7 @@ func patternFromEvent(event *build_event_stream.BuildEvent) string {
 		switch c := child.Id.(type) {
 		case *build_event_stream.BuildEventId_Pattern:
 			{
-				return invocationutil.ShortFormatPatterns(c.Pattern.Pattern)
+				return invocation_format.ShortFormatPatterns(c.Pattern.Pattern)
 			}
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
@@ -20,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/invocationutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
@@ -474,7 +474,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 	i.Role = p.Role
 	i.Command = p.Command
 	if p.Pattern != nil {
-		i.Pattern = invocationutil.ShortFormatPatterns(p.Pattern)
+		i.Pattern = invocation_format.ShortFormatPatterns(p.Pattern)
 	}
 	i.ActionCount = p.ActionCount
 	i.BlobID = blobID
