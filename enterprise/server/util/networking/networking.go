@@ -25,7 +25,7 @@ func runCommand(ctx context.Context, args ...string) error {
 	if err != nil {
 		return status.InternalErrorf("Error running %q %s: %s", cmd.String(), string(out), err)
 	}
-	log.Printf("Succesfully ran: %q", cmd.String())
+	log.Debugf("Succesfully ran: %q", cmd.String())
 	return nil
 }
 
@@ -117,14 +117,10 @@ func attachAddressToVeth(ctx context.Context, netNamespace, ipAddr, vethName str
 	}
 }
 
-func RemoveVethPair(ctx context.Context, netNamespace string, vmIdx int) error {
+func RemoveNetNamespace(ctx context.Context, netNamespace string) error {
 	// This will delete the veth pair too, and the address attached
 	// to the host-size of the veth pair.
-	err := runCommand(ctx, "ip", "netns", "delete", netNamespace)
-	if err != nil {
-		return err
-	}
-	return nil
+	return runCommand(ctx, "ip", "netns", "delete", netNamespace)
 }
 
 // SetupVethPair is equivalent to:
