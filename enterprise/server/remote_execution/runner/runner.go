@@ -724,8 +724,8 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 			removeResults <- r.RemoveWithTimeout(ctx)
 		}()
 	}
-	errs := []error{}
-	for _, _ = range runners {
+	errs := make([]error, 0)
+	for range runners {
 		if err := <-removeResults; err != nil {
 			errs = append(errs, err)
 		}
