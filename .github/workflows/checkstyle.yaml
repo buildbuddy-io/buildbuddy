@@ -53,6 +53,8 @@ jobs:
             grep -P '\.(js|jsx|ts|tsx|html|css|yaml|json|md|xml)$' |
             ( xargs --no-run-if-empty --delimiter='\n' npx prettier@2.2.1 --check || true ) |
             ( grep -P '^\[warn\]' || true ) > prettier-errors.txt
+          echo "prettier errors:"
+          cat prettier-errors.txt
 
       - name: Summary
         run: |
