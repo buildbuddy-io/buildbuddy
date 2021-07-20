@@ -26,7 +26,6 @@ export default class TargetsComponent extends React.Component {
             model={this.props.model}
             filter={this.props.filter}
             pageSize={this.props.pageSize}
-            skipped={false}
           />
         )}
 
@@ -40,7 +39,6 @@ export default class TargetsComponent extends React.Component {
             model={this.props.model}
             filter={this.props.filter}
             pageSize={this.props.pageSize}
-            skipped={false}
           />
         )}
 
@@ -54,7 +52,6 @@ export default class TargetsComponent extends React.Component {
             model={this.props.model}
             filter={this.props.filter}
             pageSize={this.props.pageSize}
-            skipped={false}
           />
         )}
 
@@ -68,7 +65,6 @@ export default class TargetsComponent extends React.Component {
             model={this.props.model}
             filter={this.props.filter}
             pageSize={this.props.pageSize}
-            skipped={false}
           />
         )}
 
@@ -82,7 +78,6 @@ export default class TargetsComponent extends React.Component {
             model={this.props.model}
             filter={this.props.filter}
             pageSize={this.props.pageSize}
-            skipped={false}
           />
         )}
 
@@ -96,21 +91,19 @@ export default class TargetsComponent extends React.Component {
             model={this.props.model}
             filter={this.props.filter}
             pageSize={this.props.pageSize}
-            skipped={false}
           />
         )}
 
         {!!this.props.model.skipped.length && (
           <TargetsCardComponent
             buildEvents={this.props.model.skipped}
-            className="card-neutral"
+            className="card-skipped"
             iconPath="/image/info.svg"
             presentVerb={`${this.props.model.skipped.length == 1 ? "target" : "targets"}`}
             pastVerb={`${this.props.model.skipped.length == 1 ? "target" : "targets"} skipped`}
             model={this.props.model}
             filter={this.props.filter}
             pageSize={this.props.pageSize}
-            skipped={true}
           />
         )}
       </div>

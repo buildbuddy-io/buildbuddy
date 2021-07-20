@@ -417,6 +417,14 @@ button {
   border-left: 6px solid #8bc34a;
 }
 
+.card.card-skipped {
+  border-left: 6px solid #888;
+}
+
+.card.card-skipped .content .details .list-grid .target {
+  color: #673ab7;
+}
+
 .card.card-failure {
   border-left: 6px solid #f44336;
 }
@@ -1018,10 +1026,6 @@ code .comment {
 .target {
   display: flex;
   align-self: center;
-}
-
-.purple {
-  color: #7d0552;
 }
 
 .target-status-icon {
