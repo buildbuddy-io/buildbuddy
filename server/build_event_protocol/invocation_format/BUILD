@@ -5,7 +5,6 @@ go_library(
     srcs = ["invocation_format.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format",
     visibility = ["//visibility:public"],
-    deps = [],
 )
 
 go_test(
