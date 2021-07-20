@@ -205,4 +205,3 @@ message RegisteredExecutionNode {
   string group_id = 3;
   acl.ACL acl = 4;
 }
-
