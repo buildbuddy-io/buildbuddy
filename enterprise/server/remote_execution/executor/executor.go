@@ -45,8 +45,6 @@ const (
 	// has been set in the config and no timeout was set in the client
 	// request. It's basically the same as "no-timeout".
 	infiniteDuration = time.Hour * 24 * 7
-	// TODO(siggisim): Figure out why this needs to be so large for small tests.
-	timeoutGracePeriodFactor = 3
 	// Allowed deadline extension for uploading action outputs.
 	// The deadline of the original request may be extended by up to this amount
 	// in order to give enough time to upload action outputs.
@@ -215,7 +213,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		// These errors are failure-specific. Pass through unchanged.
 		return finishWithErrFn(err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, execDuration*timeoutGracePeriodFactor)
+	ctx, cancel := context.WithTimeout(ctx, execDuration)
 	defer cancel()
 
 	cmdResultChan := make(chan *interfaces.CommandResult, 1)

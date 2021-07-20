@@ -14,6 +14,7 @@ go_library(
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/util/ext4",
+        "//enterprise/server/util/networking",
         "//enterprise/server/util/vsock",
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",
@@ -23,8 +24,10 @@ go_library(
         "//server/util/status",
         "@com_github_firecracker_microvm_firecracker_go_sdk//:firecracker-go-sdk",
         "@com_github_firecracker_microvm_firecracker_go_sdk//client/models",
+        "@com_github_google_uuid//:uuid",
         "@com_github_sirupsen_logrus//:logrus",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@org_golang_x_sys//unix",
     ],
 )
 

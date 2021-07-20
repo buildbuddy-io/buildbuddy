@@ -41,6 +41,7 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/unreachable:go_tool_library",
         # "@org_golang_x_tools//go/analysis/passes/unsafeptr:go_tool_library",
         "@org_golang_x_tools//go/analysis/passes/unusedresult:go_tool_library",
+        "@com_github_nishanths_exhaustive//:exhaustive",
     ],
 )
 

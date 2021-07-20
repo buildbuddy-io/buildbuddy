@@ -38,14 +38,6 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func (s *ActionCacheServer) getCache(instanceName string) interfaces.Cache {
-	return namespace.ActionCache(s.cache, instanceName)
-}
-
-func (s *ActionCacheServer) getCASCache(instanceName string) interfaces.Cache {
-	return namespace.CASCache(s.cache, instanceName)
-}
-
 func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*repb.Digest) error {
 	foundMap, err := cache.ContainsMulti(ctx, digests)
 	if err != nil {
@@ -137,8 +129,14 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		return nil, err
 	}
 
-	cache := s.getCache(req.GetInstanceName())
-	casCache := s.getCASCache(req.GetInstanceName())
+	cache, err := namespace.ActionCache(ctx, s.cache, req.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
+	casCache, err := namespace.CASCache(ctx, s.cache, req.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
@@ -205,7 +203,10 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
 	d := req.GetActionDigest()
 	uploadTracker := ht.TrackUpload(d)
-	cache := s.getCache(req.GetInstanceName())
+	cache, err := namespace.ActionCache(ctx, s.cache, req.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131
 	// More: https://github.com/buchgr/bazel-remote/commit/7de536f47bf163fb96bc1e38ffd5e444e2bcaa00

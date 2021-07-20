@@ -11,6 +11,7 @@ ts_library(
         "//app/auth",
         "//app/capabilities",
         "//app/components/button",
+        "//app/preferences",
         "//app/router",
         "//enterprise/app/api_keys",
         "//enterprise/app/org",
