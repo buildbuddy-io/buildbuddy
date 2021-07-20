@@ -58,13 +58,21 @@ func TestFirecrackerRun(t *testing.T) {
 		Stderr:             []byte("foo"),
 		CommandDebugString: "(firecracker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
 	}
-	c, err := firecracker.NewContainer(ctx, "docker.io/library/busybox", rootDir)
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         "docker.io/library/busybox",
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              2500,
+		EnableNetworking:       false,
+	}
+	c, err := firecracker.NewContainer(ctx, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, workDir)
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory)
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
@@ -80,7 +88,14 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	c, err := firecracker.NewContainer(ctx, "docker.io/library/busybox", workDir)
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         "docker.io/library/busybox",
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              100,
+		EnableNetworking:       false,
+	}
+	c, err := firecracker.NewContainer(ctx, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +104,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		t.Fatalf("unable to PullImageIfNecessary: %s", err)
 	}
 
-	if err := c.Create(ctx, workDir); err != nil {
+	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
 		t.Fatalf("unable to Create container: %s", err)
 	}
 
@@ -158,12 +173,19 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		Stderr:             nil,
 		CommandDebugString: `(firecracker) [sh -c find -name '*.txt' -exec cp {} {}.out \;]`,
 	}
-	c, err := firecracker.NewContainer(ctx, "docker.io/library/busybox", rootDir)
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         "docker.io/library/busybox",
+		ActionWorkingDirectory: rootDir,
+		NumCPUs:                1,
+		MemSizeMB:              100,
+		EnableNetworking:       false,
+	}
+	c, err := firecracker.NewContainer(ctx, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, rootDir)
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory)
 	if res.Error != nil {
 		t.Fatalf("error: %s", res.Error)
 	}

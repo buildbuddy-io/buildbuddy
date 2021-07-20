@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"math/rand"
 	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
@@ -13,7 +14,8 @@ import (
 )
 
 var (
-	image = flag.String("image", "docker.io/library/busybox", "The default container to run.")
+	image      = flag.String("image", "docker.io/library/busybox", "The default container to run.")
+	forceVMIdx = flag.Int("force_vm_idx", -1, "VM index to force to avoid network conflicts -- random by default")
 )
 
 func getToolEnv() *real_environment.RealEnv {
@@ -27,7 +29,6 @@ func getToolEnv() *real_environment.RealEnv {
 
 func main() {
 	flag.Parse()
-	env := getToolEnv()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -36,14 +37,27 @@ func main() {
 		log.Fatalf("unable to make temp dir: %s", err)
 	}
 
-	c, err := firecracker.NewContainer(ctx, env, *image, "/tmp")
+	vmIdx := 100 + rand.Intn(100)
+	if *forceVMIdx != -1 {
+		vmIdx = *forceVMIdx
+	}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         *image,
+		ActionWorkingDirectory: emptyActionDir,
+		NumCPUs:                1,
+		MemSizeMB:              2500,
+		EnableNetworking:       true,
+		DebugMode:              true,
+		ForceVMIdx:             vmIdx,
+	}
+	c, err := firecracker.NewContainer(ctx, opts)
 	if err != nil {
 		log.Fatalf("Error creating container: %s", err)
 	}
 	if err := c.PullImageIfNecessary(ctx); err != nil {
 		log.Fatalf("unable to PullImageIfNecessary: %s", err)
 	}
-	if err := c.Create(ctx, emptyActionDir); err != nil {
+	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
 		log.Fatalf("unable to Create container: %s", err)
 	}
 	log.Printf("Started firecracker container!")
