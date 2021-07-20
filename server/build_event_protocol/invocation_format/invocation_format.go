@@ -26,10 +26,12 @@ func ShortFormatPatterns(patterns []string) string {
 	charCount := 0
 	for i, pattern := range patterns {
 		patternLength := len(pattern) + len(listSeparator)
-		if i == 0 || charCount+patternLength < patternCharLimit {
-			displayedPatterns = append(displayedPatterns, pattern)
-			charCount += patternLength
+		if i > 0 && charCount+patternLength > patternCharLimit {
+			break
 		}
+		displayedPatterns = append(displayedPatterns, pattern)
+		charCount += patternLength
+
 	}
 	out := strings.Join(displayedPatterns, listSeparator)
 	if len(displayedPatterns) < len(patterns) {
