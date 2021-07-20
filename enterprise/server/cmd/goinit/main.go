@@ -93,7 +93,6 @@ func configureDefaultRoute(ifaceName, ipAddr string) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("iface: %#v", iface)
 	nlConn, err := rtnl.Dial(nil)
 	if err != nil {
 		return err
