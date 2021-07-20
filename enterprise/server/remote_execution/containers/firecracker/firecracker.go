@@ -432,7 +432,6 @@ func (c *firecrackerContainer) getConfig(ctx context.Context, containerFS, works
 	if c.enableNetworking {
 		bootArgs = "--set_default_route " + bootArgs
 	}
-	log.Errorf("boot args: %q", bootArgs)
 	cfg := &fcclient.Config{
 		VMID:            c.id,
 		SocketPath:      firecrackerSocketPath,
