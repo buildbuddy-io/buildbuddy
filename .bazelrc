@@ -71,8 +71,6 @@ build:workflows --disk_cache=
 # Configuration used for BuildBuddy release workflow
 build:release --config=remote
 build:release --remote_instance_name=buildbuddy-io/buildbuddy/release
-build:release --tls_client_certificate=buildbuddy-cert.pem
-build:release --tls_client_key=buildbuddy-key.pem
 build:release -c opt
 build:release --stamp
 build:release --define release=true
