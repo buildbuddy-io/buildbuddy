@@ -33,7 +33,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/sync/errgroup"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -720,6 +719,7 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 		// to finish (if applicable). A single runner that takes a long time to
 		// upload its outputs should not block other runners from working on
 		// workspace removal in the meantime.
+		r := r
 		go func() {
 			removeResults <- r.RemoveWithTimeout(ctx)
 		}()
