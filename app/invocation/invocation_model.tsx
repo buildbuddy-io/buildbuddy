@@ -125,7 +125,8 @@ export default class InvocationModel {
           model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         }
         if (buildEvent.unstructuredCommandLine) {
-          model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+          model.unstructuredCommandLine =
+            buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
         }
       }
     }
@@ -267,6 +268,10 @@ export default class InvocationModel {
   }
 
   getBuildkiteUrl() {
+    if (this.clientEnvMap.get("BUILDKITE_BUILD_URL") && this.clientEnvMap.get("BUILDKITE_JOB_ID")) {
+      return `${this.clientEnvMap.get("BUILDKITE_BUILD_URL")}#${this.clientEnvMap.get("BUILDKITE_JOB_ID")}`;
+    }
+
     return this.clientEnvMap.get("BUILDKITE_BUILD_URL");
   }
 
