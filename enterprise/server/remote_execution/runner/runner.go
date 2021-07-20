@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -713,9 +714,19 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 	p.runners = nil
 	p.mu.Unlock()
 
-	errs := []error{}
+	removeResults := make(chan error)
 	for _, r := range runners {
-		if err := r.RemoveWithTimeout(ctx); err != nil {
+		// Remove runners in parallel, since each deletion is blocked on uploads
+		// to finish (if applicable). A single runner that takes a long time to
+		// upload its outputs should not block other runners from working on
+		// workspace removal in the meantime.
+		go func() {
+			removeResults <- r.RemoveWithTimeout(ctx)
+		}()
+	}
+	errs := []error{}
+	for _, _ = range runners {
+		if err := <-removeResults; err != nil {
 			errs = append(errs, err)
 		}
 	}
