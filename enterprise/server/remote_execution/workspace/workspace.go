@@ -3,6 +3,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,8 +29,6 @@ var (
 	// whenever Remove was previously called on the workspace.
 	WorkspaceMarkedForRemovalError = status.UnavailableError("workspace is marked for removal")
 )
-
-type workspaceState int
 
 // Workspace holds the working tree for an action and keeps track of
 // inputs and outputs.
