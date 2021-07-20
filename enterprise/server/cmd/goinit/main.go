@@ -122,13 +122,8 @@ func main() {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1) // in case log.Fatalf does not work.
 	}
-	log.Printf("os.Args before: %q", os.Args)
 
 	flag.Parse()
-	flag.VisitAll(func(f *flag.Flag) {
-		log.Printf("Parsed flag: %+v", f)
-	})
-
 	log.Infof("Starting BuildBuddy init (args: %s)", os.Args)
 
 	// Quick note about devices: This script is passed to the kernel via
