@@ -69,7 +69,7 @@ const (
 	redisTaskClaimedField     = "claimed"
 
 	// Maximum number of unclaimed task IDs we track per pool.
-	maxUnclaimedTasksTracked = 1000
+	maxUnclaimedTasksTracked = 10_000
 	// TTL for sets used to track unclaimed tasks in Redis. TTL is extended when new tasks are added.
 	unclaimedTaskSetTTL = 1 * time.Hour
 
@@ -195,23 +195,23 @@ func (k *nodePoolKey) redisUnclaimedTasksKey() string {
 }
 
 type nodePool struct {
-	env       environment.Env
-	rdb       *redis.Client
-	mu        sync.Mutex
-	lastFetch time.Time
-	useRedis  bool
-	nodes     []*executionNode
-	key       nodePoolKey
+	env                     environment.Env
+	rdb                     *redis.Client
+	mu                      sync.Mutex
+	lastFetch               time.Time
+	fetchExecutorsFromRedis bool
+	nodes                   []*executionNode
+	key                     nodePoolKey
 	// Executors that are currently connected to this instance of the scheduler server.
 	connectedExecutors []*executionNode
 }
 
-func newNodePool(env environment.Env, key nodePoolKey, useRedis bool) *nodePool {
+func newNodePool(env environment.Env, key nodePoolKey, fetchExecutorsFromRedis bool) *nodePool {
 	np := &nodePool{
-		env:      env,
-		key:      key,
-		rdb:      env.GetRemoteExecutionRedisClient(),
-		useRedis: useRedis,
+		env:                     env,
+		key:                     key,
+		rdb:                     env.GetRemoteExecutionRedisClient(),
+		fetchExecutorsFromRedis: fetchExecutorsFromRedis,
 	}
 	return np
 }
@@ -279,7 +279,7 @@ func (np *nodePool) fetchExecutionNodesFromRedis(ctx context.Context) ([]*execut
 }
 
 func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, error) {
-	if np.useRedis {
+	if np.fetchExecutorsFromRedis {
 		return np.fetchExecutionNodesFromRedis(ctx)
 	}
 	return np.fetchExecutionNodesFromDB(ctx)
