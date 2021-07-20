@@ -1,11 +1,9 @@
 package scheduler_server
 
 import (
-	"container/list"
 	"context"
 	"fmt"
 	"io"
-	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -72,6 +70,8 @@ const (
 
 	// Maximum number of unclaimed task IDs we track per pool.
 	maxUnclaimedTasksTracked = 1000
+	// TTL for sets used to track unclaimed tasks in Redis. TTL is extended when new tasks are added.
+	unclaimedTaskSetTTL = 1 * time.Hour
 
 	unusedSchedulerClientExpiration    = 5 * time.Minute
 	unusedSchedulerClientCheckInterval = 1 * time.Minute
@@ -178,32 +178,40 @@ type nodePoolKey struct {
 	pool    string
 }
 
-func (k *nodePoolKey) toRedisKey() string {
-	key := "executorPool/"
+func (k *nodePoolKey) redisKeySuffix() string {
+	key := ""
 	if k.groupID != "" {
 		key += k.groupID + "-"
 	}
 	return key + fmt.Sprintf("%s-%s-%s", k.os, k.arch, k.pool)
 }
 
+func (k *nodePoolKey) redisPoolKey() string {
+	return "executorPool/" + k.redisKeySuffix()
+}
+
+func (k *nodePoolKey) redisUnclaimedTasksKey() string {
+	return "unclaimedTasks/" + k.redisKeySuffix()
+}
+
 type nodePool struct {
-	env            environment.Env
-	mu             sync.Mutex
-	lastFetch      time.Time
-	useRedis       bool
-	nodes          []*executionNode
-	key            nodePoolKey
-	unclaimedTasks *unclaimedTasksList
+	env       environment.Env
+	rdb       *redis.Client
+	mu        sync.Mutex
+	lastFetch time.Time
+	useRedis  bool
+	nodes     []*executionNode
+	key       nodePoolKey
 	// Executors that are currently connected to this instance of the scheduler server.
 	connectedExecutors []*executionNode
 }
 
 func newNodePool(env environment.Env, key nodePoolKey, useRedis bool) *nodePool {
 	np := &nodePool{
-		env:            env,
-		key:            key,
-		useRedis:       useRedis,
-		unclaimedTasks: newUnclaimedTasksList(),
+		env:      env,
+		key:      key,
+		rdb:      env.GetRemoteExecutionRedisClient(),
+		useRedis: useRedis,
 	}
 	return np
 }
@@ -248,9 +256,7 @@ func (np *nodePool) fetchExecutionNodesFromDB(ctx context.Context) ([]*execution
 }
 
 func (np *nodePool) fetchExecutionNodesFromRedis(ctx context.Context) ([]*executionNode, error) {
-	rdb := np.env.GetRemoteExecutionRedisClient()
-
-	redisExecutors, err := rdb.HGetAll(ctx, np.key.toRedisKey()).Result()
+	redisExecutors, err := np.rdb.HGetAll(ctx, np.key.redisPoolKey()).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -361,70 +367,39 @@ func (np *nodePool) FindConnectedExecutorByID(executorID string) *executionNode 
 	return nil
 }
 
-// unclaimedTasksList maintains a subset of unclaimed task IDs that can be given out to newly registered executors.
-// Only the most recent maxUnclaimedTasksTracked task IDs are kept.
-type unclaimedTasksList struct {
-	taskList *list.List
-	taskMap  map[string]*list.Element
-	mu       sync.Mutex
+func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
+	key := np.key.redisUnclaimedTasksKey()
+	m := &redis.Z{
+		Member: taskID,
+		Score:  float64(time.Now().Unix()),
+	}
+	err := np.rdb.ZAdd(ctx, key, m).Err()
+	if err != nil {
+		return err
+	}
+	err = np.rdb.Expire(ctx, key, unclaimedTaskSetTTL).Err()
+	if err != nil {
+		return err
+	}
+
+	// Trim the set if necessary.
+	// The next 2 commands are not atomic but it's okay if the list length is not exactly what we want.
+	n, err := np.rdb.ZCard(ctx, key).Result()
+	if err != nil {
+		return err
+	}
+	if n > maxUnclaimedTasksTracked {
+		return np.rdb.ZRemRangeByRank(ctx, key, 0, n-maxUnclaimedTasksTracked-1).Err()
+	}
+	return nil
 }
 
-func newUnclaimedTasksList() *unclaimedTasksList {
-	l := &unclaimedTasksList{}
-	l.taskList = list.New()
-	l.taskMap = make(map[string]*list.Element)
-	return l
+func (np *nodePool) RemoveUnclaimedTask(ctx context.Context, taskID string) error {
+	return np.rdb.ZRem(ctx, np.key.redisUnclaimedTasksKey(), taskID).Err()
 }
 
-func (l *unclaimedTasksList) addTask(taskID string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if _, exists := l.taskMap[taskID]; exists {
-		return
-	}
-	e := l.taskList.PushBack(taskID)
-	l.taskMap[taskID] = e
-	if l.taskList.Len() > maxUnclaimedTasksTracked {
-		v := l.taskList.Remove(l.taskList.Front())
-		s, ok := v.(string)
-		if !ok { // Should never happen.
-			log.Warningf("non-string value in list: %T", v)
-			return
-		}
-		delete(l.taskMap, s)
-	}
-}
-
-func (l *unclaimedTasksList) removeTask(taskID string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	e, ok := l.taskMap[taskID]
-	if !ok {
-		return
-	}
-	delete(l.taskMap, taskID)
-	l.taskList.Remove(e)
-}
-
-func (l *unclaimedTasksList) sample(n int) []string {
-	l.mu.Lock()
-	unclaimed := make([]string, 0, l.taskList.Len())
-	for e := l.taskList.Front(); e != nil; e = e.Next() {
-		taskID, ok := e.Value.(string)
-		if !ok {
-			log.Warningf("Unexpected type in container: %T", e.Value)
-			continue
-		}
-		unclaimed = append(unclaimed, taskID)
-	}
-	l.mu.Unlock()
-
-	// Random sample (without replacement) up to `count` tasks from the
-	// returned results.
-	rand.Shuffle(len(unclaimed), func(i, j int) {
-		unclaimed[i], unclaimed[j] = unclaimed[j], unclaimed[i]
-	})
-	return unclaimed[:minInt(n, len(unclaimed))]
+func (np *nodePool) SampleUnclaimedTasks(ctx context.Context, n int) ([]string, error) {
+	return np.rdb.ZRandMember(ctx, np.key.redisUnclaimedTasksKey(), n, false /* withScores= */).Result()
 }
 
 type persistedTask struct {
@@ -636,7 +611,7 @@ func (s *SchedulerServer) deleteNodeFromRedis(ctx context.Context, node *scpb.Ex
 	if err := s.checkPreconditions(node); err != nil {
 		return err
 	}
-	return s.rdb.HDel(ctx, poolKey.toRedisKey(), node.GetExecutorId()).Err()
+	return s.rdb.HDel(ctx, poolKey.redisPoolKey(), node.GetExecutorId()).Err()
 }
 
 func (s *SchedulerServer) deleteNode(ctx context.Context, node *scpb.ExecutionNode, poolKey nodePoolKey) error {
@@ -734,7 +709,7 @@ func (s *SchedulerServer) insertOrUpdateNodeInRedis(ctx context.Context, executo
 	}
 
 	pipe := s.rdb.TxPipeline()
-	poolRedisKey := poolKey.toRedisKey()
+	poolRedisKey := poolKey.redisPoolKey()
 	pipe.HSet(ctx, poolRedisKey, node.GetExecutorId(), b)
 	pipe.SAdd(ctx, s.redisKeyForExecutorPools(groupID), poolRedisKey)
 	_, err = pipe.Exec(ctx)
@@ -1000,7 +975,10 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 	if !ok {
 		return nil, nil
 	}
-	taskIDs := nodePool.unclaimedTasks.sample(count)
+	taskIDs, err := nodePool.SampleUnclaimedTasks(ctx, count)
+	if err != nil {
+		return nil, err
+	}
 	tasks, err := s.readTasks(ctx, taskIDs)
 	if err != nil {
 		return nil, err
@@ -1150,7 +1128,10 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			}
 			nodePool, ok := s.getPool(key)
 			if ok {
-				nodePool.unclaimedTasks.removeTask(taskID)
+				err := nodePool.RemoveUnclaimedTask(ctx, taskID)
+				if err != nil {
+					log.Warningf("Could not remove task from unclaimed list: %s", err)
+				}
 			}
 
 			// Prometheus: observe queue wait time.
@@ -1210,7 +1191,10 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		return err
 	}
 
-	nodeBalancer.unclaimedTasks.addTask(enqueueRequest.GetTaskId())
+	err = nodeBalancer.AddUnclaimedTask(ctx, enqueueRequest.GetTaskId())
+	if err != nil {
+		log.Warningf("Could not add task to unclaimed task list: %s", err)
+	}
 
 	probeCount := minInt(opts.numReplicas, nodeCount)
 	probesSent := 0
