@@ -26,7 +26,7 @@ import (
 var (
 	// WorkspaceMarkedForRemovalError is returned from workspace operations
 	// whenever Remove was previously called on the workspace.
-	WorkspaceMarkedForRemovalError = status.UnavailableError("workspace is marked for deletion")
+	WorkspaceMarkedForRemovalError = status.UnavailableError("workspace is marked for removal")
 )
 
 type workspaceState int
@@ -45,7 +45,7 @@ type Workspace struct {
 	// to make sure this map accurately reflects the filesystem.
 	Inputs map[string]*repb.Digest
 
-	mu       sync.Mutex // protects(deleting)
+	mu       sync.Mutex // protects(removing)
 	removing bool
 }
 
