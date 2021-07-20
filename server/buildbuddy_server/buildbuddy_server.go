@@ -103,6 +103,9 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 	if err != nil {
 		return nil, err
 	}
+	if inv != nil && !s.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+		inv.HasChunkedEventLogs = false
+	}
 
 	rsp := &inpb.GetInvocationResponse{
 		Invocation: []*inpb.Invocation{
