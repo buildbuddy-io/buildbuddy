@@ -60,14 +60,16 @@ const (
 	// https://github.com/firecracker-microvm/firecracker/blob/main/docs/snapshotting/network-for-clones.md
 	tapDeviceName = "vmtap0"
 	tapDeviceMac  = "7a:a8:fa:dc:76:b7"
-	tapAddr       = "192.168.241.1/29"
+	tapIP         = "192.168.241.1"
+	tapAddr       = tapIP + "/29"
 
-	vmIP   = "192.168.241.2"
-	vmAddr = vmIP + "/29"
+	vmIP    = "192.168.241.2"
+	vmAddr  = vmIP + "/29"
+	vmIface = "eth0"
 
 	// https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/networking_guide/sec-configuring_ip_networking_from_the_kernel_command_line
 	// ip<client-IP-number>:[<server-id>]:<gateway-IP-number>:<netmask>:<client-hostname>:<interface>:{dhcp|dhcp6|auto6|on|any|none|off}
-	machineIPBootArgs = "ip=" + vmIP + "::192.168.241.1:255.255.255.48::eth0:off"
+	machineIPBootArgs = "ip=" + vmIP + ":::255.255.255.48::" + vmIface + ":off"
 
 	// This is pretty arbitrary limit -- when vmIdx gets this big it will
 	// roll over to 0, causing new VMs to start re-using old local IPs. But
@@ -414,15 +416,23 @@ func (c *firecrackerContainer) getJailerCommand(ctx context.Context) *exec.Cmd {
 
 func (c *firecrackerContainer) getConfig(ctx context.Context, containerFS, workspaceFS string) (*fcclient.Config, error) {
 	bootArgs := "ro console=ttyS0 noapic reboot=k panic=1 pci=off nomodules=1 random.trust_cpu=on i8042.noaux=1 tsc=reliable ipv6.disable=1"
-	if c.debugMode {
-		bootArgs = "--debug_mode " + bootArgs
-	} else {
-		bootArgs += " quiet"
-	}
 	if c.enableNetworking {
 		bootArgs += " " + machineIPBootArgs
 	}
 
+	// End the kernel args, before passing some more args to init.
+	if !c.debugMode {
+		bootArgs += " quiet"
+	}
+
+	// Pass some flags to the init script.
+	if c.debugMode {
+		bootArgs = "--debug_mode " + bootArgs
+	}
+	if c.enableNetworking {
+		bootArgs = "--set_default_route " + bootArgs
+	}
+	log.Errorf("boot args: %q", bootArgs)
 	cfg := &fcclient.Config{
 		VMID:            c.id,
 		SocketPath:      firecrackerSocketPath,
