@@ -10,6 +10,8 @@ import format from "../format/format";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 
+export const InvocationStatus = invocation.Invocation.InvocationStatus;
+
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
   cacheStats: cache.CacheStats[] = [];
@@ -375,31 +377,35 @@ export default class InvocationModel {
   }
 
   getStatus() {
-    let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
-    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
-      return "Disconnected";
+    const invocation = this.invocations[0];
+    if (!invocation) return "";
+
+    switch (invocation.invocationStatus) {
+      case InvocationStatus.COMPLETE_INVOCATION_STATUS:
+        return invocation.success ? "Succeeded" : "Failed";
+      case InvocationStatus.PARTIAL_INVOCATION_STATUS:
+        return "In progress...";
+      case InvocationStatus.DISCONNECTED_INVOCATION_STATUS:
+        return "Disconnected";
+      default:
+        return "";
     }
-    if (!this.started) {
-      return "Not started";
-    }
-    if (!this.finished) {
-      return "In progress...";
-    }
-    return this.finished.exitCode.code == 0 ? "Succeeded" : "Failed";
   }
 
   getStatusClass() {
-    let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
-    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
-      return "disconnected";
+    const invocation = this.invocations[0];
+    if (!invocation) return "";
+
+    switch (invocation.invocationStatus) {
+      case InvocationStatus.COMPLETE_INVOCATION_STATUS:
+        return invocation.success ? "success" : "failure";
+      case InvocationStatus.PARTIAL_INVOCATION_STATUS:
+        return "in-progress";
+      case InvocationStatus.DISCONNECTED_INVOCATION_STATUS:
+        return "disconnected";
+      default:
+        return "";
     }
-    if (!this.started) {
-      return "neutral";
-    }
-    if (!this.finished) {
-      return "in-progress";
-    }
-    return this.finished.exitCode.code == 0 ? "success" : "failure";
   }
 
   getFaviconType() {
