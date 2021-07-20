@@ -17,10 +17,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v1
 
-      - name: Install tools
-        run: |
-          npm install --global prettier@2.2.1
-
       - name: gofmt
         run: |
           gofmt -d . > gofmt-diff.txt || true
@@ -55,7 +51,7 @@ jobs:
           git merge-base HEAD master |
             xargs git diff --name-only --diff-filter=AMRCT |
             grep -P '\.(js|jsx|ts|tsx|html|css|yaml|json|md|xml)$' |
-            ( xargs --no-run-if-empty --delimiter='\n' prettier --check || true ) |
+            ( xargs --no-run-if-empty --delimiter='\n' npx prettier@2.2.1 --check || true ) |
             grep -P '^\[warn\]' > prettier-errors.txt
 
       - name: Summary
