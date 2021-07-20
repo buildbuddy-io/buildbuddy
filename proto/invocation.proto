@@ -83,8 +83,7 @@ message Invocation {
 
   string last_chunk_id = 21;
 
-  // This field indicates to the client if we have chunked event logs;
-  // it is set to true if last_chunk_id is non-empty
+  // This field indicates to the client if we have chunked event logs
   bool has_chunked_event_logs = 22;
 }
 

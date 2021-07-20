@@ -16,8 +16,10 @@ message GetEventLogChunkRequest {
   // Optionally specify the chunk to be returned; gets the last chunk if empty
   string chunk_id = 3;
 
-  // Specify fewest lines that may be returned, additional chunks will be read
-  // to meet this requirement
+  // Specify fewest lines that may be returned; additional chunks may be read
+  // to meet this requirement. If no more chunks are available to be read and
+  // this requirement is still not satisfied, the buffer will instead contain as
+  // many lines as are available.
   int32 min_lines = 4;
 
   // Specify direction to read to satisfy the minimum line count
