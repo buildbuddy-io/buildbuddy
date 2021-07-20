@@ -31,7 +31,6 @@ func ShortFormatPatterns(patterns []string) string {
 		}
 		displayedPatterns = append(displayedPatterns, pattern)
 		charCount += patternLength
-
 	}
 	out := strings.Join(displayedPatterns, listSeparator)
 	if len(displayedPatterns) < len(patterns) {
