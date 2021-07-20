@@ -55,7 +55,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	rsp := &elpb.GetEventLogChunkResponse{
 		Chunk: &elpb.GetEventLogChunkResponse_Chunk{
 			ChunkId: chunkstore.ChunkIndexAsString(intChunkId),
-			Lines:   make([][]byte, 0),
+			Buffer:  make([]byte, 0),
 		},
 	}
 	if intChunkId < math.MaxInt16-1 {
@@ -65,21 +65,25 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		rsp.PreviousChunkId = chunkstore.ChunkIndexAsString(intChunkId - 1)
 	}
 
+	lineCount := 0
 	for {
 		buffer, err := c.ReadChunk(ctx, eventLogPath, intChunkId)
 		if err != nil {
 			return nil, err
 		}
-		lines := make([][]byte, 0)
 		scanner := bufio.NewScanner(bytes.NewReader(buffer))
 		for scanner.Scan() {
 			if scanner.Err() != nil {
 				return nil, err
 			}
-			lines = append(lines, scanner.Bytes())
+			lineCount++
 		}
-		rsp.Chunk.Lines = append(lines, rsp.Chunk.Lines...)
-		if len(rsp.Chunk.Lines) >= int(req.MinLines) {
+		if req.ReadBackward {
+			rsp.Chunk.Buffer = append(buffer, rsp.Chunk.Buffer...)
+		} else {
+			rsp.Chunk.Buffer = append(rsp.Chunk.Buffer, buffer...)
+		}
+		if lineCount >= int(req.MinLines) {
 			break
 		} else if req.ReadBackward || req.ChunkId == "" {
 			// If the client specified a backwards Read or the client requested the tail of the log

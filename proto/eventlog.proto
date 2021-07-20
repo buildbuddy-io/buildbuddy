@@ -35,7 +35,6 @@ message GetEventLogChunkResponse {
     string chunk_id = 1;
 
     bytes buffer = 2;
-    repeated bytes lines = 3;
   }
 
   // The requested chunk
