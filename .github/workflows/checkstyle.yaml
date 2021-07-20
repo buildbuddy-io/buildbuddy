@@ -52,7 +52,7 @@ jobs:
             xargs git diff --name-only --diff-filter=AMRCT |
             grep -P '\.(js|jsx|ts|tsx|html|css|yaml|json|md|xml)$' |
             ( xargs --no-run-if-empty --delimiter='\n' npx prettier@2.2.1 --check || true ) |
-            grep -P '^\[warn\]' > prettier-errors.txt
+            ( grep -P '^\[warn\]' || true ) > prettier-errors.txt
 
       - name: Summary
         run: |
