@@ -32,6 +32,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	log.Configure(log.Opts{Level: "debug", EnableShortFileName: true})
+
 	emptyActionDir, err := os.MkdirTemp("", "fc-container-*")
 	if err != nil {
 		log.Fatalf("unable to make temp dir: %s", err)
