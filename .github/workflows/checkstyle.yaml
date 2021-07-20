@@ -17,6 +17,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v1
 
+      - name: Install tools
+        run: |
+          npm install --global prettier@2.2.1
+
       - name: gofmt
         run: |
           gofmt -d . > gofmt-diff.txt || true
@@ -44,6 +48,16 @@ jobs:
           echo "clang format errors:"
           cat clang-format-errors.txt
 
+      - name: prettier
+        # NOTE: Only run prettier on files that differ from master, since
+        # prettier can be slow.
+        run: |
+          git merge-base HEAD master |
+            xargs git diff --name-only --diff-filter=AMRCT |
+            grep -P '\.(js|jsx|ts|tsx|html|css|yaml|json|md|xml)$' |
+            ( xargs --no-run-if-empty --delimiter='\n' prettier --check || true ) |
+            grep -P '^\[warn\]' > prettier-errors.txt
+
       - name: Summary
         run: |
           echo "===== gofmt diff ====="
@@ -54,6 +68,8 @@ jobs:
           cat gazelle-diff.txt
           echo "===== clang-format errors ====="
           cat clang-format-errors.txt
+          echo "===== prettier errors ====="
+          cat prettier-errors.txt
 
       - name: Check
         run: |
@@ -61,3 +77,4 @@ jobs:
           if [ -s gofmt-diff.txt ]; then exit 1; fi
           if [ -s buildifier-diff.txt ]; then exit 1; fi
           if [ -s clang-format-errors.txt ]; then exit 1; fi
+          if [ -s prettier-errors.txt ]; then exit 1; fi
