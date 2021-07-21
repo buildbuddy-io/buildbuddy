@@ -30,7 +30,10 @@ type Chunkstore struct {
 type ChunkstoreOptions struct {
 	WriteBlockSize       int
 	WriteTimeoutDuration time.Duration
-	NoSplitWrite         bool
+
+	// If true, individual buffers passed to Write will not be split accross
+	// multiple blobs unless the buffer itself exceeds the WriteBlockSize
+	NoSplitWrite bool
 }
 
 func New(blobstore interfaces.Blobstore, co *ChunkstoreOptions) *Chunkstore {
@@ -120,7 +123,7 @@ func (c *Chunkstore) GetLastChunkIndex(ctx context.Context, blobName string, sta
 		}
 		if !exists {
 			if index == 0 || index == startingIndex {
-				return math.MaxUint16, status.OutOfRangeError(fmt.Sprintf("No Chunk found at index %d", index))
+				return math.MaxUint16, status.NotFoundErrorf("No Chunk found at index %d", index)
 			}
 			break
 		}
@@ -386,6 +389,9 @@ func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
 }
 
 func (w *ChunkstoreWriter) GetLastChunkIndex() uint16 {
+	// Call Write with an empty buffer to update lastChunkIndex without triggering
+	// an actual write to blobstore, which lets us get an updated index in case a
+	// timeout-based flush has happened between now and the last call to Write.
 	w.Write([]byte{})
 	return w.lastChunkIndex
 }

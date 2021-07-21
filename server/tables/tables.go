@@ -101,7 +101,8 @@ type Invocation struct {
 	DurationUsec                     int64
 	UploadThroughputBytesPerSecond   int64
 	ActionCount                      int64
-	Perms                            int   `gorm:"index:perms"`
+	Perms                            int `gorm:"index:perms"`
+	RedactionFlags                   int
 	InvocationStatus                 int64 `gorm:"index:invocation_status_idx"`
 	ActionCacheHits                  int64
 	ActionCacheMisses                int64

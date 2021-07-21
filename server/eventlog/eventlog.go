@@ -11,8 +11,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	ansi "github.com/leaanthony/go-ansi-parser"
 )
 
@@ -48,14 +50,20 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		startingIndex, _ := chunkstore.ChunkIndexAsUint16(inv.LastChunkId)
 		var err error
 		if intChunkId, err = c.GetLastChunkIndex(ctx, eventLogPath, startingIndex); err != nil {
-			return nil, err
+			if status.IsNotFoundError(err) && inv.InvocationStatus != int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
+				return &elpb.GetEventLogChunkResponse{
+					Chunk: &elpb.GetEventLogChunkResponse_Chunk{
+						Buffer: make([]byte, 0),
+					},
+				}, nil
+			}
 		}
 	}
 
 	rsp := &elpb.GetEventLogChunkResponse{
 		Chunk: &elpb.GetEventLogChunkResponse_Chunk{
 			ChunkId: chunkstore.ChunkIndexAsString(intChunkId),
-			Lines:   make([][]byte, 0),
+			Buffer:  make([]byte, 0),
 		},
 	}
 	if intChunkId < math.MaxInt16-1 {
@@ -65,23 +73,28 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		rsp.PreviousChunkId = chunkstore.ChunkIndexAsString(intChunkId - 1)
 	}
 
+	lineCount := 0
 	for {
 		buffer, err := c.ReadChunk(ctx, eventLogPath, intChunkId)
 		if err != nil {
 			return nil, err
 		}
-		lines := make([][]byte, 0)
 		scanner := bufio.NewScanner(bytes.NewReader(buffer))
 		for scanner.Scan() {
 			if scanner.Err() != nil {
 				return nil, err
 			}
-			lines = append(lines, scanner.Bytes())
+			lineCount++
 		}
-		rsp.Chunk.Lines = append(lines, rsp.Chunk.Lines...)
-		if len(rsp.Chunk.Lines) >= int(req.MinLines) {
+		if req.ReadBackward {
+			rsp.Chunk.Buffer = append(buffer, rsp.Chunk.Buffer...)
+		} else {
+			rsp.Chunk.Buffer = append(rsp.Chunk.Buffer, buffer...)
+		}
+		if lineCount >= int(req.MinLines) {
 			break
-		} else if req.ReadBackward || req.ChunkId == "" {
+		}
+		if req.ReadBackward || req.ChunkId == "" {
 			// If the client specified a backwards Read or the client requested the tail of the log
 			if intChunkId == 0 {
 				rsp.PreviousChunkId = ""
@@ -156,6 +169,9 @@ func (w *EventLogWriter) WriteLines(p []byte) (int, error) {
 	return bytesWritten, err
 }
 
+// Split ANSI text by line, rewriting ANSI control sequences when necessary such
+// that any line printed individually is still formatted as it was in the
+// original buffer
 func (w *EventLogWriter) WriteLinesANSI(p []byte) (int, error) {
 	s := string(p)
 	if !ansi.HasEscapeCodes(s) {

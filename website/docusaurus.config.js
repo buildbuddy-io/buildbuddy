@@ -217,6 +217,10 @@ module.exports = {
     ],
   ],
   plugins: [
+    [require.resolve('@cmfcmf/docusaurus-search-local'), {
+      indexDocs: true,
+      indexBlog: true,
+    }],
     [
       '@docusaurus/plugin-client-redirects',
       {

@@ -198,3 +198,13 @@ If you're doing a lot of Java builds on your Mac executors that are not fully he
 ```
 brew install --cask adoptopenjdk
 ```
+
+### Optional: Increase the maximum number of open files
+
+Some builds will exceed the default maximum number of open files on the Mac executor (which is relatively low). You'll know if you're hitting this limit if you see an error message that looks like `too many open files in system`. 
+
+You can increase this limit by running the following command:
+
+```
+sudo launchctl limit maxfiles 5000000 5000000
+```

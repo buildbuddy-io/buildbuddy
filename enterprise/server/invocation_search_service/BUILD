@@ -13,6 +13,7 @@ go_library(
         "//server/build_event_protocol/build_event_handler",
         "//server/environment",
         "//server/tables",
+        "//server/util/alert",
         "//server/util/blocklist",
         "//server/util/db",
         "//server/util/perms",

@@ -22,6 +22,7 @@ ts_library(
         "//app/favicon",
         "//app/flame_chart",
         "//app/format",
+        "//app/preferences",
         "//app/router",
         "//app/service",
         "//app/target",

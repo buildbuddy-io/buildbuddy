@@ -2,11 +2,11 @@ import React from "react";
 import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
 import router, { Path } from "../router/router";
+import UserPreferences from "../preferences/preferences";
 
 interface Props {
   children?: any;
-  denseModeEnabled: boolean;
-  handleDenseModeToggled: VoidFunction;
+  preferences: UserPreferences;
   user: User;
   showHamburger: boolean;
 }
@@ -34,7 +34,7 @@ export default class MenuComponent extends React.Component {
   }
 
   handleToggleDenseModeClicked() {
-    this.props.handleDenseModeToggled();
+    this.props.preferences.toggleDenseMode();
     this.dismissMenu();
   }
 
@@ -114,7 +114,7 @@ export default class MenuComponent extends React.Component {
                     </a>
                   </li>
                   <li onClick={this.handleToggleDenseModeClicked.bind(this)}>
-                    {this.props.denseModeEnabled ? "Disable" : "Enable"} dense mode
+                    {this.props.preferences.denseModeEnabled ? "Disable" : "Enable"} dense mode
                   </li>
                   <li onClick={this.handleSetupClicked.bind(this)}>Setup instructions</li>
                   {!capabilities.enterprise && (

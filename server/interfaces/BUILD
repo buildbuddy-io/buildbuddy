@@ -18,5 +18,6 @@ go_library(
         "//proto:workflow_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/tables",
+        "//server/util/alert",
     ],
 )

@@ -8,6 +8,7 @@ import InvocationModel from "./invocation_model";
 interface Props {
   model: InvocationModel;
   expanded: boolean;
+  dark: boolean;
 }
 
 interface State {
@@ -85,8 +86,8 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
 
   render() {
     return (
-      <div className={`card dark ${this.props.expanded ? "expanded" : ""}`}>
-        <img className="icon" src="/image/log-circle-light.svg" />
+      <div className={`card ${this.props.dark ? "dark" : "light-terminal"} ${this.props.expanded ? "expanded" : ""}`}>
+        <img className="icon" src={this.props.dark ? "/image/log-circle-light.svg" : "/image/log-circle.svg"} />
         <div className="content">
           <div className="title">Build logs </div>
           <div className="details">
