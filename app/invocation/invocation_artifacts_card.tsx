@@ -91,7 +91,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                   ))}
                   {target.hiddenOutputCount > 0 && (
                     <div className="artifact-hidden-count">
-                      + {target.hiddenOutputCount} more {target.hiddenOutputCount === 1 ? "artifact" : "artifacts"} for
+                      {target.hiddenOutputCount} more {target.hiddenOutputCount === 1 ? "artifact" : "artifacts"} for
                       this target
                     </div>
                   )}
@@ -100,7 +100,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
             ))}
             {hiddenTargetCount > 0 && (
               <div className="artifact-hidden-count">
-                + {hiddenTargetCount} more {hiddenTargetCount === 1 ? "target" : "targets"} with artifacts
+                {hiddenTargetCount} more {hiddenTargetCount === 1 ? "target" : "targets"} with artifacts
               </div>
             )}
             {totalOutputCount === 0 && <span>{this.props.filter ? "No matching artifacts" : "No artifacts"}</span>}
