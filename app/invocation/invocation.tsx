@@ -198,7 +198,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           />
 
           {(activeTab === "targets" || activeTab === "artifacts") && (
-            <InvocationFilterComponent hash={activeTab} search={this.props.search} />
+            <InvocationFilterComponent hash={this.props.hash} search={this.props.search} />
           )}
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted.description && (
