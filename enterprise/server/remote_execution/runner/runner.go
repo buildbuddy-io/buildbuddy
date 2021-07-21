@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/containerd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -315,22 +316,6 @@ func NewPool(env environment.Env) (*Pool, error) {
 	return p, nil
 }
 
-func (p *Pool) props() *platform.ExecutorProperties {
-	return &platform.ExecutorProperties{
-		ContainerType: p.containerType(),
-	}
-}
-
-func (p *Pool) containerType() platform.ContainerType {
-	if p.dockerClient != nil {
-		return platform.DockerContainerType
-	}
-	if p.containerdSocket != "" {
-		return platform.ContainerdContainerType
-	}
-	return platform.BareContainerType
-}
-
 func (p *Pool) shuttingDown() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -531,16 +516,16 @@ func (p *Pool) WarmupDefaultImage() {
 // The returned runner is considered "active" and will be killed if the
 // executor is shut down.
 func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunner, error) {
-	props, err := platform.ParseProperties(task.GetCommand().GetPlatform(), p.props())
-	if err != nil {
+	executorProps := platform.GetExecutorProperties(p.env.GetConfigurator().GetExecutorConfig())
+	props := platform.ParseProperties(task.GetCommand().GetPlatform())
+	// TODO: This mutates the task; find a cleaner way to do this.
+	if err := platform.ApplyOverrides(executorProps, props, task.GetCommand()); err != nil {
 		return nil, err
 	}
-	// TODO: This mutates the task; find a cleaner way to do this.
-	platform.ApplyOverrides(p.env, props, task.GetCommand())
 
-	user, err := auth.UserFromTrustedJWT(ctx)
 	// PermissionDenied and Unimplemented both imply that this is an
 	// anonymous execution, so ignore those.
+	user, err := auth.UserFromTrustedJWT(ctx)
 	if err != nil && !status.IsPermissionDeniedError(err) && !status.IsUnimplementedError(err) {
 		return nil, err
 	}
@@ -580,7 +565,10 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	if err != nil {
 		return nil, err
 	}
-	ctr := p.newContainer(props)
+	ctr, err := p.newContainer(ctx, props)
+	if err != nil {
+		return nil, err
+	}
 	r := &CommandRunner{
 		ACL:                ACLForUser(user),
 		PlatformProperties: props,
@@ -593,9 +581,9 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	return r, nil
 }
 
-func (p *Pool) newContainer(props *platform.Properties) container.CommandContainer {
+func (p *Pool) newContainer(ctx context.Context, props *platform.Properties) (container.CommandContainer, error) {
 	var ctr container.CommandContainer
-	switch p.containerType() {
+	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:
 		opts := p.dockerOptions()
 		opts.ForceRoot = props.DockerForceRoot
@@ -603,10 +591,23 @@ func (p *Pool) newContainer(props *platform.Properties) container.CommandContain
 			p.dockerClient, props.ContainerImage, p.hostBuildRoot(), opts)
 	case platform.ContainerdContainerType:
 		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
+	case platform.FirecrackerContainerType:
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         props.ContainerImage,
+			ActionWorkingDirectory: p.hostBuildRoot(),
+			NumCPUs:                1,
+			MemSizeMB:              2500,
+			EnableNetworking:       false,
+		}
+		c, err := firecracker.NewContainer(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		ctr = c
 	default:
 		ctr = bare.NewBareCommandContainer()
 	}
-	return container.NewTracedCommandContainer(ctr)
+	return container.NewTracedCommandContainer(ctr), nil
 }
 
 // query specifies a set of search criteria for runners within a pool.
