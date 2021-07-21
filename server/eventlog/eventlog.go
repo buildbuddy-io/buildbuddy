@@ -37,7 +37,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		return nil, err
 	}
 
-	invocationInProgress := inv.InvocationStatus != int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS)
+	invocationInProgress := inv.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS)
 	c := chunkstore.New(env.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
 	eventLogPath := GetEventLogPathFromInvocationId(req.InvocationId)
 	startingIndex, _ := chunkstore.ChunkIndexAsUint16(inv.LastChunkId)
