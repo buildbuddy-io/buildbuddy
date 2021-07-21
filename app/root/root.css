@@ -523,8 +523,9 @@ button {
 .card .more {
   margin-top: 16px;
   font-weight: 600;
-  color: #aaa;
+  color: #263238;
   cursor: pointer;
+  user-select: none;
 }
 
 .card-suggestion-message {
@@ -1059,15 +1060,26 @@ code .comment {
 .artifact-name {
   font-weight: 600;
   text-decoration: underline;
-  margin-left: 32px;
-  margin-top: 4px;
   cursor: pointer;
   display: block;
 }
 
 .artifact-section-title {
-  color: #aaa;
+  color: #757575;
   margin-top: 8px;
+}
+
+.artifacts .artifact-list {
+  padding-left: 32px;
+}
+
+.artifacts :is(.artifact-name, .artifact-hidden-count) {
+  margin-top: 4px;
+}
+
+.artifacts .artifact-hidden-count {
+  color: #bdbdbd;
+  margin-bottom: 8px;
 }
 
 .stat-cards {
