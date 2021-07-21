@@ -46,14 +46,16 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
         })
       )
       .then((response) => {
-        const consoleBuffer = this.state.consoleBuffer + String.fromCharCode(...response.chunk?.buffer);
-        this.setState({ consoleBuffer });
+        this.setState({
+          consoleBuffer: this.state.consoleBuffer + String.fromCharCode(...(response.chunk?.buffer || [])),
+        });
 
-        // Empty next chunk ID means there are no more chunks to fetch.
+        // Empty next chunk ID means the invocation is complete and we've reached
+        // the end of the log.
         if (!response.nextChunkId) return;
 
-        // Unchanged next chunk ID means the chunk has not yet been written
-        // yet and that we should poll for it.
+        // Unchanged next chunk ID means the invocation is still in progress and
+        // we should continue polling that chunk.
         if (response.nextChunkId === chunkId) {
           this.pollTailTimeout = window.setTimeout(() => this.fetchTail(chunkId), POLL_TAIL_INTERVAL_MS);
           return;
