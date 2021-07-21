@@ -418,11 +418,7 @@ button {
 }
 
 .card.card-skipped {
-  border-left: 6px solid #888;
-}
-
-.card.card-skipped .content .details .list-grid .target {
-  color: #673ab7;
+  border-left: 6px solid #673ab7;
 }
 
 .card.card-failure {
