@@ -21,7 +21,7 @@ export default class TargetLogCardComponent extends React.Component {
           <div className="test-subtitle">{this.props.subtitle}</div>
           {this.props.contents && (
             <div className="test-log">
-              <TerminalComponent value={this.props.contents} />
+              <TerminalComponent value={this.props.contents} lightTheme={!this.props.dark} />
             </div>
           )}
         </div>
