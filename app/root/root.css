@@ -421,6 +421,10 @@ button {
   border-left: 6px solid #8bc34a;
 }
 
+.card.card-skipped {
+  border-left: 6px solid #673ab7;
+}
+
 .card.card-failure {
   border-left: 6px solid #f44336;
 }
