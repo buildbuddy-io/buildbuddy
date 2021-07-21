@@ -490,6 +490,6 @@ export default class InvocationModel {
   }
 
   isComplete(): boolean {
-    return this.invocations[0]?.status === InvocationStatus.COMPLETE_INVOCATION_STATUS;
+    return this.invocations[0]?.invocationStatus === InvocationStatus.COMPLETE_INVOCATION_STATUS;
   }
 }
