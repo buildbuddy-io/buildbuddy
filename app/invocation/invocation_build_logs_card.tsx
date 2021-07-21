@@ -18,7 +18,7 @@ export default class BuildLogsCardComponent extends React.Component {
         <div className="content">
           <div className="title">Build logs </div>
           <div className="details">
-            <TerminalComponent value={this.props.model.consoleBuffer} />
+            <TerminalComponent value={this.props.model.consoleBuffer} lightTheme={!this.props.dark} />
           </div>
         </div>
       </div>

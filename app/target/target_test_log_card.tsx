@@ -120,7 +120,7 @@ export default class TargetTestLogCardComponent extends React.Component {
           )}
           {this.state.cacheEnabled && this.state.testLog && (
             <div className="test-log">
-              <TerminalComponent value={this.state.testLog} />
+              <TerminalComponent value={this.state.testLog} lightTheme={!this.props.dark} />
             </div>
           )}
           {this.state.cacheEnabled && this.state.loading && (

@@ -54,7 +54,7 @@
     "protobufjs": "^6.8.9",
     "react": "^16.8.6",
     "react-dom": "^16.8.6",
-    "react-lazylog": "https://github.com/buildbuddy-io/react-lazylog.git#37947b0c1363acfd3ec14c937d051f547ea92547",
+    "react-lazylog": "https://github.com/buildbuddy-io/react-lazylog.git#571fcaee618082aa141d7d09c5a3054ed6324837",
     "react-modal": "^3.11.2",
     "react-virtualized": "^9.21.2",
     "recharts": "^2.0.8",
