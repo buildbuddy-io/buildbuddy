@@ -11,7 +11,6 @@ go_library(
         "//server/backends/chunkstore",
         "//server/environment",
         "//server/interfaces",
-        "//server/util/status",
         "@com_github_leaanthony_go_ansi_parser//:go-ansi-parser",
     ],
 )
