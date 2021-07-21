@@ -12,8 +12,6 @@ export const InvocationStatus = invocation.Invocation.InvocationStatus;
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 
-export const InvocationStatus = invocation.Invocation.InvocationStatus;
-
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
   cacheStats: cache.CacheStats[] = [];
@@ -493,7 +491,7 @@ export default class InvocationModel {
     return this.getCommand() == "query";
   }
 
-  hasChunkedEventLogs(): string {
+  hasChunkedEventLogs(): boolean {
     return this.invocations[0]?.hasChunkedEventLogs || false;
   }
 

@@ -40,38 +40,34 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
     window.clearTimeout(this.pollTailTimeout);
   }
 
-  private fetchTail(isFirstRequest = false) {
+  private fetchTail(isFirstRequest = false, chunkId = this.state.nextChunkId) {
     rpcService.service
       .getEventLogChunk(
         new eventlog.GetEventLogChunkRequest({
           invocationId: this.props.model.getId(),
-          chunkId: this.state.nextChunkId,
+          chunkId,
           minLines: MIN_LINES,
           readBackward: isFirstRequest,
         })
       )
       .then((response) => {
-        let consoleBuffer = this.state.consoleBuffer;
-        for (const line of response.chunk?.lines || []) {
-          consoleBuffer += String.fromCharCode(...line) + "\n";
-        }
         const requestedChunkId = this.state.nextChunkId;
-        const nextChunkId = response.nextChunkId;
-        this.setState({ consoleBuffer, nextChunkId });
+        const consoleBuffer = this.state.consoleBuffer + String.fromCharCode(...response.chunk?.buffer);
+        this.setState({ consoleBuffer, nextChunkId: response.nextChunkId });
 
         // Empty next chunk ID means there are no more chunks to fetch.
-        if (!nextChunkId) return;
+        if (!response.nextChunkId) return;
 
         // Unchanged next chunk ID means the chunk has not yet been written
         // yet and that we should poll for it.
-        if (nextChunkId === requestedChunkId) {
+        if (response.nextChunkId === requestedChunkId) {
           this.pollTailTimeout = window.setTimeout(() => this.fetchTail(), POLL_TAIL_INTERVAL_MS);
           return;
         }
 
         // New next chunk ID means we successfully fetched the requested
         // chunk, and more may be available. Try fetching it immediately.
-        this.fetchTail();
+        this.fetchTail(/*isFirstRequest=*/ false, response.nextChunkId);
       })
       .catch((e) => errorService.handleError(e));
   }
