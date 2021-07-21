@@ -1,7 +1,5 @@
 import React from "react";
 import { eventlog } from "../../proto/eventlog_ts_proto";
-import { invocation } from "../../proto/invocation_ts_proto";
-import capabilities from "../capabilities/capabilities";
 import errorService from "../errors/error_service";
 import rpcService from "../service/rpc_service";
 import { TerminalComponent } from "../terminal/terminal";
@@ -33,7 +31,7 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
   private pollTailTimeout: number | null = null;
 
   componentDidMount() {
-    if (this.shouldFetchFromEventLog()) {
+    if (this.props.model.hasChunkedEventLogs()) {
       this.fetchTail(/*isFirstRequest=*/ true);
     }
   }
@@ -42,15 +40,7 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
     window.clearTimeout(this.pollTailTimeout);
   }
 
-  private shouldFetchFromEventLog() {
-    return capabilities.chunkedEventLogs && Boolean(this.props.model.invocations[0]?.lastChunkId);
-  }
-
   private fetchTail(isFirstRequest = false) {
-    let rpcError: BuildBuddyError;
-    let nextChunkId = "";
-    const wasCompleteBeforeMakingRequest = this.props.model.isComplete();
-
     rpcService.service
       .getEventLogChunk(
         new eventlog.GetEventLogChunkRequest({
@@ -65,47 +55,29 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
         for (const line of response.chunk?.lines || []) {
           consoleBuffer += String.fromCharCode(...line) + "\n";
         }
-        nextChunkId = response.nextChunkId;
+        const requestedChunkId = this.state.nextChunkId;
+        const nextChunkId = response.nextChunkId;
         this.setState({ consoleBuffer, nextChunkId });
-      })
-      .catch((e) => {
-        rpcError = BuildBuddyError.parse(e);
-      })
-      .finally(() => {
-        // NotFound / OutOfRange errors just mean the next chunk has not yet been written
-        // and that we should continue polling.
-        if (rpcError?.code === "NotFound" || rpcError?.code === "OutOfRange") {
-          // If the tail chunk of a completed invocation was not found, no new
-          // chunks should be written, so stop polling.
-          // Note: this relies on the server not writing any new chunks after an
-          // invocation is marked complete.
-          if (wasCompleteBeforeMakingRequest) return;
 
-          // Wait some time since new chunks are unlikely to be written since we last made
-          // our request.
+        // Empty next chunk ID means there are no more chunks to fetch.
+        if (!nextChunkId) return;
+
+        // Unchanged next chunk ID means the chunk has not yet been written
+        // yet and that we should poll for it.
+        if (nextChunkId === requestedChunkId) {
           this.pollTailTimeout = window.setTimeout(() => this.fetchTail(), POLL_TAIL_INTERVAL_MS);
           return;
         }
 
-        // Other error codes indicate something is wrong and that we should stop fetching.
-        if (rpcError) {
-          errorService.handleError(rpcError);
-          return;
-        }
-
-        // There won't be a next chunk ID if we've reached the upper limit.
-        // This should rarely happen (if ever) but check for it just to be safe.
-        if (!nextChunkId) return;
-
-        // At this point, we successfully fetched a chunk. Immediately request the next
-        // chunk to avoid unnecessarily delaying the logs from being displayed in case
-        // more chunks are already available.
+        // New next chunk ID means we successfully fetched the requested
+        // chunk, and more may be available. Try fetching it immediately.
         this.fetchTail();
-      });
+      })
+      .catch((e) => errorService.handleError(e));
   }
 
   private getConsoleBuffer() {
-    if (!this.shouldFetchFromEventLog()) {
+    if (!this.props.model.hasChunkedEventLogs()) {
       return this.props.model.consoleBuffer || "";
     }
 

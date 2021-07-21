@@ -485,8 +485,8 @@ export default class InvocationModel {
     return this.getCommand() == "query";
   }
 
-  getLastChunkId(): string {
-    return this.invocations[0]?.lastChunkId || "";
+  hasChunkedEventLogs(): string {
+    return this.invocations[0]?.hasChunkedEventLogs || false;
   }
 
   isComplete(): boolean {
