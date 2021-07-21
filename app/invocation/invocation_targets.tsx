@@ -98,7 +98,7 @@ export default class TargetsComponent extends React.Component {
           <TargetsCardComponent
             buildEvents={this.props.model.skipped}
             className="card-skipped"
-            iconPath="/image/info.svg"
+            iconPath="/image/skip-forward.svg"
             presentVerb={`${this.props.model.skipped.length == 1 ? "target" : "targets"}`}
             pastVerb={`${this.props.model.skipped.length == 1 ? "target" : "targets"} skipped`}
             model={this.props.model}
