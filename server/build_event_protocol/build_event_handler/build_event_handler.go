@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
@@ -173,7 +172,7 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 		return err
 	}
 	if e.logWriter != nil {
-		invocation.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.GetLastChunkIndex())
+		invocation.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.ChunkstoreWriter.GetLastChunkIndex())
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
@@ -239,7 +238,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		return err
 	}
 	if e.logWriter != nil {
-		invocation.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.GetLastChunkIndex())
+		invocation.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.ChunkstoreWriter.GetLastChunkIndex())
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
@@ -339,7 +338,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 
 		if e.logWriter != nil {
-			ti.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.GetLastChunkIndex())
+			ti.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.ChunkstoreWriter.GetLastChunkIndex())
 		}
 		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
 			return err
@@ -377,10 +376,8 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		if e.logWriter != nil {
-			screenWriter := terminal.NewScreenWriter()
-			screenWriter.Write([]byte(p.Progress.Stderr))
-			screenWriter.Write([]byte(p.Progress.Stdout))
-			e.logWriter.Write(screenWriter.RenderAsANSI())
+			e.logWriter.Write([]byte(p.Progress.Stderr))
+			e.logWriter.Write([]byte(p.Progress.Stdout))
 			// For now, write logs to both chunks and the invocation proto
 			// p.Progress.Stderr = ""
 			// p.Progress.Stdout = ""
@@ -429,7 +426,7 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 		return err
 	}
 	if e.logWriter != nil {
-		invocationProto.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.GetLastChunkIndex())
+		invocationProto.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.ChunkstoreWriter.GetLastChunkIndex())
 	}
 	ti = tableInvocationFromProto(invocationProto, ti.BlobID)
 	if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {

@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"io"
 	"math"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
@@ -23,6 +25,10 @@ const (
 	// Chunks will also be flushed to blobstore after this much time
 	// passes with no new data being written.
 	defaultChunkTimeout = 15 * time.Second
+
+	// Number of lines to keep in the screen buffer so that they may be modified
+	// by ANSI Cursor control codes.
+	linesToRetainForANSICursor = 6
 )
 
 func getEventLogPathFromInvocationId(invocationId string) string {
@@ -143,18 +149,58 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 }
 
 func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, invocationId string) *EventLogWriter {
+	cw := chunkstore.New(
+		b,
+		&chunkstore.ChunkstoreOptions{
+			WriteBlockSize:       defaultLogChunkSize,
+			WriteTimeoutDuration: defaultChunkTimeout,
+			NoSplitWrite:         true,
+		},
+	).Writer(ctx, getEventLogPathFromInvocationId(invocationId))
 	return &EventLogWriter{
-		chunkstore.New(
-			b,
-			&chunkstore.ChunkstoreOptions{
-				WriteBlockSize:       defaultLogChunkSize,
-				WriteTimeoutDuration: defaultChunkTimeout,
-				NoSplitWrite:         true,
-			},
-		).Writer(ctx, getEventLogPathFromInvocationId(invocationId)),
+		WriteCloser: &ANSICursorBufferWriter{
+			WriteCloser: cw,
+			screenWriter: terminal.NewScreenWriter(),
+		},
+		ChunkstoreWriter: cw,
 	}
 }
 
 type EventLogWriter struct {
-	*chunkstore.ChunkstoreWriter
+	io.WriteCloser
+	ChunkstoreWriter *chunkstore.ChunkstoreWriter
+}
+
+func (w *EventLogWriter) Write(p []byte) (int, error) {
+	return w.WriteCloser.Write(p)
+}
+
+type ANSICursorBufferWriter struct {
+	io.WriteCloser
+	screenWriter *terminal.ScreenWriter
+}
+
+func (w* ANSICursorBufferWriter) Write(p []byte) (int, error) {
+	if p == nil || len(p) == 0 {
+		return w.WriteCloser.Write(p)
+	}
+	if _, err := w.screenWriter.Write(p); err != nil {
+		return 0, err
+	}
+	popped := w.screenWriter.PopExtraLinesAsANSI(linesToRetainForANSICursor)
+	if len(popped) == 0 {
+		return 0, nil
+	}
+	return w.WriteCloser.Write(append(popped, '\n'))
+}
+
+func (w* ANSICursorBufferWriter) Close() error {
+	if _, err := w.WriteCloser.Write(w.screenWriter.RenderAsANSI()); err != nil {
+		return err
+	}
+	return w.WriteCloser.Close()
+}
+
+type ANSILineWriter struct {
+	io.WriteCloser
 }
