@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	RedactionFlagAPIKey = 1 << iota
+	RedactionFlagAPIKey = 1
 )
 
 func APIKey(ctx context.Context, env environment.Env, event *bespb.BuildEvent) error {
