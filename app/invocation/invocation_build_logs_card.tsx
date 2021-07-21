@@ -13,8 +13,6 @@ interface Props {
 
 interface State {
   consoleBuffer?: string;
-  nextChunkId?: string;
-  fetchedFirstChunk?: boolean;
 }
 
 const POLL_TAIL_INTERVAL_MS = 3_000;
@@ -24,15 +22,13 @@ const MIN_LINES = 100_000;
 export default class BuildLogsCardComponent extends React.Component<Props, State> {
   state: State = {
     consoleBuffer: "",
-    nextChunkId: "",
-    fetchedFirstChunk: false,
   };
 
   private pollTailTimeout: number | null = null;
 
   componentDidMount() {
     if (this.props.model.hasChunkedEventLogs()) {
-      this.fetchTail(/*isFirstRequest=*/ true);
+      this.fetchTail();
     }
   }
 
@@ -40,34 +36,32 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
     window.clearTimeout(this.pollTailTimeout);
   }
 
-  private fetchTail(isFirstRequest = false, chunkId = this.state.nextChunkId) {
+  private fetchTail(chunkId = "") {
     rpcService.service
       .getEventLogChunk(
         new eventlog.GetEventLogChunkRequest({
           invocationId: this.props.model.getId(),
           chunkId,
           minLines: MIN_LINES,
-          readBackward: isFirstRequest,
         })
       )
       .then((response) => {
-        const requestedChunkId = this.state.nextChunkId;
         const consoleBuffer = this.state.consoleBuffer + String.fromCharCode(...response.chunk?.buffer);
-        this.setState({ consoleBuffer, nextChunkId: response.nextChunkId });
+        this.setState({ consoleBuffer });
 
         // Empty next chunk ID means there are no more chunks to fetch.
         if (!response.nextChunkId) return;
 
         // Unchanged next chunk ID means the chunk has not yet been written
         // yet and that we should poll for it.
-        if (response.nextChunkId === requestedChunkId) {
-          this.pollTailTimeout = window.setTimeout(() => this.fetchTail(), POLL_TAIL_INTERVAL_MS);
+        if (response.nextChunkId === chunkId) {
+          this.pollTailTimeout = window.setTimeout(() => this.fetchTail(chunkId), POLL_TAIL_INTERVAL_MS);
           return;
         }
 
         // New next chunk ID means we successfully fetched the requested
         // chunk, and more may be available. Try fetching it immediately.
-        this.fetchTail(/*isFirstRequest=*/ false, response.nextChunkId);
+        this.fetchTail(response.nextChunkId);
       })
       .catch((e) => errorService.handleError(e));
   }
