@@ -84,6 +84,8 @@ func handleRootPaths(env environment.Env, rootPaths []string, template *template
 func serveIndexTemplate(env environment.Env, tpl *template.Template, version string, w http.ResponseWriter) {
 	issuers := make([]string, 0)
 	ssoEnabled := false
+	// Assemble a slice of the supported issuers. Omit "private" issuers, which have a slug,
+	// and set ssoEnabled = true if any private issuers are present in the config.
 	for _, provider := range env.GetConfigurator().GetAuthOauthProviders() {
 		if provider.Slug == "" {
 			issuers = append(issuers, provider.IssuerURL)

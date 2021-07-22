@@ -452,7 +452,7 @@ func (a *OpenIDAuthenticator) getAuthConfig(issuer string) authenticator {
 
 func (a *OpenIDAuthenticator) getAuthConfigForSlug(slug string) authenticator {
 	for _, a := range a.authenticators {
-		if strings.ToLower(a.getSlug()) == strings.ToLower(slug) {
+		if strings.EqualFold(a.getSlug(), slug) {
 			return a
 		}
 	}
