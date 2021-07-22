@@ -413,7 +413,12 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAu
 		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
 	}
 
-	return newOpenIDAuthenticator(ctx, env, authConfigs)
+	a, err := newOpenIDAuthenticator(ctx, env, authConfigs)
+	if err != nil {
+		alert.UnexpectedEvent("authentication_configuration_failed", "Failed to configure authentication: %s", err)
+	}
+
+	return a, err
 }
 
 func sameHostname(urlStringA, urlStringB string) bool {
