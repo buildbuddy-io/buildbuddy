@@ -181,6 +181,10 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
+	if cacheStats := hit_tracker.CollectCacheStats(e.ctx, e.env, iid); cacheStats != nil {
+		fillInvocationFromCacheStats(cacheStats, ti)
+	}
+	recordInvocationMetrics(ti)
 	return e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti)
 }
 
