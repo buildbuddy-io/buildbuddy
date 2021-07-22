@@ -186,6 +186,7 @@ type OauthProvider struct {
 	IssuerURL    string `yaml:"issuer_url" usage:"The issuer URL of this OIDC Provider."`
 	ClientID     string `yaml:"client_id" usage:"The oauth client ID."`
 	ClientSecret string `yaml:"client_secret" usage:"The oauth client secret."`
+	Slug         string `yaml:"slug" usage:"The slug of this OIDC Provider."`
 }
 
 type SSLConfig struct {
