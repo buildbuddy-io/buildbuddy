@@ -299,5 +299,34 @@ func main() {
 	go func() {
 		http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), nil)
 	}()
+
+	//ws, err := workspace.New(env, "/tmp/casfs", &workspace.Opts{})
+	//if err != nil {
+	//	log.Fatalf("could not setup workspace: %s", err)
+	//}
+	//ws.SetTask(&repb.ExecutionTask{
+	//	Action: &repb.Action{
+	//		InputRootDigest: &repb.Digest{
+	//			Hash:      "6dcadf0304f45a6c2647ed669c16368b8167a4f99fc8c7e5ff3e7a08d8d229c7",
+	//			SizeBytes: 160,
+	//		},
+	//	},
+	//	Command: &repb.Command{
+	//		OutputFiles: []string{
+	//			"bazel-out/k8-fastbuild/bin/absl/base/_objs/log_severity/log_severity.pic.d",
+	//			"bazel-out/k8-fastbuild/bin/absl/base/_objs/log_severity/log_severity.pic.o",
+	//		},
+	//	},
+	//})
+	//if err := ws.CreateOutputDirs(); err != nil {
+	//	log.Fatalf("could not create output dirs: %s", err)
+	//}
+	//if _, err := ws.DownloadInputs(context.Background()); err != nil {
+	//	log.Fatalf("could not download inputs: %s", err)
+	//}
+	//env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+	//	return ws.Remove()
+	//})
+
 	env.GetHealthChecker().WaitForGracefulShutdown()
 }

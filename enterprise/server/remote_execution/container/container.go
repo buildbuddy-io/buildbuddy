@@ -22,6 +22,12 @@ type Stats struct {
 	// are frozen when not in use, reducing their CPU usage to 0.
 }
 
+type FilesystemLayout struct {
+	Inputs      []*repb.Directory
+	OutputDirs  []string
+	OutputFiles []string
+}
+
 // CommandContainer provides an execution environment for commands.
 type CommandContainer interface {
 	// Run the given command within the container and remove the container after

@@ -90,6 +90,11 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
+	log.Infof("Command arguments: %s", command.GetArguments())
+	for _, c := range command.GetArguments() {
+		fmt.Printf("%s\n", c)
+	}
+
 	containerCfg, err := r.containerConfig(
 		command.GetArguments(),
 		commandutil.EnvStringList(command),
@@ -166,6 +171,9 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 			return result
 		}
 	}
+	log.Infof("RESULT: %+v", result)
+	log.Infof("STDOUT: %s", string(result.Stdout))
+	log.Infof("STDERR: %s", string(result.Stderr))
 	return result
 }
 
@@ -214,13 +222,17 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	if r.options.DockerMountMode != "" {
 		mountMode = fmt.Sprintf(":%s", r.options.DockerMountMode)
 	}
+
+	containerRoot := filepath.Join(r.hostRootDir, filepath.Base(workDir))
+	log.Infof("CONTAINER ROOT: %s", containerRoot)
+
 	binds := []string{
 		fmt.Sprintf(
 			"%s:%s%s",
 			// Source path here needs to point to the host machine (*not* a path in this
 			// executor's FS), since we spawn child actions via the docker daemon
 			// running on the host.
-			filepath.Join(r.hostRootDir, filepath.Base(workDir)),
+			containerRoot,
 			workDir,
 			mountMode,
 		),

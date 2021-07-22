@@ -4,7 +4,7 @@ COPY data/firecracker /usr/bin/firecracker
 COPY data/jailer /usr/bin/jailer
 
 RUN apt-get update && apt-get install -y \
-  rpm curl apt-transport-https ca-certificates gnupg-agent software-properties-common
+  rpm curl apt-transport-https ca-certificates gnupg-agent software-properties-common fuse
 
 RUN curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - && \
     apt-key fingerprint 0EBFCD88 && \

@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
@@ -162,8 +163,8 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.Execution
 			return err
 		}
 	}
-	if err := r.Workspace.CreateOutputDirs(); err != nil {
-		return status.UnavailableErrorf("Error creating output directory: %s", err.Error())
+	//if err := r.Workspace.CreateOutputDirs(); err != nil {
+	//	return status.UnavailableErrorf("Error creating output directory: %s", err.Error())
 	}
 
 	// Pull the container image before Run() is called, so that we don't
@@ -174,7 +175,12 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.Execution
 	return nil
 }
 
+func (r *CommandRunner) CreateOutputDirs() error {
+	return r.Workspace.CreateOutputDirs()
+}
+
 func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+	//log.Infof("Run command:\n%s", proto.MarshalTextString(command))
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
@@ -581,7 +587,11 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		}
 	}
 	wsOpts := &workspace.Opts{Preserve: props.PreserveWorkspace}
-	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
+	wsID, err := uuid.NewRandom()
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to generate workspace ID")
+	}
+	ws, err := workspace.New(p.env, filepath.Join(p.buildRoot, wsID.String()), wsOpts)
 	if err != nil {
 		return nil, err
 	}

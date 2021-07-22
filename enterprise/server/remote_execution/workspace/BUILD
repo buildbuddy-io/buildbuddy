@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/remote_execution/casfs",
         "//enterprise/server/remote_execution/dirtools",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -16,7 +17,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/tracing",
-        "@com_github_google_uuid//:uuid",
+        "@com_github_docker_go_units//:go-units",
         "@org_golang_x_sync//errgroup",
     ],
 )

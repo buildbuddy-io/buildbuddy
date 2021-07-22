@@ -55,7 +55,7 @@ func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capabil
 	if err != nil {
 		if isAnonymousUser := status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err); isAnonymousUser {
 			if authIsRequired {
-				return false, nil
+				return false, status.PermissionDeniedErrorf("no anons")
 			}
 			return int32(cap)&AnonymousUserCapabilitiesMask > 0, nil
 		}

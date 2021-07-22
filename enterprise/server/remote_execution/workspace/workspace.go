@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -17,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
-	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -37,6 +37,7 @@ type Workspace struct {
 	task      *repb.ExecutionTask
 	dirHelper *dirtools.DirHelper
 	opts      *Opts
+	casFs     *casfs.CASFs
 	// Action input files known to exist in the workspace, as a map of
 	// workspace-relative paths to digests.
 	// TODO: Make sure these files are written read-only
@@ -55,20 +56,30 @@ type Opts struct {
 
 // New creates a new workspace directly under the given parent directory.
 func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) {
-	id, err := uuid.NewRandom()
-	if err != nil {
-		return nil, status.UnavailableErrorf("failed to generate workspace ID")
-	}
-	rootDir := filepath.Join(parentDir, id.String())
+	rootDir := parentDir
 	if err := os.MkdirAll(rootDir, 0755); err != nil {
 		return nil, status.UnavailableErrorf("failed to create workspace at %q", rootDir)
 	}
-	return &Workspace{
+
+	ws := &Workspace{
 		env:     env,
 		rootDir: rootDir,
 		opts:    opts,
 		Inputs:  map[string]*repb.Digest{},
-	}, nil
+	}
+	if env.GetConfigurator().GetExecutorConfig().EnableCASFilesystem || true {
+		scratchDir := rootDir + "_scratch"
+		if err := os.MkdirAll(scratchDir, 0755); err != nil {
+			return nil, status.UnavailableErrorf("failed to create scratch dir at %q", scratchDir)
+		}
+		log.Infof("Mounting CAS filesystem at %q", rootDir)
+		casFs := casfs.NewCASFs(env, scratchDir)
+		if err := casFs.Mount(rootDir); err != nil {
+			return nil, err
+		}
+		ws.casFs = casFs
+	}
+	return ws, nil
 }
 
 // Path returns the absolute path to the workspace root directory.
@@ -79,9 +90,13 @@ func (ws *Workspace) Path() string {
 // SetTask sets the next task to be executed within the workspace.
 func (ws *Workspace) SetTask(task *repb.ExecutionTask) {
 	log.Debugf("Assigned task %s to workspace at %q", task.GetExecutionId(), ws.rootDir)
+	//log.Infof("TASK:\n%s", proto.MarshalTextString(task))
 	ws.task = task
 	cmd := task.GetCommand()
-	ws.dirHelper = dirtools.NewDirHelper(ws.Path(), cmd.GetOutputFiles(), cmd.GetOutputDirectories())
+	ws.dirHelper = dirtools.NewDirHelper(ws.Path()+"_scratch", cmd.GetOutputFiles(), cmd.GetOutputDirectories())
+	if ws.casFs != nil {
+		ws.casFs.SetJWT(ws.task.GetJwt())
+	}
 }
 
 // CommandWorkingDirectory returns the absolute path to the working directory
@@ -107,11 +122,27 @@ func (ws *Workspace) CreateOutputDirs() error {
 		return WorkspaceMarkedForRemovalError
 	}
 
-	return ws.dirHelper.CreateOutputDirs()
+	var dirsToCreate []string
+	for _, outputFile := range ws.task.GetCommand().GetOutputFiles() {
+		fullPath := filepath.Join(ws.Path(), outputFile)
+		dirsToCreate = append(dirsToCreate, filepath.Dir(fullPath))
+	}
+	for _, outputDir := range ws.task.GetCommand().GetOutputDirectories() {
+		fullPath := filepath.Join(ws.Path(), outputDir)
+		dirsToCreate = append(dirsToCreate, fullPath)
+	}
+	for _, dir := range dirsToCreate {
+		if err := disk.EnsureDirectoryExists(dir); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DownloadInputs downloads any missing inputs for the current action.
 func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo, error) {
+	log.Warningf("DOWNLOAD INPUTS")
+	defer log.Warningf("DOWNLOAD INPUTS DONE")
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
@@ -131,15 +162,28 @@ func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
-	txInfo, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, ws.env, rootInstanceDigest, ws.rootDir, opts)
-	if err == nil {
-		for path, digest := range txInfo.Transfers {
-			ws.Inputs[path] = digest
+
+	txInfo := &dirtools.TransferInfo{}
+	//txInfo, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, ws.env, rootInstanceDigest, ws.rootDir+"_scratch", opts)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//for path, digest := range txInfo.Transfers {
+	//	ws.Inputs[path] = digest
+	//}
+	//mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
+	//log.Debugf("GetTree downloaded %s in %s [%2.2f MB/sec]", units.HumanSize(float64(txInfo.BytesTransferred)), txInfo.TransferDuration, mbps)
+
+	if ws.casFs != nil {
+		dirMap, err := dirtools.GetDirMapFromRootDirectoryDigest(ctx, ws.env, rootInstanceDigest)
+		if err != nil {
+			return nil, err
 		}
-		mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
-		log.Debugf("GetTree downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
+		if err := ws.casFs.PrepareLayout(ctx, rootInstanceDigest.GetInstanceName(), dirMap, rootInstanceDigest.Digest); err != nil {
+			return nil, err
+		}
 	}
-	return txInfo, err
+	return txInfo, nil
 }
 
 // UploadOutputs uploads any outputs created by the last executed command
@@ -181,7 +225,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 	})
 	eg.Go(func() error {
 		var err error
-		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, ws.Path(), actionResult)
+		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, ws.Path()+"_scratch", actionResult)
 		return err
 	})
 	if err := eg.Wait(); err != nil {
@@ -198,6 +242,13 @@ func (ws *Workspace) Remove() error {
 	// No need to keep the lock held while removing; other operations will
 	// immediately fail since we've set the removing bit.
 	ws.mu.Unlock()
+
+	if ws.casFs != nil {
+		err := ws.casFs.Unmount()
+		if err != nil {
+			log.Warningf("could not unmount fuse FS: %s", err)
+		}
+	}
 
 	return os.RemoveAll(ws.rootDir)
 }
