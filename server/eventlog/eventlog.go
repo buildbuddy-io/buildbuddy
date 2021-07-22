@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -44,31 +45,33 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 
 	lastChunkIndex, err := c.GetLastChunkIndex(ctx, eventLogPath, startingIndex)
 	if err != nil {
-		if startingIndex == math.MaxUint16 {
-			// No chunks have been written for this invocation
-			if invocationInProgress {
-				// If the invocation is in progress, logs may be written in the future.
-				// Return an empty chunk with NextChunkId set to 0.
-				return &elpb.GetEventLogChunkResponse{
-					Chunk: &elpb.GetEventLogChunkResponse_Chunk{
-						Buffer: make([]byte, 0),
-					},
-					NextChunkId: chunkstore.ChunkIndexAsString(0),
-				}, nil
-			} else {
-				// If the invocation is not in progress, no logs will ever exist for
-				// this invocation. Return an empty chunk with NextChunkId left blank.
-				return &elpb.GetEventLogChunkResponse{
-					Chunk: &elpb.GetEventLogChunkResponse_Chunk{
-						Buffer: make([]byte, 0),
-					},
-				}, nil
-			}
-		} else {
-			// The last chunk id recorded in the invocation table is wrong. Most
+		if startingIndex != math.MaxUint16 {
+			// The last chunk id recorded in the invocation table is wrong; the only
+			// valid reason for GetLastChunkIndex to fail with the starting index
+			// recorded in the invocation table is if no chunks have yet been written,
+			// in which case the starting index is equal to invalid chunk id. Most
 			// likely, the logs were deleted.
 			return nil, err
 		}
+
+		// No chunks have been written for this invocation
+		if invocationInProgress {
+			// If the invocation is in progress, logs may be written in the future.
+			// Return an empty chunk with NextChunkId set to 0.
+			return &elpb.GetEventLogChunkResponse{
+				Chunk: &elpb.GetEventLogChunkResponse_Chunk{
+					Buffer: make([]byte, 0),
+				},
+				NextChunkId: chunkstore.ChunkIndexAsString(0),
+			}, nil
+		}
+		// The invocation is not in progress, no logs will ever exist for this
+		// invocation. Return an empty chunk with NextChunkId left blank.
+		return &elpb.GetEventLogChunkResponse{
+			Chunk: &elpb.GetEventLogChunkResponse_Chunk{
+				Buffer: make([]byte, 0),
+			},
+		}, nil
 	}
 
 	chunkIndex := lastChunkIndex
@@ -78,11 +81,14 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 			return nil, err
 		}
 		if chunkIndex > lastChunkIndex {
-			if invocationInProgress || chunkIndex == math.MaxUint16 {
-				// If out-of-bounds and the invocation is in-progress, or if the invalid
-				// chunk is requested, return an empty chunk with NextChunkId set to the
-				// id of the next chunk to be written and PreviousChunkId set to the id
-				// of the last chunk.
+			if chunkIndex == math.MaxUint16 {
+				// The client requested the invalid id; this is an error.
+				return nil, status.ResourceExhaustedErrorf("Log index limit exceeded.")
+			}
+			if invocationInProgress {
+				// If out-of-bounds and the invocation is in-progress, return an empty
+				// chunk with NextChunkId set to the id of the next chunk to be written
+				// and PreviousChunkId set to the id of the last chunk.
 				return &elpb.GetEventLogChunkResponse{
 					Chunk: &elpb.GetEventLogChunkResponse_Chunk{
 						Buffer: make([]byte, 0),
@@ -113,10 +119,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		PreviousChunkId: chunkstore.ChunkIndexAsString(chunkIndex - 1),
 	}
 
-	readBackward := false
-	if req.ReadBackward || req.ChunkId == "" {
-		readBackward = true
-	}
+	readBackward := req.ReadBackward || req.ChunkId == ""
 	boundary := lastChunkIndex + 1
 	step := uint16(1)
 	if readBackward {
@@ -152,11 +155,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		rsp.NextChunkId = chunkstore.ChunkIndexAsString(chunkIndex)
 	}
 
-	invalidChunkId := chunkstore.ChunkIndexAsString(math.MaxUint16)
-	if rsp.NextChunkId == invalidChunkId {
-		rsp.NextChunkId = ""
-	}
-	if rsp.PreviousChunkId == invalidChunkId {
+	if rsp.PreviousChunkId == chunkstore.ChunkIndexAsString(math.MaxUint16) {
 		rsp.PreviousChunkId = ""
 	}
 
@@ -214,7 +213,9 @@ func (w *EventLogWriter) WriteLinesANSI(p []byte) (int, error) {
 	if !ansi.HasEscapeCodes(s) {
 		return w.WriteLines(p)
 	}
-	remainingSegments, err := ansi.Parse(string(s))
+	// Segments are the input broken up by ANSI format (i. e., every time the
+	// format changes, a new segment begins).
+	remainingSegments, err := ansi.Parse(s)
 	// If parsing fails just fall back to normal write lines.
 	if err != nil {
 		return w.WriteLines(p)
