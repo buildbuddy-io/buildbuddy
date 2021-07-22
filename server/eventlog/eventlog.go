@@ -159,7 +159,7 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, invocationId
 	).Writer(ctx, getEventLogPathFromInvocationId(invocationId))
 	return &EventLogWriter{
 		WriteCloser: &ANSICursorBufferWriter{
-			WriteCloser: cw,
+			WriteCloser:  cw,
 			screenWriter: terminal.NewScreenWriter(),
 		},
 		ChunkstoreWriter: cw,
@@ -180,7 +180,7 @@ type ANSICursorBufferWriter struct {
 	screenWriter *terminal.ScreenWriter
 }
 
-func (w* ANSICursorBufferWriter) Write(p []byte) (int, error) {
+func (w *ANSICursorBufferWriter) Write(p []byte) (int, error) {
 	if p == nil || len(p) == 0 {
 		return w.WriteCloser.Write(p)
 	}
@@ -194,7 +194,7 @@ func (w* ANSICursorBufferWriter) Write(p []byte) (int, error) {
 	return w.WriteCloser.Write(append(popped, '\n'))
 }
 
-func (w* ANSICursorBufferWriter) Close() error {
+func (w *ANSICursorBufferWriter) Close() error {
 	if _, err := w.WriteCloser.Write(w.screenWriter.RenderAsANSI()); err != nil {
 		return err
 	}
