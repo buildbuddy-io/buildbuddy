@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
@@ -73,11 +72,16 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		chunkFileSizeBytes = defaultChunkFileSizeBytes
 	}
 	buildEventAccumulator := accumulator.NewBEValues(iid)
+	redactor := redact.NewStreamingRedactor(b.env, &redact.StreamingRedactorOptions{
+		ExistingRedactions:       0,
+		EnableOptimizedRedaction: *enableOptimizedRedaction,
+	})
 	return &EventChannel{
 		env:                     b.env,
 		ctx:                     ctx,
 		pw:                      protofile.NewBufferedProtoWriter(b.env.GetBlobstore(), iid, chunkFileSizeBytes),
 		beValues:                buildEventAccumulator,
+		redactor:                redactor,
 		statusReporter:          build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
 		targetTracker:           target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		hasReceivedStartedEvent: false,
@@ -123,36 +127,43 @@ func readBazelEvent(obe *pepb.OrderedBuildEvent, out *build_event_stream.BuildEv
 	return fmt.Errorf("Not a bazel event %s", obe)
 }
 
+// fillInvocationFromEvents reads all events written for the invocation and
+// populates the given invocation proto based on it.
+func fillInvocationFromEvents(ctx context.Context, env environment.Env, iid string, invocation *inpb.Invocation, appliedRedactions int) error {
+	pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), iid)
+	parser := event_parser.NewStreamingEventParser()
+	for {
+		event := &inpb.InvocationEvent{}
+		err := pr.ReadProto(ctx, event)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Warningf("Error reading proto from log: %s", err)
+			return err
+		}
+		if !*enableOptimizedRedaction || appliedRedactions&redact.RedactionFlagAPIKey == 0 {
+			if err := redact.APIKeysWithSlowRegexp(ctx, env, event.BuildEvent); err != nil {
+				return err
+			}
+		}
+		parser.ParseEvent(event)
+	}
+	parser.FillInvocation(invocation)
+	return nil
+}
+
 type EventChannel struct {
 	ctx                     context.Context
 	env                     environment.Env
 	pw                      *protofile.BufferedProtoWriter
 	beValues                *accumulator.BEValues
+	redactor                *redact.StreamingRedactor
 	statusReporter          *build_status_reporter.BuildStatusReporter
 	targetTracker           *target_tracker.TargetTracker
 	eventsBeforeStarted     []*inpb.InvocationEvent
 	hasReceivedStartedEvent bool
 	logWriter               *chunkstore.ChunkstoreWriter
-}
-
-func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string, invocation *inpb.Invocation) error {
-	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), iid)
-	parser := event_parser.NewStreamingEventParser()
-	parser.FillInvocation(invocation)
-	for {
-		event := &inpb.InvocationEvent{}
-		err := pr.ReadProto(ctx, event)
-		if err == nil {
-			parser.ParseEvent(event)
-		} else if err == io.EOF {
-			break
-		} else {
-			log.Warningf("Error reading proto from log: %s", err)
-			return err
-		}
-	}
-	parser.FillInvocation(invocation)
-	return nil
 }
 
 func (e *EventChannel) writeCompletedBlob(ctx context.Context, blobID string, invocation *inpb.Invocation) error {
@@ -175,7 +186,7 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 		InvocationStatus: inpb.Invocation_DISCONNECTED_INVOCATION_STATUS,
 	}
 
-	err := e.fillInvocationFromEvents(ctx, iid, invocation)
+	err := fillInvocationFromEvents(ctx, e.env, iid, invocation)
 	if err != nil {
 		return err
 	}
@@ -241,7 +252,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	if lastChunkId, err := e.logWriter.GetLastChunkIndex(); err == nil {
 		invocation.LastChunkId = fmt.Sprintf("%04x", lastChunkId)
 	}
-	err := e.fillInvocationFromEvents(e.ctx, iid, invocation)
+	err := fillInvocationFromEvents(e.ctx, e.env, iid, invocation, getRedactionFlags())
 	if err != nil {
 		return err
 	}
@@ -318,9 +329,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			InvocationID:     iid,
 			InvocationPK:     md5Int64(iid),
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
-		}
-		if *enableOptimizedRedaction {
-			ti.RedactionFlags = redact.RedactionFlagAPIKey
+			RedactionFlags:   getRedactionFlags(),
 		}
 
 		if auth := e.env.GetAuthenticator(); auth != nil {
@@ -365,8 +374,9 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 }
 
 func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid string) error {
+	e.redactor.Redact(event.BuildEvent)
 	if *enableOptimizedRedaction {
-		if err := redact.APIKey(e.ctx, e.env, event.BuildEvent); err != nil {
+		if err := e.redactor.Redact(e.ctx, event.BuildEvent, 0 /*=existingRedactions*/); err != nil {
 			return err
 		}
 	}
@@ -421,7 +431,7 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 		InvocationID: invocationID,
 	}
 	invocationProto := TableInvocationToProto(ti)
-	err := e.fillInvocationFromEvents(ctx, invocationID, invocationProto)
+	err := fillInvocationFromEvents(ctx, e.env, invocationID, invocationProto, getRedactionFlags())
 	if err != nil {
 		return err
 	}
@@ -440,6 +450,15 @@ func extractOptionsFromStartedBuildEvent(event *build_event_stream.BuildEvent) (
 	return "", nil
 }
 
+// getRedactionFlags returns the redaction flags applied to all invocations
+// and events processed by this server instance.
+func getRedactionFlags() int {
+	if *enableOptimizedRedaction {
+		return redact.RedactionFlagAPIKey
+	}
+	return 0
+}
+
 func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {
 	ti, err := env.GetInvocationDB().LookupInvocation(ctx, iid)
 	if err != nil {
@@ -456,28 +475,19 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	}
 
 	invocation := TableInvocationToProto(ti)
-
-	parser := event_parser.NewStreamingEventParser()
-	pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), iid)
-	for {
-		event := &inpb.InvocationEvent{}
-		err := pr.ReadProto(ctx, event)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Warningf("Error reading proto from log: %s", err)
-			return nil, err
-		}
-		if !*enableOptimizedRedaction || ti.RedactionFlags&redact.RedactionFlagAPIKey == 0 {
-			if err := redact.APIKeysWithSlowRegexp(ctx, env, event.BuildEvent); err != nil {
-				return nil, err
-			}
-		}
-		parser.ParseEvent(event)
+	if err := fillInvocationFromEvents(ctx, env, iid, invocation, ti.RedactionFlags); err != nil {
+		return nil, err
 	}
-	parser.FillInvocation(invocation)
 	return invocation, nil
+}
+
+// TODO(siggisim): pull this out somewhere central
+func truncatedJoin(list []string, maxItems int) string {
+	length := len(list)
+	if length > maxItems {
+		return fmt.Sprintf("%s and %d more", strings.Join(list[0:maxItems], ", "), length-maxItems)
+	}
+	return strings.Join(list, ", ")
 }
 
 func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocation {
@@ -493,7 +503,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 	i.Role = p.Role
 	i.Command = p.Command
 	if p.Pattern != nil {
-		i.Pattern = invocation_format.ShortFormatPatterns(p.Pattern)
+		i.Pattern = truncatedJoin(p.Pattern, 3)
 	}
 	i.ActionCount = p.ActionCount
 	i.BlobID = blobID
@@ -502,9 +512,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 		i.Perms = perms.OTHERS_READ
 	}
 	i.LastChunkId = p.LastChunkId
-	if *enableOptimizedRedaction {
-		i.RedactionFlags = redact.RedactionFlagAPIKey
-	}
+	i.RedactionFlags = getRedactionFlags()
 	return i
 }
 
