@@ -8,14 +8,30 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/golang/protobuf/proto"
 
-	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/bespb"
+	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 )
 
 const (
-	RedactionFlagAPIKey = 1
+	RedactionFlagStandardRedactions = 1
 )
 
-func APIKey(ctx context.Context, env environment.Env, event *bespb.BuildEvent) error {
+// StreamingRedactor processes a stream of build events and redacts them as they are
+// received by the event handler.
+type StreamingRedactor struct {
+	env environment.Env
+}
+
+func NewStreamingRedactor(env environment.Env) *StreamingRedactor {
+	return &StreamingRedactor{env}
+}
+
+func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
+	// TODO(bduffs): Migrate redaction logic from parser.ParseEvent to here.
+	return
+}
+
+func (r *StreamingRedactor) RedactAPIKey(ctx context.Context, event *bespb.BuildEvent) error {
 	proto.DiscardUnknown(event)
 
 	apiKey, ok := ctx.Value("x-buildbuddy-api-key").(string)
@@ -31,7 +47,7 @@ func APIKey(ctx context.Context, env environment.Env, event *bespb.BuildEvent) e
 	return proto.UnmarshalText(txt, event)
 }
 
-func APIKeysWithSlowRegexp(ctx context.Context, env environment.Env, event *bespb.BuildEvent) error {
+func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, event *bespb.BuildEvent) error {
 	proto.DiscardUnknown(event)
 	txt := proto.MarshalTextString(event)
 
@@ -56,7 +72,7 @@ func APIKeysWithSlowRegexp(ctx context.Context, env environment.Env, event *besp
 
 	// Replace the literal API key set up via the BuildBuddy config, which does not
 	// need to conform to the way we generate API keys.
-	configuredKey := getAPIKeyFromBuildBuddyConfig(env)
+	configuredKey := getAPIKeyFromBuildBuddyConfig(r.env)
 	if configuredKey != "" {
 		txt = strings.ReplaceAll(txt, configuredKey, "<REDACTED>")
 	}
