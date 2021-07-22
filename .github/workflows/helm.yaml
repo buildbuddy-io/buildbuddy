@@ -58,8 +58,8 @@ jobs:
         github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
         branch: master
 
-    - name: Sleep for 1 minute
-      run: sleep 60s
+    - name: Sleep for 2 minutes
+      run: sleep 120s
       shell: bash
 
     - name: Bump Enterprise Version
