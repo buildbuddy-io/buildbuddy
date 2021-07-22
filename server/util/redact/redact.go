@@ -9,7 +9,6 @@ import (
 	"github.com/golang/protobuf/proto"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/bespb"
-	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 )
 
 const (
