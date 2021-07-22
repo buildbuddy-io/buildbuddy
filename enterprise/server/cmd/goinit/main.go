@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
+	"github.com/jsimonetti/rtnetlink/rtnl"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
@@ -31,10 +33,11 @@ const (
 )
 
 var (
-	path      = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
-	port      = flag.Uint("port", vsock.DefaultPort, "The vsock port number to listen on")
-	debugMode = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
-	logLevel  = flag.String("log_level", "info", "The loglevel to emit logs at")
+	path            = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
+	port            = flag.Uint("port", vsock.DefaultPort, "The vsock port number to listen on")
+	debugMode       = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
+	logLevel        = flag.String("log_level", "info", "The loglevel to emit logs at")
+	setDefaultRoute = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
 )
 
 // die logs the provided error if it is not nil and then terminates the program.
@@ -82,6 +85,27 @@ func reapChildren(ctx context.Context, reapMutex *sync.RWMutex) {
 			reapMutex.Unlock()
 		}
 	}
+}
+
+func configureDefaultRoute(ifaceName, ipAddr string) error {
+	// Setup the default route
+	iface, err := net.InterfaceByName(ifaceName)
+	if err != nil {
+		return err
+	}
+	nlConn, err := rtnl.Dial(nil)
+	if err != nil {
+		return err
+	}
+	_, ipNet, err := net.ParseCIDR("0.0.0.0/0") // this is the default route.
+	if err != nil {
+		return err
+	}
+
+	if err := nlConn.RouteAdd(iface, *ipNet, net.ParseIP(ipAddr)); err != nil {
+		return err
+	}
+	return nlConn.Close()
 }
 
 // This is mostly cribbed from github.com/superfly/init-snapshot
@@ -210,8 +234,11 @@ func main() {
 		"ff02::2		ip6-allrouters",
 	}
 	die(os.WriteFile("/etc/hosts", []byte(strings.Join(hosts, "\n")), 0755))
+	die(os.WriteFile("/etc/resolv.conf", []byte("nameserver 8.8.8.8"), 0755))
 
-	// TODO(tylerw): setup networking
+	if *setDefaultRoute {
+		die(configureDefaultRoute("eth0", "192.168.241.1"))
+	}
 
 	reapMutex := sync.RWMutex{}
 	go reapChildren(rootContext, &reapMutex)

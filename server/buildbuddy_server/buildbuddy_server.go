@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -20,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/proto"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
@@ -54,46 +52,6 @@ func NewBuildBuddyServer(env environment.Env, sslService *ssl.SSLService) (*Buil
 	}, nil
 }
 
-func (s *BuildBuddyServer) getConfiguredAPIKey() string {
-	if apiConfig := s.env.GetConfigurator().GetAPIConfig(); apiConfig != nil {
-		return apiConfig.APIKey
-	}
-	return ""
-}
-
-func (s *BuildBuddyServer) redactAPIKeys(ctx context.Context, rsp *inpb.GetInvocationResponse) error {
-	proto.DiscardUnknown(rsp)
-	txt := proto.MarshalTextString(rsp)
-
-	// NB: this implementation depends on the way we generate API keys
-	// (20 alphanumeric characters).
-
-	// Replace x-buildbuddy-api-key header.
-	pat := regexp.MustCompile("x-buildbuddy-api-key=[[:alnum:]]{20}")
-	txt = pat.ReplaceAllLiteralString(txt, "x-buildbuddy-api-key=<REDACTED>")
-
-	// Replace sequences that look like API keys immediately followed by '@',
-	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
-	// or "bes_backend=$API_KEY@domain.com".
-
-	// Here we match 20 alphanum chars occurring at the start of a line.
-	pat = regexp.MustCompile("^[[:alnum:]]{20}@")
-	txt = pat.ReplaceAllLiteralString(txt, "<REDACTED>@")
-	// Here we match 20 alphanum chars anywhere in the line, preceded by a non-
-	// alphanum char (to ensure the match is exactly 20 alphanum chars long).
-	pat = regexp.MustCompile("([^[:alnum:]])[[:alnum:]]{20}@")
-	txt = pat.ReplaceAllString(txt, "$1<REDACTED>@")
-
-	// Replace the literal API key in the configuration, which does not need
-	// to conform to the way we generate API keys.
-	configuredKey := s.getConfiguredAPIKey()
-	if configuredKey != "" {
-		txt = strings.ReplaceAll(txt, configuredKey, "<REDACTED>")
-	}
-
-	return proto.UnmarshalText(txt, rsp)
-}
-
 func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvocationRequest) (*inpb.GetInvocationResponse, error) {
 	if req.GetLookup().GetInvocationId() == "" {
 		return nil, status.InvalidArgumentErrorf("GetInvocationRequest must contain a valid invocation_id")
@@ -107,15 +65,7 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 		inv.HasChunkedEventLogs = false
 	}
 
-	rsp := &inpb.GetInvocationResponse{
-		Invocation: []*inpb.Invocation{
-			inv,
-		},
-	}
-	if err := s.redactAPIKeys(ctx, rsp); err != nil {
-		return nil, err
-	}
-	return rsp, nil
+	return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{inv}}, nil
 }
 
 func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {

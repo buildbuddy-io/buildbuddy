@@ -133,7 +133,7 @@ export default class ActionCardComponent extends React.Component {
               )}
               {this.state.cacheEnabled && this.state.stdErr && (
                 <div className="error-log">
-                  <TerminalComponent value={this.state.stdErr} />
+                  <TerminalComponent value={this.state.stdErr} lightTheme={!this.props.dark} />
                 </div>
               )}
               {this.state.cacheEnabled && this.state.loadingStderr && (
@@ -169,7 +169,7 @@ export default class ActionCardComponent extends React.Component {
               )}
               {this.state.cacheEnabled && this.state.stdOut && (
                 <div className="error-log">
-                  <TerminalComponent value={this.state.stdOut} />
+                  <TerminalComponent value={this.state.stdOut} lightTheme={!this.props.dark} />
                 </div>
               )}
               {this.state.cacheEnabled && this.state.loadingStdout && (

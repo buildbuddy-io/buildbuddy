@@ -6,41 +6,49 @@ build:local --remote_upload_local_results
 
 # Build with --config=dev to send build logs to the dev server
 build:dev --bes_results_url=https://app.buildbuddy.dev/invocation/
-build:dev --bes_backend=grpcs://cloud.buildbuddy.dev
+build:dev --bes_backend=grpcs://remote.buildbuddy.dev
 
-# Build with --config=dev-cache to send build logs to the dev server with cache
-build:dev-cache --bes_results_url=https://app.buildbuddy.dev/invocation/
-build:dev-cache --bes_backend=grpcs://cloud.buildbuddy.dev
-build:dev-cache --remote_cache=grpcs://cloud.buildbuddy.dev
-build:dev-cache --remote_upload_local_results
+# Build with --config=cache-dev to send build logs to the dev server with cache
+build:cache-dev --bes_results_url=https://app.buildbuddy.dev/invocation/
+build:cache-dev --bes_backend=grpcs://remote.buildbuddy.dev
+build:cache-dev --remote_cache=grpcs://remote.buildbuddy.dev
+build:cache-dev --remote_upload_local_results
 
 # Build with --config=cache to send build logs to the production server with cache
 build:cache --bes_results_url=https://app.buildbuddy.io/invocation/
-build:cache --bes_backend=grpcs://cloud.buildbuddy.io
-build:cache --remote_cache=grpcs://cloud.buildbuddy.io
+build:cache --bes_backend=grpcs://remote.buildbuddy.io
+build:cache --remote_cache=grpcs://remote.buildbuddy.io
 build:cache --remote_upload_local_results
 
+# Flags shared across remote configs
+build:remote-shared --remote_upload_local_results
+build:remote-shared --host_platform=@buildbuddy_toolchain//:platform
+build:remote-shared --platforms=@buildbuddy_toolchain//:platform
+build:remote-shared --crosstool_top=@buildbuddy_toolchain//:toolchain
+build:remote-shared --remote_timeout=600
+build:remote-shared --remote_download_minimal
+build:remote-shared --experimental_repo_remote_exec
+build:remote-shared --jobs=100
+build:remote-shared --verbose_failures
+
 # Build with --config=remote to use BuildBuddy RBE.
+build:remote --config=remote-shared
 build:remote --bes_results_url=https://app.buildbuddy.io/invocation/
-build:remote --bes_backend=grpcs://cloud.buildbuddy.io
-build:remote --remote_cache=grpcs://cloud.buildbuddy.io
-build:remote --remote_executor=grpcs://cloud.buildbuddy.io
-build:remote --remote_upload_local_results
-build:remote --host_platform=@buildbuddy_toolchain//:platform
-build:remote --platforms=@buildbuddy_toolchain//:platform
-build:remote --crosstool_top=@buildbuddy_toolchain//:toolchain
-build:remote --remote_timeout=600
-build:remote --remote_download_minimal
-build:remote --experimental_repo_remote_exec
-build:remote --jobs=100
-build:remote --verbose_failures
+build:remote --bes_backend=grpcs://remote.buildbuddy.io
+build:remote --remote_cache=grpcs://remote.buildbuddy.io
+build:remote --remote_executor=grpcs://remote.buildbuddy.io
+
+# Build with --config=remote-dev to use BuildBuddy RBE.
+build:remote-dev --config=remote-shared
+build:remote-dev --bes_results_url=https://app.buildbuddy.dev/invocation/
+build:remote-dev --bes_backend=grpcs://remote.buildbuddy.dev
+build:remote-dev --remote_cache=grpcs://remote.buildbuddy.dev
+build:remote-dev --remote_executor=grpcs://remote.buildbuddy.dev
 
 # Configuration used for GitHub actions-based CI
 build:ci --config=remote
 build:ci --build_metadata=ROLE=CI
 build:ci --build_metadata=VISIBILITY=PUBLIC
-build:ci --tls_client_certificate=buildbuddy-cert.pem
-build:ci --tls_client_key=buildbuddy-key.pem
 build:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci
 build:ci --repository_cache=/home/runner/repo-cache/
 build:ci --color=yes
@@ -63,8 +71,6 @@ build:workflows --disk_cache=
 # Configuration used for BuildBuddy release workflow
 build:release --config=remote
 build:release --remote_instance_name=buildbuddy-io/buildbuddy/release
-build:release --tls_client_certificate=buildbuddy-cert.pem
-build:release --tls_client_key=buildbuddy-key.pem
 build:release -c opt
 build:release --stamp
 build:release --define release=true
@@ -72,7 +78,7 @@ build:release --remote_download_toplevel
 
 # By default, build logs get sent to the production server
 build --bes_results_url=https://app.buildbuddy.io/invocation/
-build --bes_backend=grpcs://cloud.buildbuddy.io
+build --bes_backend=grpcs://remote.buildbuddy.io
 
 # Recommended if connecting to a remote (upload speed constrained) BuildBuddy instance
 build --noremote_upload_local_results # Uploads logs & artifacts without writing to cache
