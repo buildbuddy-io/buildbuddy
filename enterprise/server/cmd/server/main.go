@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -104,7 +105,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	if err == nil {
 		env.SetAuthenticator(authenticator)
 	} else {
-		log.Infof("No authentication will be configured: %s", err)
+		alert.UnexpectedEvent("authentication_configuration_failed", "Failed to configure authentication: %s", err)
 	}
 
 	userDB, err := userdb.NewUserDB(env, env.GetDBHandle())
