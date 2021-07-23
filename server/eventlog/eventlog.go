@@ -75,14 +75,14 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		return nil, err
 	}
 
-	chunkIndex := lastChunkIndex
+	startIndex := lastChunkIndex
 	if req.ChunkId != "" {
 		var err error
-		if chunkIndex, err = chunkstore.ChunkIdAsUint16Index(req.ChunkId); err != nil {
+		if startIndex, err = chunkstore.ChunkIdAsUint16Index(req.ChunkId); err != nil {
 			return nil, err
 		}
-		if chunkIndex > lastChunkIndex {
-			if chunkIndex == math.MaxUint16 {
+		if startIndex > lastChunkIndex {
+			if startIndex == math.MaxUint16 {
 				// The client requested the invalid id; this is an error.
 				return nil, status.ResourceExhaustedErrorf("Log index limit exceeded.")
 			}
@@ -105,22 +105,22 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 
 	rsp := &elpb.GetEventLogChunkResponse{
 		Chunk: &elpb.GetEventLogChunkResponse_Chunk{
-			ChunkId: chunkstore.ChunkIndexAsStringId(chunkIndex),
+			ChunkId: chunkstore.ChunkIndexAsStringId(startIndex),
 			Buffer:  make([]byte, 0),
 		},
-		NextChunkId:     chunkstore.ChunkIndexAsStringId(chunkIndex + 1),
-		PreviousChunkId: chunkstore.ChunkIndexAsStringId(chunkIndex - 1),
+		NextChunkId:     chunkstore.ChunkIndexAsStringId(startIndex + 1),
+		PreviousChunkId: chunkstore.ChunkIndexAsStringId(startIndex - 1),
 	}
 
-	readBackward := req.ChunkId == ""
-	boundary := lastChunkIndex + 1
+	boundary := lastChunkIndex
 	step := uint16(1)
-	if readBackward {
-		boundary = math.MaxUint16
+	if req.ChunkId == "" {
+		boundary = 0
 		step = math.MaxUint16 // decrements the value when added
 	}
+	lineCount := 0
 	// Fetch one chunk even if the minimum line count is 0
-	for lineCount := 0; (rsp.Chunk.ChunkId != "" || lineCount < int(req.MinLines)) && chunkIndex != boundary; chunkIndex += step {
+	for chunkIndex := startIndex; chunkIndex != boundary + step; chunkIndex += step {
 		buffer, err := c.ReadChunk(ctx, eventLogPath, chunkIndex)
 		if err != nil {
 			return nil, err
@@ -132,20 +132,20 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 			}
 			lineCount++
 		}
-		if readBackward {
-			rsp.Chunk.Buffer = append(buffer, rsp.Chunk.Buffer...)
-		} else {
+		if step == 1 {
 			rsp.Chunk.Buffer = append(rsp.Chunk.Buffer, buffer...)
+			rsp.NextChunkId = chunkstore.ChunkIndexAsStringId(chunkIndex + step)
+		} else {
+			rsp.Chunk.Buffer = append(buffer, rsp.Chunk.Buffer...)
+			rsp.PreviousChunkId = chunkstore.ChunkIndexAsStringId(chunkIndex + step)
 		}
 		if rsp.Chunk.ChunkId != chunkstore.ChunkIndexAsStringId(chunkIndex) {
 			// No longer fetching a single chunk, ChunkId cannot be meaningfully set.
 			rsp.Chunk.ChunkId = ""
 		}
-	}
-	if readBackward {
-		rsp.PreviousChunkId = chunkstore.ChunkIndexAsStringId(chunkIndex)
-	} else {
-		rsp.NextChunkId = chunkstore.ChunkIndexAsStringId(chunkIndex)
+		if lineCount < int(req.MinLines) {
+			break
+		}
 	}
 
 	if rsp.PreviousChunkId == chunkstore.ChunkIndexAsStringId(math.MaxUint16) {
