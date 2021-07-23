@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"math"
-	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
@@ -15,7 +14,6 @@ import (
 
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	ansi "github.com/leaanthony/go-ansi-parser"
 )
 
 const (
@@ -172,104 +170,4 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, invocationId
 
 type EventLogWriter struct {
 	*chunkstore.ChunkstoreWriter
-}
-
-func (w *EventLogWriter) WriteLines(p []byte) (int, error) {
-	bytesWritten := 0
-	scanner := bufio.NewScanner(bytes.NewReader(p))
-	if scanner.Err() != nil {
-		return bytesWritten, scanner.Err()
-	}
-	line := scanner.Bytes()
-	for scanner.Scan() {
-		n, err := w.ChunkstoreWriter.Write(append(line, '\n'))
-		bytesWritten += n
-		if err != nil {
-			return bytesWritten, err
-		}
-		if scanner.Err() != nil {
-			return bytesWritten, scanner.Err()
-		}
-		line = scanner.Bytes()
-	}
-	if len(p) != 0 && p[len(p)-1] == '\n' {
-		line = append(line, '\n')
-	}
-	n, err := w.ChunkstoreWriter.Write(append(line, '\n'))
-	bytesWritten += n
-	return bytesWritten, err
-}
-
-// Split ANSI text by line, rewriting ANSI control sequences when necessary such
-// that any line printed individually is still formatted as it was in the
-// original buffer
-func (w *EventLogWriter) WriteLinesANSI(p []byte) (int, error) {
-	s := string(p)
-	if !ansi.HasEscapeCodes(s) {
-		return w.WriteLines(p)
-	}
-	// Segments are the input broken up by ANSI format (i. e., every time the
-	// format changes, a new segment begins).
-	remainingSegments, err := ansi.Parse(s)
-	// If parsing fails just fall back to normal write lines.
-	if err != nil {
-		return w.WriteLines(p)
-	}
-	bytesWritten := 0
-	remainingSegmentsIndex := 0
-	for remainingSegmentsIndex < len(remainingSegments) {
-		segment := remainingSegments[remainingSegmentsIndex]
-		label := segment.Label
-		if len(label) == 0 {
-			remainingSegmentsIndex += 1
-			continue
-		}
-		scanner := bufio.NewScanner(strings.NewReader(label))
-		scanner.Scan()
-		if scanner.Err() != nil {
-			return bytesWritten, scanner.Err()
-		}
-		line := scanner.Text()
-		for scanner.Scan() {
-			segment.Label = line
-			n, err := w.ChunkstoreWriter.Write(append([]byte(ansi.String(remainingSegments[:remainingSegmentsIndex+1])), '\n'))
-			bytesWritten += n
-			if err != nil {
-				return bytesWritten, err
-			}
-			remainingSegments = remainingSegments[remainingSegmentsIndex:]
-			remainingSegmentsIndex = 0
-			if scanner.Err() != nil {
-				return bytesWritten, scanner.Err()
-			}
-			line = scanner.Text()
-		}
-		segment.Label = line
-		if strings.HasSuffix(label, "\n") {
-			n, err := w.ChunkstoreWriter.Write(append([]byte(ansi.String(remainingSegments[:remainingSegmentsIndex+1])), '\n'))
-			bytesWritten += n
-			if err != nil {
-				return bytesWritten, err
-			}
-			remainingSegments = remainingSegments[remainingSegmentsIndex+1:]
-			remainingSegmentsIndex = 0
-		} else {
-			remainingSegmentsIndex += 1
-		}
-	}
-	if len(remainingSegments) != 0 {
-		n, err := w.ChunkstoreWriter.Write([]byte(ansi.String(remainingSegments)))
-		bytesWritten += n
-		if err != nil {
-			return bytesWritten, err
-		}
-	}
-	return bytesWritten, nil
-}
-
-func (w *EventLogWriter) Write(p []byte) (int, error) {
-	if len(p) == 0 {
-		return 0, nil
-	}
-	return w.WriteLinesANSI(p)
 }
