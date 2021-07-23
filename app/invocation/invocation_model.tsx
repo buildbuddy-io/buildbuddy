@@ -504,8 +504,4 @@ export default class InvocationModel {
   hasChunkedEventLogs(): boolean {
     return this.invocations[0]?.hasChunkedEventLogs || false;
   }
-
-  isComplete(): boolean {
-    return this.invocations[0]?.invocationStatus === InvocationStatus.COMPLETE_INVOCATION_STATUS;
-  }
 }
