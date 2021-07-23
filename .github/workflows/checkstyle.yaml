@@ -50,9 +50,8 @@ jobs:
         run: |
           git merge-base HEAD origin/master |
             xargs git diff --name-only --diff-filter=AMRCT |
-            grep -P '\.(js|jsx|ts|tsx|html|css|yaml|yml|json|md)$' |
-            ( xargs --no-run-if-empty --delimiter='\n' npx prettier@2.2.1 --check || true ) |
-            ( grep -P '^\[warn\]' || true ) > prettier-errors.txt
+            grep -P '(README|\.(js|jsx|ts|tsx|html|css|yaml|yml|json|md))$' |
+            ( xargs --no-run-if-empty --delimiter='\n' npx prettier@2.2.1 --check 1>/dev/null || true ) > prettier-errors.txt
           echo "prettier errors:"
           cat prettier-errors.txt
 
