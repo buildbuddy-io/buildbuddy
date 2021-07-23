@@ -8,9 +8,9 @@ import { invocation } from "../../proto/invocation_ts_proto";
 import { IconType } from "../favicon/favicon";
 import format from "../format/format";
 
-export const InvocationStatus = invocation.Invocation.InvocationStatus;
-
 export const CI_RUNNER_ROLE = "CI_RUNNER";
+
+export const InvocationStatus = invocation.Invocation.InvocationStatus;
 
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
