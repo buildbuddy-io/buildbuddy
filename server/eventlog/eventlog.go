@@ -80,7 +80,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	}
 
 	chunkIndex := lastChunkIndex
-	if len(req.ChunkId) > 0 {
+	if req.ChunkId != "" {
 		var err error
 		if chunkIndex, err = chunkstore.ChunkIdAsUint16Index(req.ChunkId); err != nil {
 			return nil, err

@@ -563,7 +563,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 		UploadThroughputBytesPerSecond:   i.UploadThroughputBytesPerSecond,
 	}
 	out.LastChunkId = i.LastChunkId
-	if len(i.LastChunkId) > 0 {
+	if i.LastChunkId != "" {
 		out.HasChunkedEventLogs = true
 	}
 	return out
