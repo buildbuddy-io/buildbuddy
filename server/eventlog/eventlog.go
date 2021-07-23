@@ -39,14 +39,10 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	invocationInProgress := inv.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS)
 	c := chunkstore.New(env.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
 	eventLogPath := getEventLogPathFromInvocationId(req.InvocationId)
-	startingIndex, err := chunkstore.ChunkIdAsUint16Index(inv.LastChunkId)
-	if err != nil {
-		return nil, err
-	}
 
 	lastChunkId, err := c.GetLastChunkId(ctx, eventLogPath, inv.LastChunkId)
 	if err != nil {
-		if startingIndex != math.MaxUint16 {
+		if inv.LastChunkId != chunkstore.ChunkIndexAsStringId(math.MaxUint16) {
 			// The last chunk id recorded in the invocation table is wrong; the only
 			// valid reason for GetLastChunkId to fail with the starting index
 			// recorded in the invocation table is if no chunks have yet been written,
