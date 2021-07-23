@@ -21,7 +21,7 @@ const (
 )
 
 var (
-	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js", "Absolute URL path of the app JS entry point")
+	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
 )
 
@@ -43,7 +43,7 @@ type StaticFileServer struct {
 
 // NewStaticFileServer returns a new static file server that will serve the
 // content in relpath, optionally stripping the prefix.
-func NewStaticFileServer(env environment.Env, fs fs.FS, rootPaths []string) (*StaticFileServer, error) {
+func NewStaticFileServer(env environment.Env, fs fs.FS, rootPaths []string, appBundleHash string) (*StaticFileServer, error) {
 	// Handle "/static/*" requests by serving those static files out of the bundled runfiles.
 	handler := http.FileServer(http.FS(fs))
 	if len(rootPaths) > 0 {
@@ -52,7 +52,12 @@ func NewStaticFileServer(env environment.Env, fs fs.FS, rootPaths []string) (*St
 			return nil, err
 		}
 
-		handler = handleRootPaths(env, rootPaths, template, version.AppVersion(), handler)
+		jsPath := *jsEntryPointPath
+		if appBundleHash != "" {
+			jsPath = strings.ReplaceAll(jsPath, "{APP_BUNDLE_HASH}", appBundleHash)
+		}
+
+		handler = handleRootPaths(env, rootPaths, template, version.AppVersion(), jsPath, handler)
 	}
 	return &StaticFileServer{
 		handler: handler,
@@ -64,7 +69,7 @@ func (s *StaticFileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
 }
 
-func handleRootPaths(env environment.Env, rootPaths []string, template *template.Template, version string, h http.Handler) http.Handler {
+func handleRootPaths(env environment.Env, rootPaths []string, template *template.Template, version string, jsPath string, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for _, rootPath := range rootPaths {
 			if strings.HasPrefix(r.URL.Path, rootPath) {
@@ -73,7 +78,7 @@ func handleRootPaths(env environment.Env, rootPaths []string, template *template
 		}
 
 		if r.URL.Path == "/" {
-			serveIndexTemplate(env, template, version, w)
+			serveIndexTemplate(env, template, version, jsPath, w)
 			return
 		}
 
@@ -81,7 +86,7 @@ func handleRootPaths(env environment.Env, rootPaths []string, template *template
 	})
 }
 
-func serveIndexTemplate(env environment.Env, tpl *template.Template, version string, w http.ResponseWriter) {
+func serveIndexTemplate(env environment.Env, tpl *template.Template, version string, jsPath string, w http.ResponseWriter) {
 	issuers := make([]string, 0)
 	ssoEnabled := false
 	// Assemble a slice of the supported issuers. Omit "private" issuers, which have a slug,
@@ -120,10 +125,21 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 	}
 	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendTemplateData{
 		Config:           &config,
-		JsEntryPointPath: *jsEntryPointPath,
+		JsEntryPointPath: jsPath,
 		GaEnabled:        !*disableGA,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func AppBundleHash(bundleFS fs.FS) string {
+	var hashBytes []byte
+	if data, err := fs.ReadFile(bundleFS, "sha.txt"); err == nil {
+		hashBytes = data
+	}
+	if hashBytes != nil {
+		return strings.TrimSpace(string(hashBytes))
+	}
+	return ""
 }
