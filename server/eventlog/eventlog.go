@@ -41,7 +41,10 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	invocationInProgress := inv.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS)
 	c := chunkstore.New(env.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
 	eventLogPath := GetEventLogPathFromInvocationId(req.InvocationId)
-	startingIndex, _ := chunkstore.ChunkIndexAsUint16(inv.LastChunkId)
+	startingIndex, err := chunkstore.ChunkIdAsUint16Index(inv.LastChunkId)
+	if err != nil {
+		return nil, err
+	}
 
 	lastChunkIndex, err := c.GetLastChunkIndex(ctx, eventLogPath, startingIndex)
 	if err != nil {
@@ -62,7 +65,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 				Chunk: &elpb.GetEventLogChunkResponse_Chunk{
 					Buffer: make([]byte, 0),
 				},
-				NextChunkId: chunkstore.ChunkIndexAsString(0),
+				NextChunkId: chunkstore.ChunkIndexAsStringId(0),
 			}, nil
 		}
 		// The invocation is not in progress, no logs will ever exist for this
@@ -77,7 +80,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	chunkIndex := lastChunkIndex
 	if len(req.ChunkId) > 0 {
 		var err error
-		if chunkIndex, err = chunkstore.ChunkIndexAsUint16(req.ChunkId); err != nil {
+		if chunkIndex, err = chunkstore.ChunkIdAsUint16Index(req.ChunkId); err != nil {
 			return nil, err
 		}
 		if chunkIndex > lastChunkIndex {
@@ -85,38 +88,30 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 				// The client requested the invalid id; this is an error.
 				return nil, status.ResourceExhaustedErrorf("Log index limit exceeded.")
 			}
-			if invocationInProgress {
-				// If out-of-bounds and the invocation is in-progress, return an empty
-				// chunk with NextChunkId set to the id of the next chunk to be written
-				// and PreviousChunkId set to the id of the last chunk.
-				return &elpb.GetEventLogChunkResponse{
-					Chunk: &elpb.GetEventLogChunkResponse_Chunk{
-						Buffer: make([]byte, 0),
-					},
-					PreviousChunkId: chunkstore.ChunkIndexAsString(lastChunkIndex),
-					NextChunkId:     chunkstore.ChunkIndexAsString(lastChunkIndex + 1),
-				}, nil
-			} else {
-				// If out-of-bounds and the invocation is not in-progress, return an
-				// empty chunk with NextChunkId left blank and PreviousChunkId set to
-				// the id of the last chunk.
-				return &elpb.GetEventLogChunkResponse{
-					Chunk: &elpb.GetEventLogChunkResponse_Chunk{
-						Buffer: make([]byte, 0),
-					},
-					PreviousChunkId: chunkstore.ChunkIndexAsString(lastChunkIndex),
-				}, nil
+			// If out-of-bounds, return an empty chunk with PreviousChunkId set to the
+			// id of the last chunk.
+			rsp := &elpb.GetEventLogChunkResponse{
+				Chunk: &elpb.GetEventLogChunkResponse_Chunk{
+					Buffer: make([]byte, 0),
+				},
+				PreviousChunkId: chunkstore.ChunkIndexAsStringId(lastChunkIndex),
 			}
+			if invocationInProgress {
+				// If out-of-bounds and the invocation is in-progress, set NextChunkId
+				// to the id of the next chunk to be written.
+				rsp.NextChunkId = chunkstore.ChunkIndexAsStringId(lastChunkIndex + 1)
+			}
+			return rsp, nil
 		}
 	}
 
 	rsp := &elpb.GetEventLogChunkResponse{
 		Chunk: &elpb.GetEventLogChunkResponse_Chunk{
-			ChunkId: chunkstore.ChunkIndexAsString(chunkIndex),
+			ChunkId: chunkstore.ChunkIndexAsStringId(chunkIndex),
 			Buffer:  make([]byte, 0),
 		},
-		NextChunkId:     chunkstore.ChunkIndexAsString(chunkIndex + 1),
-		PreviousChunkId: chunkstore.ChunkIndexAsString(chunkIndex - 1),
+		NextChunkId:     chunkstore.ChunkIndexAsStringId(chunkIndex + 1),
+		PreviousChunkId: chunkstore.ChunkIndexAsStringId(chunkIndex - 1),
 	}
 
 	readBackward := req.ReadBackward || req.ChunkId == ""
@@ -144,18 +139,18 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		} else {
 			rsp.Chunk.Buffer = append(rsp.Chunk.Buffer, buffer...)
 		}
-		if rsp.Chunk.ChunkId != chunkstore.ChunkIndexAsString(chunkIndex) {
+		if rsp.Chunk.ChunkId != chunkstore.ChunkIndexAsStringId(chunkIndex) {
 			// No longer fetching a single chunk, ChunkId cannot be meaningfully set.
 			rsp.Chunk.ChunkId = ""
 		}
 	}
 	if readBackward {
-		rsp.PreviousChunkId = chunkstore.ChunkIndexAsString(chunkIndex)
+		rsp.PreviousChunkId = chunkstore.ChunkIndexAsStringId(chunkIndex)
 	} else {
-		rsp.NextChunkId = chunkstore.ChunkIndexAsString(chunkIndex)
+		rsp.NextChunkId = chunkstore.ChunkIndexAsStringId(chunkIndex)
 	}
 
-	if rsp.PreviousChunkId == chunkstore.ChunkIndexAsString(math.MaxUint16) {
+	if rsp.PreviousChunkId == chunkstore.ChunkIndexAsStringId(math.MaxUint16) {
 		rsp.PreviousChunkId = ""
 	}
 

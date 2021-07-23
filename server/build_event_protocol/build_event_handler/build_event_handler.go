@@ -172,7 +172,7 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 		return err
 	}
 	if e.logWriter != nil {
-		invocation.LastChunkId = chunkstore.ChunkIndexAsString(e.logWriter.GetLastChunkIndex())
+		invocation.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.GetLastChunkIndex())
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
@@ -238,7 +238,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		return err
 	}
 	if e.logWriter != nil {
-		invocation.LastChunkId = chunkstore.ChunkIndexAsString(e.logWriter.GetLastChunkIndex())
+		invocation.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.GetLastChunkIndex())
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
@@ -338,7 +338,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 
 		if e.logWriter != nil {
-			ti.LastChunkId = chunkstore.ChunkIndexAsString(e.logWriter.GetLastChunkIndex())
+			ti.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.GetLastChunkIndex())
 		}
 		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
 			return err
@@ -428,7 +428,7 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 		return err
 	}
 	if e.logWriter != nil {
-		invocationProto.LastChunkId = chunkstore.ChunkIndexAsString(e.logWriter.GetLastChunkIndex())
+		invocationProto.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.GetLastChunkIndex())
 	}
 	ti = tableInvocationFromProto(invocationProto, ti.BlobID)
 	if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {

@@ -95,11 +95,11 @@ func (c *Chunkstore) DeleteBlob(ctx context.Context, blobName string) error {
 	}
 }
 
-func ChunkIndexAsString(index uint16) string {
+func ChunkIndexAsStringId(index uint16) string {
 	return fmt.Sprintf("%04x", index)
 }
 
-func ChunkIndexAsUint16(id string) (uint16, error) {
+func ChunkIdAsUint16Index(id string) (uint16, error) {
 	n, err := strconv.ParseUint(id, 16, 16)
 	if err != nil {
 		return 0, err
@@ -108,7 +108,7 @@ func ChunkIndexAsUint16(id string) (uint16, error) {
 }
 
 func ChunkName(blobName string, index uint16) string {
-	return blobName + "_" + ChunkIndexAsString(index)
+	return blobName + "_" + ChunkIndexAsStringId(index)
 }
 
 func (c *Chunkstore) GetLastChunkIndex(ctx context.Context, blobName string, startingIndex uint16) (uint16, error) {
