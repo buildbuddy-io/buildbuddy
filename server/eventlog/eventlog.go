@@ -18,11 +18,11 @@ import (
 
 const (
 	// Chunks will be flushed to blobstore when they reach this size.
-	defaultLogChunkSize = 1_000 // 2MB
+	defaultLogChunkSize = 2_000_000 // 2MB
 
 	// Chunks will also be flushed to blobstore after this much time
 	// passes with no new data being written.
-	defaultChunkTimeout = 5 * time.Second
+	defaultChunkTimeout = 15 * time.Second
 )
 
 func getEventLogPathFromInvocationId(invocationId string) string {
