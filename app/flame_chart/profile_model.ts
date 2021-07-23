@@ -90,10 +90,10 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
       event.dur &&
       event.dur > visibilityThreshold
   );
-  
+
   // Merge all of the threads with a single thread name under the same tid.
   for (const [tid, threadName] of threadNameByTid.entries()) {
-      threadNameToTidMap.set(threadName, tid)
+    threadNameToTidMap.set(threadName, tid);
   }
 
   for (const event of events) {
@@ -101,7 +101,7 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
   }
 
   events.sort(eventComparator);
-  
+
   const timelines: ThreadTimeline[] = [];
   let tid = null;
   let timeline: ThreadTimeline | null = null;

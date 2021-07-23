@@ -3,9 +3,7 @@ import router from "../../../app/router/router";
 import { grp } from "../../../proto/group_ts_proto";
 import authService, { User } from "../../../app/auth/auth_service";
 import rpcService from "../../../app/service/rpc_service";
-import FilledButton, {
-  OutlinedButton,
-} from "../../../app/components/button/button";
+import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 
 export interface JoinOrgComponentProps {
   user: User;
