@@ -150,8 +150,6 @@ func main() {
 	if err := ws.setup(ctx); err != nil {
 		fatal(status.WrapError(err, "failed to set up git repo"))
 	}
-	runDebugCommand(ws.log, `pwd`)
-	runDebugCommand(ws.log, `ls -la`)
 	cfg, err := readConfig()
 	if err != nil {
 		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
@@ -222,9 +220,9 @@ func (ws *workspace) RunAllActions(ctx context.Context, cfg *config.BuildBuddyCo
 			// Print the setup logs to the first action's logs.
 			b, _ := io.ReadAll(&ws.logBuf)
 			ws.logBuf.Reset()
-			ar.log.Printf("[BUILDBUDDY] Setup completed in %s", startTime.Sub(ws.startTime))
+			ar.log.Printf("Setup completed in %s", startTime.Sub(ws.startTime))
 			startTime = ws.startTime
-			ar.log.Printf("[BUILDBUDDY] Setup logs:")
+			ar.log.Printf("Setup logs:")
 			ar.log.Printf(string(b))
 		}
 
@@ -459,22 +457,8 @@ type actionRunner struct {
 	progressCount int32
 }
 
-func runDebugCommand(out io.Writer, script string) {
-	if !*debug {
-		return
-	}
-	io.WriteString(out, fmt.Sprintf("(debug) # %s\n", script))
-	output, err := exec.Command("sh", "-c", script).CombinedOutput()
-	out.Write(output)
-	exitCode := getExitCode(err)
-	if exitCode != noExitCode {
-		io.WriteString(out, fmt.Sprintf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset))
-	}
-	io.WriteString(out, "===\n")
-}
-
 func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.Time) error {
-	ar.log.Printf("[BUILDBUDDY] Running action %q", ar.action.Name)
+	ar.log.Printf("Running action %q", ar.action.Name)
 
 	// Only print this to the local logs -- it's mostly useful for development purposes.
 	log.Infof("Invocation URL:  %s", invocationURL(ar.bep.streamID.InvocationId))
@@ -611,10 +595,8 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 		runErr := runCommand(ctx, *bazelCommand, args, nil /*=env*/, ar.log)
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
-			ar.log.Printf("%s[BUILDBUDDY] (command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
+			ar.log.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
 		}
-
-		runDebugCommand(ar.log, `ls -la`)
 
 		// Publish the status of each command as well as the finish time.
 		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Wait()`.
@@ -924,7 +906,6 @@ func git(ctx context.Context, out io.Writer, args ...string) *gitError {
 
 func writeCommandSummary(out io.Writer, format string, args ...interface{}) {
 	io.WriteString(out, ansiGray)
-	io.WriteString(out, "[BUILDBUDDY] ")
 	io.WriteString(out, fmt.Sprintf(format, args...))
 	io.WriteString(out, ansiReset)
 	io.WriteString(out, "\n")
