@@ -143,7 +143,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 			// No longer fetching a single chunk, ChunkId cannot be meaningfully set.
 			rsp.Chunk.ChunkId = ""
 		}
-		if lineCount < int(req.MinLines) {
+		if lineCount >= int(req.MinLines) {
 			break
 		}
 	}
