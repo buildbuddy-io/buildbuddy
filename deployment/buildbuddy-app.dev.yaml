@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-    name: buildbuddy-dev
+  name: buildbuddy-dev
 ---
 apiVersion: apps/v1beta1
 kind: Deployment
@@ -24,16 +24,16 @@ spec:
         - name: buildbuddy-app
           image: gcr.io/flame-build/buildbuddy-app-dev:server_image
           imagePullPolicy: Always
-          args: 
+          args:
             - "--config_file=config/buildbuddy.dev.yaml"
             - "--server_type=dev-buildbuddy-server"
           env:
-          - name: ENV
-            value: "dev"
-          - name: SERVICE_NAME
-            value: "app-backend"
-          - name: VERSION
-            value: "prod-1.0"
+            - name: ENV
+              value: "dev"
+            - name: SERVICE_NAME
+              value: "app-backend"
+            - name: VERSION
+              value: "prod-1.0"
           ports:
             - name: http
               containerPort: 8080
@@ -71,11 +71,11 @@ spec:
     app: buildbuddy-app
   ports:
     - name: http
-      protocol: 'TCP'
+      protocol: "TCP"
       port: 80
       targetPort: 8080
     - name: grpc
-      protocol: 'TCP'
+      protocol: "TCP"
       port: 1985
       targetPort: 1985
   type: LoadBalancer
@@ -95,7 +95,7 @@ metadata:
   name: buildbuddy-app-ingress
   namespace: buildbuddy-dev
   annotations:
-      networking.gke.io/managed-certificates: "app-buildbuddy-dev-certificate"
+    networking.gke.io/managed-certificates: "app-buildbuddy-dev-certificate"
 spec:
   rules:
     - host: app.buildbuddy.dev

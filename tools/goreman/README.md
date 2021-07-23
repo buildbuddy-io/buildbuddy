@@ -2,9 +2,10 @@
 
 This directory contains tools that make it easier to run multiple BuildBuddy
 servers locally. You may want to do this in order to:
- - Test remote execution locally
- - Test distributed caching locally
- - Something else!
+
+- Test remote execution locally
+- Test distributed caching locally
+- Something else!
 
 ## Pre-reqs
 

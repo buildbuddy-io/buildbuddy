@@ -6,7 +6,7 @@ on:
       - master
     paths-ignore:
       - "docs/**"
-      - 'website/**'
+      - "website/**"
 
 jobs:
   build:
