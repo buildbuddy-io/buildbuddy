@@ -44,11 +44,11 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		return nil, err
 	}
 
-	lastChunkIndex, err := c.GetLastChunkIndex(ctx, eventLogPath, startingIndex)
+	lastChunkId, err := c.GetLastChunkId(ctx, eventLogPath, inv.LastChunkId)
 	if err != nil {
 		if startingIndex != math.MaxUint16 {
 			// The last chunk id recorded in the invocation table is wrong; the only
-			// valid reason for GetLastChunkIndex to fail with the starting index
+			// valid reason for GetLastChunkId to fail with the starting index
 			// recorded in the invocation table is if no chunks have yet been written,
 			// in which case the starting index is equal to invalid chunk id. Most
 			// likely, the logs were deleted.
@@ -73,6 +73,10 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 				Buffer: make([]byte, 0),
 			},
 		}, nil
+	}
+	lastChunkIndex, err := chunkstore.ChunkIdAsUint16Index(lastChunkId)
+	if err != nil {
+		return nil, err
 	}
 
 	chunkIndex := lastChunkIndex
