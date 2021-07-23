@@ -29,7 +29,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jhump/protoreflect v1.8.2
-	github.com/leaanthony/go-ansi-parser v1.2.0
+	github.com/jsimonetti/rtnetlink v0.0.0-20210714135244-af39de65d6ad // indirect
 	github.com/lib/pq v1.5.2 // indirect
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-shellwords v1.0.11

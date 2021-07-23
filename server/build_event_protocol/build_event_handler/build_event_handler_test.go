@@ -8,6 +8,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
@@ -69,6 +71,13 @@ func startedEvent(options string) *anypb.Any {
 	return progressAny
 }
 
+func assertAPIKeyRedacted(t *testing.T, invocation *inpb.Invocation, apiKey string) {
+	txt := proto.MarshalTextString(invocation)
+	assert.NotContains(t, txt, apiKey, "API key %q should not appear in invocation", apiKey)
+	assert.Contains(t, txt, "--remote_header='x-buildbuddy-api-key=<REDACTED>'", "All remote headers should be redacted")
+	assert.Contains(t, txt, "--should_be_redacted=<REDACTED>", "BuildBuddy API key should be redacted, even if not in remote header")
+}
+
 func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
@@ -99,7 +108,7 @@ func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
 
 	// Send authenticated started event with api key
-	request := streamRequest(startedEvent("--remote_upload_local_results --remote_header='"+testauth.APIKeyHeader+"=USER1' --remote_instance_name=foo"), "test-invocation-id", 1)
+	request := streamRequest(startedEvent("--remote_upload_local_results --remote_header='"+testauth.APIKeyHeader+"=USER1' --remote_instance_name=foo --should_be_redacted=USER1"), "test-invocation-id", 1)
 	err := channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -107,6 +116,17 @@ func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
+
+	// Now write the workspace status event to ensure all events are written,
+	// then make sure the API key is not visible in the returned invocation.
+	request = streamRequest(workspaceStatusEvent("", ""), "test-invocation-id", 2)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
+	assert.NoError(t, err)
+	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
+
+	assertAPIKeyRedacted(t, invocation, "USER1")
 }
 
 func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
@@ -128,7 +148,7 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	assert.Error(t, err)
 
 	// Send started event with api key
-	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), "test-invocation-id", 2)
+	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1' --should_be_redacted=USER1"), "test-invocation-id", 2)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -136,6 +156,90 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
+
+	// Now write the workspace status event to ensure all events are written,
+	// then make sure the API key is not visible in the returned invocation.
+	request = streamRequest(workspaceStatusEvent("", ""), "test-invocation-id", 2)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
+	assert.NoError(t, err)
+	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
+
+	assertAPIKeyRedacted(t, invocation, "USER1")
+}
+
+func TestAuthenticatedHandleEventWithStartedFirst_OptimizedAPIKeyRedaction(t *testing.T) {
+	flags.Set(t, "enable_optimized_redaction", "true")
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	ctx := context.Background()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel := handler.OpenChannel(ctx, "test-invocation-id")
+
+	// Send authenticated started event with api key
+	request := streamRequest(startedEvent("--remote_upload_local_results --remote_header='"+testauth.APIKeyHeader+"=USER1' --remote_instance_name=foo --should_be_redacted=USER1"), "test-invocation-id", 1)
+	err := channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	// Look up the invocation and make sure it's only visible to group
+	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
+	assert.NoError(t, err)
+	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
+
+	// Now write the workspace status event to ensure all events are written,
+	// then make sure the API key is not visible in the returned invocation.
+	request = streamRequest(workspaceStatusEvent("", ""), "test-invocation-id", 2)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
+	assert.NoError(t, err)
+	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
+
+	assertAPIKeyRedacted(t, invocation, "USER1")
+}
+
+func TestAuthenticatedHandleEventWithProgressFirst_OptimizedAPIKeyRedaction(t *testing.T) {
+	flags.Set(t, "enable_optimized_redaction", "true")
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	ctx := context.Background()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel := handler.OpenChannel(ctx, "test-invocation-id")
+
+	// Send progress event
+	request := streamRequest(progressEvent(), "test-invocation-id", 1)
+	err := channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	// Make sure invocation isn't written yet
+	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
+	assert.Error(t, err)
+
+	// Send started event with api key
+	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1' --should_be_redacted=USER1"), "test-invocation-id", 2)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	// Look up the invocation and make sure it's only visible to group
+	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
+	assert.NoError(t, err)
+	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
+
+	// Now write the workspace status event to ensure all events are written,
+	// then make sure the API key is not visible in the returned invocation.
+	request = streamRequest(workspaceStatusEvent("", ""), "test-invocation-id", 2)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
+	assert.NoError(t, err)
+	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
+
+	assertAPIKeyRedacted(t, invocation, "USER1")
 }
 
 func TestUnAuthenticatedHandleEventWithProgressFirst(t *testing.T) {

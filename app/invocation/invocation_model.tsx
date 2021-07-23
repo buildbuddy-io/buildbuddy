@@ -20,6 +20,7 @@ export default class InvocationModel {
   targets: build_event_stream.BuildEvent[] = [];
   succeeded: build_event_stream.BuildEvent[] = [];
   failed: build_event_stream.BuildEvent[] = [];
+  skipped: build_event_stream.BuildEvent[] = [];
   fetchEventURLs: string[] = [];
   succeededTest: build_event_stream.BuildEvent[] = [];
   failedTest: build_event_stream.BuildEvent[] = [];
@@ -95,7 +96,8 @@ export default class InvocationModel {
         if (buildEvent.started) model.started = buildEvent.started as build_event_stream.BuildStarted;
         if (buildEvent.expanded) model.expanded = buildEvent as build_event_stream.BuildEvent;
         if (buildEvent.finished) model.finished = buildEvent.finished as build_event_stream.BuildFinished;
-        if (buildEvent.aborted) model.aborted = buildEvent as build_event_stream.BuildEvent;
+        if (buildEvent.aborted && buildEvent.aborted.reason.toString().toLowerCase() != "skipped")
+          model.aborted = buildEvent as build_event_stream.BuildEvent;
         if (buildEvent.buildToolLogs) model.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         if (buildEvent.workspaceStatus) {
           model.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
@@ -147,6 +149,10 @@ export default class InvocationModel {
         model.succeeded.push(buildEvent as build_event_stream.BuildEvent);
       } else {
         model.failed.push(buildEvent as build_event_stream.BuildEvent);
+      }
+
+      if (buildEvent.aborted && buildEvent.aborted.reason.toString().toLowerCase() == "skipped") {
+        model.skipped.push(buildEvent as build_event_stream.BuildEvent);
       }
     }
 
@@ -267,6 +273,10 @@ export default class InvocationModel {
   }
 
   getBuildkiteUrl() {
+    if (this.clientEnvMap.get("BUILDKITE_BUILD_URL") && this.clientEnvMap.get("BUILDKITE_JOB_ID")) {
+      return `${this.clientEnvMap.get("BUILDKITE_BUILD_URL")}#${this.clientEnvMap.get("BUILDKITE_JOB_ID")}`;
+    }
+
     return this.clientEnvMap.get("BUILDKITE_BUILD_URL");
   }
 

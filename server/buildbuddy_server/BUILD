@@ -28,7 +28,6 @@ go_library(
         "//server/util/perms",
         "//server/util/request_context",
         "//server/util/status",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],

@@ -83,7 +83,7 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
         <div className="content">
           <div className="title">Build logs </div>
           <div className="details">
-            <TerminalComponent value={this.getConsoleBuffer()} />
+            <TerminalComponent value={this.getConsoleBuffer()} lightTheme={!this.props.dark} />
           </div>
         </div>
       </div>

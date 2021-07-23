@@ -21,9 +21,6 @@ message GetEventLogChunkRequest {
   // this requirement is still not satisfied, the buffer will instead contain as
   // many lines as are available.
   int32 min_lines = 4;
-
-  // Specify direction to read to satisfy the minimum line count
-  bool read_backward = 5;
 }
 
 message GetEventLogChunkResponse {

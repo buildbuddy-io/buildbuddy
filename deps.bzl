@@ -370,8 +370,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_cilium_ebpf",
         importpath = "github.com/cilium/ebpf",
-        sum = "h1:QlHdikaxALkqWasW8hAC1mfR0jdmvbfaBdBPFmRSglA=",
-        version = "v0.4.0",
+        sum = "h1:iHsfF/t4aW4heW2YKfeHrVPGdtYTL4C4KocpM8KTSnI=",
+        version = "v0.6.2",
     )
     go_repository(
         name = "com_github_client9_misspell",
@@ -1866,6 +1866,19 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v0.1.0",
     )
     go_repository(
+        name = "com_github_josharian_native",
+        importpath = "github.com/josharian/native",
+        sum = "h1:uhL5Gw7BINiiPAo24A2sxkcDI0Jt/sqp1v5xQCniEFA=",
+        version = "v0.0.0-20200817173448-b6b71def0850",
+    )
+    go_repository(
+        name = "com_github_jsimonetti_rtnetlink",
+        importpath = "github.com/jsimonetti/rtnetlink",
+        sum = "h1:/D5pcmLLpcuMnRkd08U1dJ0xiHXGXYqmLIR4+pfcEMY=",
+        version = "v0.0.0-20210714135244-af39de65d6ad",
+    )
+
+    go_repository(
         name = "com_github_json_iterator_go",
         importpath = "github.com/json-iterator/go",
         sum = "h1:Kz6Cvnvv2wGdaG/V8yMvfkmNiXq9Ya2KUv4rouJJr68=",
@@ -2104,6 +2117,31 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:I0XW9+e1XWDxdcEniV4rQAIOPUGDq67JSCiRCgGCZLI=",
         version = "v1.0.2-0.20181231171920-c182affec369",
     )
+    go_repository(
+        name = "com_github_mdlayher_ethtool",
+        importpath = "github.com/mdlayher/ethtool",
+        sum = "h1:WgyLFv10Ov49JAQI/ZLUkCZ7VJS3r74hwFIGXJsgZlY=",
+        version = "v0.0.0-20210210192532-2b88debcdd43",
+    )
+    go_repository(
+        name = "com_github_mdlayher_genetlink",
+        importpath = "github.com/mdlayher/genetlink",
+        sum = "h1:OoHN1OdyEIkScEmRgxLEe2M9U8ClMytqA5niynLtfj0=",
+        version = "v1.0.0",
+    )
+    go_repository(
+        name = "com_github_mdlayher_netlink",
+        importpath = "github.com/mdlayher/netlink",
+        sum = "h1:I154BCU+mKlIf7BgcAJB2r7QjveNPty6uNY1g9ChVfI=",
+        version = "v1.4.1",
+    )
+    go_repository(
+        name = "com_github_mdlayher_socket",
+        importpath = "github.com/mdlayher/socket",
+        sum = "h1:qEtkL8n1DAHpi5/AOgAckwGQUlMe4+jhL/GMt+GKIks=",
+        version = "v0.0.0-20210307095302-262dc9984e00",
+    )
+
     go_repository(
         name = "com_github_mdlayher_vsock",
         importpath = "github.com/mdlayher/vsock",
@@ -3677,8 +3715,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_net",
         importpath = "golang.org/x/net",
-        sum = "h1:4nGaVu0QrbjT/AK2PRLuQfQuh6DJve+pELhqTdAj3x0=",
-        version = "v0.0.0-20210405180319-a5a99cb37ef4",
+        sum = "h1:wjuX4b5yYQnEQHzd+CBcrcC6OVR2J1CN6mUy0oSxIPo=",
+        version = "v0.0.0-20210525063256-abc453219eb5",
     )
 
     go_repository(
@@ -3703,22 +3741,22 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_term",
         importpath = "golang.org/x/term",
-        sum = "h1:SZxvLBoTP5yHO3Frd4z4vrF+DBX9vMVanchswa69toE=",
-        version = "v0.0.0-20210220032956-6a3ed077a48d",
+        sum = "h1:v+OssWQX+hTHEmOBgwxdZxK4zHq3yOs8F9J7mk0PY8E=",
+        version = "v0.0.0-20201126162022-7de9c90e9dd1",
     )
 
     go_repository(
         name = "org_golang_x_text",
         importpath = "golang.org/x/text",
-        sum = "h1:i6eZZ+zk0SOf0xgBpEpPD18qWcJda6q1sxt3S0kzyUQ=",
-        version = "v0.3.5",
+        sum = "h1:aRYxNxv6iGQlyVaZmk6ZgYEDa+Jg18DxebPSrd6bg1M=",
+        version = "v0.3.6",
     )
 
     go_repository(
         name = "org_golang_x_time",
         importpath = "golang.org/x/time",
-        sum = "h1:O8mE0/t419eoIwhTFpKVkHiTs/Igowgfkj25AcZrtiE=",
-        version = "v0.0.0-20210220033141-f8bda1e9f3ba",
+        sum = "h1:EHBhcS0mlXEAVwNyO2dLfjToGsyY4j24pTs2ScHnX7s=",
+        version = "v0.0.0-20200630173020-3af7569d3a1e",
     )
 
     go_repository(

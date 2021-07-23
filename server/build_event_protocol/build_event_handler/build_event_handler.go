@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"io"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
+	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
@@ -44,6 +46,10 @@ const (
 	defaultChunkFileSizeBytes = 1000 * 100 // 100KB
 )
 
+var (
+	enableOptimizedRedaction = flag.Bool("enable_optimized_redaction", false, "Enables more efficient API key redaction.")
+)
+
 type BuildEventHandler struct {
 	env environment.Env
 }
@@ -60,6 +66,10 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		chunkFileSizeBytes = defaultChunkFileSizeBytes
 	}
 	buildEventAccumulator := accumulator.NewBEValues(iid)
+	var logWriter *eventlog.EventLogWriter
+	if b.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+		logWriter = eventlog.NewEventLogWriter(ctx, b.env.GetBlobstore(), iid)
+	}
 	return &EventChannel{
 		env:                     b.env,
 		ctx:                     ctx,
@@ -69,7 +79,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		targetTracker:           target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		hasReceivedStartedEvent: false,
 		eventsBeforeStarted:     make([]*inpb.InvocationEvent, 0),
-		logWriter:               eventlog.NewEventLogWriter(ctx, b.env.GetBlobstore(), iid),
+		logWriter:               logWriter,
 	}
 }
 
@@ -161,8 +171,8 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 	if err != nil {
 		return err
 	}
-	if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
-		invocation.LastChunkId = chunkstore.ChunkIndexAsString(e.logWriter.GetLastChunkIndex())
+	if e.logWriter != nil {
+		invocation.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.GetLastChunkIndex())
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
@@ -227,8 +237,8 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	if err != nil {
 		return err
 	}
-	if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
-		invocation.LastChunkId = chunkstore.ChunkIndexAsString(e.logWriter.GetLastChunkIndex())
+	if e.logWriter != nil {
+		invocation.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.GetLastChunkIndex())
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
@@ -279,7 +289,9 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	iid := streamID.InvocationId
 
 	if isFinalEvent(event.OrderedBuildEvent) {
-		e.logWriter.Close()
+		if e.logWriter != nil {
+			e.logWriter.Close()
+		}
 		return nil
 	}
 
@@ -304,6 +316,9 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			InvocationPK:     md5Int64(iid),
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
 		}
+		if *enableOptimizedRedaction {
+			ti.RedactionFlags = redact.RedactionFlagAPIKey
+		}
 
 		if auth := e.env.GetAuthenticator(); auth != nil {
 			options, err := extractOptionsFromStartedBuildEvent(&bazelBuildEvent)
@@ -322,8 +337,8 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			}
 		}
 
-		if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
-			ti.LastChunkId = chunkstore.ChunkIndexAsString(e.logWriter.GetLastChunkIndex())
+		if e.logWriter != nil {
+			ti.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.GetLastChunkIndex())
 		}
 		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
 			return err
@@ -350,11 +365,17 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 }
 
 func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid string) error {
+	if *enableOptimizedRedaction {
+		if err := redact.APIKey(e.ctx, e.env, event.BuildEvent); err != nil {
+			return err
+		}
+	}
+
 	e.beValues.AddEvent(event.BuildEvent) // in-memory structure to hold common values we want from the event.
 
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
-		if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+		if e.logWriter != nil {
 			screenWriter := terminal.NewScreenWriter()
 			screenWriter.Write([]byte(p.Progress.Stderr))
 			screenWriter.Write([]byte(p.Progress.Stdout))
@@ -371,8 +392,7 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	e.statusReporter.ReportStatusForEvent(e.ctx, event.BuildEvent)
 
 	// For everything else, just save the event to our buffer and keep on chugging.
-	err := e.pw.WriteProtoToStream(e.ctx, event)
-	if err != nil {
+	if err := e.pw.WriteProtoToStream(e.ctx, event); err != nil {
 		return err
 	}
 
@@ -407,8 +427,8 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 	if err != nil {
 		return err
 	}
-	if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
-		invocationProto.LastChunkId = chunkstore.ChunkIndexAsString(e.logWriter.GetLastChunkIndex())
+	if e.logWriter != nil {
+		invocationProto.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.GetLastChunkIndex())
 	}
 	ti = tableInvocationFromProto(invocationProto, ti.BlobID)
 	if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
@@ -447,14 +467,19 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	for {
 		event := &inpb.InvocationEvent{}
 		err := pr.ReadProto(ctx, event)
-		if err == nil {
-			parser.ParseEvent(event)
-		} else if err == io.EOF {
+		if err == io.EOF {
 			break
-		} else {
+		}
+		if err != nil {
 			log.Warningf("Error reading proto from log: %s", err)
 			return nil, err
 		}
+		if !*enableOptimizedRedaction || ti.RedactionFlags&redact.RedactionFlagAPIKey == 0 {
+			if err := redact.APIKeysWithSlowRegexp(ctx, env, event.BuildEvent); err != nil {
+				return nil, err
+			}
+		}
+		parser.ParseEvent(event)
 	}
 	parser.FillInvocation(invocation)
 	return invocation, nil
@@ -491,6 +516,9 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 		i.Perms = perms.OTHERS_READ
 	}
 	i.LastChunkId = p.LastChunkId
+	if *enableOptimizedRedaction {
+		i.RedactionFlags = redact.RedactionFlagAPIKey
+	}
 	return i
 }
 
@@ -535,7 +563,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 		UploadThroughputBytesPerSecond:   i.UploadThroughputBytesPerSecond,
 	}
 	out.LastChunkId = i.LastChunkId
-	if len(i.LastChunkId) > 0 {
+	if i.LastChunkId != "" {
 		out.HasChunkedEventLogs = true
 	}
 	return out
