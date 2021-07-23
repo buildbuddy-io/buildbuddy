@@ -25,7 +25,7 @@ const (
 	defaultChunkTimeout = 15 * time.Second
 )
 
-func GetEventLogPathFromInvocationId(invocationId string) string {
+func getEventLogPathFromInvocationId(invocationId string) string {
 	return invocationId + "/chunks/log/eventlog"
 }
 
@@ -38,7 +38,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 
 	invocationInProgress := inv.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS)
 	c := chunkstore.New(env.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
-	eventLogPath := GetEventLogPathFromInvocationId(req.InvocationId)
+	eventLogPath := getEventLogPathFromInvocationId(req.InvocationId)
 	startingIndex, err := chunkstore.ChunkIdAsUint16Index(inv.LastChunkId)
 	if err != nil {
 		return nil, err
@@ -168,7 +168,7 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, invocationId
 				WriteTimeoutDuration: defaultChunkTimeout,
 				NoSplitWrite:         true,
 			},
-		).Writer(ctx, GetEventLogPathFromInvocationId(invocationId)),
+		).Writer(ctx, getEventLogPathFromInvocationId(invocationId)),
 	}
 }
 
