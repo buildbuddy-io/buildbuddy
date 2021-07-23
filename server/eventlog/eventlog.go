@@ -116,7 +116,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		PreviousChunkId: chunkstore.ChunkIndexAsStringId(chunkIndex - 1),
 	}
 
-	readBackward := req.ReadBackward || req.ChunkId == ""
+	readBackward := req.ChunkId == ""
 	boundary := lastChunkIndex + 1
 	step := uint16(1)
 	if readBackward {
