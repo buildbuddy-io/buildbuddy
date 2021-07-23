@@ -111,7 +111,7 @@ func ChunkName(blobName string, index uint16) string {
 	return blobName + "_" + ChunkIndexAsStringId(index)
 }
 
-func (c* Chunkstore) GetLastChunkId(ctx context.Context, blobName string, startingId string) (string, error) {
+func (c *Chunkstore) GetLastChunkId(ctx context.Context, blobName string, startingId string) (string, error) {
 	startingIndex, err := ChunkIdAsUint16Index(startingId)
 	if err != nil {
 		return "", nil
