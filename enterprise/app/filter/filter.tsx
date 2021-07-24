@@ -10,7 +10,7 @@ export interface FilterProps {
   search: URLSearchParams;
 }
 
-export interface State {
+interface State {
   isDatePickerOpen?: boolean;
 }
 
