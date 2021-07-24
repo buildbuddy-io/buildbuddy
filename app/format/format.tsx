@@ -1,5 +1,6 @@
 import Long from "long";
 import moment from "moment";
+import { isSameDay } from "date-fns";
 
 export function percent(percent: number | Long) {
   if (!percent) return "0";
@@ -110,6 +111,35 @@ export function formatTimestamp(timestamp: { seconds?: number | Long; nanos?: nu
     .padStart(3, "0")} ${moment(+timestamp.seconds * 1000).format("A")}`;
 }
 
+const DATE_RANGE_SEPARATOR = "\u2013";
+
+export function formatDateRange(startDate: Date, endDate: Date) {
+  console.log("format d1=", startDate, "d2=", endDate);
+
+  // TODO: Use `new Intl.DateTimeFormat(...).formatRange` when supported by all browsers.
+  let startFormat, endFormat;
+  const now = new Date();
+  if (startDate.getFullYear() === endDate.getFullYear()) {
+    startFormat = "MMMM Do";
+    endFormat = "MMMM Do, YYYY";
+    if (endDate.getFullYear() === now.getFullYear()) {
+      endFormat = "MMMM Do";
+    }
+  } else {
+    startFormat = endFormat = "MMMM Do, YYYY";
+  }
+
+  let start = moment(startDate).format(startFormat);
+  let end = moment(endDate).format(endFormat);
+
+  if (isSameDay(now, startDate)) start = "Today";
+  if (isSameDay(now, endDate)) end = "Today";
+
+  if (start === end) return start;
+
+  return `${start} ${DATE_RANGE_SEPARATOR} ${end}`;
+}
+
 export function formatGitUrl(url: string) {
   return url
     ?.replace("https://", "")
@@ -155,4 +185,5 @@ export default {
   formatCommitHash,
   formatRole,
   formatWithCommas,
+  formatDateRange,
 };

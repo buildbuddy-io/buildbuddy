@@ -62,6 +62,8 @@ exports_files([
     "package.json",
     "yarn.lock",
     "VERSION",
+    "node_modules/react-date-range/dist/styles.css",
+    "node_modules/react-date-range/dist/theme/default.css",
 ])
 
 filegroup(

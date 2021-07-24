@@ -1,11 +1,13 @@
 import React from "react";
 import { fromEvent, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
+import capabilities from "../../../app/capabilities/capabilities";
 import LinkButton from "../../../app/components/button/link_button";
 import format from "../../../app/format/format";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
+import FilterComponent from "../filter/filter";
 import OrgJoinRequestsComponent from "../org/org_join_requests";
 import HistoryInvocationCardComponent from "./history_invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
@@ -27,7 +29,7 @@ interface Props {
   repo?: string;
   commit?: string;
   user?: User;
-  search?: URLSearchParams;
+  search: URLSearchParams;
   hash: string;
 }
 
@@ -376,6 +378,7 @@ export default class HistoryComponent extends React.Component {
           )}
         </div>
         {this.props.hash === "#users" && <OrgJoinRequestsComponent user={this.props.user} />}
+        {capabilities.globalFilter && <FilterComponent search={this.props.search} />}
         {this.state.invocations.length > 0 && (
           <div className="container nopadding-dense">
             {!slice &&

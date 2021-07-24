@@ -21,6 +21,12 @@ body {
   word-break: break-word;
 }
 
+button,
+input,
+select {
+  font-family: inherit;
+}
+
 #app {
   display: flex;
   flex-direction: column;
@@ -867,7 +873,6 @@ code .comment {
   color: #fff;
   font-size: 16px;
   font-weight: 600;
-  font-family: inherit;
   border: 0;
   border-radius: 8px;
   margin-bottom: 32px;
@@ -888,7 +893,6 @@ code .comment {
   color: #fff;
   font-size: 16px;
   font-weight: 600;
-  font-family: inherit;
   border: 0;
   border-radius: 8px;
   margin-bottom: 32px;
