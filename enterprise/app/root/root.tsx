@@ -73,7 +73,6 @@ export default class EnterpriseRootComponent extends React.Component {
     if (this.state.path != window.location.pathname) {
       faviconService.setDefaultFavicon();
     }
-    console.log("Updated this.state.search to ", window.location.search);
     this.setState({
       hash: window.location.hash,
       path: window.location.pathname,
