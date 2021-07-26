@@ -72,13 +72,12 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		chunkFileSizeBytes = defaultChunkFileSizeBytes
 	}
 	buildEventAccumulator := accumulator.NewBEValues(iid)
-	redactor := redact.NewStreamingRedactor(b.env)
 	return &EventChannel{
 		env:                     b.env,
 		ctx:                     ctx,
 		pw:                      protofile.NewBufferedProtoWriter(b.env.GetBlobstore(), iid, chunkFileSizeBytes),
 		beValues:                buildEventAccumulator,
-		redactor:                redactor,
+		redactor:                redact.NewStreamingRedactor(b.env),
 		statusReporter:          build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
 		targetTracker:           target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		hasReceivedStartedEvent: false,
