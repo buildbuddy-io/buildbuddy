@@ -8,7 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/golang/protobuf/proto"
 
-	bespb "github.com/buildbuddy-io/buildbuddy/proto/bespb"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 )
 
 const (
