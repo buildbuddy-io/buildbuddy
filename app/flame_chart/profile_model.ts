@@ -27,9 +27,12 @@ export type ThreadEvent = TraceEvent & {
 export type ThreadTimeline = {
   tid: number;
   threadName: string;
+  skyframeNumber?: number;
   events: ThreadEvent[];
   maxDepth: number;
 };
+
+const SKYFRAME_EVALUATOR_PATTERN = /skyframe evaluator (\d+)/;
 
 function eventComparator(a: TraceEvent, b: TraceEvent) {
   // Group by thread ID.
@@ -47,8 +50,13 @@ function eventComparator(a: TraceEvent, b: TraceEvent) {
   return durationDiff;
 }
 
-function threadNameComparator(a: ThreadTimeline, b: ThreadTimeline) {
-  // Sort by thread name.
+function timelineComparator(a: ThreadTimeline, b: ThreadTimeline) {
+  // Within "skyframe evaluator {index}" threads, sort numerically by index.
+  if (a.skyframeNumber !== undefined && b.skyframeNumber !== undefined) {
+    return a.skyframeNumber - b.skyframeNumber;
+  }
+
+  // Sort other timelines lexicographically by thread name.
   return a.threadName.localeCompare(b.threadName);
 }
 
@@ -149,9 +157,15 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
 
   for (const timeline of timelines) {
     timeline.threadName = threadNameByTid.get(timeline.tid);
+    timeline.skyframeNumber = getSkyframeNumber(timeline.threadName);
   }
 
-  timelines.sort(threadNameComparator);
+  timelines.sort(timelineComparator);
 
   return timelines;
+}
+
+function getSkyframeNumber(threadName: string): number | undefined {
+  const skyframeMatch = threadName.match(SKYFRAME_EVALUATOR_PATTERN);
+  return skyframeMatch ? Number(skyframeMatch[1]) : undefined;
 }
