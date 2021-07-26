@@ -27,12 +27,18 @@ export type ThreadEvent = TraceEvent & {
 export type ThreadTimeline = {
   tid: number;
   threadName: string;
-  skyframeNumber?: number;
   events: ThreadEvent[];
   maxDepth: number;
 };
 
-const SKYFRAME_EVALUATOR_PATTERN = /skyframe evaluator (\d+)/;
+type NumberedThreadName = {
+  prefix: string;
+  number: number;
+};
+
+// Matches strings like "skyframe evaluator 1", "grpc-command-0", etc., splitting the
+// non-numeric prefix and numeric suffix into separate match groups.
+const NUMBERED_THREAD_NAME_PATTERN = /^([^\d]+)(\d+)$/;
 
 function eventComparator(a: TraceEvent, b: TraceEvent) {
   // Group by thread ID.
@@ -51,9 +57,12 @@ function eventComparator(a: TraceEvent, b: TraceEvent) {
 }
 
 function timelineComparator(a: ThreadTimeline, b: ThreadTimeline) {
-  // Within "skyframe evaluator {index}" threads, sort numerically by index.
-  if (a.skyframeNumber !== undefined && b.skyframeNumber !== undefined) {
-    return a.skyframeNumber - b.skyframeNumber;
+  // Within numbered thread names (e.g. "skyframe evaluator 0", "grpc-command-0"), sort
+  // numerically.
+  const numberedThreadA = parseNumberedThreadName(a.threadName);
+  const numberedThreadB = parseNumberedThreadName(b.threadName);
+  if (numberedThreadA && numberedThreadB && numberedThreadA.prefix === numberedThreadB.prefix) {
+    return numberedThreadA.number - numberedThreadB.number;
   }
 
   // Sort other timelines lexicographically by thread name.
@@ -157,7 +166,6 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
 
   for (const timeline of timelines) {
     timeline.threadName = threadNameByTid.get(timeline.tid);
-    timeline.skyframeNumber = getSkyframeNumber(timeline.threadName);
   }
 
   timelines.sort(timelineComparator);
@@ -165,7 +173,7 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
   return timelines;
 }
 
-function getSkyframeNumber(threadName: string): number | undefined {
-  const skyframeMatch = threadName.match(SKYFRAME_EVALUATOR_PATTERN);
-  return skyframeMatch ? Number(skyframeMatch[1]) : undefined;
+function parseNumberedThreadName(threadName: string): NumberedThreadName | undefined {
+  const match = threadName.match(NUMBERED_THREAD_NAME_PATTERN);
+  return match ? { prefix: match[0], number: Number(match[1]) } : undefined;
 }
