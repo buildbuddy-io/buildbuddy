@@ -647,6 +647,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "timestamp_ts_proto",
+    proto = "@com_google_protobuf//:timestamp_proto",
+)
+
+ts_proto_library(
     name = "cache_ts_proto",
     proto = ":cache_proto",
 )

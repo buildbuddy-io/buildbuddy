@@ -61,3 +61,11 @@ ts_library(
         "@npm//tslib",
     ],
 )
+
+ts_library(
+    name = "proto",
+    srcs = ["proto.ts"],
+    deps = [
+        "//proto:timestamp_ts_proto",
+    ],
+)

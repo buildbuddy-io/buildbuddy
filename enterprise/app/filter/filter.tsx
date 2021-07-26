@@ -14,8 +14,8 @@ interface State {
   isDatePickerOpen?: boolean;
 }
 
-const START_DATE_PARAM_NAME = "start";
-const END_DATE_PARAM_NAME = "end";
+export const START_DATE_PARAM_NAME = "start";
+export const END_DATE_PARAM_NAME = "end";
 const DATE_PARAM_FORMAT = "YYYY-MM-DD";
 
 export default class FilterComponent extends React.Component<FilterProps, State> {
