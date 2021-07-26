@@ -33,7 +33,6 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   }
   private onDateChange(range: OnChangeProps) {
     const selection = (range as { selection: RangeWithKey }).selection;
-    console.log(selection);
     router.setQuery(
       new URLSearchParams({
         ...Object.fromEntries(this.props.search?.entries() || []),
