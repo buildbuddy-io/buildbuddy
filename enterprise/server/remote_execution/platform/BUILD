@@ -8,8 +8,6 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/config",
-        "//server/environment",
-        "//server/util/log",
         "//server/util/status",
     ],
 )
@@ -20,7 +18,6 @@ go_test(
     deps = [
         ":platform",
         "//proto:remote_execution_go_proto",
-        "//server/testutil/testenv",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
