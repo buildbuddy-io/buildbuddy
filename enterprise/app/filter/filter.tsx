@@ -35,7 +35,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const selection = (range as { selection: RangeWithKey }).selection;
     router.setQuery(
       new URLSearchParams({
-        ...Object.fromEntries(this.props.search?.entries() || []),
+        ...Object.fromEntries(this.props.search.entries() || []),
         [START_DATE_PARAM_NAME]: moment(selection.startDate).format(DATE_PARAM_FORMAT),
         [END_DATE_PARAM_NAME]: moment(selection.endDate).format(DATE_PARAM_FORMAT),
       })
@@ -43,13 +43,13 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   }
 
   render() {
-    const startDateParam = this.props.search?.get(START_DATE_PARAM_NAME);
-    const endDateParam = this.props.search?.get(END_DATE_PARAM_NAME);
+    const startDateParam = this.props.search.get(START_DATE_PARAM_NAME);
+    const endDateParam = this.props.search.get(END_DATE_PARAM_NAME);
 
     const startDate = (startDateParam ? moment(startDateParam) : moment().subtract(7, "days")).toDate();
     const endDate = (endDateParam ? moment(endDateParam) : moment()).toDate();
 
-    const isFiltering = Boolean(`${this.props.search}`);
+    const isFiltering = Boolean(this.props.search.toString());
 
     return (
       <div className={`global-filter container ${isFiltering ? "is-filtering" : ""}`}>
