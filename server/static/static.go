@@ -135,7 +135,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 
 func AppBundleHash(bundleFS fs.FS) string {
 	var hashBytes []byte
-	if data, err := fs.ReadFile(bundleFS, "sha.txt"); err == nil {
+	if data, err := fs.ReadFile(bundleFS, "sha.sum"); err == nil {
 		hashBytes = data
 	}
 	if hashBytes != nil {
