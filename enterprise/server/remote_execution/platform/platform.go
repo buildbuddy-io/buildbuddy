@@ -133,6 +133,10 @@ func contains(haystack []ContainerType, needle ContainerType) bool {
 // ApplyOverrides modifies the platformProps and command as needed to match the
 // locally configured executor properties.
 func ApplyOverrides(executorProps *ExecutorProperties, platformProps *Properties, command *repb.Command) error {
+	if len(executorProps.SupportedIsolationTypes) == 0 {
+		return status.FailedPreconditionError("No workload isolation types configured.")
+	}
+
 	// If no isolation type was specified; default to the first configured one.
 	if platformProps.WorkloadIsolationType == "" {
 		platformProps.WorkloadIsolationType = string(executorProps.SupportedIsolationTypes[0])
