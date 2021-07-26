@@ -1,6 +1,7 @@
 package static
 
 import (
+	"context"
 	"flag"
 	"html/template"
 	"io/fs"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 
 	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
@@ -55,6 +57,10 @@ func NewStaticFileServer(env environment.Env, fs fs.FS, rootPaths []string, appB
 		jsPath := *jsEntryPointPath
 		if appBundleHash != "" {
 			jsPath = strings.ReplaceAll(jsPath, "{APP_BUNDLE_HASH}", appBundleHash)
+		}
+
+		if strings.HasPrefix(jsPath, "http://") || strings.HasPrefix(jsPath, "https://") {
+			env.GetHealthChecker().AddHealthCheck("static_bundle", &healthChecker{jsPath: jsPath})
 		}
 
 		handler = handleRootPaths(env, rootPaths, template, version.AppVersion(), jsPath, handler)
@@ -142,4 +148,16 @@ func AppBundleHash(bundleFS fs.FS) string {
 		return strings.TrimSpace(string(hashBytes))
 	}
 	return ""
+}
+
+type healthChecker struct {
+	jsPath string
+}
+
+func (c *healthChecker) Check(ctx context.Context) error {
+	resp, err := http.Get(c.jsPath)
+	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
+		return status.UnavailableErrorf("Failed to fetch static app js content from url %s. HTTP error code: %s", c.jsPath, resp.Status)
+	}
+	return err
 }
