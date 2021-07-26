@@ -80,12 +80,15 @@ export default class TargetComponent extends React.Component {
         return "test-passed";
       case build_event_stream.TestStatus.FLAKY:
         return "test-flaky";
+      case build_event_stream.TestStatus.TIMEOUT:
       case build_event_stream.TestStatus.FAILED:
+      case build_event_stream.TestStatus.REMOTE_FAILURE:
+      case build_event_stream.TestStatus.FAILED_TO_BUILD:
         return "test-failed";
       case build_event_stream.TestStatus.INCOMPLETE:
         return "test-error";
       default:
-        return "test-failed";
+        return "test-error";
     }
   }
 
