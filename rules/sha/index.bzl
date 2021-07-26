@@ -1,5 +1,4 @@
-"""Calculates the sha1 of the contents of the files in `srcs` and outputs it to a file called `name`.sum"""
-
+# Calculates the sha1 of the contents of the files in `srcs` and outputs it to a file called `name`.sum.
 def sha(name, srcs, **kwargs):
     native.genrule(
         name = name,
