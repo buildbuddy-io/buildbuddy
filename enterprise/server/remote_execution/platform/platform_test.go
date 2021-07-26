@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -12,8 +11,8 @@ import (
 )
 
 var (
-	bare   = &platform.ExecutorProperties{ContainerType: platform.BareContainerType}
-	docker = &platform.ExecutorProperties{ContainerType: platform.DockerContainerType}
+	bare   = &platform.ExecutorProperties{SupportedIsolationTypes: []platform.ContainerType{platform.BareContainerType}}
+	docker = &platform.ExecutorProperties{SupportedIsolationTypes: []platform.ContainerType{platform.DockerContainerType}}
 )
 
 func TestParse_ContainerImage_Success(t *testing.T) {
@@ -43,10 +42,10 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 			{Name: testCase.containerImageKey, Value: testCase.imageProp},
 		}}
 
-		props, err := platform.ParseProperties(plat, testCase.execProps)
-
+		platformProps := platform.ParseProperties(plat)
+		err := platform.ApplyOverrides(testCase.execProps, platformProps, &repb.Command{})
 		require.NoError(t, err)
-		assert.Equal(t, testCase.expected, props.ContainerImage)
+		assert.Equal(t, testCase.expected, platformProps.ContainerImage, testCase)
 	}
 }
 
@@ -65,9 +64,8 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 			{Name: "container-image", Value: testCase.imageProp},
 		}}
 
-		props, err := platform.ParseProperties(plat, testCase.execProps)
-
-		assert.Nil(t, props)
+		platformProps := platform.ParseProperties(plat)
+		err := platform.ApplyOverrides(testCase.execProps, platformProps, &repb.Command{})
 		assert.Error(t, err)
 	}
 }
@@ -221,15 +219,11 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		},
 	} {
 		plat := &repb.Platform{Properties: testCase.platformProps}
-
-		props, err := platform.ParseProperties(plat, bare)
-
-		env := testenv.GetTestEnv(t)
-		env.GetConfigurator().GetExecutorConfig().DefaultXCodeVersion = testCase.defaultXCodeVersion
-
+		platformProps := platform.ParseProperties(plat)
+		execProps := bare
+		execProps.DefaultXCodeVersion = testCase.defaultXCodeVersion
 		command := &repb.Command{EnvironmentVariables: testCase.startingEnvVars}
-		platform.ApplyOverrides(env, props, command)
-
+		err := platform.ApplyOverrides(execProps, platformProps, command)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, command.EnvironmentVariables, append(testCase.startingEnvVars, testCase.expectedEnvVars...))
 	}
