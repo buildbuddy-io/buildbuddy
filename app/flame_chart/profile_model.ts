@@ -31,14 +31,9 @@ export type ThreadTimeline = {
   maxDepth: number;
 };
 
-type NumberedThreadName = {
-  prefix: string;
-  number: number;
-};
-
 // Matches strings like "skyframe evaluator 1", "grpc-command-0", etc., splitting the
 // non-numeric prefix and numeric suffix into separate match groups.
-const NUMBERED_THREAD_NAME_PATTERN = /^([^\d]+)(\d+)$/;
+const NUMBERED_THREAD_NAME_PATTERN = /^(?<prefix>[^\d]+)(?<number>\d+)$/;
 
 function eventComparator(a: TraceEvent, b: TraceEvent) {
   // Group by thread ID.
@@ -59,10 +54,10 @@ function eventComparator(a: TraceEvent, b: TraceEvent) {
 function timelineComparator(a: ThreadTimeline, b: ThreadTimeline) {
   // Within numbered thread names (e.g. "skyframe evaluator 0", "grpc-command-0"), sort
   // numerically.
-  const numberedThreadA = parseNumberedThreadName(a.threadName);
-  const numberedThreadB = parseNumberedThreadName(b.threadName);
-  if (numberedThreadA && numberedThreadB && numberedThreadA.prefix === numberedThreadB.prefix) {
-    return numberedThreadA.number - numberedThreadB.number;
+  const matchA = a.threadName.match(NUMBERED_THREAD_NAME_PATTERN)?.groups;
+  const matchB = b.threadName.match(NUMBERED_THREAD_NAME_PATTERN)?.groups;
+  if (matchA && matchB && matchA["prefix"] === matchB["prefix"]) {
+    return Number(matchA["number"]) - Number(matchB["number"]);
   }
 
   // Sort other timelines lexicographically by thread name.
@@ -171,9 +166,4 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
   timelines.sort(timelineComparator);
 
   return timelines;
-}
-
-function parseNumberedThreadName(threadName: string): NumberedThreadName | undefined {
-  const match = threadName.match(NUMBERED_THREAD_NAME_PATTERN);
-  return match ? { prefix: match[1], number: Number(match[2]) } : undefined;
 }
