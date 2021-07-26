@@ -465,6 +465,10 @@ button {
   box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.2), 0px 1px 10px rgba(0, 0, 0, 0.1);
 }
 
+.dense .card.light-terminal:hover {
+  box-shadow: none;
+}
+
 .grid-block:hover .card-hover {
   display: flex;
 }
@@ -1666,8 +1670,17 @@ code .comment {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.light-terminal .terminal::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+}
+
 .terminal ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.light-terminal .terminal ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
   border-radius: 3px;
 }
 
