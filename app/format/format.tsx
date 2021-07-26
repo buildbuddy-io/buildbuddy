@@ -114,8 +114,6 @@ export function formatTimestamp(timestamp: { seconds?: number | Long; nanos?: nu
 const DATE_RANGE_SEPARATOR = "\u2013";
 
 export function formatDateRange(startDate: Date, endDate: Date) {
-  console.log("format d1=", startDate, "d2=", endDate);
-
   // TODO: Use `new Intl.DateTimeFormat(...).formatRange` when supported by all browsers.
   let startFormat, endFormat;
   const now = new Date();
