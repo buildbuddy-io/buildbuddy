@@ -84,6 +84,8 @@ export default class TargetComponent extends React.Component {
         return "test-failed";
       case build_event_stream.TestStatus.INCOMPLETE:
         return "test-error";
+      default:
+        return "test-failed";
     }
   }
 
@@ -209,7 +211,7 @@ export default class TargetComponent extends React.Component {
                   href={`#${index + 1}`}
                   title={`Run ${result.buildEvent.id.testResult.run} (Attempt ${result.buildEvent.id.testResult.attempt}, Shard ${result.buildEvent.id.testResult.shard})`}
                   className={`run ${this.getStatusClass(result.buildEvent.testResult.status)} ${
-                    (this.props.hash || "#1") == `#${index + 1}` && "selected"
+                    (this.props.hash || "#1") == `#${index + 1}` ? "selected" : ""
                   }`}>
                   Run {result.buildEvent.id.testResult.run} (Attempt {result.buildEvent.id.testResult.attempt}, Shard{" "}
                   {result.buildEvent.id.testResult.shard})
