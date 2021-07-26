@@ -175,5 +175,5 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
 
 function parseNumberedThreadName(threadName: string): NumberedThreadName | undefined {
   const match = threadName.match(NUMBERED_THREAD_NAME_PATTERN);
-  return match ? { prefix: match[0], number: Number(match[1]) } : undefined;
+  return match ? { prefix: match[1], number: Number(match[2]) } : undefined;
 }
