@@ -56,18 +56,14 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 			// If the invocation is in progress, logs may be written in the future.
 			// Return an empty chunk with NextChunkId set to 0.
 			return &elpb.GetEventLogChunkResponse{
-				Chunk: &elpb.GetEventLogChunkResponse_Chunk{
-					Buffer: make([]byte, 0),
-				},
+				Buffer:      []byte{},
 				NextChunkId: chunkstore.ChunkIndexAsStringId(0),
 			}, nil
 		}
 		// The invocation is not in progress, no logs will ever exist for this
 		// invocation. Return an empty chunk with NextChunkId left blank.
 		return &elpb.GetEventLogChunkResponse{
-			Chunk: &elpb.GetEventLogChunkResponse_Chunk{
-				Buffer: make([]byte, 0),
-			},
+			Buffer: []byte{},
 		}, nil
 	}
 	lastChunkIndex, err := chunkstore.ChunkIdAsUint16Index(lastChunkId)
@@ -89,9 +85,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 			// If out-of-bounds, return an empty chunk with PreviousChunkId set to the
 			// id of the last chunk.
 			rsp := &elpb.GetEventLogChunkResponse{
-				Chunk: &elpb.GetEventLogChunkResponse_Chunk{
-					Buffer: make([]byte, 0),
-				},
+				Buffer:          []byte{},
 				PreviousChunkId: chunkstore.ChunkIndexAsStringId(lastChunkIndex),
 			}
 			if invocationInProgress {
@@ -104,10 +98,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	}
 
 	rsp := &elpb.GetEventLogChunkResponse{
-		Chunk: &elpb.GetEventLogChunkResponse_Chunk{
-			ChunkId: chunkstore.ChunkIndexAsStringId(startIndex),
-			Buffer:  make([]byte, 0),
-		},
+		Buffer:          []byte{},
 		NextChunkId:     chunkstore.ChunkIndexAsStringId(startIndex + 1),
 		PreviousChunkId: chunkstore.ChunkIndexAsStringId(startIndex - 1),
 	}
@@ -133,15 +124,11 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 			lineCount++
 		}
 		if step == 1 {
-			rsp.Chunk.Buffer = append(rsp.Chunk.Buffer, buffer...)
+			rsp.Buffer = append(rsp.Buffer, buffer...)
 			rsp.NextChunkId = chunkstore.ChunkIndexAsStringId(chunkIndex + step)
 		} else {
-			rsp.Chunk.Buffer = append(buffer, rsp.Chunk.Buffer...)
+			rsp.Buffer = append(buffer, rsp.Buffer...)
 			rsp.PreviousChunkId = chunkstore.ChunkIndexAsStringId(chunkIndex + step)
-		}
-		if rsp.Chunk.ChunkId != chunkstore.ChunkIndexAsStringId(chunkIndex) {
-			// No longer fetching a single chunk, ChunkId cannot be meaningfully set.
-			rsp.Chunk.ChunkId = ""
 		}
 		if lineCount >= int(req.MinLines) {
 			break
