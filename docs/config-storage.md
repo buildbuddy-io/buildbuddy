@@ -72,7 +72,6 @@ storage:
     credentials_profile: "other-profile"
 ```
 
-
 ### Minio
 
 ```

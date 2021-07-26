@@ -228,7 +228,10 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
 
     try {
       const response = await rpcService.service.getExecutionNodes({});
-      this.setState({ nodes: response.executionNode, userOwnedExecutorsSupported: response.userOwnedExecutorsSupported });
+      this.setState({
+        nodes: response.executionNode,
+        userOwnedExecutorsSupported: response.userOwnedExecutorsSupported,
+      });
       if (response.userOwnedExecutorsSupported) {
         await this.fetchApiKeys();
         await this.fetchBazelConfig();

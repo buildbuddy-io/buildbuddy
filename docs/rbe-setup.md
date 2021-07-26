@@ -143,7 +143,6 @@ This determines the number of parallel actions Bazel will remotely execute at on
 
 [Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--jobs)
 
-
 ### --remote_timeout
 
 This determines the maximum time Bazel will spend on any single remote call, including cache writes. The default value is 60s. We recommend setting this high to avoid timeouts when uploading large cache artifacts.
@@ -238,7 +237,6 @@ Explicitly setting strategies should [no longer be needed](https://github.com/ba
 
 [Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--strategy)
 
-
 ## --experimental_inmemory_dotd_files
 
 If enabled, C++ .d files will be passed through in memory directly from the remote build nodes instead of being written to disk. This flag is automatically set when using `--remote_download_minimal`.
@@ -261,7 +259,7 @@ If enabled, .jdeps files generated from Java compilations will be passed through
 
 ## Examples
 
-- [buildbuddy-io/buildbuddy .bazelrc --config=remote](https://github.com/buildbuddy-io/buildbuddy/blob/master/.bazelrc#L23) 
+- [buildbuddy-io/buildbuddy .bazelrc --config=remote](https://github.com/buildbuddy-io/buildbuddy/blob/master/.bazelrc#L23)
 - [graknlabs/grakn .bazelrc --config=rbe](https://github.com/graknlabs/grakn/blob/master/.bazelrc#L6)
 - [wix/exodus .bazlerc.remote](https://github.com/wix/exodus/blob/master/.bazelrc.remote#L8)
 
@@ -293,6 +291,7 @@ rbe_autoconfig(name = "rbe_default")
 ```
 
 And to your `.bazelrc`:
+
 ```bash
 # Depending on how many machines are in the remote execution instance, setting
 # this higher can make builds faster by allowing more jobs to run in parallel.

@@ -2,13 +2,13 @@
 id: enterprise-mac-rbe
 title: Enterprise Mac RBE Setup
 sidebar_label: Enterprise Mac RBE Setup
---- 
+---
 
 Deploying Mac executors requires a little extra love since the deployment process can't easily be automated via Kubernetes.
 
 ## Deploying a BuildBuddy cluster
 
-First you'll need to deploy the BuildBuddy app which serves the BuildBuddy UI, acts as a scheduler, and handles caching - which we still recommend deploying to a Linux Kubernetes cluster. 
+First you'll need to deploy the BuildBuddy app which serves the BuildBuddy UI, acts as a scheduler, and handles caching - which we still recommend deploying to a Linux Kubernetes cluster.
 
 You can follow the standard [Enterprise RBE Setup](enterprise-rbe.md) instructions to get your cluster up and running.
 
@@ -41,20 +41,22 @@ mv Xcode.app /Applications/Xcode_12.2.app
 ```
 
 If this is the first Xcode version you're installing, you'll want to select it as your default Xcode version with:
+
 ```sh
 sudo xcode-select -s /Applications/Xcode_12.2.app
 ```
 
 You can then accept the license with:
+
 ```sh
 sudo xcodebuild -license accept
 ```
 
 And run the "first launch" with
+
 ```sh
 sudo xcodebuild -runFirstLaunch
 ```
-
 
 ### Installing Homebrew
 
@@ -71,6 +73,7 @@ Now that the environment is configured, we can download and install the BuildBud
 ### Download the BuildBuddy executor
 
 The BuildBuddy executor binary can be downloaded with (make sure to update the version number to the [lastest release](https://github.com/buildbuddy-io/buildbuddy/releases)):
+
 ```
 curl -fSL https://github.com/buildbuddy-io/buildbuddy/releases/download/v2.3.0/executor-enterprise-darwin-amd64 -o buildbuddy-executor
 ```
@@ -78,6 +81,7 @@ curl -fSL https://github.com/buildbuddy-io/buildbuddy/releases/download/v2.3.0/e
 ### Make the executor executable
 
 In order to run the executor binary, we must first make it executable with:
+
 ```
 chmod +x buildbuddy-executor
 ```
@@ -85,15 +89,16 @@ chmod +x buildbuddy-executor
 ### Create directories
 
 If you don't already have any launch agents installed, you'll need to make sure the `~/Library/LaunchAgents/` directory exits with:
+
 ```
 mkdir -p ~/Library/LaunchAgents/
 ```
 
-You'll also need a directory to store the executor's disk cache and execution roots. We recommend *avoiding* using the `/tmp` directory since this is periodically cleaned up.
+You'll also need a directory to store the executor's disk cache and execution roots. We recommend _avoiding_ using the `/tmp` directory since this is periodically cleaned up.
+
 ```
 mkdir -p buildbuddy
 ```
-
 
 ### Create config file
 
@@ -107,13 +112,13 @@ executor:
   local_cache_size_bytes: 100000000000  # 100GB
 ```
 
-Make sure to replace *YOUR_USERNAME* with your Mac username and *YOUR_BUILDBUDDY_CLUSTER_URL* with the grpc url the BuildBuddy cluster you deployed. If you deployed the cluster without an NGINX Ingress, you'll need to update the protocol to grpc:// and the port to 1985.
+Make sure to replace _YOUR_USERNAME_ with your Mac username and _YOUR_BUILDBUDDY_CLUSTER_URL_ with the grpc url the BuildBuddy cluster you deployed. If you deployed the cluster without an NGINX Ingress, you'll need to update the protocol to grpc:// and the port to 1985.
 
 ### Create a Launch Agent .plist file
 
 Now that everything is in place, we can create a LaunchAgent .plist file that tells Mac OS to keep the executor binary running on launch, and restart it if ever stops.
 
-Make sure to replace *YOUR_USERNAME* with your Mac username and *YOUR_MACS_NETWORK_ADDRESS* with the IP address or DNS name of the Mac.
+Make sure to replace _YOUR_USERNAME_ with your Mac username and _YOUR_MACS_NETWORK_ADDRESS_ with the IP address or DNS name of the Mac.
 
 You can place this file in `~/Library/LaunchAgents/buildbuddy-executor.plist`.
 
@@ -154,6 +159,7 @@ You can place this file in `~/Library/LaunchAgents/buildbuddy-executor.plist`.
 ### Update Launch Agent plist permissions
 
 You may need to update the file's permissions with:
+
 ```
 chmod 600 ~/Library/LaunchAgents/buildbuddy-executor.plist
 ```
@@ -161,11 +167,13 @@ chmod 600 ~/Library/LaunchAgents/buildbuddy-executor.plist
 ### Start the Launch Agent
 
 You can load the Launch Agent with:
+
 ```
 launchctl load ~/Library/LaunchAgents/buildbuddy-executor.plist
 ```
 
 And start it with:
+
 ```
 launchctl start buildbuddy-executor
 ```
@@ -173,6 +181,7 @@ launchctl start buildbuddy-executor
 ### Verify installation
 
 You can verify that your BuildBuddy Executor successfully connected to the cluster by live tailing the stdout file:
+
 ```
 tail -f buildbuddy_stdout.log
 ```
@@ -195,13 +204,14 @@ sudo enable_autologin "MY_USER" "MY_PASSWORD"
 ### Optional: Install Java
 
 If you're doing a lot of Java builds on your Mac executors that are not fully hermetic (i.e. rely on the system installed Java rather than the remote Java SDK shipped by Bazel), you can install the JDK with:
+
 ```
 brew install --cask adoptopenjdk
 ```
 
 ### Optional: Increase the maximum number of open files
 
-Some builds will exceed the default maximum number of open files on the Mac executor (which is relatively low). You'll know if you're hitting this limit if you see an error message that looks like `too many open files in system`. 
+Some builds will exceed the default maximum number of open files on the Mac executor (which is relatively low). You'll know if you're hitting this limit if you see an error message that looks like `too many open files in system`.
 
 You can increase this limit by running the following command:
 

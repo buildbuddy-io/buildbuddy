@@ -41,7 +41,7 @@ sidebar_label: Cache
   - `bucket` The AWS S3 bucket (will be created automatically)
 
   - `credentials_profile` If a profile other than default is chosen, use that one.
-  
+
   - `ttl_days` The period after which cache files should be TTLd. Disabled if 0.
 
   - By default, the S3 blobstore will rely on environment variables, shared credentials, or IAM roles. See [AWS Go SDK docs](https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html#specifying-credentials) for more information.

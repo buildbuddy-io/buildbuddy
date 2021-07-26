@@ -159,17 +159,17 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
           </label>
         )}
         {capabilities.userOwnedExecutors && (
-            <label className="form-row input-label">
-              <input
-                  autoComplete="off"
-                  onFocus={this.onFocus.bind(this)}
-                  onChange={this.onChange.bind(this)}
-                  type="checkbox"
-                  name="useGroupOwnedExecutors"
-                  checked={request.useGroupOwnedExecutors}
-              />
-              <span>Use self-hosted executors</span>
-            </label>
+          <label className="form-row input-label">
+            <input
+              autoComplete="off"
+              onFocus={this.onFocus.bind(this)}
+              onChange={this.onChange.bind(this)}
+              type="checkbox"
+              name="useGroupOwnedExecutors"
+              checked={request.useGroupOwnedExecutors}
+            />
+            <span>Use self-hosted executors</span>
+          </label>
         )}
       </>
     );

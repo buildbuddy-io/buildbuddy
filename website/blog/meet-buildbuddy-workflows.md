@@ -10,7 +10,7 @@ image: /img/workflows.png
 tags: [product]
 ---
 
-Traditional [CI systems](https://en.wikipedia.org/wiki/Continuous_integration), like Jenkins, Travis, CircleCI, and BuildKite, are built around the concept of a pipeline. Pipelines allow you to specify a list of build/test steps to run for each commit or pull request to your repo. Pipelines are great because you can run many in parallel across multiple machines. Unfortunately, there are often dependencies between these pipelines, for example a build step that must be completed before a test step can begin. 
+Traditional [CI systems](https://en.wikipedia.org/wiki/Continuous_integration), like Jenkins, Travis, CircleCI, and BuildKite, are built around the concept of a pipeline. Pipelines allow you to specify a list of build/test steps to run for each commit or pull request to your repo. Pipelines are great because you can run many in parallel across multiple machines. Unfortunately, there are often dependencies between these pipelines, for example a build step that must be completed before a test step can begin.
 
 Some tools, like [GitLab Pipelines](https://docs.gitlab.com/ee/ci/pipelines/), attempt to solve this problem by allowing you to specify dependencies between pipelines. This approach is better, but forces you to manually maintain the relationships between pipelines in a pile of YAML configuration files. As the number of dependencies grow, any sufficiently complex CI system [starts to resemble a build system](https://gregoryszorc.com/blog/2021/04/07/modern-ci-is-too-complex-and-misdirected/).
 
@@ -25,7 +25,7 @@ builds successfully and passes all tests before you merge pull requests or
 deploy a new release.
 
 But because BuildBuddy Workflows were built for Bazel repos and tightly
-integrated with BuildBuddy RBE and Remote Caching, they are ***really fast***.
+integrated with BuildBuddy RBE and Remote Caching, they are **_really fast_**.
 
 ## How fast are BuildBuddy Workflows?
 
@@ -68,7 +68,7 @@ itself.
 
 Once you have a sufficiently fast RBE and Remote Caching setup, and have removed network bottlenecks &mdash; the CI bottleneck often becomes Bazel's [analysis phase](https://docs.bazel.build/versions/main/glossary.html#analysis-phase).
 
-By re-using warm Bazel processes when possible, we're able to re-use Bazel's analysis cache across CI runs of the same repo. This can save several minutes per build, depending on the size of your repository and the number of external dependencies being pulled in. 
+By re-using warm Bazel processes when possible, we're able to re-use Bazel's analysis cache across CI runs of the same repo. This can save several minutes per build, depending on the size of your repository and the number of external dependencies being pulled in.
 
 This is similar to how [Google's Build Dequeuing Service](https://dl.acm.org/doi/pdf/10.1145/3395363.3397371) performs workspace selection:
 
@@ -93,6 +93,7 @@ While the main focus of BuildBuddy v2.3 has been on launching BuildBuddy Workflo
 We added dependency graph visualizations for `bazel query` commands that use the `--output graph` parameter. This visualization is zoom-able and pan-able, and can render graphs with thousands of edges.
 
 Here's an example of a command you can run to generate a graph:
+
 ```
 bazel query '//...' --output graph --bes_backend=cloud.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/
 ```
@@ -101,13 +102,11 @@ And the resulting output:
 
 ![Bazel query dependency graph visualization](images/query_graph.png)
 
-
 ### Clickable RBE Actions
 
 For actions executed with BuildBuddy Remote Build Execution, you can now click on individual actions to get the full set of command arguments, environment variables, execution metadata, output files, and more:
 
 ![RBE actions view](images/clickable_rbe_actions.png)
-
 
 That's it for this release! As always, message us on [Slack](https://buildbuddy.slack.com) or
 [file an issue](https://github.com/buildbuddy-io/buildbuddy/issues/new)
