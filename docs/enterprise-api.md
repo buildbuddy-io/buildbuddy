@@ -4,19 +4,22 @@ title: API Documentation
 sidebar_label: Enterprise API
 ---
 
-The BuildBuddy API let's you programmatically obtain information about your Bazel builds. API access available to Enterprise BuildBuddy Customers. 
+The BuildBuddy API let's you programmatically obtain information about your Bazel builds. API access available to Enterprise BuildBuddy Customers.
 
 Requests can be made via JSON or using Protobuf. The examples below are using the JSON API. For a full overview of the service, you can view the [service definition](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/service.proto) or the [individual protos](https://github.com/buildbuddy-io/buildbuddy/tree/master/proto/api/v1).
 
 ## GetInvocation
+
 The `GetInvocation` endpoint allows you to fetch invocations associated with a commit SHA or invocation ID. View full [Invocation proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/invocation.proto).
 
 ### Endpoint
+
 ```
 https://app.buildbuddy.io/api/v1/GetInvocation
 ```
 
 ### Service
+
 ```protobuf
 // Retrieves a list of invocations or a specific invocation matching the given
 // request selector.
@@ -34,29 +37,29 @@ curl -d '{"selector": {"invocation_id":"c6b2b6de-c7bb-4dd9-b7fd-a530362f0845"}}'
 
 Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c7bb-4dd9-b7fd-a530362f0845` with your own values.
 
-
 ### Example cURL response
+
 ```json
 {
-   "invocation":[
-      {
-         "id":{
-            "invocationId":"c7fbfe97-8298-451f-b91d-722ad91632ea"
-         },
-         "success":true,
-         "user":"runner",
-         "durationUsec":"221970000",
-         "host":"fv-az278-49",
-         "command":"build",
-         "pattern":"//...",
-         "actionCount":"1402",
-         "createdAtUsec":"1623193638545989",
-         "updatedAtUsec":"1623193638545989",
-         "repoUrl":"https://github.com/buildbuddy-io/buildbuddy",
-         "commitSha":"800f549937a4c0a1614e65501caf7577d2a00624",
-         "role":"CI"
-      }
-   ]
+  "invocation": [
+    {
+      "id": {
+        "invocationId": "c7fbfe97-8298-451f-b91d-722ad91632ea"
+      },
+      "success": true,
+      "user": "runner",
+      "durationUsec": "221970000",
+      "host": "fv-az278-49",
+      "command": "build",
+      "pattern": "//...",
+      "actionCount": "1402",
+      "createdAtUsec": "1623193638545989",
+      "updatedAtUsec": "1623193638545989",
+      "repoUrl": "https://github.com/buildbuddy-io/buildbuddy",
+      "commitSha": "800f549937a4c0a1614e65501caf7577d2a00624",
+      "role": "CI"
+    }
+  ]
 }
 ```
 
@@ -106,6 +109,7 @@ message InvocationSelector {
 ```
 
 ### Invocation
+
 ```protobuf
 // Response from calling GetInvocation
 message GetInvocationResponse {
@@ -167,20 +171,18 @@ message Invocation {
 }
 ```
 
-
-
-
-
-
 ## GetTarget
+
 The `GetTarget` endpoint allows you to fetch targets associated with a given invocation ID. View full [Target proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/target.proto).
 
 ### Endpoint
+
 ```
 https://app.buildbuddy.io/api/v1/GetTarget
 ```
 
 ### Service
+
 ```protobuf
 // Retrieves a list of targets or a specific target matching the given
 // request selector.
@@ -198,40 +200,39 @@ curl -d '{"selector": {"invocation_id":"c6b2b6de-c7bb-4dd9-b7fd-a530362f0845"}}'
 
 Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c7bb-4dd9-b7fd-a530362f0845` with your own values.
 
-
 ### Example cURL response
+
 ```json
 {
-   "target":[
-      {
-         "id":{
-            "invocationId":"c7fbfe97-8298-451f-b91d-722ad91632ea",
-            "targetId":"aWQ6OnYxOjovL3Rvb2xzL3JlcGxheV9hY3Rpb246cmVwbGF5X2FjdGlvbl9saWI"
-         },
-         "label":"//tools/replay_action:replay_action_lib",
-         "status":"BUILT",
-         "ruleType":"go_library"
+  "target": [
+    {
+      "id": {
+        "invocationId": "c7fbfe97-8298-451f-b91d-722ad91632ea",
+        "targetId": "aWQ6OnYxOjovL3Rvb2xzL3JlcGxheV9hY3Rpb246cmVwbGF5X2FjdGlvbl9saWI"
       },
-      ...
-      {
-         "id":{
-            "invocationId":"c7fbfe97-8298-451f-b91d-722ad91632ea",
-            "targetId":"aWQ6OnYxOjovL2VudGVycHJpc2UvYXBwOmNvcHlfYXBwX2J1bmRsZV9zb3VyY2VtYXA"
-         },
-         "label":"//enterprise/app:copy_app_bundle_sourcemap",
-         "status":"BUILT",
-         "ruleType":"genrule"
+      "label": "//tools/replay_action:replay_action_lib",
+      "status": "BUILT",
+      "ruleType": "go_library"
+    },
+    ...{
+      "id": {
+        "invocationId": "c7fbfe97-8298-451f-b91d-722ad91632ea",
+        "targetId": "aWQ6OnYxOjovL2VudGVycHJpc2UvYXBwOmNvcHlfYXBwX2J1bmRsZV9zb3VyY2VtYXA"
       },
-      {
-         "id":{
-            "invocationId":"c7fbfe97-8298-451f-b91d-722ad91632ea",
-            "targetId":"aWQ6OnYxOjovL2VudGVycHJpc2U6YnVpbGRidWRkeQ"
-         },
-         "label":"//enterprise:buildbuddy",
-         "status":"BUILT",
-         "ruleType":"go_binary"
-      }
-   ]
+      "label": "//enterprise/app:copy_app_bundle_sourcemap",
+      "status": "BUILT",
+      "ruleType": "genrule"
+    },
+    {
+      "id": {
+        "invocationId": "c7fbfe97-8298-451f-b91d-722ad91632ea",
+        "targetId": "aWQ6OnYxOjovL2VudGVycHJpc2U6YnVpbGRidWRkeQ"
+      },
+      "label": "//enterprise:buildbuddy",
+      "status": "BUILT",
+      "ruleType": "go_binary"
+    }
+  ]
 }
 ```
 
@@ -279,6 +280,7 @@ message TargetSelector {
 ```
 
 ### Target
+
 ```protobuf
 // Each Target represents data for a given target in a given Invocation.
 message Target {
@@ -311,20 +313,18 @@ message Target {
 }
 ```
 
-
-
-
-
-
 ## GetAction
+
 The `GetAction` endpoint allows you to fetch actions associated with a given target or invocation. View full [Action proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/action.proto).
 
 ### Endpoint
+
 ```
 https://app.buildbuddy.io/api/v1/GetAction
 ```
 
 ### Service
+
 ```protobuf
 // Retrieves a list of targets or a specific target matching the given
 // request selector.
@@ -342,8 +342,8 @@ curl -d '{"selector": {"invocation_id":"c6b2b6de-c7bb-4dd9-b7fd-a530362f0845"}}'
 
 Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c7bb-4dd9-b7fd-a530362f0845` with your own values.
 
-
 ### Example cURL response
+
 ```json
 {
    "action":[
@@ -453,6 +453,7 @@ message ActionSelector {
 ```
 
 ### Action
+
 ```protobuf
 // An action that happened as part of a configured target. This action could be
 // a build, a test, or another type of action.
@@ -480,20 +481,18 @@ message Action {
 }
 ```
 
-
-
-
-
-
 ## GetFile
+
 The `GetFile` endpoint allows you to fetch files associated with a given url. View full [File proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/file.proto).
 
 ### Endpoint
+
 ```
 https://app.buildbuddy.io/api/v1/GetFile
 ```
 
 ### Service
+
 ```protobuf
 // Streams the File with the given uri.
 // - Over gRPC returns a stream of bytes to be stitched together in order.
@@ -512,9 +511,10 @@ curl -d '{"uri":"bytestream://cloud.buildbuddy.io/buildbuddy-io/buildbuddy-inter
 
 Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the file uri `bytestream://cloud.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216` with your own values.
 
-
 ### Example cURL response
+
 The file contents.
+
 ```
 exec ${PAGER:-/usr/bin/less} "$0" || exit 1
 Executing tests from //enterprise/server/test/integration/remote_cache:remote_cache_test

@@ -1,6 +1,7 @@
 import React from "react";
 import InvocationModel from "./invocation_model";
 import rpcService from "../service/rpc_service";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 
 interface Props {
   model: InvocationModel;
@@ -12,9 +13,7 @@ interface State {
   numPages: number;
 }
 
-export default class ArtifactsCardComponent extends React.Component {
-  props: Props;
-
+export default class ArtifactsCardComponent extends React.Component<Props, State> {
   state: State = {
     numPages: 1,
   };
@@ -35,16 +34,42 @@ export default class ArtifactsCardComponent extends React.Component {
   }
 
   render() {
-    let targets = this.props.model.succeeded
-      .filter((completed) => completed.completed.importantOutput.length)
-      .filter(
-        (target) =>
-          !this.props.filter ||
-          target.id.targetCompleted.label.toLowerCase().includes(this.props.filter.toLowerCase()) ||
-          target.completed.importantOutput.some((output) =>
+    type Target = {
+      label: string;
+      outputs: build_event_stream.IFile[];
+      // The number of outputs hidden due to paging limits.
+      hiddenOutputCount?: number;
+    };
+    const filteredTargets = this.props.model.succeeded
+      .map((event) => ({
+        label: event.id.targetCompleted.label,
+        outputs: event.completed.importantOutput.filter(
+          (output) =>
+            !this.props.filter ||
+            event.id.targetCompleted.label.toLowerCase().includes(this.props.filter.toLowerCase()) ||
             output.name.toLowerCase().includes(this.props.filter.toLowerCase())
-          )
-      );
+        ),
+      }))
+      .filter((target) => target.outputs.length);
+
+    const visibleTargets: Target[] = [];
+    let visibleOutputCount = 0;
+    const visibleOutputLimit =
+      (this.props.pageSize && this.state.numPages * this.props.pageSize) || Number.MAX_SAFE_INTEGER;
+    const totalOutputCount = filteredTargets.map((target) => target.outputs.length).reduce((acc, val) => acc + val, 0);
+
+    for (const target of filteredTargets) {
+      const visibleOutputs = target.outputs.slice(0, visibleOutputLimit - visibleOutputCount);
+      if (!visibleOutputs.length) break;
+
+      visibleOutputCount += visibleOutputs.length;
+      visibleTargets.push({
+        ...target,
+        outputs: visibleOutputs,
+        hiddenOutputCount: target.outputs.length - visibleOutputs.length,
+      });
+    }
+    const hiddenTargetCount = filteredTargets.length - visibleTargets.length;
 
     return (
       <div className="card artifacts">
@@ -52,33 +77,35 @@ export default class ArtifactsCardComponent extends React.Component {
         <div className="content">
           <div className="title">Artifacts</div>
           <div className="details">
-            {targets
-              .slice(0, (this.props.pageSize && this.state.numPages * this.props.pageSize) || undefined)
-              .map((completed) => (
-                <div>
-                  <div className="artifact-section-title">{completed.id.targetCompleted.label}</div>
-                  {completed.completed.importantOutput
-                    .filter(
-                      (output) =>
-                        !this.props.filter ||
-                        completed.id.targetCompleted.label.toLowerCase().includes(this.props.filter.toLowerCase()) ||
-                        output.name.toLowerCase().includes(this.props.filter.toLowerCase())
-                    )
-                    .map((output) => (
-                      <a
-                        href={rpcService.getBytestreamFileUrl(output.name, output.uri, this.props.model.getId())}
-                        className="artifact-name"
-                        onClick={this.handleArtifactClicked.bind(this, output.uri, output.name)}>
-                        {output.name}
-                      </a>
-                    ))}
+            {visibleTargets.map((target) => (
+              <div>
+                <div className="artifact-section-title">{target.label}</div>
+                <div className="artifact-list">
+                  {target.outputs.map((output) => (
+                    <a
+                      href={rpcService.getBytestreamFileUrl(output.name, output.uri, this.props.model.getId())}
+                      className="artifact-name"
+                      onClick={this.handleArtifactClicked.bind(this, output.uri, output.name)}>
+                      {output.name}
+                    </a>
+                  ))}
+                  {target.hiddenOutputCount > 0 && (
+                    <div className="artifact-hidden-count">
+                      {target.hiddenOutputCount} more {target.hiddenOutputCount === 1 ? "artifact" : "artifacts"} for
+                      this target
+                    </div>
+                  )}
                 </div>
-              ))}
-            {targets.flatMap((completed) => completed.completed.importantOutput).length == 0 && (
-              <span>{this.props.filter ? "No matching artifacts" : "No artifacts"}</span>
+              </div>
+            ))}
+            {hiddenTargetCount > 0 && (
+              <div className="artifact-hidden-count">
+                {hiddenTargetCount} more {hiddenTargetCount === 1 ? "target" : "targets"} with artifacts
+              </div>
             )}
+            {totalOutputCount === 0 && <span>{this.props.filter ? "No matching artifacts" : "No artifacts"}</span>}
           </div>
-          {this.props.pageSize && targets.length > this.state.numPages * this.props.pageSize && !!this.state.numPages && (
+          {this.props.pageSize && visibleOutputCount < totalOutputCount && (
             <div className="more" onClick={this.handleMoreArtifactsClicked.bind(this)}>
               See more artifacts
             </div>

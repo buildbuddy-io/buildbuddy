@@ -421,6 +421,10 @@ button {
   border-left: 6px solid #8bc34a;
 }
 
+.card.card-skipped {
+  border-left: 6px solid #673ab7;
+}
+
 .card.card-failure {
   border-left: 6px solid #f44336;
 }
@@ -519,8 +523,9 @@ button {
 .card .more {
   margin-top: 16px;
   font-weight: 600;
-  color: #aaa;
+  color: #263238;
   cursor: pointer;
+  user-select: none;
 }
 
 .card-suggestion-message {
@@ -1055,15 +1060,26 @@ code .comment {
 .artifact-name {
   font-weight: 600;
   text-decoration: underline;
-  margin-left: 32px;
-  margin-top: 4px;
   cursor: pointer;
   display: block;
 }
 
 .artifact-section-title {
-  color: #aaa;
+  color: #757575;
   margin-top: 8px;
+}
+
+.artifacts .artifact-list {
+  padding-left: 32px;
+}
+
+.artifacts :is(.artifact-name, .artifact-hidden-count) {
+  margin-top: 4px;
+}
+
+.artifacts .artifact-hidden-count {
+  color: #bdbdbd;
+  margin-bottom: 8px;
 }
 
 .stat-cards {
@@ -1341,6 +1357,24 @@ code .comment {
 .login .on-prem a {
   text-decoration: underline;
   color: rgba(255, 255, 255, 0.7);
+}
+
+.login .sso {
+  margin-top: 32px;
+  text-align: center;
+}
+
+.login .sso input {
+  border-radius: 8px;
+}
+
+.login .sso button {
+  margin-left: 4px;
+  opacity: 0.8;
+}
+
+.login .sso button.active {
+  opacity: 1;
 }
 
 @media (min-width: 801px) {

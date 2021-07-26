@@ -4,7 +4,7 @@ export default class FooterComponent extends React.Component {
   render() {
     return (
       <div className="footer">
-        <span>&copy; 2020 Iteration, Inc.</span>
+        <span>&copy; {new Date().getFullYear()} Iteration, Inc.</span>
         <a href="https://buildbuddy.io/terms" target="_blank">
           Terms
         </a>

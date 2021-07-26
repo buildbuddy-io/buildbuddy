@@ -49,4 +49,7 @@ message FrontendConfig {
 
   // Whether remote execution is enabled.
   bool remote_execution_enabled = 12;
+
+  // Whether or not SSO is enabled.
+  bool sso_enabled = 13;
 }

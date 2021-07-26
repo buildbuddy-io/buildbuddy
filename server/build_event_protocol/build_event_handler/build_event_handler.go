@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"io"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
@@ -23,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
+	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
@@ -48,6 +51,10 @@ const (
 	// Chunks will also be flushed to blobstore after this much time
 	// passes with no new data being written.
 	defaultChunkTimeout = 15 * time.Second
+)
+
+var (
+	enableOptimizedRedaction = flag.Bool("enable_optimized_redaction", false, "Enables more efficient API key redaction.")
 )
 
 type BuildEventHandler struct {
@@ -312,6 +319,9 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			InvocationPK:     md5Int64(iid),
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
 		}
+		if *enableOptimizedRedaction {
+			ti.RedactionFlags = redact.RedactionFlagAPIKey
+		}
 
 		if auth := e.env.GetAuthenticator(); auth != nil {
 			options, err := extractOptionsFromStartedBuildEvent(&bazelBuildEvent)
@@ -355,6 +365,12 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 }
 
 func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid string) error {
+	if *enableOptimizedRedaction {
+		if err := redact.APIKey(e.ctx, e.env, event.BuildEvent); err != nil {
+			return err
+		}
+	}
+
 	e.beValues.AddEvent(event.BuildEvent) // in-memory structure to hold common values we want from the event.
 
 	switch p := event.BuildEvent.Payload.(type) {
@@ -374,8 +390,7 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	e.statusReporter.ReportStatusForEvent(e.ctx, event.BuildEvent)
 
 	// For everything else, just save the event to our buffer and keep on chugging.
-	err := e.pw.WriteProtoToStream(e.ctx, event)
-	if err != nil {
+	if err := e.pw.WriteProtoToStream(e.ctx, event); err != nil {
 		return err
 	}
 
@@ -447,26 +462,22 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	for {
 		event := &inpb.InvocationEvent{}
 		err := pr.ReadProto(ctx, event)
-		if err == nil {
-			parser.ParseEvent(event)
-		} else if err == io.EOF {
+		if err == io.EOF {
 			break
-		} else {
+		}
+		if err != nil {
 			log.Warningf("Error reading proto from log: %s", err)
 			return nil, err
 		}
+		if !*enableOptimizedRedaction || ti.RedactionFlags&redact.RedactionFlagAPIKey == 0 {
+			if err := redact.APIKeysWithSlowRegexp(ctx, env, event.BuildEvent); err != nil {
+				return nil, err
+			}
+		}
+		parser.ParseEvent(event)
 	}
 	parser.FillInvocation(invocation)
 	return invocation, nil
-}
-
-// TODO(siggisim): pull this out somewhere central
-func truncatedJoin(list []string, maxItems int) string {
-	length := len(list)
-	if length > maxItems {
-		return fmt.Sprintf("%s and %d more", strings.Join(list[0:maxItems], ", "), length-maxItems)
-	}
-	return strings.Join(list, ", ")
 }
 
 func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocation {
@@ -482,7 +493,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 	i.Role = p.Role
 	i.Command = p.Command
 	if p.Pattern != nil {
-		i.Pattern = truncatedJoin(p.Pattern, 3)
+		i.Pattern = invocation_format.ShortFormatPatterns(p.Pattern)
 	}
 	i.ActionCount = p.ActionCount
 	i.BlobID = blobID
@@ -491,6 +502,9 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 		i.Perms = perms.OTHERS_READ
 	}
 	i.LastChunkId = p.LastChunkId
+	if *enableOptimizedRedaction {
+		i.RedactionFlags = redact.RedactionFlagAPIKey
+	}
 	return i
 }
 

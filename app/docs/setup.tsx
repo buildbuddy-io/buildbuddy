@@ -5,8 +5,7 @@ import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
 import SetupCodeComponent from "./setup_code";
 
-interface Props {
-}
+interface Props {}
 
 interface State {
   menuExpanded: boolean;

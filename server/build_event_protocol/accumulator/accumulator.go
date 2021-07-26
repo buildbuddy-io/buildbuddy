@@ -1,12 +1,12 @@
 package accumulator
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -186,21 +186,12 @@ func (v *BEValues) handleWorkflowConfigured(wfc *build_event_stream.WorkflowConf
 	v.setStringValue(actionNameFieldName, wfc.GetActionName())
 }
 
-// TODO(siggisim): pull this out somewhere central
-func truncatedJoin(list []string, maxItems int) string {
-	length := len(list)
-	if length > maxItems {
-		return fmt.Sprintf("%s and %d more", strings.Join(list[0:maxItems], ", "), length-maxItems)
-	}
-	return strings.Join(list, ", ")
-}
-
 func patternFromEvent(event *build_event_stream.BuildEvent) string {
 	for _, child := range event.Children {
 		switch c := child.Id.(type) {
 		case *build_event_stream.BuildEventId_Pattern:
 			{
-				return truncatedJoin(c.Pattern.Pattern, 3)
+				return invocation_format.ShortFormatPatterns(c.Pattern.Pattern)
 			}
 		}
 	}

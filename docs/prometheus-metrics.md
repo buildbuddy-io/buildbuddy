@@ -72,6 +72,7 @@ sum(rate(buildbuddy_invocation_build_event_count{status="0"}[5m]))
   /
 sum(rate(buildbuddy_invocation_build_event_count[5m]))
 ```
+
 ## Remote cache metrics
 
 NOTE: Cache metrics are recorded at the end of each invocation,
@@ -85,7 +86,6 @@ Number of cache events handled.
 
 - **cache_type**: Cache type: `action` for action cache, `cas` for content-addressable storage.
 - **cache_event_type**: Cache event type: `hit`, `miss`, or `upload`.
-
 
 ### **`buildbuddy_remote_cache_download_size_bytes`** (Histogram)
 
@@ -156,6 +156,7 @@ histogram_quantile(
   sum(rate(buildbuddy_remote_cache_upload_duration_usec{cache_type="cas"}[5m])) by (le)
 )
 ```
+
 ## Remote execution metrics
 
 ### **`buildbuddy_remote_execution_count`** (Counter)
@@ -202,6 +203,7 @@ histogram_quantile(
 ### **`buildbuddy_remote_execution_queue_length`** (Gauge)
 
 Number of actions currently waiting in the executor queue.
+
 #### Examples
 
 ```promql
@@ -212,6 +214,7 @@ quantile(0.5, buildbuddy_remote_execution_queue_length)
 ### **`buildbuddy_remote_execution_tasks_executing`** (Gauge)
 
 Number of tasks currently being executed by the executor.
+
 #### Examples
 
 ```promql
@@ -228,6 +231,7 @@ Estimated RAM on the executor that is currently allocated for task execution, in
 ### **`buildbuddy_remote_execution_assigned_milli_cpu`** (Gauge)
 
 Estimated CPU time on the executor that is currently allocated for task execution, in Kubernetes milliCPU.
+
 #### Examples
 
 ```promql
@@ -267,6 +271,7 @@ Total number of bytes uploaded during remote execution.
 ### **`buildbuddy_remote_execution_file_upload_duration_usec`** (Histogram)
 
 Per-file upload duration during remote execution, in **microseconds**.
+
 ## Blobstore metrics
 
 "Blobstore" refers to the backing storage that BuildBuddy uses to
@@ -281,7 +286,6 @@ Number of files read from the blobstore.
 
 - **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
 - **blobstore_type**: `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
-
 
 ### **`buildbuddy_blobstore_read_size_bytes`** (Histogram)
 
@@ -303,7 +307,6 @@ Duration per blobstore file read, in **microseconds**.
 #### Labels
 
 - **blobstore_type**: `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
-
 
 ### **`buildbuddy_blobstore_write_count`** (Counter)
 
@@ -327,7 +330,6 @@ Number of bytes written to the blobstore per file.
 
 - **blobstore_type**: `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
 
-
 ### **`buildbuddy_blobstore_write_duration_usec`** (Histogram)
 
 Duration per blobstore file write, in **microseconds**.
@@ -335,7 +337,6 @@ Duration per blobstore file write, in **microseconds**.
 #### Labels
 
 - **blobstore_type**: `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
-
 
 ### **`buildbuddy_blobstore_delete_count`** (Counter)
 
@@ -345,7 +346,6 @@ Number of files deleted from the blobstore.
 
 - **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
 - **blobstore_type**: `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
-
 
 ### **`buildbuddy_blobstore_delete_duration_usec`** (Histogram)
 
@@ -414,6 +414,7 @@ sum(rate(buildbuddy_sql_error_count[5m]))
   /
 sum(rate(buildbuddy_sql_query_count[5m]))
 ```
+
 ## `database/sql` metrics
 
 The following metrics directly expose
@@ -428,7 +429,6 @@ Maximum number of open connections to the database.
 
 - **sql_db_role**: SQL DB replica role: `primary` for read+write replicas, or `read_replica` for read-only DB replicas.
 
-
 ### **`buildbuddy_sql_open_connections`** (Gauge)
 
 The number of established connections to the database.
@@ -438,7 +438,6 @@ The number of established connections to the database.
 - **connection_status**: Status of the database connection: `in_use` or `idle`
 - **sql_db_role**: SQL DB replica role: `primary` for read+write replicas, or `read_replica` for read-only DB replicas.
 
-
 ### **`buildbuddy_sql_wait_count`** (Counter)
 
 The total number of connections waited for.
@@ -446,7 +445,6 @@ The total number of connections waited for.
 #### Labels
 
 - **sql_db_role**: SQL DB replica role: `primary` for read+write replicas, or `read_replica` for read-only DB replicas.
-
 
 ### **`buildbuddy_sql_wait_duration_usec`** (Counter)
 
@@ -456,7 +454,6 @@ The total time blocked waiting for a new connection, in **microseconds**.
 
 - **sql_db_role**: SQL DB replica role: `primary` for read+write replicas, or `read_replica` for read-only DB replicas.
 
-
 ### **`buildbuddy_sql_max_idle_closed`** (Counter)
 
 The total number of connections closed due to SetMaxIdleConns.
@@ -465,7 +462,6 @@ The total number of connections closed due to SetMaxIdleConns.
 
 - **sql_db_role**: SQL DB replica role: `primary` for read+write replicas, or `read_replica` for read-only DB replicas.
 
-
 ### **`buildbuddy_sql_max_idle_time_closed`** (Counter)
 
 The total number of connections closed due to SetConnMaxIdleTime.
@@ -473,7 +469,6 @@ The total number of connections closed due to SetConnMaxIdleTime.
 #### Labels
 
 - **sql_db_role**: SQL DB replica role: `primary` for read+write replicas, or `read_replica` for read-only DB replicas.
-
 
 ### **`buildbuddy_sql_max_lifetime_closed`** (Counter)
 
@@ -547,6 +542,7 @@ histogram_quantile(
   sum by (le)	(rate(buildbuddy_http_response_size_bytes[5m]))
 )
 ```
+
 ## Internal metrics
 
 These metrics are for monitoring lower-level subsystems of BuildBuddy.
@@ -589,7 +585,6 @@ Number of cache get requests.
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 
-
 ### **`buildbuddy_cache_get_duration_usec`** (Histogram)
 
 The time spent retrieving each entry from the cache, in **microseconds**.
@@ -600,7 +595,6 @@ This is recorded only for successful gets.
 
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
-
 
 ### **`buildbuddy_cache_get_size_bytes`** (Histogram)
 
@@ -629,7 +623,6 @@ This is incremented once for each started stream, **not** for each chunk in the 
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 
-
 ### **`buildbuddy_cache_read_duration_usec`** (Histogram)
 
 The total time spent for each read stream, in **microseconds**.
@@ -640,7 +633,6 @@ This is recorded only for successful reads, and measures the entire read stream 
 
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
-
 
 ### **`buildbuddy_cache_read_size_bytes`** (Histogram)
 
@@ -668,7 +660,6 @@ Number of cache set requests.
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 
-
 ### **`buildbuddy_cache_set_duration_usec`** (Histogram)
 
 The time spent writing each entry to the cache, in **microseconds**.
@@ -680,7 +671,6 @@ This is recorded only for successful sets.
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 
-
 ### **`buildbuddy_cache_set_size_bytes`** (Histogram)
 
 Size of the value stored in each set operation, in **bytes**.
@@ -691,7 +681,6 @@ This is recorded only for successful sets.
 
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
-
 
 ### **`buildbuddy_cache_set_retries`** (Histogram)
 
@@ -718,7 +707,6 @@ This is incremented once for each started stream, **not** for each chunk in the 
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 
-
 ### **`buildbuddy_cache_write_duration_usec`** (Histogram)
 
 The time spent for each streamed write to the cache, in **microseconds**.
@@ -730,7 +718,6 @@ This is recorded only on success, and measures the entire stream (not just indiv
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 
-
 ### **`buildbuddy_cache_write_size_bytes`** (Histogram)
 
 Size of each entry written to the cache via streaming, in **bytes**.
@@ -741,7 +728,6 @@ This is recorded only on success, and measures the entire stream (not just indiv
 
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
-
 
 ### **`buildbuddy_cache_write_retries`** (Histogram)
 
@@ -764,7 +750,6 @@ Number of deletes from the cache.
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 
-
 ### **`buildbuddy_cache_delete_duration_usec`** (Histogram)
 
 Duration of each cache deletion, in **microseconds**.
@@ -773,7 +758,6 @@ Duration of each cache deletion, in **microseconds**.
 
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
-
 
 ### **`buildbuddy_cache_contains_count`** (Counter)
 
@@ -785,7 +769,6 @@ Number of `contains(key)` requests made to the cache.
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 
-
 ### **`buildbuddy_cache_contains_duration_usec`** (Histogram)
 
 Duration of each each `contains(key)` request, in **microseconds**.
@@ -794,7 +777,6 @@ Duration of each each `contains(key)` request, in **microseconds**.
 
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
-
 
 ### **`buildbuddy_cache_contains_retry_count`** (Histogram)
 

@@ -186,6 +186,7 @@ type OauthProvider struct {
 	IssuerURL    string `yaml:"issuer_url" usage:"The issuer URL of this OIDC Provider."`
 	ClientID     string `yaml:"client_id" usage:"The oauth client ID."`
 	ClientSecret string `yaml:"client_secret" usage:"The oauth client secret."`
+	Slug         string `yaml:"slug" usage:"The slug of this OIDC Provider."`
 }
 
 type SSLConfig struct {
@@ -214,6 +215,7 @@ type RemoteExecutionConfig struct {
 	RequireExecutorAuthorization  bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
 	EnableUserOwnedExecutors      bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
 	EnableExecutorKeyCreation     bool   `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
+	UseRedisForExecutorPools      bool   `yaml:"use_redis_for_executor_pools" usage:"If enabled, executor pool information will be read from Redis instead of database."`
 }
 
 type ExecutorConfig struct {

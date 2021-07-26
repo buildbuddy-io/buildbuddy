@@ -93,6 +93,19 @@ export default class TargetsComponent extends React.Component {
             pageSize={this.props.pageSize}
           />
         )}
+
+        {!!this.props.model.skipped.length && (
+          <TargetsCardComponent
+            buildEvents={this.props.model.skipped}
+            className="card-skipped"
+            iconPath="/image/skip-forward.svg"
+            presentVerb={`${this.props.model.skipped.length == 1 ? "target" : "targets"}`}
+            pastVerb={`${this.props.model.skipped.length == 1 ? "target" : "targets"} skipped`}
+            model={this.props.model}
+            filter={this.props.filter}
+            pageSize={this.props.pageSize}
+          />
+        )}
       </div>
     );
   }

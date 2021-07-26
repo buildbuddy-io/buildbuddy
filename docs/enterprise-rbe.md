@@ -2,13 +2,14 @@
 id: enterprise-rbe
 title: Enterprise RBE Setup
 sidebar_label: Enterprise RBE Setup
---- 
+---
 
 To deploy BuildBuddy Remote Build Execution on-prem, we recommend using the [BuildBuddy Enterprise Helm charts](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise).
 
 ## Installing the chart
 
 First add the BuildBuddy Helm repository:
+
 ```
 helm repo add buildbuddy https://helm.buildbuddy.io
 ```
@@ -16,6 +17,7 @@ helm repo add buildbuddy https://helm.buildbuddy.io
 Then you'll need to make sure kubectl is configured with access to your Kubernetes cluster. Here are instructions for [Google Cloud](https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl), [AWS](https://docs.aws.amazon.com/eks/latest/userguide/create-kubeconfig.html), and [Azure](https://docs.microsoft.com/en-us/azure/aks/kubernetes-walkthrough#connect-to-the-cluster).
 
 Finally install BuildBuddy enterprise to your Kubernetes cluster:
+
 ```
 helm install buildbuddy buildbuddy/buildbuddy-enterprise
 ```
@@ -23,6 +25,7 @@ helm install buildbuddy buildbuddy/buildbuddy-enterprise
 This will deploy a minimal BuildBuddy enterprise install to your Kubernetes cluster.
 
 You can verify your install by waiting a minute or two for your deployment to complete, then running:
+
 ```
 echo `kubectl get --namespace default service buildbuddy-enterprise -o jsonpath='{.status.loadBalancer.ingress[0].*}'`
 ```
@@ -34,6 +37,7 @@ This will return an IP address that you can visit in a browser and verify that y
 Now that you have a basic BuildBuddy Enterprise install deployed. Let's configure it to enable Remote Build Execution.
 
 You can do so this by passing a `values.yaml` file to Helm that enables RBE. Here's a simple `values.yaml` file with RBE enabled. This will deploy RBE with 3 executors and Redis enabled:
+
 ```
 executor:
   enabled: true
@@ -45,16 +49,18 @@ config:
     enable_remote_exec: true
 ```
 
-This configuration with 1 app instance, 3 executors, and a Redis instance will fit on a machine/cluster with at least 5 vCPUs and 24 GB of RAM. 
+This configuration with 1 app instance, 3 executors, and a Redis instance will fit on a machine/cluster with at least 5 vCPUs and 24 GB of RAM.
 
 GCP's [n2-standard-8 machines](https://cloud.google.com/compute/docs/machine-types#n2_standard_machine_types) or similar are a good place to start. For information on scaling up and down your deployments, see the **Configuring resource** section.
 
 You can now upgrade your install with the following command:
+
 ```
 helm upgrade buildbuddy buildbuddy/buildbuddy-enterprise --values values.yaml
 ```
 
-Once your upgrade has completed (and the rollout has finished), you can reload the IP address you obtained from the kubectl command above. 
+Once your upgrade has completed (and the rollout has finished), you can reload the IP address you obtained from the kubectl command above.
+
 ```
 echo `kubectl get --namespace default service buildbuddy-enterprise -o jsonpath='{.status.loadBalancer.ingress[0].*}'`
 ```
@@ -63,11 +69,12 @@ You should now see a remote build execution checkbox and can try your first remo
 
 ## Configuring resources
 
-Now that you've got a working RBE deployment, you can configure resources requested by BuildBuddy app instances and executors to scale up and down your cluster. 
+Now that you've got a working RBE deployment, you can configure resources requested by BuildBuddy app instances and executors to scale up and down your cluster.
 
 By default BuildBuddy app instances request 1 CPU and 4 GB of RAM, executors request 1 CPU and 5 GB of RAM per instance, and Redis requests 1 CPU and 5GB of RAM.
 
 Here's a values.yaml file that specifies the replica and resource settings you can use to scale your cluster up and down:
+
 ```
 replicas: 1
 resources:
