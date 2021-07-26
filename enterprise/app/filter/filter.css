@@ -23,11 +23,11 @@
   justify-content: center;
 }
 
-.clear-filters-button {
+.global-filter .clear-filters-button {
   color: #263238;
 }
 
-.filter-icon-container img {
+.global-filter .filter-icon-container img {
   opacity: 0.5;
 }
 
