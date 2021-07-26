@@ -13,6 +13,8 @@ go_library(
         "//enterprise:bundle",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/snaploader",
+        "//enterprise/server/util/container",
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/networking",
         "//enterprise/server/util/vsock",
