@@ -62,6 +62,7 @@ go_binary(
         "//enterprise:config_files",
         "//enterprise:licenses",
         "//enterprise/app:app_bundle",
+        "//enterprise/app:sha",
         "//enterprise/app:style",
         "//static",
     ],
