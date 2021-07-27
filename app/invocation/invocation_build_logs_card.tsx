@@ -47,7 +47,7 @@ export default class BuildLogsCardComponent extends React.Component<Props, State
       )
       .then((response) => {
         this.setState({
-          consoleBuffer: this.state.consoleBuffer + String.fromCharCode(...(response.chunk?.buffer || [])),
+          consoleBuffer: this.state.consoleBuffer + String.fromCharCode(...(response.buffer || [])),
         });
 
         // Empty next chunk ID means the invocation is complete and we've reached
