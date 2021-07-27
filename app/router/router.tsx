@@ -229,8 +229,14 @@ function getRepoUrlPathParam(repo: string): string {
   return window.btoa(repo);
 }
 
+function getQueryString(params: Record<string, string>) {
+  return new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([_, value]) => Boolean(value)))
+  ).toString();
+}
+
 function getModifiedUrl({ query }: { query?: Record<string, string> }) {
-  const queryString = query ? new URLSearchParams(query).toString() : window.location.search;
+  const queryString = query ? getQueryString(query) : window.location.search;
 
   return (
     window.location.protocol +
