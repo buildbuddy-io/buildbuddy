@@ -31,6 +31,10 @@ export type ThreadTimeline = {
   maxDepth: number;
 };
 
+// Matches strings like "skyframe evaluator 1", "grpc-command-0", etc., splitting the
+// non-numeric prefix and numeric suffix into separate match groups.
+const NUMBERED_THREAD_NAME_PATTERN = /^(?<prefix>[^\d]+)(?<number>\d+)$/;
+
 function eventComparator(a: TraceEvent, b: TraceEvent) {
   // Group by thread ID.
   const threadIdDiff = a.tid - b.tid;
@@ -47,8 +51,16 @@ function eventComparator(a: TraceEvent, b: TraceEvent) {
   return durationDiff;
 }
 
-function threadNameComparator(a: ThreadTimeline, b: ThreadTimeline) {
-  // Sort by thread name.
+function timelineComparator(a: ThreadTimeline, b: ThreadTimeline) {
+  // Within numbered thread names (e.g. "skyframe evaluator 0", "grpc-command-0"), sort
+  // numerically.
+  const matchA = a.threadName.match(NUMBERED_THREAD_NAME_PATTERN)?.groups;
+  const matchB = b.threadName.match(NUMBERED_THREAD_NAME_PATTERN)?.groups;
+  if (matchA && matchB && matchA["prefix"] === matchB["prefix"]) {
+    return Number(matchA["number"]) - Number(matchB["number"]);
+  }
+
+  // Sort other timelines lexicographically by thread name.
   return a.threadName.localeCompare(b.threadName);
 }
 
@@ -90,10 +102,10 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
       event.dur &&
       event.dur > visibilityThreshold
   );
-  
+
   // Merge all of the threads with a single thread name under the same tid.
   for (const [tid, threadName] of threadNameByTid.entries()) {
-      threadNameToTidMap.set(threadName, tid)
+    threadNameToTidMap.set(threadName, tid);
   }
 
   for (const event of events) {
@@ -101,7 +113,7 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
   }
 
   events.sort(eventComparator);
-  
+
   const timelines: ThreadTimeline[] = [];
   let tid = null;
   let timeline: ThreadTimeline | null = null;
@@ -151,7 +163,7 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
     timeline.threadName = threadNameByTid.get(timeline.tid);
   }
 
-  timelines.sort(threadNameComparator);
+  timelines.sort(timelineComparator);
 
   return timelines;
 }

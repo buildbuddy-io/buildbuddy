@@ -104,7 +104,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	if err == nil {
 		env.SetAuthenticator(authenticator)
 	} else {
-		log.Infof("No authentication will be configured: %s", err)
+		log.Warningf("No authentication will be configured: %s", err)
 	}
 
 	userDB, err := userdb.NewUserDB(env, env.GetDBHandle())

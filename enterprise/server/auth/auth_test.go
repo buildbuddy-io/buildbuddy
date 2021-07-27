@@ -16,6 +16,7 @@ import (
 
 const (
 	testIssuer        = "testIssuer"
+	testSlug          = "test-slug"
 	validJWT          = "validJWT"
 	expiredJWT        = "expiredJWT"
 	refreshedJWT      = "refreshedJWT"
@@ -39,6 +40,10 @@ type fakeOidcAuthenticator struct {
 
 func (f fakeOidcAuthenticator) getIssuer() string {
 	return testIssuer
+}
+
+func (f fakeOidcAuthenticator) getSlug() string {
+	return testSlug
 }
 
 func (f fakeOidcAuthenticator) authCodeURL(state string, opts ...oauth2.AuthCodeOption) string {

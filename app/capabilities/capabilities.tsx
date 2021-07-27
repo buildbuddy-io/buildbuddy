@@ -20,6 +20,7 @@ export class Capabilities {
   userOwnedExecutors: boolean;
   executorKeyCreation: boolean;
   code: boolean;
+  sso: boolean;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
@@ -37,6 +38,7 @@ export class Capabilities {
     this.compareInvocations = true;
     this.deleteInvocation = true;
     this.manageApiKeys = true;
+    this.sso = Boolean(config.sso_enabled);
     this.workflows = Boolean(config.workflows_enabled);
     this.executors = Boolean(config.remote_execution_enabled);
     this.userOwnedExecutors = Boolean(config.user_owned_executors_enabled);

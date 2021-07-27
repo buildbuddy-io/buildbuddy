@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -423,7 +424,44 @@ func TestUnregisterExecutor(t *testing.T) {
 	rbe.RemoveExecutor(executors[0])
 }
 
+func TestUnregisterExecutor_RedisExecutorPools(t *testing.T) {
+	flags.Set(t, "remote_execution.use_redis_for_executor_pools", "true")
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+
+	// Start with two executors.
+	// AddExecutors will block until both are registered.
+	executors := rbe.AddExecutors(2)
+
+	// Remove one of the executors.
+	// RemoveExecutor will block until the executor is unregistered.
+	rbe.RemoveExecutor(executors[0])
+}
+
 func TestMultipleSchedulersAndExecutors(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	// Start with 2 BuildBuddy servers.
+	rbe.AddBuildBuddyServer()
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutors(5)
+
+	var cmds []*rbetest.Command
+	for i := 0; i < 10; i++ {
+		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
+		cmds = append(cmds, cmd)
+	}
+	for i := range cmds {
+		res := cmds[i].Wait()
+		assert.Equal(t, 0, res.ExitCode, "exit code should be propagated")
+		assert.Equal(t, fmt.Sprintf("hello from command %d\n", i), res.Stdout, "stdout should be propagated")
+		assert.Equal(t, "", res.Stderr, "stderr should be empty")
+	}
+}
+
+func TestMultipleSchedulersAndExecutors_RedisExecutorPools(t *testing.T) {
+	flags.Set(t, "remote_execution.use_redis_for_executor_pools", "true")
 	rbe := rbetest.NewRBETestEnv(t)
 
 	// Start with 2 BuildBuddy servers.

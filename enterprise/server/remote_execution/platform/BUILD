@@ -7,7 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
-        "//server/environment",
+        "//server/config",
         "//server/util/status",
     ],
 )
@@ -18,7 +18,6 @@ go_test(
     deps = [
         ":platform",
         "//proto:remote_execution_go_proto",
-        "//server/testutil/testenv",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

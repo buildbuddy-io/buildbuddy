@@ -75,7 +75,6 @@ Add your BuildBuddy API Key as GitHub Secret named `BUILDBUDDY_ORG_API_KEY`. For
 
 ## More
 
-
 ### Github commit statuses
 
 If you'd like BuildBuddy to publish commit statuses to your repo, you can do so by [logging in](https://app.buildbuddy.io) and clicking `Link Github Account` in the user menu in the top right.

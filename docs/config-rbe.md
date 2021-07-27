@@ -19,7 +19,6 @@ RBE configuration must be enabled in your `config.yaml` file, but most configura
 - `enable_remote_exec:` True if remote execution should be enabled.
 - `default_pool_name:` The default executor pool to use if one is not specified.
 
-
 ## Example section
 
 ```
@@ -46,7 +45,7 @@ executor:
 
 In addition to the config.yaml, there are also environment variables that executors consume. To get more information about their environment. All of these are optional, but can be useful for more complex configurations.
 
-- `SYS_MEMORY_BYTES`: The amount of memory (in bytes) that this executor is allowed to consume. Defaults to free system memory. 
+- `SYS_MEMORY_BYTES`: The amount of memory (in bytes) that this executor is allowed to consume. Defaults to free system memory.
 - `SYS_MILLICPU`: The amount of CPU (in millicpus) that this executor is allowed to consume. Defaults to system CPU.
 - `MY_NODENAME`: The name of the machine/node that the executor is running on. Defaults to empty string.
 - `MY_HOSTNAME`: The hostname by which the app can communicate to this executor. Defaults to machine hostname.

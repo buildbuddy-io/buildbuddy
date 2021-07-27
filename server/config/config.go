@@ -186,6 +186,7 @@ type OauthProvider struct {
 	IssuerURL    string `yaml:"issuer_url" usage:"The issuer URL of this OIDC Provider."`
 	ClientID     string `yaml:"client_id" usage:"The oauth client ID."`
 	ClientSecret string `yaml:"client_secret" usage:"The oauth client secret."`
+	Slug         string `yaml:"slug" usage:"The slug of this OIDC Provider."`
 }
 
 type SSLConfig struct {
@@ -214,6 +215,7 @@ type RemoteExecutionConfig struct {
 	RequireExecutorAuthorization  bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
 	EnableUserOwnedExecutors      bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
 	EnableExecutorKeyCreation     bool   `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
+	UseRedisForExecutorPools      bool   `yaml:"use_redis_for_executor_pools" usage:"If enabled, executor pool information will be read from Redis instead of database."`
 }
 
 type ExecutorConfig struct {
@@ -231,6 +233,8 @@ type ExecutorConfig struct {
 	DockerSiblingContainers bool             `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
 	DockerInheritUserIDs    bool             `yaml:"docker_inherit_user_ids" usage:"If set, run docker containers using the same uid and gid as the user running the executor process."`
 	DefaultXCodeVersion     string           `yaml:"default_xcode_version" usage:"Sets the default XCode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
+	EnableBareRunner        bool             `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
+	EnableFirecracker       bool             `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
 }
 
 func (c *ExecutorConfig) GetAppTarget() string {

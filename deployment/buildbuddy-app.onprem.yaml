@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-    name: buildbuddy
+  name: buildbuddy
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -26,12 +26,12 @@ spec:
           image: gcr.io/flame-public/buildbuddy-app-onprem:latest
           imagePullPolicy: Always
           env:
-          - name: ENV
-            value: "onprem"
-          - name: SERVICE_NAME
-            value: "app-backend"
-          - name: VERSION
-            value: "prod-1.0"
+            - name: ENV
+              value: "onprem"
+            - name: SERVICE_NAME
+              value: "app-backend"
+            - name: VERSION
+              value: "prod-1.0"
           ports:
             - name: http
               containerPort: 8080
@@ -48,14 +48,14 @@ spec:
           configMap:
             name: "config"
   volumeClaimTemplates:
-      - metadata:
-          name: data
-        spec:
-          accessModes:
-            - ReadWriteOnce
-          resources:
-            requests:
-              storage: 10Gi
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
 ---
 apiVersion: v1
 kind: Service
@@ -67,11 +67,11 @@ spec:
     app: buildbuddy-app
   ports:
     - name: http
-      protocol: 'TCP'
+      protocol: "TCP"
       port: 80
       targetPort: 8080
     - name: grpc
-      protocol: 'TCP'
+      protocol: "TCP"
       port: 1985
       targetPort: 1985
   type: LoadBalancer

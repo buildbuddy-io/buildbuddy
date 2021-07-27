@@ -2,7 +2,7 @@
 id: enterprise-helm
 title: Enterprise Helm Charts
 sidebar_label: Enterprise Helm Charts
---- 
+---
 
 If you run or have access to a Kubernetes cluster and are comfortable with [Helm](https://helm.sh/), we maintain official BuildBuddy Helm charts that are easy to configure and deploy.
 

@@ -124,7 +124,14 @@ export class AuthService {
     }
   }
 
-  login() {
+  login(slug?: string) {
+    if (slug) {
+      window.location.href = `/login/?redirect_url=${encodeURIComponent(
+        window.location.href
+      )}&slug=${encodeURIComponent(slug)}`;
+      return;
+    }
+
     window.location.href = `/login/?redirect_url=${encodeURIComponent(
       window.location.href
     )}&issuer_url=${encodeURIComponent(capabilities.auth)}`;
