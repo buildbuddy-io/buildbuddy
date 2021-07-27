@@ -2,7 +2,7 @@
 set -euo pipefail
 
 get_bundle_info() {
-  bazel build //enterprise/app:app_bundle >&2
+  bazel build -c opt //enterprise/app:app_bundle >&2
   local bundle_path="bazel-bin/enterprise/app/app_bundle/app.js"
   local size_bytes
   local compressed_size_bytes
