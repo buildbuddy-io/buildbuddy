@@ -76,6 +76,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		ctx:                     ctx,
 		pw:                      protofile.NewBufferedProtoWriter(b.env.GetBlobstore(), iid, chunkFileSizeBytes),
 		beValues:                buildEventAccumulator,
+		redactor:                redact.NewStreamingRedactor(b.env),
 		statusReporter:          build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
 		targetTracker:           target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		hasReceivedStartedEvent: false,
@@ -121,6 +122,7 @@ type EventChannel struct {
 	env                     environment.Env
 	pw                      *protofile.BufferedProtoWriter
 	beValues                *accumulator.BEValues
+	redactor                *redact.StreamingRedactor
 	statusReporter          *build_status_reporter.BuildStatusReporter
 	targetTracker           *target_tracker.TargetTracker
 	eventsBeforeStarted     []*inpb.InvocationEvent
@@ -130,12 +132,16 @@ type EventChannel struct {
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string, invocation *inpb.Invocation) error {
 	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), iid)
+	redactor := redact.NewStreamingRedactor(e.env)
 	parser := event_parser.NewStreamingEventParser()
 	parser.FillInvocation(invocation)
 	for {
 		event := &inpb.InvocationEvent{}
 		err := pr.ReadProto(ctx, event)
 		if err == nil {
+			if !*enableOptimizedRedaction {
+				redactor.RedactMetadata(event.BuildEvent)
+			}
 			parser.ParseEvent(event)
 		} else if err == io.EOF {
 			break
@@ -318,7 +324,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
 		}
 		if *enableOptimizedRedaction {
-			ti.RedactionFlags = redact.RedactionFlagAPIKey
+			ti.RedactionFlags = redact.RedactionFlagStandardRedactions
 		}
 
 		if auth := e.env.GetAuthenticator(); auth != nil {
@@ -367,9 +373,10 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid string) error {
 	if *enableOptimizedRedaction {
-		if err := redact.APIKey(e.ctx, e.env, event.BuildEvent); err != nil {
+		if err := e.redactor.RedactAPIKey(e.ctx, event.BuildEvent); err != nil {
 			return err
 		}
+		e.redactor.RedactMetadata(event.BuildEvent)
 	}
 
 	e.beValues.AddEvent(event.BuildEvent) // in-memory structure to hold common values we want from the event.
@@ -463,6 +470,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 
 	invocation := TableInvocationToProto(ti)
 
+	redactor := redact.NewStreamingRedactor(env)
 	parser := event_parser.NewStreamingEventParser()
 	pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), iid)
 	for {
@@ -475,10 +483,11 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			log.Warningf("Error reading proto from log: %s", err)
 			return nil, err
 		}
-		if !*enableOptimizedRedaction || ti.RedactionFlags&redact.RedactionFlagAPIKey == 0 {
-			if err := redact.APIKeysWithSlowRegexp(ctx, env, event.BuildEvent); err != nil {
+		if !*enableOptimizedRedaction || ti.RedactionFlags&redact.RedactionFlagStandardRedactions == 0 {
+			if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
 				return nil, err
 			}
+			redactor.RedactMetadata(event.BuildEvent)
 		}
 		parser.ParseEvent(event)
 	}
@@ -509,7 +518,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 	}
 	i.LastChunkId = p.LastChunkId
 	if *enableOptimizedRedaction {
-		i.RedactionFlags = redact.RedactionFlagAPIKey
+		i.RedactionFlags = redact.RedactionFlagStandardRedactions
 	}
 	return i
 }
