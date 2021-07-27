@@ -16,10 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
-	"github.com/golang/protobuf/ptypes"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	tspb "github.com/golang/protobuf/ptypes/timestamp"
 )
 
 const (
@@ -143,11 +141,11 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	if role := req.GetQuery().GetRole(); role != "" {
 		q.AddWhereClause("i.role = ?", role)
 	}
-	if start := req.GetQuery().GetStartTimestamp(); start.GetSeconds() > 0 || start.GetNanos() > 0 {
-		q.AddWhereClause("i.created_at_usec >= ?", timestampToMicros(start))
+	if start := req.GetQuery().GetUpdatedTimestampRangeStart().AsTime(); !start.IsZero() {
+		q.AddWhereClause("i.updated_at_usec >= ?", timeutil.ToUsec(start))
 	}
-	if end := req.GetQuery().GetEndTimestamp(); end.GetSeconds() > 0 || end.GetNanos() > 0 {
-		q.AddWhereClause("i.created_at_usec < ?", timestampToMicros(end))
+	if end := req.GetQuery().GetUpdatedTimestampRangeEnd().AsTime(); !end.IsZero() {
+		q.AddWhereClause("i.updated_at_usec < ?", timeutil.ToUsec(end))
 	}
 
 	// Always add permissions check.
@@ -197,9 +195,4 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 		rsp.NextPageToken = pageSizeOffsetPrefix + strconv.FormatInt(offset+limitSize, 10)
 	}
 	return rsp, nil
-}
-
-func timestampToMicros(tsPb *tspb.Timestamp) int64 {
-	ts, _ := ptypes.Timestamp(tsPb)
-	return timeutil.ToUsec(ts)
 }
