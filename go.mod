@@ -20,7 +20,6 @@ require (
 	github.com/go-git/go-git/v5 v5.2.0
 	github.com/go-redis/redis/extra/redisotel/v8 v8.10.0
 	github.com/go-redis/redis/v8 v8.10.0
-	github.com/gofrs/uuid v3.3.0+incompatible // indirect
 	github.com/golang/protobuf v1.5.2
 	github.com/google/go-cmp v0.5.6
 	github.com/google/go-github v17.0.0+incompatible
@@ -36,6 +35,7 @@ require (
 	github.com/mattn/go-shellwords v1.0.11
 	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
 	github.com/mdlayher/vsock v0.0.0-20210303205602-10d591861736
+	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/nishanths/exhaustive v0.2.3 // indirect
 	github.com/opencontainers/runtime-spec v1.0.3-0.20200929063507-e6143ca7d51d
@@ -66,5 +66,4 @@ require (
 	gorm.io/driver/postgres v1.0.8
 	gorm.io/driver/sqlite v1.1.4
 	gorm.io/gorm v1.20.12
-	k8s.io/kubelet v0.21.2 // indirect
 )
