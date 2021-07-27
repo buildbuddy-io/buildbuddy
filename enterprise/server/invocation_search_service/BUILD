@@ -20,7 +20,5 @@ go_library(
         "//server/util/query_builder",
         "//server/util/status",
         "//server/util/timeutil",
-        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
-        "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
     ],
 )
