@@ -14,6 +14,7 @@ import (
 
 const (
 	repoURLFieldName    = "repoURL"
+	branchNameFieldName = "branchName"
 	commitSHAFieldName  = "commitSHA"
 	roleFieldName       = "role"
 	commandFieldName    = "command"
@@ -24,9 +25,10 @@ const (
 
 var (
 	buildMetadataFieldMapping = map[string]string{
-		"REPO_URL":   repoURLFieldName,
-		"COMMIT_SHA": commitSHAFieldName,
-		"ROLE":       roleFieldName,
+		"REPO_URL":    repoURLFieldName,
+		"BRANCH_NAME": branchNameFieldName,
+		"COMMIT_SHA":  commitSHAFieldName,
+		"ROLE":        roleFieldName,
 	}
 )
 
@@ -77,6 +79,10 @@ func (v *BEValues) StartTime() time.Time {
 }
 func (v *BEValues) RepoURL() string {
 	return v.getStringValue(repoURLFieldName)
+}
+
+func (v *BEValues) BranchName() string {
+	return v.getStringValue(branchNameFieldName)
 }
 
 func (v *BEValues) CommitSHA() string {
@@ -151,6 +157,12 @@ func (v *BEValues) populateWorkspaceInfoFromStructuredCommandLine(commandLine *c
 			switch environmentVariable {
 			case "CIRCLE_REPOSITORY_URL", "GITHUB_REPOSITORY", "BUILDKITE_REPO", "TRAVIS_REPO_SLUG", "GIT_URL", "CI_REPOSITORY_URL", "REPO_URL":
 				v.setStringValue(repoURLFieldName, value)
+			case "CIRCLE_BRANCH", "GITHUB_HEAD_REF", "BUILDKITE_BRANCH", "TRAVIS_BRANCH", "GIT_BRANCH", "CI_COMMIT_BRANCH":
+				v.setStringValue(branchNameFieldName, value)
+			case "GITHUB_REF":
+				if strings.HasPrefix(value, "refs/heads/") {
+					v.setStringValue(branchNameFieldName, strings.TrimPrefix(value, "refs/heads/"))
+				}
 			case "CIRCLE_SHA1", "GITHUB_SHA", "BUILDKITE_COMMIT", "TRAVIS_COMMIT", "GIT_COMMIT", "CI_COMMIT_SHA", "COMMIT_SHA":
 				v.setStringValue(commitSHAFieldName, value)
 			case "CI":
@@ -174,6 +186,9 @@ func (v *BEValues) populateWorkspaceInfoFromWorkspaceStatus(workspace *build_eve
 	for _, item := range workspace.Item {
 		if item.Key == "REPO_URL" {
 			v.setStringValue(repoURLFieldName, item.Value)
+		}
+		if item.Key == "BRANCH_NAME" {
+			v.setStringValue(branchNameFieldName, item.Value)
 		}
 		if item.Key == "COMMIT_SHA" {
 			v.setStringValue(commitSHAFieldName, item.Value)

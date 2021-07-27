@@ -85,6 +85,9 @@ message Invocation {
 
   // This field indicates to the client if we have chunked event logs
   bool has_chunked_event_logs = 22;
+
+  // The name of the git branch for this invocation, if any
+  string branch_name = 23;
 }
 
 message InvocationEvent {
@@ -176,6 +179,8 @@ message InvocationQuery {
 
   // The timestamp up to which the build was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 8;
+  // The git branch used for the build.
+  string branch_name = 9;
 }
 
 message InvocationSort {
@@ -232,6 +237,7 @@ enum AggType {
   REPO_URL_AGGREGATION_TYPE = 4;
   COMMIT_SHA_AGGREGATION_TYPE = 5;
   DATE_AGGREGATION_TYPE = 6;
+  BRANCH_AGGREGATION_TYPE = 7;
 }
 
 message InvocationStat {
@@ -288,6 +294,8 @@ message InvocationStatQuery {
 
   // The timestamp up to which the build was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 8;
+  // The git branch used for the build.
+  string branch_name = 9;
 }
 
 message GetInvocationStatRequest {
@@ -353,6 +361,9 @@ message TrendStat {
   int64 total_upload_size_bytes = 17;
   int64 total_download_usec = 18;
   int64 total_upload_usec = 19;
+
+  // The number of unique branches that were built.
+  int64 branch_count = 20;
 }
 
 message TrendQuery {
@@ -375,6 +386,9 @@ message TrendQuery {
   // The role played by the build. Ex: "CI". Multiple filters are combined with
   // OR.
   repeated string role = 6;
+
+  // The git branch used for the build.
+  string branch_name = 7;
 }
 
 message GetTrendRequest {

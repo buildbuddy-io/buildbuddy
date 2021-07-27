@@ -233,6 +233,24 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	if url, ok := envVarMap["GITHUB_REPOSITORY"]; ok && url != "" {
 		invocation.RepoUrl = url
 	}
+	if branch, ok := envVarMap["TRAVIS_BRANCH"]; ok && branch != "" {
+		invocation.BranchName = branch
+	}
+	if branch, ok := envVarMap["GIT_BRANCH"]; ok && branch != "" {
+		invocation.BranchName = branch
+	}
+	if branch, ok := envVarMap["BUILDKITE_BRANCH"]; ok && branch != "" {
+		invocation.BranchName = branch
+	}
+	if branch, ok := envVarMap["CIRCLE_BRANCH"]; ok && branch != "" {
+		invocation.BranchName = branch
+	}
+	if branch, ok := envVarMap["GITHUB_REF"]; ok && strings.HasPrefix(branch, "refs/heads/") {
+		invocation.BranchName = strings.TrimPrefix(branch, "refs/heads/")
+	}
+	if branch, ok := envVarMap["GITHUB_HEAD_REF"]; ok && branch != "" {
+		invocation.BranchName = branch
+	}
 	if sha, ok := envVarMap["TRAVIS_COMMIT"]; ok && sha != "" {
 		invocation.CommitSha = sha
 	}
@@ -260,6 +278,9 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	if url, ok := envVarMap["CI_REPOSITORY_URL"]; ok && url != "" {
 		invocation.RepoUrl = url
 	}
+	if branch, ok := envVarMap["CI_COMMIT_BRANCH"]; ok && branch != "" {
+		invocation.BranchName = branch
+	}
 	if sha, ok := envVarMap["CI_COMMIT_SHA"]; ok && sha != "" {
 		invocation.CommitSha = sha
 	}
@@ -283,6 +304,8 @@ func fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.Works
 			invocation.Role = item.Value
 		case "REPO_URL":
 			invocation.RepoUrl = item.Value
+		case "GIT_BRANCH":
+			invocation.BranchName = item.Value
 		case "COMMIT_SHA":
 			invocation.CommitSha = item.Value
 		}
@@ -292,6 +315,9 @@ func fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.Works
 func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inpb.Invocation) {
 	if sha, ok := metadata["COMMIT_SHA"]; ok && sha != "" {
 		invocation.CommitSha = sha
+	}
+	if branch, ok := metadata["BRANCH_NAME"]; ok && branch != "" {
+		invocation.BranchName = branch
 	}
 	if url, ok := metadata["REPO_URL"]; ok && url != "" {
 		invocation.RepoUrl = url

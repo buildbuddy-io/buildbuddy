@@ -149,6 +149,18 @@ export default class ArtifactsCardComponent extends React.Component {
               </div>
             )}
 
+            {this.props.model.getGithubBranch() && (
+              <div className="invocation-section">
+                <div className="invocation-section-title">Github branch</div>
+                <div>
+                  <a
+                    href={`https://github.com/${this.props.model.getGithubRepo()}/tree/${this.props.model.getGithubBranch()}`}>
+                    {this.props.model.getGithubBranch()}
+                  </a>
+                </div>
+              </div>
+            )}
+
             {this.props.model.getGithubSHA() && (
               <div className="invocation-section">
                 <div className="invocation-section-title">Github commit</div>

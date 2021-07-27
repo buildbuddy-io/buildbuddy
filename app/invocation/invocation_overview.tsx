@@ -29,6 +29,10 @@ export default class InvocationOverviewComponent extends React.Component {
     router.navigateToRepoHistory(this.props.model.getRepo());
   }
 
+  handleBranchClicked() {
+    router.navigateToBranchHistory(this.props.model.getBranchName());
+  }
+
   handleCommitClicked() {
     router.navigateToCommitHistory(this.props.model.getCommit());
   }
@@ -165,6 +169,12 @@ export default class InvocationOverviewComponent extends React.Component {
             <div className="detail clickable" onClick={this.handleRepoClicked.bind(this)}>
               <img className="icon" src="/image/github-regular.svg" />
               {format.formatGitUrl(this.props.model.getRepo())}
+            </div>
+          )}
+          {this.props.model.getBranchName() && (
+            <div className="detail clickable" onClick={this.handleBranchClicked.bind(this)}>
+              <img className="icon" src="/image/git-branch-regular.svg" />
+              {this.props.model.getBranchName()}
             </div>
           )}
           {this.props.model.getCommit() && (

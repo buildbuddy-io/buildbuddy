@@ -23,6 +23,9 @@ export default class HistoryInvocationStatCardComponent extends React.Component 
     if (this.props.type == invocation.AggType.REPO_URL_AGGREGATION_TYPE) {
       router.navigateToRepoHistory(this.props.invocationStat.name);
     }
+    if (this.props.type == invocation.AggType.BRANCH_AGGREGATION_TYPE) {
+      router.navigateToBranchHistory(this.props.invocationStat.name);
+    }
     if (this.props.type == invocation.AggType.COMMIT_SHA_AGGREGATION_TYPE) {
       router.navigateToCommitHistory(this.props.invocationStat.name);
     }
@@ -37,6 +40,9 @@ export default class HistoryInvocationStatCardComponent extends React.Component 
     }
     if (this.props.type == invocation.AggType.REPO_URL_AGGREGATION_TYPE) {
       return format.formatGitUrl(this.props.invocationStat.name) || "Unknown repo";
+    }
+    if (this.props.type == invocation.AggType.BRANCH_AGGREGATION_TYPE) {
+      return this.props.invocationStat.name || "Unknown branch";
     }
     if (this.props.type == invocation.AggType.COMMIT_SHA_AGGREGATION_TYPE) {
       return this.props.invocationStat.name

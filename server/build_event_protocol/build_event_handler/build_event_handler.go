@@ -523,6 +523,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 	if *enableOptimizedRedaction {
 		i.RedactionFlags = redact.RedactionFlagStandardRedactions
 	}
+	i.BranchName = p.BranchName
 	return i
 }
 
@@ -570,5 +571,6 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	if i.LastChunkId != "" {
 		out.HasChunkedEventLogs = true
 	}
+	out.BranchName = i.BranchName
 	return out
 }

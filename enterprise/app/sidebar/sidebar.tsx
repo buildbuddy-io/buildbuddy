@@ -59,6 +59,10 @@ export default class SidebarComponent extends React.Component {
     return this.props.path.startsWith("/history/repo/") || this.props.hash == "#repos";
   }
 
+  isBranchesSelected() {
+    return this.props.path.startsWith("/history/branch/") || this.props.hash == "#branches";
+  }
+
   isCommitsSelected() {
     return this.props.path.startsWith("/history/commit/") || this.props.hash == "#commits";
   }
@@ -108,6 +112,10 @@ export default class SidebarComponent extends React.Component {
 
   navigateToRepos() {
     this.isReposSelected() ? this.refreshCurrentPage() : router.navigateHome("#repos");
+  }
+
+  navigateToBranches() {
+    this.isBranchesSelected() ? this.refreshCurrentPage() : router.navigateHome("#branches");
   }
 
   navigateToCommits() {
@@ -161,6 +169,11 @@ export default class SidebarComponent extends React.Component {
             className={`sidebar-item ${this.isReposSelected() ? "selected" : ""}`}
             onClick={this.navigateToRepos.bind(this)}>
             <img src="/image/github-white.svg" /> Repos
+          </div>
+          <div
+            className={`sidebar-item ${this.isBranchesSelected() ? "selected" : ""}`}
+            onClick={this.navigateToBranches.bind(this)}>
+            <img src="/image/git-branch-white.svg" /> Branches
           </div>
           <div
             className={`sidebar-item ${this.isCommitsSelected() ? "selected" : ""}`}

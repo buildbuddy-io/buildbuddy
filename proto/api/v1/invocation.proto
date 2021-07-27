@@ -68,6 +68,9 @@ message Invocation {
 
   // The role played by this invocation. Ex: "CI"
   string role = 19;
+
+  // The git branch that this invocation was for.
+  string branch_name = 20;
 }
 
 // The selector used to specify which invocations to return.

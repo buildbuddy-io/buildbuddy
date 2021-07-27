@@ -68,6 +68,13 @@ export default class HistoryInvocationCardComponent extends React.Component {
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
+  handleBranchClicked(event: any, invocation: invocation.Invocation) {
+    router.navigateToBranchHistory(invocation.commitSha);
+    event.stopPropagation();
+    event.preventDefault();
+  }
+
+  // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
   handleRepoClicked(event: any, invocation: invocation.Invocation) {
     router.navigateToRepoHistory(invocation.repoUrl);
     event.stopPropagation();
@@ -233,6 +240,16 @@ export default class HistoryInvocationCardComponent extends React.Component {
                   }}>
                   <img className="icon" src="/image/github-regular.svg" />
                   {format.formatGitUrl(this.props.invocation.repoUrl)}
+                </div>
+              )}
+              {this.props.invocation.branchName && (
+                <div
+                  className="detail clickable"
+                  onClick={(e) => {
+                    this.handleBranchClicked(e, this.props.invocation);
+                  }}>
+                  <img className="icon" src="/image/git-branch-regular.svg" />
+                  {this.props.invocation.branchName}
                 </div>
               )}
               {this.props.invocation.commitSha && (

@@ -97,6 +97,7 @@ type Invocation struct {
 	RepoURL      string `gorm:"index:repo_url_index"`
 	CommitSHA    string `gorm:"index:commit_sha_index"`
 	LastChunkId  string
+	BranchName   string `gorm:"index:branch_name_index"`
 	Model
 	DurationUsec                     int64
 	UploadThroughputBytesPerSecond   int64
@@ -545,6 +546,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 		"invocations_stats_user_index":        "(`group_id`, `user`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
 		"invocations_stats_host_index":        "(`group_id`, `host`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
 		"invocations_stats_repo_index":        "(`group_id`, `repo_url`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+		"invocations_stats_branch_index":      "(`group_id`, `branch_name`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
 		"invocations_stats_commit_index":      "(`group_id`, `commit_sha`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
 	}
 	m := db.Migrator()
