@@ -270,6 +270,7 @@ proto_library(
     name = "scheduler_proto",
     srcs = ["scheduler.proto"],
     deps = [
+        ":acl_proto",
         ":context_proto",
         ":trace_proto",
     ],
@@ -555,6 +556,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/scheduler",
     proto = ":scheduler_proto",
     deps = [
+        ":acl_go_proto",
         ":context_go_proto",
         ":trace_go_proto",
     ],

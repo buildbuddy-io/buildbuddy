@@ -80,7 +80,8 @@ func (ws *Workspace) Path() string {
 func (ws *Workspace) SetTask(task *repb.ExecutionTask) {
 	log.Debugf("Assigned task %s to workspace at %q", task.GetExecutionId(), ws.rootDir)
 	ws.task = task
-	ws.dirHelper = dirtools.NewDirHelper(ws.Path(), task.GetCommand())
+	cmd := task.GetCommand()
+	ws.dirHelper = dirtools.NewDirHelper(ws.Path(), cmd.GetOutputFiles(), cmd.GetOutputDirectories())
 }
 
 // CommandWorkingDirectory returns the absolute path to the working directory

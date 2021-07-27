@@ -230,10 +230,9 @@ function getRepoUrlPathParam(repo: string): string {
 }
 
 function getQueryString(params: Record<string, string>) {
-  return Object.keys(params)
-    .filter((key) => Boolean(params[key]))
-    .map((key) => `${key}=${encodeURIComponent(params[key])}`)
-    .join("&");
+  return new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([_, value]) => Boolean(value)))
+  ).toString();
 }
 
 function getModifiedUrl({ query }: { query?: Record<string, string> }) {

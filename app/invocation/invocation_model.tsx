@@ -500,4 +500,8 @@ export default class InvocationModel {
   isQuery() {
     return this.getCommand() == "query";
   }
+
+  hasChunkedEventLogs(): boolean {
+    return this.invocations[0]?.hasChunkedEventLogs || false;
+  }
 }

@@ -26,7 +26,7 @@ filegroup(
     name = "css",
     srcs = [
         ":filter.css",
-        "//:node_modules/react-date-range/dist/styles.css",
-        "//:node_modules/react-date-range/dist/theme/default.css",
+        ":react_date_range_base.css",
+        ":react_date_range_default_theme.css",
     ],
 )
