@@ -1,6 +1,8 @@
 module github.com/buildbuddy-io/buildbuddy
 
-go 1.14
+go 1.16
+
+replace github.com/firecracker-microvm/firecracker-go-sdk => github.com/tylerwilliams/firecracker-go-sdk v0.22.1
 
 require (
 	cloud.google.com/go/storage v1.12.0
@@ -16,7 +18,7 @@ require (
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.4.0
 	github.com/elastic/gosigar v0.11.0
-	github.com/firecracker-microvm/firecracker-go-sdk v0.22.0
+	github.com/firecracker-microvm/firecracker-go-sdk v0.0.0-00010101000000-000000000000
 	github.com/go-git/go-git/v5 v5.2.0
 	github.com/go-redis/redis/extra/redisotel/v8 v8.10.0
 	github.com/go-redis/redis/v8 v8.10.0
@@ -29,7 +31,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jhump/protoreflect v1.8.2
-	github.com/jsimonetti/rtnetlink v0.0.0-20210714135244-af39de65d6ad // indirect
+	github.com/jsimonetti/rtnetlink v0.0.0-20210714135244-af39de65d6ad
 	github.com/lib/pq v1.5.2 // indirect
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-shellwords v1.0.11
@@ -37,13 +39,12 @@ require (
 	github.com/mdlayher/vsock v0.0.0-20210303205602-10d591861736
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
-	github.com/nishanths/exhaustive v0.2.3 // indirect
 	github.com/opencontainers/runtime-spec v1.0.3-0.20200929063507-e6143ca7d51d
 	github.com/pkg/errors v0.9.1
 	github.com/pquerna/cachecontrol v0.0.0-20201205024021-ac21108117ac // indirect
 	github.com/prometheus/client_golang v1.7.1
 	github.com/rs/zerolog v1.20.0
-	github.com/sirupsen/logrus v1.7.0
+	github.com/sirupsen/logrus v1.8.0
 	github.com/stretchr/testify v1.7.0
 	github.com/whilp/git-urls v1.0.0
 	go.opentelemetry.io/contrib/detectors/gcp v0.20.0
@@ -57,6 +58,9 @@ require (
 	golang.org/x/oauth2 v0.0.0-20210313182246-cd4f82c27b84
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c
+	golang.org/x/term v0.0.0-20210220032956-6a3ed077a48d // indirect
+	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba // indirect
+	golang.org/x/tools v0.1.4 // indirect
 	google.golang.org/api v0.43.0
 	google.golang.org/genproto v0.0.0-20210402141018-6c239bbf2bb1
 	google.golang.org/grpc v1.38.0
