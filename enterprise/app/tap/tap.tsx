@@ -131,8 +131,7 @@ export default class TapComponent extends React.Component<Props> {
   }
 
   handleFilterChange(event: any) {
-    let value = encodeURIComponent(event.target.value);
-    router.updateParams({ filter: value });
+    router.updateParams({ filter: event.target.value });
   }
 
   durationToNum(duration: any) {
@@ -250,7 +249,7 @@ export default class TapComponent extends React.Component<Props> {
       );
     }
 
-    let filter = this.props.search.get("filter") ? decodeURIComponent(this.props.search.get("filter")) : "";
+    let filter = this.props.search.get("filter");
 
     return (
       <div className="tap">
