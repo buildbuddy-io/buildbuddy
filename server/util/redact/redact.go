@@ -56,7 +56,7 @@ func NewStreamingRedactor(env environment.Env) *StreamingRedactor {
 }
 
 func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
-	switch p := event.BuildEvent.Payload.(type) {
+	switch p := event.Payload.(type) {
 	case *bespb.BuildEvent_Progress:
 		{
 		}
@@ -128,7 +128,6 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		}
 	case *bespb.BuildEvent_BuildMetrics:
 		{
-			sep.actionCount = p.BuildMetrics.ActionSummary.ActionsExecuted
 		}
 	case *bespb.BuildEvent_WorkspaceInfo:
 		{
