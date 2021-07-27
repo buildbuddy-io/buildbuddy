@@ -63,6 +63,7 @@ export default class HistoryComponent extends React.Component {
 
   getBuilds(nextPage?: boolean) {
     const filterParams = getProtoFilterParams(this.props.search);
+    console.log(filterParams);
     let request = new invocation.SearchInvocationRequest({
       query: new invocation.InvocationQuery({
         host: this.props.hostname,
@@ -146,6 +147,9 @@ export default class HistoryComponent extends React.Component {
   componentDidUpdate(prevProps: Props) {
     if (this.props.hash !== prevProps.hash) {
       this.getStats();
+    }
+    if (this.props.search !== prevProps.search) {
+      this.getBuilds();
     }
   }
 
