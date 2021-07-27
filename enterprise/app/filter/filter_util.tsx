@@ -3,10 +3,10 @@ import { google } from "../../../proto/timestamp_ts_proto";
 import moment from "moment";
 import { START_DATE_PARAM_NAME, END_DATE_PARAM_NAME } from "./filter";
 
-type ProtoFilterParams = {
+export interface ProtoFilterParams {
   updatedTimestampRangeStart: google.protobuf.Timestamp;
   updatedTimestampRangeEnd: google.protobuf.Timestamp;
-};
+}
 
 export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams {
   return {
