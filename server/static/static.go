@@ -60,7 +60,7 @@ func NewStaticFileServer(env environment.Env, fs fs.FS, rootPaths []string, appB
 		}
 
 		if strings.HasPrefix(jsPath, "http://") || strings.HasPrefix(jsPath, "https://") {
-			env.GetHealthChecker().AddHealthCheck("static_bundle", &healthChecker{jsPath: jsPath})
+			env.GetHealthChecker().AddHealthCheck("app_static_file_server", &healthChecker{jsPath: jsPath})
 		}
 
 		handler = handleRootPaths(env, rootPaths, template, version.AppVersion(), jsPath, handler)
@@ -139,15 +139,12 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 	}
 }
 
-func AppBundleHash(bundleFS fs.FS) string {
-	var hashBytes []byte
-	if data, err := fs.ReadFile(bundleFS, "sha.sum"); err == nil {
-		hashBytes = data
+func AppBundleHash(bundleFS fs.FS) (string, error) {
+	hashBytes, err := fs.ReadFile(bundleFS, "sha.sum")
+	if err != nil {
+		return "", err
 	}
-	if hashBytes != nil {
-		return strings.TrimSpace(string(hashBytes))
-	}
-	return ""
+	return strings.TrimSpace(string(hashBytes)), nil
 }
 
 type healthChecker struct {

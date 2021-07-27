@@ -324,7 +324,12 @@ func StartAndRunServices(env environment.Env) {
 		log.Printf("Error raising open files limit: %s", err)
 	}
 
-	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, static.AppBundleHash(env.GetAppFilesystem()))
+	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
+	if err != nil {
+		log.Fatalf("Error reading app bundle hash: %s", err)
+	}
+
+	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)
 	}
