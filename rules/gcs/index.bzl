@@ -27,7 +27,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         prefix += "$$(cat $(location %s))/" % sha_prefix
         srcs = srcs + [sha_prefix]
 
-    # Zip the
+    # Zip the files if requested.
     options = "-r"
     if zip:
         options += " -Z"
