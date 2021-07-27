@@ -63,7 +63,6 @@ export default class HistoryComponent extends React.Component {
 
   getBuilds(nextPage?: boolean) {
     const filterParams = getProtoFilterParams(this.props.search);
-    console.log(filterParams);
     let request = new invocation.SearchInvocationRequest({
       query: new invocation.InvocationQuery({
         host: this.props.hostname,
@@ -72,7 +71,8 @@ export default class HistoryComponent extends React.Component {
         commitSha: this.props.commit,
         groupId: this.props.user?.selectedGroup?.id,
         role: this.isFilteredToWorkflows() ? "CI_RUNNER" : "",
-        ...filterParams,
+        updatedTimestampRangeStart: filterParams.updatedTimestampRangeStart,
+        updatedTimestampRangeEnd: filterParams.updatedTimestampRangeEnd,
       }),
       pageToken: nextPage ? this.state.pageToken : "",
       // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
