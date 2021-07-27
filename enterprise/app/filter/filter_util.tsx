@@ -4,8 +4,8 @@ import moment from "moment";
 import { START_DATE_PARAM_NAME, END_DATE_PARAM_NAME } from "./filter";
 
 export interface ProtoFilterParams {
-  updatedTimestampRangeStart: google.protobuf.Timestamp;
-  updatedTimestampRangeEnd: google.protobuf.Timestamp;
+  updatedTimestampRangeStart?: google.protobuf.Timestamp;
+  updatedTimestampRangeEnd?: google.protobuf.Timestamp;
 }
 
 export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams {
