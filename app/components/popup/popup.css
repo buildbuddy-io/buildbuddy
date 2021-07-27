@@ -11,11 +11,18 @@
 .popup {
   position: absolute;
   top: 100%;
-  right: 0;
 
   z-index: 2;
 
   border-radius: 4px;
   background: white;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27), 0 3px 5px rgba(0, 0, 0, 0.12);
+}
+
+.popup.anchor-right {
+  right: 0;
+}
+
+.popup.anchor-left {
+  left: 0;
 }

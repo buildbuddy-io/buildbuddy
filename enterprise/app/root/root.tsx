@@ -176,10 +176,20 @@ export default class EnterpriseRootComponent extends React.Component {
                   </Suspense>
                 )}
                 {historyUser && (
-                  <HistoryComponent user={this.state.user} username={historyUser} hash={this.state.hash} />
+                  <HistoryComponent
+                    user={this.state.user}
+                    username={historyUser}
+                    hash={this.state.hash}
+                    search={this.state.search}
+                  />
                 )}
                 {historyHost && (
-                  <HistoryComponent user={this.state.user} hostname={historyHost} hash={this.state.hash} />
+                  <HistoryComponent
+                    user={this.state.user}
+                    hostname={historyHost}
+                    hash={this.state.hash}
+                    search={this.state.search}
+                  />
                 )}
                 {historyRepo && (
                   <HistoryComponent
@@ -190,7 +200,12 @@ export default class EnterpriseRootComponent extends React.Component {
                   />
                 )}
                 {historyCommit && (
-                  <HistoryComponent user={this.state.user} commit={historyCommit} hash={this.state.hash} />
+                  <HistoryComponent
+                    user={this.state.user}
+                    commit={historyCommit}
+                    hash={this.state.hash}
+                    search={this.state.search}
+                  />
                 )}
                 {settings && (
                   <Suspense fallback={<div className="loading" />}>
@@ -216,7 +231,7 @@ export default class EnterpriseRootComponent extends React.Component {
                 {executors && (
                   <ExecutorsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
                 )}
-                {home && <HistoryComponent user={this.state.user} hash={this.state.hash} />}
+                {home && <HistoryComponent user={this.state.user} hash={this.state.hash} search={this.state.search} />}
                 {workflows && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                 {code && (
                   <Suspense fallback={<div className="loading" />}>
