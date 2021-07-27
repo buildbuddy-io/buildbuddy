@@ -2375,8 +2375,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/nishanths/exhaustive",
         patch_args = ["-p1"],
         patches = ["@%s//buildpatches:com_github_nishanths_exhaustive" % workspace_name],
-        sum = "h1:eMV1t2NQRc3r1k3guWiv/zEeqZZP6kPvpUfy6byfL1g=",
-        version = "v0.0.0-20200811152831-6cf413ae40e0",
+        sum = "h1:+ANTMqRNrqwInnP9aszg/0jDo+zbXa4x66U19Bx/oTk=",  # keep
+        version = "v0.2.3",  # keep
     )
     go_repository(
         name = "com_github_nishanths_predeclared",
