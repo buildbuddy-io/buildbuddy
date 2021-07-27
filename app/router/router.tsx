@@ -229,15 +229,8 @@ function getRepoUrlPathParam(repo: string): string {
   return window.btoa(repo);
 }
 
-function getQueryString(params: Record<string, string>) {
-  return Object.keys(params)
-    .filter((key) => Boolean(params[key]))
-    .map((key) => `${key}=${encodeURIComponent(params[key])}`)
-    .join("&");
-}
-
 function getModifiedUrl({ query }: { query?: Record<string, string> }) {
-  const queryString = query ? getQueryString(query) : window.location.search;
+  const queryString = query ? new URLSearchParams(query).toString() : window.location.search;
 
   return (
     window.location.protocol +

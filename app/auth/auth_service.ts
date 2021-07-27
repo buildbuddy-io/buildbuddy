@@ -126,15 +126,17 @@ export class AuthService {
 
   login(slug?: string) {
     if (slug) {
-      window.location.href = `/login/?redirect_url=${encodeURIComponent(
-        window.location.href
-      )}&slug=${encodeURIComponent(slug)}`;
+      window.location.href = `/login/?${new URLSearchParams({
+        redirect_url: window.location.href,
+        slug,
+      })}`;
       return;
     }
 
-    window.location.href = `/login/?redirect_url=${encodeURIComponent(
-      window.location.href
-    )}&issuer_url=${encodeURIComponent(capabilities.auth)}`;
+    window.location.href = `/login/?${new URLSearchParams({
+      redirect_url: window.location.href,
+      issuer_url: capabilities.auth,
+    })}`;
   }
 
   logout() {
