@@ -115,10 +115,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
     }, 3000);
   }
 
-  decodedSearchParam(key: string) {
-    return this.props.search.get(key) ? decodeURIComponent(this.props.search.get(key)) : "";
-  }
-
   render() {
     if (this.state.loading || this.props.user === undefined) {
       return <div className="loading"></div>;
@@ -217,7 +213,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <TargetsComponent
               model={this.state.model}
               mode="failing"
-              filter={this.decodedSearchParam("targetFilter")}
+              filter={this.props.search.get("targetFilter")}
               pageSize={activeTab === "all" ? smallPageSize : largePageSize}
             />
           )}
@@ -240,7 +236,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <TargetsComponent
               model={this.state.model}
               mode="passing"
-              filter={this.decodedSearchParam("targetFilter")}
+              filter={this.props.search.get("targetFilter")}
               pageSize={activeTab === "all" ? smallPageSize : largePageSize}
             />
           )}
@@ -256,7 +252,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {isBazelInvocation && (activeTab === "all" || activeTab == "artifacts") && (
             <ArtifactsCardComponent
               model={this.state.model}
-              filter={this.decodedSearchParam("artifactFilter")}
+              filter={this.props.search.get("artifactFilter")}
               pageSize={activeTab ? largePageSize : smallPageSize}
             />
           )}
