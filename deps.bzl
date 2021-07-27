@@ -255,6 +255,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "com_github_bojand_ghz",
+        build_directives = [
+            "gazelle:proto package",
+        ],
         importpath = "github.com/bojand/ghz",
         sum = "h1:5KxpUb69n2m07388In4xQKIucbsjCwsG6yoBPN8vVvg=",
         version = "v0.95.0",
