@@ -13,7 +13,7 @@ export default class InvocationFilterComponent extends React.Component {
   handleFilterChange(event: any) {
     let value = event.target.value;
     let params = this.props.hash == "#artifacts" ? { artifactFilter: value } : { targetFilter: value };
-    router.updateParams(params);
+    router.replaceParams(params);
   }
 
   render() {
