@@ -1,0 +1,53 @@
+.global-filter {
+  display: flex;
+  transition: background-color 300ms;
+  border-bottom: 1px solid #eee;
+}
+
+.global-filter.container {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.global-filter.is-filtering {
+  background-color: #e0f7fa;
+}
+
+.global-filter .clear-filters-button,
+.global-filter .filter-icon-container {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.global-filter .clear-filters-button {
+  color: #263238;
+}
+
+.global-filter .filter-icon-container img {
+  opacity: 0.5;
+}
+
+.global-filter > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.global-filter .date-picker-container {
+  position: relative;
+}
+
+.global-filter .date-picker-button > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.global-filter .date-picker-button img {
+  opacity: 0.5;
+}
+
+.global-filter .date-picker-popup {
+  border-radius: 8px;
+  overflow: hidden;
+}
