@@ -167,6 +167,13 @@ message InvocationQuery {
 
   // The ROLE metadata set on the build.
   string role = 6;
+
+  // The timestamp on or after which the build must have been updated
+  // (inclusive).
+  google.protobuf.Timestamp updated_timestamp_range_start = 7;
+
+  // The timestamp up to which the build must have been updated (exclusive).
+  google.protobuf.Timestamp updated_timestamp_range_end = 8;
 }
 
 message InvocationSort {
