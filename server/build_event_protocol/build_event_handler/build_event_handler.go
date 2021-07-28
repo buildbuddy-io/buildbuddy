@@ -172,7 +172,9 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 		return err
 	}
 	if e.logWriter != nil {
-		e.logWriter.Close()
+		if err := e.logWriter.Close(); err != nil {
+			return err
+		}
 		invocation.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.ChunkstoreWriter.GetLastChunkIndex())
 	}
 
@@ -239,7 +241,9 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		return err
 	}
 	if e.logWriter != nil {
-		e.logWriter.Close()
+		if err := e.logWriter.Close(); err != nil {
+			return err
+		}
 		invocation.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.ChunkstoreWriter.GetLastChunkIndex())
 	}
 
