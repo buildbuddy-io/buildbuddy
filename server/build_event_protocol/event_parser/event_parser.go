@@ -341,7 +341,7 @@ func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inp
 		invocation.CommitSha = sha
 	}
 	if url, ok := metadata["REPO_URL"]; ok && url != "" {
-		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
+		invocation.RepoUrl = url
 	}
 	if user, ok := metadata["USER"]; ok && user != "" {
 		invocation.User = user

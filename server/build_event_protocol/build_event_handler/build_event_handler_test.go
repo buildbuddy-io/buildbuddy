@@ -2,6 +2,7 @@ package build_event_handler_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
+	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	anypb "github.com/golang/protobuf/ptypes/any"
@@ -69,6 +71,45 @@ func startedEvent(options string) *anypb.Any {
 		},
 	})
 	return progressAny
+}
+
+func buildMetadataEvent(metadata map[string]string) *anypb.Any {
+	metadataAny := &anypb.Any{}
+	metadataAny.MarshalFrom(&build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_BuildMetadata{
+			BuildMetadata: &build_event_stream.BuildMetadata{Metadata: metadata},
+		},
+	})
+	return metadataAny
+}
+
+func structuredCommandLineEvent(env map[string]string) *anypb.Any {
+	options := []*clpb.Option{}
+	for k, v := range env {
+		options = append(options, &clpb.Option{
+			CombinedForm: fmt.Sprintf("--client_env=%s=%s", k, v),
+			OptionName:   "client_env",
+			OptionValue:  fmt.Sprintf("%s=%s", k, v),
+		})
+	}
+	commandLine := &clpb.CommandLine{
+		Sections: []*clpb.CommandLineSection{
+			{
+				SectionLabel: "command options",
+				SectionType: &clpb.CommandLineSection_OptionList{
+					OptionList: &clpb.OptionList{Option: options},
+				},
+			},
+		},
+	}
+
+	commandLineAny := &anypb.Any{}
+	commandLineAny.MarshalFrom(&build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_StructuredCommandLine{
+			StructuredCommandLine: commandLine,
+		},
+	})
+	return commandLineAny
 }
 
 func assertAPIKeyRedacted(t *testing.T, invocation *inpb.Invocation, apiKey string) {
@@ -346,4 +387,58 @@ func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
+}
+
+func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	ctx := context.Background()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel := handler.OpenChannel(ctx, "test-invocation-id")
+
+	// Send unauthenticated started event without an api key
+	request := streamRequest(startedEvent(
+		"--remote_upload_local_results "+
+			"--build_metadata='ALLOW_ENV=FOO_ALLOWED' "+
+			"--build_metadata='REPO_URL=https://username:githubToken@github.com/acme-inc/acme'",
+	), "test-invocation-id", 1)
+	err := channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	// Send env and metadata with info that should be redacted
+	request = streamRequest(structuredCommandLineEvent(map[string]string{
+		"FOO_ALLOWED": "public_env_value",
+		"FOO_SECRET":  "secret_env_value",
+	}), "test-invocation-id", 2)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	request = streamRequest(buildMetadataEvent(map[string]string{
+		// Note: ALLOW_ENV is also present in the build metadata event (not just the
+		// started event). The build metadata event may come after the structured
+		// command line event, which contains the env vars, but we should still
+		// redact properly in this case.
+		"ALLOW_ENV": "FOO_ALLOWED",
+		"REPO_URL":  "https://username:githubToken@github.com/acme-inc/acme",
+	}), "test-invocation-id", 3)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	// Send workspace status so events get flushed. Include a secret here as well.
+	request = streamRequest(workspaceStatusEvent(
+		"REPO_URL", "https://username:githubToken@github.com/acme-inc/acme",
+	), "test-invocation-id", 4)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	// Look up the invocation and make sure we redacted correctly
+	invocation, err := build_event_handler.LookupInvocation(te, ctx, "test-invocation-id")
+	assert.NoError(t, err)
+	txt := proto.MarshalTextString(invocation)
+	assert.NotContains(t, txt, "secret_env_value", "Env secrets should not appear in invocation")
+	assert.NotContains(t, txt, "githubToken", "URL secrets should not appear in invocation")
+	assert.Contains(t, txt, "--client_env=FOO_ALLOWED=public_env_value", "Values of allowed env vars should not be redacted")
+	assert.Contains(t, txt, "--client_env=FOO_SECRET=<REDACTED>", "Values of non-allowed env vars should be redacted")
 }
