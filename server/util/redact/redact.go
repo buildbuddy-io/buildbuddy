@@ -51,6 +51,27 @@ func stripURLSecretsFromFiles(files []*bespb.File) []*bespb.File {
 	return files
 }
 
+func stripRepoURLCredentialsFromBuildMetadata(metadata *bespb.BuildMetadata) {
+	for _, repoURLKey := range knownGitRepoURLKeys {
+		if val := metadata.Metadata[repoURLKey]; val != "" {
+			metadata.Metadata[repoURLKey] = gitutil.StripRepoURLCredentials(val)
+		}
+	}
+}
+
+func stripRepoURLCredentialsFromWorkspaceStatus(status *bespb.WorkspaceStatus) {
+	for _, item := range status.Item {
+		if item.Value == "" {
+			continue
+		}
+		for _, repoURLKey := range knownGitRepoURLKeys {
+			if item.Key == repoURLKey {
+				item.Value = gitutil.StripRepoURLCredentials(item.Value)
+			}
+		}
+	}
+}
+
 // StreamingRedactor processes a stream of build events and redacts them as they are
 // received by the event handler.
 type StreamingRedactor struct {
@@ -151,27 +172,6 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		}
 	}
 	return
-}
-
-func stripRepoURLCredentialsFromBuildMetadata(metadata *bespb.BuildMetadata) {
-	for _, repoURLKey := range knownGitRepoURLKeys {
-		if val := metadata.Metadata[repoURLKey]; val != "" {
-			metadata.Metadata[repoURLKey] = gitutil.StripRepoURLCredentials(val)
-		}
-	}
-}
-
-func stripRepoURLCredentialsFromWorkspaceStatus(status *bespb.WorkspaceStatus) {
-	for _, item := range status.Item {
-		if item.Value == "" {
-			continue
-		}
-		for _, repoURLKey := range knownGitRepoURLKeys {
-			if item.Key == repoURLKey {
-				item.Value = gitutil.StripRepoURLCredentials(item.Value)
-			}
-		}
-	}
 }
 
 func (r *StreamingRedactor) RedactAPIKey(ctx context.Context, event *bespb.BuildEvent) error {
