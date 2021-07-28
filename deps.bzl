@@ -3559,7 +3559,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
         importpath = "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc",
-        patch_args = ["-p5"],
         sum = "h1:TjqELdtCtlOJQrTnXd2y+RP6wXKZUnnJer0HR0CSo18=",
         version = "v0.22.0",
     )
