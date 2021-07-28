@@ -183,7 +183,7 @@ func TestFillInvocation(t *testing.T) {
 		Metadata: map[string]string{
 			"ALLOW_ENV": "SHELL",
 			"ROLE":      "METADATA_CI",
-			"REPO_URL":  "https://USERNAME:PASSWORD@github.com/buildbuddy-io/metadata_repo_url",
+			"REPO_URL":  "https://github.com/buildbuddy-io/metadata_repo_url",
 		},
 	}
 	events = append(events, &inpb.InvocationEvent{
