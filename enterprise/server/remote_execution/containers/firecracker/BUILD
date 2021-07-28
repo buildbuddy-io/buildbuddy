@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "firecracker",
-    srcs = ["firecracker.go"],
+    srcs = [
+        "firecracker.go",
+        "firecracker_darwin.go",
+    ],
     data = [
         "//enterprise/vmsupport/bin:initrd.cpio",
         "//enterprise/vmsupport/bin:vmlinux",
@@ -22,13 +25,15 @@ go_library(
         "//server/util/disk",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_firecracker_microvm_firecracker_go_sdk//:firecracker-go-sdk",
         "@com_github_firecracker_microvm_firecracker_go_sdk//client/models",
         "@com_github_google_uuid//:uuid",
         "@com_github_sirupsen_logrus//:logrus",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
         "@org_golang_x_sys//unix",
-    ],
+    ] + select({
+        "@bazel_tools//src/conditions:darwin": [],
+        "@bazel_tools//src/conditions:linux_x86_64": ["@com_github_firecracker_microvm_firecracker_go_sdk//:firecracker-go-sdk"],
+    }),
 )
 
 go_test(
