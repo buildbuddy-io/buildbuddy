@@ -8,6 +8,7 @@ storage:
   chunk_file_size_bytes: 3000000 # 3 MB
   disk:
     root_directory: /tmp/buildbuddy
+  enable_chunked_event_logs: true
 cache:
   max_size_bytes: 1000000000 # 1 GB
   #in_memory: true
