@@ -32,12 +32,12 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
     if zip:
         options += " -Z"
 
-    # Generate a .apply rule for uploading.
+    # Generate an .apply rule for uploading.
     native.genrule(
         name = name + ".apply",
         srcs = srcs,
         outs = [name + ".apply.out"],
-        cmd = "echo \"pwd; %s -m cp %s $(SRCS) gs://%s/%s\" > $@" % (gsutil, options, bucket, prefix),
+        cmd = "echo \"%s -m cp %s $(SRCS) gs://%s/%s\" > $@" % (gsutil, options, bucket, prefix),
         local = 1,
         executable = 1,
         **kwargs
