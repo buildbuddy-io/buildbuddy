@@ -15,6 +15,36 @@ const (
 	RedactionFlagStandardRedactions = 1
 )
 
+var (
+	urlSecretRegex = regexp.MustCompile(`[a-zA-Z-0-9-_=]+\@`)
+)
+
+func stripURLSecrets(input string) string {
+	return urlSecretRegex.ReplaceAllString(input, "")
+}
+
+func stripURLSecretsFromList(inputs []string) []string {
+	for index, input := range inputs {
+		inputs[index] = stripURLSecrets(input)
+	}
+	return inputs
+}
+
+func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
+	switch p := file.GetFile().(type) {
+	case *bespb.File_Uri:
+		p.Uri = stripURLSecrets(p.Uri)
+	}
+	return file
+}
+
+func stripURLSecretsFromFiles(files []*bespb.File) []*bespb.File {
+	for index, file := range files {
+		files[index] = stripURLSecretsFromFile(file)
+	}
+	return files
+}
+
 // StreamingRedactor processes a stream of build events and redacts them as they are
 // received by the event handler.
 type StreamingRedactor struct {
@@ -26,7 +56,92 @@ func NewStreamingRedactor(env environment.Env) *StreamingRedactor {
 }
 
 func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
-	// TODO(bduffs): Migrate redaction logic from parser.ParseEvent to here.
+	switch p := event.Payload.(type) {
+	case *bespb.BuildEvent_Progress:
+		{
+		}
+	case *bespb.BuildEvent_Aborted:
+		{
+		}
+	case *bespb.BuildEvent_Started:
+		{
+			p.Started.OptionsDescription = stripURLSecrets(p.Started.OptionsDescription)
+		}
+	case *bespb.BuildEvent_UnstructuredCommandLine:
+		{
+			// Clear the unstructured command line so we don't have to redact it.
+			p.UnstructuredCommandLine.Args = []string{}
+		}
+	case *bespb.BuildEvent_StructuredCommandLine:
+		{
+		}
+	case *bespb.BuildEvent_OptionsParsed:
+		{
+			p.OptionsParsed.CmdLine = stripURLSecretsFromList(p.OptionsParsed.CmdLine)
+			p.OptionsParsed.ExplicitCmdLine = stripURLSecretsFromList(p.OptionsParsed.ExplicitCmdLine)
+		}
+	case *bespb.BuildEvent_WorkspaceStatus:
+		{
+		}
+	case *bespb.BuildEvent_Fetch:
+		{
+		}
+	case *bespb.BuildEvent_Configuration:
+		{
+		}
+	case *bespb.BuildEvent_Expanded:
+		{
+		}
+	case *bespb.BuildEvent_Configured:
+		{
+		}
+	case *bespb.BuildEvent_Action:
+		{
+			p.Action.Stdout = stripURLSecretsFromFile(p.Action.Stdout)
+			p.Action.Stderr = stripURLSecretsFromFile(p.Action.Stderr)
+			p.Action.PrimaryOutput = stripURLSecretsFromFile(p.Action.PrimaryOutput)
+			p.Action.ActionMetadataLogs = stripURLSecretsFromFiles(p.Action.ActionMetadataLogs)
+		}
+	case *bespb.BuildEvent_NamedSetOfFiles:
+		{
+			p.NamedSetOfFiles.Files = stripURLSecretsFromFiles(p.NamedSetOfFiles.Files)
+		}
+	case *bespb.BuildEvent_Completed:
+		{
+			p.Completed.ImportantOutput = stripURLSecretsFromFiles(p.Completed.ImportantOutput)
+		}
+	case *bespb.BuildEvent_TestResult:
+		{
+			p.TestResult.TestActionOutput = stripURLSecretsFromFiles(p.TestResult.TestActionOutput)
+		}
+	case *bespb.BuildEvent_TestSummary:
+		{
+			p.TestSummary.Passed = stripURLSecretsFromFiles(p.TestSummary.Passed)
+			p.TestSummary.Failed = stripURLSecretsFromFiles(p.TestSummary.Failed)
+		}
+	case *bespb.BuildEvent_Finished:
+		{
+		}
+	case *bespb.BuildEvent_BuildToolLogs:
+		{
+			p.BuildToolLogs.Log = stripURLSecretsFromFiles(p.BuildToolLogs.Log)
+		}
+	case *bespb.BuildEvent_BuildMetrics:
+		{
+		}
+	case *bespb.BuildEvent_WorkspaceInfo:
+		{
+		}
+	case *bespb.BuildEvent_BuildMetadata:
+		{
+		}
+	case *bespb.BuildEvent_ConvenienceSymlinksIdentified:
+		{
+		}
+	case *bespb.BuildEvent_WorkflowConfigured:
+		{
+		}
+	}
 	return
 }
 
