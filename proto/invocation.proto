@@ -172,10 +172,10 @@ message InvocationQuery {
   string role = 6;
 
   // The timestamp on or after which the build was last updated (inclusive).
-  google.protobuf.Timestamp updated_timestamp_range_start = 7;
+  google.protobuf.Timestamp updated_after = 7;
 
   // The timestamp up to which the build was last updated (exclusive).
-  google.protobuf.Timestamp updated_timestamp_range_end = 8;
+  google.protobuf.Timestamp updated_before = 8;
 }
 
 message InvocationSort {
