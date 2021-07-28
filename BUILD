@@ -123,6 +123,7 @@ go_library(
             "//:config_files",
             "//app:app_bundle",
             "//app:style.css",
+            "//app:sha",
             "//static",
         ],
     }),

@@ -68,3 +68,10 @@ genrule(
         cat out > $@;
     """,
 )
+
+load("//rules/sha:index.bzl", "sha")
+
+sha(
+    name = "sha",
+    srcs = ["//app:app_bundle"],
+)
