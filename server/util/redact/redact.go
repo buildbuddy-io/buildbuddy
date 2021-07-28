@@ -84,6 +84,8 @@ func stripRepoURLCredentialsFromWorkspaceStatus(status *bespb.WorkspaceStatus) {
 }
 
 func stripRepoURLCredentialsFromCommandLineOption(option *clpb.Option) {
+	// Only strip repo URLs from env var options that point to known Git env
+	// vars; other options will be stripped using the regex-based method.
 	if option.OptionName != envVarOptionName {
 		return
 	}
