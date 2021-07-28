@@ -154,12 +154,9 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 }
 
 func stripRepoURLCredentialsFromBuildMetadata(metadata *bespb.BuildMetadata) {
-	for mdKey, mdVal := range metadata.Metadata {
-		for _, repoURLKey := range knownGitRepoURLKeys {
-			if mdKey == repoURLKey {
-				metadata.Metadata[mdKey] = gitutil.StripRepoURLCredentials(mdVal)
-				break
-			}
+	for _, repoURLKey := range knownGitRepoURLKeys {
+		if val := metadata.Metadata[repoURLKey]; val != "" {
+			metadata.Metadata[repoURLKey] = gitutil.StripRepoURLCredentials(val)
 		}
 	}
 }
