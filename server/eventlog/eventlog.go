@@ -149,14 +149,12 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 }
 
 func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, invocationId string) *EventLogWriter {
-	cw := chunkstore.New(
-		b,
-		&chunkstore.ChunkstoreOptions{
-			WriteBlockSize:       defaultLogChunkSize,
-			WriteTimeoutDuration: defaultChunkTimeout,
-			NoSplitWrite:         true,
-		},
-	).Writer(ctx, getEventLogPathFromInvocationId(invocationId))
+	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
+		WriteBlockSize:       defaultLogChunkSize,
+		WriteTimeoutDuration: defaultChunkTimeout,
+		NoSplitWrite:         true,
+	}
+	cw := chunkstore.New(b,chunkstoreOptions).Writer(ctx, getEventLogPathFromInvocationId(invocationId))
 	return &EventLogWriter{
 		WriteCloser: &ANSICursorBufferWriter{
 			WriteCloser:  cw,
