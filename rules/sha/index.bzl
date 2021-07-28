@@ -4,7 +4,7 @@ def sha(name, srcs, **kwargs):
         name = name,
         srcs = srcs,
         outs = [name + ".sum"],
-        cmd = "echo \"$(SRCS)\" | xargs find | sort | xargs shasum | shasum | awk '{ print $$1 } > $@",
+        cmd = "find $(SRCS) -type f | sort | xargs shasum | shasum | awk '{ print $$1 }' > $@",
         local = 1,
         **kwargs
     )

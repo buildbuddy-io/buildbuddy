@@ -50,6 +50,7 @@ go_library(
         "//conditions:default": [
             "//enterprise/app:app_bundle",
             "//enterprise/app:style",
+            "//enterprise/app:sha",
         ],
     }),
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise",

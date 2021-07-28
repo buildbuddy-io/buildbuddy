@@ -12,10 +12,140 @@ import (
 )
 
 const (
-	RedactionFlagAPIKey = 1
+	RedactionFlagStandardRedactions = 1
 )
 
-func APIKey(ctx context.Context, env environment.Env, event *bespb.BuildEvent) error {
+var (
+	urlSecretRegex = regexp.MustCompile(`[a-zA-Z-0-9-_=]+\@`)
+)
+
+func stripURLSecrets(input string) string {
+	return urlSecretRegex.ReplaceAllString(input, "")
+}
+
+func stripURLSecretsFromList(inputs []string) []string {
+	for index, input := range inputs {
+		inputs[index] = stripURLSecrets(input)
+	}
+	return inputs
+}
+
+func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
+	switch p := file.GetFile().(type) {
+	case *bespb.File_Uri:
+		p.Uri = stripURLSecrets(p.Uri)
+	}
+	return file
+}
+
+func stripURLSecretsFromFiles(files []*bespb.File) []*bespb.File {
+	for index, file := range files {
+		files[index] = stripURLSecretsFromFile(file)
+	}
+	return files
+}
+
+// StreamingRedactor processes a stream of build events and redacts them as they are
+// received by the event handler.
+type StreamingRedactor struct {
+	env environment.Env
+}
+
+func NewStreamingRedactor(env environment.Env) *StreamingRedactor {
+	return &StreamingRedactor{env}
+}
+
+func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
+	switch p := event.Payload.(type) {
+	case *bespb.BuildEvent_Progress:
+		{
+		}
+	case *bespb.BuildEvent_Aborted:
+		{
+		}
+	case *bespb.BuildEvent_Started:
+		{
+			p.Started.OptionsDescription = stripURLSecrets(p.Started.OptionsDescription)
+		}
+	case *bespb.BuildEvent_UnstructuredCommandLine:
+		{
+			// Clear the unstructured command line so we don't have to redact it.
+			p.UnstructuredCommandLine.Args = []string{}
+		}
+	case *bespb.BuildEvent_StructuredCommandLine:
+		{
+		}
+	case *bespb.BuildEvent_OptionsParsed:
+		{
+			p.OptionsParsed.CmdLine = stripURLSecretsFromList(p.OptionsParsed.CmdLine)
+			p.OptionsParsed.ExplicitCmdLine = stripURLSecretsFromList(p.OptionsParsed.ExplicitCmdLine)
+		}
+	case *bespb.BuildEvent_WorkspaceStatus:
+		{
+		}
+	case *bespb.BuildEvent_Fetch:
+		{
+		}
+	case *bespb.BuildEvent_Configuration:
+		{
+		}
+	case *bespb.BuildEvent_Expanded:
+		{
+		}
+	case *bespb.BuildEvent_Configured:
+		{
+		}
+	case *bespb.BuildEvent_Action:
+		{
+			p.Action.Stdout = stripURLSecretsFromFile(p.Action.Stdout)
+			p.Action.Stderr = stripURLSecretsFromFile(p.Action.Stderr)
+			p.Action.PrimaryOutput = stripURLSecretsFromFile(p.Action.PrimaryOutput)
+			p.Action.ActionMetadataLogs = stripURLSecretsFromFiles(p.Action.ActionMetadataLogs)
+		}
+	case *bespb.BuildEvent_NamedSetOfFiles:
+		{
+			p.NamedSetOfFiles.Files = stripURLSecretsFromFiles(p.NamedSetOfFiles.Files)
+		}
+	case *bespb.BuildEvent_Completed:
+		{
+			p.Completed.ImportantOutput = stripURLSecretsFromFiles(p.Completed.ImportantOutput)
+		}
+	case *bespb.BuildEvent_TestResult:
+		{
+			p.TestResult.TestActionOutput = stripURLSecretsFromFiles(p.TestResult.TestActionOutput)
+		}
+	case *bespb.BuildEvent_TestSummary:
+		{
+			p.TestSummary.Passed = stripURLSecretsFromFiles(p.TestSummary.Passed)
+			p.TestSummary.Failed = stripURLSecretsFromFiles(p.TestSummary.Failed)
+		}
+	case *bespb.BuildEvent_Finished:
+		{
+		}
+	case *bespb.BuildEvent_BuildToolLogs:
+		{
+			p.BuildToolLogs.Log = stripURLSecretsFromFiles(p.BuildToolLogs.Log)
+		}
+	case *bespb.BuildEvent_BuildMetrics:
+		{
+		}
+	case *bespb.BuildEvent_WorkspaceInfo:
+		{
+		}
+	case *bespb.BuildEvent_BuildMetadata:
+		{
+		}
+	case *bespb.BuildEvent_ConvenienceSymlinksIdentified:
+		{
+		}
+	case *bespb.BuildEvent_WorkflowConfigured:
+		{
+		}
+	}
+	return
+}
+
+func (r *StreamingRedactor) RedactAPIKey(ctx context.Context, event *bespb.BuildEvent) error {
 	proto.DiscardUnknown(event)
 
 	apiKey, ok := ctx.Value("x-buildbuddy-api-key").(string)
@@ -31,7 +161,7 @@ func APIKey(ctx context.Context, env environment.Env, event *bespb.BuildEvent) e
 	return proto.UnmarshalText(txt, event)
 }
 
-func APIKeysWithSlowRegexp(ctx context.Context, env environment.Env, event *bespb.BuildEvent) error {
+func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, event *bespb.BuildEvent) error {
 	proto.DiscardUnknown(event)
 	txt := proto.MarshalTextString(event)
 
@@ -56,7 +186,7 @@ func APIKeysWithSlowRegexp(ctx context.Context, env environment.Env, event *besp
 
 	// Replace the literal API key set up via the BuildBuddy config, which does not
 	// need to conform to the way we generate API keys.
-	configuredKey := getAPIKeyFromBuildBuddyConfig(env)
+	configuredKey := getAPIKeyFromBuildBuddyConfig(r.env)
 	if configuredKey != "" {
 		txt = strings.ReplaceAll(txt, configuredKey, "<REDACTED>")
 	}

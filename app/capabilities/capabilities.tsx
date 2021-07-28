@@ -21,6 +21,7 @@ export class Capabilities {
   executorKeyCreation: boolean;
   code: boolean;
   sso: boolean;
+  globalFilter: boolean;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
@@ -45,6 +46,7 @@ export class Capabilities {
     this.executorKeyCreation = Boolean(config.executor_key_creation_enabled);
     this.code = Boolean(config.code_editor_enabled);
     this.paths = new Set(paths);
+    this.globalFilter = Boolean(config.global_filter_enabled);
     if (window.gtag) {
       window.gtag("set", {
         app_name: this.name,

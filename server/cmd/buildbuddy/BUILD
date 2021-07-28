@@ -15,6 +15,7 @@ go_binary(
     data = [
         "//:config_files",
         "//app:app_bundle",
+        "//app:sha",
         "//app:style.css",
         "//static",
     ],

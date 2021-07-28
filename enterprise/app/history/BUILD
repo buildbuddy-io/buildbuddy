@@ -9,11 +9,13 @@ ts_library(
     srcs = glob(["*.tsx"]),
     deps = [
         "//app/auth",
+        "//app/capabilities",
         "//app/components/button",
         "//app/docs",
         "//app/format",
         "//app/router",
         "//app/service",
+        "//enterprise/app/filter",
         "//enterprise/app/org",
         "//proto:invocation_ts_proto",
         "//proto:user_ts_proto",

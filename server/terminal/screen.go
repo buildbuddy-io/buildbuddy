@@ -198,3 +198,14 @@ func (s *screen) backspace() {
 		s.x--
 	}
 }
+
+func (s *screen) popExtraLines(linesToRetain int) []byte {
+	extraLines := len(s.screen) - linesToRetain
+	if extraLines < 1 {
+		return []byte{}
+	}
+	poppedLines := (&screen{screen: s.screen[:extraLines]}).asANSI()
+	s.screen = s.screen[extraLines:]
+	s.y -= extraLines
+	return poppedLines
+}

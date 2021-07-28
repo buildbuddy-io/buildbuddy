@@ -21,6 +21,12 @@ body {
   word-break: break-word;
 }
 
+button,
+input,
+select {
+  font-family: inherit;
+}
+
 #app {
   display: flex;
   flex-direction: column;
@@ -465,6 +471,10 @@ button {
   box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.2), 0px 1px 10px rgba(0, 0, 0, 0.1);
 }
 
+.dense .card.light-terminal:hover {
+  box-shadow: none;
+}
+
 .grid-block:hover .card-hover {
   display: flex;
 }
@@ -867,7 +877,6 @@ code .comment {
   color: #fff;
   font-size: 16px;
   font-weight: 600;
-  font-family: inherit;
   border: 0;
   border-radius: 8px;
   margin-bottom: 32px;
@@ -888,7 +897,6 @@ code .comment {
   color: #fff;
   font-size: 16px;
   font-weight: 600;
-  font-family: inherit;
   border: 0;
   border-radius: 8px;
   margin-bottom: 32px;
@@ -1666,8 +1674,17 @@ code .comment {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.light-terminal .terminal::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+}
+
 .terminal ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.light-terminal .terminal ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
   border-radius: 3px;
 }
 
