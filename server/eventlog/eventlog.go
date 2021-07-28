@@ -154,7 +154,7 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, invocationId
 		WriteTimeoutDuration: defaultChunkTimeout,
 		NoSplitWrite:         true,
 	}
-	cw := chunkstore.New(b,chunkstoreOptions).Writer(ctx, getEventLogPathFromInvocationId(invocationId))
+	cw := chunkstore.New(b, chunkstoreOptions).Writer(ctx, getEventLogPathFromInvocationId(invocationId))
 	return &EventLogWriter{
 		WriteCloser: &ANSICursorBufferWriter{
 			WriteCloser:  cw,
