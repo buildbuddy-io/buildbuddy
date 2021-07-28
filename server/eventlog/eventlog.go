@@ -160,15 +160,18 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, invocationId
 			WriteCloser:  cw,
 			screenWriter: terminal.NewScreenWriter(),
 		},
-		ChunkstoreWriter: cw,
+		chunkstoreWriter: cw,
 	}
 }
 
 type EventLogWriter struct {
 	io.WriteCloser
-	ChunkstoreWriter *chunkstore.ChunkstoreWriter
+	chunkstoreWriter *chunkstore.ChunkstoreWriter
 }
 
+func (w *EventLogWriter) GetLastChunkId() string {
+	return chunkstore.ChunkIndexAsStringId(w.chunkstoreWriter.GetLastChunkIndex())
+}
 
 // Parses text passed into it as ANSI text and flushes it to the WriteCloser,
 // retaining a buffer of the last N lines. On Close, all lines are flushed. This

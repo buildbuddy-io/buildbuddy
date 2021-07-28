@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
@@ -175,7 +174,7 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 		if err := e.logWriter.Close(); err != nil {
 			return err
 		}
-		invocation.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.ChunkstoreWriter.GetLastChunkIndex())
+		invocation.LastChunkId = e.logWriter.GetLastChunkId()
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
@@ -244,7 +243,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		if err := e.logWriter.Close(); err != nil {
 			return err
 		}
-		invocation.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.ChunkstoreWriter.GetLastChunkIndex())
+		invocation.LastChunkId = e.logWriter.GetLastChunkId()
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
@@ -341,7 +340,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 
 		if e.logWriter != nil {
-			ti.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.ChunkstoreWriter.GetLastChunkIndex())
+			ti.LastChunkId = e.logWriter.GetLastChunkId()
 		}
 		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
 			return err
@@ -429,7 +428,7 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 		return err
 	}
 	if e.logWriter != nil {
-		invocationProto.LastChunkId = chunkstore.ChunkIndexAsStringId(e.logWriter.ChunkstoreWriter.GetLastChunkIndex())
+		invocationProto.LastChunkId = e.logWriter.GetLastChunkId()
 	}
 	ti = tableInvocationFromProto(invocationProto, ti.BlobID)
 	if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
