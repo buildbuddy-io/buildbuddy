@@ -14,11 +14,6 @@ import (
 
 const (
 	RedactionFlagStandardRedactions = 1
-
-	envVarPrefix              = "--"
-	envVarOptionName          = "client_env"
-	envVarSeparator           = "="
-	envVarRedactedPlaceholder = "<REDACTED>"
 )
 
 var (
