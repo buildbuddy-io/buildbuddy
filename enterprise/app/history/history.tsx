@@ -71,8 +71,8 @@ export default class HistoryComponent extends React.Component {
         commitSha: this.props.commit,
         groupId: this.props.user?.selectedGroup?.id,
         role: this.isFilteredToWorkflows() ? "CI_RUNNER" : "",
-        updatedTimestampRangeStart: filterParams.updatedTimestampRangeStart,
-        updatedTimestampRangeEnd: filterParams.updatedTimestampRangeEnd,
+        updatedAfter: filterParams.updatedAfter,
+        updatedBefore: filterParams.updatedBefore,
       }),
       pageToken: nextPage ? this.state.pageToken : "",
       // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.

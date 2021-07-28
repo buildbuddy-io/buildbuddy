@@ -4,14 +4,14 @@ import moment from "moment";
 import { START_DATE_PARAM_NAME, END_DATE_PARAM_NAME } from "./filter";
 
 export interface ProtoFilterParams {
-  updatedTimestampRangeStart?: google.protobuf.Timestamp;
-  updatedTimestampRangeEnd?: google.protobuf.Timestamp;
+  updatedAfter?: google.protobuf.Timestamp;
+  updatedBefore?: google.protobuf.Timestamp;
 }
 
 export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams {
   return {
-    updatedTimestampRangeStart: parseStartOfDay(search.get(START_DATE_PARAM_NAME)),
-    updatedTimestampRangeEnd: parseStartOfDay(search.get(END_DATE_PARAM_NAME), /*offsetDays=*/ +1),
+    updatedAfter: parseStartOfDay(search.get(START_DATE_PARAM_NAME)),
+    updatedBefore: parseStartOfDay(search.get(END_DATE_PARAM_NAME), /*offsetDays=*/ +1),
   };
 }
 
