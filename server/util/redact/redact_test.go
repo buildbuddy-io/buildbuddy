@@ -47,7 +47,7 @@ func TestRedactMetadata_UnstructuredCommandLine_RemovesArgs(t *testing.T) {
 	assert.Equal(t, []string{}, unstructuredCommandLine.Args)
 }
 
-func TestRedactMetadata_StructuredCommandLine_RedactsEnvVars(t *testing.T) {
+func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	// Started event specified which env vars shouldn't be redacted.
 	buildStarted := &bespb.BuildStarted{
