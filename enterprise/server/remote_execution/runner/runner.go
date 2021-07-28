@@ -165,7 +165,7 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.Execution
 	}
 	//if err := r.Workspace.CreateOutputDirs(); err != nil {
 	//	return status.UnavailableErrorf("Error creating output directory: %s", err.Error())
-	}
+	//}
 
 	// Pull the container image before Run() is called, so that we don't
 	// use up the whole exec ctx timeout with a slow container pull.
@@ -179,13 +179,13 @@ func (r *CommandRunner) CreateOutputDirs() error {
 	return r.Workspace.CreateOutputDirs()
 }
 
-func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+func (r *CommandRunner) Run(ctx context.Context, command *repb.Command, fsLayout *container.FilesystemLayout) *interfaces.CommandResult {
 	//log.Infof("Run command:\n%s", proto.MarshalTextString(command))
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
 		// TODO: Remove this `Run` method and call lifecycle methods directly.
-		return r.Container.Run(ctx, command, r.Workspace.Path())
+		return r.Container.Run(ctx, command, r.Workspace.Path(), fsLayout)
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
@@ -209,7 +209,7 @@ func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfa
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
-	return r.Container.Exec(ctx, command, nil, nil)
+	return r.Container.Exec(ctx, command, fsLayout, nil, nil)
 }
 
 func (r *CommandRunner) Remove(ctx context.Context) error {
@@ -617,7 +617,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd
 	case platform.DockerContainerType:
 		opts := p.dockerOptions()
 		opts.ForceRoot = props.DockerForceRoot
-		ctr = docker.NewDockerContainer(
+		ctr = docker.NewDockerContainer(p.env,
 			p.dockerClient, props.ContainerImage, p.hostBuildRoot(), opts)
 	case platform.ContainerdContainerType:
 		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
@@ -927,7 +927,8 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 		command.Arguments = append(workerArgs, "--persistent_worker")
 
 		go func() {
-			res := r.Container.Exec(ctx, command, stdinReader, stdoutWriter)
+			// XXX what should the layout be here? do we need to update it per command?
+			res := r.Container.Exec(ctx, command, nil, stdinReader, stdoutWriter)
 			stdinWriter.Close()
 			stdoutReader.Close()
 			log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)

@@ -99,7 +99,7 @@ func formatCommand(args []string) string {
 	return strings.Join(quoted, " ")
 }
 
-func (r *containerdCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string) *interfaces.CommandResult {
+func (r *containerdCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, fsLayout *container.FilesystemLayout) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		ExitCode:           commandutil.NoExitCode,
 		CommandDebugString: "(containerd) " + formatCommand(command.Arguments),
@@ -353,7 +353,7 @@ func cleanupProcess(ctx context.Context, proc containerd.Process) error {
 func (r *containerdCommandContainer) Create(ctx context.Context, workDir string) error {
 	return status.UnimplementedError("not implemented")
 }
-func (r *containerdCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (r *containerdCommandContainer) Exec(ctx context.Context, cmd *repb.Command, fsLayout *container.FilesystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	res := &interfaces.CommandResult{}
 	res.Error = status.UnimplementedError("not implemented")
 	return res

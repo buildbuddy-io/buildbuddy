@@ -7,13 +7,17 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -46,6 +50,7 @@ type DockerOptions struct {
 
 // dockerCommandContainer containerizes a command's execution using a Docker container.
 type dockerCommandContainer struct {
+	env   environment.Env
 	image string
 	// hostRootDir is the path on the _host_ machine ("node", in k8s land) of the
 	// root data dir for builds. We need this information because we are interfacing
@@ -62,8 +67,9 @@ type dockerCommandContainer struct {
 	workDir string
 }
 
-func NewDockerContainer(client *dockerclient.Client, image, hostRootDir string, options *DockerOptions) *dockerCommandContainer {
+func NewDockerContainer(env environment.Env, client *dockerclient.Client, image, hostRootDir string, options *DockerOptions) *dockerCommandContainer {
 	return &dockerCommandContainer{
+		env:         env,
 		image:       image,
 		hostRootDir: hostRootDir,
 		client:      client,
@@ -71,7 +77,7 @@ func NewDockerContainer(client *dockerclient.Client, image, hostRootDir string, 
 	}
 }
 
-func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string) *interfaces.CommandResult {
+func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, fsLayout *container.FilesystemLayout) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -82,6 +88,31 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		result.Error = status.UnavailableErrorf("failed to generate docker container name: %s", err)
 		return result
 	}
+
+	casFsDir := workDir + "_casfs"
+	if err := os.Mkdir(casFsDir, 0755); err != nil {
+		result.Error = status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
+		return result
+	}
+
+	fileFetcher := dirtools.NewBatchFileFetcher(ctx, "", r.env.GetFileCache(), r.env.GetByteStreamClient(), r.env.GetContentAddressableStorageClient())
+	casfs := casfs.New(fileFetcher, workDir)
+	log.Warningf("Mounting CAS FS at %q", casFsDir)
+	if err := casfs.Mount(casFsDir); err != nil {
+		result.Error = status.UnavailableErrorf("unable to mount CASFS at %q: %s", casFsDir, err)
+		return result
+	}
+	err = casfs.PrepareLayout(ctx, "", fsLayout)
+	if err != nil {
+		result.Error = status.UnavailableErrorf("unable to prepare CASFS layout at %q: %s", casFsDir, err)
+		return result
+	}
+	defer func() {
+		err := casfs.Unmount()
+		if err != nil {
+			log.Warningf("CASFS unmount failed: %s", err)
+		}
+	}()
 
 	// explicitly pull the image before running to avoid the
 	// pull output logs spilling into the execution logs.
@@ -98,7 +129,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 	containerCfg, err := r.containerConfig(
 		command.GetArguments(),
 		commandutil.EnvStringList(command),
-		workDir,
+		casFsDir,
 	)
 	if err != nil {
 		result.Error = err
@@ -107,7 +138,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 	createResponse, err := r.client.ContainerCreate(
 		ctx,
 		containerCfg,
-		r.hostConfig(workDir),
+		r.hostConfig(casFsDir),
 		/*networkingConfig=*/ nil,
 		/*platform=*/ nil,
 		containerName,
@@ -171,7 +202,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 			return result
 		}
 	}
-	log.Infof("RESULT: %+v", result)
+	log.Infof("RESULT ERROR: %s", result.Error)
 	log.Infof("STDOUT: %s", string(result.Stdout))
 	log.Infof("STDERR: %s", string(result.Stderr))
 	return result
@@ -240,6 +271,9 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	if r.options.EnableSiblingContainers {
 		binds = append(binds, fmt.Sprintf("%s:%s%s", r.options.Socket, r.options.Socket, mountMode))
 	}
+
+	log.Warningf("BINDS: %s", binds)
+
 	return &dockercontainer.HostConfig{
 		NetworkMode: networkMode,
 		Binds:       binds,
@@ -345,7 +379,7 @@ func (r *dockerCommandContainer) create(ctx context.Context, workDir string) err
 	return nil
 }
 
-func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command, fsLayout *container.FilesystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	var res *interfaces.CommandResult
 	// Ignore error from this function; it is returned as part of res.
 	commandutil.RetryIfTextFileBusy(func() error {

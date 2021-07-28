@@ -203,7 +203,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		task.GetAction().GetInputRootDigest(),
 		task.GetExecuteRequest().GetInstanceName(),
 	)
-	dirs, err := dirtools.GetDirsFromRootDirectoryDigest(ctx, s.env, rootInstanceDigest)
+	dirs, err := dirtools.GetDirsFromRootDirectoryDigest(ctx, s.env.GetContentAddressableStorageClient(), rootInstanceDigest)
 	if err != nil {
 		return finishWithErrFn(err)
 	}
@@ -238,7 +238,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	log.Warningf("EXEC %s", taskID)
 
-	layout := container.FilesystemLayout{
+	layout := &container.FilesystemLayout{
 		Inputs:      dirs,
 		OutputDirs:  task.GetCommand().GetOutputDirectories(),
 		OutputFiles: task.GetCommand().GetOutputFiles(),
@@ -246,7 +246,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	cmdResultChan := make(chan *interfaces.CommandResult, 1)
 	go func() {
-		cmdResultChan <- r.Run(ctx, task.GetCommand())
+		cmdResultChan <- r.Run(ctx, task.GetCommand(), layout)
 		log.Warningf("EXEC DONE %s", taskID)
 	}()
 

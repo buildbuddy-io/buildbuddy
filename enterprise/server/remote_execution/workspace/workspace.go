@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/docker/go-units"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -37,7 +38,7 @@ type Workspace struct {
 	task      *repb.ExecutionTask
 	dirHelper *dirtools.DirHelper
 	opts      *Opts
-	casFs     *casfs.CASFs
+	casFs     *casfs.CASFS
 	// Action input files known to exist in the workspace, as a map of
 	// workspace-relative paths to digests.
 	// TODO: Make sure these files are written read-only
@@ -67,18 +68,6 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 		opts:    opts,
 		Inputs:  map[string]*repb.Digest{},
 	}
-	if env.GetConfigurator().GetExecutorConfig().EnableCASFilesystem || true {
-		scratchDir := rootDir + "_scratch"
-		if err := os.MkdirAll(scratchDir, 0755); err != nil {
-			return nil, status.UnavailableErrorf("failed to create scratch dir at %q", scratchDir)
-		}
-		log.Infof("Mounting CAS filesystem at %q", rootDir)
-		casFs := casfs.NewCASFs(env, scratchDir)
-		if err := casFs.Mount(rootDir); err != nil {
-			return nil, err
-		}
-		ws.casFs = casFs
-	}
 	return ws, nil
 }
 
@@ -93,10 +82,7 @@ func (ws *Workspace) SetTask(task *repb.ExecutionTask) {
 	//log.Infof("TASK:\n%s", proto.MarshalTextString(task))
 	ws.task = task
 	cmd := task.GetCommand()
-	ws.dirHelper = dirtools.NewDirHelper(ws.Path()+"_scratch", cmd.GetOutputFiles(), cmd.GetOutputDirectories())
-	if ws.casFs != nil {
-		ws.casFs.SetJWT(ws.task.GetJwt())
-	}
+	ws.dirHelper = dirtools.NewDirHelper(ws.Path(), cmd.GetOutputFiles(), cmd.GetOutputDirectories())
 }
 
 // CommandWorkingDirectory returns the absolute path to the working directory
@@ -163,26 +149,16 @@ func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo
 		opts.TrackTransfers = true
 	}
 
-	txInfo := &dirtools.TransferInfo{}
-	//txInfo, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, ws.env, rootInstanceDigest, ws.rootDir+"_scratch", opts)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//for path, digest := range txInfo.Transfers {
-	//	ws.Inputs[path] = digest
-	//}
-	//mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
-	//log.Debugf("GetTree downloaded %s in %s [%2.2f MB/sec]", units.HumanSize(float64(txInfo.BytesTransferred)), txInfo.TransferDuration, mbps)
-
-	if ws.casFs != nil {
-		dirMap, err := dirtools.GetDirMapFromRootDirectoryDigest(ctx, ws.env, rootInstanceDigest)
-		if err != nil {
-			return nil, err
-		}
-		if err := ws.casFs.PrepareLayout(ctx, rootInstanceDigest.GetInstanceName(), dirMap, rootInstanceDigest.Digest); err != nil {
-			return nil, err
-		}
+	txInfo, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, ws.env, rootInstanceDigest, ws.rootDir, opts)
+	if err != nil {
+		return nil, err
 	}
+	for path, digest := range txInfo.Transfers {
+		ws.Inputs[path] = digest
+	}
+	mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
+	log.Debugf("GetTree downloaded %s in %s [%2.2f MB/sec]", units.HumanSize(float64(txInfo.BytesTransferred)), txInfo.TransferDuration, mbps)
+
 	return txInfo, nil
 }
 
@@ -225,7 +201,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 	})
 	eg.Go(func() error {
 		var err error
-		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, ws.Path()+"_scratch", actionResult)
+		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, ws.Path(), actionResult)
 		return err
 	})
 	if err := eg.Wait(); err != nil {
@@ -243,14 +219,8 @@ func (ws *Workspace) Remove() error {
 	// immediately fail since we've set the removing bit.
 	ws.mu.Unlock()
 
-	if ws.casFs != nil {
-		err := ws.casFs.Unmount()
-		if err != nil {
-			log.Warningf("could not unmount fuse FS: %s", err)
-		}
-	}
-
-	return os.RemoveAll(ws.rootDir)
+	return nil
+	//return os.RemoveAll(ws.rootDir)
 }
 
 // Size computes the current workspace size in bytes.

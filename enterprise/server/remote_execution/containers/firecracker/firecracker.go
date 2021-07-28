@@ -765,7 +765,7 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 //
 // It is approximately the same as calling PullImageIfNecessary, Create,
 // Exec, then Remove.
-func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string, fsLayout *container.FilesystemLayout) *interfaces.CommandResult {
 	start := time.Now()
 	defer func() {
 		log.Debugf("Run took %s", time.Since(start))
@@ -812,7 +812,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 
 	defer c.Remove(ctx)
 
-	cmdResult := c.Exec(ctx, command, nil /*=stdin*/, nil /*=stdout*/)
+	cmdResult := c.Exec(ctx, command, fsLayout, nil /*=stdin*/, nil /*=stdout*/)
 	return cmdResult
 }
 
@@ -873,7 +873,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 // the executed process.
 // If stdout is non-nil, the stdout of the executed process will be written to the
 // stdout writer.
-func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, fsLayout *container.FilesystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	start := time.Now()
 	defer func() {
 		log.Debugf("Exec took %s", time.Since(start))

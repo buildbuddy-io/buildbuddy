@@ -15,7 +15,6 @@ go_library(
         "//server/util/fastcopy",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_docker_go_units//:go-units",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//codes",
