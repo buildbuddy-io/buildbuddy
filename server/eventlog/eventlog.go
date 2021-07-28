@@ -173,6 +173,10 @@ func (w *EventLogWriter) Write(p []byte) (int, error) {
 	return w.WriteCloser.Write(p)
 }
 
+// Parses text passed into it as ANSI text and flushes it to the WriteCloser,
+// retaining a buffer of the last N lines. On Close, all lines are flushed. This
+// is necessary so that ANSI cursor control sequences can freely modify the last
+// N lines.
 type ANSICursorBufferWriter struct {
 	io.WriteCloser
 	screenWriter *terminal.ScreenWriter
