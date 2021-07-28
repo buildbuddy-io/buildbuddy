@@ -156,7 +156,7 @@ func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
 
 // parseAllowedEnv looks for an option like "--build_metadata='ALLOW_ENV=A,B,C'"
 // and returns a slice of the comma-separated values specified in the value of
-// ALLOW_ENV.
+// ALLOW_ENV -- in this example, it would return {"A", "B", "C"}.
 func parseAllowedEnv(optionsDescription string) []string {
 	const buildMetadataOptionPrefix = "--build_metadata="
 	const allowEnvPrefix = "ALLOW_ENV="
