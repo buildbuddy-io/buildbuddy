@@ -23,5 +23,6 @@ go_test(
         "//proto:command_line_go_proto",
         "//server/testutil/testenv",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
