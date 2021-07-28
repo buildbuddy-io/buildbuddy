@@ -169,9 +169,6 @@ type EventLogWriter struct {
 	ChunkstoreWriter *chunkstore.ChunkstoreWriter
 }
 
-func (w *EventLogWriter) Write(p []byte) (int, error) {
-	return w.WriteCloser.Write(p)
-}
 
 // Parses text passed into it as ANSI text and flushes it to the WriteCloser,
 // retaining a buffer of the last N lines. On Close, all lines are flushed. This
@@ -201,8 +198,4 @@ func (w *ANSICursorBufferWriter) Close() error {
 		return err
 	}
 	return w.WriteCloser.Close()
-}
-
-type ANSILineWriter struct {
-	io.WriteCloser
 }
