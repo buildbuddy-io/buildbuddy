@@ -102,7 +102,6 @@ func structuredCommandLineEvent(env map[string]string) *anypb.Any {
 			},
 		},
 	}
-
 	commandLineAny := &anypb.Any{}
 	commandLineAny.MarshalFrom(&build_event_stream.BuildEvent{
 		Payload: &build_event_stream.BuildEvent_StructuredCommandLine{
