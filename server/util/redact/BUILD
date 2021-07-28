@@ -7,8 +7,10 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:build_event_stream_go_proto",
+        "//proto:command_line_go_proto",
         "//server/environment",
         "//server/util/git",
+        "//server/util/log",
         "@com_github_golang_protobuf//proto:go_default_library",
     ],
 )
@@ -21,6 +23,7 @@ go_test(
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
         "//server/testutil/testenv",
+        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

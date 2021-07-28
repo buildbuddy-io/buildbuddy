@@ -3,13 +3,13 @@ package redact_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 )
 
 func fileWithURI(uri string) *bespb.File {
@@ -48,30 +48,49 @@ func TestRedactMetadata_UnstructuredCommandLine_RemovesArgs(t *testing.T) {
 }
 
 func TestRedactMetadata_StructuredCommandLine_RedactsEnvVars(t *testing.T) {
-	// TODO(bduffany): Migrate env redaction to redactor and enable.
-	t.Skip()
-
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	shellOption := &command_line.Option{
-		CombinedForm: "--client_env=SHELL=/bin/bash",
-		OptionName:   "client_env",
-		OptionValue:  "SHELL=/bin/bash",
+	// Started event specified which env vars shouldn't be redacted.
+	buildStarted := &bespb.BuildStarted{
+		OptionsDescription: "--build_metadata='ALLOW_ENV=FOO_ALLOWED'",
 	}
-	secretOption := &command_line.Option{
+	envSecretOption := &clpb.Option{
 		CombinedForm: "--client_env=SECRET=codez",
 		OptionName:   "client_env",
 		OptionValue:  "SECRET=codez",
 	}
-	structuredCommandLine := &command_line.CommandLine{
+	envAllowedByDefaultOption := &clpb.Option{
+		CombinedForm: "--client_env=GITHUB_REPOSITORY=https://username:password@github.com/foo/bar",
+		OptionName:   "client_env",
+		OptionValue:  "GITHUB_REPOSITORY=https://username:password@github.com/foo/bar",
+	}
+	envAllowedByUserOption := &clpb.Option{
+		CombinedForm: "--client_env=FOO_ALLOWED=bar",
+		OptionName:   "client_env",
+		OptionValue:  "FOO_ALLOWED=bar",
+	}
+	remoteHeaderOption := &clpb.Option{
+		CombinedForm: "--remote_header=x-buildbuddy-api-key=bbapikey",
+		OptionName:   "remote_header",
+		OptionValue:  "x-buildbuddy-api-key=bbapikey",
+	}
+	nonEnvURLOption := &clpb.Option{
+		CombinedForm: "--some_url=https://password@foo.com",
+		OptionName:   "some_url",
+		OptionValue:  "https://password@foo.com",
+	}
+	structuredCommandLine := &clpb.CommandLine{
 		CommandLineLabel: "label",
-		Sections: []*command_line.CommandLineSection{
+		Sections: []*clpb.CommandLineSection{
 			{
 				SectionLabel: "command",
-				SectionType: &command_line.CommandLineSection_OptionList{
-					OptionList: &command_line.OptionList{
-						Option: []*command_line.Option{
-							shellOption,
-							secretOption,
+				SectionType: &clpb.CommandLineSection_OptionList{
+					OptionList: &clpb.OptionList{
+						Option: []*clpb.Option{
+							envSecretOption,
+							envAllowedByDefaultOption,
+							envAllowedByUserOption,
+							remoteHeaderOption,
+							nonEnvURLOption,
 						},
 					},
 				},
@@ -80,11 +99,22 @@ func TestRedactMetadata_StructuredCommandLine_RedactsEnvVars(t *testing.T) {
 	}
 
 	redactor.RedactMetadata(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_Started{Started: buildStarted},
+	})
+	redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: structuredCommandLine},
 	})
 
-	assert.Equal(t, "--client_env=SECRET=<REDACTED>", secretOption.OptionValue)
-	assert.Equal(t, "secret=<REDACTED>", secretOption.OptionValue)
+	assert.Equal(t, "--client_env=SECRET=<REDACTED>", envSecretOption.CombinedForm)
+	assert.Equal(t, "SECRET=<REDACTED>", envSecretOption.OptionValue)
+	assert.Equal(t, "--client_env=GITHUB_REPOSITORY=https://github.com/foo/bar", envAllowedByDefaultOption.CombinedForm)
+	assert.Equal(t, "GITHUB_REPOSITORY=https://github.com/foo/bar", envAllowedByDefaultOption.OptionValue)
+	assert.Equal(t, "--client_env=FOO_ALLOWED=bar", envAllowedByUserOption.CombinedForm)
+	assert.Equal(t, "FOO_ALLOWED=bar", envAllowedByUserOption.OptionValue)
+	assert.Equal(t, "--remote_header=<REDACTED>", remoteHeaderOption.CombinedForm)
+	assert.Equal(t, "<REDACTED>", remoteHeaderOption.OptionValue)
+	assert.Equal(t, "--some_url=https://foo.com", nonEnvURLOption.CombinedForm)
+	assert.Equal(t, "https://foo.com", nonEnvURLOption.OptionValue)
 }
 
 func TestRedactMetadata_OptionsParsed_StripsURLSecrets(t *testing.T) {

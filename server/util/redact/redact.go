@@ -9,11 +9,17 @@ import (
 	"github.com/golang/protobuf/proto"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
 const (
 	RedactionFlagStandardRedactions = 1
+
+	envVarPrefix              = "--"
+	envVarOptionName          = "client_env"
+	envVarSeparator           = "="
+	envVarRedactedPlaceholder = "<REDACTED>"
 )
 
 var (
@@ -22,6 +28,11 @@ var (
 	knownGitRepoURLKeys = []string{
 		"REPO_URL", "GIT_URL", "TRAVIS_REPO_SLUG", "BUILDKITE_REPO",
 		"CIRCLE_REPOSITORY_URL", "GITHUB_REPOSITORY", "CI_REPOSITORY_URL",
+	}
+
+	defaultAllowedEnvVars = []string{
+		"USER", "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID",
+		"BUILDKITE_BUILD_URL", "BUILDKITE_JOB_ID",
 	}
 )
 
@@ -72,14 +83,115 @@ func stripRepoURLCredentialsFromWorkspaceStatus(status *bespb.WorkspaceStatus) {
 	}
 }
 
+func stripRepoURLCredentialsFromCommandLineOption(option *clpb.Option) {
+	if option.OptionName != envVarOptionName {
+		return
+	}
+	for _, repoURLKey := range knownGitRepoURLKeys {
+		// assignmentPrefix is a string like "REPO_URL=" or "GIT_URL="
+		assignmentPrefix := repoURLKey + envVarSeparator
+		if strings.HasPrefix(option.OptionValue, assignmentPrefix) {
+			envVarValue := strings.TrimPrefix(option.OptionValue, assignmentPrefix)
+			strippedValue := gitutil.StripRepoURLCredentials(envVarValue)
+			option.OptionValue = assignmentPrefix + strippedValue
+			option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + option.OptionValue
+			return
+		}
+	}
+}
+
+func redactEnv(commandLine *clpb.CommandLine, allowedEnvVars []string) map[string]string {
+	envVarMap := make(map[string]string)
+	if commandLine == nil {
+		return envVarMap
+	}
+	for _, section := range commandLine.Sections {
+		if p, ok := section.SectionType.(*clpb.CommandLineSection_OptionList); ok {
+			for _, option := range p.OptionList.Option {
+				// Strip URL secrets. Strip git URLs explicitly first, since
+				// gitutil.StripRepoURLCredentials is URL-aware. Then fall back to
+				// regex-based stripping.
+				stripRepoURLCredentialsFromCommandLineOption(option)
+				option.OptionValue = stripURLSecrets(option.OptionValue)
+				option.CombinedForm = stripURLSecrets(option.CombinedForm)
+
+				// Redact remote header values
+				if option.OptionName == "remote_header" || option.OptionName == "remote_cache_header" {
+					option.OptionValue = envVarRedactedPlaceholder
+					option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + envVarRedactedPlaceholder
+				}
+
+				// Redact non-allowed env vars
+				if option.OptionName == envVarOptionName {
+					parts := strings.Split(option.OptionValue, envVarSeparator)
+					if len(parts) == 0 || isAllowedEnvVar(parts[0], allowedEnvVars) {
+						continue
+					}
+					option.OptionValue = parts[0] + envVarSeparator + envVarRedactedPlaceholder
+					option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + envVarRedactedPlaceholder
+				}
+			}
+		}
+	}
+	return envVarMap
+}
+
+func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
+	lowercaseVariableName := strings.ToLower(variableName)
+	for _, allowed := range allowedEnvVars {
+		lowercaseAllowed := strings.ToLower(allowed)
+		if allowed == "*" || lowercaseVariableName == lowercaseAllowed {
+			return true
+		}
+		isWildCard := strings.HasSuffix(allowed, "*")
+		allowedPrefix := strings.ReplaceAll(lowercaseAllowed, "*", "")
+		if isWildCard && strings.HasPrefix(lowercaseVariableName, allowedPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseAllowedEnv looks for an option like "--build_metadata='ALLOW_ENV=A,B,C'"
+// and returns a slice of the comma-separated values specified in the value of
+// ALLOW_ENV.
+func parseAllowedEnv(optionsDescription string) []string {
+	const buildMetadataOptionPrefix = "--build_metadata="
+	const allowEnvPrefix = "ALLOW_ENV="
+	const allowEnvListSeparator = ","
+
+	options := strings.Split(optionsDescription, " ")
+	for _, option := range options {
+		if !strings.HasPrefix(option, buildMetadataOptionPrefix) {
+			continue
+		}
+		optionValue := strings.TrimPrefix(option, buildMetadataOptionPrefix)
+		if strings.HasPrefix(optionValue, "'") && strings.HasSuffix(optionValue, "'") {
+			optionValue = strings.TrimPrefix(optionValue, "'")
+			optionValue = strings.TrimSuffix(optionValue, "'")
+		}
+		if !strings.HasPrefix(optionValue, allowEnvPrefix) {
+			continue
+		}
+		envVarValue := strings.TrimPrefix(optionValue, allowEnvPrefix)
+		return strings.Split(envVarValue, allowEnvListSeparator)
+	}
+
+	return []string{}
+}
+
 // StreamingRedactor processes a stream of build events and redacts them as they are
 // received by the event handler.
 type StreamingRedactor struct {
-	env environment.Env
+	env            environment.Env
+	allowedEnvVars []string
 }
 
 func NewStreamingRedactor(env environment.Env) *StreamingRedactor {
-	return &StreamingRedactor{env}
+	return &StreamingRedactor{
+		env:            env,
+		allowedEnvVars: defaultAllowedEnvVars,
+	}
 }
 
 func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
@@ -93,6 +205,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 	case *bespb.BuildEvent_Started:
 		{
 			p.Started.OptionsDescription = stripURLSecrets(p.Started.OptionsDescription)
+			r.allowedEnvVars = append(r.allowedEnvVars, parseAllowedEnv(p.Started.OptionsDescription)...)
 		}
 	case *bespb.BuildEvent_UnstructuredCommandLine:
 		{
@@ -101,6 +214,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		}
 	case *bespb.BuildEvent_StructuredCommandLine:
 		{
+			redactEnv(p.StructuredCommandLine, r.allowedEnvVars)
 		}
 	case *bespb.BuildEvent_OptionsParsed:
 		{
