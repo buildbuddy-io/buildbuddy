@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"io"
 	"math"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
@@ -23,6 +25,10 @@ const (
 	// Chunks will also be flushed to blobstore after this much time
 	// passes with no new data being written.
 	defaultChunkTimeout = 15 * time.Second
+
+	// Number of lines to keep in the screen buffer so that they may be modified
+	// by ANSI Cursor control codes.
+	linesToRetainForANSICursor = 6
 )
 
 func getEventLogPathFromInvocationId(invocationId string) string {
@@ -143,18 +149,56 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 }
 
 func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, invocationId string) *EventLogWriter {
+	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
+		WriteBlockSize:       defaultLogChunkSize,
+		WriteTimeoutDuration: defaultChunkTimeout,
+		NoSplitWrite:         true,
+	}
+	cw := chunkstore.New(b, chunkstoreOptions).Writer(ctx, getEventLogPathFromInvocationId(invocationId))
 	return &EventLogWriter{
-		chunkstore.New(
-			b,
-			&chunkstore.ChunkstoreOptions{
-				WriteBlockSize:       defaultLogChunkSize,
-				WriteTimeoutDuration: defaultChunkTimeout,
-				NoSplitWrite:         true,
-			},
-		).Writer(ctx, getEventLogPathFromInvocationId(invocationId)),
+		WriteCloser: &ANSICursorBufferWriter{
+			WriteCloser:  cw,
+			screenWriter: terminal.NewScreenWriter(),
+		},
+		chunkstoreWriter: cw,
 	}
 }
 
 type EventLogWriter struct {
-	*chunkstore.ChunkstoreWriter
+	io.WriteCloser
+	chunkstoreWriter *chunkstore.ChunkstoreWriter
+}
+
+func (w *EventLogWriter) GetLastChunkId() string {
+	return chunkstore.ChunkIndexAsStringId(w.chunkstoreWriter.GetLastChunkIndex())
+}
+
+// Parses text passed into it as ANSI text and flushes it to the WriteCloser,
+// retaining a buffer of the last N lines. On Close, all lines are flushed. This
+// is necessary so that ANSI cursor control sequences can freely modify the last
+// N lines.
+type ANSICursorBufferWriter struct {
+	io.WriteCloser
+	screenWriter *terminal.ScreenWriter
+}
+
+func (w *ANSICursorBufferWriter) Write(p []byte) (int, error) {
+	if p == nil || len(p) == 0 {
+		return w.WriteCloser.Write(p)
+	}
+	if _, err := w.screenWriter.Write(p); err != nil {
+		return 0, err
+	}
+	popped := w.screenWriter.PopExtraLinesAsANSI(linesToRetainForANSICursor)
+	if len(popped) == 0 {
+		return 0, nil
+	}
+	return w.WriteCloser.Write(append(popped, '\n'))
+}
+
+func (w *ANSICursorBufferWriter) Close() error {
+	if _, err := w.WriteCloser.Write(w.screenWriter.RenderAsANSI()); err != nil {
+		return err
+	}
+	return w.WriteCloser.Close()
 }
