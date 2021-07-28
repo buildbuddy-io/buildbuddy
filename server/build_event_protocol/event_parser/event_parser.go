@@ -329,7 +329,7 @@ func fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.Works
 		case "ROLE":
 			invocation.Role = item.Value
 		case "REPO_URL":
-			invocation.RepoUrl = gitutil.StripRepoURLCredentials(item.Value)
+			invocation.RepoUrl = item.Value
 		case "COMMIT_SHA":
 			invocation.CommitSha = item.Value
 		}
