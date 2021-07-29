@@ -389,6 +389,8 @@ func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
 		return err
 	}
 	if n > maxUnclaimedTasksTracked {
+		// Trim the oldest tasks. We use the task insertion timestamp as the score so the oldest task is at rank 0, next
+		// oldest is at rank 1 and so on. We subtract 1 because the indexes are inclusive.
 		return np.rdb.ZRemRangeByRank(ctx, key, 0, n-maxUnclaimedTasksTracked-1).Err()
 	}
 	return nil
@@ -399,7 +401,7 @@ func (np *nodePool) RemoveUnclaimedTask(ctx context.Context, taskID string) erro
 }
 
 func (np *nodePool) SampleUnclaimedTasks(ctx context.Context, n int) ([]string, error) {
-	return np.rdb.ZRandMember(ctx, np.key.redisUnclaimedTasksKey(), n, false /* withScores= */).Result()
+	return np.rdb.ZRandMember(ctx, np.key.redisUnclaimedTasksKey(), n, false /* =withScores */).Result()
 }
 
 type persistedTask struct {
