@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	// Keep under the limit of ~4MB (1024 * 1024 * 4).
-	readBufSizeBytes = (1024 * 1024 * 3)
+	// Keep under the limit of ~4MB (save 256KB).
+	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
 )
 
 type ByteStreamServer struct {
