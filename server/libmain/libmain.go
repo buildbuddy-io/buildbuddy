@@ -43,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
@@ -56,6 +57,7 @@ import (
 	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
 var (
