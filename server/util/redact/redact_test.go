@@ -20,6 +20,27 @@ func fileWithURI(uri string) *bespb.File {
 	}
 }
 
+func structuredCommandLineEvent(option *clpb.Option) {
+	commandLine := &clpb.CommandLine{
+		CommandLineLabel: "label",
+		Sections: []*clpb.CommandLineSection{
+			{
+				SectionLabel: "command",
+				SectionType: &clpb.CommandLineSection_OptionList{
+					OptionList: &clpb.OptionList{
+						Option: []*clpb.Option{option},
+					},
+				},
+			},
+		},
+	}
+	return &bespb.BuildEvent{
+		StructuredCommandLine: &bespb.BuildEvent_StructuredCommandLine{
+			StructuredCommandLine: commandLine,
+		}
+	}
+}
+
 func TestRedactMetadata_BuildStarted_StripsSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	buildStarted := &bespb.BuildStarted{
@@ -76,23 +97,8 @@ func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecr
 			OptionValue:  testCase.inputValue,
 			CombinedForm: fmt.Sprintf("--%s=%s", testCase.name, testCase.inputValue),
 		}
-		commandLine := &clpb.CommandLine{
-			CommandLineLabel: "label",
-			Sections: []*clpb.CommandLineSection{
-				{
-					SectionLabel: "command",
-					SectionType: &clpb.CommandLineSection_OptionList{
-						OptionList: &clpb.OptionList{
-							Option: []*clpb.Option{option},
-						},
-					},
-				},
-			},
-		}
 
-		redactor.RedactMetadata(&bespb.BuildEvent{
-			Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: commandLine},
-		})
+		redactor.RedactMetadata(structuredCommandLineEvent(option))
 
 		assert.Equal(t, testCase.expectedValue, option.OptionValue)
 		assert.Equal(t, fmt.Sprintf("--%s=%s", testCase.name, testCase.expectedValue), option.CombinedForm)
