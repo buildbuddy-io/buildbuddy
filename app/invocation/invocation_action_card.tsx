@@ -2,12 +2,14 @@ import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
 import { build } from "../../proto/remote_execution_ts_proto";
+import InputFileComponent from "./code_sidebar_node";
 import rpcService from "../service/rpc_service";
 import { Action } from "rxjs/internal/scheduler/Action";
 
 interface Props {
   model: InvocationModel;
   search: URLSearchParams;
+  path: string;
 }
 
 interface State {
@@ -67,29 +69,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
           error: "Error loading action profile. Make sure your cache is correctly configured.",
         });
       });
-  }
-
-  fetchDirectory(digest: build.bazel.remote.execution.v2.IDigest): build.bazel.remote.execution.v2.Directory {
-    let dir_file = "bytestream://" + this.getCacheAddress() + "/blobs/" + digest.hash + "/" + digest.sizeBytes;
-    var dir: build.bazel.remote.execution.v2.Directory;
-    rpcService
-      .fetchBytestreamFile(dir_file, this.props.model.getId(), "arraybuffer")
-      .then((dir_buff: any) => {
-        console.log(dir_buff);
-        dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(dir_buff));
-        console.log(dir.toJSON());
-        return dir;
-      })
-      .catch(() => {
-        console.error("Error loading directory!");
-        dir = null;
-        this.setState({
-          ...this.state,
-          error: "Error loading directory profile. Make sure your cache is correctly configured.",
-        });
-        return dir;
-      });
-    return dir;
   }
 
   fetchActionResult() {
@@ -243,6 +222,44 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
+  handleFileClicked(node: any) {
+    let digest_string = this.props.node.digest.hash + "/" + this.props.node.digest.size;
+    if (node.type === "tree") {
+      if (this.state.treeShaToExpanded.get(digest_string)) {
+        this.state.treeShaToExpanded.set(digest_string, false);
+        this.setState({ treeShaToExpanded: this.state.treeShaToExpanded });
+        return;
+      }
+
+      let dirFile =
+      "bytestream://" + this.getCacheAddress() + "/blobs/" + digest_string;
+      rpcService
+        .fetchBytestreamFile(dirFile, this.props.model.getId(), "arraybuffer")
+        .then((dir_buff: any) => {
+          let tempDir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(dir_buff));
+          this.state.treeShaToExpanded.set(digest_string, true);
+          this.state.treeShaToChildrenMap.set(digest_string, tempDir.directories + tempDir.files);
+          this.setState({
+              treeShaToChildrenMap: this.state.treeShaToChildrenMap,
+              treeShaToPathMap: this.state.treeShaToPathMap,
+          });
+        })
+        .catch(() => {
+          console.error("Error loading bytestream inputRoot profile!");
+          this.setState({
+            ...this.state,
+            error: "Error loading action profile. Make sure your cache is correctly configured.",
+          });
+        });
+      return;
+    }
+    try {
+      rpcService.downloadBytestreamFile(node.name, dirFile, this.props.model.getId());
+    } catch {
+      console.error("Error downloading bytestream timing profile");
+    }
+  }
+
   render() {
     return (
       <div>
@@ -289,7 +306,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       className="action-property-title">
                       Input Files
                     </div>
-                    <div>{this.state.inputRoot.directories[0].name}</div>
+                    <div className="code-sidebar">
+                      {this.state.inputRoot &&
+                        this.state.inputRoot.data.tree.map((node: any) => (
+                          <SidebarNodeComponent
+                            node={node}
+                            treeShaToExpanded={this.state.treeShaToExpanded}
+                            treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                            handleFileClicked={this.handleFileClicked.bind(this)}
+                          />
+                        ))}
+                    </div>
                   </div>
                 </div>
               )}
