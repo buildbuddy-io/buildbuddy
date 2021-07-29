@@ -19,6 +19,7 @@ func Run(t *testing.T, args ...string) *app.App {
 func RunWithConfig(t *testing.T, configPath string, args ...string) *app.App {
 	commandArgs := []string{
 		fmt.Sprintf("--telemetry_port=%d", app.FreePort(t)),
+		"--app_directory=/enterprise/app",
 	}
 	commandArgs = append(commandArgs, args...)
 	return app.Run(
