@@ -20,6 +20,10 @@ const (
 	envVarOptionName          = "client_env"
 	envVarSeparator           = "="
 	envVarRedactedPlaceholder = "<REDACTED>"
+
+	buildMetadataOptionPrefix = "--build_metadata="
+	allowEnvPrefix            = "ALLOW_ENV="
+	allowEnvListSeparator     = ","
 )
 
 var (
@@ -158,10 +162,6 @@ func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
 // and returns a slice of the comma-separated values specified in the value of
 // ALLOW_ENV -- in this example, it would return {"A", "B", "C"}.
 func parseAllowedEnv(optionsDescription string) []string {
-	const buildMetadataOptionPrefix = "--build_metadata="
-	const allowEnvPrefix = "ALLOW_ENV="
-	const allowEnvListSeparator = ","
-
 	options := strings.Split(optionsDescription, " ")
 	for _, option := range options {
 		if !strings.HasPrefix(option, buildMetadataOptionPrefix) {
