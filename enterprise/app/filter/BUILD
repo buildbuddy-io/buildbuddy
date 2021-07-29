@@ -10,6 +10,8 @@ ts_library(
         "//app/components/popup",
         "//app/format",
         "//app/router",
+        "//app/util:proto",
+        "//proto:timestamp_ts_proto",
         "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//@types/react-date-range",

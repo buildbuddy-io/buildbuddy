@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
@@ -139,6 +140,12 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	}
 	if role := req.GetQuery().GetRole(); role != "" {
 		q.AddWhereClause("i.role = ?", role)
+	}
+	if start := req.GetQuery().GetUpdatedAfter().AsTime(); !start.IsZero() {
+		q.AddWhereClause("i.updated_at_usec >= ?", timeutil.ToUsec(start))
+	}
+	if end := req.GetQuery().GetUpdatedBefore().AsTime(); !end.IsZero() {
+		q.AddWhereClause("i.updated_at_usec < ?", timeutil.ToUsec(end))
 	}
 
 	// Always add permissions check.
