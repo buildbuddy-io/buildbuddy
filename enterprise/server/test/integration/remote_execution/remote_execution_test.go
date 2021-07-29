@@ -495,7 +495,7 @@ func TestMultipleSchedulersAndExecutors_RedisExecutorPools(t *testing.T) {
 func TestWorkSchedulingOnNewExecutor(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer()
+	rbe.AddBuildBuddyServers(5)
 	rbe.AddSingleTaskExecutorWithOptions(&rbetest.ExecutorOptions{Name: "busyExecutor1"})
 	rbe.AddSingleTaskExecutorWithOptions(&rbetest.ExecutorOptions{Name: "busyExecutor2"})
 
