@@ -141,10 +141,10 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	if role := req.GetQuery().GetRole(); role != "" {
 		q.AddWhereClause("i.role = ?", role)
 	}
-	if start := req.GetQuery().GetUpdatedTimestampRangeStart().AsTime(); !start.IsZero() {
+	if start := req.GetQuery().GetUpdatedAfter().AsTime(); !start.IsZero() {
 		q.AddWhereClause("i.updated_at_usec >= ?", timeutil.ToUsec(start))
 	}
-	if end := req.GetQuery().GetUpdatedTimestampRangeEnd().AsTime(); !end.IsZero() {
+	if end := req.GetQuery().GetUpdatedBefore().AsTime(); !end.IsZero() {
 		q.AddWhereClause("i.updated_at_usec < ?", timeutil.ToUsec(end))
 	}
 
