@@ -94,3 +94,5 @@ build --incompatible_strict_action_env
 # You can create your own by copying and editing the template-user.bazelrc template:
 # cp template-user.bazelrc user.bazelrc
 try-import %workspace%/user.bazelrc
+
+# NOP
