@@ -15,7 +15,7 @@ func singleFile() *build_event_stream.File {
 	return &build_event_stream.File{
 		Name: "afile",
 		File: &build_event_stream.File_Uri{
-			Uri: "213wZJyTUyhXkj381312@uri",
+			Uri: "uri",
 		},
 	}
 }
@@ -42,7 +42,7 @@ func TestFillInvocation(t *testing.T) {
 	buildStarted := &build_event_stream.BuildStarted{
 		StartTimeMillis:    0,
 		Command:            "test",
-		OptionsDescription: "213wZJyTUyhXkj381312@foo",
+		OptionsDescription: "foo",
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
@@ -92,8 +92,8 @@ func TestFillInvocation(t *testing.T) {
 	})
 
 	optionsParsed := &build_event_stream.OptionsParsed{
-		CmdLine:         []string{"213wZJyTUyhXkj381312@foo"},
-		ExplicitCmdLine: []string{"213wZJyTUyhXkj381312@explicit"},
+		CmdLine:         []string{"foo"},
+		ExplicitCmdLine: []string{"explicit"},
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{

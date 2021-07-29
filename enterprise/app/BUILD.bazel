@@ -60,6 +60,7 @@ genrule(
         "//enterprise/app/code:code.css",
         "//enterprise/app/code:monaco.css",
         "//enterprise/app/executors:executors.css",
+        "//enterprise/app/filter:css",
         "//app:style.css",
     ],
     outs = ["style.css"],
@@ -72,4 +73,11 @@ genrule(
         done;
         cat out > $@;
     """,
+)
+
+load("//rules/sha:index.bzl", "sha")
+
+sha(
+    name = "sha",
+    srcs = ["//enterprise/app:app_bundle"],
 )

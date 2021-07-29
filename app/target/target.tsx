@@ -80,9 +80,14 @@ export default class TargetComponent extends React.Component {
         return "test-passed";
       case build_event_stream.TestStatus.FLAKY:
         return "test-flaky";
+      case build_event_stream.TestStatus.TIMEOUT:
       case build_event_stream.TestStatus.FAILED:
+      case build_event_stream.TestStatus.REMOTE_FAILURE:
+      case build_event_stream.TestStatus.FAILED_TO_BUILD:
         return "test-failed";
       case build_event_stream.TestStatus.INCOMPLETE:
+        return "test-error";
+      default:
         return "test-error";
     }
   }
@@ -209,7 +214,7 @@ export default class TargetComponent extends React.Component {
                   href={`#${index + 1}`}
                   title={`Run ${result.buildEvent.id.testResult.run} (Attempt ${result.buildEvent.id.testResult.attempt}, Shard ${result.buildEvent.id.testResult.shard})`}
                   className={`run ${this.getStatusClass(result.buildEvent.testResult.status)} ${
-                    (this.props.hash || "#1") == `#${index + 1}` && "selected"
+                    (this.props.hash || "#1") == `#${index + 1}` ? "selected" : ""
                   }`}>
                   Run {result.buildEvent.id.testResult.run} (Attempt {result.buildEvent.id.testResult.attempt}, Shard{" "}
                   {result.buildEvent.id.testResult.shard})

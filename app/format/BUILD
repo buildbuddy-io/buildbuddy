@@ -9,6 +9,7 @@ ts_library(
     deps = [
         "@npm//@types/long",
         "@npm//@types/moment",
+        "@npm//date-fns",
         "@npm//long",
         "@npm//moment",
     ],

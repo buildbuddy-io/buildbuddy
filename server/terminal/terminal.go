@@ -39,3 +39,7 @@ func (sw *ScreenWriter) Write(data []byte) (int, error) {
 func (sw *ScreenWriter) RenderAsANSI() []byte {
 	return sw.s.asANSI()
 }
+
+func (sw *ScreenWriter) PopExtraLinesAsANSI(linesToRetain int) []byte {
+	return sw.s.popExtraLines(linesToRetain)
+}

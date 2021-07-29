@@ -56,6 +56,7 @@ type appConfig struct {
 	TraceFractionOverrides    []string `yaml:"trace_fraction_overrides" usage:"Tracing fraction override based on name in format name=fraction."`
 	IgnoreForcedTracingHeader bool     `yaml:"ignore_forced_tracing_header" usage:"If set, we will not honor the forced tracing header."`
 	CodeEditorEnabled         bool     `yaml:"code_editor_enabled" usage:"If set, code editor functionality will be enabled."`
+	GlobalFilterEnabled       bool     `yaml:"global_filter_enabled" usage:"If set, the global filter will be enabled in the UI."`
 }
 
 type buildEventProxy struct {
@@ -233,6 +234,8 @@ type ExecutorConfig struct {
 	DockerSiblingContainers bool             `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
 	DockerInheritUserIDs    bool             `yaml:"docker_inherit_user_ids" usage:"If set, run docker containers using the same uid and gid as the user running the executor process."`
 	DefaultXCodeVersion     string           `yaml:"default_xcode_version" usage:"Sets the default XCode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
+	EnableBareRunner        bool             `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
+	EnableFirecracker       bool             `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
 }
 
 func (c *ExecutorConfig) GetAppTarget() string {
@@ -536,6 +539,10 @@ func (c *Configurator) GetDefaultToDenseMode() bool {
 
 func (c *Configurator) GetCodeEditorEnabled() bool {
 	return c.gc.App.CodeEditorEnabled
+}
+
+func (c *Configurator) GetAppGlobalFilterEnabled() bool {
+	return c.gc.App.GlobalFilterEnabled
 }
 
 func (c *Configurator) GetGRPCMaxRecvMsgSizeBytes() int {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -23,11 +24,16 @@ type Chunkstore struct {
 	internalBlobstore    interfaces.Blobstore
 	writeBlockSize       int
 	writeTimeoutDuration time.Duration
+	noSplitWrite         bool
 }
 
 type ChunkstoreOptions struct {
 	WriteBlockSize       int
 	WriteTimeoutDuration time.Duration
+
+	// If true, individual buffers passed to Write will not be split accross
+	// multiple blobs unless the buffer itself exceeds the WriteBlockSize
+	NoSplitWrite bool
 }
 
 func New(blobstore interfaces.Blobstore, co *ChunkstoreOptions) *Chunkstore {
@@ -43,6 +49,7 @@ func New(blobstore interfaces.Blobstore, co *ChunkstoreOptions) *Chunkstore {
 		internalBlobstore:    blobstore,
 		writeBlockSize:       writeBlockSize,
 		writeTimeoutDuration: writeTimeoutDuration,
+		noSplitWrite:         co.NoSplitWrite,
 	}
 }
 
@@ -88,23 +95,50 @@ func (c *Chunkstore) DeleteBlob(ctx context.Context, blobName string) error {
 	}
 }
 
-func ChunkName(blobName string, index uint16) string {
-	return blobName + "_" + fmt.Sprintf("%04x", index)
+func ChunkIndexAsStringId(index uint16) string {
+	return fmt.Sprintf("%04x", index)
 }
 
-func (c *Chunkstore) GetLastChunkIndex(ctx context.Context, blobName string) (uint16, error) {
-	index := uint16(0)
+func ChunkIdAsUint16Index(id string) (uint16, error) {
+	n, err := strconv.ParseUint(id, 16, 16)
+	if err != nil {
+		return 0, err
+	}
+	return uint16(n), nil
+}
+
+func ChunkName(blobName string, index uint16) string {
+	return blobName + "_" + ChunkIndexAsStringId(index)
+}
+
+func (c *Chunkstore) GetLastChunkId(ctx context.Context, blobName string, startingId string) (string, error) {
+	startingIndex, err := ChunkIdAsUint16Index(startingId)
+	if err != nil {
+		return "", nil
+	}
+	index, err := c.getLastChunkIndex(ctx, blobName, startingIndex)
+	return ChunkIndexAsStringId(index), err
+}
+
+func (c *Chunkstore) getLastChunkIndex(ctx context.Context, blobName string, startingIndex uint16) (uint16, error) {
+	index := startingIndex
+	if index == math.MaxUint16 {
+		index = 0
+	}
 	for index < math.MaxUint16 {
-		exists, err := c.ChunkExists(ctx, blobName, index+1)
+		exists, err := c.ChunkExists(ctx, blobName, index)
 		if err != nil {
 			return 0, err
 		}
 		if !exists {
+			if index == 0 || index == startingIndex {
+				return math.MaxUint16, status.NotFoundErrorf("No Chunk found at index %d", index)
+			}
 			break
 		}
 		index++
 	}
-	return index, nil
+	return index - 1, nil
 }
 
 func (c *Chunkstore) ChunkExists(ctx context.Context, blobName string, index uint16) (bool, error) {
@@ -363,12 +397,12 @@ func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
 	}
 }
 
-func (w *ChunkstoreWriter) GetLastChunkIndex() (uint16, error) {
+func (w *ChunkstoreWriter) GetLastChunkIndex() uint16 {
+	// Call Write with an empty buffer to update lastChunkIndex without triggering
+	// an actual write to blobstore, which lets us get an updated index in case a
+	// timeout-based flush has happened between now and the last call to Write.
 	w.Write([]byte{})
-	if w.lastChunkIndex == math.MaxUint16 {
-		return 0, status.NotFoundError("No chunks have been written.")
-	}
-	return w.lastChunkIndex, nil
+	return w.lastChunkIndex
 }
 
 func (w *ChunkstoreWriter) Write(p []byte) (int, error) {
@@ -406,12 +440,15 @@ type writeLoop struct {
 	timeout            bool
 	writeChannel       chan []byte
 	writeResultChannel chan writeResult
+	lastWriteSize      int
 }
 
 func (l *writeLoop) write() error {
 	size := l.chunkstore.writeBlockSize
-	if len(l.chunk) < l.chunkstore.writeBlockSize {
+	if len(l.chunk) <= size {
 		size = len(l.chunk)
+	} else if l.chunkstore.noSplitWrite && l.lastWriteSize <= l.chunkstore.writeBlockSize {
+		size = len(l.chunk) - l.lastWriteSize
 	}
 	bytesWritten, err := l.chunkstore.writeChunk(l.ctx, l.blobName, l.chunkIndex, l.chunk[:size])
 	if bytesWritten > 0 {
@@ -434,6 +471,7 @@ func (l *writeLoop) readFromWriteChannel() {
 			l.flushTime = time.Unix(0, 0)
 		} else {
 			l.chunk = append(l.chunk, p...)
+			l.lastWriteSize = len(p)
 		}
 	case <-time.After(time.Until(l.flushTime)):
 		l.timeout = true

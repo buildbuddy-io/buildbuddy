@@ -32,6 +32,7 @@ ts_library(
         "//proto:build_event_stream_ts_proto",
         "//proto:cache_ts_proto",
         "//proto:command_line_ts_proto",
+        "//proto:eventlog_ts_proto",
         "//proto:execution_stats_ts_proto",
         "//proto:group_ts_proto",
         "//proto:grpc_code_ts_proto",

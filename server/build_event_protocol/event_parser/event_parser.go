@@ -29,28 +29,6 @@ func stripURLSecrets(input string) string {
 	return urlSecretRegex.ReplaceAllString(input, "")
 }
 
-func stripURLSecretsFromList(inputs []string) []string {
-	for index, input := range inputs {
-		inputs[index] = stripURLSecrets(input)
-	}
-	return inputs
-}
-
-func stripURLSecretsFromFile(file *build_event_stream.File) *build_event_stream.File {
-	switch p := file.GetFile().(type) {
-	case *build_event_stream.File_Uri:
-		p.Uri = stripURLSecrets(p.Uri)
-	}
-	return file
-}
-
-func stripURLSecretsFromFiles(files []*build_event_stream.File) []*build_event_stream.File {
-	for index, file := range files {
-		files[index] = stripURLSecretsFromFile(file)
-	}
-	return files
-}
-
 func parseAndFilterCommandLine(in *command_line.CommandLine, allowedEnvVars []string) map[string]string {
 	envVarMap := make(map[string]string)
 	if in == nil {
@@ -152,7 +130,6 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 		}
 	case *build_event_stream.BuildEvent_Started:
 		{
-			p.Started.OptionsDescription = stripURLSecrets(p.Started.OptionsDescription)
 			sep.startTimeMillis = p.Started.StartTimeMillis
 			sep.command = p.Started.Command
 			for _, child := range event.BuildEvent.Children {
@@ -167,8 +144,6 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 		}
 	case *build_event_stream.BuildEvent_UnstructuredCommandLine:
 		{
-			// Clear the unstructured command line so we don't have to redact it.
-			p.UnstructuredCommandLine.Args = []string{}
 		}
 	case *build_event_stream.BuildEvent_StructuredCommandLine:
 		{
@@ -176,8 +151,6 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 		}
 	case *build_event_stream.BuildEvent_OptionsParsed:
 		{
-			p.OptionsParsed.CmdLine = stripURLSecretsFromList(p.OptionsParsed.CmdLine)
-			p.OptionsParsed.ExplicitCmdLine = stripURLSecretsFromList(p.OptionsParsed.ExplicitCmdLine)
 		}
 	case *build_event_stream.BuildEvent_WorkspaceStatus:
 		{
@@ -197,27 +170,18 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 		}
 	case *build_event_stream.BuildEvent_Action:
 		{
-			p.Action.Stdout = stripURLSecretsFromFile(p.Action.Stdout)
-			p.Action.Stderr = stripURLSecretsFromFile(p.Action.Stderr)
-			p.Action.PrimaryOutput = stripURLSecretsFromFile(p.Action.PrimaryOutput)
-			p.Action.ActionMetadataLogs = stripURLSecretsFromFiles(p.Action.ActionMetadataLogs)
 		}
 	case *build_event_stream.BuildEvent_NamedSetOfFiles:
 		{
-			p.NamedSetOfFiles.Files = stripURLSecretsFromFiles(p.NamedSetOfFiles.Files)
 		}
 	case *build_event_stream.BuildEvent_Completed:
 		{
-			p.Completed.ImportantOutput = stripURLSecretsFromFiles(p.Completed.ImportantOutput)
 		}
 	case *build_event_stream.BuildEvent_TestResult:
 		{
-			p.TestResult.TestActionOutput = stripURLSecretsFromFiles(p.TestResult.TestActionOutput)
 		}
 	case *build_event_stream.BuildEvent_TestSummary:
 		{
-			p.TestSummary.Passed = stripURLSecretsFromFiles(p.TestSummary.Passed)
-			p.TestSummary.Failed = stripURLSecretsFromFiles(p.TestSummary.Failed)
 		}
 	case *build_event_stream.BuildEvent_Finished:
 		{
@@ -226,7 +190,6 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 		}
 	case *build_event_stream.BuildEvent_BuildToolLogs:
 		{
-			p.BuildToolLogs.Log = stripURLSecretsFromFiles(p.BuildToolLogs.Log)
 		}
 	case *build_event_stream.BuildEvent_BuildMetrics:
 		{
