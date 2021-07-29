@@ -1,6 +1,7 @@
 package redact_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -51,7 +52,7 @@ func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecr
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	// Started event specified which env vars shouldn't be redacted.
 	buildStarted := &bespb.BuildStarted{
-		OptionsDescription: "--build_metadata='ALLOW_ENV=FOO_ALLOWED'",
+		OptionsDescription: "--build_metadata='ALLOW_ENV=FOO_ALLOWED,BAR_ALLOWED_PATTERN_*'",
 	}
 	envSecretOption := &clpb.Option{
 		CombinedForm: "--client_env=SECRET=codez",
@@ -68,9 +69,19 @@ func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecr
 		OptionName:   "client_env",
 		OptionValue:  "FOO_ALLOWED=bar",
 	}
+	envAllowedByUserPatternOption := &clpb.Option{
+		CombinedForm: "--client_env=BAR_ALLOWED_PATTERN_XYZ=qux",
+		OptionName:   "client_env",
+		OptionValue:  "BAR_ALLOWED_PATTERN_XYZ=qux",
+	}
 	remoteHeaderOption := &clpb.Option{
 		CombinedForm: "--remote_header=x-buildbuddy-api-key=bbapikey",
 		OptionName:   "remote_header",
+		OptionValue:  "x-buildbuddy-api-key=bbapikey",
+	}
+	remoteCacheHeaderOption := &clpb.Option{
+		CombinedForm: "--remote_cache_header=x-buildbuddy-api-key=bbapikey",
+		OptionName:   "remote_cache_header",
 		OptionValue:  "x-buildbuddy-api-key=bbapikey",
 	}
 	nonEnvURLOption := &clpb.Option{
@@ -89,7 +100,9 @@ func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecr
 							envSecretOption,
 							envAllowedByDefaultOption,
 							envAllowedByUserOption,
+							envAllowedByUserPatternOption,
 							remoteHeaderOption,
+							remoteCacheHeaderOption,
 							nonEnvURLOption,
 						},
 					},
@@ -105,16 +118,22 @@ func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecr
 		Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: structuredCommandLine},
 	})
 
-	assert.Equal(t, "--client_env=SECRET=<REDACTED>", envSecretOption.CombinedForm)
-	assert.Equal(t, "SECRET=<REDACTED>", envSecretOption.OptionValue)
-	assert.Equal(t, "--client_env=GITHUB_REPOSITORY=https://github.com/foo/bar", envAllowedByDefaultOption.CombinedForm)
-	assert.Equal(t, "GITHUB_REPOSITORY=https://github.com/foo/bar", envAllowedByDefaultOption.OptionValue)
-	assert.Equal(t, "--client_env=FOO_ALLOWED=bar", envAllowedByUserOption.CombinedForm)
-	assert.Equal(t, "FOO_ALLOWED=bar", envAllowedByUserOption.OptionValue)
-	assert.Equal(t, "--remote_header=<REDACTED>", remoteHeaderOption.CombinedForm)
-	assert.Equal(t, "<REDACTED>", remoteHeaderOption.OptionValue)
-	assert.Equal(t, "--some_url=https://foo.com", nonEnvURLOption.CombinedForm)
-	assert.Equal(t, "https://foo.com", nonEnvURLOption.OptionValue)
+	for _, assertion := range []struct {
+		option        *clpb.Option
+		key           string
+		expectedValue string
+	}{
+		{envSecretOption, "client_env", "SECRET=<REDACTED>"},
+		{envAllowedByDefaultOption, "client_env", "GITHUB_REPOSITORY=https://github.com/foo/bar"},
+		{envAllowedByUserOption, "client_env", "FOO_ALLOWED=bar"},
+		{envAllowedByUserPatternOption, "client_env", "BAR_ALLOWED_PATTERN_XYZ=qux"},
+		{remoteHeaderOption, "remote_header", "<REDACTED>"},
+		{remoteCacheHeaderOption, "remote_cache_header", "<REDACTED>"},
+		{nonEnvURLOption, "some_url", "https://foo.com"},
+	} {
+		assert.Equal(t, assertion.expectedValue, assertion.option.OptionValue)
+		assert.Equal(t, fmt.Sprintf("--%s=%s", assertion.key, assertion.expectedValue), assertion.option.CombinedForm)
+	}
 }
 
 func TestRedactMetadata_OptionsParsed_StripsURLSecrets(t *testing.T) {
