@@ -1,21 +1,42 @@
 package redact_test
 
 import (
+	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 )
 
 func fileWithURI(uri string) *bespb.File {
 	return &bespb.File{
 		Name: "foo.txt",
 		File: &bespb.File_Uri{Uri: uri},
+	}
+}
+
+func structuredCommandLineEvent(option *clpb.Option) *bespb.BuildEvent {
+	section := &clpb.CommandLineSection{
+		SectionLabel: "command",
+		SectionType: &clpb.CommandLineSection_OptionList{
+			OptionList: &clpb.OptionList{
+				Option: []*clpb.Option{option},
+			},
+		},
+	}
+	commandLine := &clpb.CommandLine{
+		CommandLineLabel: "label",
+		Sections:         []*clpb.CommandLineSection{section},
+	}
+	return &bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_StructuredCommandLine{
+			StructuredCommandLine: commandLine,
+		},
 	}
 }
 
@@ -47,44 +68,41 @@ func TestRedactMetadata_UnstructuredCommandLine_RemovesArgs(t *testing.T) {
 	assert.Equal(t, []string{}, unstructuredCommandLine.Args)
 }
 
-func TestRedactMetadata_StructuredCommandLine_RedactsEnvVars(t *testing.T) {
-	// TODO(bduffany): Migrate env redaction to redactor and enable.
-	t.Skip()
-
+func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
-	shellOption := &command_line.Option{
-		CombinedForm: "--client_env=SHELL=/bin/bash",
-		OptionName:   "client_env",
-		OptionValue:  "SHELL=/bin/bash",
+	// Started event specified which env vars shouldn't be redacted.
+	buildStarted := &bespb.BuildStarted{
+		OptionsDescription: "--build_metadata='ALLOW_ENV=FOO_ALLOWED,BAR_ALLOWED_PATTERN_*'",
 	}
-	secretOption := &command_line.Option{
-		CombinedForm: "--client_env=SECRET=codez",
-		OptionName:   "client_env",
-		OptionValue:  "SECRET=codez",
-	}
-	structuredCommandLine := &command_line.CommandLine{
-		CommandLineLabel: "label",
-		Sections: []*command_line.CommandLineSection{
-			{
-				SectionLabel: "command",
-				SectionType: &command_line.CommandLineSection_OptionList{
-					OptionList: &command_line.OptionList{
-						Option: []*command_line.Option{
-							shellOption,
-							secretOption,
-						},
-					},
-				},
-			},
-		},
-	}
-
 	redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: structuredCommandLine},
+		Payload: &bespb.BuildEvent_Started{Started: buildStarted},
 	})
 
-	assert.Equal(t, "--client_env=SECRET=<REDACTED>", secretOption.OptionValue)
-	assert.Equal(t, "secret=<REDACTED>", secretOption.OptionValue)
+	for _, testCase := range []struct {
+		optionName    string
+		inputValue    string
+		expectedValue string
+	}{
+		{"client_env", "SECRET=codez", "SECRET=<REDACTED>"},
+		{"client_env", "GITHUB_REPOSITORY=https://username:password@github.com/foo/bar", "GITHUB_REPOSITORY=https://github.com/foo/bar"},
+		{"client_env", "FOO_ALLOWED=bar", "FOO_ALLOWED=bar"},
+		{"client_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
+		{"remote_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
+		{"remote_cache_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
+		{"some_url", "https://token@foo.com", "https://foo.com"},
+	} {
+		option := &clpb.Option{
+			OptionName:   testCase.optionName,
+			OptionValue:  testCase.inputValue,
+			CombinedForm: fmt.Sprintf("--%s=%s", testCase.optionName, testCase.inputValue),
+		}
+
+		redactor.RedactMetadata(structuredCommandLineEvent(option))
+
+		expectedCombinedForm := fmt.Sprintf("--%s=%s", testCase.optionName, testCase.expectedValue)
+		assert.Equal(t, expectedCombinedForm, option.CombinedForm)
+		assert.Equal(t, testCase.expectedValue, option.OptionValue)
+	}
 }
 
 func TestRedactMetadata_OptionsParsed_StripsURLSecrets(t *testing.T) {

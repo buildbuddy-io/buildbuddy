@@ -65,9 +65,9 @@ func TestFillInvocation(t *testing.T) {
 		OptionValue:  "SHELL=/bin/bash",
 	}
 	secretOption := &command_line.Option{
-		CombinedForm: "--client_env=SECRET=codez",
+		CombinedForm: "--client_env=SECRET=<REDACTED>",
 		OptionName:   "client_env",
-		OptionValue:  "SECRET=codez",
+		OptionValue:  "SECRET=<REDACTED>",
 	}
 	structuredCommandLine := &command_line.CommandLine{
 		CommandLineLabel: "label",
