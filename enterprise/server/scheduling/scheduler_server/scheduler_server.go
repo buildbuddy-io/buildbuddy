@@ -1452,6 +1452,7 @@ func (s *SchedulerServer) getExecutionNodesFromDB(ctx context.Context, groupID s
 			Arch:                  en.Arch,
 			Pool:                  en.Pool,
 			ExecutorId:            en.ExecutorID,
+			Version:               en.Version,
 		}
 		executionNodes = append(executionNodes, node)
 	}

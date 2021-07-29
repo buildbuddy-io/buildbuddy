@@ -132,19 +132,37 @@ interface ExecutorsListProps {
 
 class ExecutorsList extends React.Component<ExecutorsListProps> {
   render() {
+    let executorsByPool = new Map<string, scheduler.IExecutionNode[]>();
+    for (const e of this.props.executors) {
+      const key = e.os + "-" + e.arch + "-" + e.pool;
+      if (!executorsByPool.has(key)) {
+        executorsByPool.set(key, []);
+      }
+      executorsByPool.get(key).push(e);
+    }
+    const keys = Array.from(executorsByPool.keys()).sort();
+
     return (
       <>
-        {this.props.executors.length == 1 && <p>You have 1 self-hosted executor connected.</p>}
-        {this.props.executors.length > 1 && (
-          <p>You have {this.props.executors.length} self-hosted executors connected.</p>
-        )}
-        {this.props.executors.length < 3 && (
-          <p>For better performance and reliability, we suggest running a minimum of 3 executors.</p>
-        )}
         <div className="executor-cards">
-          {this.props.executors.map((node) => (
-            <ExecutorCardComponent node={node} />
-          ))}
+          {}
+          {keys
+            .map((key) => executorsByPool.get(key))
+            .map((executors) => (
+              <>
+                <h2>
+                  {executors[0].os}/{executors[0].arch} {executors[0].pool || "Default Pool"}
+                </h2>
+                {executors.length == 1 && <p>There is 1 self-hosted executor in this pool.</p>}
+                {executors.length > 1 && <p>There are {executors.length} self-hosted executors in this pool.</p>}
+                {executors.length < 3 && (
+                  <p>For better performance and reliability, we suggest running a minimum of 3 executors per pool.</p>
+                )}
+                {executors.map((node) => (
+                  <ExecutorCardComponent node={node} />
+                ))}
+              </>
+            ))}
         </div>
       </>
     );
