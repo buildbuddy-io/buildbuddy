@@ -48,8 +48,12 @@ export default class ArtifactsCardComponent extends React.Component {
                   </div>
                 )}
                 <div className="invocation-section">
+                  <div className="invocation-section-title">Pushed branch</div>
+                  <div>{this.props.model.workflowConfigured.pushedBranch}</div>
+                </div>
+                <div className="invocation-section">
                   <div className="invocation-section-title">Target branch</div>
-                  <div>{this.props.model.workflowConfigured.actionTriggerBranch}</div>
+                  <div>{this.props.model.workflowConfigured.targetBranch}</div>
                 </div>
               </>
             )}

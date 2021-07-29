@@ -82,6 +82,7 @@ func stripRepoURLCredentialsFromWorkspaceStatus(status *bespb.WorkspaceStatus) {
 		for _, repoURLKey := range knownGitRepoURLKeys {
 			if item.Key == repoURLKey {
 				item.Value = gitutil.StripRepoURLCredentials(item.Value)
+				break
 			}
 		}
 	}

@@ -2,6 +2,7 @@ package testgit
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -11,10 +12,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-
-	git "github.com/go-git/go-git/v5"
-	gitobject "github.com/go-git/go-git/v5/plumbing/object"
 )
 
 const (
@@ -68,25 +67,25 @@ func MakeTempRepo(t testing.TB, contents map[string]string) (path, commitSHA str
 			}
 		}
 	}
-	repo, err := git.PlainInit(path, false /*=bare*/)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tree, err := repo.Worktree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := tree.AddGlob("*"); err != nil {
-		t.Fatal(err)
-	}
-	hash, err := tree.Commit("Initial commit", &git.CommitOptions{
-		Author: &gitobject.Signature{
-			Name:  "Test",
-			Email: "test@buildbuddy.io",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path, hash.String()
+	testshell.Run(t, path, `git init`)
+	configure(t, path)
+	testshell.Run(t, path, `git add . && git commit -m "Initial commit"`)
+	headCommitSHA := strings.TrimSpace(testshell.Run(t, path, `git rev-parse HEAD`))
+	return path, headCommitSHA
+}
+
+// MakeTempRepoClone makes a clone of the git repo at the given path, and cleans
+// up the copy after the test is complete.
+func MakeTempRepoClone(t testing.TB, path string) string {
+	copyPath := testfs.MakeTempDir(t)
+	testshell.Run(t, copyPath, fmt.Sprintf(`git clone file://%q .`, path))
+	configure(t, copyPath)
+	return copyPath
+}
+
+func configure(t testing.TB, repoPath string) {
+	testshell.Run(t, repoPath, `
+		git config user.name "Test"
+		git config user.email "test@buildbuddy.io"
+	`)
 }

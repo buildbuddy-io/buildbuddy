@@ -66,6 +66,8 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 		fmt.Sprintf("--port=%d", app.httpPort),
 		fmt.Sprintf("--grpc_port=%d", app.gRPCPort),
 		fmt.Sprintf("--monitoring_port=%d", app.monitoringPort),
+		"--static_directory=static",
+		"--app_directory=/app",
 		fmt.Sprintf("--app.build_buddy_url=http://localhost:%d", app.httpPort),
 		"--database.data_source=sqlite3://:memory:",
 		fmt.Sprintf("--storage.disk.root_directory=%s", filepath.Join(dataDir, "storage")),
