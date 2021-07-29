@@ -9,6 +9,7 @@ import (
 	"github.com/golang/protobuf/proto"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
 const (
@@ -17,6 +18,11 @@ const (
 
 var (
 	urlSecretRegex = regexp.MustCompile(`[a-zA-Z-0-9-_=]+\@`)
+
+	knownGitRepoURLKeys = []string{
+		"REPO_URL", "GIT_URL", "TRAVIS_REPO_SLUG", "BUILDKITE_REPO",
+		"CIRCLE_REPOSITORY_URL", "GITHUB_REPOSITORY", "CI_REPOSITORY_URL",
+	}
 )
 
 func stripURLSecrets(input string) string {
@@ -43,6 +49,28 @@ func stripURLSecretsFromFiles(files []*bespb.File) []*bespb.File {
 		files[index] = stripURLSecretsFromFile(file)
 	}
 	return files
+}
+
+func stripRepoURLCredentialsFromBuildMetadata(metadata *bespb.BuildMetadata) {
+	for _, repoURLKey := range knownGitRepoURLKeys {
+		if val := metadata.Metadata[repoURLKey]; val != "" {
+			metadata.Metadata[repoURLKey] = gitutil.StripRepoURLCredentials(val)
+		}
+	}
+}
+
+func stripRepoURLCredentialsFromWorkspaceStatus(status *bespb.WorkspaceStatus) {
+	for _, item := range status.Item {
+		if item.Value == "" {
+			continue
+		}
+		for _, repoURLKey := range knownGitRepoURLKeys {
+			if item.Key == repoURLKey {
+				item.Value = gitutil.StripRepoURLCredentials(item.Value)
+				break
+			}
+		}
+	}
 }
 
 // StreamingRedactor processes a stream of build events and redacts them as they are
@@ -82,6 +110,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		}
 	case *bespb.BuildEvent_WorkspaceStatus:
 		{
+			stripRepoURLCredentialsFromWorkspaceStatus(p.WorkspaceStatus)
 		}
 	case *bespb.BuildEvent_Fetch:
 		{
@@ -134,6 +163,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		}
 	case *bespb.BuildEvent_BuildMetadata:
 		{
+			stripRepoURLCredentialsFromBuildMetadata(p.BuildMetadata)
 		}
 	case *bespb.BuildEvent_ConvenienceSymlinksIdentified:
 		{

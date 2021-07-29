@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 )
@@ -177,10 +178,6 @@ func TestRedactMetadata_TestSummary_StripsURLSecrets(t *testing.T) {
 }
 
 func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
-	// TODO(bduffany): Migrate BuildMetadata redaction from event_parser to redactor
-	// and enable.
-	t.Skip()
-
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	buildMetadata := &bespb.BuildMetadata{
 		Metadata: map[string]string{
@@ -195,4 +192,20 @@ func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
 	})
 
 	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", buildMetadata.Metadata["REPO_URL"])
+}
+
+func TestRedactMetadata_WorkspaceStatus_StripsRepoURLCredentials(t *testing.T) {
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	workspaceStatus := &bespb.WorkspaceStatus{
+		Item: []*bespb.WorkspaceStatus_Item{
+			{Key: "REPO_URL", Value: "https://USERNAME:PASSWORD@github.com/buildbuddy-io/metadata_repo_url"},
+		},
+	}
+
+	redactor.RedactMetadata(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_WorkspaceStatus{WorkspaceStatus: workspaceStatus},
+	})
+
+	require.Equal(t, 1, len(workspaceStatus.Item))
+	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", workspaceStatus.Item[0].Value)
 }

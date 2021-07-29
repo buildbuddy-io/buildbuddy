@@ -42,6 +42,7 @@ go_test(
         ":build_event_handler",
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
+        "//proto:command_line_go_proto",
         "//proto:invocation_go_proto",
         "//proto:publish_build_event_go_proto",
         "//server/testutil/testauth",
