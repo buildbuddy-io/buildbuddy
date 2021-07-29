@@ -79,7 +79,7 @@ func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecr
 	})
 
 	for _, testCase := range []struct {
-		name          string
+		optionName    string
 		inputValue    string
 		expectedValue string
 	}{
@@ -92,15 +92,16 @@ func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecr
 		{"some_url", "https://token@foo.com", "https://foo.com"},
 	} {
 		option := &clpb.Option{
-			OptionName:   testCase.name,
+			OptionName:   testCase.optionName,
 			OptionValue:  testCase.inputValue,
-			CombinedForm: fmt.Sprintf("--%s=%s", testCase.name, testCase.inputValue),
+			CombinedForm: fmt.Sprintf("--%s=%s", testCase.optionName, testCase.inputValue),
 		}
 
 		redactor.RedactMetadata(structuredCommandLineEvent(option))
 
+		expectedCombinedForm := fmt.Sprintf("--%s=%s", testCase.optionName, testCase.expectedValue)
+		assert.Equal(t, expectedCombinedForm, option.CombinedForm)
 		assert.Equal(t, testCase.expectedValue, option.OptionValue)
-		assert.Equal(t, fmt.Sprintf("--%s=%s", testCase.name, testCase.expectedValue), option.CombinedForm)
 	}
 }
 
