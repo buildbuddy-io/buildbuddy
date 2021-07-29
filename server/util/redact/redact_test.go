@@ -20,24 +20,23 @@ func fileWithURI(uri string) *bespb.File {
 	}
 }
 
-func structuredCommandLineEvent(option *clpb.Option) {
-	commandLine := &clpb.CommandLine{
-		CommandLineLabel: "label",
-		Sections: []*clpb.CommandLineSection{
-			{
-				SectionLabel: "command",
-				SectionType: &clpb.CommandLineSection_OptionList{
-					OptionList: &clpb.OptionList{
-						Option: []*clpb.Option{option},
-					},
-				},
+func structuredCommandLineEvent(option *clpb.Option) *bespb.BuildEvent {
+	section := &clpb.CommandLineSection{
+		SectionLabel: "command",
+		SectionType: &clpb.CommandLineSection_OptionList{
+			OptionList: &clpb.OptionList{
+				Option: []*clpb.Option{option},
 			},
 		},
 	}
+	commandLine := &clpb.CommandLine{
+		CommandLineLabel: "label",
+		Sections:         []*clpb.CommandLineSection{section},
+	}
 	return &bespb.BuildEvent{
-		StructuredCommandLine: &bespb.BuildEvent_StructuredCommandLine{
+		Payload: &bespb.BuildEvent_StructuredCommandLine{
 			StructuredCommandLine: commandLine,
-		}
+		},
 	}
 }
 
