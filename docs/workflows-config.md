@@ -40,7 +40,7 @@ not have a `buildbuddy.yaml`, with some exceptions:
   run the above bazel command when any branch is pushed.
 - By default, we also pass `--remote_header=x-buildbuddy-api-key=<YOUR_API_KEY>`,
   so that workflow builds show up in your BuildBuddy org. For security reasons,
-  we do not pass these flags when running the workflow on pull request
+  we do not pass these flags when running workflows on pull request
   branches from forked repos.
 
 Other points to note:
