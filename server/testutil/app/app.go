@@ -64,6 +64,7 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 	args := []string{
 		fmt.Sprintf("--config_file=%s", runfile(t, configFilePath)),
 		fmt.Sprintf("--port=%d", app.httpPort),
+		"--static_file_serving_enabled=false",
 		fmt.Sprintf("--grpc_port=%d", app.gRPCPort),
 		fmt.Sprintf("--monitoring_port=%d", app.monitoringPort),
 		fmt.Sprintf("--app.build_buddy_url=http://localhost:%d", app.httpPort),

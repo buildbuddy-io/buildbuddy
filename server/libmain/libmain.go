@@ -43,7 +43,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
@@ -57,7 +56,6 @@ import (
 	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
 var (
@@ -67,6 +65,8 @@ var (
 	GRPCPort       = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
 	gRPCSPort      = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
+
+	staticFileServingEnabled = flag.Bool("static_file_serving_enabled", true, "Whether to enable serving static files")
 
 	staticDirectory = flag.String("static_directory", "", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "", "the directory containing app binary files to host")
@@ -323,20 +323,23 @@ func StartAndRunServices(env environment.Env) {
 	if err := rlimit.MaxRLimit(); err != nil {
 		log.Printf("Error raising open files limit: %s", err)
 	}
+	var afs, staticFileServer *static.StaticFileServer
+	var err error
+	if *staticFileServingEnabled {
+		appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
+		if err != nil {
+			log.Fatalf("Error reading app bundle hash: %s", err)
+		}
 
-	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
-	if err != nil {
-		log.Fatalf("Error reading app bundle hash: %s", err)
-	}
+		staticFileServer, err = static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
+		if err != nil {
+			log.Fatalf("Error initializing static file server: %s", err)
+		}
 
-	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
-	if err != nil {
-		log.Fatalf("Error initializing static file server: %s", err)
-	}
-
-	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, "")
-	if err != nil {
-		log.Fatalf("Error initializing app server: %s", err)
+		afs, err = static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, "")
+		if err != nil {
+			log.Fatalf("Error initializing app server: %s", err)
+		}
 	}
 
 	sslService, err := ssl.NewSSLService(env)
@@ -372,8 +375,12 @@ func StartAndRunServices(env environment.Env) {
 
 	mux := tracing.NewHttpServeMux(http.NewServeMux())
 	// Register all of our HTTP handlers on the default mux.
-	mux.Handle("/", httpfilters.WrapExternalHandler(env, staticFileServer))
-	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
+	if staticFileServer != nil {
+		mux.Handle("/", httpfilters.WrapExternalHandler(env, staticFileServer))
+	}
+	if afs != nil {
+		mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
+	}
 	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", buildBuddyProtoHandlers))
 	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, buildBuddyServer))
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
