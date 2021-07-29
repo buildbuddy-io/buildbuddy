@@ -102,7 +102,7 @@ func stripRepoURLCredentialsFromCommandLineOption(option *clpb.Option) {
 	}
 }
 
-func redactEnv(commandLine *clpb.CommandLine, allowedEnvVars []string) map[string]string {
+func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars []string) map[string]string {
 	envVarMap := make(map[string]string)
 	if commandLine == nil {
 		return envVarMap
@@ -216,7 +216,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		}
 	case *bespb.BuildEvent_StructuredCommandLine:
 		{
-			redactEnv(p.StructuredCommandLine, r.allowedEnvVars)
+			redactStructuredCommandLine(p.StructuredCommandLine, r.allowedEnvVars)
 		}
 	case *bespb.BuildEvent_OptionsParsed:
 		{
