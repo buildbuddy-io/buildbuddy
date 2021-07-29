@@ -113,30 +113,32 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 		return envVarMap
 	}
 	for _, section := range commandLine.Sections {
-		if p, ok := section.SectionType.(*clpb.CommandLineSection_OptionList); ok {
-			for _, option := range p.OptionList.Option {
-				// Strip URL secrets. Strip git URLs explicitly first, since
-				// gitutil.StripRepoURLCredentials is URL-aware. Then fall back to
-				// regex-based stripping.
-				stripRepoURLCredentialsFromCommandLineOption(option)
-				option.OptionValue = stripURLSecrets(option.OptionValue)
-				option.CombinedForm = stripURLSecrets(option.CombinedForm)
+		p, ok := section.SectionType.(*clpb.CommandLineSection_OptionList)
+		if !ok {
+			continue
+		}
+		for _, option := range p.OptionList.Option {
+			// Strip URL secrets. Strip git URLs explicitly first, since
+			// gitutil.StripRepoURLCredentials is URL-aware. Then fall back to
+			// regex-based stripping.
+			stripRepoURLCredentialsFromCommandLineOption(option)
+			option.OptionValue = stripURLSecrets(option.OptionValue)
+			option.CombinedForm = stripURLSecrets(option.CombinedForm)
 
-				// Redact remote header values
-				if option.OptionName == "remote_header" || option.OptionName == "remote_cache_header" {
-					option.OptionValue = envVarRedactedPlaceholder
-					option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + envVarRedactedPlaceholder
-				}
+			// Redact remote header values
+			if option.OptionName == "remote_header" || option.OptionName == "remote_cache_header" {
+				option.OptionValue = envVarRedactedPlaceholder
+				option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + envVarRedactedPlaceholder
+			}
 
-				// Redact non-allowed env vars
-				if option.OptionName == envVarOptionName {
-					parts := strings.Split(option.OptionValue, envVarSeparator)
-					if len(parts) == 0 || isAllowedEnvVar(parts[0], allowedEnvVars) {
-						continue
-					}
-					option.OptionValue = parts[0] + envVarSeparator + envVarRedactedPlaceholder
-					option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + envVarRedactedPlaceholder
+			// Redact non-allowed env vars
+			if option.OptionName == envVarOptionName {
+				parts := strings.Split(option.OptionValue, envVarSeparator)
+				if len(parts) == 0 || isAllowedEnvVar(parts[0], allowedEnvVars) {
+					continue
 				}
+				option.OptionValue = parts[0] + envVarSeparator + envVarRedactedPlaceholder
+				option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + envVarRedactedPlaceholder
 			}
 		}
 	}

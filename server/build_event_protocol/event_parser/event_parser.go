@@ -23,14 +23,17 @@ func parseEnv(commandLine *command_line.CommandLine) map[string]string {
 		return envVarMap
 	}
 	for _, section := range commandLine.Sections {
-		if p, ok := section.SectionType.(*command_line.CommandLineSection_OptionList); ok {
-			for _, option := range p.OptionList.Option {
-				if option.OptionName == envVarOptionName {
-					parts := strings.Split(option.OptionValue, envVarSeparator)
-					if len(parts) == 2 {
-						envVarMap[parts[0]] = parts[1]
-					}
-				}
+		p, ok := section.SectionType.(*command_line.CommandLineSection_OptionList)
+		if !ok {
+			continue
+		}
+		for _, option := range p.OptionList.Option {
+			if option.OptionName != envVarOptionName {
+				continue
+			}
+			parts := strings.Split(option.OptionValue, envVarSeparator)
+			if len(parts) == 2 {
+				envVarMap[parts[0]] = parts[1]
 			}
 		}
 	}

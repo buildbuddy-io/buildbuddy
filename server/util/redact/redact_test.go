@@ -54,85 +54,48 @@ func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecr
 	buildStarted := &bespb.BuildStarted{
 		OptionsDescription: "--build_metadata='ALLOW_ENV=FOO_ALLOWED,BAR_ALLOWED_PATTERN_*'",
 	}
-	envSecretOption := &clpb.Option{
-		CombinedForm: "--client_env=SECRET=codez",
-		OptionName:   "client_env",
-		OptionValue:  "SECRET=codez",
-	}
-	envAllowedByDefaultOption := &clpb.Option{
-		CombinedForm: "--client_env=GITHUB_REPOSITORY=https://username:password@github.com/foo/bar",
-		OptionName:   "client_env",
-		OptionValue:  "GITHUB_REPOSITORY=https://username:password@github.com/foo/bar",
-	}
-	envAllowedByUserOption := &clpb.Option{
-		CombinedForm: "--client_env=FOO_ALLOWED=bar",
-		OptionName:   "client_env",
-		OptionValue:  "FOO_ALLOWED=bar",
-	}
-	envAllowedByUserPatternOption := &clpb.Option{
-		CombinedForm: "--client_env=BAR_ALLOWED_PATTERN_XYZ=qux",
-		OptionName:   "client_env",
-		OptionValue:  "BAR_ALLOWED_PATTERN_XYZ=qux",
-	}
-	remoteHeaderOption := &clpb.Option{
-		CombinedForm: "--remote_header=x-buildbuddy-api-key=bbapikey",
-		OptionName:   "remote_header",
-		OptionValue:  "x-buildbuddy-api-key=bbapikey",
-	}
-	remoteCacheHeaderOption := &clpb.Option{
-		CombinedForm: "--remote_cache_header=x-buildbuddy-api-key=bbapikey",
-		OptionName:   "remote_cache_header",
-		OptionValue:  "x-buildbuddy-api-key=bbapikey",
-	}
-	nonEnvURLOption := &clpb.Option{
-		CombinedForm: "--some_url=https://password@foo.com",
-		OptionName:   "some_url",
-		OptionValue:  "https://password@foo.com",
-	}
-	structuredCommandLine := &clpb.CommandLine{
-		CommandLineLabel: "label",
-		Sections: []*clpb.CommandLineSection{
-			{
-				SectionLabel: "command",
-				SectionType: &clpb.CommandLineSection_OptionList{
-					OptionList: &clpb.OptionList{
-						Option: []*clpb.Option{
-							envSecretOption,
-							envAllowedByDefaultOption,
-							envAllowedByUserOption,
-							envAllowedByUserPatternOption,
-							remoteHeaderOption,
-							remoteCacheHeaderOption,
-							nonEnvURLOption,
+	redactor.RedactMetadata(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_Started{Started: buildStarted},
+	})
+
+	for _, testCase := range []struct {
+		name          string
+		inputValue    string
+		expectedValue string
+	}{
+		{"client_env", "SECRET=codez", "SECRET=<REDACTED>"},
+		{"client_env", "GITHUB_REPOSITORY=https://username:password@github.com/foo/bar", "GITHUB_REPOSITORY=https://github.com/foo/bar"},
+		{"client_env", "FOO_ALLOWED=bar", "FOO_ALLOWED=bar"},
+		{"client_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
+		{"remote_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
+		{"remote_cache_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
+		{"some_url", "https://token@foo.com", "https://foo.com"},
+	} {
+		option := &clpb.Option{
+			OptionName:   testCase.name,
+			OptionValue:  testCase.inputValue,
+			CombinedForm: fmt.Sprintf("--%s=%s", testCase.name, testCase.inputValue),
+		}
+		commandLine := &clpb.CommandLine{
+			CommandLineLabel: "label",
+			Sections: []*clpb.CommandLineSection{
+				{
+					SectionLabel: "command",
+					SectionType: &clpb.CommandLineSection_OptionList{
+						OptionList: &clpb.OptionList{
+							Option: []*clpb.Option{option},
 						},
 					},
 				},
 			},
-		},
-	}
+		}
 
-	redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_Started{Started: buildStarted},
-	})
-	redactor.RedactMetadata(&bespb.BuildEvent{
-		Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: structuredCommandLine},
-	})
+		redactor.RedactMetadata(&bespb.BuildEvent{
+			Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: commandLine},
+		})
 
-	for _, assertion := range []struct {
-		option        *clpb.Option
-		key           string
-		expectedValue string
-	}{
-		{envSecretOption, "client_env", "SECRET=<REDACTED>"},
-		{envAllowedByDefaultOption, "client_env", "GITHUB_REPOSITORY=https://github.com/foo/bar"},
-		{envAllowedByUserOption, "client_env", "FOO_ALLOWED=bar"},
-		{envAllowedByUserPatternOption, "client_env", "BAR_ALLOWED_PATTERN_XYZ=qux"},
-		{remoteHeaderOption, "remote_header", "<REDACTED>"},
-		{remoteCacheHeaderOption, "remote_cache_header", "<REDACTED>"},
-		{nonEnvURLOption, "some_url", "https://foo.com"},
-	} {
-		assert.Equal(t, assertion.expectedValue, assertion.option.OptionValue)
-		assert.Equal(t, fmt.Sprintf("--%s=%s", assertion.key, assertion.expectedValue), assertion.option.CombinedForm)
+		assert.Equal(t, testCase.expectedValue, option.OptionValue)
+		assert.Equal(t, fmt.Sprintf("--%s=%s", testCase.name, testCase.expectedValue), option.CombinedForm)
 	}
 }
 
