@@ -57,9 +57,9 @@ func generateWebhookID() (string, error) {
 }
 
 func instanceName(wd *interfaces.WebhookData) string {
-	// Note, we use a unique remote instance per repo URL, so that forked repos
-	// don't share the same cache as the base repo.
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(wd.RepoURL)))
+	// Note, we use a unique remote instance per repo URL, so that the cache as
+	// well as runners aren't shared across repos.
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(wd.PushedRepoURL)))
 }
 
 type workflowService struct {
@@ -311,8 +311,17 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if req.GetCommitSha() == "" {
 		return nil, status.InvalidArgumentError("Missing commit_sha")
 	}
-	if req.GetBranch() == "" {
-		return nil, status.InvalidArgumentError("Missing branch")
+	if req.GetPushedRepoUrl() == "" {
+		return nil, status.InvalidArgumentError("Missing pushed_repo_url")
+	}
+	if req.GetPushedBranch() == "" {
+		return nil, status.InvalidArgumentError("Missing pushed_branch")
+	}
+	if req.GetTargetRepoUrl() == "" {
+		return nil, status.InvalidArgumentError("Missing target_repo_url")
+	}
+	if req.GetTargetBranch() == "" {
+		return nil, status.InvalidArgumentError("Missing target_branch")
 	}
 	if req.GetActionName() == "" {
 		return nil, status.InvalidArgumentError("Missing action_name")
@@ -348,11 +357,12 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	// workflow execution, since there are no webhooks involved when executing a
 	// workflow manually.
 	wd := &interfaces.WebhookData{
-		PushedBranch: req.GetBranch(),
-		TargetBranch: req.GetBranch(),
-		RepoURL:      wf.RepoURL,
-		SHA:          req.GetCommitSha(),
-		IsTrusted:    true,
+		PushedRepoURL: req.GetPushedRepoUrl(),
+		PushedBranch:  req.GetPushedBranch(),
+		TargetRepoURL: req.GetTargetRepoUrl(),
+		TargetBranch:  req.GetTargetBranch(),
+		SHA:           req.GetCommitSha(),
+		IsTrusted:     req.GetTargetRepoUrl() == req.GetPushedRepoUrl(),
 	}
 	invocationUUID, err := guuid.NewRandom()
 	if err != nil {
@@ -550,12 +560,13 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"./" + runnerBinName,
 			"--bes_backend=" + conf.GetAppEventsAPIURL(),
 			"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
-			"--repo_url=" + wd.RepoURL,
 			"--commit_sha=" + wd.SHA,
-			"--branch=" + wd.PushedBranch,
+			"--pushed_repo_url=" + wd.PushedRepoURL,
+			"--pushed_branch=" + wd.PushedBranch,
+			"--target_repo_url=" + wd.TargetRepoURL,
+			"--target_branch=" + wd.TargetBranch,
 			"--workflow_id=" + wf.WorkflowID,
 			"--trigger_event=" + wd.EventName,
-			"--trigger_branch=" + wd.TargetBranch,
 			"--bazel_command=" + ws.ciRunnerBazelCommand(),
 			"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		}, extraArgs...),
