@@ -63,7 +63,7 @@ func runBBServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.
 
 // Makes a local temp repo and returns the repo URL.
 func makeTempRepo(t *testing.T) string {
-	path, _ := testgit.MakeTempRepo(t, nil /*=contents*/)
+	path, _ := testgit.MakeTempRepo(t, map[string]string{"README": "# Test repo"})
 	return fmt.Sprintf("file://%s", path)
 }
 

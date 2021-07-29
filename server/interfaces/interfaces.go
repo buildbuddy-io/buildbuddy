@@ -299,44 +299,32 @@ type WebhookData struct {
 	// EventName is the canonical event name that this data was created from.
 	EventName string
 
-	// PushedBranch is the name of the branch in the source repo that triggered the
-	// event when pushed. Note that for forks, the branch here references the branch
-	// name in the forked repository, and the TargetBranch references the branch in
-	// the main repository into which the PushedBranch will be merged.
-	//
-	// Some examples:
-	//
-	// Push main branch (e.g. `git push main` or merge a PR into main):
-	// - RepoURL: "https://github.com/example/example.git"
-	// - PushedBranch: "main" // in "example/example" repo
-	// - TargetBranch: "main" // in "example/example" repo
-	//
-	// Push to a PR branch within the mainline repo:
-	// - RepoURL: "https://github.com/example/example.git"
-	// - PushedBranch: "foo-feature" // in "example/example" repo
-	// - TargetBranch: "main"        // in "example/example" repo
-	//
-	// Push to a PR branch within a forked repo:
-	// - RepoURL: "https://github.com/some-user/example-fork.git"
-	// - PushedBranch: "bar-feature" // in "some-user/example-fork" repo
-	// - TargetBranch: "main"        // in "example/example" repo
+	// PushedRepoURL is the canonical URL of the repo containing the pushed branch.
+	// For pull request events from forked repos, this is the URL of the forked repo.
+	// For other events, this is the same as the TargetRepoURL.
+	// Ex: "https://github.com/some-untrusted-user/acme-fork"
+	PushedRepoURL string
+
+	// PushedBranch is the name of the branch in the pushed repo that triggered
+	// the event when pushed.
+	// Ex: "my-cool-feature"
 	PushedBranch string
+
+	// SHA is the commit SHA of the branch that was pushed.
+	SHA string
+
+	// TargetRepoURL is the canonical URL of the repo containing the TargetBranch.
+	// This should always match the canonicalized URL of the repo linked to the
+	// workflow.
+	// Ex: "https://github.com/acme-inc/acme"
+	TargetRepoURL string
 
 	// TargetBranch is the branch associated with the event that determines whether
 	// actions should be triggered. For push events this is the branch that was
 	// pushed to. For pull_request events this is the base branch into which the PR
 	// branch is being merged.
+	// Ex: "main"
 	TargetBranch string
-
-	// RepoURL points to the canonical repo URL containing the sources needed for the
-	// workflow.
-	//
-	// This will be different from the workflow repo if the workflow is run on a forked
-	// repo as part of a pull request.
-	RepoURL string
-
-	// SHA of the commit to be checked out.
-	SHA string
 
 	// IsTrusted returns whether the committed code came from a trusted actor.
 	// For example, this will be true for members of the organization that owns

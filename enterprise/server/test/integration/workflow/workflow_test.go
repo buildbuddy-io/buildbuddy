@@ -122,7 +122,10 @@ func TestCreateAndExecute(t *testing.T) {
 		WorkflowId:     createResp.GetId(),
 		ActionName:     "Test action",
 		CommitSha:      commitSHA,
-		Branch:         "master",
+		PushedRepoUrl:  repoURL,
+		PushedBranch:   "master",
+		TargetRepoUrl:  repoURL,
+		TargetBranch:   "master",
 	}
 
 	execResp, err := bb.ExecuteWorkflow(ctx, execReq)
