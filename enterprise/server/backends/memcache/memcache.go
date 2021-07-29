@@ -87,6 +87,17 @@ func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
 	}
 }
 
+func (c *Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
+	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
+		newPrefix += "/"
+	}
+	return &Cache{
+		prefix: newPrefix,
+		mc:     c.mc,
+	}, nil
+}
+
 func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	key, err := c.key(ctx, d)
 	if err != nil {

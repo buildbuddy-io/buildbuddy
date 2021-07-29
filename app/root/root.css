@@ -21,6 +21,12 @@ body {
   word-break: break-word;
 }
 
+button,
+input,
+select {
+  font-family: inherit;
+}
+
 #app {
   display: flex;
   flex-direction: column;
@@ -254,6 +260,10 @@ button {
   margin-right: 8px;
 }
 
+.shelf .details img.buildkite {
+  opacity: 1;
+}
+
 .shelf .details img:first-of-type {
   margin-left: 0;
 }
@@ -417,6 +427,10 @@ button {
   border-left: 6px solid #8bc34a;
 }
 
+.card.card-skipped {
+  border-left: 6px solid #673ab7;
+}
+
 .card.card-failure {
   border-left: 6px solid #f44336;
 }
@@ -444,9 +458,21 @@ button {
 }
 
 .card.dark {
-  /* background-color: #263238; */
   background-color: #222;
   color: #fff;
+}
+
+.card.light-terminal {
+  background-color: #fafafa;
+  box-shadow: 0px 1px 4px rgba(0, 0, 0, 0.2), 0px 1px 6px rgba(0, 0, 0, 0.1);
+}
+
+.card.light-terminal:hover {
+  box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.2), 0px 1px 10px rgba(0, 0, 0, 0.1);
+}
+
+.dense .card.light-terminal:hover {
+  box-shadow: none;
 }
 
 .grid-block:hover .card-hover {
@@ -507,8 +533,9 @@ button {
 .card .more {
   margin-top: 16px;
   font-weight: 600;
-  color: #aaa;
+  color: #263238;
   cursor: pointer;
+  user-select: none;
 }
 
 .card-suggestion-message {
@@ -850,7 +877,6 @@ code .comment {
   color: #fff;
   font-size: 16px;
   font-weight: 600;
-  font-family: inherit;
   border: 0;
   border-radius: 8px;
   margin-bottom: 32px;
@@ -871,7 +897,6 @@ code .comment {
   color: #fff;
   font-size: 16px;
   font-weight: 600;
-  font-family: inherit;
   border: 0;
   border-radius: 8px;
   margin-bottom: 32px;
@@ -898,6 +923,18 @@ code .comment {
   font-size: 14px;
   font-family: "Source Code Pro", monospace;
   color: #fff;
+}
+
+.light-terminal .terminal-line {
+  color: #222;
+}
+
+.light-terminal .terminal-line:hover {
+  background-color: #fafafa;
+}
+
+.light-terminal .react-lazylog {
+  background-color: #fafafa;
 }
 
 .inline-code {
@@ -1031,15 +1068,26 @@ code .comment {
 .artifact-name {
   font-weight: 600;
   text-decoration: underline;
-  margin-left: 32px;
-  margin-top: 4px;
   cursor: pointer;
   display: block;
 }
 
 .artifact-section-title {
-  color: #aaa;
+  color: #757575;
   margin-top: 8px;
+}
+
+.artifacts .artifact-list {
+  padding-left: 32px;
+}
+
+.artifacts :is(.artifact-name, .artifact-hidden-count) {
+  margin-top: 4px;
+}
+
+.artifacts .artifact-hidden-count {
+  color: #bdbdbd;
+  margin-bottom: 8px;
 }
 
 .stat-cards {
@@ -1317,6 +1365,24 @@ code .comment {
 .login .on-prem a {
   text-decoration: underline;
   color: rgba(255, 255, 255, 0.7);
+}
+
+.login .sso {
+  margin-top: 32px;
+  text-align: center;
+}
+
+.login .sso input {
+  border-radius: 8px;
+}
+
+.login .sso button {
+  margin-left: 4px;
+  opacity: 0.8;
+}
+
+.login .sso button.active {
+  opacity: 1;
 }
 
 @media (min-width: 801px) {
@@ -1608,8 +1674,17 @@ code .comment {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.light-terminal .terminal::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+}
+
 .terminal ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.light-terminal .terminal ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
   border-radius: 3px;
 }
 

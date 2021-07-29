@@ -20,15 +20,15 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/trace/jaeger"
+	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
-	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/metadata"
 
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
 
 const (
@@ -119,7 +119,7 @@ func Configure(configurator *config.Configurator, healthChecker interfaces.Healt
 		return status.InvalidArgumentErrorf("Tracing enabled but Jaeger collector endpoint is not set.")
 	}
 
-	traceExporter, err := jaeger.NewRawExporter(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(collector)))
+	traceExporter, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(collector)))
 	if err != nil {
 		log.Warningf("Could not initialize Cloud Trace exporter: %s", err)
 		return nil
@@ -157,7 +157,7 @@ func Configure(configurator *config.Configurator, healthChecker interfaces.Healt
 		resource.WithAttributes(resourceAttrs...))
 	if err != nil {
 		log.Warningf("Could not automatically detect resource information for tracing: %s", err)
-		res = resource.NewWithAttributes(resourceAttrs...)
+		res = resource.NewSchemaless(resourceAttrs...)
 	}
 
 	tp := sdktrace.NewTracerProvider(
@@ -245,7 +245,7 @@ func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // StartSpan starts a new span named after the calling function.
-func StartSpan(ctx context.Context, opts ...trace.SpanOption) (context.Context, trace.Span) {
+func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	ctx, span := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, "unknown_go_function", opts...)
 	if !span.IsRecording() {
 		return ctx, span

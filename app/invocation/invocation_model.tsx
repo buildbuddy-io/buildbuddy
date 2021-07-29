@@ -10,6 +10,8 @@ import format from "../format/format";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 
+export const InvocationStatus = invocation.Invocation.InvocationStatus;
+
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
   cacheStats: cache.CacheStats[] = [];
@@ -18,6 +20,7 @@ export default class InvocationModel {
   targets: build_event_stream.BuildEvent[] = [];
   succeeded: build_event_stream.BuildEvent[] = [];
   failed: build_event_stream.BuildEvent[] = [];
+  skipped: build_event_stream.BuildEvent[] = [];
   fetchEventURLs: string[] = [];
   succeededTest: build_event_stream.BuildEvent[] = [];
   failedTest: build_event_stream.BuildEvent[] = [];
@@ -93,7 +96,8 @@ export default class InvocationModel {
         if (buildEvent.started) model.started = buildEvent.started as build_event_stream.BuildStarted;
         if (buildEvent.expanded) model.expanded = buildEvent as build_event_stream.BuildEvent;
         if (buildEvent.finished) model.finished = buildEvent.finished as build_event_stream.BuildFinished;
-        if (buildEvent.aborted) model.aborted = buildEvent as build_event_stream.BuildEvent;
+        if (buildEvent.aborted && buildEvent.aborted.reason.toString().toLowerCase() != "skipped")
+          model.aborted = buildEvent as build_event_stream.BuildEvent;
         if (buildEvent.buildToolLogs) model.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         if (buildEvent.workspaceStatus) {
           model.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
@@ -123,8 +127,7 @@ export default class InvocationModel {
           model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         }
         if (buildEvent.unstructuredCommandLine) {
-          model.unstructuredCommandLine =
-            buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+          model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
         }
       }
     }
@@ -146,6 +149,10 @@ export default class InvocationModel {
         model.succeeded.push(buildEvent as build_event_stream.BuildEvent);
       } else {
         model.failed.push(buildEvent as build_event_stream.BuildEvent);
+      }
+
+      if (buildEvent.aborted && buildEvent.aborted.reason.toString().toLowerCase() == "skipped") {
+        model.skipped.push(buildEvent as build_event_stream.BuildEvent);
       }
     }
 
@@ -222,7 +229,9 @@ export default class InvocationModel {
   }
 
   getCache() {
-    if (!this.optionsMap.get("remote_cache")) return "Cache off";
+    if (!this.optionsMap.get("remote_cache") && !this.optionsMap.get("remote_executor")) {
+      return "Cache off";
+    }
     if (this.optionsMap.get("remote_upload_local_results") == "0") {
       return "Log upload on";
     }
@@ -264,6 +273,10 @@ export default class InvocationModel {
   }
 
   getBuildkiteUrl() {
+    if (this.clientEnvMap.get("BUILDKITE_BUILD_URL") && this.clientEnvMap.get("BUILDKITE_JOB_ID")) {
+      return `${this.clientEnvMap.get("BUILDKITE_BUILD_URL")}#${this.clientEnvMap.get("BUILDKITE_JOB_ID")}`;
+    }
+
     return this.clientEnvMap.get("BUILDKITE_BUILD_URL");
   }
 
@@ -374,31 +387,35 @@ export default class InvocationModel {
   }
 
   getStatus() {
-    let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
-    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
-      return "Disconnected";
+    const invocation = this.invocations[0];
+    if (!invocation) return "";
+
+    switch (invocation.invocationStatus) {
+      case InvocationStatus.COMPLETE_INVOCATION_STATUS:
+        return invocation.success ? "Succeeded" : "Failed";
+      case InvocationStatus.PARTIAL_INVOCATION_STATUS:
+        return "In progress...";
+      case InvocationStatus.DISCONNECTED_INVOCATION_STATUS:
+        return "Disconnected";
+      default:
+        return "";
     }
-    if (!this.started) {
-      return "Not started";
-    }
-    if (!this.finished) {
-      return "In progress...";
-    }
-    return this.finished.exitCode.code == 0 ? "Succeeded" : "Failed";
   }
 
   getStatusClass() {
-    let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
-    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
-      return "disconnected";
+    const invocation = this.invocations[0];
+    if (!invocation) return "";
+
+    switch (invocation.invocationStatus) {
+      case InvocationStatus.COMPLETE_INVOCATION_STATUS:
+        return invocation.success ? "success" : "failure";
+      case InvocationStatus.PARTIAL_INVOCATION_STATUS:
+        return "in-progress";
+      case InvocationStatus.DISCONNECTED_INVOCATION_STATUS:
+        return "disconnected";
+      default:
+        return "";
     }
-    if (!this.started) {
-      return "neutral";
-    }
-    if (!this.finished) {
-      return "in-progress";
-    }
-    return this.finished.exitCode.code == 0 ? "success" : "failure";
   }
 
   getFaviconType() {
@@ -482,5 +499,9 @@ export default class InvocationModel {
 
   isQuery() {
     return this.getCommand() == "query";
+  }
+
+  hasChunkedEventLogs(): boolean {
+    return this.invocations[0]?.hasChunkedEventLogs || false;
   }
 }

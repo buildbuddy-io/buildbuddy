@@ -23,16 +23,14 @@ import TrendsComponent from "../trends/trends";
 // TODO(siggisim): lazy load all components that make sense more gracefully.
 
 import ExecutorsComponent from "../executors/executors";
-
-const denseModeKey = "VIEW_MODE";
-const denseModeValue = "DENSE";
+import UserPreferences from "../../../app/preferences/preferences";
 
 interface State {
   user: User;
   hash: string;
   path: string;
   search: URLSearchParams;
-  denseMode: boolean;
+  preferences: UserPreferences;
   loading: boolean;
 }
 
@@ -43,7 +41,7 @@ export default class EnterpriseRootComponent extends React.Component {
     hash: window.location.hash,
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
-    denseMode: window.localStorage.getItem(denseModeKey) == denseModeValue || false,
+    preferences: new UserPreferences(this.handlePreferencesChanged.bind(this)),
   };
 
   componentWillMount() {
@@ -83,10 +81,8 @@ export default class EnterpriseRootComponent extends React.Component {
     capabilities.didNavigateToPath();
   }
 
-  handleToggleDenseClicked() {
-    let newDenseMode = !this.state.denseMode;
-    this.setState({ ...this.state, denseMode: newDenseMode });
-    window.localStorage.setItem(denseModeKey, newDenseMode ? denseModeValue : "");
+  handlePreferencesChanged() {
+    this.setState({ ...this.state, preferences: this.state.preferences });
   }
 
   handleOrganizationClicked() {
@@ -135,15 +131,14 @@ export default class EnterpriseRootComponent extends React.Component {
 
     return (
       <div
-        className={`root ${this.state.denseMode ? "dense" : ""} ${sidebar || code ? "left" : ""} ${
+        className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${sidebar || code ? "left" : ""} ${
           login ? "dark" : ""
         }`}>
         {menu && (
           <MenuComponent
             user={this.state.user}
             showHamburger={!this.state.user && !!invocationId}
-            denseModeEnabled={this.state.denseMode}
-            handleDenseModeToggled={this.handleToggleDenseClicked.bind(this)}>
+            preferences={this.state.preferences}>
             <div onClick={this.handleOrganizationClicked.bind(this)}>{this.state.user?.selectedGroupName()}</div>
           </MenuComponent>
         )}
@@ -166,7 +161,7 @@ export default class EnterpriseRootComponent extends React.Component {
                       key={invocationId}
                       hash={this.state.hash}
                       search={this.state.search}
-                      denseMode={this.state.denseMode}
+                      preferences={this.state.preferences}
                     />
                   </Suspense>
                 )}
@@ -181,10 +176,20 @@ export default class EnterpriseRootComponent extends React.Component {
                   </Suspense>
                 )}
                 {historyUser && (
-                  <HistoryComponent user={this.state.user} username={historyUser} hash={this.state.hash} />
+                  <HistoryComponent
+                    user={this.state.user}
+                    username={historyUser}
+                    hash={this.state.hash}
+                    search={this.state.search}
+                  />
                 )}
                 {historyHost && (
-                  <HistoryComponent user={this.state.user} hostname={historyHost} hash={this.state.hash} />
+                  <HistoryComponent
+                    user={this.state.user}
+                    hostname={historyHost}
+                    hash={this.state.hash}
+                    search={this.state.search}
+                  />
                 )}
                 {historyRepo && (
                   <HistoryComponent
@@ -195,14 +200,18 @@ export default class EnterpriseRootComponent extends React.Component {
                   />
                 )}
                 {historyCommit && (
-                  <HistoryComponent user={this.state.user} commit={historyCommit} hash={this.state.hash} />
+                  <HistoryComponent
+                    user={this.state.user}
+                    commit={historyCommit}
+                    hash={this.state.hash}
+                    search={this.state.search}
+                  />
                 )}
                 {settings && (
                   <Suspense fallback={<div className="loading" />}>
                     <SettingsComponent
                       user={this.state.user}
-                      denseModeEnabled={this.state.denseMode}
-                      handleDenseModeToggled={this.handleToggleDenseClicked.bind(this)}
+                      preferences={this.state.preferences}
                       path={this.state.path}
                     />
                   </Suspense>
@@ -222,7 +231,7 @@ export default class EnterpriseRootComponent extends React.Component {
                 {executors && (
                   <ExecutorsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
                 )}
-                {home && <HistoryComponent user={this.state.user} hash={this.state.hash} />}
+                {home && <HistoryComponent user={this.state.user} hash={this.state.hash} search={this.state.search} />}
                 {workflows && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                 {code && (
                   <Suspense fallback={<div className="loading" />}>

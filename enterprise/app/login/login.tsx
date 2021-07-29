@@ -3,26 +3,44 @@ import authService from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
+import Input from "../../../app/components/input/input";
+import Button from "../../../app/components/button/button";
+import alertService from "../../../app/alert/alert_service";
 
 interface State {
   orgName?: string;
+  showSSO: boolean;
+  ssoSlug: string;
 }
 
 export default class LoginComponent extends React.Component<{}, State> {
-  state: State = {};
+  state: State = {
+    showSSO: false,
+    ssoSlug: this.getUrlSlug(),
+  };
 
-  private isJoiningOrg = window.location.pathname.startsWith("/join/");
+  ssoSlugButton = React.createRef<HTMLInputElement>();
 
   componentDidMount() {
-    if (this.isJoiningOrg) {
+    if (this.isJoiningOrg()) {
       this.fetchOrgName();
     }
   }
 
+  isJoiningOrg() {
+    return window.location.pathname.startsWith("/join/");
+  }
+
+  getUrlSlug() {
+    if (this.isJoiningOrg()) {
+      return window.location.pathname.split("/").pop();
+    }
+    return "";
+  }
+
   async fetchOrgName() {
-    const urlIdentifier = window.location.pathname.split("/").pop();
     try {
-      const { name } = await rpcService.service.getGroup({ urlIdentifier });
+      const { name } = await rpcService.service.getGroup({ urlIdentifier: this.getUrlSlug() });
       this.setState({ orgName: name });
     } catch (e) {
       // TODO: handle 404 errors better
@@ -38,12 +56,34 @@ export default class LoginComponent extends React.Component<{}, State> {
     authService.login();
   }
 
+  handleSSOClicked(event: any) {
+    event.preventDefault();
+
+    if (!this.state.showSSO && !this.state.ssoSlug) {
+      this.setState({ showSSO: true }, () => {
+        this.ssoSlugButton.current.focus();
+      });
+      return;
+    }
+
+    if (!this.state.ssoSlug) {
+      alertService.error("Enter your organization's url slug to continue");
+      return;
+    }
+
+    authService.login(this.state.ssoSlug);
+  }
+
   handleSetupClicked() {
     router.navigateTo("/docs/setup");
   }
 
+  onChange(e: React.ChangeEvent<HTMLInputElement>) {
+    this.setState({ ssoSlug: e.target.value });
+  }
+
   render() {
-    if (this.isJoiningOrg && !this.state.orgName) {
+    if (this.isJoiningOrg() && !this.state.orgName) {
       return (
         <div className="login">
           <div className="loading" />
@@ -55,16 +95,16 @@ export default class LoginComponent extends React.Component<{}, State> {
       <div className="login">
         <div className="container">
           <div className="login-box">
-            <div className={`login-hero ${!this.isJoiningOrg ? "hide-on-mobile" : ""}`}>
+            <div className={`login-hero ${!this.isJoiningOrg() ? "hide-on-mobile" : ""}`}>
               <div className="login-hero-title">
-                {!this.isJoiningOrg && (
+                {!this.isJoiningOrg() && (
                   <>
                     Faster Builds.
                     <br />
                     Happier Developers.
                   </>
                 )}
-                {this.isJoiningOrg && this.state.orgName && <>Join {this.state.orgName} on BuildBuddy</>}
+                {this.isJoiningOrg() && this.state.orgName && <>Join {this.state.orgName} on BuildBuddy</>}
               </div>
               <div className="hide-on-mobile">
                 BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to
@@ -80,10 +120,25 @@ export default class LoginComponent extends React.Component<{}, State> {
             </div>
           </div>
           <div className="on-prem">
-            Want to run BuildBuddy on-prem?{" "}
-            <a href="https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/on-prem.md">Click here</a> for
+            Want to run BuildBuddy on-prem? <a href="https://docs.buildbuddy.io/docs/on-prem">Click here</a> for
             instructions.
           </div>
+          {capabilities.sso && (
+            <form className="sso" onSubmit={this.handleSSOClicked.bind(this)}>
+              {this.state.showSSO && (
+                <>
+                  <Input
+                    name="ssoSlug"
+                    value={this.state.ssoSlug}
+                    onChange={this.onChange.bind(this)}
+                    placeholder="my-team-slug"
+                    ref={this.ssoSlugButton}
+                  />
+                </>
+              )}
+              <Button className={this.state.ssoSlug ? "active" : ""}>Log in with SSO</Button>
+            </form>
+          )}
         </div>
       </div>
     );

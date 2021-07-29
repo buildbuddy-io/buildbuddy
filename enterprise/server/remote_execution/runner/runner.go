@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/containerd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -67,9 +68,6 @@ const (
 	// Memory usage estimate multiplier for pooled runners, relative to the
 	// default memory estimate for execution tasks.
 	runnerMemUsageEstimateMultiplierBytes = 6.5
-	// The maximum fraction of allocated RAM that can be allocated to pooled
-	// runners.
-	runnerAllocatedRAMFractionBytes = 0.8
 
 	// Label assigned to runner pool request count metric for fulfilled requests.
 	hitStatusLabel = "hit"
@@ -318,22 +316,6 @@ func NewPool(env environment.Env) (*Pool, error) {
 	return p, nil
 }
 
-func (p *Pool) props() *platform.ExecutorProperties {
-	return &platform.ExecutorProperties{
-		ContainerType: p.containerType(),
-	}
-}
-
-func (p *Pool) containerType() platform.ContainerType {
-	if p.dockerClient != nil {
-		return platform.DockerContainerType
-	}
-	if p.containerdSocket != "" {
-		return platform.ContainerdContainerType
-	}
-	return platform.BareContainerType
-}
-
 func (p *Pool) shuttingDown() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -472,19 +454,24 @@ func (p *Pool) hostBuildRoot() string {
 	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 }
 
+func (p *Pool) dockerOptions() *docker.DockerOptions {
+	cfg := p.env.GetConfigurator().GetExecutorConfig()
+	return &docker.DockerOptions{
+		Socket:                  cfg.DockerSocket,
+		EnableSiblingContainers: cfg.DockerSiblingContainers,
+		UseHostNetwork:          cfg.DockerNetHost,
+		DockerMountMode:         cfg.DockerMountMode,
+		InheritUserIDs:          cfg.DockerInheritUserIDs,
+	}
+}
+
 func (p *Pool) WarmupDefaultImage() {
 	if p.dockerClient == nil {
 		return
 	}
-	cfg := p.env.GetConfigurator().GetExecutorConfig()
 	c := docker.NewDockerContainer(
 		p.dockerClient, platform.DefaultContainerImage, p.hostBuildRoot(),
-		&docker.DockerOptions{
-			Socket:                  cfg.DockerSocket,
-			EnableSiblingContainers: cfg.DockerSiblingContainers,
-			UseHostNetwork:          cfg.DockerNetHost,
-			DockerMountMode:         cfg.DockerMountMode,
-		},
+		p.dockerOptions(),
 	)
 	start := time.Now()
 	// Give the pull up to 1 minute to succeed and 1 minute to create a warm up container.
@@ -529,16 +516,16 @@ func (p *Pool) WarmupDefaultImage() {
 // The returned runner is considered "active" and will be killed if the
 // executor is shut down.
 func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunner, error) {
-	props, err := platform.ParseProperties(task.GetCommand().GetPlatform(), p.props())
-	if err != nil {
+	executorProps := platform.GetExecutorProperties(p.env.GetConfigurator().GetExecutorConfig())
+	props := platform.ParseProperties(task.GetCommand().GetPlatform())
+	// TODO: This mutates the task; find a cleaner way to do this.
+	if err := platform.ApplyOverrides(executorProps, props, task.GetCommand()); err != nil {
 		return nil, err
 	}
-	// TODO: This mutates the task; find a cleaner way to do this.
-	platform.ApplyOverrides(p.env, props, task.GetCommand())
 
-	user, err := auth.UserFromTrustedJWT(ctx)
 	// PermissionDenied and Unimplemented both imply that this is an
 	// anonymous execution, so ignore those.
+	user, err := auth.UserFromTrustedJWT(ctx)
 	if err != nil && !status.IsPermissionDeniedError(err) && !status.IsUnimplementedError(err) {
 		return nil, err
 	}
@@ -578,7 +565,10 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	if err != nil {
 		return nil, err
 	}
-	ctr := p.newContainer(props)
+	ctr, err := p.newContainer(ctx, props)
+	if err != nil {
+		return nil, err
+	}
 	r := &CommandRunner{
 		ACL:                ACLForUser(user),
 		PlatformProperties: props,
@@ -591,27 +581,33 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	return r, nil
 }
 
-func (p *Pool) newContainer(props *platform.Properties) container.CommandContainer {
+func (p *Pool) newContainer(ctx context.Context, props *platform.Properties) (container.CommandContainer, error) {
 	var ctr container.CommandContainer
-	switch p.containerType() {
+	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:
-		cfg := p.env.GetConfigurator().GetExecutorConfig()
+		opts := p.dockerOptions()
+		opts.ForceRoot = props.DockerForceRoot
 		ctr = docker.NewDockerContainer(
-			p.dockerClient, props.ContainerImage, p.hostBuildRoot(),
-			&docker.DockerOptions{
-				Socket:                  cfg.DockerSocket,
-				EnableSiblingContainers: cfg.DockerSiblingContainers,
-				UseHostNetwork:          cfg.DockerNetHost,
-				DockerMountMode:         cfg.DockerMountMode,
-				ForceRoot:               props.DockerForceRoot,
-			},
-		)
+			p.dockerClient, props.ContainerImage, p.hostBuildRoot(), opts)
 	case platform.ContainerdContainerType:
 		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
+	case platform.FirecrackerContainerType:
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         props.ContainerImage,
+			ActionWorkingDirectory: p.hostBuildRoot(),
+			NumCPUs:                1,
+			MemSizeMB:              2500,
+			EnableNetworking:       false,
+		}
+		c, err := firecracker.NewContainer(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		ctr = c
 	default:
 		ctr = bare.NewBareCommandContainer()
 	}
-	return container.NewTracedCommandContainer(ctr)
+	return container.NewTracedCommandContainer(ctr), nil
 }
 
 // query specifies a set of search criteria for runners within a pool.
@@ -718,9 +714,20 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 	p.runners = nil
 	p.mu.Unlock()
 
-	errs := []error{}
+	removeResults := make(chan error)
 	for _, r := range runners {
-		if err := r.RemoveWithTimeout(ctx); err != nil {
+		// Remove runners in parallel, since each deletion is blocked on uploads
+		// to finish (if applicable). A single runner that takes a long time to
+		// upload its outputs should not block other runners from working on
+		// workspace removal in the meantime.
+		r := r
+		go func() {
+			removeResults <- r.RemoveWithTimeout(ctx)
+		}()
+	}
+	errs := make([]error, 0)
+	for range runners {
+		if err := <-removeResults; err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -787,7 +794,7 @@ func (p *Pool) TryRecycle(r *CommandRunner, finishedCleanly bool) {
 }
 
 func (p *Pool) setLimits(cfg *config.RunnerPoolConfig) {
-	totalRAMBytes := int64(float64(resources.GetAllocatedRAMBytes()) * runnerAllocatedRAMFractionBytes)
+	totalRAMBytes := int64(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio)
 	estimatedRAMBytes := int64(float64(tasksize.DefaultMemEstimate) * runnerMemUsageEstimateMultiplierBytes)
 
 	count := cfg.MaxRunnerCount

@@ -39,7 +39,7 @@ type CacheProxy struct {
 	server                *grpc.Server
 	clients               map[string]*dcClient
 	heartbeatCallback     func(peer string)
-	hintedHandoffCallback func(ctx context.Context, peer, prefix string, d *repb.Digest)
+	hintedHandoffCallback func(ctx context.Context, peer, prefix string, isolation *dcpb.Isolation, d *repb.Digest)
 	listenAddr            string
 }
 
@@ -97,7 +97,7 @@ func (c *CacheProxy) SetHeartbeatCallbackFunc(fn func(peer string)) {
 	c.heartbeatCallback = fn
 }
 
-func (c *CacheProxy) SetHintedHandoffCallbackFunc(fn func(ctx context.Context, peer, prefix string, d *repb.Digest)) {
+func (c *CacheProxy) SetHintedHandoffCallbackFunc(fn func(ctx context.Context, peer, prefix string, isolation *dcpb.Isolation, d *repb.Digest)) {
 	c.hintedHandoffCallback = fn
 }
 
@@ -138,6 +138,28 @@ func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.Distribut
 	return client, nil
 }
 
+func ProtoCacheTypeToCacheType(cacheType dcpb.Isolation_CacheType) (interfaces.CacheType, error) {
+	switch cacheType {
+	case dcpb.Isolation_CAS_CACHE:
+		return interfaces.CASCacheType, nil
+	case dcpb.Isolation_ACTION_CACHE:
+		return interfaces.ActionCacheType, nil
+	default:
+		return interfaces.UnknownCacheType, status.InvalidArgumentErrorf("unknown cache type %v", cacheType)
+	}
+}
+
+func (c *CacheProxy) getCache(ctx context.Context, prefix string, isolation *dcpb.Isolation) (interfaces.Cache, error) {
+	if isolation.GetCacheType() != dcpb.Isolation_UNKNOWN_TYPE {
+		ct, err := ProtoCacheTypeToCacheType(isolation.GetCacheType())
+		if err != nil {
+			return nil, err
+		}
+		return c.cache.WithIsolation(ctx, ct, isolation.GetRemoteInstanceName())
+	}
+	return c.cache.WithPrefix(prefix), nil
+}
+
 func (c *CacheProxy) ContainsMulti(ctx context.Context, req *dcpb.ContainsMultiRequest) (*dcpb.ContainsMultiResponse, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, c.env)
 	if err != nil {
@@ -147,7 +169,11 @@ func (c *CacheProxy) ContainsMulti(ctx context.Context, req *dcpb.ContainsMultiR
 	for _, k := range req.GetKey() {
 		digests = append(digests, digestFromKey(k))
 	}
-	found, err := c.cache.WithPrefix(req.GetPrefix()).ContainsMulti(ctx, digests)
+	cache, err := c.getCache(ctx, req.GetPrefix(), req.GetIsolation())
+	if err != nil {
+		return nil, err
+	}
+	found, err := cache.ContainsMulti(ctx, digests)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +196,11 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 	for _, k := range req.GetKey() {
 		digests = append(digests, digestFromKey(k))
 	}
-	found, err := c.cache.WithPrefix(req.GetPrefix()).GetMulti(ctx, digests)
+	cache, err := c.getCache(ctx, req.GetPrefix(), req.GetIsolation())
+	if err != nil {
+		return nil, err
+	}
+	found, err := cache.GetMulti(ctx, digests)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +235,11 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	}
 	up, _ := prefix.UserPrefixFromContext(ctx)
 	d := digestFromKey(req.GetKey())
-	reader, err := c.cache.WithPrefix(req.GetPrefix()).Reader(ctx, d, req.GetOffset())
+	cache, err := c.getCache(ctx, req.GetPrefix(), req.GetIsolation())
+	if err != nil {
+		return err
+	}
+	reader, err := cache.Reader(ctx, d, req.GetOffset())
 	if err != nil {
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", req.GetPrefix()+d.GetHash(), up, err)
 		return err
@@ -222,9 +256,9 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	return err
 }
 
-func (c *CacheProxy) callHintedHandoffCB(ctx context.Context, peer, prefix string, d *repb.Digest) {
+func (c *CacheProxy) callHintedHandoffCB(ctx context.Context, peer, prefix string, isolation *dcpb.Isolation, d *repb.Digest) {
 	if c.hintedHandoffCallback != nil {
-		c.hintedHandoffCallback(ctx, peer, prefix, d)
+		c.hintedHandoffCallback(ctx, peer, prefix, isolation, d)
 	}
 }
 
@@ -247,14 +281,18 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		}
 		if writeCloser == nil {
 			d := digestFromKey(req.GetKey())
-			wc, err := c.cache.WithPrefix(req.GetPrefix()).Writer(ctx, d)
+			cache, err := c.getCache(ctx, req.GetPrefix(), req.GetIsolation())
+			if err != nil {
+				return err
+			}
+			wc, err := cache.Writer(ctx, d)
 			if err != nil {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", req.GetPrefix()+d.GetHash(), up, err)
 				return err
 			}
 			writeCloser = wc
 			if req.GetHandoffPeer() != "" {
-				c.callHintedHandoffCB(ctx, req.GetHandoffPeer(), req.GetPrefix(), d)
+				c.callHintedHandoffCB(ctx, req.GetHandoffPeer(), req.GetPrefix(), req.GetIsolation(), d)
 			}
 		}
 		n, err := writeCloser.Write(req.Data)
@@ -285,8 +323,8 @@ func (c *CacheProxy) Heartbeat(ctx context.Context, req *dcpb.HeartbeatRequest) 
 	return &dcpb.HeartbeatResponse{}, nil
 }
 
-func (c *CacheProxy) RemoteContains(ctx context.Context, peer, prefix string, d *repb.Digest) (bool, error) {
-	multiRsp, err := c.RemoteContainsMulti(ctx, peer, prefix, []*repb.Digest{d})
+func (c *CacheProxy) RemoteContains(ctx context.Context, peer, prefix string, isolation *dcpb.Isolation, d *repb.Digest) (bool, error) {
+	multiRsp, err := c.RemoteContainsMulti(ctx, peer, prefix, isolation, []*repb.Digest{d})
 	if err != nil {
 		return false, err
 	}
@@ -294,9 +332,10 @@ func (c *CacheProxy) RemoteContains(ctx context.Context, peer, prefix string, d 
 	return ok && exists, nil
 }
 
-func (c *CacheProxy) RemoteContainsMulti(ctx context.Context, peer, prefix string, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
+func (c *CacheProxy) RemoteContainsMulti(ctx context.Context, peer, prefix string, isolation *dcpb.Isolation, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
 	req := &dcpb.ContainsMultiRequest{
-		Prefix: prefix,
+		Isolation: isolation,
+		Prefix:    prefix,
 	}
 	hashDigests := make(map[string]*repb.Digest, len(digests))
 	for _, d := range digests {
@@ -322,9 +361,10 @@ func (c *CacheProxy) RemoteContainsMulti(ctx context.Context, peer, prefix strin
 	return resultMap, nil
 }
 
-func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer, prefix string, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer, prefix string, isolation *dcpb.Isolation, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	req := &dcpb.GetMultiRequest{
-		Prefix: prefix,
+		Isolation: isolation,
+		Prefix:    prefix,
 	}
 	hashDigests := make(map[string]*repb.Digest, len(digests))
 	for _, d := range digests {
@@ -350,11 +390,12 @@ func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer, prefix string, di
 	return resultMap, nil
 }
 
-func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, isolation *dcpb.Isolation, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	req := &dcpb.ReadRequest{
-		Prefix: prefix,
-		Key:    digestToKey(d),
-		Offset: offset,
+		Isolation: isolation,
+		Prefix:    prefix,
+		Key:       digestToKey(d),
+		Offset:    offset,
 	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
@@ -398,6 +439,7 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, d *r
 type streamWriteCloser struct {
 	stream        dcpb.DistributedCache_WriteClient
 	key           *dcpb.Key
+	isolation     *dcpb.Isolation
 	prefix        string
 	handoffPeer   string
 	bytesUploaded int64
@@ -405,6 +447,7 @@ type streamWriteCloser struct {
 
 func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 	req := &dcpb.WriteRequest{
+		Isolation:   wc.isolation,
 		Prefix:      wc.prefix,
 		Key:         wc.key,
 		Data:        data,
@@ -417,6 +460,7 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 
 func (wc *streamWriteCloser) Close() error {
 	req := &dcpb.WriteRequest{
+		Isolation:   wc.isolation,
 		Prefix:      wc.prefix,
 		Key:         wc.key,
 		FinishWrite: true,
@@ -428,14 +472,14 @@ func (wc *streamWriteCloser) Close() error {
 	return err
 }
 
-func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer, prefix string, d *repb.Digest) (io.WriteCloser, error) {
+func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer, prefix string, isolation *dcpb.Isolation, d *repb.Digest) (io.WriteCloser, error) {
 	// Stopping a write mid-stream is difficult because Write streams are
 	// unidirectional. The server can close the stream early, but this does
 	// not necessarily save the client any work. So, to attempt to reduce
 	// duplicate writes, we call Contains before writing a new digest, and
 	// if it already exists, we'll return a devnull writecloser so no bytes
 	// are transmitted over the network.
-	if alreadyExists, err := c.RemoteContains(ctx, peer, prefix, d); err == nil && alreadyExists {
+	if alreadyExists, err := c.RemoteContains(ctx, peer, prefix, isolation, d); err == nil && alreadyExists {
 		log.Debugf("Skipping duplicate write of %q", d.GetHash())
 		return devnull.NewWriteCloser(), nil
 	}
@@ -448,6 +492,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer, prefix
 		return nil, err
 	}
 	wc := &streamWriteCloser{
+		isolation:     isolation,
 		prefix:        prefix,
 		handoffPeer:   handoffPeer,
 		key:           digestToKey(d),

@@ -1,14 +1,12 @@
 import React from "react";
 
-import { invocation } from "../../proto/invocation_ts_proto";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { TerminalComponent } from "../terminal/terminal";
-import rpcService from "../service/rpc_service";
 
 interface Props {
   title: string;
   subtitle: string;
   contents: string;
+  dark: boolean;
 }
 
 export default class TargetLogCardComponent extends React.Component {
@@ -16,14 +14,14 @@ export default class TargetLogCardComponent extends React.Component {
 
   render() {
     return (
-      <div className={`card dark`}>
-        <img className="icon" src="/image/log-circle-light.svg" />
+      <div className={`card ${this.props.dark ? "dark" : "light-terminal"}`}>
+        <img className="icon" src={this.props.dark ? "/image/log-circle-light.svg" : "/image/log-circle.svg"} />
         <div className="content">
           <div className="title">{this.props.title}</div>
           <div className="test-subtitle">{this.props.subtitle}</div>
           {this.props.contents && (
             <div className="test-log">
-              <TerminalComponent value={this.props.contents} />
+              <TerminalComponent value={this.props.contents} lightTheme={!this.props.dark} />
             </div>
           )}
         </div>

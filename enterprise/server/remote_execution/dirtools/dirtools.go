@@ -61,7 +61,7 @@ type DirHelper struct {
 	outputDirs []string
 }
 
-func NewDirHelper(rootDir string, command *repb.Command) *DirHelper {
+func NewDirHelper(rootDir string, outputFiles, outputDirectories []string) *DirHelper {
 	c := &DirHelper{
 		rootDir:      rootDir,
 		prefixes:     make(map[string]struct{}, 0),
@@ -70,12 +70,12 @@ func NewDirHelper(rootDir string, command *repb.Command) *DirHelper {
 		outputDirs:   make([]string, 0),
 	}
 
-	for _, outputFile := range command.GetOutputFiles() {
+	for _, outputFile := range outputFiles {
 		fullPath := filepath.Join(c.rootDir, outputFile)
 		c.fullPaths[fullPath] = struct{}{}
 		c.dirsToCreate = append(c.dirsToCreate, filepath.Dir(fullPath))
 	}
-	for _, outputDir := range command.GetOutputDirectories() {
+	for _, outputDir := range outputDirectories {
 		fullPath := filepath.Join(c.rootDir, outputDir)
 		c.fullPaths[fullPath] = struct{}{}
 		c.dirsToCreate = append(c.dirsToCreate, fullPath)

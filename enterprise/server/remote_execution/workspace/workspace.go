@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -22,6 +23,12 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+var (
+	// WorkspaceMarkedForRemovalError is returned from workspace operations
+	// whenever Remove was previously called on the workspace.
+	WorkspaceMarkedForRemovalError = status.UnavailableError("workspace is marked for removal")
+)
+
 // Workspace holds the working tree for an action and keeps track of
 // inputs and outputs.
 type Workspace struct {
@@ -35,6 +42,9 @@ type Workspace struct {
 	// TODO: Make sure these files are written read-only
 	// to make sure this map accurately reflects the filesystem.
 	Inputs map[string]*repb.Digest
+
+	mu       sync.Mutex // protects(removing)
+	removing bool
 }
 
 type Opts struct {
@@ -70,7 +80,8 @@ func (ws *Workspace) Path() string {
 func (ws *Workspace) SetTask(task *repb.ExecutionTask) {
 	log.Debugf("Assigned task %s to workspace at %q", task.GetExecutionId(), ws.rootDir)
 	ws.task = task
-	ws.dirHelper = dirtools.NewDirHelper(ws.Path(), task.GetCommand())
+	cmd := task.GetCommand()
+	ws.dirHelper = dirtools.NewDirHelper(ws.Path(), cmd.GetOutputFiles(), cmd.GetOutputDirectories())
 }
 
 // CommandWorkingDirectory returns the absolute path to the working directory
@@ -90,11 +101,23 @@ func (ws *Workspace) CommandWorkingDirectory() string {
 // CreateOutputDirs creates the required output directories for the current
 // action.
 func (ws *Workspace) CreateOutputDirs() error {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	if ws.removing {
+		return WorkspaceMarkedForRemovalError
+	}
+
 	return ws.dirHelper.CreateOutputDirs()
 }
 
 // DownloadInputs downloads any missing inputs for the current action.
 func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo, error) {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	if ws.removing {
+		return nil, WorkspaceMarkedForRemovalError
+	}
+
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -122,6 +145,12 @@ func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo
 // UploadOutputs uploads any outputs created by the last executed command
 // as well as the command's stdout and stderr.
 func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) (*dirtools.TransferInfo, error) {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	if ws.removing {
+		return nil, WorkspaceMarkedForRemovalError
+	}
+
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -164,17 +193,35 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 }
 
 func (ws *Workspace) Remove() error {
+	ws.mu.Lock()
+	ws.removing = true
+	// No need to keep the lock held while removing; other operations will
+	// immediately fail since we've set the removing bit.
+	ws.mu.Unlock()
+
 	return os.RemoveAll(ws.rootDir)
 }
 
 // Size computes the current workspace size in bytes.
 func (ws *Workspace) DiskUsageBytes() (int64, error) {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	if ws.removing {
+		return 0, WorkspaceMarkedForRemovalError
+	}
+
 	return disk.DirSize(ws.Path())
 }
 
 // Clean removes files and directories in the workspace which are not preserved
 // according to the workspace options.
 func (ws *Workspace) Clean() error {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	if ws.removing {
+		return WorkspaceMarkedForRemovalError
+	}
+
 	// No task is currently assigned; nothing to clean.
 	if ws.task == nil {
 		return nil

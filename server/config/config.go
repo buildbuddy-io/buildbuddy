@@ -56,6 +56,7 @@ type appConfig struct {
 	TraceFractionOverrides    []string `yaml:"trace_fraction_overrides" usage:"Tracing fraction override based on name in format name=fraction."`
 	IgnoreForcedTracingHeader bool     `yaml:"ignore_forced_tracing_header" usage:"If set, we will not honor the forced tracing header."`
 	CodeEditorEnabled         bool     `yaml:"code_editor_enabled" usage:"If set, code editor functionality will be enabled."`
+	GlobalFilterEnabled       bool     `yaml:"global_filter_enabled" usage:"If set, the global filter will be enabled in the UI."`
 }
 
 type buildEventProxy struct {
@@ -84,7 +85,7 @@ type storageConfig struct {
 
 type DiskCachePartition struct {
 	ID           string `yaml:"id" json:"id" usage:"The ID of the partition."`
-	MaxSizeBytes int64  `yaml:"max_size" json:"max_size_bytes" usage:"Maximum size of the partition."`
+	MaxSizeBytes int64  `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
 }
 
 type DiskCachePartitionMapping struct {
@@ -109,6 +110,14 @@ type AwsS3Config struct {
 	Region             string `yaml:"region" usage:"The AWS region."`
 	Bucket             string `yaml:"bucket" usage:"The AWS S3 bucket to store files in."`
 	CredentialsProfile string `yaml:"credentials_profile" usage:"A custom credentials profile to use."`
+
+	// Useful for configuring MinIO: https://docs.min.io/docs/how-to-use-aws-sdk-for-go-with-minio-server.html
+	Endpoint                string `yaml:"endpoint" usage:"The AWS endpoint to use, useful for configuring the use of MinIO."`
+	StaticCredentialsID     string `yaml:"static_credentials_id" usage:"Static credentials ID to use, useful for configuring the use of MinIO."`
+	StaticCredentialsSecret string `yaml:"static_credentials_secret" usage:"Static credentials secret to use, useful for configuring the use of MinIO."`
+	StaticCredentialsToken  string `yaml:"static_credentials_token" usage:"Static credentials token to use, useful for configuring the use of MinIO."`
+	DisableSSL              bool   `yaml:"disable_ssl" usage:"Disables the use of SSL, useful for configuring the use of MinIO."`
+	S3ForcePathStyle        bool   `yaml:"s3_force_path_style" usage:"Force path style urls for objects, useful for configuring the use of MinIO."`
 }
 
 type integrationsConfig struct {
@@ -131,6 +140,14 @@ type S3CacheConfig struct {
 	Bucket             string `yaml:"bucket" usage:"The AWS S3 bucket to store files in."`
 	CredentialsProfile string `yaml:"credentials_profile" usage:"A custom credentials profile to use."`
 	TTLDays            int64  `yaml:"ttl_days" usage:"The period after which cache files should be TTLd. Disabled if 0."`
+
+	// Useful for configuring MinIO: https://docs.min.io/docs/how-to-use-aws-sdk-for-go-with-minio-server.html
+	Endpoint                string `yaml:"endpoint" usage:"The AWS endpoint to use, useful for configuring the use of MinIO."`
+	StaticCredentialsID     string `yaml:"static_credentials_id" usage:"Static credentials ID to use, useful for configuring the use of MinIO."`
+	StaticCredentialsSecret string `yaml:"static_credentials_secret" usage:"Static credentials secret to use, useful for configuring the use of MinIO."`
+	StaticCredentialsToken  string `yaml:"static_credentials_token" usage:"Static credentials token to use, useful for configuring the use of MinIO."`
+	DisableSSL              bool   `yaml:"disable_ssl" usage:"Disables the use of SSL, useful for configuring the use of MinIO."`
+	S3ForcePathStyle        bool   `yaml:"s3_force_path_style" usage:"Force path style urls for objects, useful for configuring the use of MinIO."`
 }
 
 type DistributedCacheConfig struct {
@@ -170,6 +187,7 @@ type OauthProvider struct {
 	IssuerURL    string `yaml:"issuer_url" usage:"The issuer URL of this OIDC Provider."`
 	ClientID     string `yaml:"client_id" usage:"The oauth client ID."`
 	ClientSecret string `yaml:"client_secret" usage:"The oauth client secret."`
+	Slug         string `yaml:"slug" usage:"The slug of this OIDC Provider."`
 }
 
 type SSLConfig struct {
@@ -198,6 +216,7 @@ type RemoteExecutionConfig struct {
 	RequireExecutorAuthorization  bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
 	EnableUserOwnedExecutors      bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
 	EnableExecutorKeyCreation     bool   `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
+	UseRedisForExecutorPools      bool   `yaml:"use_redis_for_executor_pools" usage:"If enabled, executor pool information will be read from Redis instead of database."`
 }
 
 type ExecutorConfig struct {
@@ -213,7 +232,10 @@ type ExecutorConfig struct {
 	RunnerPool              RunnerPoolConfig `yaml:"runner_pool"`
 	DockerNetHost           bool             `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
 	DockerSiblingContainers bool             `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
+	DockerInheritUserIDs    bool             `yaml:"docker_inherit_user_ids" usage:"If set, run docker containers using the same uid and gid as the user running the executor process."`
 	DefaultXCodeVersion     string           `yaml:"default_xcode_version" usage:"Sets the default XCode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
+	EnableBareRunner        bool             `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
+	EnableFirecracker       bool             `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
 }
 
 func (c *ExecutorConfig) GetAppTarget() string {
@@ -517,6 +539,10 @@ func (c *Configurator) GetDefaultToDenseMode() bool {
 
 func (c *Configurator) GetCodeEditorEnabled() bool {
 	return c.gc.App.CodeEditorEnabled
+}
+
+func (c *Configurator) GetAppGlobalFilterEnabled() bool {
+	return c.gc.App.GlobalFilterEnabled
 }
 
 func (c *Configurator) GetGRPCMaxRecvMsgSizeBytes() int {

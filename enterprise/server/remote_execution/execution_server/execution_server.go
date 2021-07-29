@@ -219,7 +219,10 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 // N.B. This should only be used if the calling code has already ensured the
 // action is valid and may be returned.
 func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, d *digest.InstanceNameDigest) (*repb.ActionResult, error) {
-	cache := namespace.ActionCache(s.cache, d.GetInstanceName())
+	cache, err := namespace.ActionCache(ctx, s.cache, d.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
 	data, err := cache.Get(ctx, d.Digest)
 	if err != nil {
 		if status.IsNotFoundError(err) {
@@ -239,7 +242,10 @@ func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *diges
 	if err != nil {
 		return nil, err
 	}
-	casCache := namespace.CASCache(s.cache, d.GetInstanceName())
+	casCache, err := namespace.CASCache(ctx, s.cache, d.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
 	if err := action_cache_server.ValidateActionResult(ctx, casCache, actionResult); err != nil {
 		return nil, err
 	}

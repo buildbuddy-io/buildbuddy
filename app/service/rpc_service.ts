@@ -15,9 +15,11 @@ class RpcService {
   }
 
   getBytestreamFileUrl(filename: string, bytestreamURL: string, invocationId: string): string {
-    return `/file/download?filename=${encodeURI(filename)}&bytestream_url=${encodeURIComponent(
-      bytestreamURL
-    )}&invocation_id=${invocationId}`;
+    return `/file/download?${new URLSearchParams({
+      filename,
+      bytestream_url: bytestreamURL,
+      invocation_id: invocationId,
+    })}`;
   }
 
   downloadBytestreamFile(filename: string, bytestreamURL: string, invocationId: string) {
@@ -30,7 +32,10 @@ class RpcService {
     responseType?: "arraybuffer" | "json" | "text" | undefined
   ) {
     return this.fetchFile(
-      `/file/download?bytestream_url=${encodeURIComponent(bytestreamURL)}&invocation_id=${invocationId}`,
+      `/file/download?${new URLSearchParams({
+        bytestream_url: bytestreamURL,
+        invocation_id: invocationId,
+      })}`,
       responseType || ""
     );
   }

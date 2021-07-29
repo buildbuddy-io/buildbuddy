@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -38,7 +39,8 @@ const (
 	// check the cache size.
 	janitorCheckPeriod = 100 * time.Millisecond
 
-	defaultPartitionID = "default"
+	defaultPartitionID       = "default"
+	PartitionDirectoryPrefix = "PT"
 )
 
 // DiskCache stores data on disk as files.
@@ -62,7 +64,7 @@ func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSize
 			if pc.ID == "" {
 				return nil, status.InvalidArgumentError("Non-default partition %q must have a valid ID")
 			}
-			rootDir = filepath.Join(rootDir, pc.ID)
+			rootDir = filepath.Join(rootDir, PartitionDirectoryPrefix+pc.ID)
 		}
 
 		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes)
@@ -80,6 +82,7 @@ func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSize
 			return nil, err
 		}
 		defaultPartition = p
+		partitions[defaultPartitionID] = p
 	}
 
 	c := &DiskCache{
@@ -107,14 +110,14 @@ func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
 	}
 }
 
-func (c *DiskCache) WithRemoteInstanceName(ctx context.Context, remoteInstanceName string) (interfaces.Cache, error) {
+func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string) (*partition, error) {
 	auth := c.env.GetAuthenticator()
 	if auth == nil {
-		return c, nil
+		return c.partition, nil
 	}
 	user, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
-		return c, nil
+		return c.partition, nil
 	}
 	for _, m := range c.partitionMappings {
 		if m.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, m.Prefix) {
@@ -122,16 +125,30 @@ func (c *DiskCache) WithRemoteInstanceName(ctx context.Context, remoteInstanceNa
 			if !ok {
 				return nil, status.NotFoundErrorf("Mapping to unknown partition %q", m.PartitionID)
 			}
-			return &DiskCache{
-				env:               c.env,
-				prefix:            c.prefix,
-				partition:         p,
-				partitions:        c.partitions,
-				partitionMappings: c.partitionMappings,
-			}, nil
+			return p, nil
 		}
 	}
-	return c, nil
+	return c.partition, nil
+}
+
+func (c *DiskCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+	p, err := c.getPartition(ctx, remoteInstanceName)
+	if err != nil {
+		return nil, err
+	}
+
+	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
+	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
+		newPrefix += "/"
+	}
+
+	return &DiskCache{
+		env:               c.env,
+		prefix:            newPrefix,
+		partition:         p,
+		partitions:        c.partitions,
+		partitionMappings: c.partitionMappings,
+	}, nil
 }
 
 func (c *DiskCache) Statusz(ctx context.Context) string {
@@ -267,9 +284,9 @@ func (p *partition) Statusz(ctx context.Context) string {
 			oldestItem = time.Unix(0, fr.lastUse)
 		}
 	}
-	buf += fmt.Sprintf("<div>%d items (oldest: %s)</div>", p.lru.Len(), oldestItem.Format("Jan 02, 2006 15:04:05 PST"))
+	buf += fmt.Sprintf("<div>%d items (oldest: %s)</div>", p.lru.Len(), oldestItem.Format("Jan 02, 2006 15:04:05 MST"))
 	buf += fmt.Sprintf("<div>Mapped into LRU: %t</div>", p.diskIsMapped)
-	buf += fmt.Sprintf("<div>GC Last run: %s</div>", p.lastGCTime.Format("Jan 02, 2006 15:04:05 PST"))
+	buf += fmt.Sprintf("<div>GC Last run: %s</div>", p.lastGCTime.Format("Jan 02, 2006 15:04:05 MST"))
 	return buf
 }
 
@@ -324,21 +341,35 @@ func (p *partition) initializeCache() error {
 			if err != nil {
 				return err
 			}
-			if !d.IsDir() {
-				info, err := d.Info()
-				if err != nil {
-					return err
+			if d.IsDir() {
+				// Originally there was just one "partition" with its contents under the root directory.
+				// Additional partition directories live under the root as well and they need to be ignored
+				// when initializing the default partition.
+				if p.id == defaultPartitionID && strings.HasPrefix(d.Name(), PartitionDirectoryPrefix) {
+					return filepath.SkipDir
 				}
-				if info.Size() == 0 {
-					log.Debugf("Skipping 0 length file: %q", path)
+				return nil
+			}
+
+			info, err := d.Info()
+			if err != nil {
+				// File disappeared since the directory entries were read.
+				// We handle streamed writes by writing to a temp file & then renaming it so it's possible that
+				// we can come across some temp files that disappear.
+				if os.IsNotExist(err) {
 					return nil
 				}
-				records = append(records, makeRecord(path, info))
+				return err
 			}
+			if info.Size() == 0 {
+				log.Debugf("Skipping 0 length file: %q", path)
+				return nil
+			}
+			records = append(records, makeRecord(path, info))
 			return nil
 		}
 		if err := filepath.WalkDir(p.rootDir, walkFn); err != nil {
-			log.Warningf("Error walking disk directory: %s", err)
+			alert.UnexpectedEvent("disk_cache_error_walking_directory", "err: %s", err)
 		}
 
 		// Sort entries by ascending ATime.

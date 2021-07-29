@@ -52,9 +52,16 @@ func NewS3Cache(awsConfig *config.S3CacheConfig) (*S3Cache, error) {
 		creds = credentials.NewSharedCredentials("", awsConfig.CredentialsProfile)
 	}
 
+	if awsConfig.StaticCredentialsID != "" && awsConfig.StaticCredentialsSecret != "" {
+		creds = credentials.NewStaticCredentials(awsConfig.StaticCredentialsID, awsConfig.StaticCredentialsSecret, awsConfig.StaticCredentialsToken)
+	}
+
 	sess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(awsConfig.Region),
-		Credentials: creds,
+		Region:           aws.String(awsConfig.Region),
+		Credentials:      creds,
+		Endpoint:         aws.String(awsConfig.Endpoint),
+		DisableSSL:       aws.Bool(awsConfig.DisableSSL),
+		S3ForcePathStyle: aws.Bool(awsConfig.S3ForcePathStyle),
 	})
 	if err != nil {
 		return nil, err
@@ -191,6 +198,21 @@ func (s3c *S3Cache) WithPrefix(prefix string) interfaces.Cache {
 		ttlInDays:  s3c.ttlInDays,
 		prefix:     newPrefix,
 	}
+}
+
+func (s3c *S3Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
+	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
+		newPrefix += "/"
+	}
+	return &S3Cache{
+		s3:         s3c.s3,
+		bucket:     s3c.bucket,
+		downloader: s3c.downloader,
+		uploader:   s3c.uploader,
+		ttlInDays:  s3c.ttlInDays,
+		prefix:     newPrefix,
+	}, nil
 }
 
 func (s3c *S3Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {

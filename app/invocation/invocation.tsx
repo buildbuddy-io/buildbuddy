@@ -25,9 +25,10 @@ import RawLogsCardComponent from "./invocation_raw_logs_card";
 import InvocationTabsComponent, { getActiveTab } from "./invocation_tabs";
 import TimingCardComponent from "./invocation_timing_card";
 import ExecutionCardComponent from "./invocation_execution_card";
-import ActionCardComponent from "./invocation_action_card";
+import InvocationActionCardComponent from "./invocation_action_card";
 import TargetsComponent from "./invocation_targets";
 import { BuildBuddyError } from "../util/errors";
+import UserPreferences from "../preferences/preferences";
 
 interface State {
   loading: boolean;
@@ -42,7 +43,7 @@ interface Props {
   invocationId: string;
   hash: string;
   search: URLSearchParams;
-  denseMode: boolean;
+  preferences: UserPreferences;
 }
 
 const largePageSize = 100;
@@ -160,6 +161,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           actionEvents={actionEvents}
           user={this.props.user}
           targetLabel={targetLabel}
+          dark={!this.props.preferences.lightTerminalEnabled}
         />
       );
     }
@@ -167,14 +169,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
     const activeTab = getActiveTab({
       hash: this.props.hash,
       role: this.state.model.getRole(),
-      denseMode: this.props.denseMode,
+      denseMode: this.props.preferences.denseModeEnabled,
     });
     const isBazelInvocation = this.state.model.isBazelInvocation();
 
     return (
       <div className="invocation">
         <div className={`shelf nopadding-dense ${this.state.model.getStatusClass()}`}>
-          {this.props.denseMode ? (
+          {this.props.preferences.denseModeEnabled ? (
             <DenseInvocationOverviewComponent
               user={this.props.user}
               invocationId={this.props.invocationId}
@@ -191,12 +193,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
         <div className="container nopadding-dense">
           <InvocationTabsComponent
             hash={this.props.hash}
-            denseMode={this.props.denseMode}
+            denseMode={this.props.preferences.denseModeEnabled}
             role={this.state.model.getRole()}
           />
 
           {(activeTab === "targets" || activeTab === "artifacts") && (
-            <InvocationFilterComponent hash={activeTab} search={this.props.search} />
+            <InvocationFilterComponent hash={this.props.hash} search={this.props.search} />
           )}
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted.description && (
@@ -223,7 +225,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
           )}
 
           {(activeTab === "all" || activeTab == "log") && (
-            <BuildLogsCardComponent model={this.state.model} expanded={activeTab == "log"} />
+            <BuildLogsCardComponent
+              dark={!this.props.preferences.lightTerminalEnabled}
+              model={this.state.model}
+              expanded={activeTab == "log"}
+            />
           )}
 
           {isBazelInvocation && (activeTab === "all" || activeTab == "targets") && (
@@ -257,7 +263,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <ExecutionCardComponent model={this.state.model} inProgress={this.state.inProgress} />
           )}
 
-          {activeTab == "action" && <ActionCardComponent model={this.state.model} search={this.props.search} />}
+          {activeTab == "action" && (
+            <InvocationActionCardComponent model={this.state.model} search={this.props.search} />
+          )}
 
           {activeTab == "fetches" && <FetchCardComponent model={this.state.model} inProgress={this.state.inProgress} />}
 

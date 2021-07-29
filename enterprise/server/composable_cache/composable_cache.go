@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -36,6 +37,22 @@ func (c *composableCache) WithPrefix(prefix string) interfaces.Cache {
 		outer: c.outer.WithPrefix(prefix),
 		mode:  c.mode,
 	}
+}
+
+func (c *composableCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+	newInner, err := c.inner.WithIsolation(ctx, cacheType, remoteInstanceName)
+	if err != nil {
+		return nil, status.WrapError(err, "WithIsolation failed on inner cache")
+	}
+	newOuter, err := c.outer.WithIsolation(ctx, cacheType, remoteInstanceName)
+	if err != nil {
+		return nil, status.WrapError(err, "WithIsolation failed on outer cache")
+	}
+	return &composableCache{
+		inner: newInner,
+		outer: newOuter,
+		mode:  c.mode,
+	}, nil
 }
 
 func (c *composableCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {

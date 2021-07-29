@@ -8,6 +8,7 @@ import TargetLogCardComponent from "./target_log_card";
 interface Props {
   testResult: invocation.InvocationEvent;
   invocationId: string;
+  dark: boolean;
 }
 
 interface State {
@@ -137,6 +138,7 @@ export default class TargetTestDocumentCardComponent extends React.Component {
                       contents={child.innerHTML.replace("<![CDATA[", "").replace("--]]>", "")}
                       title={testSuite.getAttribute("name")}
                       subtitle={`${child.tagName}`}
+                      dark={this.props.dark}
                     />
                   ))}
               </div>

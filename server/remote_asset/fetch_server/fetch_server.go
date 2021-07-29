@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -91,20 +92,15 @@ func timeoutHTTPClient(ctx context.Context, protoTimeout *durationpb.Duration) *
 	}
 }
 
-func (p *FetchServer) getCache(instanceName string) interfaces.Cache {
-	c := p.cache
-	if instanceName != "" {
-		c = c.WithPrefix(instanceName)
-	}
-	return c
-}
-
 func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest) (*rapb.FetchBlobResponse, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, p.env)
 	if err != nil {
 		return nil, err
 	}
-	cache := p.getCache(req.GetInstanceName())
+	cache, err := namespace.CASCache(ctx, p.cache, req.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
 
 	for _, qualifier := range req.GetQualifiers() {
 		if qualifier.GetName() == checksumQualifier && strings.HasPrefix(qualifier.GetValue(), sha256Prefix) {

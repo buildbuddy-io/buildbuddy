@@ -20,9 +20,7 @@ export default class ExecutorCardComponent extends React.Component<Props> {
           </div>
           <div className="executor-section">
             <div className="executor-section-title">ID:</div>
-            <div>
-              {this.props.node.executorId}
-            </div>
+            <div>{this.props.node.executorId}</div>
           </div>
           <div className="executor-section">
             <div className="executor-section-title">Assignable Memory:</div>
@@ -33,16 +31,8 @@ export default class ExecutorCardComponent extends React.Component<Props> {
             <div>{this.props.node.assignableMilliCpu}</div>
           </div>
           <div className="executor-section">
-            <div className="executor-section-title">OS/Arch:</div>
-            <div>
-              {this.props.node.os}/{this.props.node.arch}
-            </div>
-          </div>
-          <div className="executor-section">
-            <div className="executor-section">
-              <div className="executor-section-title">Pool:</div>
-              <div>{this.props.node.pool || "Default Pool"}</div>
-            </div>
+            <div className="executor-section-title">Version:</div>
+            <div>{this.props.node.version}</div>
           </div>
         </div>
       </div>

@@ -529,13 +529,14 @@ func TestNonDefaultPartition(t *testing.T) {
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 
-		c, err := dc.WithRemoteInstanceName(ctx, "nonmatchingprefix/")
+		instanceName := "nonmatchingprefix"
+		c, err := dc.WithIsolation(ctx, interfaces.CASCacheType, instanceName)
 		require.NoError(t, err)
 		err = c.Set(ctx, d, buf)
 		require.NoError(t, err)
 
 		userRoot := filepath.Join(rootDir, testGroup2)
-		dPath := filepath.Join(userRoot, d.GetHash())
+		dPath := filepath.Join(userRoot, instanceName, d.GetHash())
 		require.FileExists(t, dPath)
 	}
 
@@ -548,13 +549,14 @@ func TestNonDefaultPartition(t *testing.T) {
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 
-		c, err := dc.WithRemoteInstanceName(ctx, otherPartitionPrefix+"hello")
+		instanceName := otherPartitionPrefix + "hello"
+		c, err := dc.WithIsolation(ctx, interfaces.CASCacheType, instanceName)
 		require.NoError(t, err)
 		err = c.Set(ctx, d, buf)
 		require.NoError(t, err)
 
-		userRoot := filepath.Join(rootDir, otherPartitionID, testGroup2)
-		dPath := filepath.Join(userRoot, d.GetHash())
+		userRoot := filepath.Join(rootDir, disk_cache.PartitionDirectoryPrefix+otherPartitionID, testGroup2)
+		dPath := filepath.Join(userRoot, instanceName, d.GetHash())
 		require.FileExists(t, dPath)
 	}
 }

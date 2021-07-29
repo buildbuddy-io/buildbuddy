@@ -5,45 +5,45 @@ on:
     branches:
       - master
     paths-ignore:
-      - 'docs/**'
-      - 'website/**'
+      - "docs/**"
+      - "website/**"
 
 jobs:
   update:
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, 'deps skip')"
-    
+
     steps:
-    - name: Checkout
-      uses: actions/checkout@v1
-      with:
-        repository: "buildbuddy-io/buildbuddy-internal"
-        ref: 'master'
-        token: ${{ secrets.BUILDBUDDY_APP_TOKEN }}
-    
-    - name: Update SHA
-      run: | 
-        cd ../buildbuddy-internal
-        sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" WORKSPACE
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: "buildbuddy-io/buildbuddy-internal"
+          ref: "master"
+          token: ${{ secrets.BUILDBUDDY_APP_TOKEN }}
 
-    - name: Commit
-      run: |
-        cd ../buildbuddy-internal
-        git config --local user.email ${{ github.event.head_commit.author.email }}
-        git config --local user.name ${{ github.event.head_commit.author.name }}
-        git add WORKSPACE
-        cat <<EOF > message.txt
-        🔄 ${{ github.event.head_commit.message }}
-        Update buildbuddy-io/buildbuddy commit SHA
+      - name: Update SHA
+        run: |
+          cd ../buildbuddy-internal
+          sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" WORKSPACE
 
-        🔗 ${{ github.event.head_commit.url }}
-        EOF
-        git commit -F message.txt -a
+      - name: Commit
+        run: |
+          cd ../buildbuddy-internal
+          git config --local user.email ${{ github.event.head_commit.author.email }}
+          git config --local user.name ${{ github.event.head_commit.author.name }}
+          git add WORKSPACE
+          cat <<EOF > message.txt
+          🔄 ${{ github.event.head_commit.message }}
+          Update buildbuddy-io/buildbuddy commit SHA
 
-    - name: Push changes
-      uses: ad-m/github-push-action@v0.6.0
-      with:
-        directory: ../buildbuddy-internal
-        repository: buildbuddy-io/buildbuddy-internal
-        github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
-        branch: master
+          🔗 ${{ github.event.head_commit.url }}
+          EOF
+          git commit -F message.txt -a
+
+      - name: Push changes
+        uses: ad-m/github-push-action@v0.6.0
+        with:
+          directory: ../buildbuddy-internal
+          repository: buildbuddy-io/buildbuddy-internal
+          github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+          branch: master

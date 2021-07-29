@@ -1,216 +1,221 @@
 module.exports = {
-  title: 'BuildBuddy',
-  tagline: 'BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to build and test software 10x faster.',
-  url: process.env.BLOG ? 'https://blog.buildbuddy.io' : 'https://docs.buildbuddy.io',
-  baseUrl: '/',
-  favicon: 'img/favicon_black.svg',
-  organizationName: 'buildbuddy-io',
-  projectName: 'buildbuddy',
+  title: "BuildBuddy",
+  tagline:
+    "BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to build and test software 10x faster.",
+  url: process.env.BLOG ? "https://blog.buildbuddy.io" : "https://docs.buildbuddy.io",
+  baseUrl: "/",
+  favicon: "img/favicon_black.svg",
+  organizationName: "buildbuddy-io",
+  projectName: "buildbuddy",
   themeConfig: {
     colorMode: {
       switchConfig: {
-        darkIcon: ' ',
-        lightIcon: ' ',
+        darkIcon: " ",
+        lightIcon: " ",
       },
     },
     prism: {
-      additionalLanguages: ['promql', 'protobuf'],
+      additionalLanguages: ["promql", "protobuf"],
     },
     navbar: {
       logo: {
-        alt: 'BuildBuddy Logo',
-        src: 'img/logo.svg',
-        srcDark: 'img/logo_white.svg',
-        target: '_self',
-        href: 'https://www.buildbuddy.io'
+        alt: "BuildBuddy Logo",
+        src: "img/logo.svg",
+        srcDark: "img/logo_white.svg",
+        target: "_self",
+        href: "https://www.buildbuddy.io",
       },
       items: [
         {
-          href: 'https://docs.buildbuddy.io/docs/introduction/',
-          activeBasePath: '/docs/',
-          label: 'Docs',
-          position: 'left',
+          href: "https://docs.buildbuddy.io/docs/introduction/",
+          activeBasePath: "/docs/",
+          label: "Docs",
+          position: "left",
         },
         {
-          href: 'https://buildbuddy.io/faq',
-          target: '_self',
-          label: 'FAQs',
-          position: 'left',
+          href: "https://buildbuddy.io/faq",
+          target: "_self",
+          label: "FAQs",
+          position: "left",
         },
         {
-          href: 'https://github.com/buildbuddy-io/buildbuddy',
-          target: '_self',
-          label: 'GitHub',
-          position: 'left',
+          href: "https://github.com/buildbuddy-io/buildbuddy",
+          target: "_self",
+          label: "GitHub",
+          position: "left",
         },
         {
-          href: 'https://buildbuddy.io/pricing',
-          target: '_self',
-          label: 'Pricing',
-          position: 'left',
+          href: "https://buildbuddy.io/pricing",
+          target: "_self",
+          label: "Pricing",
+          position: "left",
         },
         {
-          href: 'https://app.buildbuddy.io/',
-          target: '_self',
-          label: 'Login',
-          position: 'left',
+          href: "https://app.buildbuddy.io/",
+          target: "_self",
+          label: "Login",
+          position: "left",
         },
 
         {
-          href: 'https://app.buildbuddy.io/',
-          target: '_self',
-          label: 'Sign Up',
-          position: 'right',
-          class: 'sign-up'
+          href: "https://app.buildbuddy.io/",
+          target: "_self",
+          label: "Sign Up",
+          position: "right",
+          class: "sign-up",
         },
       ],
     },
     footer: {
-      style: 'dark',
+      style: "dark",
       links: [
         {
           items: [
             {
               html: `<a href="https://www.buildbuddy.io/"><img src="/img/logo_white.svg" class="footer-logo" /></a>`,
-            }
-
-          ],
-        },
-        {
-          title: 'Product',
-          items: [
-            {
-              label: 'Get Started',
-              href: 'https://app.buildbuddy.io/',
-              target: '_self',
-            },
-            {
-              label: 'Documentation',
-              href: 'https://docs.buildbuddy.io/docs/introduction/',
-              target: '_self',
-            },
-            {
-              label: 'Pricing',
-              href: 'https://www.buildbuddy.io/pricing',
-              target: '_self',
-            },
-            {
-              label: 'Login',
-              href: 'https://app.buildbuddy.io/',
-              target: '_self',
-            },
-            {
-              label: 'Privacy Policy',
-              href: 'https://www.buildbuddy.io/privacy',
-              target: '_self',
-            },
-            {
-              label: 'Terms of Service',
-              href: 'https://www.buildbuddy.io/terms',
-              target: '_self',
             },
           ],
         },
         {
-          title: 'Company',
+          title: "Product",
           items: [
             {
-              label: 'Blog',
-              href: 'https://blog.buildbuddy.io/blog/',
-              target: '_self',
+              label: "Get Started",
+              href: "https://app.buildbuddy.io/",
+              target: "_self",
             },
             {
-              label: 'Report an Issue',
-              href: 'https://github.com/buildbuddy-io/buildbuddy/issues/new',
+              label: "Documentation",
+              href: "https://docs.buildbuddy.io/docs/introduction/",
+              target: "_self",
             },
             {
-              label: 'Contact Us',
-              href: 'https://www.buildbuddy.io/contact',
-              target: '_self',
+              label: "Pricing",
+              href: "https://www.buildbuddy.io/pricing",
+              target: "_self",
             },
             {
-              label: 'Our Team',
-              href: 'https://www.buildbuddy.io/team',
-              target: '_self',
+              label: "Login",
+              href: "https://app.buildbuddy.io/",
+              target: "_self",
             },
             {
-              label: 'Careers',
-              href: 'https://www.buildbuddy.io/careers',
-              target: '_self',
+              label: "Privacy Policy",
+              href: "https://www.buildbuddy.io/privacy",
+              target: "_self",
+            },
+            {
+              label: "Terms of Service",
+              href: "https://www.buildbuddy.io/terms",
+              target: "_self",
             },
           ],
         },
         {
-          title: 'Security',
+          title: "Company",
           items: [
             {
-              label: 'Security Overview',
-              href: 'https://www.buildbuddy.io/security',
-              target: '_self',
+              label: "Blog",
+              href: "https://blog.buildbuddy.io/blog/",
+              target: "_self",
             },
             {
-              label: 'Security Updates',
-              href: 'https://www.buildbuddy.io/security-updates',
-              target: '_self',
+              label: "Report an Issue",
+              href: "https://github.com/buildbuddy-io/buildbuddy/issues/new",
             },
             {
-              label: 'Report a Vulnerability',
-              href: 'https://www.buildbuddy.io/security-vulnerability-report',
-              target: '_self',
+              label: "Contact Us",
+              href: "https://www.buildbuddy.io/contact",
+              target: "_self",
+            },
+            {
+              label: "Our Team",
+              href: "https://www.buildbuddy.io/team",
+              target: "_self",
+            },
+            {
+              label: "Careers",
+              href: "https://www.buildbuddy.io/careers",
+              target: "_self",
             },
           ],
         },
         {
-          title: 'Connect',
+          title: "Security",
           items: [
             {
-              label: 'Slack',
-              href: 'http://slack.buildbuddy.io/',
+              label: "Security Overview",
+              href: "https://www.buildbuddy.io/security",
+              target: "_self",
             },
             {
-              label: 'Twitter',
-              href: 'https://twitter.com/buildbuddy_io',
+              label: "Security Updates",
+              href: "https://www.buildbuddy.io/security-updates",
+              target: "_self",
             },
             {
-              label: 'LinkedIn',
-              href: 'http://linkedin.com/company/buildbuddy',
-            },
-            {
-              label: 'GitHub',
-              href: 'https://github.com/buildbuddy-io',
+              label: "Report a Vulnerability",
+              href: "https://www.buildbuddy.io/security-vulnerability-report",
+              target: "_self",
             },
           ],
         },
-        
+        {
+          title: "Connect",
+          items: [
+            {
+              label: "Slack",
+              href: "http://slack.buildbuddy.io/",
+            },
+            {
+              label: "Twitter",
+              href: "https://twitter.com/buildbuddy_io",
+            },
+            {
+              label: "LinkedIn",
+              href: "http://linkedin.com/company/buildbuddy",
+            },
+            {
+              label: "GitHub",
+              href: "https://github.com/buildbuddy-io",
+            },
+          ],
+        },
       ],
       copyright: `© ${new Date().getFullYear()} Iteration, Inc.`,
     },
   },
   presets: [
     [
-      '@docusaurus/preset-classic',
+      "@docusaurus/preset-classic",
       {
-        docs: (process.env.PROD && process.env.BLOG) ? { path: 'empty'} : {
-          path: '../docs',
-          sidebarPath: require.resolve('./sidebars.js'),
-          editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/docs/',
-        },
-        blog: (process.env.PROD && !process.env.BLOG) ? { path: 'empty'} : {
-          path: 'blog',
-          showReadingTime: true,
-          blogSidebarCount: 5,
-          editUrl: 'https://github.com/buildbuddy-io/buildbuddy/edit/master/website/',
-          blogPostComponent: '../theme/BlogPostPage',
-          blogListComponent: '../theme/BlogListPage',
-          blogTagsListComponent: '../theme/BlogTagsListPage',
-          blogTagsPostsComponent: '../theme/BlogTagsPostsPage',  
-        },
+        docs:
+          process.env.PROD && process.env.BLOG
+            ? { path: "empty" }
+            : {
+                path: "../docs",
+                sidebarPath: require.resolve("./sidebars.js"),
+                editUrl: "https://github.com/buildbuddy-io/buildbuddy/edit/master/docs/",
+              },
+        blog:
+          process.env.PROD && !process.env.BLOG
+            ? { path: "empty" }
+            : {
+                path: "blog",
+                showReadingTime: true,
+                blogSidebarCount: 5,
+                editUrl: "https://github.com/buildbuddy-io/buildbuddy/edit/master/website/",
+                blogPostComponent: "../theme/BlogPostPage",
+                blogListComponent: "../theme/BlogListPage",
+                blogTagsListComponent: "../theme/BlogTagsListPage",
+                blogTagsPostsComponent: "../theme/BlogTagsPostsPage",
+              },
         theme: {
           customCss: [
-            require.resolve('./src/css/footer.css'),
-            require.resolve('./src/css/general.css'),
-            require.resolve('./src/css/markdown.css'),
-            require.resolve('./src/css/nav.css'),
+            require.resolve("./src/css/footer.css"),
+            require.resolve("./src/css/general.css"),
+            require.resolve("./src/css/markdown.css"),
+            require.resolve("./src/css/nav.css"),
           ],
         },
       },
@@ -218,23 +223,32 @@ module.exports = {
   ],
   plugins: [
     [
-      '@docusaurus/plugin-client-redirects',
+      require.resolve("@cmfcmf/docusaurus-search-local"),
       {
-        redirects: process.env.BLOG ? [
-          {
-            to: '/blog',
-            from: ['/'],
-          },
-        ] : [
-          {
-            to: '/docs/introduction',
-            from: ['/'],
-          },
-          {
-            to: '/docs/introduction',
-            from: ['/docs'],
-          }
-        ],
+        indexDocs: true,
+        indexBlog: true,
+      },
+    ],
+    [
+      "@docusaurus/plugin-client-redirects",
+      {
+        redirects: process.env.BLOG
+          ? [
+              {
+                to: "/blog",
+                from: ["/"],
+              },
+            ]
+          : [
+              {
+                to: "/docs/introduction",
+                from: ["/"],
+              },
+              {
+                to: "/docs/introduction",
+                from: ["/docs"],
+              },
+            ],
       },
     ],
   ],

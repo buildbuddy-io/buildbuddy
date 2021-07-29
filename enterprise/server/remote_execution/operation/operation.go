@@ -66,7 +66,14 @@ func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *dige
 		if err != nil {
 			return status.InternalErrorf("Error updating state of %q: %s", taskID, err)
 		}
-		return stream.Send(op)
+
+		select {
+		case <-stream.Context().Done():
+			log.Warningf("Attempted state change on %q but context is done.", taskID)
+			return status.UnavailableErrorf("Context cancelled: %s", stream.Context().Err())
+		default:
+			return stream.Send(op)
+		}
 	}
 }
 
@@ -75,9 +82,16 @@ func GetFinishWithErrFunc(stream StreamLike, taskID string, adInstanceDigest *di
 		stage := repb.ExecutionStage_COMPLETED
 		if op, err := AssembleFailed(stage, taskID, adInstanceDigest, finalErr); err == nil {
 			log.Warningf("Failed action %q (returning err: %s via operation)", taskID, finalErr)
-			if err := stream.Send(op); err != nil {
-				log.Errorf("Error sending operation %+v on stream", op)
-				return err
+
+			select {
+			case <-stream.Context().Done():
+				log.Warningf("Attempted finish with err on %q but context is done.", taskID)
+				return status.UnavailableErrorf("Context cancelled: %s", stream.Context().Err())
+			default:
+				if err := stream.Send(op); err != nil {
+					log.Errorf("Error sending operation %+v on stream", op)
+					return err
+				}
 			}
 		}
 		return finalErr

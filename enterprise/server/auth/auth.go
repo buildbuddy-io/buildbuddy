@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -63,6 +64,7 @@ const (
 	// login.
 	authRedirectParam = "redirect_url"
 	authIssuerParam   = "issuer_url"
+	slugParam         = "slug"
 
 	// The name of the auth cookies used to authenticate the
 	// client.
@@ -205,6 +207,7 @@ func (t *userToken) GetSubID() string {
 }
 
 type authenticator interface {
+	getSlug() string
 	getIssuer() string
 	authCodeURL(state string, opts ...oauth2.AuthCodeOption) string
 	exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
@@ -217,6 +220,7 @@ type oidcAuthenticator struct {
 	oidcConfig   *oidc.Config
 	provider     *oidc.Provider
 	issuer       string
+	slug         string
 }
 
 func extractToken(issuer string, idToken *oidc.IDToken) (*userToken, error) {
@@ -231,6 +235,10 @@ func extractToken(issuer string, idToken *oidc.IDToken) (*userToken, error) {
 
 func (a *oidcAuthenticator) getIssuer() string {
 	return a.issuer
+}
+
+func (a *oidcAuthenticator) getSlug() string {
+	return a.slug
 }
 
 func (a *oidcAuthenticator) authCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
@@ -347,6 +355,7 @@ func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.Oa
 			Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
 		}
 		authenticators = append(authenticators, &oidcAuthenticator{
+			slug:         authConfig.Slug,
 			issuer:       authConfig.IssuerURL,
 			oauth2Config: oauth2Config,
 			oidcConfig:   oidcConfig,
@@ -404,7 +413,12 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAu
 		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
 	}
 
-	return newOpenIDAuthenticator(ctx, env, authConfigs)
+	a, err := newOpenIDAuthenticator(ctx, env, authConfigs)
+	if err != nil {
+		alert.UnexpectedEvent("authentication_configuration_failed", "Failed to configure authentication: %s", err)
+	}
+
+	return a, err
 }
 
 func sameHostname(urlStringA, urlStringB string) bool {
@@ -430,6 +444,15 @@ func (a *OpenIDAuthenticator) validateRedirectURL(redirectURL string) error {
 func (a *OpenIDAuthenticator) getAuthConfig(issuer string) authenticator {
 	for _, a := range a.authenticators {
 		if sameHostname(a.getIssuer(), issuer) {
+			return a
+		}
+	}
+	return nil
+}
+
+func (a *OpenIDAuthenticator) getAuthConfigForSlug(slug string) authenticator {
+	for _, a := range a.authenticators {
+		if strings.EqualFold(a.getSlug(), slug) {
 			return a
 		}
 	}
@@ -534,6 +557,10 @@ func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) string {
 }
 
 func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
+	if _, ok := ctx.Value(APIKeyHeader).(string); ok {
+		alert.UnexpectedEvent("overwrite_api_key", "Overwriting existing value of %q in context.", APIKeyHeader)
+	}
+	ctx = context.WithValue(ctx, APIKeyHeader, apiKey)
 	claims, err := a.claimsFromAPIKey(ctx, apiKey)
 	return authContextFromClaims(ctx, claims, err)
 }
@@ -759,6 +786,17 @@ func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	issuer := r.URL.Query().Get(authIssuerParam)
 	auth := a.getAuthConfig(issuer)
+
+	if slug := r.URL.Query().Get(slugParam); slug != "" {
+		auth = a.getAuthConfigForSlug(slug)
+		if auth == nil {
+			err := status.PermissionDeniedErrorf("No SSO config found for slug: %s", slug)
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+		issuer = auth.getIssuer()
+	}
+
 	if auth == nil {
 		err := status.PermissionDeniedErrorf("No config found for issuer: %s", issuer)
 		http.Error(w, err.Error(), http.StatusUnauthorized)

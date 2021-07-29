@@ -149,13 +149,14 @@ Then you'll need to add a `workspace_status.sh` file to the root of your workspa
 You can add custom links to the BuildBuddy overview page using the `BUILDBUDDY_LINKS` build metadata flag. These links must be comma separated, and in the form [link text](https://linkurl.com). Urls must begin with either `http://` or `https://`.
 
 Example:
+
 ```
 --build_metadata=BUILDBUDDY_LINKS="[Search Github](https://github.com/search),[GCP Dashboard](https://console.cloud.google.com/home/dashboard)"
 ```
 
 ## Environment variable redacting
 
-By default, all environment variables are redacted by BuildBuddy except for `USER`, `GITHUB_ACTOR`, `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_RUN_ID`, `BUILDKITE_BUILD_URL`, which are displayed in the BuildBuddy UI.
+By default, all environment variables are redacted by BuildBuddy except for `USER`, `GITHUB_ACTOR`, `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_RUN_ID`, `BUILDKITE_BUILD_URL`, `BUILDKITE_JOB_ID`, which are displayed in the BuildBuddy UI.
 
 Redacted environment variables are displayed in the BuildBuddy UI as `<REDACTED>`.
 
