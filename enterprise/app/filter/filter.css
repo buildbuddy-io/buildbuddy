@@ -1,16 +1,13 @@
 .global-filter {
   display: flex;
   transition: background-color 300ms;
-  border-bottom: 1px solid #eee;
+  padding: 4px;
+  border-radius: 8px;
 }
 
 .global-filter.container {
   padding-top: 16px;
   padding-bottom: 16px;
-}
-
-.global-filter.is-filtering {
-  background-color: #e0f7fa;
 }
 
 .global-filter .clear-filters-button,

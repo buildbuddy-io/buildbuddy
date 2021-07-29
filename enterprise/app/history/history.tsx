@@ -241,43 +241,46 @@ export default class HistoryComponent extends React.Component {
       <div className="history">
         <div className="shelf">
           <div className="container">
-            {!this.props.user?.isInDefaultGroup() && this.state.invocations.length > 0 && (
+            {!capabilities.globalFilter && !this.props.user?.isInDefaultGroup() && this.state.invocations.length > 0 && (
               <div
                 onClick={this.handleCreateOrgClicked.bind(this)}
                 className={`org-button ${!this.props.user?.selectedGroup?.ownedDomain && "clickable"}`}>
                 {this.props.user?.selectedGroup?.ownedDomain || "Create Organization"}
               </div>
             )}
-            <div className="breadcrumbs">
-              {this.props.user && this.props.user?.selectedGroupName() && (
-                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
-                  {this.props.user?.selectedGroupName()}
-                </span>
-              )}
-              {(this.props.username || this.props.hash == "#users") && (
-                <span onClick={this.handleUsersClicked.bind(this)} className="clickable">
-                  Users
-                </span>
-              )}
-              {(this.props.hostname || this.props.hash == "#hosts") && (
-                <span onClick={this.handleHostsClicked.bind(this)} className="clickable">
-                  Hosts
-                </span>
-              )}
-              {(this.props.repo || this.props.hash == "#repos") && (
-                <span onClick={this.handleReposClicked.bind(this)} className="clickable">
-                  Repos
-                </span>
-              )}
-              {(this.props.commit || this.props.hash == "#commits") && (
-                <span onClick={this.handleCommitsClicked.bind(this)} className="clickable">
-                  Commits
-                </span>
-              )}
-              {scope && <span>{scope}</span>}
-              {!this.props.username && !this.props.hostname && this.props.hash == "" && (
-                <>{this.isFilteredToWorkflows() ? <span>Workflow runs</span> : <span>Builds</span>}</>
-              )}
+            <div className="top-bar">
+              <div className="breadcrumbs">
+                {this.props.user && this.props.user?.selectedGroupName() && (
+                  <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                    {this.props.user?.selectedGroupName()}
+                  </span>
+                )}
+                {(this.props.username || this.props.hash == "#users") && (
+                  <span onClick={this.handleUsersClicked.bind(this)} className="clickable">
+                    Users
+                  </span>
+                )}
+                {(this.props.hostname || this.props.hash == "#hosts") && (
+                  <span onClick={this.handleHostsClicked.bind(this)} className="clickable">
+                    Hosts
+                  </span>
+                )}
+                {(this.props.repo || this.props.hash == "#repos") && (
+                  <span onClick={this.handleReposClicked.bind(this)} className="clickable">
+                    Repos
+                  </span>
+                )}
+                {(this.props.commit || this.props.hash == "#commits") && (
+                  <span onClick={this.handleCommitsClicked.bind(this)} className="clickable">
+                    Commits
+                  </span>
+                )}
+                {scope && <span>{scope}</span>}
+                {!this.props.username && !this.props.hostname && this.props.hash == "" && (
+                  <>{this.isFilteredToWorkflows() ? <span>Workflow runs</span> : <span>Builds</span>}</>
+                )}
+              </div>
+              {capabilities.globalFilter && <FilterComponent search={this.props.search} />}
             </div>
             <div className="titles">
               <div className="title">
@@ -385,7 +388,6 @@ export default class HistoryComponent extends React.Component {
           )}
         </div>
         {this.props.hash === "#users" && <OrgJoinRequestsComponent user={this.props.user} />}
-        {capabilities.globalFilter && <FilterComponent search={this.props.search} />}
         {this.state.invocations.length > 0 && (
           <div className="container nopadding-dense">
             {!slice &&

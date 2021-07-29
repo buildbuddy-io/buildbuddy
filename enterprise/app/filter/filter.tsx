@@ -1,7 +1,7 @@
 import moment from "moment";
 import React from "react";
 import { DateRangePicker, defaultInputRanges, OnChangeProps, RangeWithKey } from "react-date-range";
-import { OutlinedButton } from "../../../app/components/button/button";
+import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Popup from "../../../app/components/popup/popup";
 import { formatDateRange } from "../../../app/format/format";
 import router from "../../../app/router/router";
@@ -52,14 +52,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const isFiltering = Boolean(this.props.search.toString());
 
     return (
-      <div className={`global-filter container ${isFiltering ? "is-filtering" : ""}`}>
+      <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>
         {isFiltering ? (
-          <OutlinedButton
+          <FilledButton
             className="clear-filters-button"
             title="Clear filters"
             onClick={this.onClickClearFilters.bind(this)}>
-            <img src="/image/x.svg" alt="" />
-          </OutlinedButton>
+            <img src="/image/x-white.svg" alt="" />
+          </FilledButton>
         ) : (
           <div className="filter-icon-container">
             <img src="/image/filter.svg" alt="" />
@@ -73,8 +73,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           <Popup
             isOpen={this.state.isDatePickerOpen}
             onRequestClose={this.onCloseDatePicker.bind(this)}
-            className="date-picker-popup"
-            anchor="left">
+            className="date-picker-popup">
             <DateRangePicker
               ranges={[{ startDate, endDate, key: "selection" }]}
               onChange={this.onDateChange.bind(this)}

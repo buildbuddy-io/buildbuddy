@@ -13,3 +13,14 @@
 .history a.text-link {
   text-decoration: underline;
 }
+
+.history .top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.history .breadcrumbs {
+  margin-bottom: 0;
+}
