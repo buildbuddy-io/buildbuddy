@@ -141,11 +141,11 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	if role := req.GetQuery().GetRole(); role != "" {
 		q.AddWhereClause("i.role = ?", role)
 	}
-	if start := req.GetQuery().GetUpdatedAfter().AsTime(); !start.IsZero() {
-		q.AddWhereClause("i.updated_at_usec >= ?", timeutil.ToUsec(start))
+	if start := req.GetQuery().UpdatedAfter; start != nil {
+		q.AddWhereClause("i.updated_at_usec >= ?", timeutil.ToUsec(start.AsTime()))
 	}
-	if end := req.GetQuery().GetUpdatedBefore().AsTime(); !end.IsZero() {
-		q.AddWhereClause("i.updated_at_usec < ?", timeutil.ToUsec(end))
+	if end := req.GetQuery().UpdatedBefore; end != nil {
+		q.AddWhereClause("i.updated_at_usec < ?", timeutil.ToUsec(end.AsTime()))
 	}
 
 	// Always add permissions check.
