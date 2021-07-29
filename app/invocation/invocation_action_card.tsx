@@ -17,7 +17,6 @@ interface State {
   command?: build.bazel.remote.execution.v2.Command;
   error?: string;
   inputRoot?: build.bazel.remote.execution.v2.Directory;
-  inputFiles?: build.bazel.remote.execution.v2.IFileNode[];
 }
 
 export default class InvocationActionCardComponent extends React.Component<Props, State> {
@@ -56,13 +55,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(inputRootFile, this.props.model.getId(), "arraybuffer")
       .then((root_buff: any) => {
         let tempRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(root_buff));
-        let files = [] as build.bazel.remote.execution.v2.IFileNode[];
-        files = this.unravelInputRoot(tempRoot, files);
-        console.log(files.length);
         this.setState({
           ...this.state,
           inputRoot: tempRoot,
-          inputFiles: files,
         });
       })
       .catch(() => {
@@ -167,22 +162,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
       address = address + "/" + this.props.model.optionsMap.get("remote_instance_name");
     }
     return address;
-  }
-
-  unravelInputRoot(
-    root: build.bazel.remote.execution.v2.Directory,
-    files: build.bazel.remote.execution.v2.IFileNode[]
-  ): build.bazel.remote.execution.v2.IFileNode[] {
-    if (root.directories) {
-      console.log(root.directories.length);
-      for (var dir of root.directories) {
-        console.log(this.fetchDirectory(dir.digest));
-        return files.concat(this.unravelInputRoot(this.fetchDirectory(dir.digest), files));
-      }
-    } else {
-      console.log("else " + dir.name);
-      return root.files;
-    }
   }
 
   private renderTimeline() {
@@ -304,22 +283,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       <div>Default</div>
                     )}
                   </div>
-                  {/* <div className="action-section">
+                  <div className="action-section">
                     <div
                       title="List of required supported NodeProperty [build.bazel.remote.execution.v2.NodeProperty] keys."
                       className="action-property-title">
                       Input Files
                     </div>
-                    {this.state.inputFiles.length ? (
-                      <div>
-                        {this.state.inputFiles.map((file) => (
-                          <div className="output-node">{file.name}</div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div>Default</div>
-                    )}
-                  </div> */}
+                    <div>{this.state.inputRoot.directories[0].name}</div>
+                  </div>
                 </div>
               )}
               <div className="action-line">
