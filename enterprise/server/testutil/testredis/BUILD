@@ -9,7 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/util/redisutil",
-        "//server/testutil/app",
+        "//server/testutil/testfs",
         "//server/util/log",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_stretchr_testify//assert",

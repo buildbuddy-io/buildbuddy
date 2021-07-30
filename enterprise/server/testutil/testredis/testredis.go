@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -13,7 +13,7 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
@@ -44,10 +44,16 @@ func Start(t testing.TB) string {
 		assert.FailNow(t, "redis binary not found in runfiles", err.Error())
 	}
 
-	redisPort := app.FreePort(t)
+	socketDir := testfs.MakeTempDir(t)
+	socketPath := path.Join(socketDir, "redis.sock")
+	target := fmt.Sprintf("unix://%s", socketPath)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	args := []string{"--port", strconv.Itoa(redisPort)}
+	args := []string{
+		"--port", "0",
+		"--unixsocket", socketPath,
+		"--unixsocketperm", "700",
+	}
 	// Disable persistence, not useful for testing.
 	args = append(args, "--save", "")
 	// Set a precautionary limit, tests should not reach it...
@@ -56,8 +62,8 @@ func Start(t testing.TB) string {
 	args = append(args, "--maxmemory-policy", "noeviction")
 	cmd := exec.CommandContext(ctx, redisBinPath, args...)
 	log.Printf("Starting redis server: %s", cmd)
-	cmd.Stdout = &logWriter{}
-	cmd.Stderr = &logWriter{}
+	cmd.Stdout = &logWriter{t}
+	cmd.Stderr = &logWriter{t}
 	err = cmd.Start()
 	if err != nil {
 		assert.FailNowf(t, "redis binary could not be started", err.Error())
@@ -74,7 +80,6 @@ func Start(t testing.TB) string {
 		killed.Store(true)
 		cancel()
 	})
-	target := fmt.Sprintf("localhost:%d", redisPort)
 	waitUntilHealthy(t, target)
 	return target
 }
@@ -83,9 +88,8 @@ func waitUntilHealthy(t testing.TB, target string) {
 	start := time.Now()
 	ctx := context.Background()
 	r := redis.NewClient(redisutil.TargetToOptions(target))
-	hc := redisutil.HealthChecker{Rdb: r}
 	for {
-		err := hc.Check(ctx)
+		err := r.Ping(ctx).Err()
 		if err == nil {
 			return
 		}
@@ -96,7 +100,9 @@ func waitUntilHealthy(t testing.TB, target string) {
 	}
 }
 
-type logWriter struct{}
+type logWriter struct {
+	t testing.TB
+}
 
 func (w *logWriter) Write(b []byte) (int, error) {
 	lines := strings.Split(string(b), "\n")
@@ -104,6 +110,7 @@ func (w *logWriter) Write(b []byte) (int, error) {
 		if line == "" {
 			continue
 		}
+		w.t.Log(line)
 		log.Infof("[redis server] %s", line)
 	}
 	return len(b), nil
