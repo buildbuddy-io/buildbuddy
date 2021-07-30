@@ -4,6 +4,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 // A terminal 'screen'. Current cursor position, cursor style, and characters
@@ -56,7 +58,10 @@ func pi(s string) int {
 // Move the cursor up, if we can
 func (s *screen) up(i string) {
 	s.y -= pi(i)
-	s.y = int(math.Max(0, float64(s.y)))
+	if s.y < 0 {
+		log.Warningf("Screen attempted to move cursor above the top of the screen by %d line(s).", -s.y)
+		s.y = 0
+	}
 }
 
 // Move the cursor down
@@ -85,7 +90,10 @@ func (s *screen) growScreenHeight() {
 		if extraLines > 0 {
 			s.screen = s.screen[extraLines:]
 			s.y -= extraLines
-			s.y = int(math.Max(0, float64(s.y)))
+			if s.y < 0 {
+				log.Warningf("Screen did not retain enough lines to maintain the cursor position. Screen retained %d too few line(s).", -s.y)
+				s.y = 0
+			}
 		}
 	}
 }
@@ -202,7 +210,10 @@ func (s *screen) backspace() {
 
 func (s *screen) popExtraLines(linesToRetain int) []byte {
 	extraLines := len(s.screen) - linesToRetain
-	extraLines = int(math.Min(float64(extraLines), float64(s.y)))
+	if extraLines > s.y {
+		log.Warningf("Screen attempted to pop line containing the current cursor position. Attempted to retain too few lines by %d line(s).", extraLines-s.y)
+		extraLines = s.y
+	}
 	if extraLines < 1 {
 		return []byte{}
 	}
