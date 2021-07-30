@@ -28,7 +28,7 @@ const (
 
 	// Number of lines to keep in the screen buffer so that they may be modified
 	// by ANSI Cursor control codes.
-	linesToRetainForANSICursor = 6
+	linesToRetainForANSICursor = 10
 )
 
 func getEventLogPathFromInvocationId(invocationId string) string {
