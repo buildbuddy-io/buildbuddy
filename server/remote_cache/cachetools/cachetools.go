@@ -2,7 +2,6 @@ package cachetools
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -28,20 +27,6 @@ const (
 	uploadBufSizeBytes = 1000000 // 1MB
 	gRPCMaxSize        = int64(4000000)
 )
-
-func openFileAndGzip(file string) (io.Reader, error) {
-	f, err := os.Open(file)
-	if err != nil {
-		return nil, err
-	}
-
-	r, w := io.Pipe()
-	go func() {
-		io.Copy(gzip.NewWriter(w), f)
-		f.Close()
-	}()
-	return r, nil
-}
 
 func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.InstanceNameDigest, out io.Writer) error {
 	if bsClient == nil {
