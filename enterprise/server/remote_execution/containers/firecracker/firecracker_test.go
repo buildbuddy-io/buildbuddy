@@ -15,12 +15,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/stretchr/testify/assert"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
