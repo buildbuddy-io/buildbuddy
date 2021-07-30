@@ -316,7 +316,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     <div
                       title="List of required supported NodeProperty [build.bazel.remote.execution.v2.NodeProperty] keys."
                       className="action-property-title">
-                      Input Tree
+                      Input File Tree
                     </div>
                     <div className="input-file-tree">
                       {this.state.inputRoot &&
