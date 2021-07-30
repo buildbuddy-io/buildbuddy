@@ -117,7 +117,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     return address;
   }
 
-  private renderTimeline(i: number) {
+  private renderTimelines() {
     const metadata = this.state.actionResult.executionMetadata;
 
     type TimelineEvent = { name: string; color: string; timestamp: any };
@@ -173,30 +173,37 @@ export default class InvocationActionCardComponent extends React.Component<Props
       if (!event.timestamp) return null;
     }
 
-    if (!events[i].color) return null;
-
     const totalDuration = durationSeconds(events[0].timestamp, events[events.length - 1].timestamp);
-    const next = events[i + 1];
-    const duration = durationSeconds(events[i].timestamp, next.timestamp);
-    const weight = duration / totalDuration;
 
     return (
       <div>
-        <div className="metadata-detail">
-          {events[i].name} @ {format.formatTimestamp(events[i].timestamp)}
-        </div>
-        <div className="action-timeline">
-          <div
-            className="timeline-event"
-            title={`${events[i].name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
-            style={{ flex: `${weight} 0 0`, backgroundColor: events[i].color }}></div>
-          <div
-            className="timeline-event-label"
-            title={`${events[i].name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
-            style={{ flex: `${1 - weight} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}>
-            ({format.compactDurationSec(duration)}, {(weight * 100).toFixed(0)}%)
-          </div>
-        </div>
+        {events.map((event, i) => {
+          // Don't render the end marker.
+          if (!event.color) return null;
+
+          const next = events[i + 1];
+          const duration = durationSeconds(event.timestamp, next.timestamp);
+          const weight = duration / totalDuration;
+          return (
+            <div>
+              <div className="metadata-detail">
+                {event.name} @ {format.formatTimestamp(event.timestamp)}
+              </div>
+              <div className="action-timeline">
+                <div
+                  className="timeline-event"
+                  title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
+                  style={{ flex: `${weight} 0 0`, backgroundColor: event.color }}></div>
+                <div
+                  className="timeline-event-label"
+                  title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
+                  style={{ flex: `${1 - weight} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}>
+                  ({format.compactDurationSec(duration)}, {(weight * 100).toFixed(0)}%)
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -282,54 +289,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                           <div className="metadata-title">Executor ID</div>
                           <div className="metadata-detail">{this.state.actionResult.executionMetadata.executorId}</div>
                           <div className="metadata-title">Timeline</div>
-                          <div className="metadata-detail">
-                            Queuing @{" "}
-                            {format.formatTimestamp(this.state.actionResult.executionMetadata.queuedTimestamp)}
-                            {this.renderTimeline(0)}
-                          </div>
-                          <div className="metadata-detail">
-                            Initializing @{" "}
-                            {format.formatTimestamp(this.state.actionResult.executionMetadata.workerStartTimestamp)}
-                            {this.renderTimeline(1)}
-                          </div>
-                          <div className="metadata-detail">
-                            Downloading inputs @{" "}
-                            {format.formatTimestamp(this.state.actionResult.executionMetadata.inputFetchStartTimestamp)}
-                            {this.renderTimeline(2)}
-                          </div>
-                          <div className="metadata-detail">
-                            Preparing runner @{" "}
-                            {format.formatTimestamp(
-                              this.state.actionResult.executionMetadata.inputFetchCompletedTimestamp
-                            )}
-                            {this.renderTimeline(3)}
-                          </div>
-                          <div className="metadata-detail">
-                            Executing @{" "}
-                            {format.formatTimestamp(this.state.actionResult.executionMetadata.executionStartTimestamp)}
-                            {this.renderTimeline(4)}
-                          </div>
-                          <div className="metadata-detail">
-                            Preparing for upload @{" "}
-                            {format.formatTimestamp(
-                              this.state.actionResult.executionMetadata.executionCompletedTimestamp
-                            )}
-                            {this.renderTimeline(5)}
-                          </div>
-                          <div className="metadata-detail">
-                            Uploading outputs @{" "}
-                            {format.formatTimestamp(
-                              this.state.actionResult.executionMetadata.outputUploadStartTimestamp
-                            )}
-                            {this.renderTimeline(6)}
-                          </div>
-                          <div className="metadata-detail">
-                            Worker completed @{" "}
-                            {format.formatTimestamp(
-                              this.state.actionResult.executionMetadata.outputUploadCompletedTimestamp
-                            )}
-                            {this.renderTimeline(7)}
-                          </div>
+                          {this.renderTimelines()}
                         </div>
                       ) : (
                         <div>None found</div>
