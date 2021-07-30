@@ -56,7 +56,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
   fetchInputRoot(rootDigest: build.bazel.remote.execution.v2.IDigest) {
     let inputRootFile =
       "bytestream://" + this.getCacheAddress() + "/blobs/" + rootDigest.hash + "/" + rootDigest.sizeBytes;
-    console.log(inputRootFile);
     rpcService
       .fetchBytestreamFile(inputRootFile, this.props.model.getId(), "arraybuffer")
       .then((root_buff: any) => {
@@ -227,9 +226,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   handleFileClicked(node: any) {
-    console.log(node);
-    console.log(build.bazel.remote.execution.v2.FileNode.verify(node));
-    console.log(node.hasOwnProperty("isExecutable"));
     let digest_string = node.digest.hash + "/" + node.digest.sizeBytes;
     let dirFile = "bytestream://" + this.getCacheAddress() + "/blobs/" + digest_string;
     if (!node.hasOwnProperty("isExecutable")) {
@@ -238,12 +234,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.setState({ treeShaToExpanded: this.state.treeShaToExpanded });
         return;
       }
-      console.log(dirFile);
       rpcService
         .fetchBytestreamFile(dirFile, this.props.model.getId(), "arraybuffer")
         .then((dir_buff: any) => {
           let tempDir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(dir_buff));
-          console.log(dir_buff);
           this.state.treeShaToExpanded.set(digest_string, true);
           let contents: (any | any)[] = [];
           this.state.treeShaToChildrenMap.set(
