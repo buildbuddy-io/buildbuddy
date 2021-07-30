@@ -11,7 +11,10 @@ interface Props {
 export default class BuildLogsCardComponent extends React.Component<Props> {
   render() {
     return (
-      <div className={`card ${this.props.dark ? "dark" : "light-terminal"} ${this.props.expanded ? "expanded" : ""}`}>
+      <div
+        className={`card build-logs-card ${this.props.dark ? "dark" : "light-terminal"} ${
+          this.props.expanded ? "expanded" : ""
+        }`}>
         <img className="icon" src={this.props.dark ? "/image/log-circle-light.svg" : "/image/log-circle.svg"} />
         <div className="content">
           <div className="title">Build logs </div>
@@ -20,7 +23,7 @@ export default class BuildLogsCardComponent extends React.Component<Props> {
               // "terminal" class makes sure the loading container's size
               // is the same as the terminal that will take its place.
               <div className="terminal">
-                <div className="loading" />
+                <div className={`loading ${this.props.dark ? "loading-dark" : ""}`} />
               </div>
             ) : (
               <TerminalComponent value={this.props.value} lightTheme={!this.props.dark} />
