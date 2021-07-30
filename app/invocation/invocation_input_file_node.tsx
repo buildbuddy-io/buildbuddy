@@ -16,16 +16,29 @@ export default class InputFileComponent extends React.Component<Props, State> {
       this.props.node.digest.hash + "/" + this.props.node.digest.sizeBytes
     );
     return (
-      <div className={`code-sidebar-node`}>
+      <div className={`input-file-tree-node`}>
         <div
-          className={`code-sidebar-node-name ${expanded ? "code-sidebar-node-expanded" : ""} ${
-            this.props.node.hasOwnProperty("isExecutable") ? "code-sidebar-file": "code-sidebar-folder"
+          className={`input-file-tree-node-name ${expanded ? "input-file-tree-node-expanded" : ""} ${
+            this.props.node.hasOwnProperty("isExecutable") ? "input-file-tree-file" : "input-file-tree-folder"
           }`}
           onClick={() => this.props.handleFileClicked(this.props.node)}>
-          {this.props.node.name}
+          <span>
+            {this.props.node.hasOwnProperty("isExecutable") ? (
+              <img className="file-icon" src="/image/download.svg" />
+            ) : (
+              <span>
+                {expanded ? (
+                  <img className="file-icon" src="/image/folder-minus.svg" />
+                ) : (
+                  <img className="file-icon" src="/image/folder-plus.svg" />
+                )}
+              </span>
+            )}
+          </span>{" "}
+          <span>{this.props.node.name}</span>
         </div>
         {expanded && (
-          <div className="code-sidebar-node-children">
+          <div className="input-file-tree-node-children">
             {this.props.treeShaToChildrenMap
               .get(this.props.node.digest.hash + "/" + this.props.node.digest.sizeBytes)
               .map((child: any) => (

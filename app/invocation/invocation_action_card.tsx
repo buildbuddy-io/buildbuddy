@@ -4,7 +4,6 @@ import InvocationModel from "./invocation_model";
 import { build } from "../../proto/remote_execution_ts_proto";
 import InputFileComponent from "./invocation_input_file_node";
 import rpcService from "../service/rpc_service";
-import { Action } from "rxjs/internal/scheduler/Action";
 
 interface Props {
   model: InvocationModel;
@@ -230,7 +229,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   handleFileClicked(node: any) {
     console.log(node);
     console.log(build.bazel.remote.execution.v2.FileNode.verify(node));
-    console.log(node.hasOwnProperty("isExecutable"))
+    console.log(node.hasOwnProperty("isExecutable"));
     let digest_string = node.digest.hash + "/" + node.digest.sizeBytes;
     let dirFile = "bytestream://" + this.getCacheAddress() + "/blobs/" + digest_string;
     if (!node.hasOwnProperty("isExecutable")) {
@@ -247,7 +246,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
           console.log(dir_buff);
           this.state.treeShaToExpanded.set(digest_string, true);
           let contents: (any | any)[] = [];
-          this.state.treeShaToChildrenMap.set(digest_string, contents.concat(tempDir.directories).concat(tempDir.files));
+          this.state.treeShaToChildrenMap.set(
+            digest_string,
+            contents.concat(tempDir.directories).concat(tempDir.files)
+          );
           this.setState({
             treeShaToChildrenMap: this.state.treeShaToChildrenMap,
             treeShaToExpanded: this.state.treeShaToExpanded,
@@ -316,7 +318,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       className="action-property-title">
                       Input Tree
                     </div>
-                    <div className="code-sidebar">
+                    <div className="input-file-tree">
                       {this.state.inputRoot &&
                         this.state.inputRoot.directories.map((node: any) => (
                           <InputFileComponent

@@ -1,146 +1,33 @@
-.code-editor {
-  background-color: #fff;
-  display: flex;
-  flex-direction: column;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-}
-
-.code-menu {
-  height: 60px;
-  border-bottom: 1px solid #fafafa;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  box-sizing: border-box;
-}
-
-.code-menu button {
-  padding: 0 32px;
-  height: 100%;
-  border: 0;
-  background: transparent;
-  border-left: 1px solid #fafafa;
-  font-weight: 600;
-  cursor: pointer;
-  color: #444;
-}
-
-.code-menu-logo {
-  font-weight: 500;
-  font-size: 18px;
-  color: #888;
-  font-family: monospace;
-}
-
-.code-menu-logo .logo {
-  height: 24px;
-  margin-right: 4px;
-}
-
-.code-menu-logo .code-logo {
-  height: 18px;
-  margin-left: 4px;
-  opacity: 0.5;
-}
-
-.code-menu-logo a {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.code-main {
-  display: flex;
-  flex-grow: 1;
-  width: 100vw;
-  height: calc(100vh - 60px);
-}
-
-.code-sidebar {
+.input-file-tree {
   width: 200px;
   border-right: 1px solid #fafafa;
   flex-shrink: 0;
-  height: calc(100vh - 60px);
-  overflow: auto;
-  padding: 16px;
+  max-height: 250px;
+  overflow: scroll;
   box-sizing: border-box;
 }
 
-.code-sidebar div {
+.input-file-tree div {
   margin-bottom: 4px;
   cursor: pointer;
 }
 
-.code-container {
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
+.input-file-tree-file:hover {
+  color: #8bc34a;
 }
 
-.code-viewer-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
-.code-viewer {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-}
-
-.code-diff-viewer {
-  max-height: 200px;
-  overflow: scroll;
-  flex-shrink: 0;
-  border-top: 1px solid #fafafa;
-  padding: 16px;
-}
-
-.code-diff-viewer-title {
-  font-weight: bold;
-  margin-bottom: 6px;
-}
-
-.code-diff-viewer-item {
-  margin-bottom: 4px;
-  font-size: 13px;
-  cursor: pointer;
-  display: flex;
-}
-
-.code-sidebar-node-children {
+.input-file-tree-node-children {
   padding-left: 16px;
 }
 
-.code-sidebar-node-name {
+.input-file-tree-node-name {
   display: flex;
   font-size: 13px;
 }
 
-.code-sidebar-folder.code-sidebar-node-name:before {
-  content: "▸";
-  width: 12px;
-}
-
-.code-sidebar-folder.code-sidebar-node-expanded.code-sidebar-node-name:before {
-  content: "▾";
-}
-
-/* Monaco overrides */
-
-.minimap-shadow-visible,
-.scroll-decoration {
-  display: none;
-}
-
-.minimap-decorations-layer {
-  border-left: 1px solid #fafafa;
+.file-icon {
+  margin-right: 3px;
+  padding-top: 5px;
 }
 
 .action-timeline {
@@ -195,6 +82,7 @@
 
 .action-section div {
   flex-grow: 1;
+  font-size: 13px;
 }
 
 .action-section div.action-property-title {
@@ -205,6 +93,7 @@
   text-align: right;
   margin-right: 16px;
   font-weight: 700;
+  font-size: 14px;
 }
 
 .cache-sections {
