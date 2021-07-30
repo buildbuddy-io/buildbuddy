@@ -479,9 +479,11 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer, prefix
 	// duplicate writes, we call Contains before writing a new digest, and
 	// if it already exists, we'll return a devnull writecloser so no bytes
 	// are transmitted over the network.
-	if alreadyExists, err := c.RemoteContains(ctx, peer, prefix, isolation, d); err == nil && alreadyExists {
-		log.Debugf("Skipping duplicate write of %q", d.GetHash())
-		return devnull.NewWriteCloser(), nil
+	if isolation.GetCacheType() == dcpb.Isolation_CAS_CACHE {
+		if alreadyExists, err := c.RemoteContains(ctx, peer, prefix, isolation, d); err == nil && alreadyExists {
+			log.Debugf("Skipping duplicate write of %q", d.GetHash())
+			return devnull.NewWriteCloser(), nil
+		}
 	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
