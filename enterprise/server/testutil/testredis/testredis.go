@@ -9,20 +9,26 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 )
 
 const (
 	redisLinuxBinRunfilePath = "enterprise/server/test/bin/redis/redis-server-linux-x86_64"
+
+	startupTimeout      = 10 * time.Second
+	startupPingInterval = 1 * time.Millisecond
 )
 
 // Start spawns a Redis server for the given test and returns a Redis target
 // that points to it.
-func Start(t *testing.T) string {
+func Start(t testing.TB) string {
 	var redisBinPath string
 	osArchKey := runtime.GOOS + "_" + runtime.GOARCH
 	switch osArchKey {
@@ -68,7 +74,27 @@ func Start(t *testing.T) string {
 		killed.Store(true)
 		cancel()
 	})
-	return fmt.Sprintf("localhost:%d", redisPort)
+	target := fmt.Sprintf("localhost:%d", redisPort)
+	// waitUntilHealthy(t, target)
+	return target
+}
+
+func waitUntilHealthy(t testing.TB, target string) {
+	start := time.Now()
+	ctx := context.Background()
+	r := redis.NewClient(redisutil.TargetToOptions(target))
+	hc := redisutil.HealthChecker{Rdb: r}
+	for {
+		err := hc.Check(ctx)
+		if err == nil {
+			return
+		}
+		if time.Since(start) > startupTimeout {
+			t.Fatalf("Failed to connect to redis within %s: %s", startupTimeout, err)
+		}
+		time.Sleep(startupPingInterval)
+		continue
+	}
 }
 
 type logWriter struct{}
