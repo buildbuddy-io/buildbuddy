@@ -602,7 +602,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties) (co
 			MemSizeMB:              2500,
 			EnableNetworking:       false,
 		}
-		c, err := firecracker.NewContainer(ctx, opts)
+		c, err := firecracker.NewContainer(p.env, opts)
 		if err != nil {
 			return nil, err
 		}
