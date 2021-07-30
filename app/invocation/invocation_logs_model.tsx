@@ -50,18 +50,20 @@ export default class InvocationLogsModel {
       )
     ).subscribe({
       next: (response) => {
-        const newLogs = this.logs + String.fromCharCode(...(response.buffer || []));
-        if (this.logs !== newLogs) {
-          this.logs = newLogs;
-          this.onChange.next();
-        }
+        this.logs = this.logs + String.fromCharCode(...(response.buffer || []));
 
         // Empty next chunk ID means the invocation is complete and we've reached
         // the end of the log.
         if (!response.nextChunkId) {
           this.responseSubscription = null;
+          // Notify of change to `isFetching` state.
           this.onChange.next();
           return;
+        }
+
+        if (response.buffer?.length) {
+          // Notify of change to `logs` state.
+          this.onChange.next();
         }
 
         // Unchanged next chunk ID means the invocation is still in progress and
