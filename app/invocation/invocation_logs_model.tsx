@@ -8,8 +8,8 @@ const POLL_TAIL_INTERVAL_MS = 3_000;
 const MIN_LINES = 100_000;
 
 /**
- * InvocationLogsModel holds the invocation log content and handles fetching
- * log chunks.
+ * InvocationLogsModel holds the invocation log content for chunkstore-enabled
+ * invocations, and handles fetching log chunks from chunkstore.
  */
 export default class InvocationLogsModel {
   /** Streams an event whenever the state of the model changes. */
