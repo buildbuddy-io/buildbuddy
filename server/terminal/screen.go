@@ -85,6 +85,7 @@ func (s *screen) growScreenHeight() {
 		if extraLines > 0 {
 			s.screen = s.screen[extraLines:]
 			s.y -= extraLines
+			s.y = int(math.Max(0, float64(s.y)))
 		}
 	}
 }
@@ -201,6 +202,7 @@ func (s *screen) backspace() {
 
 func (s *screen) popExtraLines(linesToRetain int) []byte {
 	extraLines := len(s.screen) - linesToRetain
+	extraLines = int(math.Min(float64(extraLines), float64(s.y)))
 	if extraLines < 1 {
 		return []byte{}
 	}
