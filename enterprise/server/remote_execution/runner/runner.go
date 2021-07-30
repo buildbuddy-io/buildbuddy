@@ -451,6 +451,9 @@ func (p *Pool) hostBuildRoot() string {
 	// TODO(bduffany): Make this configurable in YAML, populating {{.PodID}} via template.
 	// People might have conventions other than executor-data for the volume name + remotebuilds
 	// for the build root dir.
+	if hd := p.env.GetConfigurator().GetExecutorConfig().HostExecutorRootDirectory; hd != "" {
+		return filepath.Join(hd, "remotebuilds")
+	}
 	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 }
 
