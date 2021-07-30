@@ -62,8 +62,8 @@ func Start(t testing.TB) string {
 	args = append(args, "--maxmemory-policy", "noeviction")
 	cmd := exec.CommandContext(ctx, redisBinPath, args...)
 	log.Printf("Starting redis server: %s", cmd)
-	cmd.Stdout = &logWriter{t}
-	cmd.Stderr = &logWriter{t}
+	cmd.Stdout = &logWriter{}
+	cmd.Stderr = &logWriter{}
 	err = cmd.Start()
 	if err != nil {
 		assert.FailNowf(t, "redis binary could not be started", err.Error())
@@ -100,9 +100,7 @@ func waitUntilHealthy(t testing.TB, target string) {
 	}
 }
 
-type logWriter struct {
-	t testing.TB
-}
+type logWriter struct{}
 
 func (w *logWriter) Write(b []byte) (int, error) {
 	lines := strings.Split(string(b), "\n")
@@ -110,7 +108,6 @@ func (w *logWriter) Write(b []byte) (int, error) {
 		if line == "" {
 			continue
 		}
-		w.t.Log(line)
 		log.Infof("[redis server] %s", line)
 	}
 	return len(b), nil
