@@ -11,10 +11,7 @@ interface Props {
 export default class BuildLogsCardComponent extends React.Component<Props> {
   render() {
     return (
-      <div
-        className={`build-logs-card card ${this.props.dark ? "dark" : "light-terminal"} ${
-          this.props.expanded ? "expanded" : ""
-        }`}>
+      <div className={`card ${this.props.dark ? "dark" : "light-terminal"} ${this.props.expanded ? "expanded" : ""}`}>
         <img className="icon" src={this.props.dark ? "/image/log-circle-light.svg" : "/image/log-circle.svg"} />
         <div className="content">
           <div className="title">Build logs </div>
