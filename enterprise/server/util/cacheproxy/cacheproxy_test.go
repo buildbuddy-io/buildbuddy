@@ -69,6 +69,13 @@ func waitUntilServerIsAlive(addr string) {
 	}
 }
 
+func copyAndClose(wc io.WriteCloser, r io.Reader) error {
+	if _, err := io.Copy(wc, r); err != nil {
+		return err
+	}
+	return wc.Close()
+}
+
 func TestReader(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
@@ -167,11 +174,7 @@ func TestWriter(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = io.Copy(wc, readSeeker)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := wc.Close(); err != nil {
+		if err := copyAndClose(wc, readSeeker); err != nil {
 			t.Fatal(err)
 		}
 
@@ -219,7 +222,63 @@ func (s *snitchCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 	return wc, nil
 }
 
-func TestWriteAlreadyExists(t *testing.T) {
+func TestWriteAlreadyExistsCAS(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "auth.enable_anonymous_usage", "true")
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	writeCounts := make(map[string]int, 0)
+	sc := snitchCache{te.GetCache(), writeCounts}
+
+	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	c := cacheproxy.NewCacheProxy(te, &sc, peer)
+	if err := c.StartListening(); err != nil {
+		t.Fatalf("Error setting up cacheproxy: %s", err)
+	}
+
+	waitUntilServerIsAlive(peer)
+
+	testSize := int64(10000000)
+	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
+	prefix := ""
+	isolation := &dcpb.Isolation{
+		CacheType: dcpb.Isolation_CAS_CACHE,
+	}
+
+	// Remote-write the random bytes to the cache (with a prefix).
+	wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, isolation, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := copyAndClose(wc, readSeeker); err != nil {
+		t.Fatal(err)
+	}
+
+	if writeCounts[d.GetHash()] != 1 {
+		t.Fatalf("Snitch cache was not written to. It should have been.")
+	}
+
+	// Reset readSeeker.
+	readSeeker.Seek(0, 0)
+	wc, err = c.RemoteWriter(ctx, peer, noHandoff, prefix, isolation, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := copyAndClose(wc, readSeeker); err != nil {
+		t.Fatal(err)
+	}
+
+	if writeCounts[d.GetHash()] != 1 {
+		t.Fatalf("Snitch cache was written to, but digest already existed.")
+	}
+}
+
+func TestWriteAlreadyExistsAC(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := getTestEnv(t, emptyUserMap)
@@ -244,16 +303,16 @@ func TestWriteAlreadyExists(t *testing.T) {
 	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
 	prefix := ""
 
+	isolation := &dcpb.Isolation{
+		CacheType: dcpb.Isolation_ACTION_CACHE,
+	}
+
 	// Remote-write the random bytes to the cache (with a prefix).
-	wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, &dcpb.Isolation{}, d)
+	wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, isolation, d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = io.Copy(wc, readSeeker)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := wc.Close(); err != nil {
+	if err := copyAndClose(wc, readSeeker); err != nil {
 		t.Fatal(err)
 	}
 
@@ -263,20 +322,16 @@ func TestWriteAlreadyExists(t *testing.T) {
 
 	// Reset readSeeker.
 	readSeeker.Seek(0, 0)
-	wc, err = c.RemoteWriter(ctx, peer, noHandoff, prefix, &dcpb.Isolation{}, d)
+	wc, err = c.RemoteWriter(ctx, peer, noHandoff, prefix, isolation, d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = io.Copy(wc, readSeeker)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := wc.Close(); err != nil {
+	if err := copyAndClose(wc, readSeeker); err != nil {
 		t.Fatal(err)
 	}
 
-	if writeCounts[d.GetHash()] != 1 {
-		t.Fatalf("Snitch cache was written to, but digest already existed.")
+	if writeCounts[d.GetHash()] != 2 {
+		t.Fatalf("Snitch cache should have been written to twice.")
 	}
 }
 
@@ -394,11 +449,7 @@ func TestOversizeBlobs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = io.Copy(wc, readSeeker)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := wc.Close(); err != nil {
+		if err := copyAndClose(wc, readSeeker); err != nil {
 			t.Fatal(err)
 		}
 
@@ -677,11 +728,7 @@ func TestWriter_Isolation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = io.Copy(wc, readSeeker)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := wc.Close(); err != nil {
+		if err := copyAndClose(wc, readSeeker); err != nil {
 			t.Fatal(err)
 		}
 
@@ -731,11 +778,7 @@ func TestWriteAlreadyExists_Isolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = io.Copy(wc, readSeeker)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := wc.Close(); err != nil {
+	if err := copyAndClose(wc, readSeeker); err != nil {
 		t.Fatal(err)
 	}
 
@@ -749,11 +792,7 @@ func TestWriteAlreadyExists_Isolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = io.Copy(wc, readSeeker)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := wc.Close(); err != nil {
+	if err := copyAndClose(wc, readSeeker); err != nil {
 		t.Fatal(err)
 	}
 
@@ -880,11 +919,7 @@ func TestOversizeBlobs_Isolation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = io.Copy(wc, readSeeker)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := wc.Close(); err != nil {
+		if err := copyAndClose(wc, readSeeker); err != nil {
 			t.Fatal(err)
 		}
 
