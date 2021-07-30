@@ -481,7 +481,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer, prefix
 	// are transmitted over the network.
 	if isolation.GetCacheType() == dcpb.Isolation_CAS_CACHE {
 		if alreadyExists, err := c.RemoteContains(ctx, peer, prefix, isolation, d); err == nil && alreadyExists {
-			log.Debugf("Skipping duplicate write of %q", d.GetHash())
+			log.Debugf("Skipping duplicate CAS write of %q", d.GetHash())
 			return devnull.NewWriteCloser(), nil
 		}
 	}
