@@ -13,7 +13,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/containers/firecracker",
-        "//enterprise/server/remote_execution/snaploader",
         "//proto:remote_execution_go_proto",
         "//server/config",
         "//server/real_environment",
