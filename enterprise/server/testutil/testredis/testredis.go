@@ -23,7 +23,7 @@ const (
 	redisLinuxBinRunfilePath = "enterprise/server/test/bin/redis/redis-server-linux-x86_64"
 
 	startupTimeout      = 10 * time.Second
-	startupPingInterval = 1 * time.Millisecond
+	startupPingInterval = 5 * time.Millisecond
 )
 
 // Start spawns a Redis server for the given test and returns a Redis target
@@ -75,7 +75,7 @@ func Start(t testing.TB) string {
 		cancel()
 	})
 	target := fmt.Sprintf("localhost:%d", redisPort)
-	// waitUntilHealthy(t, target)
+	waitUntilHealthy(t, target)
 	return target
 }
 
