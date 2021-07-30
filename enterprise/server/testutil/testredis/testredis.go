@@ -90,16 +90,21 @@ func waitUntilHealthy(t testing.TB, target string) {
 			return
 		}
 		if time.Since(start) > startupTimeout {
-			t.Fatalf("Failed to connect to redis within %s: %s", startupTimeout, err)
+			assert.FailNowf(t, "Failed to connect to redis", "Health check still failing after %s: %s", startupTimeout, err)
 		}
 		time.Sleep(startupPingInterval)
-		continue
 	}
 }
 
 type logWriter struct{}
 
 func (w *logWriter) Write(b []byte) (int, error) {
-	log.Infof("[redis server] %s", strings.TrimSuffix(string(b), "\n"))
+	lines := strings.Split(string(b), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		log.Infof("[redis server] %s", line)
+	}
 	return len(b), nil
 }
