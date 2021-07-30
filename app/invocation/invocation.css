@@ -26,8 +26,9 @@
 }
 
 .file-icon {
-  margin-right: 10px;
-  padding-top: 3px;
+  margin-right: 12px;
+  margin-left: 2px;
+  padding-top: 1.5px;
 }
 
 .action-timeline {
