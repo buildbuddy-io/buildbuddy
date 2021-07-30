@@ -319,8 +319,8 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	if err := c.machine.PauseVM(ctx); err != nil {
 		return "", err
 	}
-	memSnapshotPath := filepath.Join(c.getChroot(), fullDiskSnapshotName)
-	diskSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
+	memSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
+	diskSnapshotPath := filepath.Join(c.getChroot(), fullDiskSnapshotName)
 
 	// If an older snapshot is present -- nuke it since we're writing a new one.
 	disk.DeleteLocalFileIfExists(memSnapshotPath)
