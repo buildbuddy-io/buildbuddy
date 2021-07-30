@@ -1,8 +1,10 @@
 package snaploader
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -107,20 +109,30 @@ type Loader struct {
 	env              environment.Env
 	instanceName     string
 	workingDirectory string
+	snapshotID       string
+
+	tree *repb.Tree
 }
 
-func New(ctx context.Context, env environment.Env, instanceName, workingDirectory string) *Loader {
-	return &Loader{
+func New(ctx context.Context, env environment.Env, workingDirectory, instanceName, snapshotID string) (*Loader, error) {
+	l := &Loader{
 		ctx:              ctx,
 		env:              env,
-		instanceName:     instanceName,
 		workingDirectory: workingDirectory,
+		instanceName:     instanceName,
+		snapshotID:       snapshotID,
+
+		tree: &repb.Tree{},
 	}
+	if err := l.loadTree(); err != nil {
+		return nil, err
+	}
+	return l, nil
 }
 
-func (l *Loader) UnpackSnapshot(snapshotID, outputDirectory string) error {
+func (l *Loader) loadTree() error {
 	acClient := l.env.GetActionCacheClient()
-	ad, err := parseSnapshotID(snapshotID)
+	ad, err := parseSnapshotID(l.snapshotID)
 	if err != nil {
 		return err
 	}
@@ -131,31 +143,44 @@ func (l *Loader) UnpackSnapshot(snapshotID, outputDirectory string) error {
 	}
 	outs := actionResult.GetOutputDirectories()
 	if len(outs) != 1 {
-		return status.FailedPreconditionErrorf("No files found for snapshot: %q", snapshotID)
+		return status.FailedPreconditionErrorf("No files found for snapshot: %q", l.snapshotID)
 	}
 	treeDigest := digest.NewInstanceNameDigest(outs[0].GetTreeDigest(), l.instanceName)
-	tree := &repb.Tree{}
-	if err := cachetools.GetBlobAsProto(l.ctx, l.env.GetByteStreamClient(), treeDigest, tree); err != nil {
-		return err
+	return cachetools.GetBlobAsProto(l.ctx, l.env.GetByteStreamClient(), treeDigest, l.tree)
+}
+
+func (l *Loader) UnpackManifest(v interface{}) error {
+	for _, f := range l.tree.GetRoot().GetFiles() {
+		if f.GetName() == ManifestFileName {
+			d := digest.NewInstanceNameDigest(f.GetDigest(), l.instanceName)
+			data := new(bytes.Buffer)
+			if err := cachetools.GetBlob(l.ctx, l.env.GetByteStreamClient(), d, data); err != nil {
+				return err
+			}
+			return json.Unmarshal(data.Bytes(), v)
+		}
 	}
-	if _, err := dirtools.GetTree(l.ctx, l.env, l.instanceName, tree, outputDirectory, &dirtools.GetTreeOpts{}); err != nil {
+	return status.FailedPreconditionErrorf("No manifest file found for snapshot: %s", l.snapshotID)
+}
+
+func (l *Loader) UnpackSnapshot(outputDirectory string) error {
+	if _, err := dirtools.GetTree(l.ctx, l.env, l.instanceName, l.tree, outputDirectory, &dirtools.GetTreeOpts{}); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (l *Loader) OptionsToCache(snapOpts *LoadSnapshotOptions) (string, error) {
-	snapDir, err := os.MkdirTemp(l.workingDirectory, "snap-upload-*")
+func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, workingDirectory string, snapOpts *LoadSnapshotOptions) (string, error) {
+	snapDir, err := os.MkdirTemp(workingDirectory, "snap-upload-*")
 	if err != nil {
 		return "", err
 	}
 	defer os.RemoveAll(snapDir) // clean up
-
 	if err := PutFilesIntoDir(snapOpts, snapDir); err != nil {
 		return "", err
 	}
 
-	_, td, err := cachetools.UploadDirectoryToCAS(l.ctx, l.env, l.instanceName, snapDir)
+	_, td, err := cachetools.UploadDirectoryToCAS(ctx, env, instanceName, snapDir)
 	if err != nil {
 		return "", err
 	}
@@ -167,9 +192,9 @@ func (l *Loader) OptionsToCache(snapOpts *LoadSnapshotOptions) (string, error) {
 	}
 
 	ad := snapOpts.Digest()
-	adInstanceDigest := digest.NewInstanceNameDigest(ad, l.instanceName)
-	acClient := l.env.GetActionCacheClient()
-	if err := cachetools.UploadActionResult(l.ctx, acClient, adInstanceDigest, actionResult); err != nil {
+	adInstanceDigest := digest.NewInstanceNameDigest(ad, instanceName)
+	acClient := env.GetActionCacheClient()
+	if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
 		return "", status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 	}
 	snapshotID := fmt.Sprintf("%s/%d", ad.GetHash(), ad.GetSizeBytes())

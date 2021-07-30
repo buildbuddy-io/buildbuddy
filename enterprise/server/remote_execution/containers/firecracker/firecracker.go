@@ -352,8 +352,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		WorkspaceFSPath:     c.workspaceFSPath,
 	}
 
-	loader := snaploader.New(ctx, c.env, instanceName, c.jailerRoot)
-	return loader.OptionsToCache(opts)
+	return snaploader.CacheSnapshot(ctx, c.env, instanceName, c.jailerRoot, opts)
 }
 
 func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, instanceName, snapshotID string) error {
@@ -378,6 +377,14 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, instanceName, s
 		},
 	}
 
+	loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName, snapshotID)
+	if err != nil {
+		return err
+	}
+	if err := loader.UnpackManifest(&c.constants); err != nil {
+		return err
+	}
+
 	if err := c.setupNetworking(ctx); err != nil {
 		return err
 	}
@@ -388,7 +395,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, instanceName, s
 		fcclient.WithProcessRunner(cmd),
 	}
 	// Start Firecracker
-	err := cmd.Start()
+	err = cmd.Start()
 	if err != nil {
 		return status.InternalErrorf("Failed starting firecracker binary: %s", err)
 	}
@@ -398,16 +405,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, instanceName, s
 	// going through the normal flow and letting the library start the cmd.
 	waitUntilExists(ctx, jailerDirectoryCreationTimeout, c.getChroot())
 
-	loader := snaploader.New(ctx, c.env, instanceName, c.jailerRoot)
-	if err := loader.UnpackSnapshot(snapshotID, c.getChroot()); err != nil {
-		return err
-	}
-
-	invariantJson, err := os.ReadFile(filepath.Join(c.getChroot(), snaploader.ManifestFileName))
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(invariantJson, &c.constants); err != nil {
+	if err := loader.UnpackSnapshot(c.getChroot()); err != nil {
 		return err
 	}
 
