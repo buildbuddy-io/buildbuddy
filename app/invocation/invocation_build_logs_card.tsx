@@ -1,89 +1,33 @@
 import React from "react";
-import { eventlog } from "../../proto/eventlog_ts_proto";
-import errorService from "../errors/error_service";
-import rpcService from "../service/rpc_service";
 import { TerminalComponent } from "../terminal/terminal";
-import InvocationModel from "./invocation_model";
 
 interface Props {
-  model: InvocationModel;
+  value: string;
+  loading: boolean;
   expanded: boolean;
   dark: boolean;
 }
 
-interface State {
-  consoleBuffer?: string;
-}
-
-const POLL_TAIL_INTERVAL_MS = 3_000;
-// How many lines to request from the server on each chunk request.
-const MIN_LINES = 100_000;
-
-export default class BuildLogsCardComponent extends React.Component<Props, State> {
-  state: State = {
-    consoleBuffer: "",
-  };
-
-  private pollTailTimeout: number | null = null;
-
-  componentDidMount() {
-    if (this.props.model.hasChunkedEventLogs()) {
-      this.fetchTail();
-    }
-  }
-
-  componentWillUnmount() {
-    window.clearTimeout(this.pollTailTimeout);
-  }
-
-  private fetchTail(chunkId = "") {
-    rpcService.service
-      .getEventLogChunk(
-        new eventlog.GetEventLogChunkRequest({
-          invocationId: this.props.model.getId(),
-          chunkId,
-          minLines: MIN_LINES,
-        })
-      )
-      .then((response) => {
-        this.setState({
-          consoleBuffer: this.state.consoleBuffer + String.fromCharCode(...(response.buffer || [])),
-        });
-
-        // Empty next chunk ID means the invocation is complete and we've reached
-        // the end of the log.
-        if (!response.nextChunkId) return;
-
-        // Unchanged next chunk ID means the invocation is still in progress and
-        // we should continue polling that chunk.
-        if (response.nextChunkId === chunkId) {
-          this.pollTailTimeout = window.setTimeout(() => this.fetchTail(chunkId), POLL_TAIL_INTERVAL_MS);
-          return;
-        }
-
-        // New next chunk ID means we successfully fetched the requested
-        // chunk, and more may be available. Try fetching it immediately.
-        this.fetchTail(response.nextChunkId);
-      })
-      .catch((e) => errorService.handleError(e));
-  }
-
-  private getConsoleBuffer() {
-    if (!this.props.model.hasChunkedEventLogs()) {
-      return this.props.model.consoleBuffer || "";
-    }
-
-    return this.state.consoleBuffer;
-  }
-
+export default class BuildLogsCardComponent extends React.Component<Props> {
   render() {
     return (
-      <div className={`card ${this.props.dark ? "dark" : "light-terminal"} ${this.props.expanded ? "expanded" : ""}`}>
+      <div
+        className={`build-logs-card card ${this.props.dark ? "dark" : "light-terminal"} ${
+          this.props.expanded ? "expanded" : ""
+        }`}>
         <img className="icon" src={this.props.dark ? "/image/log-circle-light.svg" : "/image/log-circle.svg"} />
         <div className="content">
           <div className="title">Build logs </div>
           <div className="details">
-            <TerminalComponent value={this.getConsoleBuffer()} lightTheme={!this.props.dark} />
+            {this.props.loading ? (
+              // "terminal" makes sure the loading container's size is the same as the terminal
+              // that will take its place.
+              <div className="terminal">
+                <div className="loading" />
+              </div>
+            ) : (
+              <TerminalComponent value={this.props.value} lightTheme={!this.props.dark} />
+            )}
           </div>
         </div>
       </div>
