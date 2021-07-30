@@ -220,22 +220,23 @@ type RemoteExecutionConfig struct {
 }
 
 type ExecutorConfig struct {
-	AppTarget               string           `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
-	RootDirectory           string           `yaml:"root_directory" usage:"The root directory to use for build files."`
-	LocalCacheDirectory     string           `yaml:"local_cache_directory" usage:"A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result."`
-	LocalCacheSizeBytes     int64            `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
-	DisableLocalCache       bool             `yaml:"disable_local_cache" usage:"If true, a local file cache will not be used."`
-	DockerSocket            string           `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
-	APIKey                  string           `yaml:"api_key" usage:"API Key used to authorize the executor with the BuildBuddy app server."`
-	ContainerdSocket        string           `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
-	DockerMountMode         string           `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/"`
-	RunnerPool              RunnerPoolConfig `yaml:"runner_pool"`
-	DockerNetHost           bool             `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
-	DockerSiblingContainers bool             `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
-	DockerInheritUserIDs    bool             `yaml:"docker_inherit_user_ids" usage:"If set, run docker containers using the same uid and gid as the user running the executor process."`
-	DefaultXCodeVersion     string           `yaml:"default_xcode_version" usage:"Sets the default XCode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
-	EnableBareRunner        bool             `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
-	EnableFirecracker       bool             `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
+	AppTarget                 string           `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
+	RootDirectory             string           `yaml:"root_directory" usage:"The root directory to use for build files."`
+	LocalCacheDirectory       string           `yaml:"local_cache_directory" usage:"A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result."`
+	LocalCacheSizeBytes       int64            `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
+	DisableLocalCache         bool             `yaml:"disable_local_cache" usage:"If true, a local file cache will not be used."`
+	DockerSocket              string           `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
+	APIKey                    string           `yaml:"api_key" usage:"API Key used to authorize the executor with the BuildBuddy app server."`
+	ContainerdSocket          string           `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
+	DockerMountMode           string           `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/"`
+	RunnerPool                RunnerPoolConfig `yaml:"runner_pool"`
+	DockerNetHost             bool             `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
+	DockerSiblingContainers   bool             `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
+	DockerInheritUserIDs      bool             `yaml:"docker_inherit_user_ids" usage:"If set, run docker containers using the same uid and gid as the user running the executor process."`
+	DefaultXCodeVersion       string           `yaml:"default_xcode_version" usage:"Sets the default XCode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
+	EnableBareRunner          bool             `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
+	EnableFirecracker         bool             `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
+	HostExecutorRootDirectory string           `yaml:"host_executor_root_directory" usage:"Path on the host where the executor container root directory is mounted."`
 }
 
 func (c *ExecutorConfig) GetAppTarget() string {
