@@ -43,6 +43,17 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         **kwargs
     )
 
+    # Generate a .diff rule for diffing.
+    native.genrule(
+        name = name + ".diff",
+        srcs = srcs,
+        outs = [name + ".diff.out"],
+        cmd = "echo \"echo 'Diff not yet implemented for gcs uploads.'\" > $@",
+        local = 1,
+        executable = 1,
+        **kwargs
+    )
+
     # Generate a .delete rule for deleting.
     native.genrule(
         name = name + ".delete",

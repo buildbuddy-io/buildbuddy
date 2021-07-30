@@ -31,7 +31,7 @@ def release(name, run, after, enable_actions = True, **kwargs):
             name = name + action,
             tools = [run + action, after + action],
             outs = [name + action + ".out"],
-            cmd = "echo \"bash $(location %s);\nbash $(location %s);\" > $@" % (after + action, run + action),
+            cmd = "echo \"bash $(location %s) && bash $(location %s);\" > $@" % (after + action, run + action),
             local = 1,
             executable = 1,
             **kwargs
