@@ -51,8 +51,6 @@ interface Props {
 const largePageSize = 100;
 const smallPageSize = 10;
 
-const BUILD_LOGS_EMPTY_MSG = "No build logs...";
-
 export default class InvocationComponent extends React.Component<Props, State> {
   state: State = {
     loading: true,
