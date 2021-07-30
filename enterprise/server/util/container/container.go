@@ -50,28 +50,23 @@ func GetOrCreateImage(ctx context.Context, containerImage string) (string, error
 	if err != nil {
 		return "", err
 	}
-
+	containerFileName := "containerfs.ext4"
 	containerImagesPath := filepath.Join(userCacheDir, "executor", hashedContainerName)
-	if err := disk.EnsureDirectoryExists(containerImagesPath); err != nil {
-		return "", err
-	}
-	files, err := os.ReadDir(containerImagesPath)
-	if err != nil {
-		return "", err
-	}
-	sort.Slice(files, func(i, j int) bool {
-		var iUnix int64
-		if fi, err := files[i].Info(); err == nil {
-			iUnix = fi.ModTime().Unix()
+	if files, err := os.ReadDir(containerImagesPath); err == nil {
+		sort.Slice(files, func(i, j int) bool {
+			var iUnix int64
+			if fi, err := files[i].Info(); err == nil {
+				iUnix = fi.ModTime().Unix()
+			}
+			var jUnix int64
+			if fi, err := files[j].Info(); err == nil {
+				jUnix = fi.ModTime().Unix()
+			}
+			return iUnix < jUnix
+		})
+		if len(files) > 0 {
+			return filepath.Join(containerImagesPath, files[len(files)-1].Name(), containerFileName), nil
 		}
-		var jUnix int64
-		if fi, err := files[j].Info(); err == nil {
-			jUnix = fi.ModTime().Unix()
-		}
-		return iUnix < jUnix
-	})
-	if len(files) > 0 {
-		return filepath.Join(containerImagesPath, files[len(files)-1].Name()), nil
 	}
 
 	// container not found -- write one!
@@ -83,7 +78,11 @@ func GetOrCreateImage(ctx context.Context, containerImage string) (string, error
 	if err != nil {
 		return "", err
 	}
-	containerImagePath := filepath.Join(containerImagesPath, imageHash)
+	containerImageHome := filepath.Join(containerImagesPath, imageHash)
+	if err := disk.EnsureDirectoryExists(containerImageHome); err != nil {
+		return "", err
+	}
+	containerImagePath := filepath.Join(containerImageHome, containerFileName)
 	if err := os.Rename(tmpImagePath, containerImagePath); err != nil {
 		return "", err
 	}

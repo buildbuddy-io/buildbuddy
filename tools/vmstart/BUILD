@@ -13,9 +13,13 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/containers/firecracker",
+        "//enterprise/server/remote_execution/snaploader",
+        "//proto:remote_execution_go_proto",
         "//server/config",
         "//server/real_environment",
+        "//server/util/grpc_client",
         "//server/util/healthcheck",
         "//server/util/log",
+        "@go_googleapis//google/bytestream:bytestream_go_proto",
     ],
 )
