@@ -123,6 +123,11 @@ func RemoveNetNamespace(ctx context.Context, netNamespace string) error {
 	return runCommand(ctx, "ip", "netns", "delete", netNamespace)
 }
 
+func DeleteRoute(ctx context.Context, vmIdx int) error {
+	cloneIP := fmt.Sprintf("192.168.%d.%d", vmIdx/30, ((vmIdx%30)*8)+3)
+	return runCommand(ctx, "ip", "route", "delete", cloneIP)
+}
+
 // SetupVethPair is equivalent to:
 //  # create a new veth pair
 //  $ sudo ip netns exec fc0 ip link add veth1 type veth peer name veth0

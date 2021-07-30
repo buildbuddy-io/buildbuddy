@@ -330,14 +330,6 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		return "", err
 	}
 
-	if err := c.machine.StopVMM(); err != nil {
-		return "", err
-	}
-	c.machine = nil
-
-	if err := c.cleanupNetworking(ctx); err != nil {
-		log.Errorf("Error cleaning up networking: %s", err)
-	}
 	invariantString, err := json.Marshal(c.constants)
 	if err != nil {
 		return "", err
@@ -352,7 +344,15 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		WorkspaceFSPath:     c.workspaceFSPath,
 	}
 
-	return snaploader.CacheSnapshot(ctx, c.env, instanceName, c.jailerRoot, opts)
+	snapshotID, err := snaploader.CacheSnapshot(ctx, c.env, instanceName, c.jailerRoot, opts)
+	if err != nil {
+		return "", err
+	}
+
+	if err := c.machine.ResumeVM(ctx); err != nil {
+		return "", err
+	}
+	return snapshotID, nil
 }
 
 func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, instanceName, snapshotID string) error {
@@ -375,6 +375,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, instanceName, s
 			ExecFile:       firecrackerBinPath,
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(""),
 		},
+		ForwardSignals: make([]os.Signal, 0),
 	}
 
 	loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName, snapshotID)
@@ -509,6 +510,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 		KernelImagePath: kernelImagePath,
 		InitrdPath:      initrdImagePath,
 		KernelArgs:      bootArgs,
+		ForwardSignals:  make([]os.Signal, 0),
 		Drives: []fcmodels.Drive{
 			fcmodels.Drive{
 				DriveID:      fcclient.String("containerfs"),
@@ -656,7 +658,10 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	if !c.constants.EnableNetworking {
 		return nil
 	}
-	return networking.RemoveNetNamespace(ctx, c.id)
+	if err := networking.RemoveNetNamespace(ctx, c.id); err != nil {
+		return err
+	}
+	return networking.DeleteRoute(ctx, c.vmIdx)
 }
 
 // Run the given command within the container and remove the container after
@@ -852,6 +857,15 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 		return err
 	}
 	c.pausedSnapshotID = snapshotID
+
+	if err := c.machine.StopVMM(); err != nil {
+		return err
+	}
+	c.machine = nil
+
+	if err := c.cleanupNetworking(ctx); err != nil {
+		log.Errorf("Error cleaning up networking: %s", err)
+	}
 	return nil
 }
 

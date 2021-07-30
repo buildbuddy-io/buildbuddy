@@ -5,6 +5,8 @@ import (
 	"flag"
 	"math/rand"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -23,7 +25,6 @@ var (
 	remoteInstanceName = flag.String("remote_instance_name", "", "The remote_instance_name for caching snapshots")
 	forceVMIdx         = flag.Int("force_vm_idx", -1, "VM index to force to avoid network conflicts -- random by default")
 	snapshotID         = flag.String("snapshot_id", "", "The snapshot ID to load")
-	saveSnapshot       = flag.Bool("save_snapshot", false, "If true, save a snapshot of the VM that is created and print the snapshot ID")
 )
 
 func getToolEnv() *real_environment.RealEnv {
@@ -65,7 +66,7 @@ func main() {
 		ContainerImage:         *image,
 		ActionWorkingDirectory: emptyActionDir,
 		NumCPUs:                1,
-		MemSizeMB:              2500,
+		MemSizeMB:              100,
 		EnableNetworking:       true,
 		DebugMode:              true,
 		ForceVMIdx:             vmIdx,
@@ -98,20 +99,27 @@ func main() {
 	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
 		log.Fatalf("Unable to Create container: %s", err)
 	}
-	log.Printf("Started firecracker container!")
 
-	if *saveSnapshot {
-		snapshotID, err := c.SaveSnapshot(ctx, *remoteInstanceName)
-		if err != nil {
-			log.Fatalf("Error dumping snapshot: %s", err)
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc, syscall.SIGTERM)
+	go func() {
+		for {
+			<-sigc
+			log.Errorf("Capturing snapshot...")
+			snapshotID, err := c.SaveSnapshot(ctx, *remoteInstanceName)
+			if err != nil {
+				log.Fatalf("Error dumping snapshot: %s", err)
+			}
+			log.Printf("Created snapshot with ID %q", snapshotID)
 		}
-		log.Printf("Created snapshot with ID %q", snapshotID)
-		return
-	}
+	}()
 
+	log.Printf("Started firecracker container!")
+	log.Printf("To capture a snapshot at any time, send SIGTERM (killall vmstart)")
 	if err := c.Wait(ctx); err != nil {
 		log.Printf("Wait err: %s", err)
 	}
+
 	if err := c.Remove(ctx); err != nil {
 		log.Errorf("Error removing container: %s", err)
 	}
