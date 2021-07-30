@@ -330,18 +330,18 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		return "", err
 	}
 
-	invariantString, err := json.Marshal(c.constants)
+	configJson, err := json.Marshal(c.constants)
 	if err != nil {
 		return "", err
 	}
 	opts := &snaploader.LoadSnapshotOptions{
-		ConfigurationString: string(invariantString),
-		MemSnapshotPath:     memSnapshotPath,
-		DiskSnapshotPath:    diskSnapshotPath,
-		KernelImagePath:     kernelImagePath,
-		InitrdImagePath:     initrdImagePath,
-		ContainerFSPath:     c.containerFSPath,
-		WorkspaceFSPath:     c.workspaceFSPath,
+		ConfigurationData: configJson,
+		MemSnapshotPath:   memSnapshotPath,
+		DiskSnapshotPath:  diskSnapshotPath,
+		KernelImagePath:   kernelImagePath,
+		InitrdImagePath:   initrdImagePath,
+		ContainerFSPath:   c.containerFSPath,
+		WorkspaceFSPath:   c.workspaceFSPath,
 	}
 
 	snapshotID, err := snaploader.CacheSnapshot(ctx, c.env, instanceName, c.jailerRoot, opts)
@@ -382,7 +382,12 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, instanceName, s
 	if err != nil {
 		return err
 	}
-	if err := loader.UnpackManifest(&c.constants); err != nil {
+
+	configurationData, err := loader.GetConfigurationData()
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(configurationData, &c.constants); err != nil {
 		return err
 	}
 

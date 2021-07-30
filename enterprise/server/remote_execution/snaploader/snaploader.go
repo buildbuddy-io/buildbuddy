@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,29 +20,32 @@ import (
 )
 
 const (
+	// The name of a file that will be included in the snapshot and contains
+	// metadata about the machine configuration that was snapshotted.
 	ManifestFileName = "manifest.json"
 )
 
 type LoadSnapshotOptions struct {
 	// The following fields are all required.
-	ConfigurationString string
-	MemSnapshotPath     string
-	DiskSnapshotPath    string
-	KernelImagePath     string
-	InitrdImagePath     string
-	ContainerFSPath     string
+	ConfigurationData []byte
+	MemSnapshotPath   string
+	DiskSnapshotPath  string
+	KernelImagePath   string
+	InitrdImagePath   string
+	ContainerFSPath   string
 
 	// This field is optional -- a snapshot may have a filesystem
 	// stored with it or it may have one attached at runtime.
 	WorkspaceFSPath string
 }
 
+// Digest computes the repb.Digest of a LoadSnapshotOptions struct.
 func (o *LoadSnapshotOptions) Digest() *repb.Digest {
 	h := sha256.New()
 	for _, f := range extractFiles(o) {
 		h.Write([]byte(f))
 	}
-	h.Write([]byte(o.ConfigurationString))
+	h.Write(o.ConfigurationData)
 	return &repb.Digest{
 		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
 		SizeBytes: int64(101),
@@ -81,14 +83,6 @@ func extractFiles(snapOpts *LoadSnapshotOptions) []string {
 	return files
 }
 
-func PutFilesIntoDir(snapOpts *LoadSnapshotOptions, dir string) error {
-	if err := hardlinkFilesIntoDirectory(dir, extractFiles(snapOpts)...); err != nil {
-		return err
-	}
-	manifestFile := filepath.Join(dir, ManifestFileName)
-	return os.WriteFile(manifestFile, []byte(snapOpts.ConfigurationString), 0644)
-}
-
 func parseSnapshotID(snapshotID string) (*repb.Digest, error) {
 	parts := strings.SplitN(snapshotID, "/", 2)
 	if len(parts) != 2 || len(parts[0]) != 64 {
@@ -114,6 +108,8 @@ type Loader struct {
 	tree *repb.Tree
 }
 
+// New returns a new snapshot.Loader that can be used to download the specified
+// snapshot into the target chroot.
 func New(ctx context.Context, env environment.Env, workingDirectory, instanceName, snapshotID string) (*Loader, error) {
 	l := &Loader{
 		ctx:              ctx,
@@ -130,6 +126,8 @@ func New(ctx context.Context, env environment.Env, workingDirectory, instanceNam
 	return l, nil
 }
 
+// loadTree is called in New and downloads the snapshot index or returns an
+// error.
 func (l *Loader) loadTree() error {
 	acClient := l.env.GetActionCacheClient()
 	ad, err := parseSnapshotID(l.snapshotID)
@@ -149,20 +147,24 @@ func (l *Loader) loadTree() error {
 	return cachetools.GetBlobAsProto(l.ctx, l.env.GetByteStreamClient(), treeDigest, l.tree)
 }
 
-func (l *Loader) UnpackManifest(v interface{}) error {
+// GetConfigurationData returns the configuration data associated with a
+// snapshot.
+func (l *Loader) GetConfigurationData() ([]byte, error) {
 	for _, f := range l.tree.GetRoot().GetFiles() {
 		if f.GetName() == ManifestFileName {
 			d := digest.NewInstanceNameDigest(f.GetDigest(), l.instanceName)
 			data := new(bytes.Buffer)
 			if err := cachetools.GetBlob(l.ctx, l.env.GetByteStreamClient(), d, data); err != nil {
-				return err
+				return nil, err
 			}
-			return json.Unmarshal(data.Bytes(), v)
+			return data.Bytes(), nil
 		}
 	}
-	return status.FailedPreconditionErrorf("No manifest file found for snapshot: %s", l.snapshotID)
+	return nil, status.FailedPreconditionErrorf("No manifest file found for snapshot: %s", l.snapshotID)
 }
 
+// UnpackSnapshot unpacks all of the files in a snapshot to the specified output
+// directory.
 func (l *Loader) UnpackSnapshot(outputDirectory string) error {
 	if _, err := dirtools.GetTree(l.ctx, l.env, l.instanceName, l.tree, outputDirectory, &dirtools.GetTreeOpts{}); err != nil {
 		return err
@@ -170,13 +172,20 @@ func (l *Loader) UnpackSnapshot(outputDirectory string) error {
 	return nil
 }
 
+// CacheSnapshot uploads a snapshot (described by snapOpts), to the cache.
+// Each file is individually stored in the CAS and a parent directory is created
+// that lists all files. Finally, an action result is cached that describes all
+// files -- this allows for fast existence checking and easy download.
 func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, workingDirectory string, snapOpts *LoadSnapshotOptions) (string, error) {
 	snapDir, err := os.MkdirTemp(workingDirectory, "snap-upload-*")
 	if err != nil {
 		return "", err
 	}
 	defer os.RemoveAll(snapDir) // clean up
-	if err := PutFilesIntoDir(snapOpts, snapDir); err != nil {
+	if err := hardlinkFilesIntoDirectory(snapDir, extractFiles(snapOpts)...); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(snapDir, ManifestFileName), snapOpts.ConfigurationData, 0644); err != nil {
 		return "", err
 	}
 
