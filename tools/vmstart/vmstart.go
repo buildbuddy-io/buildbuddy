@@ -58,7 +58,7 @@ func main() {
 	}
 
 	vmIdx := 100 + rand.Intn(100)
-	if *forceVMIdx == -1 {
+	if *forceVMIdx != -1 {
 		vmIdx = *forceVMIdx
 	}
 	opts := firecracker.ContainerOpts{

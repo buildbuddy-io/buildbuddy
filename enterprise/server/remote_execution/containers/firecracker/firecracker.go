@@ -88,7 +88,7 @@ const (
 
 	// Workspace slack space is how much extra space will be allocated in the
 	// workspace disk image beyond the size of the existing files.
-	workspaceSlackBytes = 10 * 1e6 // 10MB
+	workspaceSlackBytes = 100 * 1e6 // 100MB
 )
 
 var (
