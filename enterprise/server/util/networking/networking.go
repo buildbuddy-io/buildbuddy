@@ -14,8 +14,8 @@ import (
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
-// not already root.
-func runCommand(ctx context.Context, args ...string) error {
+// not already root. Output and errors are returned.
+func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
 	// If we're not running as root, use sudo.
 	if unix.Getuid() != 0 {
 		args = append([]string{"sudo"}, args...)
@@ -23,10 +23,17 @@ func runCommand(ctx context.Context, args ...string) error {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return status.InternalErrorf("Error running %q %s: %s", cmd.String(), string(out), err)
+		return nil, status.InternalErrorf("Error running %q %s: %s", cmd.String(), string(out), err)
 	}
 	log.Debugf("Succesfully ran: %q", cmd.String())
-	return nil
+	return out, nil
+}
+
+// runCommand runs the provided command, prepending sudo if the calling user is
+// not already root, and returns any error encountered.
+func runCommand(ctx context.Context, args ...string) error {
+	_, err := sudoCommand(ctx, args...)
+	return err
 }
 
 // namespace prepends the provided command with 'ip netns exec "netNamespace"'
@@ -214,4 +221,32 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) er
 	}
 
 	return runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
+}
+
+// findDefaultDevice find's the device used for the default route.
+// Equivalent to "ip route | grep default | awk '{print $5}'"
+func findDefaultDevice(ctx context.Context) (string, error) {
+	out, err := sudoCommand(ctx, "ip", "route")
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		log.Printf("Line: %q", line)
+		if strings.HasPrefix(line, "default") {
+			if parts := strings.Split(line, " "); len(parts) > 5 {
+				return parts[4], nil
+			}
+		}
+	}
+	return "", status.FailedPreconditionError("Unable to determine default device.")
+}
+
+// EnableMasquerading turns on ipmasq for the default device. This is required
+// for networking to work on vms.
+func EnableMasquerading(ctx context.Context) error {
+	defaultDevice, err := findDefaultDevice(ctx)
+	if err != nil {
+		return err
+	}
+	return runCommand(ctx, "iptables", "-t", "nat", "-A", "POSTROUTING", "-o", defaultDevice, "-j", "MASQUERADE")
 }
