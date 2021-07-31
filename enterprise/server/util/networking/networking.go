@@ -231,7 +231,6 @@ func findDefaultDevice(ctx context.Context) (string, error) {
 		return "", err
 	}
 	for _, line := range strings.Split(string(out), "\n") {
-		log.Printf("Line: %q", line)
 		if strings.HasPrefix(line, "default") {
 			if parts := strings.Split(line, " "); len(parts) > 5 {
 				return parts[4], nil
