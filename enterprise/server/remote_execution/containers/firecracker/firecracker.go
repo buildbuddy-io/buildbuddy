@@ -94,6 +94,7 @@ const (
 var (
 	locateBinariesOnce  sync.Once
 	locateBinariesError error
+	masqueradingOnce    sync.Once
 
 	// kernel + initrd
 	kernelImagePath string
@@ -639,6 +640,15 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	if !c.constants.EnableNetworking {
 		return nil
+	}
+
+	// Setup masquerading on the host if it isn't already.
+	var masqueradingErr error
+	masqueradingOnce.Do(func() {
+		masqueradingErr = networking.EnableMasquerading(ctx)
+	})
+	if masqueradingErr != nil {
+		return masqueradingErr
 	}
 
 	if err := networking.CreateNetNamespace(ctx, c.id); err != nil {
