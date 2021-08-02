@@ -12,7 +12,6 @@ interface Props {
 }
 
 interface State {
-  contents?: ArrayBuffer;
   action?: build.bazel.remote.execution.v2.Action;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   command?: build.bazel.remote.execution.v2.Command;
@@ -38,14 +37,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
     let actionFile = "bytestream://" + this.getCacheAddress() + "/blobs/" + this.props.search.get("actionDigest");
     rpcService
       .fetchBytestreamFile(actionFile, this.props.model.getId(), "arraybuffer")
-      .then((actionBuff: any) => {
-        let tempAction = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(actionBuff));
+      .then((buffer: any) => {
         this.setState({
-          ...this.state,
-          contents: actionBuff,
-          action: tempAction,
+          action: build.bazel.remote.execution.v2.Action.decode(new Uint8Array(buffer)),
         });
-        this.fetchCommand(tempAction);
+        this.fetchCommand(this.state.action);
       })
       .catch((e) => errorService.handleError(e));
   }
@@ -55,8 +51,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
       "bytestream://" + this.getCacheAddress() + "/blobs/" + rootDigest.hash + "/" + rootDigest.sizeBytes;
     rpcService
       .fetchBytestreamFile(inputRootFile, this.props.model.getId(), "arraybuffer")
-      .then((rootBuff: any) => {
-        let tempRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(rootBuff));
+      .then((buffer: any) => {
+        let tempRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
         let inputDirs: InputNode[] = tempRoot.directories.map(
           (node) =>
             ({
@@ -78,11 +74,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
       "actioncache://" + this.getCacheAddress() + "/blobs/ac/" + this.props.search.get("actionDigest");
     rpcService
       .fetchBytestreamFile(actionResultFile, this.props.model.getId(), "arraybuffer")
-      .then((actionBuff: any) => {
-        let tempArray = new Uint8Array(actionBuff);
+      .then((buffer: any) => {
         this.setState({
           ...this.state,
-          actionResult: build.bazel.remote.execution.v2.ActionResult.decode(tempArray),
+          actionResult: build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer)),
         });
       })
       .catch((e) => errorService.handleError(e));
@@ -98,11 +93,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
       action.commandDigest.sizeBytes;
     rpcService
       .fetchBytestreamFile(commandFile, this.props.model.getId(), "arraybuffer")
-      .then((actionBuff: any) => {
-        let tempArray = new Uint8Array(actionBuff);
+      .then((buffer: any) => {
         this.setState({
           ...this.state,
-          command: build.bazel.remote.execution.v2.Command.decode(tempArray),
+          command: build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer)),
         });
         this.fetchInputRoot(action.inputRootDigest);
       })
@@ -228,20 +222,20 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
     rpcService
       .fetchBytestreamFile(dirUrl, this.props.model.getId(), "arraybuffer")
-      .then((dirBuff: any) => {
-        let tempDir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(dirBuff));
+      .then((buffer: any) => {
+        let dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
         this.state.treeShaToExpanded.set(digestString, true);
-        let dirs: InputNode[] = tempDir.directories.map(
-          (dir) =>
+        let dirs: InputNode[] = dir.directories.map(
+          (child) =>
             ({
-              obj: dir,
+              obj: child,
               type: "dir",
             } as InputNode)
         );
-        let files: InputNode[] = tempDir.directories.map(
-          (file) =>
+        let files: InputNode[] = dir.directories.map(
+          (child) =>
             ({
-              obj: file,
+              obj: child,
               type: "file",
             } as InputNode)
         );
