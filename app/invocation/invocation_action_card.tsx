@@ -117,10 +117,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
     return address;
   }
 
-  private renderTimeline() {
+  private renderTimelines() {
     const metadata = this.state.actionResult.executionMetadata;
 
-    type TimelineEvent = { name: string; color: string; timestamp: any } | { timestamp: any };
+    type TimelineEvent = { name: string; color: string; timestamp: any };
     const events: TimelineEvent[] = [
       {
         name: "Queued",
@@ -158,7 +158,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
         timestamp: metadata.outputUploadStartTimestamp,
       },
       // End marker -- not actually rendered.
-      { timestamp: metadata.outputUploadCompletedTimestamp },
+      {
+        name: "Upload complete",
+        color: "",
+        timestamp: metadata.outputUploadCompletedTimestamp,
+      },
     ];
 
     // Make sure that we've actually received the metadata. This will not be sent
@@ -172,22 +176,33 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const totalDuration = durationSeconds(events[0].timestamp, events[events.length - 1].timestamp);
 
     return (
-      <div className="action-timeline">
+      <div>
         {events.map((event, i) => {
           // Don't render the end marker.
-          if (!("name" in event)) return null;
+          if (!event.color) return null;
 
           const next = events[i + 1];
           const duration = durationSeconds(event.timestamp, next.timestamp);
           const weight = duration / totalDuration;
           return (
-            <div
-              className="timeline-event"
-              title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
-              style={{ flex: `${weight} 0 0`, backgroundColor: event.color }}>
-              <div className="timeline-event-label">
-                <span className="event-name">{event.name}</span> ({format.compactDurationSec(duration)},{" "}
-                {(weight * 100).toFixed(0)}%)
+            <div>
+              <div className="metadata-detail">
+                <span className="label">
+                  {event.name} @ {format.formatTimestamp(event.timestamp)}
+                </span>
+                <span className="bar-description">
+                  ({format.compactDurationSec(duration)}, {(weight * 100).toFixed(0)}%)
+                </span>
+              </div>
+              <div className="action-timeline">
+                <div
+                  className="timeline-event"
+                  title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
+                  style={{ flex: `${weight} 0 0`, backgroundColor: event.color }}></div>
+                <div
+                  className="timeline-event-gray"
+                  title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
+                  style={{ flex: `${1 - weight} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}></div>
               </div>
             </div>
           );
@@ -277,50 +292,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                           <div className="metadata-title">Executor ID</div>
                           <div className="metadata-detail">{this.state.actionResult.executionMetadata.executorId}</div>
                           <div className="metadata-title">Timeline</div>
-                          {this.renderTimeline()}
-                          <div className="metadata-detail">
-                            Queued @ {format.formatTimestamp(this.state.actionResult.executionMetadata.queuedTimestamp)}
-                          </div>
-                          <div className="metadata-detail">
-                            Worker Started @{" "}
-                            {format.formatTimestamp(this.state.actionResult.executionMetadata.workerStartTimestamp)}
-                          </div>
-                          <div className="metadata-detail">
-                            Input Fetching Started @{" "}
-                            {format.formatTimestamp(this.state.actionResult.executionMetadata.inputFetchStartTimestamp)}
-                          </div>
-                          <div className="metadata-detail">
-                            Input Fetching Completed @{" "}
-                            {format.formatTimestamp(
-                              this.state.actionResult.executionMetadata.inputFetchCompletedTimestamp
-                            )}
-                          </div>
-                          <div className="metadata-detail">
-                            Execution Started @{" "}
-                            {format.formatTimestamp(this.state.actionResult.executionMetadata.executionStartTimestamp)}
-                          </div>
-                          <div className="metadata-detail">
-                            Execution Completed @{" "}
-                            {format.formatTimestamp(
-                              this.state.actionResult.executionMetadata.executionCompletedTimestamp
-                            )}
-                          </div>
-                          <div className="metadata-detail">
-                            Output Upload Started @{" "}
-                            {format.formatTimestamp(
-                              this.state.actionResult.executionMetadata.outputUploadStartTimestamp
-                            )}
-                          </div>
-                          <div className="metadata-detail">
-                            Output Upload Completed @{" "}
-                            {format.formatTimestamp(
-                              this.state.actionResult.executionMetadata.outputUploadCompletedTimestamp
-                            )}
-                          </div>
-                          <div className="metadata-detail">
-                            Worker Completed @{" "}
-                            {format.formatTimestamp(this.state.actionResult.executionMetadata.workerCompletedTimestamp)}
-                          </div>
+                          {this.renderTimelines()}
                         </div>
                       ) : (
                         <div>None found</div>
