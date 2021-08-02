@@ -187,7 +187,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
           return (
             <div>
               <div className="metadata-detail">
-                {event.name} @ {format.formatTimestamp(event.timestamp)}
+                <span className="label">
+                  {event.name} @ {format.formatTimestamp(event.timestamp)}
+                </span>
+                <span className="bar-description">
+                  ({format.compactDurationSec(duration)}, {(weight * 100).toFixed(0)}%)
+                </span>
               </div>
               <div className="action-timeline">
                 <div
@@ -195,11 +200,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
                   title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
                   style={{ flex: `${weight} 0 0`, backgroundColor: event.color }}></div>
                 <div
-                  className="timeline-event-label"
+                  className="timeline-event-gray"
                   title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
-                  style={{ flex: `${1 - weight} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}>
-                  ({format.compactDurationSec(duration)}, {(weight * 100).toFixed(0)}%)
-                </div>
+                  style={{ flex: `${1 - weight} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}></div>
               </div>
             </div>
           );
