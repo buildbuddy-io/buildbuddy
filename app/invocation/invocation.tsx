@@ -1,5 +1,6 @@
 import moment from "moment";
 import React from "react";
+import { Subscription } from "rxjs";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
@@ -18,6 +19,7 @@ import SuggestionCardComponent from "./invocation_suggestion_card";
 import InvocationFilterComponent from "./invocation_filter";
 import InvocationInProgressComponent from "./invocation_in_progress";
 import InvocationModel from "./invocation_model";
+import InvocationLogsModel from "./invocation_logs_model";
 import WorkflowCommands from "./workflow_commands";
 import InvocationNotFoundComponent from "./invocation_not_found";
 import InvocationOverviewComponent from "./invocation_overview";
@@ -58,7 +60,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
     model: new InvocationModel(),
   };
 
-  timeoutRef: number;
+  private timeoutRef: number;
+  private logsModel: InvocationLogsModel;
+  private logsSubscription: Subscription;
 
   componentWillMount() {
     document.title = `Invocation ${this.props.invocationId} | BuildBuddy`;
@@ -70,6 +74,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
   componentWillUnmount() {
     clearTimeout(this.timeoutRef);
+    this.logsModel?.stopFetching();
+    this.logsSubscription?.unsubscribe();
   }
 
   fetchInvocation() {
@@ -105,14 +111,35 @@ export default class InvocationComponent extends React.Component<Props, State> {
           loading: false,
         });
       });
+
+    this.logsModel = new InvocationLogsModel(this.props.invocationId);
+    // Re-render whenever we fetch new log chunks.
+    this.logsSubscription = this.logsModel.onChange.subscribe({
+      next: () => this.forceUpdate(),
+    });
+    this.logsModel.startFetching();
   }
 
   fetchUpdatedProgress() {
     clearTimeout(this.timeoutRef);
     // Refetch invocation data in 3 seconds to update status.
-    this.timeoutRef = setTimeout(() => {
+    this.timeoutRef = window.setTimeout(() => {
       this.fetchInvocation();
     }, 3000);
+  }
+
+  getBuildLogs() {
+    if (!this.state.model.hasChunkedEventLogs()) {
+      return this.state.model.consoleBuffer;
+    }
+    return this.logsModel.getLogs();
+  }
+
+  areBuildLogsLoading() {
+    if (!this.state.model.hasChunkedEventLogs()) {
+      return false;
+    }
+    return this.logsModel.isFetching();
   }
 
   render() {
@@ -227,7 +254,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {(activeTab === "all" || activeTab == "log") && (
             <BuildLogsCardComponent
               dark={!this.props.preferences.lightTerminalEnabled}
-              model={this.state.model}
+              value={this.getBuildLogs()}
+              loading={this.areBuildLogsLoading()}
               expanded={activeTab == "log"}
             />
           )}

@@ -46,6 +46,10 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	c := chunkstore.New(env.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
 	eventLogPath := getEventLogPathFromInvocationId(req.InvocationId)
 
+	if inv.LastChunkId == "" {
+		return &elpb.GetEventLogChunkResponse{}, nil
+	}
+
 	lastChunkId, err := c.GetLastChunkId(ctx, eventLogPath, inv.LastChunkId)
 	if err != nil {
 		if inv.LastChunkId != chunkstore.ChunkIndexAsStringId(math.MaxUint16) {

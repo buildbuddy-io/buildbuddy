@@ -446,3 +446,7 @@ svg.invocation-query-graph .nodes rect {
   rx: 8px;
   ry: 8px;
 }
+
+.invocation .build-logs-card .loading.loading-dark {
+  background: transparent;
+}
