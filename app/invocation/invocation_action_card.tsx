@@ -202,10 +202,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
         <div className="card">
           <img className="icon" src="/image/info.svg" />
           <div className="content">
-            <div className="title">Action details </div>
             <div className="details">
-              {this.state.action && (
+              {this.state.action ? (
                 <div>
+                  <div className="title">Action details </div>
                   <div className="action-section">
                     <div className="action-property-title">Hash/Size</div>
                     <div>{this.props.search.get("actionDigest")} bytes</div>
@@ -237,11 +237,16 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     )}
                   </div>
                 </div>
+              ) : (
+                <div>
+                  No action profile was found. If there are no error messages, the action profile was likely removed
+                  from the content-addressable storage.
+                </div>
               )}
               <div className="action-line">
-                <div className="action-title">Command details</div>
                 {this.state.command && (
                   <div>
+                    <div className="action-title">Command details</div>
                     <div className="action-section">
                       <div className="action-property-title">Arguments</div>
                       {this.displayList(this.state.command.arguments)}
