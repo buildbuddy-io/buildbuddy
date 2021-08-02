@@ -38,10 +38,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
     rpcService
       .fetchBytestreamFile(actionFile, this.props.model.getId(), "arraybuffer")
       .then((buffer: any) => {
+        let action = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(buffer));
         this.setState({
-          action: build.bazel.remote.execution.v2.Action.decode(new Uint8Array(buffer)),
+          action: action,
         });
-        this.fetchCommand(this.state.action);
+        this.fetchCommand(action);
+        this.fetchInputRoot(action.inputRootDigest);
       })
       .catch((e) => errorService.handleError(e));
   }
@@ -95,7 +97,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.setState({
           command: build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer)),
         });
-        this.fetchInputRoot(action.inputRootDigest);
       })
       .catch((e) => errorService.handleError(e));
   }
