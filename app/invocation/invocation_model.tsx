@@ -502,6 +502,12 @@ export default class InvocationModel {
   }
 
   hasChunkedEventLogs(): boolean {
-    return this.invocations[0]?.hasChunkedEventLogs || false;
+    return false;
+
+    // TODO(bduffany): re-enable once we can confirm
+    // https://github.com/buildbuddy-io/buildbuddy-internal/issues/774
+    // is not an issue.
+
+    // return this.invocations[0]?.hasChunkedEventLogs || false;
   }
 }
