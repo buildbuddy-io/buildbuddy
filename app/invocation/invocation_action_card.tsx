@@ -3,15 +3,13 @@ import format from "../format/format";
 import InvocationModel from "./invocation_model";
 import errorService from "../errors/error_service";
 import { build } from "../../proto/remote_execution_ts_proto";
-import InputFileComponent from "./invocation_action_input_node";
+import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
 
 interface Props {
   model: InvocationModel;
   search: URLSearchParams;
 }
-
-type Node = build.bazel.remote.execution.v2.IFileNode | build.bazel.remote.execution.v2.IDirectoryNode;
 
 interface State {
   contents?: ArrayBuffer;
@@ -20,14 +18,16 @@ interface State {
   command?: build.bazel.remote.execution.v2.Command;
   error?: string;
   inputRoot?: build.bazel.remote.execution.v2.Directory;
+  inputDirs?: InputNode[];
   treeShaToExpanded?: Map<string, boolean>;
-  treeShaToChildrenMap?: Map<string, Node[]>;
+  treeShaToChildrenMap?: Map<string, InputNode[]>;
 }
 
 export default class InvocationActionCardComponent extends React.Component<Props, State> {
   state: State = {
     treeShaToExpanded: new Map<string, boolean>(),
-    treeShaToChildrenMap: new Map<string, Node[]>(),
+    treeShaToChildrenMap: new Map<string, InputNode[]>(),
+    inputDirs: [],
   };
   componentDidMount() {
     this.fetchAction();
@@ -57,9 +57,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(inputRootFile, this.props.model.getId(), "arraybuffer")
       .then((rootBuff: any) => {
         let tempRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(rootBuff));
+        let inputDirs: InputNode[] = tempRoot.directories.map(
+          (node) =>
+            ({
+              obj: node,
+              type: "dir",
+            } as InputNode)
+        );
         this.setState({
           ...this.state,
           inputRoot: tempRoot,
+          inputDirs: inputDirs,
         });
       })
       .catch((e) => errorService.handleError(e));
@@ -204,12 +212,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
-  isFileNode(node: Node): node is build.bazel.remote.execution.v2.IFileNode {
-    return node.hasOwnProperty("isExecutable");
-  }
-
-  handleFileClicked(node: any) {
-    let digestString = node.digest.hash + "/" + node.digest.sizeBytes;
+  handleFileClicked(node: InputNode) {
+    console.log("reached");
+    let digestString = node.obj.digest.hash + "/" + node.obj.digest.sizeBytes;
     let dirUrl = "bytestream://" + this.getCacheAddress() + "/blobs/" + digestString;
 
     if (this.state.treeShaToExpanded.get(digestString)) {
@@ -217,8 +222,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
       this.forceUpdate();
       return;
     }
-    if (this.isFileNode(node)) {
-      rpcService.downloadBytestreamFile(node.name, dirUrl, this.props.model.getId());
+    if (node.type == "file") {
+      rpcService.downloadBytestreamFile(node.obj.name, dirUrl, this.props.model.getId());
       return;
     }
     rpcService
@@ -226,8 +231,21 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .then((dirBuff: any) => {
         let tempDir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(dirBuff));
         this.state.treeShaToExpanded.set(digestString, true);
-        let contents: Node[] = [];
-        this.state.treeShaToChildrenMap.set(digestString, contents.concat(tempDir.directories).concat(tempDir.files));
+        let dirs: InputNode[] = tempDir.directories.map(
+          (dir) =>
+            ({
+              obj: dir,
+              type: "dir",
+            } as InputNode)
+        );
+        let files: InputNode[] = tempDir.directories.map(
+          (file) =>
+            ({
+              obj: file,
+              type: "file",
+            } as InputNode)
+        );
+        this.state.treeShaToChildrenMap.set(digestString, dirs.concat(files));
         this.forceUpdate();
       })
       .catch((e) => errorService.handleError(e));
@@ -276,17 +294,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
                   </div>
                   <div className="action-section">
                     <div className="action-property-title">Input files</div>
-                    <div className="input-tree">
-                      {this.state.inputRoot &&
-                        this.state.inputRoot.directories.map((node: any) => (
-                          <InputFileComponent
+                    {this.state.inputDirs.length && (
+                      <div className="input-tree">
+                        {this.state.inputDirs.map((node) => (
+                          <InputNodeComponent
                             node={node}
                             treeShaToExpanded={this.state.treeShaToExpanded}
                             treeShaToChildrenMap={this.state.treeShaToChildrenMap}
                             handleFileClicked={this.handleFileClicked.bind(this)}
                           />
                         ))}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
