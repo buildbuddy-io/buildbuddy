@@ -1,7 +1,6 @@
 package event_parser
 
 import (
-	"regexp"
 	"strings"
 	"time"
 
@@ -10,76 +9,35 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
 const (
-	envVarPrefix              = "--"
-	envVarOptionName          = "client_env"
-	envVarSeparator           = "="
-	envVarRedactedPlaceholder = "<REDACTED>"
-	undefinedTimestamp        = int64(-1)
+	envVarOptionName   = "client_env"
+	envVarSeparator    = "="
+	undefinedTimestamp = int64(-1)
 )
 
-var (
-	urlSecretRegex = regexp.MustCompile(`[a-zA-Z-0-9-_=]+\@`)
-)
-
-func stripURLSecrets(input string) string {
-	return urlSecretRegex.ReplaceAllString(input, "")
-}
-
-func parseAndFilterCommandLine(in *command_line.CommandLine, allowedEnvVars []string) map[string]string {
+func parseEnv(commandLine *command_line.CommandLine) map[string]string {
 	envVarMap := make(map[string]string)
-	if in == nil {
+	if commandLine == nil {
 		return envVarMap
 	}
-	for _, section := range in.Sections {
-		switch p := section.SectionType.(type) {
-		case *command_line.CommandLineSection_OptionList:
-			{
-				for _, option := range p.OptionList.Option {
-					option.OptionValue = stripURLSecrets(option.OptionValue)
-					option.CombinedForm = stripURLSecrets(option.CombinedForm)
-					if option.OptionName == "remote_header" || option.OptionName == "remote_cache_header" {
-						option.OptionValue = envVarRedactedPlaceholder
-						option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + envVarRedactedPlaceholder
-					}
-					if option.OptionName == envVarOptionName {
-						parts := strings.Split(option.OptionValue, envVarSeparator)
-						if len(parts) == 2 {
-							envVarMap[parts[0]] = parts[1]
-						}
-						if isAllowedEnvVar(parts[0], allowedEnvVars) {
-							continue
-						}
-
-						option.OptionValue = strings.Join([]string{parts[0], envVarRedactedPlaceholder}, envVarSeparator)
-						option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + envVarRedactedPlaceholder
-					}
-				}
-			}
-		default:
+	for _, section := range commandLine.Sections {
+		p, ok := section.SectionType.(*command_line.CommandLineSection_OptionList)
+		if !ok {
 			continue
+		}
+		for _, option := range p.OptionList.Option {
+			if option.OptionName != envVarOptionName {
+				continue
+			}
+			parts := strings.Split(option.OptionValue, envVarSeparator)
+			if len(parts) == 2 {
+				envVarMap[parts[0]] = parts[1]
+			}
 		}
 	}
 	return envVarMap
-}
-
-func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
-	lowercaseVariableName := strings.ToLower(variableName)
-	for _, allowed := range allowedEnvVars {
-		lowercaseAllowed := strings.ToLower(allowed)
-		if allowed == "*" || lowercaseVariableName == lowercaseAllowed {
-			return true
-		}
-		isWildCard := strings.HasSuffix(allowed, "*")
-		allowedPrefix := strings.ReplaceAll(lowercaseAllowed, "*", "")
-		if isWildCard && strings.HasPrefix(lowercaseVariableName, allowedPrefix) {
-			return true
-		}
-	}
-	return false
 }
 
 type StreamingEventParser struct {
@@ -91,7 +49,6 @@ type StreamingEventParser struct {
 	workspaceStatuses      []*build_event_stream.WorkspaceStatus
 	workflowConfigurations []*build_event_stream.WorkflowConfigured
 	pattern                []string
-	allowedEnvVars         []string
 	startTimeMillis        int64
 	endTimeMillis          int64
 	actionCount            int64
@@ -103,7 +60,6 @@ func NewStreamingEventParser() *StreamingEventParser {
 		startTimeMillis:        undefinedTimestamp,
 		endTimeMillis:          undefinedTimestamp,
 		screenWriter:           terminal.NewScreenWriter(),
-		allowedEnvVars:         []string{"USER", "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID", "BUILDKITE_BUILD_URL", "BUILDKITE_JOB_ID"},
 		structuredCommandLines: make([]*command_line.CommandLine, 0),
 		workspaceStatuses:      make([]*build_event_stream.WorkspaceStatus, 0),
 		workflowConfigurations: make([]*build_event_stream.WorkflowConfigured, 0),
@@ -205,9 +161,6 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 				return
 			}
 			sep.buildMetadata = append(sep.buildMetadata, metadata)
-			if allowed, ok := metadata["ALLOW_ENV"]; ok && allowed != "" {
-				sep.allowedEnvVars = append(sep.allowedEnvVars, strings.Split(allowed, ",")...)
-			}
 		}
 	case *build_event_stream.BuildEvent_ConvenienceSymlinksIdentified:
 		{
@@ -236,7 +189,7 @@ func (sep *StreamingEventParser) FillInvocation(invocation *inpb.Invocation) {
 	// - Build metadata
 
 	for _, commandLine := range sep.structuredCommandLines {
-		fillInvocationFromStructuredCommandLine(commandLine, invocation, sep.allowedEnvVars)
+		fillInvocationFromStructuredCommandLine(commandLine, invocation)
 	}
 	for _, workspaceStatus := range sep.workspaceStatuses {
 		fillInvocationFromWorkspaceStatus(workspaceStatus, invocation)
@@ -257,8 +210,8 @@ func (sep *StreamingEventParser) FillInvocation(invocation *inpb.Invocation) {
 	invocation.ConsoleBuffer = string(sep.screenWriter.RenderAsANSI())
 }
 
-func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine, invocation *inpb.Invocation, allowedEnvVars []string) {
-	envVarMap := parseAndFilterCommandLine(commandLine, allowedEnvVars)
+func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine, invocation *inpb.Invocation) {
+	envVarMap := parseEnv(commandLine)
 	if commandLine != nil {
 		invocation.StructuredCommandLine = append(invocation.StructuredCommandLine, commandLine)
 	}
@@ -266,19 +219,19 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 		invocation.User = user
 	}
 	if url, ok := envVarMap["TRAVIS_REPO_SLUG"]; ok && url != "" {
-		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
+		invocation.RepoUrl = url
 	}
 	if url, ok := envVarMap["GIT_URL"]; ok && url != "" {
-		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
+		invocation.RepoUrl = url
 	}
 	if url, ok := envVarMap["BUILDKITE_REPO"]; ok && url != "" {
-		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
+		invocation.RepoUrl = url
 	}
 	if url, ok := envVarMap["CIRCLE_REPOSITORY_URL"]; ok && url != "" {
-		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
+		invocation.RepoUrl = url
 	}
 	if url, ok := envVarMap["GITHUB_REPOSITORY"]; ok && url != "" {
-		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
+		invocation.RepoUrl = url
 	}
 	if sha, ok := envVarMap["TRAVIS_COMMIT"]; ok && sha != "" {
 		invocation.CommitSha = sha
@@ -305,7 +258,7 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	// Gitlab CI Environment Variables
 	// https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
 	if url, ok := envVarMap["CI_REPOSITORY_URL"]; ok && url != "" {
-		invocation.RepoUrl = gitutil.StripRepoURLCredentials(url)
+		invocation.RepoUrl = url
 	}
 	if sha, ok := envVarMap["CI_COMMIT_SHA"]; ok && sha != "" {
 		invocation.CommitSha = sha

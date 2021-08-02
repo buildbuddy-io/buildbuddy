@@ -9,43 +9,79 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/stretchr/testify/assert"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	_ "github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-func makeRootDir(t *testing.T) string {
-	rootDir, err := ioutil.TempDir("/tmp", "buildbuddy_docker_test_*")
+func makeDir(t *testing.T, prefix string) string {
+	dir, err := ioutil.TempDir(prefix, "d-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		os.RemoveAll(rootDir)
+		os.RemoveAll(dir)
 	})
-	return rootDir
+	return dir
 }
 
-func makeWorkDir(t *testing.T, rootDir string) string {
-	workDir, err := ioutil.TempDir(rootDir, "ws_*")
+func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
+	env := testenv.GetTestEnv(t)
+	diskCacheSize := 10_000_000_000 // 10GB
+	testRootDir := makeDir(t, "/tmp")
+	dc, err := disk_cache.NewDiskCache(env, &config.DiskConfig{RootDirectory: testRootDir}, int64(diskCacheSize))
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
 	}
-	return workDir
+	env.SetCache(dc)
+	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
+	if err != nil {
+		t.Error(err)
+	}
+	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
+	if err != nil {
+		t.Error(err)
+	}
+	actionCacheServer, err := action_cache_server.NewActionCacheServer(env)
+	if err != nil {
+		t.Error(err)
+	}
+	grpcServer, runFunc := env.LocalGRPCServer()
+	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
+	repb.RegisterActionCacheServer(grpcServer, actionCacheServer)
+	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
+	go runFunc()
+
+	conn, err := env.LocalGRPCConn(ctx)
+	if err != nil {
+		t.Error(err)
+	}
+	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+	env.SetActionCacheClient(repb.NewActionCacheClient(conn))
+	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	return env
 }
 
 func TestFirecrackerRun(t *testing.T) {
-	rootDir := makeRootDir(t)
-	workDir := makeWorkDir(t, rootDir)
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := makeDir(t, "/tmp")
+	workDir := makeDir(t, rootDir)
 
 	path := filepath.Join(workDir, "world.txt")
 	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
@@ -66,7 +102,7 @@ func TestFirecrackerRun(t *testing.T) {
 		MemSizeMB:              2500,
 		EnableNetworking:       false,
 	}
-	c, err := firecracker.NewContainer(ctx, opts)
+	c, err := firecracker.NewContainer(env, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,14 +116,15 @@ func TestFirecrackerRun(t *testing.T) {
 }
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
-	rootDir := makeRootDir(t)
-	workDir := makeWorkDir(t, rootDir)
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := makeDir(t, "/tmp")
+	workDir := makeDir(t, rootDir)
 
 	path := filepath.Join(workDir, "world.txt")
 	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         "docker.io/library/busybox",
 		ActionWorkingDirectory: workDir,
@@ -95,7 +132,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		MemSizeMB:              100,
 		EnableNetworking:       false,
 	}
-	c, err := firecracker.NewContainer(ctx, opts)
+	c, err := firecracker.NewContainer(env, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,8 +180,9 @@ func TestFirecrackerFileMapping(t *testing.T) {
 	numFiles := 100
 	fileSizeBytes := int64(1000)
 	ctx := context.Background()
+	env := getTestEnv(ctx, t)
 
-	rootDir := makeRootDir(t)
+	rootDir := makeDir(t, "/tmp")
 	subDirs := []string{"a", "b", "c", "d", "e"}
 	files := make([]string, 0, numFiles)
 
@@ -180,7 +218,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		MemSizeMB:              100,
 		EnableNetworking:       false,
 	}
-	c, err := firecracker.NewContainer(ctx, opts)
+	c, err := firecracker.NewContainer(env, opts)
 	if err != nil {
 		t.Fatal(err)
 	}

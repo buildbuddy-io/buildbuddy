@@ -102,14 +102,19 @@ export default class HistoryComponent extends React.Component {
     let aggregationType = this.hashToAggregationTypeMap.get(this.props.hash);
     if (!aggregationType) return;
 
-    this.setState({ ...this.state, invocationStat: [], loadingStats: true });
-    let request = new invocation.GetInvocationStatRequest();
-    request.aggregationType = aggregationType;
+    this.setState({ invocationStat: [], loadingStats: true });
+    const filterParams = getProtoFilterParams(this.props.search);
+    const request = new invocation.GetInvocationStatRequest({
+      aggregationType,
+      query: new invocation.InvocationStatQuery({
+        updatedBefore: filterParams.updatedBefore,
+        updatedAfter: filterParams.updatedAfter,
+      }),
+    });
     rpcService.service.getInvocationStat(request).then((response) => {
       if (aggregationType != this.hashToAggregationTypeMap.get(this.props.hash)) return;
       console.log(response);
       this.setState({
-        ...this.state,
         invocationStat: response.invocationStat,
         loadingStats: false,
       });
@@ -117,10 +122,16 @@ export default class HistoryComponent extends React.Component {
   }
 
   getSummaryStats() {
-    let request = new invocation.GetInvocationStatRequest();
-    request.aggregationType = invocation.AggType.GROUP_ID_AGGREGATION_TYPE;
+    const filterParams = getProtoFilterParams(this.props.search);
+    const request = new invocation.GetInvocationStatRequest({
+      aggregationType: invocation.AggType.GROUP_ID_AGGREGATION_TYPE,
+      query: new invocation.InvocationQuery({
+        updatedAfter: filterParams.updatedAfter,
+        updatedBefore: filterParams.updatedBefore,
+      }),
+    });
     rpcService.service.getInvocationStat(request).then((response) => {
-      this.setState({ ...this.state, summaryStat: response.invocationStat });
+      this.setState({ summaryStat: response.invocationStat });
     });
   }
 
@@ -144,10 +155,11 @@ export default class HistoryComponent extends React.Component {
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.hash !== prevProps.hash) {
+    if (this.props.hash !== prevProps.hash || this.props.search !== prevProps.search) {
       this.getStats();
     }
     if (this.props.search !== prevProps.search) {
+      this.getSummaryStats();
       this.getBuilds();
     }
   }

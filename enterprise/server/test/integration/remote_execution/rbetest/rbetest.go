@@ -108,7 +108,7 @@ func (r *Env) uploadInputRoot(ctx context.Context, rootDir string) *repb.Digest 
 	r.testEnv.SetByteStreamClient(r.GetByteStreamClient())
 	r.testEnv.SetContentAddressableStorageClient(r.GetContentAddressableStorageClient())
 
-	digest, err := cachetools.UploadDirectoryToCAS(ctx, r.testEnv, "" /*=instanceName*/, rootDir)
+	digest, _, err := cachetools.UploadDirectoryToCAS(ctx, r.testEnv, "" /*=instanceName*/, rootDir)
 	if err != nil {
 		assert.FailNow(r.t, err.Error())
 	}

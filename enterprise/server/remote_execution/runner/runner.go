@@ -451,6 +451,9 @@ func (p *Pool) hostBuildRoot() string {
 	// TODO(bduffany): Make this configurable in YAML, populating {{.PodID}} via template.
 	// People might have conventions other than executor-data for the volume name + remotebuilds
 	// for the build root dir.
+	if hd := p.env.GetConfigurator().GetExecutorConfig().HostExecutorRootDirectory; hd != "" {
+		return filepath.Join(hd, "remotebuilds")
+	}
 	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 }
 
@@ -599,7 +602,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties) (co
 			MemSizeMB:              2500,
 			EnableNetworking:       false,
 		}
-		c, err := firecracker.NewContainer(ctx, opts)
+		c, err := firecracker.NewContainer(p.env, opts)
 		if err != nil {
 			return nil, err
 		}

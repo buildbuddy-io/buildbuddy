@@ -28,7 +28,7 @@ const (
 
 	// Number of lines to keep in the screen buffer so that they may be modified
 	// by ANSI Cursor control codes.
-	linesToRetainForANSICursor = 6
+	linesToRetainForANSICursor = 10
 )
 
 func getEventLogPathFromInvocationId(invocationId string) string {
@@ -45,6 +45,10 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	invocationInProgress := inv.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS)
 	c := chunkstore.New(env.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
 	eventLogPath := getEventLogPathFromInvocationId(req.InvocationId)
+
+	if inv.LastChunkId == "" {
+		return &elpb.GetEventLogChunkResponse{}, nil
+	}
 
 	lastChunkId, err := c.GetLastChunkId(ctx, eventLogPath, inv.LastChunkId)
 	if err != nil {

@@ -190,6 +190,14 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		q.AddWhereClause("commit = ?", commitSHA)
 	}
 
+	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
+		q.AddWhereClause("updated_at_usec >= ?", timeutil.ToUsec(start.AsTime()))
+	}
+
+	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
+		q.AddWhereClause("updated_at_usec < ?", timeutil.ToUsec(end.AsTime()))
+	}
+
 	q.AddWhereClause(`group_id = ?`, groupID)
 	q.SetGroupBy("name")
 	q.SetOrderBy("latest_build_time_usec" /*ascending=*/, false)
