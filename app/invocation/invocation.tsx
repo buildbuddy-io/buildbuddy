@@ -70,6 +70,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
     moment.relativeTimeThreshold("ss", 0);
 
     this.fetchInvocation();
+
+    this.logsModel = new InvocationLogsModel(this.props.invocationId);
+    // Re-render whenever we fetch new log chunks.
+    this.logsSubscription = this.logsModel.onChange.subscribe({
+      next: () => this.forceUpdate(),
+    });
+    this.logsModel.startFetching();
   }
 
   componentWillUnmount() {
@@ -111,13 +118,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
           loading: false,
         });
       });
-
-    this.logsModel = new InvocationLogsModel(this.props.invocationId);
-    // Re-render whenever we fetch new log chunks.
-    this.logsSubscription = this.logsModel.onChange.subscribe({
-      next: () => this.forceUpdate(),
-    });
-    this.logsModel.startFetching();
   }
 
   fetchUpdatedProgress() {
