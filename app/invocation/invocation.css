@@ -1,33 +1,41 @@
-.input-file-tree {
+.input-tree {
   width: 200px;
-  border-right: 1px solid #fafafa;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 6px 4px 4px 14px;
   flex-shrink: 0;
   max-height: 250px;
   overflow: scroll;
   box-sizing: border-box;
 }
 
-.input-file-tree div {
-  margin-bottom: 4px;
+.input-tree-node {
+  margin-bottom: 2px;
   cursor: pointer;
 }
 
-.input-file-tree-file:hover {
+.input-tree-node-name:hover {
   opacity: 0.5;
 }
 
-.input-file-tree-node-children {
-  padding-left: 16px;
+.input-tree-node-children {
+  border-left: 1px solid #ccc;
+  padding-left: 10px;
+  margin-left: 8px;
 }
 
-.input-file-tree-node-name {
+.input-tree-node-name {
   display: flex;
-  font-size: 13px;
+  font-size: 12px;
+}
+
+.input-tree-node-label {
+  padding-top: 1px;
 }
 
 .file-icon {
-  margin-right: 12px;
-  margin-left: 2px;
+  margin-right: 8px;
+  margin-left: 0px;
   padding-top: 1.5px;
 }
 
