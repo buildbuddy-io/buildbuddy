@@ -61,7 +61,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
             } as InputNode)
         );
         this.setState({
-          ...this.state,
           inputRoot: tempRoot,
           inputDirs: inputDirs,
         });
@@ -76,7 +75,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(actionResultFile, this.props.model.getId(), "arraybuffer")
       .then((buffer: any) => {
         this.setState({
-          ...this.state,
           actionResult: build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer)),
         });
       })
@@ -95,7 +93,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(commandFile, this.props.model.getId(), "arraybuffer")
       .then((buffer: any) => {
         this.setState({
-          ...this.state,
           command: build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer)),
         });
         this.fetchInputRoot(action.inputRootDigest);
