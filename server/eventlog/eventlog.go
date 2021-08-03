@@ -165,11 +165,12 @@ type chunkFuture chan chunkReadResult
 
 type chunkQueue struct {
 	store          *chunkstore.Chunkstore
-	eventLogPath   string
-	start          uint16
-	step           uint16
-	boundary       uint16
 	maxConnections int
+
+	eventLogPath string
+	start        uint16
+	step         uint16
+	boundary     uint16
 
 	futures   []chunkFuture
 	numPopped int
