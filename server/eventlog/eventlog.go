@@ -127,9 +127,6 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	// Fetch one chunk even if the minimum line count is 0
 	for chunkIndex := startIndex; chunkIndex != boundary+step; chunkIndex += step {
 		buffer, err := q.pop(ctx)
-		if err == io.EOF {
-			break
-		}
 		if err != nil {
 			return nil, err
 		}
