@@ -163,6 +163,10 @@ type chunkReadResult struct {
 
 type chunkFuture chan chunkReadResult
 
+func newChunkFuture() chunkFuture {
+	return make(chunkFuture, 1)
+}
+
 type chunkQueue struct {
 	store          *chunkstore.Chunkstore
 	maxConnections int
@@ -186,10 +190,6 @@ func newChunkQueue(c *chunkstore.Chunkstore, eventLogPath string, start, step, b
 		step:           step,
 		boundary:       boundary,
 	}
-}
-
-func newChunkFuture() chunkFuture {
-	return make(chunkFuture, 1)
 }
 
 func (q *chunkQueue) pushNewFuture(ctx context.Context, index uint16) {
