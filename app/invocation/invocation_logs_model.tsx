@@ -40,7 +40,6 @@ export default class InvocationLogsModel {
   }
 
   private fetchTail(chunkId = "") {
-    console.log("fetchTail");
     this.responseSubscription = from<Promise<eventlog.GetEventLogChunkResponse>>(
       rpcService.service.getEventLogChunk(
         new eventlog.GetEventLogChunkRequest({
