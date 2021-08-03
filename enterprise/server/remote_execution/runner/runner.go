@@ -568,7 +568,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	if err != nil {
 		return nil, err
 	}
-	ctr, err := p.newContainer(ctx, props)
+	ctr, err := p.newContainer(ctx, props, task.GetCommand())
 	if err != nil {
 		return nil, err
 	}
@@ -584,7 +584,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	return r, nil
 }
 
-func (p *Pool) newContainer(ctx context.Context, props *platform.Properties) (container.CommandContainer, error) {
+func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd *repb.Command) (container.CommandContainer, error) {
 	var ctr container.CommandContainer
 	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:
@@ -595,12 +595,14 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties) (co
 	case platform.ContainerdContainerType:
 		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
 	case platform.FirecrackerContainerType:
+		sizeEstimate := tasksize.Estimate(cmd)
 		opts := firecracker.ContainerOpts{
 			ContainerImage:         props.ContainerImage,
 			ActionWorkingDirectory: p.hostBuildRoot(),
-			NumCPUs:                1,
-			MemSizeMB:              2500,
+			NumCPUs:                int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
+			MemSizeMB:              int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
 			EnableNetworking:       false,
+			JailerRoot:             p.buildRoot,
 		}
 		c, err := firecracker.NewContainer(p.env, opts)
 		if err != nil {
