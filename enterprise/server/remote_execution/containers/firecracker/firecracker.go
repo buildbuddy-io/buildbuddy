@@ -905,6 +905,9 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 	if err := os.RemoveAll(filepath.Dir(c.workspaceFSPath)); err != nil {
 		log.Errorf("Error removing workspace fs: %s", err)
 	}
+	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
+		log.Errorf("Error removing chroot: %s", err)
+	}
 	return nil
 }
 
