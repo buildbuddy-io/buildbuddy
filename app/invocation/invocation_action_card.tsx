@@ -238,10 +238,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                   </div>
                 </div>
               ) : (
-                <div>
-                  No action profile was found. If there are no error messages, the action profile was likely removed
-                  from the content-addressable storage.
-                </div>
+                <div>No action details were found.</div>
               )}
               <div className="action-line">
                 {this.state.command && (
