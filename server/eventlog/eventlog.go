@@ -157,9 +157,8 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 }
 
 type chunkReadResult struct {
-	index uint16
-	data  []byte
-	err   error
+	data []byte
+	err  error
 }
 
 type chunkFuture chan chunkReadResult
