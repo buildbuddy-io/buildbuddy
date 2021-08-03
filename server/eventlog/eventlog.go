@@ -147,7 +147,6 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 			rsp.Buffer = append(buffer, rsp.Buffer...)
 			rsp.PreviousChunkId = chunkstore.ChunkIndexAsStringId(chunkIndex + step)
 		}
-		chunkIndex += step
 		if lineCount >= int(req.MinLines) {
 			break
 		}
