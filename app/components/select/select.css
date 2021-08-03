@@ -12,7 +12,7 @@
   border-radius: 8px;
   border: 1px solid rgba(20, 20, 20, 0.1);
   transition: border 200ms ease;
-  background: transparent;
+  background-color: transparent;
   appearance: none;
   padding-right: 40px;
   cursor: pointer;
@@ -24,8 +24,8 @@
 }
 
 .select:hover:not(:active) {
-  transition: 200ms ease;
-  background: rgba(20, 20, 20, 0.1);
+  transition: background-color 200ms ease;
+  background-color: rgba(20, 20, 20, 0.1);
 }
 
 .select:hover:not(:focus) {
