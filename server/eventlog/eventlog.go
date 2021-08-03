@@ -180,11 +180,11 @@ type chunkQueue struct {
 func newChunkQueue(c *chunkstore.Chunkstore, eventLogPath string, start, step, boundary uint16) *chunkQueue {
 	return &chunkQueue{
 		store:          c,
+		maxConnections: numReadWorkers,
 		eventLogPath:   eventLogPath,
 		start:          start,
 		step:           step,
 		boundary:       boundary,
-		maxConnections: numReadWorkers,
 	}
 }
 
