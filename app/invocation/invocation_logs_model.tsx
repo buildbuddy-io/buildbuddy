@@ -40,6 +40,7 @@ export default class InvocationLogsModel {
   }
 
   private fetchTail(chunkId = "") {
+    console.log("fetchTail");
     this.responseSubscription = from<Promise<eventlog.GetEventLogChunkResponse>>(
       rpcService.service.getEventLogChunk(
         new eventlog.GetEventLogChunkRequest({
@@ -50,7 +51,7 @@ export default class InvocationLogsModel {
       )
     ).subscribe({
       next: (response) => {
-        this.logs = this.logs + String.fromCharCode(...(response.buffer || []));
+        this.logs = this.logs + new TextDecoder().decode(response.buffer || new Uint8Array());
 
         // Empty next chunk ID means the invocation is complete and we've reached
         // the end of the log.
