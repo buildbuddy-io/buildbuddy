@@ -169,10 +169,11 @@ type chunkQueue struct {
 	start          uint16
 	step           uint16
 	boundary       uint16
-	futures        []chunkFuture
 	maxConnections int
-	numPopped      int
-	done           bool
+
+	futures   []chunkFuture
+	numPopped int
+	done      bool
 }
 
 func newChunkQueue(c *chunkstore.Chunkstore, eventLogPath string, start, step, boundary uint16) *chunkQueue {
@@ -183,9 +184,6 @@ func newChunkQueue(c *chunkstore.Chunkstore, eventLogPath string, start, step, b
 		step:           step,
 		boundary:       boundary,
 		maxConnections: numReadWorkers,
-		futures:        make([]chunkFuture, 0),
-		numPopped:      0,
-		done:           false,
 	}
 }
 
