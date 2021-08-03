@@ -116,48 +116,92 @@ func hashString(input string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
-// getStaticFilePath returns the full path to a bundled file. If runfiles are
-// present, we'll try to read the file from there. If not, we'll fall back to
-// reading the file from the bundle (by writing the contents to a file in the
-// user's cache directory). If the file is not found in either place, an error
-// is returned.
-func getStaticFilePath(fileName string, mode fs.FileMode) (string, error) {
-	// If runfiles are included with the binary, bazel will take care of
-	// things for us and we can just return the path to the runfile.
+func getFileReader(ctx context.Context, fileName string) (io.Reader, error) {
+	sourcePath := ""
+
+	// If the file exists on the filesystem, use that.
+	if fp, err := exec.LookPath(fileName); err == nil {
+		log.Debugf("Located %q at %s", fileName, fp)
+		sourcePath = fp
+	}
+
+	// If the file exists in the binary runfiles, that works too.
 	if rfp, err := bazel.RunfilesPath(); err == nil {
 		targetFile := filepath.Join(rfp, "enterprise", fileName)
 		if exists, err := disk.FileExists(targetFile); err == nil && exists {
-			log.Debugf("Found %q in runfiles.", targetFile)
-			return targetFile, nil
+			log.Debugf("Located %q at %s", fileName, targetFile)
+			sourcePath = targetFile
 		}
 	}
 
-	// If no runfile is found and we must rely on the bundled version of a
-	// file, we need to ensure that we reference the file by sha256, that
-	// way subsequent versions of a binary will not reference the same file
-	// written on disk.
-	if bundleFS, err := bundle.Get(); err == nil {
-		if userCacheDir, err := os.UserCacheDir(); err == nil {
-			if data, err := fs.ReadFile(bundleFS, fileName); err == nil {
-				h := sha256.New()
-				if _, err := h.Write(data); err != nil {
-					return "", err
-				}
-				fileHash := fmt.Sprintf("%x", h.Sum(nil))
-				fileHome := filepath.Join(userCacheDir, "executor", fileHash)
-				if err := disk.EnsureDirectoryExists(fileHome); err != nil {
-					return "", err
-				}
-				casPath := filepath.Join(fileHome, filepath.Base(fileName))
-				if _, err := disk.WriteFile(context.Background(), casPath, data); err == nil {
-					log.Debugf("Found %q in bundle (and wrote to cached file: %q)", fileName, casPath)
-					return casPath, nil
-				}
+	var fileReader io.Reader
+	if sourcePath != "" {
+		reader, err := disk.FileReader(ctx, sourcePath, 0, 0)
+		if err != nil {
+			return nil, err
+		}
+		fileReader = reader
+	}
+
+	// If file wasn't found, check the bundle, it may be available there.
+	if fileReader == nil {
+		if bundleFS, err := bundle.Get(); err == nil {
+			if f, err := bundleFS.Open(fileName); err == nil {
+				log.Debugf("Located %q in bundle", fileName)
+				fileReader = f
 			}
 		}
 	}
+	return fileReader, nil
+}
 
-	return "", status.NotFoundErrorf("File %q not found in runfiles or bundle.", fileName)
+// putFileIntoDir finds "fileName" on the local filesystem, in runfiles, or
+// in the bundle. It then puts that file into destdir (via hardlink or copying)
+// and returns a path to the file in the new location. Files are written in
+// a content-addressable-storage-based location, so when files are updated they
+// will be put into new paths.
+func putFileIntoDir(ctx context.Context, fileName, destDir string, mode fs.FileMode) (string, error) {
+	fileReader, err := getFileReader(ctx, fileName)
+	if err != nil {
+		return "", err
+	}
+	// If fileReader is still nil, the file was not found, so return an error.
+	if fileReader == nil {
+		return "", status.NotFoundErrorf("File %q not found on fs, in runfiles or in bundle.", fileName)
+	}
+
+	// Compute the file hash to determine the new location where it should be written.
+	h := sha256.New()
+	if _, err := io.Copy(h, fileReader); err != nil {
+		return "", err
+	}
+	fileHash := fmt.Sprintf("%x", h.Sum(nil))
+	fileHome := filepath.Join(destDir, "executor", fileHash)
+	if err := disk.EnsureDirectoryExists(fileHome); err != nil {
+		return "", err
+	}
+	casPath := filepath.Join(fileHome, filepath.Base(fileName))
+	if exists, err := disk.FileExists(casPath); err == nil && exists {
+		log.Debugf("Found existing %q in path: %q", fileName, casPath)
+		return casPath, nil
+	}
+	// Write the file to the new location if it does not exist there already.
+	fileReader, err = getFileReader(ctx, fileName)
+	if err != nil {
+		return "", err
+	}
+	writer, err := disk.FileWriter(ctx, casPath)
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(writer, fileReader); err != nil {
+		return "", err
+	}
+	if err := writer.Close(); err != nil {
+		return "", err
+	}
+	log.Debugf("Put %q into new path: %q", fileName, casPath)
+	return casPath, nil
 }
 
 // waitUntilExists waits, up to maxWait, for localPath to exist. If the provided
@@ -274,10 +318,6 @@ type FirecrackerContainer struct {
 }
 
 func NewContainer(env environment.Env, opts ContainerOpts) (*FirecrackerContainer, error) {
-	// Ensure our kernel and initrd exist.
-	if err := locateStaticFiles(); err != nil {
-		return nil, err
-	}
 	// WARNING: because of the limitation on the length of unix sock file
 	// paths (103), this directory path needs to be short. Specifically, a
 	// full sock path will look like:
@@ -291,6 +331,13 @@ func NewContainer(env environment.Env, opts ContainerOpts) (*FirecrackerContaine
 		return nil, status.InvalidArgumentErrorf("JailerRoot must be < 38 characters. Was %q (%d).", opts.JailerRoot, len(opts.JailerRoot))
 	}
 	if err := disk.EnsureDirectoryExists(opts.JailerRoot); err != nil {
+		return nil, err
+	}
+
+	// Ensure our kernel and initrd exist on the same filesystem where we'll
+	// be jailing containers. This allows us to hardlink these files rather
+	// than copying them around over and over again.
+	if err := copyStaticFiles(context.Background(), opts.JailerRoot); err != nil {
 		return nil, err
 	}
 
@@ -571,13 +618,13 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 	return cfg, nil
 }
 
-func locateStaticFiles() error {
+func copyStaticFiles(ctx context.Context, workingDir string) error {
 	locateBinariesOnce.Do(func() {
-		initrdImagePath, locateBinariesError = getStaticFilePath("vmsupport/bin/initrd.cpio", 0755)
+		initrdImagePath, locateBinariesError = putFileIntoDir(ctx, "vmsupport/bin/initrd.cpio", workingDir, 0755)
 		if locateBinariesError != nil {
 			return
 		}
-		kernelImagePath, locateBinariesError = getStaticFilePath("vmsupport/bin/vmlinux", 0755)
+		kernelImagePath, locateBinariesError = putFileIntoDir(ctx, "vmsupport/bin/vmlinux", workingDir, 0755)
 		if locateBinariesError != nil {
 			return
 		}
@@ -607,7 +654,7 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 		return status.FailedPreconditionErrorf("actionWorkingDir path %q not found", c.actionWorkingDir)
 	}
 
-	unpackDir, err := os.MkdirTemp("", "unpacked-workspacefs-*")
+	unpackDir, err := os.MkdirTemp(c.jailerRoot, "unpacked-workspacefs-*")
 	if err != nil {
 		return err
 	}
@@ -715,7 +762,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		return err
 	}
 
-	containerHome, err := os.MkdirTemp("", "fc-container-*")
+	containerHome, err := os.MkdirTemp(c.jailerRoot, "fc-container-*")
 	if err != nil {
 		return err
 	}
@@ -828,7 +875,7 @@ func (c *FirecrackerContainer) PullImageIfNecessary(ctx context.Context) error {
 	if c.containerFSPath != "" {
 		return nil
 	}
-	containerFSPath, err := containerutil.GetOrCreateImage(ctx, c.containerImage)
+	containerFSPath, err := containerutil.GetOrCreateImage(ctx, c.jailerRoot, c.containerImage)
 	if err != nil {
 		return err
 	}
