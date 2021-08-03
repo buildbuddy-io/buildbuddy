@@ -26,6 +26,7 @@ export default class InvocationModel {
   failedTest: build_event_stream.BuildEvent[] = [];
   brokenTest: build_event_stream.BuildEvent[] = [];
   flakyTest: build_event_stream.BuildEvent[] = [];
+  timeoutTest: build_event_stream.BuildEvent[] = [];
   files: build_event_stream.NamedSetOfFiles[] = [];
   structuredCommandLine: command_line.CommandLine[] = [];
   finished: build_event_stream.BuildFinished;
@@ -127,7 +128,8 @@ export default class InvocationModel {
           model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         }
         if (buildEvent.unstructuredCommandLine) {
-          model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+          model.unstructuredCommandLine =
+            buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
         }
       }
     }
@@ -141,6 +143,8 @@ export default class InvocationModel {
         model.brokenTest.push(buildEvent as build_event_stream.BuildEvent);
       } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.PASSED) {
         model.succeededTest.push(buildEvent as build_event_stream.BuildEvent);
+      } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.TIMEOUT) {
+        model.timeoutTest.push(buildEvent as build_event_stream.BuildEvent);
       } else if (testResult) {
         model.failedTest.push(buildEvent as build_event_stream.BuildEvent);
       }
@@ -435,18 +439,18 @@ export default class InvocationModel {
   getStatusIcon() {
     let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
     if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
-      return <img className="icon" src="/image/help-circle.svg" />;
+      return <img className="icon status" src="/image/help-circle.svg" />;
     }
     if (!this.started) {
-      return <img className="icon" src="/image/help-circle.svg" />;
+      return <img className="icon status" src="/image/help-circle.svg" />;
     }
     if (!this.finished) {
-      return <img className="icon" src="/image/play-circle.svg" />;
+      return <img className="icon status" src="/image/play-circle.svg" />;
     }
     return this.finished.exitCode.code == 0 ? (
-      <img className="icon" src="/image/check-circle.svg" />
+      <img className="icon status" src="/image/check-circle.svg" />
     ) : (
-      <img className="icon" src="/image/x-circle.svg" />
+      <img className="icon status" src="/image/x-circle.svg" />
     );
   }
 
