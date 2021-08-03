@@ -420,6 +420,12 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 	// expand environment variables
 	expandedFileBytes := []byte(os.ExpandEnv(string(fileBytes)))
 
+	// Unmarshal in strict mode once and warn about invalid fields.
+	var syntaxValidationConfig generalConfig
+	if err := yaml.UnmarshalStrict([]byte(expandedFileBytes), &syntaxValidationConfig); err != nil {
+		log.Warningf("Unknown fields in config: %s", err)
+	}
+
 	if err := yaml.Unmarshal([]byte(expandedFileBytes), &sharedGeneralConfig); err != nil {
 		return nil, fmt.Errorf("Error parsing config file: %s", err)
 	}
