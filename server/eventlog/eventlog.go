@@ -123,9 +123,9 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		step = math.MaxUint16 // decrements the value when added
 	}
 	q := newChunkQueue(c, eventLogPath, startIndex, step, boundary)
-	chunkIndex := startIndex
 	lineCount := 0
-	for {
+	// Fetch one chunk even if the minimum line count is 0
+	for chunkIndex := startIndex; chunkIndex != boundary+step; chunkIndex += step {
 		buffer, err := q.pop(ctx)
 		if err == io.EOF {
 			break
