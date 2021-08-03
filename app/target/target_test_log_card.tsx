@@ -90,14 +90,24 @@ export default class TargetTestLogCardComponent extends React.Component {
     }
   }
 
+  getStatusClass(status: build_event_stream.TestStatus) {
+    switch (status) {
+      case build_event_stream.TestStatus.PASSED:
+        return "card-success";
+      case build_event_stream.TestStatus.FLAKY:
+        return "card-flaky";
+      case build_event_stream.TestStatus.TIMEOUT:
+        return "card-timeout";
+      default:
+        return "card-failure";
+    }
+  }
   render() {
     return (
       <div
-        className={`card ${this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")} ${
-          this.props.testResult.buildEvent.testResult.status == build_event_stream.TestStatus.PASSED
-            ? "card-success"
-            : "card-failure"
-        }`}>
+        className={`card ${
+          this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")
+        } ${this.getStatusClass(this.props.testResult.buildEvent.testResult.status)}`}>
         <img className="icon" src={this.props.dark ? "/image/log-circle-light.svg" : "/image/log-circle.svg"} />
         <div className="content">
           <div className="title">Test log</div>

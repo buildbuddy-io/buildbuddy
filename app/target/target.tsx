@@ -45,7 +45,9 @@ export default class TargetComponent extends React.Component {
       case build_event_stream.TestStatus.PASSED:
         return "/image/check-circle.svg";
       case build_event_stream.TestStatus.FLAKY:
-        return "/image/help-circle.svg";
+        return "/image/flaky.svg";
+      case build_event_stream.TestStatus.TIMEOUT:
+        return "/image/clock.svg";
       default:
         return "/image/x-circle.svg";
     }
@@ -167,7 +169,7 @@ export default class TargetComponent extends React.Component {
               {this.props?.testSummaryEvent && (
                 <div className="detail">
                   <img
-                    className="icon"
+                    className="icon status"
                     src={this.getStatusIcon(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
                   />
                   {this.getStatusTitle(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
