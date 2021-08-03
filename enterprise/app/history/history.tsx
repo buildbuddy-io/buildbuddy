@@ -133,7 +133,6 @@ export default class HistoryComponent extends React.Component {
       }),
     });
     rpcService.service.getInvocationStat(request).then((response) => {
-      console.log(response);
       this.setState({ summaryStat: response.invocationStat });
     });
   }
