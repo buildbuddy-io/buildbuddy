@@ -3,6 +3,7 @@ import React from "react";
 import { DateRangePicker, defaultInputRanges, OnChangeProps, RangeWithKey } from "react-date-range";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Popup from "../../../app/components/popup/popup";
+import Select, { Option } from "../../../app/components/select/select";
 import { formatDateRange } from "../../../app/format/format";
 import router from "../../../app/router/router";
 
@@ -14,6 +15,7 @@ interface State {
   isDatePickerOpen?: boolean;
 }
 
+export const ROLE_PARAM_NAME = "role";
 export const START_DATE_PARAM_NAME = "start";
 export const END_DATE_PARAM_NAME = "end";
 const DATE_PARAM_FORMAT = "YYYY-MM-DD";
@@ -22,7 +24,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   state: State = {};
 
   private onClickClearFilters() {
-    router.setQuery(new URLSearchParams());
+    router.setQuery({});
   }
 
   private onOpenDatePicker() {
@@ -33,13 +35,19 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   }
   private onDateChange(range: OnChangeProps) {
     const selection = (range as { selection: RangeWithKey }).selection;
-    router.setQuery(
-      new URLSearchParams({
-        ...Object.fromEntries(this.props.search.entries() || []),
-        [START_DATE_PARAM_NAME]: moment(selection.startDate).format(DATE_PARAM_FORMAT),
-        [END_DATE_PARAM_NAME]: moment(selection.endDate).format(DATE_PARAM_FORMAT),
-      })
-    );
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [START_DATE_PARAM_NAME]: moment(selection.startDate).format(DATE_PARAM_FORMAT),
+      [END_DATE_PARAM_NAME]: moment(selection.endDate).format(DATE_PARAM_FORMAT),
+    });
+  }
+
+  private onRoleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const role = e.target.value;
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [ROLE_PARAM_NAME]: role,
+    });
   }
 
   render() {
@@ -65,6 +73,13 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             <img src="/image/filter.svg" alt="" />
           </div>
         )}
+        <div className="role-filter-container">
+          <Select value={this.props.search.get(ROLE_PARAM_NAME) || ""} onChange={this.onRoleChange.bind(this)}>
+            <Option value="">All build roles</Option>
+            <Option value="CI">CI only</Option>
+            <Option value="CI_RUNNER">Workflows only</Option>
+          </Select>
+        </div>
         <div className="date-picker-container">
           <OutlinedButton className="date-picker-button" onClick={this.onOpenDatePicker.bind(this)}>
             <img src="/image/calendar.svg" alt="" />

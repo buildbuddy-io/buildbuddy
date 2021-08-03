@@ -8,6 +8,7 @@ ts_library(
     deps = [
         "//app/components/button",
         "//app/components/popup",
+        "//app/components/select",
         "//app/format",
         "//app/router",
         "//app/util:proto",

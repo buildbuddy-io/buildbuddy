@@ -9,11 +9,27 @@
   height: 40px;
   padding: 8px 16px;
   box-sizing: border-box;
-  border-radius: 4px;
+  border-radius: 8px;
+  border: 1px solid rgba(20, 20, 20, 0.1);
+  transition: border 200ms ease;
   background: transparent;
   appearance: none;
   padding-right: 40px;
   cursor: pointer;
+}
+
+.select:focus {
+  outline: none;
+  border: 1px solid rgba(20, 20, 20, 0.5);
+}
+
+.select:hover:not(:active) {
+  transition: 200ms ease;
+  background: rgba(20, 20, 20, 0.1);
+}
+
+.select:hover:not(:focus) {
+  border: 1px solid transparent;
 }
 
 .select-wrapper::after {

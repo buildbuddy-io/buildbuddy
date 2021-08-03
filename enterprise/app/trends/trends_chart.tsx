@@ -85,6 +85,7 @@ export default class TrendsChartComponent extends React.Component {
                 dot={false}
                 dataKey={this.props.extractSecondaryValue}
                 stroke="#03A9F4"
+                animationDuration={1}
               />
             )}
             {this.props.extractSecondaryValue && !this.props.secondaryLine && (
@@ -93,6 +94,7 @@ export default class TrendsChartComponent extends React.Component {
                 name={this.props.secondaryName}
                 dataKey={this.props.extractSecondaryValue}
                 fill="#03A9F4"
+                animationDuration={1}
               />
             )}
           </ComposedChart>

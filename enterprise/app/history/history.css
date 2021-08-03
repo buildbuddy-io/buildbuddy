@@ -18,7 +18,16 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   margin-bottom: 8px;
+  --gap: 8px;
+  margin-top: calc(-1 * var(--gap));
+  margin-right: calc(-1 * var(--gap));
+}
+
+.history .top-bar > * {
+  margin-right: var(--gap);
+  margin-top: var(--gap);
 }
 
 .history .breadcrumbs {

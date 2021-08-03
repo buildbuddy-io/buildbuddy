@@ -1,8 +1,9 @@
 .global-filter {
   display: flex;
   transition: background-color 300ms;
-  padding: 4px;
   border-radius: 8px;
+
+  --row-height: 40px;
 }
 
 .global-filter.container {
@@ -10,10 +11,14 @@
   padding-bottom: 16px;
 }
 
+.global-filter > * {
+  flex-shrink: 0;
+}
+
 .global-filter .clear-filters-button,
 .global-filter .filter-icon-container {
-  width: 42px;
-  height: 42px;
+  width: var(--row-height);
+  height: var(--row-height);
   padding: 0;
   display: flex;
   align-items: center;
@@ -34,6 +39,12 @@
 
 .global-filter .date-picker-container {
   position: relative;
+}
+
+.global-filter .date-picker-button {
+  max-height: var(--row-height);
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .global-filter .date-picker-button > :not(:last-child) {

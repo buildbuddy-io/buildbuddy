@@ -1891,6 +1891,7 @@ code .comment {
   flex-direction: column;
   flex-grow: 1;
   overflow: auto;
+  overflow-y: scroll;
   background-color: #fff;
 }
 
