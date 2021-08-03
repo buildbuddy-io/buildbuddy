@@ -16,6 +16,7 @@ go_library(
         "@io_bazel_rules_go//go/platform:darwin": [
             "//enterprise/server/remote_execution/container",
             "//proto:remote_execution_go_proto",
+            "//server/environment",
             "//server/interfaces",
             "//server/util/status",
         ],

@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -46,7 +47,7 @@ type ContainerOpts struct {
 
 type firecrackerContainer struct{}
 
-func NewContainer(ctx context.Context, opts interface{}) (*firecrackerContainer, error) {
+func NewContainer(env environment.Env, opts ContainerOpts) (*firecrackerContainer, error) {
 	c := &firecrackerContainer{}
 	return c, nil
 }
