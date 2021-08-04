@@ -246,7 +246,6 @@ func getLogrusLogger(debugMode bool) *logrus.Entry {
 	if debugMode {
 		logrusLogger.SetLevel(logrus.DebugLevel)
 	}
-	logrusLogger.SetLevel(logrus.DebugLevel)
 	return logrus.NewEntry(logrusLogger)
 }
 
@@ -330,6 +329,8 @@ type FirecrackerContainer struct {
 	allowSnapshotStart   bool
 }
 
+// ConfigurationHash returns a digest that can be used to look up or save a
+// cached snapshot for this container configuration.
 func (c *FirecrackerContainer) ConfigurationHash() (*repb.Digest, error) {
 	params := []string{
 		fmt.Sprintf("cpus=%d", c.constants.NumCPUs),
