@@ -614,6 +614,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd
 			MemSizeMB:              int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
 			EnableNetworking:       false,
 			JailerRoot:             p.buildRoot,
+			AllowSnapshotStart:     true,
 		}
 		c, err := firecracker.NewContainer(p.env, opts)
 		if err != nil {
