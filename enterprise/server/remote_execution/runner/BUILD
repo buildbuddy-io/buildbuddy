@@ -31,6 +31,7 @@ go_library(
         "@com_github_docker_docker//client:go_default_library",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
