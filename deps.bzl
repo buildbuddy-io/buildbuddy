@@ -833,10 +833,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "com_github_firecracker_microvm_firecracker_go_sdk",
+        build_directives = [
+            "gazelle:resolve go github.com/containernetworking/cni/pkg/types/current @com_github_containernetworking_cni//pkg/types/current",
+        ],
         importpath = "github.com/firecracker-microvm/firecracker-go-sdk",
         replace = "github.com/tylerwilliams/firecracker-go-sdk",
-        sum = "h1:HF6zrfB8fk6VtdbbyP7NGH00VyhQyFscoDjW0kz6z5g=",
-        version = "v0.22.1",
+        sum = "h1:yIPCFRsHH+zu8X2cz/0j7AMcWwJSu6L9y3BunUCzepg=",
+        version = "v0.22.2",
     )
 
     go_repository(
