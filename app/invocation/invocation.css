@@ -1,3 +1,44 @@
+.input-tree {
+  width: 200px;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 6px 4px 4px 14px;
+  flex-shrink: 0;
+  max-height: 250px;
+  overflow: scroll;
+  box-sizing: border-box;
+}
+
+.input-tree-node {
+  margin-bottom: 2px;
+  cursor: pointer;
+}
+
+.input-tree-node-name:hover {
+  opacity: 0.5;
+}
+
+.input-tree-node-children {
+  border-left: 1px solid #ccc;
+  padding-left: 10px;
+  margin-left: 8px;
+}
+
+.input-tree-node-name {
+  display: flex;
+  font-size: 12px;
+}
+
+.input-tree-node-label {
+  padding-top: 1px;
+}
+
+.file-icon {
+  margin-right: 8px;
+  margin-left: 0px;
+  padding-top: 1.5px;
+}
+
 .action-timeline {
   display: flex;
   border-radius: 4px;
@@ -54,6 +95,7 @@
 
 .action-section div {
   flex-grow: 1;
+  font-size: 13px;
 }
 
 .action-section div.action-property-title {
@@ -64,6 +106,7 @@
   text-align: right;
   margin-right: 16px;
   font-weight: 700;
+  font-size: 14px;
 }
 
 .cache-sections {
