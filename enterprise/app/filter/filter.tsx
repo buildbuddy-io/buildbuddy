@@ -3,7 +3,9 @@ import React from "react";
 import { DateRangePicker, defaultInputRanges, OnChangeProps, RangeWithKey } from "react-date-range";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Popup from "../../../app/components/popup/popup";
-import Select, { Option } from "../../../app/components/select/select";
+import Radio from "../../../app/components/radio/radio";
+import TextInput from "../../../app/components/input/input";
+import Checkbox from "../../../app/components/checkbox/checkbox";
 import { formatDateRange } from "../../../app/format/format";
 import router from "../../../app/router/router";
 
@@ -13,11 +15,14 @@ export interface FilterProps {
 
 interface State {
   isDatePickerOpen?: boolean;
+  isFilterMenuOpen?: boolean;
 }
 
 export const ROLE_PARAM_NAME = "role";
+export const STATUS_PARAM_NAME = "status";
 export const START_DATE_PARAM_NAME = "start";
 export const END_DATE_PARAM_NAME = "end";
+
 const DATE_PARAM_FORMAT = "YYYY-MM-DD";
 
 export default class FilterComponent extends React.Component<FilterProps, State> {
@@ -42,8 +47,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     });
   }
 
-  private onRoleChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const role = e.target.value;
+  private onOpenFilterMenu() {
+    this.setState({ isFilterMenuOpen: true });
+  }
+  private onCloseFilterMenu() {
+    this.setState({ isFilterMenuOpen: false });
+  }
+
+  private onRoleChange(role: string) {
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
       [ROLE_PARAM_NAME]: role,
@@ -57,32 +68,73 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const startDate = (startDateParam ? moment(startDateParam) : moment().subtract(7, "days")).toDate();
     const endDate = (endDateParam ? moment(endDateParam) : moment()).toDate();
 
-    const isFiltering = Boolean(this.props.search.toString());
+    const canClearFilters = Boolean(this.props.search.toString());
+
+    const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
 
     return (
-      <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>
-        {isFiltering ? (
-          <FilledButton
-            className="clear-filters-button"
-            title="Clear filters"
-            onClick={this.onClickClearFilters.bind(this)}>
+      <div className={`global-filter ${canClearFilters ? "is-filtering" : ""}`}>
+        {canClearFilters && (
+          <FilledButton className="square" title="Clear filters" onClick={this.onClickClearFilters.bind(this)}>
             <img src="/image/x-white.svg" alt="" />
           </FilledButton>
-        ) : (
-          <div className="filter-icon-container">
-            <img src="/image/filter.svg" alt="" />
-          </div>
         )}
-        <div className="role-filter-container">
-          <Select value={this.props.search.get(ROLE_PARAM_NAME) || ""} onChange={this.onRoleChange.bind(this)}>
-            <Option value="">All build roles</Option>
-            <Option value="CI">CI only</Option>
-            <Option value="CI_RUNNER">Workflows only</Option>
-          </Select>
+        <div className="popup-wrapper">
+          <OutlinedButton className="filter-menu-button icon-text-button" onClick={this.onOpenFilterMenu.bind(this)}>
+            <img className="subtle-icon" src="/image/filter.svg" alt="" />
+            {roleValue === "CI" && <span className="role-badge CI">CI</span>}
+            {roleValue === "CI_RUNNER" && <span className="role-badge CI_RUNNER">Workflows</span>}
+            {!roleValue && <span className="filter-menu-button-label">Filter...</span>}
+          </OutlinedButton>
+          <Popup
+            isOpen={this.state.isFilterMenuOpen}
+            onRequestClose={this.onCloseFilterMenu.bind(this)}
+            className="filter-menu-popup">
+            <div className="option-groups-row">
+              <div className="option-group">
+                <div className="option-group-title">Role</div>
+                <div className="option-group-options">
+                  <label onClick={this.onRoleChange.bind(this, "")}>
+                    <Radio value="" checked={roleValue === ""} />
+                    <span>Any</span>
+                  </label>
+                  <label onClick={this.onRoleChange.bind(this, "CI")}>
+                    <Radio value="CI" checked={roleValue === "CI"} />
+                    <span className="role-badge CI">CI</span>
+                  </label>
+                  <label onClick={this.onRoleChange.bind(this, "CI_RUNNER")}>
+                    <Radio value="CI_RUNNER" checked={roleValue === "CI_RUNNER"} />
+                    <span className="role-badge CI_RUNNER">Workflow</span>
+                  </label>
+                </div>
+              </div>
+              <div className="option-group">
+                <div className="option-group-title">Status</div>
+                <div className="option-group-options">
+                  <label>
+                    <Checkbox checked />
+                    <span className="status-badge succeeded">Succeeded</span>
+                  </label>
+                  <label>
+                    <Checkbox checked />
+                    <span className="status-badge failed">Failed</span>
+                  </label>
+                  <label>
+                    <Checkbox checked />
+                    <span className="status-badge in-progress">In progress</span>
+                  </label>
+                  <label>
+                    <Checkbox checked />
+                    <span className="status-badge disconnected">Disconnected</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </Popup>
         </div>
-        <div className="date-picker-container">
-          <OutlinedButton className="date-picker-button" onClick={this.onOpenDatePicker.bind(this)}>
-            <img src="/image/calendar.svg" alt="" />
+        <div className="popup-wrapper">
+          <OutlinedButton className="date-picker-button icon-text-button" onClick={this.onOpenDatePicker.bind(this)}>
+            <img className="subtle-icon" src="/image/calendar.svg" alt="" />
             <span>{formatDateRange(startDate, endDate)}</span>
           </OutlinedButton>
           <Popup
@@ -92,7 +144,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             <DateRangePicker
               ranges={[{ startDate, endDate, key: "selection" }]}
               onChange={this.onDateChange.bind(this)}
-              inputRanges={INPUT_RANGES}
+              // Disable textbox inputs, like "days from today", or "days until today".
+              inputRanges={[]}
             />
           </Popup>
         </div>
@@ -100,6 +153,3 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     );
   }
 }
-
-// Exclude "Days from today" label since it's not useful.
-const INPUT_RANGES = [defaultInputRanges[0]];
