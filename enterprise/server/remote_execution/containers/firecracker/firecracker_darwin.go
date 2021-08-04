@@ -16,10 +16,10 @@ import (
 )
 
 type ContainerOpts struct {
-	// The OCI container image. ex "alpine:latest"
+	// The OCI container image. ex "alpine:latest".
 	ContainerImage string
 
-	// The action directory with inputs / outputs
+	// The action directory with inputs / outputs.
 	ActionWorkingDirectory string
 
 	// The number of CPUs to allocate to this VM.
@@ -43,6 +43,10 @@ type ContainerOpts struct {
 	// allowing for multiple locally-started VMs to avoid using
 	// conflicting network interfaces.
 	ForceVMIdx int
+
+	// The root directory to store all files in. This needs to be
+	// short, less than 38 characters. If unset, /tmp will be used.
+	JailerRoot string
 }
 
 type firecrackerContainer struct{}
