@@ -494,7 +494,7 @@ func (p *Pool) WarmupDefaultImage() {
 			log.Errorf("Error warming up %q: %s", containerType, err)
 			return
 		}
-		log.Printf("Starting warmup job for containerType: %q", containerType)
+
 		eg.Go(func() error {
 			if err := c.PullImageIfNecessary(egCtx); err != nil {
 				return err
