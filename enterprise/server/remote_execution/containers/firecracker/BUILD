@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "firecracker",
     srcs = [
+        "containeropts.go",
         "firecracker.go",
         "firecracker_darwin.go",
     ],

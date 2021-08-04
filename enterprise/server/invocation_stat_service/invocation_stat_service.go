@@ -190,6 +190,10 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		q.AddWhereClause("commit = ?", commitSHA)
 	}
 
+	if role := req.GetQuery().GetRole(); role != "" {
+		q.AddWhereClause("role = ?", role)
+	}
+
 	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
 		q.AddWhereClause("updated_at_usec >= ?", timeutil.ToUsec(start.AsTime()))
 	}
