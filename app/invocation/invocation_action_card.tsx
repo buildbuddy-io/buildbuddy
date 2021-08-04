@@ -205,7 +205,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   handleFileClicked(node: InputNode) {
-    console.log("reached");
     let digestString = node.obj.digest.hash + "/" + node.obj.digest.sizeBytes;
     let dirUrl = "bytestream://" + this.getCacheAddress() + "/blobs/" + digestString;
 
