@@ -176,6 +176,25 @@ message InvocationQuery {
 
   // The timestamp up to which the build was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 8;
+
+  // Allowed invocation statuses.
+  repeated StatusFilterValue statuses = 9;
+}
+
+enum StatusFilterValue {
+  UNKNOWN_STATUS_FILTER_VALUE = 0;
+
+  // Filter value selecting `invocation_status == COMPLETE and success`.
+  SUCCESS = 1;
+
+  // Filter value selecting `invocation_status == COMPLETE and not success`.
+  FAILURE = 2;
+
+  // Filter value selecting `invocation_status == PARTIAL`.
+  IN_PROGRESS = 3;
+
+  // Filter value selecting `invocation_status == DISCONNECTED`.
+  DISCONNECTED = 4;
 }
 
 message InvocationSort {
@@ -288,6 +307,9 @@ message InvocationStatQuery {
 
   // The timestamp up to which the build was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 8;
+
+  // Allowed invocation statuses.
+  repeated StatusFilterValue statuses = 9;
 }
 
 message GetInvocationStatRequest {
