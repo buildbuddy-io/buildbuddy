@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -180,13 +179,8 @@ func instrumentGORM(gdb *gorm.DB) {
 	gdb.Callback().Update().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
 }
 
-func openDB(configurator *config.Configurator, connURL *url.URL) (*gorm.DB, error) {
+func openDB(configurator *config.Configurator, dialect string, connString string) (*gorm.DB, error) {
 	var dialector gorm.Dialector
-
-	dialect := connURL.Scheme
-	// Don't log the connString directly; it may contain a password.
-	connString := strings.TrimPrefix(connURL.String(), connURL.Scheme+"://")
-
 	switch dialect {
 	case sqliteDialect:
 		dialector = sqlite.Open(connString)
@@ -223,7 +217,6 @@ func openDB(configurator *config.Configurator, connURL *url.URL) (*gorm.DB, erro
 	}
 	gdb, err := gorm.Open(dialector, &config)
 	if err != nil {
-		log.Warningf("Database connection string: %q", connURL.Redacted())
 		return nil, err
 	}
 
@@ -232,15 +225,16 @@ func openDB(configurator *config.Configurator, connURL *url.URL) (*gorm.DB, erro
 	return gdb, nil
 }
 
-func parseDatasource(datasource string) (*url.URL, error) {
-	if datasource == "" {
-		return nil, fmt.Errorf("No database configured -- please specify at least one in the config")
+func parseDatasource(datasource string) (string, string, error) {
+	if datasource != "" {
+		parts := strings.SplitN(datasource, "://", 2)
+		if len(parts) != 2 {
+			return "", "", fmt.Errorf("malformed db connection string")
+		}
+		dialect, connString := parts[0], parts[1]
+		return dialect, connString, nil
 	}
-	u, err := url.Parse(datasource)
-	if err != nil {
-		return nil, err
-	}
-	return u, nil
+	return "", "", fmt.Errorf("No database configured -- please specify at least one in the config")
 }
 
 // sqlLogger is a GORM logger wrapper that supresses "record not found" errors.
@@ -335,12 +329,11 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 	if c.GetDBDataSource() == "" {
 		return nil, fmt.Errorf("No database configured -- please specify one in the config")
 	}
-	connURL, err := parseDatasource(c.GetDBDataSource())
+	dialect, connString, err := parseDatasource(c.GetDBDataSource())
 	if err != nil {
 		return nil, err
 	}
-	dialect := connURL.Scheme
-	primaryDB, err := openDB(c, connURL)
+	primaryDB, err := openDB(c, dialect, connString)
 	if err != nil {
 		return nil, err
 	}
@@ -391,15 +384,14 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 
 	// Setup a read replica if one is configured.
 	if c.GetDBReadReplica() != "" {
-		connURL, err := parseDatasource(c.GetDBReadReplica())
+		readDialect, readConnString, err := parseDatasource(c.GetDBReadReplica())
 		if err != nil {
 			return nil, err
 		}
-		replicaDB, err := openDB(c, connURL)
+		replicaDB, err := openDB(c, readDialect, readConnString)
 		if err != nil {
 			return nil, err
 		}
-		readDialect := connURL.Scheme
 		setDBOptions(c, readDialect, replicaDB)
 		log.Info("Read replica was present -- connecting to it.")
 		dbh.readReplicaDB = replicaDB
