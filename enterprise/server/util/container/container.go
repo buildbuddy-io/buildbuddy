@@ -41,17 +41,12 @@ func hashFile(filename string) (string, error) {
 // containerImage in the user's cache directory -- if none is found one will be
 // created and cached.
 func GetOrCreateImage(ctx context.Context, workspaceDir, containerImage string) (string, error) {
-	userCacheDir, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
-	}
-
 	hashedContainerName, err := hashString(containerImage)
 	if err != nil {
 		return "", err
 	}
 	containerFileName := "containerfs.ext4"
-	containerImagesPath := filepath.Join(userCacheDir, "executor", hashedContainerName)
+	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
 	if files, err := os.ReadDir(containerImagesPath); err == nil {
 		sort.Slice(files, func(i, j int) bool {
 			var iUnix int64
@@ -65,7 +60,11 @@ func GetOrCreateImage(ctx context.Context, workspaceDir, containerImage string) 
 			return iUnix < jUnix
 		})
 		if len(files) > 0 {
-			return filepath.Join(containerImagesPath, files[len(files)-1].Name(), containerFileName), nil
+			containerImagePath := filepath.Join(containerImagesPath, files[len(files)-1].Name(), containerFileName)
+			if exists, err := disk.FileExists(containerImagePath); err == nil && exists {
+				log.Debugf("Found existing %q container at path %q", containerImage, containerImagePath)
+				return containerImagePath, nil
+			}
 		}
 	}
 
