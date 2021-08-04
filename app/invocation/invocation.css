@@ -48,7 +48,7 @@
   color: #222;
 }
 
-.action-section.div {
+.action-section div {
   flex-grow: 1;
 }
 
