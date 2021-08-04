@@ -463,6 +463,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, instanceName, s
 		return err
 	}
 
+	// this is kinda hacky but for now it's OK. Will be an issue when we stop
+	// caching workspace files in the snapshot.
+	c.workspaceFSPath = filepath.Join(c.getChroot(), "workspacefs.ext4")
+
 	machine, err := fcclient.NewMachine(ctx, cfg, machineOpts...)
 	if err != nil {
 		return status.InternalErrorf("Failed creating machine: %s", err)
@@ -774,7 +778,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 
 	log.Debugf("c.containerFSPath: %q", c.containerFSPath)
 	log.Debugf("c.workspaceFSPath: %q", c.workspaceFSPath)
-
+	log.Debugf("getChroot() is %q", c.getChroot())
 	fcCfg, err := c.getConfig(ctx, c.containerFSPath, c.workspaceFSPath)
 	if err != nil {
 		return err
@@ -850,15 +854,18 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		result.Error = status.InternalErrorf("error pausing VM: %s", err)
 		return result
 	}
+
 	copyOutputsErr := c.copyOutputsToWorkspace(ctx)
 	if err := c.machine.ResumeVM(ctx); err != nil {
 		result.Error = status.InternalErrorf("error resuming VM: %s", err)
 		return result
 	}
+
 	if copyOutputsErr != nil {
 		result.Error = err
 		return result
 	}
+
 	result.ExitCode = int(rsp.GetExitCode())
 	result.Stdout = rsp.GetStdout()
 	result.Stderr = rsp.GetStderr()
@@ -923,13 +930,8 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	}
 	c.pausedSnapshotID = snapshotID
 
-	if err := c.machine.StopVMM(); err != nil {
-		return err
-	}
-	c.machine = nil
-
-	if err := c.cleanupNetworking(ctx); err != nil {
-		log.Errorf("Error cleaning up networking: %s", err)
+	if err := c.Remove(ctx); err != nil {
+		log.Errorf("Error cleaning up after pause: %s", err)
 	}
 	return nil
 }
