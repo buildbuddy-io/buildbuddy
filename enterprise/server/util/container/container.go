@@ -128,7 +128,7 @@ func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage 
 
 	// Take the rootfs and write it into an ext4 image.
 	rootFSDir := filepath.Join(bundleOutputDir, "rootfs")
-	f, err := os.CreateTemp("", "containerfs-*.ext4")
+	f, err := os.CreateTemp(workspaceDir, "containerfs-*.ext4")
 	if err != nil {
 		return "", err
 	}
