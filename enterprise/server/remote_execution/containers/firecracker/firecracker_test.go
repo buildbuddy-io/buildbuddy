@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -237,4 +238,92 @@ func TestFirecrackerFileMapping(t *testing.T) {
 			t.Fatalf("File %q not found in workspace.", fullPath)
 		}
 	}
+}
+
+func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := makeDir(t, "/tmp")
+	workDir := makeDir(t, rootDir)
+
+	path := filepath.Join(workDir, "world.txt")
+	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GREETING", Value: "Hello"},
+		},
+	}
+	expectedResult := &interfaces.CommandResult{
+		ExitCode:           0,
+		Stdout:             []byte("Hello world"),
+		Stderr:             []byte("foo"),
+		CommandDebugString: "(firecracker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
+	}
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         "docker.io/library/busybox",
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              100,
+		EnableNetworking:       false,
+		AllowSnapshotStart:     true,
+	}
+	c, err := firecracker.NewContainer(env, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Run will handle the full lifecycle: no need to call Remove() here.
+	firstRunStart := time.Now()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory)
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+	firstRunDuration := time.Since(firstRunStart)
+	assert.Equal(t, expectedResult, res)
+
+	// Now do the same thing again, but with a twist. The attached
+	// files and command run will be different. This command would
+	// fail if the new workspace were not properly attached.
+	workDir = makeDir(t, rootDir)
+	opts.ActionWorkingDirectory = workDir
+
+	path = filepath.Join(workDir, "mars.txt")
+	if err := ioutil.WriteFile(path, []byte("mars"), 0660); err != nil {
+		t.Fatal(err)
+	}
+	cmd = &repb.Command{
+		Arguments: []string{"sh", "-c", `printf "$GREETING from $(cat mars.txt)" && printf "bar" >&2`},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GREETING", Value: "Hello"},
+		},
+	}
+	expectedResult = &interfaces.CommandResult{
+		ExitCode:           0,
+		Stdout:             []byte("Hello from mars"),
+		Stderr:             []byte("bar"),
+		CommandDebugString: "(firecracker) [sh -c printf \"$GREETING from $(cat mars.txt)\" && printf \"bar\" >&2]",
+	}
+
+	// This should resume the previous snapshot.
+	c, err = firecracker.NewContainer(env, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Run will handle the full lifecycle: no need to call Remove() here.
+	secondRunStart := time.Now()
+	res = c.Run(ctx, cmd, opts.ActionWorkingDirectory)
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+	secondRunDuration := time.Since(secondRunStart)
+
+	assert.Equal(t, expectedResult, res)
+
+	// This should be significantly faster because it's started from a
+	// snapshot.
+	assert.Less(t, secondRunDuration, firstRunDuration/2)
 }
