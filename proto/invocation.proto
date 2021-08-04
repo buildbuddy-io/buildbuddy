@@ -177,7 +177,8 @@ message InvocationQuery {
   // The timestamp up to which the build was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 8;
 
-  // Allowed invocation statuses. Must be explicitly specified, or no invocations will be returned.
+  // Allowed invocation statuses. Must be explicitly specified, or no
+  // invocations will be returned.
   repeated StatusFilterValue statuses = 9;
 }
 
@@ -308,7 +309,8 @@ message InvocationStatQuery {
   // The timestamp up to which the build was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 8;
 
-  // Allowed invocation statuses. Must be explicitly specified, or no invocations will be returned.
+  // Allowed invocation statuses. Must be explicitly specified, or no
+  // invocations will be returned.
   repeated StatusFilterValue statuses = 9;
 }
 
