@@ -2,9 +2,11 @@ package platform
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -104,13 +106,25 @@ func GetExecutorProperties(executorConfig *config.ExecutorConfig) *ExecutorPrope
 	// NB: order matters! this list will be used in order to determine the which
 	// isolation method to use if none was set.
 	if executorConfig.DockerSocket != "" {
-		p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, DockerContainerType)
+		if runtime.GOOS == "darwin" {
+			log.Warning("Docker was enabled, but is unsupported on darwin. Ignoring.")
+		} else {
+			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, DockerContainerType)
+		}
 	}
 	if executorConfig.EnableFirecracker {
-		p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, FirecrackerContainerType)
+		if runtime.GOOS == "darwin" {
+			log.Warning("Firecracker was enabled, but is unsupported on darwin. Ignoring.")
+		} else {
+			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, FirecrackerContainerType)
+		}
 	}
 	if executorConfig.ContainerdSocket != "" {
-		p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, ContainerdContainerType)
+		if runtime.GOOS == "darwin" {
+			log.Warning("Containerd was enabled, but is unsupported on darwin. Ignoring.")
+		} else {
+			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, ContainerdContainerType)
+		}
 	}
 
 	// Special case: for backwards compatibility, support bare-runners when neither docker nor
@@ -118,6 +132,7 @@ func GetExecutorProperties(executorConfig *config.ExecutorConfig) *ExecutorPrope
 	if executorConfig.EnableBareRunner || len(p.SupportedIsolationTypes) == 0 {
 		p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, BareContainerType)
 	}
+
 	return p
 }
 
