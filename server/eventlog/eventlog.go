@@ -29,6 +29,9 @@ const (
 	// Number of lines to keep in the screen buffer so that they may be modified
 	// by ANSI Cursor control codes.
 	linesToRetainForANSICursor = 10
+
+	// Max number of workers to run in parallel when fetching chunks.
+	numReadWorkers = 16
 )
 
 func getEventLogPathFromInvocationId(invocationId string) string {
@@ -119,10 +122,11 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 		boundary = 0
 		step = math.MaxUint16 // decrements the value when added
 	}
+	q := newChunkQueue(c, eventLogPath, startIndex, step, boundary)
 	lineCount := 0
 	// Fetch one chunk even if the minimum line count is 0
 	for chunkIndex := startIndex; chunkIndex != boundary+step; chunkIndex += step {
-		buffer, err := c.ReadChunk(ctx, eventLogPath, chunkIndex)
+		buffer, err := q.pop(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -150,6 +154,83 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	}
 
 	return rsp, nil
+}
+
+type chunkReadResult struct {
+	data []byte
+	err  error
+}
+
+type chunkFuture chan chunkReadResult
+
+func newChunkFuture() chunkFuture {
+	return make(chunkFuture, 1)
+}
+
+type chunkQueue struct {
+	store          *chunkstore.Chunkstore
+	maxConnections int
+
+	eventLogPath string
+	start        uint16
+	step         uint16
+	boundary     uint16
+
+	futures   []chunkFuture
+	numPopped int
+	done      bool
+}
+
+func newChunkQueue(c *chunkstore.Chunkstore, eventLogPath string, start, step, boundary uint16) *chunkQueue {
+	return &chunkQueue{
+		store:          c,
+		maxConnections: numReadWorkers,
+		eventLogPath:   eventLogPath,
+		start:          start,
+		step:           step,
+		boundary:       boundary,
+	}
+}
+
+func (q *chunkQueue) pushNewFuture(ctx context.Context, index uint16) {
+	future := newChunkFuture()
+	q.futures = append(q.futures, future)
+
+	if index == q.boundary+q.step {
+		future <- chunkReadResult{err: io.EOF}
+		return
+	}
+
+	go func() {
+		defer close(future)
+
+		data, err := q.store.ReadChunk(ctx, q.eventLogPath, index)
+		future <- chunkReadResult{
+			data: data,
+			err:  err,
+		}
+	}()
+}
+
+func (q *chunkQueue) pop(ctx context.Context) ([]byte, error) {
+	if q.done {
+		return nil, status.ResourceExhaustedError("Queue has been exhausted.")
+	}
+	// Make sure maxConnections files are downloading
+	numLoading := len(q.futures) - q.numPopped
+	numNewConnections := q.maxConnections - numLoading
+	for numNewConnections > 0 {
+		index := q.start + uint16(len(q.futures))*q.step
+		q.pushNewFuture(ctx, index)
+		numNewConnections--
+	}
+	result := <-q.futures[q.numPopped]
+	q.numPopped++
+	if result.err != nil {
+		q.done = true
+		return nil, result.err
+	}
+	return result.data, nil
 }
 
 func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, invocationId string) *EventLogWriter {

@@ -61,6 +61,13 @@ const (
 	fullDiskSnapshotName = "full-disk.snap"
 	fullMemSnapshotName  = "full-mem.snap"
 
+	// The workspacefs image name and drive ID.
+	workspaceFSName  = "workspacefs.ext4"
+	workspaceDriveID = "workspacefs"
+
+	// The containerfs drive ID.
+	containerDriveID = "containerfs"
+
 	// The networking deets for host and vm interfaces.
 	// All VMs are configured with the same IP and tap device via boot args,
 	// but because they run inside of a network namespace, they do not
@@ -116,48 +123,92 @@ func hashString(input string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
-// getStaticFilePath returns the full path to a bundled file. If runfiles are
-// present, we'll try to read the file from there. If not, we'll fall back to
-// reading the file from the bundle (by writing the contents to a file in the
-// user's cache directory). If the file is not found in either place, an error
-// is returned.
-func getStaticFilePath(fileName string, mode fs.FileMode) (string, error) {
-	// If runfiles are included with the binary, bazel will take care of
-	// things for us and we can just return the path to the runfile.
+func getFileReader(ctx context.Context, fileName string) (io.Reader, error) {
+	sourcePath := ""
+
+	// If the file exists on the filesystem, use that.
+	if fp, err := exec.LookPath(fileName); err == nil {
+		log.Debugf("Located %q at %s", fileName, fp)
+		sourcePath = fp
+	}
+
+	// If the file exists in the binary runfiles, that works too.
 	if rfp, err := bazel.RunfilesPath(); err == nil {
 		targetFile := filepath.Join(rfp, "enterprise", fileName)
 		if exists, err := disk.FileExists(targetFile); err == nil && exists {
-			log.Debugf("Found %q in runfiles.", targetFile)
-			return targetFile, nil
+			log.Debugf("Located %q at %s", fileName, targetFile)
+			sourcePath = targetFile
 		}
 	}
 
-	// If no runfile is found and we must rely on the bundled version of a
-	// file, we need to ensure that we reference the file by sha256, that
-	// way subsequent versions of a binary will not reference the same file
-	// written on disk.
-	if bundleFS, err := bundle.Get(); err == nil {
-		if userCacheDir, err := os.UserCacheDir(); err == nil {
-			if data, err := fs.ReadFile(bundleFS, fileName); err == nil {
-				h := sha256.New()
-				if _, err := h.Write(data); err != nil {
-					return "", err
-				}
-				fileHash := fmt.Sprintf("%x", h.Sum(nil))
-				fileHome := filepath.Join(userCacheDir, "executor", fileHash)
-				if err := disk.EnsureDirectoryExists(fileHome); err != nil {
-					return "", err
-				}
-				casPath := filepath.Join(fileHome, filepath.Base(fileName))
-				if _, err := disk.WriteFile(context.Background(), casPath, data); err == nil {
-					log.Debugf("Found %q in bundle (and wrote to cached file: %q)", fileName, casPath)
-					return casPath, nil
-				}
+	var fileReader io.Reader
+	if sourcePath != "" {
+		reader, err := disk.FileReader(ctx, sourcePath, 0, 0)
+		if err != nil {
+			return nil, err
+		}
+		fileReader = reader
+	}
+
+	// If file wasn't found, check the bundle, it may be available there.
+	if fileReader == nil {
+		if bundleFS, err := bundle.Get(); err == nil {
+			if f, err := bundleFS.Open(fileName); err == nil {
+				log.Debugf("Located %q in bundle", fileName)
+				fileReader = f
 			}
 		}
 	}
+	return fileReader, nil
+}
 
-	return "", status.NotFoundErrorf("File %q not found in runfiles or bundle.", fileName)
+// putFileIntoDir finds "fileName" on the local filesystem, in runfiles, or
+// in the bundle. It then puts that file into destdir (via hardlink or copying)
+// and returns a path to the file in the new location. Files are written in
+// a content-addressable-storage-based location, so when files are updated they
+// will be put into new paths.
+func putFileIntoDir(ctx context.Context, fileName, destDir string, mode fs.FileMode) (string, error) {
+	fileReader, err := getFileReader(ctx, fileName)
+	if err != nil {
+		return "", err
+	}
+	// If fileReader is still nil, the file was not found, so return an error.
+	if fileReader == nil {
+		return "", status.NotFoundErrorf("File %q not found on fs, in runfiles or in bundle.", fileName)
+	}
+
+	// Compute the file hash to determine the new location where it should be written.
+	h := sha256.New()
+	if _, err := io.Copy(h, fileReader); err != nil {
+		return "", err
+	}
+	fileHash := fmt.Sprintf("%x", h.Sum(nil))
+	fileHome := filepath.Join(destDir, "executor", fileHash)
+	if err := disk.EnsureDirectoryExists(fileHome); err != nil {
+		return "", err
+	}
+	casPath := filepath.Join(fileHome, filepath.Base(fileName))
+	if exists, err := disk.FileExists(casPath); err == nil && exists {
+		log.Debugf("Found existing %q in path: %q", fileName, casPath)
+		return casPath, nil
+	}
+	// Write the file to the new location if it does not exist there already.
+	fileReader, err = getFileReader(ctx, fileName)
+	if err != nil {
+		return "", err
+	}
+	writer, err := disk.FileWriter(ctx, casPath)
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(writer, fileReader); err != nil {
+		return "", err
+	}
+	if err := writer.Close(); err != nil {
+		return "", err
+	}
+	log.Debugf("Put %q into new path: %q", fileName, casPath)
+	return casPath, nil
 }
 
 // waitUntilExists waits, up to maxWait, for localPath to exist. If the provided
@@ -209,40 +260,6 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 	return true
 }
 
-type ContainerOpts struct {
-	// The OCI container image. ex "alpine:latest".
-	ContainerImage string
-
-	// The action directory with inputs / outputs.
-	ActionWorkingDirectory string
-
-	// The number of CPUs to allocate to this VM.
-	NumCPUs int64
-
-	// The amount of RAM, in MB, to allocate to this VM.
-	MemSizeMB int64
-
-	// Whether or not to enable networking.
-	EnableNetworking bool
-
-	// Optional flags -- these will default to sane values.
-	// They are here primarily for debugging and running
-	// VMs outside of the normal action-execution framework.
-
-	// DebugMode runs init in debugmode and enables stdin/stdout so
-	// that machines can be logged into via the console.
-	DebugMode bool
-
-	// ForceVMIdx forces a machine to use a particular vm index,
-	// allowing for multiple locally-started VMs to avoid using
-	// conflicting network interfaces.
-	ForceVMIdx int
-
-	// The root directory to store all files in. This needs to be
-	// short, less than 38 characters. If unset, /tmp will be used.
-	JailerRoot string
-}
-
 // Container invariants which cannot bechanged across snapshot/resume cycles.
 // Things like the container used to create the image, the numCPUs / RAM, etc.
 // Importantly, the files attached in the actionWorkingDir, which are attached
@@ -267,17 +284,34 @@ type FirecrackerContainer struct {
 	workspaceFSPath  string // the path to the workspace ext4 image
 	containerFSPath  string // the path to the container ext4 image
 
-	jailerRoot       string            // the root dir the jailer will work in
-	machine          *fcclient.Machine // the firecracker machine object.
-	env              environment.Env
-	pausedSnapshotID string
+	jailerRoot           string            // the root dir the jailer will work in
+	machine              *fcclient.Machine // the firecracker machine object.
+	env                  environment.Env
+	pausedSnapshotDigest *repb.Digest
+	allowSnapshotStart   bool
+}
+
+// ConfigurationHash returns a digest that can be used to look up or save a
+// cached snapshot for this container configuration.
+func (c *FirecrackerContainer) ConfigurationHash() (*repb.Digest, error) {
+	params := []string{
+		fmt.Sprintf("cpus=%d", c.constants.NumCPUs),
+		fmt.Sprintf("mb=%d", c.constants.MemSizeMB),
+		fmt.Sprintf("net=%t", c.constants.EnableNetworking),
+		fmt.Sprintf("debug=%t", c.constants.DebugMode),
+		fmt.Sprintf("container=%s", c.containerImage),
+	}
+	hashedString, err := hashString(strings.Join(params, "&"))
+	if err != nil {
+		return nil, err
+	}
+	return &repb.Digest{
+		Hash:      hashedString,
+		SizeBytes: int64(102),
+	}, nil
 }
 
 func NewContainer(env environment.Env, opts ContainerOpts) (*FirecrackerContainer, error) {
-	// Ensure our kernel and initrd exist.
-	if err := locateStaticFiles(); err != nil {
-		return nil, err
-	}
 	// WARNING: because of the limitation on the length of unix sock file
 	// paths (103), this directory path needs to be short. Specifically, a
 	// full sock path will look like:
@@ -294,6 +328,13 @@ func NewContainer(env environment.Env, opts ContainerOpts) (*FirecrackerContaine
 		return nil, err
 	}
 
+	// Ensure our kernel and initrd exist on the same filesystem where we'll
+	// be jailing containers. This allows us to hardlink these files rather
+	// than copying them around over and over again.
+	if err := copyStaticFiles(context.Background(), opts.JailerRoot); err != nil {
+		return nil, err
+	}
+
 	c := &FirecrackerContainer{
 		constants: Constants{
 			NumCPUs:          opts.NumCPUs,
@@ -301,10 +342,11 @@ func NewContainer(env environment.Env, opts ContainerOpts) (*FirecrackerContaine
 			EnableNetworking: opts.EnableNetworking,
 			DebugMode:        opts.DebugMode,
 		},
-		jailerRoot:       opts.JailerRoot,
-		containerImage:   opts.ContainerImage,
-		actionWorkingDir: opts.ActionWorkingDirectory,
-		env:              env,
+		jailerRoot:         opts.JailerRoot,
+		containerImage:     opts.ContainerImage,
+		actionWorkingDir:   opts.ActionWorkingDirectory,
+		env:                env,
+		allowSnapshotStart: opts.AllowSnapshotStart,
 	}
 
 	if err := c.newID(); err != nil {
@@ -316,9 +358,14 @@ func NewContainer(env environment.Env, opts ContainerOpts) (*FirecrackerContaine
 	return c, nil
 }
 
-func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName string) (string, error) {
+func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName string, d *repb.Digest) (*repb.Digest, error) {
+	start := time.Now()
+	defer func() {
+		log.Debugf("SaveSnapshot took %s", time.Since(start))
+	}()
+
 	if err := c.machine.PauseVM(ctx); err != nil {
-		return "", err
+		return nil, err
 	}
 	memSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
 	diskSnapshotPath := filepath.Join(c.getChroot(), fullDiskSnapshotName)
@@ -328,35 +375,41 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	disk.DeleteLocalFileIfExists(diskSnapshotPath)
 
 	if err := c.machine.CreateSnapshot(ctx, fullMemSnapshotName, fullDiskSnapshotName); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	configJson, err := json.Marshal(c.constants)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	opts := &snaploader.LoadSnapshotOptions{
-		ConfigurationData: configJson,
-		MemSnapshotPath:   memSnapshotPath,
-		DiskSnapshotPath:  diskSnapshotPath,
-		KernelImagePath:   kernelImagePath,
-		InitrdImagePath:   initrdImagePath,
-		ContainerFSPath:   c.containerFSPath,
-		WorkspaceFSPath:   c.workspaceFSPath,
+		ConfigurationData:   configJson,
+		MemSnapshotPath:     memSnapshotPath,
+		DiskSnapshotPath:    diskSnapshotPath,
+		KernelImagePath:     kernelImagePath,
+		InitrdImagePath:     initrdImagePath,
+		ContainerFSPath:     c.containerFSPath,
+		WorkspaceFSPath:     c.workspaceFSPath,
+		ForceSnapshotDigest: d,
 	}
 
-	snapshotID, err := snaploader.CacheSnapshot(ctx, c.env, instanceName, c.jailerRoot, opts)
+	snapshotDigest, err := snaploader.CacheSnapshot(ctx, c.env, instanceName, c.jailerRoot, opts)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if err := c.machine.ResumeVM(ctx); err != nil {
-		return "", err
+		return nil, err
 	}
-	return snapshotID, nil
+	return snapshotDigest, nil
 }
 
-func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, instanceName, snapshotID string) error {
+func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceFSOverride, instanceName string, snapshotDigest *repb.Digest) error {
+	start := time.Now()
+	defer func() {
+		log.Debugf("LoadSnapshot took %s", time.Since(start))
+	}()
+
 	if err := c.newID(); err != nil {
 		return err
 	}
@@ -379,7 +432,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, instanceName, s
 		ForwardSignals: make([]os.Signal, 0),
 	}
 
-	loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName, snapshotID)
+	loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName, snapshotDigest)
 	if err != nil {
 		return err
 	}
@@ -416,6 +469,14 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, instanceName, s
 		return err
 	}
 
+	workspaceFileInChroot := filepath.Join(c.getChroot(), workspaceFSName)
+	if workspaceFSOverride != "" {
+		if err := os.Link(workspaceFSOverride, workspaceFileInChroot); err != nil {
+			return err
+		}
+	}
+	c.workspaceFSPath = workspaceFileInChroot
+
 	machine, err := fcclient.NewMachine(ctx, cfg, machineOpts...)
 	if err != nil {
 		return status.InternalErrorf("Failed creating machine: %s", err)
@@ -430,6 +491,13 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, instanceName, s
 	log.Debugf("waitforsocket took %s", time.Since(socketWaitStart))
 	if err := c.machine.LoadSnapshot(ctx, fullMemSnapshotName, fullDiskSnapshotName); err != nil {
 		return status.InternalErrorf("error loading snapshot: %s", err)
+	}
+	if workspaceFSOverride != "" {
+		// If the snapshot is being loaded with a different workspaceFS
+		// then handle that now.
+		if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, workspaceFSName); err != nil {
+			return status.InternalErrorf("error updating workspace drive attached to snapshot: %s", err)
+		}
 	}
 	if err := c.machine.ResumeVM(ctx); err != nil {
 		return status.InternalErrorf("error resuming VM: %s", err)
@@ -519,13 +587,13 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 		ForwardSignals:  make([]os.Signal, 0),
 		Drives: []fcmodels.Drive{
 			fcmodels.Drive{
-				DriveID:      fcclient.String("containerfs"),
+				DriveID:      fcclient.String(containerDriveID),
 				PathOnHost:   &containerFS,
 				IsRootDevice: fcclient.Bool(false),
 				IsReadOnly:   fcclient.Bool(true),
 			},
 			fcmodels.Drive{
-				DriveID:      fcclient.String("workspacefs"),
+				DriveID:      fcclient.String(workspaceDriveID),
 				PathOnHost:   &workspaceFS,
 				IsRootDevice: fcclient.Bool(false),
 				IsReadOnly:   fcclient.Bool(false),
@@ -571,13 +639,13 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 	return cfg, nil
 }
 
-func locateStaticFiles() error {
+func copyStaticFiles(ctx context.Context, workingDir string) error {
 	locateBinariesOnce.Do(func() {
-		initrdImagePath, locateBinariesError = getStaticFilePath("vmsupport/bin/initrd.cpio", 0755)
+		initrdImagePath, locateBinariesError = putFileIntoDir(ctx, "vmsupport/bin/initrd.cpio", workingDir, 0755)
 		if locateBinariesError != nil {
 			return
 		}
-		kernelImagePath, locateBinariesError = getStaticFilePath("vmsupport/bin/vmlinux", 0755)
+		kernelImagePath, locateBinariesError = putFileIntoDir(ctx, "vmsupport/bin/vmlinux", workingDir, 0755)
 		if locateBinariesError != nil {
 			return
 		}
@@ -607,7 +675,7 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 		return status.FailedPreconditionErrorf("actionWorkingDir path %q not found", c.actionWorkingDir)
 	}
 
-	unpackDir, err := os.MkdirTemp("", "unpacked-workspacefs-*")
+	unpackDir, err := os.MkdirTemp(c.jailerRoot, "unpacked-workspacefs-*")
 	if err != nil {
 		return err
 	}
@@ -689,13 +757,54 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 	defer func() {
 		log.Debugf("Run took %s", time.Since(start))
 	}()
-	if err := c.PullImageIfNecessary(ctx); err != nil {
+
+	snapDigest, err := c.ConfigurationHash()
+	if err != nil {
 		return nonCmdExit(err)
 	}
 
-	if err := c.Create(ctx, actionWorkingDir); err != nil {
-		return nonCmdExit(err)
+	// See if we can lookup a cached snapshot to run from; if not, it's not
+	// a huge deal, we can start a new VM and create one.
+	if c.allowSnapshotStart {
+		workspaceSizeBytes, err := disk.DirSize(actionWorkingDir)
+		if err != nil {
+			return nonCmdExit(err)
+		}
+		containerHome, err := os.MkdirTemp(c.jailerRoot, "fc-container-*")
+		if err != nil {
+			return nonCmdExit(err)
+		}
+		wsPath := filepath.Join(containerHome, workspaceFSName)
+		if err := ext4.DirectoryToImage(ctx, actionWorkingDir, wsPath, workspaceSizeBytes+workspaceSlackBytes); err != nil {
+			return nonCmdExit(err)
+		}
+		if err := c.LoadSnapshot(ctx, wsPath, "" /*=instanceName*/, snapDigest); err == nil {
+			log.Debugf("Starting from snapshot %s/%d!", snapDigest.GetHash(), snapDigest.GetSizeBytes())
+		}
 	}
+
+	// If a snapshot was already loaded, then c.machine will be set, so
+	// there's no need to Create the machine.
+	if c.machine == nil {
+		if err := c.PullImageIfNecessary(ctx); err != nil {
+			return nonCmdExit(err)
+		}
+
+		if err := c.Create(ctx, actionWorkingDir); err != nil {
+			return nonCmdExit(err)
+		}
+
+		if c.allowSnapshotStart {
+			wsPath := c.workspaceFSPath
+			c.workspaceFSPath = ""
+			if _, err := c.SaveSnapshot(ctx, "" /*=instanceName*/, snapDigest); err != nil {
+				return nonCmdExit(err)
+			}
+			c.workspaceFSPath = wsPath
+			log.Debugf("Saved snapshot %s/%d for next run", snapDigest.GetHash(), snapDigest.GetSizeBytes())
+		}
+	}
+
 	defer c.Remove(ctx)
 
 	cmdResult := c.Exec(ctx, command, nil /*=stdin*/, nil /*=stdout*/)
@@ -715,11 +824,11 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		return err
 	}
 
-	containerHome, err := os.MkdirTemp("", "fc-container-*")
+	containerHome, err := os.MkdirTemp(c.jailerRoot, "fc-container-*")
 	if err != nil {
 		return err
 	}
-	wsPath := filepath.Join(containerHome, "workspacefs.ext4")
+	wsPath := filepath.Join(containerHome, workspaceFSName)
 	if err := ext4.DirectoryToImage(ctx, c.actionWorkingDir, wsPath, workspaceSizeBytes+workspaceSlackBytes); err != nil {
 		return err
 	}
@@ -727,7 +836,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 
 	log.Debugf("c.containerFSPath: %q", c.containerFSPath)
 	log.Debugf("c.workspaceFSPath: %q", c.workspaceFSPath)
-
+	log.Debugf("getChroot() is %q", c.getChroot())
 	fcCfg, err := c.getConfig(ctx, c.containerFSPath, c.workspaceFSPath)
 	if err != nil {
 		return err
@@ -803,15 +912,18 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		result.Error = status.InternalErrorf("error pausing VM: %s", err)
 		return result
 	}
+
 	copyOutputsErr := c.copyOutputsToWorkspace(ctx)
 	if err := c.machine.ResumeVM(ctx); err != nil {
 		result.Error = status.InternalErrorf("error resuming VM: %s", err)
 		return result
 	}
+
 	if copyOutputsErr != nil {
 		result.Error = err
 		return result
 	}
+
 	result.ExitCode = int(rsp.GetExitCode())
 	result.Stdout = rsp.GetStdout()
 	result.Stderr = rsp.GetStderr()
@@ -828,7 +940,7 @@ func (c *FirecrackerContainer) PullImageIfNecessary(ctx context.Context) error {
 	if c.containerFSPath != "" {
 		return nil
 	}
-	containerFSPath, err := containerutil.GetOrCreateImage(ctx, c.containerImage)
+	containerFSPath, err := containerutil.GetOrCreateImage(ctx, c.jailerRoot, c.containerImage)
 	if err != nil {
 		return err
 	}
@@ -858,6 +970,9 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 	if err := os.RemoveAll(filepath.Dir(c.workspaceFSPath)); err != nil {
 		log.Errorf("Error removing workspace fs: %s", err)
 	}
+	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
+		log.Errorf("Error removing chroot: %s", err)
+	}
 	return nil
 }
 
@@ -867,19 +982,14 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	defer func() {
 		log.Debugf("Pause took %s", time.Since(start))
 	}()
-	snapshotID, err := c.SaveSnapshot(ctx, "" /*=instanceName*/)
+	snapshotDigest, err := c.SaveSnapshot(ctx, "" /*=instanceName*/, nil /*=digest*/)
 	if err != nil {
 		return err
 	}
-	c.pausedSnapshotID = snapshotID
+	c.pausedSnapshotDigest = snapshotDigest
 
-	if err := c.machine.StopVMM(); err != nil {
-		return err
-	}
-	c.machine = nil
-
-	if err := c.cleanupNetworking(ctx); err != nil {
-		log.Errorf("Error cleaning up networking: %s", err)
+	if err := c.Remove(ctx); err != nil {
+		log.Errorf("Error cleaning up after pause: %s", err)
 	}
 	return nil
 }
@@ -891,7 +1001,7 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 		log.Debugf("Unpause took %s", time.Since(start))
 	}()
 
-	return c.LoadSnapshot(ctx, "" /*=instanceName*/, c.pausedSnapshotID)
+	return c.LoadSnapshot(ctx, "" /*=workspaceOverride*/, "" /*=instanceName*/, c.pausedSnapshotDigest)
 }
 
 // Wait waits until the underlying VM exits. It returns an error if one is

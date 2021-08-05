@@ -40,18 +40,13 @@ func hashFile(filename string) (string, error) {
 // getOrCreateContainerImage will look for a cached filesystem of the specified
 // containerImage in the user's cache directory -- if none is found one will be
 // created and cached.
-func GetOrCreateImage(ctx context.Context, containerImage string) (string, error) {
-	userCacheDir, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
-	}
-
+func GetOrCreateImage(ctx context.Context, workspaceDir, containerImage string) (string, error) {
 	hashedContainerName, err := hashString(containerImage)
 	if err != nil {
 		return "", err
 	}
 	containerFileName := "containerfs.ext4"
-	containerImagesPath := filepath.Join(userCacheDir, "executor", hashedContainerName)
+	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
 	if files, err := os.ReadDir(containerImagesPath); err == nil {
 		sort.Slice(files, func(i, j int) bool {
 			var iUnix int64
@@ -65,12 +60,16 @@ func GetOrCreateImage(ctx context.Context, containerImage string) (string, error
 			return iUnix < jUnix
 		})
 		if len(files) > 0 {
-			return filepath.Join(containerImagesPath, files[len(files)-1].Name(), containerFileName), nil
+			containerImagePath := filepath.Join(containerImagesPath, files[len(files)-1].Name(), containerFileName)
+			if exists, err := disk.FileExists(containerImagePath); err == nil && exists {
+				log.Debugf("Found existing %q container at path %q", containerImage, containerImagePath)
+				return containerImagePath, nil
+			}
 		}
 	}
 
 	// container not found -- write one!
-	tmpImagePath, err := convertContainerToExt4FS(ctx, containerImage)
+	tmpImagePath, err := convertContainerToExt4FS(ctx, workspaceDir, containerImage)
 	if err != nil {
 		return "", err
 	}
@@ -94,9 +93,9 @@ func GetOrCreateImage(ctx context.Context, containerImage string) (string, error
 // image from an OCI container image reference.
 // NB: We use modern tools (not docker), that do not require root access. This
 // allows this binary to convert images even when not running as root.
-func convertContainerToExt4FS(ctx context.Context, containerImage string) (string, error) {
+func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage string) (string, error) {
 	// Make a temp directory to work in. Delete it when this fuction returns.
-	rootUnpackDir, err := os.MkdirTemp("", "container-unpack-*")
+	rootUnpackDir, err := os.MkdirTemp(workspaceDir, "container-unpack-*")
 	if err != nil {
 		return "", err
 	}
@@ -129,7 +128,7 @@ func convertContainerToExt4FS(ctx context.Context, containerImage string) (strin
 
 	// Take the rootfs and write it into an ext4 image.
 	rootFSDir := filepath.Join(bundleOutputDir, "rootfs")
-	f, err := os.CreateTemp("", "containerfs-*.ext4")
+	f, err := os.CreateTemp(workspaceDir, "containerfs-*.ext4")
 	if err != nil {
 		return "", err
 	}

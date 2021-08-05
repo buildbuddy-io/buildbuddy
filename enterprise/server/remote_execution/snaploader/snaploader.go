@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -37,10 +35,18 @@ type LoadSnapshotOptions struct {
 	// This field is optional -- a snapshot may have a filesystem
 	// stored with it or it may have one attached at runtime.
 	WorkspaceFSPath string
+
+	// Callers may specify a snapshot ID; if set, the snapshot
+	// will be stored in an action with this ID
+	ForceSnapshotDigest *repb.Digest
 }
 
 // Digest computes the repb.Digest of a LoadSnapshotOptions struct.
 func (o *LoadSnapshotOptions) Digest() *repb.Digest {
+	if o.ForceSnapshotDigest != nil {
+		return o.ForceSnapshotDigest
+	}
+
 	h := sha256.New()
 	for _, f := range extractFiles(o) {
 		h.Write([]byte(f))
@@ -83,40 +89,25 @@ func extractFiles(snapOpts *LoadSnapshotOptions) []string {
 	return files
 }
 
-func parseSnapshotID(snapshotID string) (*repb.Digest, error) {
-	parts := strings.SplitN(snapshotID, "/", 2)
-	if len(parts) != 2 || len(parts[0]) != 64 {
-		return nil, status.InvalidArgumentErrorf("Error parsing snapshotID %q: should be of form 'f31e59431cdc5d631853e28151fb664f859b5f4c5dc94f0695408a6d31b84724/142'", snapshotID)
-	}
-	i, err := strconv.ParseInt(parts[1], 10, 64)
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("Error parsing actionID %q: %s", snapshotID, err)
-	}
-	return &repb.Digest{
-		Hash:      parts[0],
-		SizeBytes: i,
-	}, nil
-}
-
 type Loader struct {
 	ctx              context.Context
 	env              environment.Env
 	instanceName     string
 	workingDirectory string
-	snapshotID       string
+	snapshotDigest   *repb.Digest
 
 	tree *repb.Tree
 }
 
 // New returns a new snapshot.Loader that can be used to download the specified
 // snapshot into the target chroot.
-func New(ctx context.Context, env environment.Env, workingDirectory, instanceName, snapshotID string) (*Loader, error) {
+func New(ctx context.Context, env environment.Env, workingDirectory, instanceName string, snapshotDigest *repb.Digest) (*Loader, error) {
 	l := &Loader{
 		ctx:              ctx,
 		env:              env,
 		workingDirectory: workingDirectory,
 		instanceName:     instanceName,
-		snapshotID:       snapshotID,
+		snapshotDigest:   snapshotDigest,
 
 		tree: &repb.Tree{},
 	}
@@ -130,18 +121,14 @@ func New(ctx context.Context, env environment.Env, workingDirectory, instanceNam
 // error.
 func (l *Loader) loadTree() error {
 	acClient := l.env.GetActionCacheClient()
-	ad, err := parseSnapshotID(l.snapshotID)
-	if err != nil {
-		return err
-	}
-	adInstanceDigest := digest.NewInstanceNameDigest(ad, l.instanceName)
+	adInstanceDigest := digest.NewInstanceNameDigest(l.snapshotDigest, l.instanceName)
 	actionResult, err := cachetools.GetActionResult(l.ctx, acClient, adInstanceDigest)
 	if err != nil {
 		return err
 	}
 	outs := actionResult.GetOutputDirectories()
 	if len(outs) != 1 {
-		return status.FailedPreconditionErrorf("No files found for snapshot: %q", l.snapshotID)
+		return status.FailedPreconditionErrorf("No files found for snapshot: %s/%d", l.snapshotDigest.GetHash(), l.snapshotDigest.GetSizeBytes())
 	}
 	treeDigest := digest.NewInstanceNameDigest(outs[0].GetTreeDigest(), l.instanceName)
 	return cachetools.GetBlobAsProto(l.ctx, l.env.GetByteStreamClient(), treeDigest, l.tree)
@@ -160,7 +147,7 @@ func (l *Loader) GetConfigurationData() ([]byte, error) {
 			return data.Bytes(), nil
 		}
 	}
-	return nil, status.FailedPreconditionErrorf("No manifest file found for snapshot: %s", l.snapshotID)
+	return nil, status.FailedPreconditionErrorf("No manifest file found for snapshot: %s/%d", l.snapshotDigest.GetHash(), l.snapshotDigest.GetSizeBytes())
 }
 
 // UnpackSnapshot unpacks all of the files in a snapshot to the specified output
@@ -176,22 +163,22 @@ func (l *Loader) UnpackSnapshot(outputDirectory string) error {
 // Each file is individually stored in the CAS and a parent directory is created
 // that lists all files. Finally, an action result is cached that describes all
 // files -- this allows for fast existence checking and easy download.
-func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, workingDirectory string, snapOpts *LoadSnapshotOptions) (string, error) {
+func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, workingDirectory string, snapOpts *LoadSnapshotOptions) (*repb.Digest, error) {
 	snapDir, err := os.MkdirTemp(workingDirectory, "snap-upload-*")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer os.RemoveAll(snapDir) // clean up
 	if err := hardlinkFilesIntoDirectory(snapDir, extractFiles(snapOpts)...); err != nil {
-		return "", err
+		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(snapDir, ManifestFileName), snapOpts.ConfigurationData, 0644); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	_, td, err := cachetools.UploadDirectoryToCAS(ctx, env, instanceName, snapDir)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	actionResult := &repb.ActionResult{
 		OutputDirectories: []*repb.OutputDirectory{{
@@ -204,8 +191,7 @@ func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, worki
 	adInstanceDigest := digest.NewInstanceNameDigest(ad, instanceName)
 	acClient := env.GetActionCacheClient()
 	if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
-		return "", status.UnavailableErrorf("Error uploading action result: %s", err.Error())
+		return nil, status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 	}
-	snapshotID := fmt.Sprintf("%s/%d", ad.GetHash(), ad.GetSizeBytes())
-	return snapshotID, nil
+	return ad, nil
 }

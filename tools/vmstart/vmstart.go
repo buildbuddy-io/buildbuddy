@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
@@ -45,6 +47,21 @@ func getToolEnv() *real_environment.RealEnv {
 	return re
 }
 
+func parseSnapshotID(in string) *repb.Digest {
+	parts := strings.SplitN(in, "/", 2)
+	if len(parts) != 2 || len(parts[0]) != 64 {
+		log.Fatalf("Error parsing snapshotID %q (not in hash/size form)", in)
+	}
+	i, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		log.Fatalf("Error parsing snapshotID %q: %s", in, err)
+	}
+	return &repb.Digest{
+		Hash:      parts[0],
+		SizeBytes: i,
+	}
+}
+
 func main() {
 	flag.Parse()
 	env := getToolEnv()
@@ -77,7 +94,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}
-		if err := c.LoadSnapshot(ctx, *remoteInstanceName, *snapshotID); err != nil {
+		if err := c.LoadSnapshot(ctx, "" /*workspaceFS*/, *remoteInstanceName, parseSnapshotID(*snapshotID)); err != nil {
 			log.Fatalf("Error loading snapshot: %s", err)
 		}
 		if err := c.Wait(ctx); err != nil {
@@ -106,11 +123,11 @@ func main() {
 		for {
 			<-sigc
 			log.Errorf("Capturing snapshot...")
-			snapshotID, err := c.SaveSnapshot(ctx, *remoteInstanceName)
+			snapshotDigest, err := c.SaveSnapshot(ctx, *remoteInstanceName, nil)
 			if err != nil {
 				log.Fatalf("Error dumping snapshot: %s", err)
 			}
-			log.Printf("Created snapshot with ID %q", snapshotID)
+			log.Printf("Created snapshot with ID %s/%d", snapshotDigest.GetHash(), snapshotDigest.GetSizeBytes())
 		}
 	}()
 

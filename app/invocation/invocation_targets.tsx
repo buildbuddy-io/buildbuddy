@@ -16,7 +16,7 @@ export default class TargetsComponent extends React.Component {
   render() {
     return (
       <div>
-        {!!this.props.model.failedTest.length && this.props.mode != "passing" && (
+        {!!this.props.model.failedTest.length && this.props.mode == "failing" && (
           <TargetsCardComponent
             buildEvents={this.props.model.failedTest}
             className="card-failure"
@@ -29,7 +29,7 @@ export default class TargetsComponent extends React.Component {
           />
         )}
 
-        {!!this.props.model.failed.length && this.props.mode != "passing" && (
+        {!!this.props.model.failed.length && this.props.mode == "failing" && (
           <TargetsCardComponent
             buildEvents={this.props.model.failed}
             className="card-failure"
@@ -42,7 +42,7 @@ export default class TargetsComponent extends React.Component {
           />
         )}
 
-        {!!this.props.model.brokenTest.length && this.props.mode != "passing" && (
+        {!!this.props.model.brokenTest.length && this.props.mode == "failing" && (
           <TargetsCardComponent
             buildEvents={this.props.model.brokenTest}
             className="card-failure"
@@ -55,11 +55,24 @@ export default class TargetsComponent extends React.Component {
           />
         )}
 
-        {!!this.props.model.flakyTest.length && this.props.mode != "passing" && (
+        {!!this.props.model.timeoutTest.length && this.props.mode == "failing" && (
+          <TargetsCardComponent
+            buildEvents={this.props.model.timeoutTest}
+            className="card-timeout"
+            iconPath="/image/clock.svg"
+            presentVerb={`timed out ${this.props.model.timeoutTest.length == 1 ? "test" : "tests"}`}
+            pastVerb={`${this.props.model.timeoutTest.length == 1 ? "test" : "tests"} timed out`}
+            model={this.props.model}
+            filter={this.props.filter}
+            pageSize={this.props.pageSize}
+          />
+        )}
+
+        {!!this.props.model.flakyTest.length && this.props.mode == "failing" && (
           <TargetsCardComponent
             buildEvents={this.props.model.flakyTest}
-            className="card-failure"
-            iconPath="/image/x-circle.svg"
+            className="card-flaky"
+            iconPath="/image/flaky.svg"
             presentVerb={`flaky ${this.props.model.flakyTest.length == 1 ? "test" : "tests"}`}
             pastVerb={`flaky ${this.props.model.flakyTest.length == 1 ? "test" : "tests"}`}
             model={this.props.model}
@@ -68,7 +81,7 @@ export default class TargetsComponent extends React.Component {
           />
         )}
 
-        {!!this.props.model.succeededTest.length && this.props.mode != "failing" && (
+        {!!this.props.model.succeededTest.length && this.props.mode == "passing" && (
           <TargetsCardComponent
             buildEvents={this.props.model.succeededTest}
             className="card-success"
@@ -81,7 +94,7 @@ export default class TargetsComponent extends React.Component {
           />
         )}
 
-        {!!this.props.model.succeeded.length && this.props.mode != "failing" && (
+        {!!this.props.model.succeeded.length && this.props.mode == "passing" && (
           <TargetsCardComponent
             buildEvents={this.props.model.succeeded}
             className="card-success"
@@ -94,7 +107,7 @@ export default class TargetsComponent extends React.Component {
           />
         )}
 
-        {!!this.props.model.skipped.length && (
+        {!!this.props.model.skipped.length && this.props.mode == "passing" && (
           <TargetsCardComponent
             buildEvents={this.props.model.skipped}
             className="card-skipped"

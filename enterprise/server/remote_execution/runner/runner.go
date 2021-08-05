@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -469,44 +470,54 @@ func (p *Pool) dockerOptions() *docker.DockerOptions {
 }
 
 func (p *Pool) WarmupDefaultImage() {
-	if p.dockerClient == nil {
-		return
-	}
-	c := docker.NewDockerContainer(
-		p.dockerClient, platform.DefaultContainerImage, p.hostBuildRoot(),
-		p.dockerOptions(),
-	)
 	start := time.Now()
 	// Give the pull up to 1 minute to succeed and 1 minute to create a warm up container.
 	// In practice I saw clean pulls take about 30 seconds.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	err := c.PullImageIfNecessary(ctx)
-	if err != nil {
-		log.Warningf("Warm up: could not pull default image %q: %s", platform.DefaultContainerImage, err)
-		return
-	}
-	log.Infof("Warm up: pulled default image %q in %s", platform.DefaultContainerImage, time.Since(start))
 
-	tmpDir, err := os.MkdirTemp("", "buildbuddy-warmup-*")
-	if err != nil {
-		log.Warningf("Warm up: could not create temp directory: %s", err)
-		return
+	eg, egCtx := errgroup.WithContext(ctx)
+	executorProps := platform.GetExecutorProperties(p.env.GetConfigurator().GetExecutorConfig())
+	for _, containerType := range executorProps.SupportedIsolationTypes {
+		containerType := containerType
+		image := platform.DefaultContainerImage
+		platProps := platform.ParseProperties(&repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "container-image", Value: image},
+				{Name: "workload-isolation-type", Value: string(containerType)},
+			},
+		})
+		c, err := p.newContainer(egCtx, platProps, &repb.Command{
+			Arguments: []string{"echo", "'warmup'"},
+		})
+		if err != nil {
+			log.Errorf("Error warming up %q: %s", containerType, err)
+			return
+		}
+
+		eg.Go(func() error {
+			if err := c.PullImageIfNecessary(egCtx); err != nil {
+				return err
+			}
+			log.Infof("Warmup: %s pulled default image %q in %s", containerType, image, time.Since(start))
+			tmpDir, err := os.MkdirTemp("", "buildbuddy-warmup-*")
+			if err != nil {
+				return err
+			}
+			defer os.Remove(tmpDir)
+			if err = c.Create(egCtx, tmpDir); err != nil {
+				return err
+			}
+			if err := c.Remove(egCtx); err != nil {
+				return err
+			}
+			log.Infof("Warmup: %s finished in %s.", containerType, time.Since(start))
+			return nil
+		})
 	}
-	defer func() {
-		_ = os.Remove(tmpDir)
-	}()
-	err = c.Create(ctx, tmpDir)
-	if err != nil {
-		log.Warningf("Warm up: could not create warm up container: %s", err)
-		return
+	if err := eg.Wait(); err != nil {
+		log.Warningf("Error warming up containers: %s", err)
 	}
-	err = c.Remove(ctx)
-	if err != nil {
-		log.Warningf("Warm up: could not remove warm up container: %s", err)
-		return
-	}
-	log.Infof("Warm up finished for default image in %s.", time.Since(start))
 }
 
 // Get returns a runner that can be used to execute the given task. The caller
@@ -568,7 +579,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	if err != nil {
 		return nil, err
 	}
-	ctr, err := p.newContainer(ctx, props)
+	ctr, err := p.newContainer(ctx, props, task.GetCommand())
 	if err != nil {
 		return nil, err
 	}
@@ -584,7 +595,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	return r, nil
 }
 
-func (p *Pool) newContainer(ctx context.Context, props *platform.Properties) (container.CommandContainer, error) {
+func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd *repb.Command) (container.CommandContainer, error) {
 	var ctr container.CommandContainer
 	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:
@@ -595,12 +606,15 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties) (co
 	case platform.ContainerdContainerType:
 		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
 	case platform.FirecrackerContainerType:
+		sizeEstimate := tasksize.Estimate(cmd)
 		opts := firecracker.ContainerOpts{
 			ContainerImage:         props.ContainerImage,
 			ActionWorkingDirectory: p.hostBuildRoot(),
-			NumCPUs:                1,
-			MemSizeMB:              2500,
+			NumCPUs:                int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
+			MemSizeMB:              int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
 			EnableNetworking:       false,
+			JailerRoot:             p.buildRoot,
+			AllowSnapshotStart:     true,
 		}
 		c, err := firecracker.NewContainer(p.env, opts)
 		if err != nil {

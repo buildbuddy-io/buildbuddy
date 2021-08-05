@@ -264,7 +264,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	md.WorkerCompletedTimestamp = ptypes.TimestampNow()
 	actionResult.ExecutionMetadata = md
 
-	if !task.GetAction().GetDoNotCache() {
+	if !task.GetAction().GetDoNotCache() && cmdResult.Error == nil && cmdResult.ExitCode == 0 {
 		if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
 			return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
 		}

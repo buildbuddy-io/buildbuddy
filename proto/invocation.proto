@@ -176,6 +176,28 @@ message InvocationQuery {
 
   // The timestamp up to which the build was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 8;
+
+  // Allowed invocation statuses. Must be explicitly specified, or no
+  // invocations will be returned.
+  repeated OverallStatus status = 9;
+}
+
+// OverallStatus is a status representing both the completion status and
+// success status of an invocation.
+enum OverallStatus {
+  UNKNOWN_OVERALL_STATUS = 0;
+
+  // Status representing a completed, successful invocation.
+  SUCCESS = 1;
+
+  // Status representing a completed, unsuccessful invocation.
+  FAILURE = 2;
+
+  // Status representing a partial invocation.
+  IN_PROGRESS = 3;
+
+  // Status representing a disconnected invocation.
+  DISCONNECTED = 4;
 }
 
 message InvocationSort {
@@ -288,6 +310,10 @@ message InvocationStatQuery {
 
   // The timestamp up to which the build was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 8;
+
+  // Allowed invocation statuses. Must be explicitly specified, or no
+  // invocations will be returned.
+  repeated OverallStatus status = 9;
 }
 
 message GetInvocationStatRequest {

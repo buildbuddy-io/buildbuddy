@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "firecracker",
     srcs = [
+        "containeropts.go",
         "firecracker.go",
         "firecracker_darwin.go",
     ],
@@ -16,6 +17,7 @@ go_library(
         "@io_bazel_rules_go//go/platform:darwin": [
             "//enterprise/server/remote_execution/container",
             "//proto:remote_execution_go_proto",
+            "//server/environment",
             "//server/interfaces",
             "//server/util/status",
         ],

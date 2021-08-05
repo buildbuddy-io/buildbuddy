@@ -1,7 +1,9 @@
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
+import errorService from "../errors/error_service";
 import { build } from "../../proto/remote_execution_ts_proto";
+import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
 
 interface Props {
@@ -10,15 +12,22 @@ interface Props {
 }
 
 interface State {
-  contents?: ArrayBuffer;
   action?: build.bazel.remote.execution.v2.Action;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   command?: build.bazel.remote.execution.v2.Command;
   error?: string;
+  inputRoot?: build.bazel.remote.execution.v2.Directory;
+  inputDirs?: InputNode[];
+  treeShaToExpanded?: Map<string, boolean>;
+  treeShaToChildrenMap?: Map<string, InputNode[]>;
 }
 
 export default class InvocationActionCardComponent extends React.Component<Props, State> {
-  state: State = {};
+  state: State = {
+    treeShaToExpanded: new Map<string, boolean>(),
+    treeShaToChildrenMap: new Map<string, InputNode[]>(),
+    inputDirs: [],
+  };
   componentDidMount() {
     this.fetchAction();
     this.fetchActionResult();
@@ -28,22 +37,37 @@ export default class InvocationActionCardComponent extends React.Component<Props
     let actionFile = "bytestream://" + this.getCacheAddress() + "/blobs/" + this.props.search.get("actionDigest");
     rpcService
       .fetchBytestreamFile(actionFile, this.props.model.getId(), "arraybuffer")
-      .then((action_buff: any) => {
-        let tempAction = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(action_buff));
+      .then((buffer: any) => {
+        let action = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(buffer));
         this.setState({
-          ...this.state,
-          contents: action_buff,
-          action: tempAction,
+          action: action,
         });
-        this.fetchCommand(tempAction);
+        this.fetchCommand(action);
+        this.fetchInputRoot(action.inputRootDigest);
       })
-      .catch(() => {
-        console.error("Error loading bytestream action profile!");
+      .catch((e) => errorService.handleError(e));
+  }
+
+  fetchInputRoot(rootDigest: build.bazel.remote.execution.v2.IDigest) {
+    let inputRootFile =
+      "bytestream://" + this.getCacheAddress() + "/blobs/" + rootDigest.hash + "/" + rootDigest.sizeBytes;
+    rpcService
+      .fetchBytestreamFile(inputRootFile, this.props.model.getId(), "arraybuffer")
+      .then((buffer: any) => {
+        let tempRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
+        let inputDirs: InputNode[] = tempRoot.directories.map(
+          (node) =>
+            ({
+              obj: node,
+              type: "dir",
+            } as InputNode)
+        );
         this.setState({
-          ...this.state,
-          error: "Error loading action profile. Make sure your cache is correctly configured.",
+          inputRoot: tempRoot,
+          inputDirs: inputDirs,
         });
-      });
+      })
+      .catch((e) => errorService.handleError(e));
   }
 
   fetchActionResult() {
@@ -51,20 +75,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
       "actioncache://" + this.getCacheAddress() + "/blobs/ac/" + this.props.search.get("actionDigest");
     rpcService
       .fetchBytestreamFile(actionResultFile, this.props.model.getId(), "arraybuffer")
-      .then((action_buff: any) => {
-        let temp_array = new Uint8Array(action_buff);
+      .then((buffer: any) => {
         this.setState({
-          ...this.state,
-          actionResult: build.bazel.remote.execution.v2.ActionResult.decode(temp_array),
+          actionResult: build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer)),
         });
       })
-      .catch(() => {
-        console.error("Error loading action result!");
-        this.setState({
-          ...this.state,
-          error: "Error loading command profile. Make sure your cache is correctly configured.",
-        });
-      });
+      .catch((e) => errorService.handleError(e));
   }
 
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
@@ -77,20 +93,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
       action.commandDigest.sizeBytes;
     rpcService
       .fetchBytestreamFile(commandFile, this.props.model.getId(), "arraybuffer")
-      .then((action_buff: any) => {
-        let temp_array = new Uint8Array(action_buff);
+      .then((buffer: any) => {
         this.setState({
-          ...this.state,
-          command: build.bazel.remote.execution.v2.Command.decode(temp_array),
+          command: build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer)),
         });
       })
-      .catch(() => {
-        console.error("Error loading bytestream command profile!");
-        this.setState({
-          ...this.state,
-          error: "Error loading command profile. Make sure your cache is correctly configured.",
-        });
-      });
+      .catch((e) => errorService.handleError(e));
   }
 
   displayList(list: string[]) {
@@ -101,6 +109,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
           <div>{argument}</div>
         ))}
       </div>
+    );
+  }
+
+  handleOutputFileClicked(file: build.bazel.remote.execution.v2.IOutputFile) {
+    rpcService.downloadBytestreamFile(
+      file.path,
+      "bytestream://" + this.getCacheAddress() + "/blobs/" + file.digest.hash + "/" + file.digest.sizeBytes,
+      this.props.model.getId()
     );
   }
 
@@ -211,16 +227,55 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
+  handleFileClicked(node: InputNode) {
+    let digestString = node.obj.digest.hash + "/" + node.obj.digest.sizeBytes;
+    let dirUrl = "bytestream://" + this.getCacheAddress() + "/blobs/" + digestString;
+
+    if (this.state.treeShaToExpanded.get(digestString)) {
+      this.state.treeShaToExpanded.set(digestString, false);
+      this.forceUpdate();
+      return;
+    }
+    if (node.type == "file") {
+      rpcService.downloadBytestreamFile(node.obj.name, dirUrl, this.props.model.getId());
+      return;
+    }
+    rpcService
+      .fetchBytestreamFile(dirUrl, this.props.model.getId(), "arraybuffer")
+      .then((buffer: any) => {
+        let dir = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
+        this.state.treeShaToExpanded.set(digestString, true);
+        let dirs: InputNode[] = dir.directories.map(
+          (child) =>
+            ({
+              obj: child,
+              type: "dir",
+            } as InputNode)
+        );
+        let files: InputNode[] = dir.directories.map(
+          (child) =>
+            ({
+              obj: child,
+              type: "file",
+            } as InputNode)
+        );
+        this.state.treeShaToChildrenMap.set(digestString, dirs.concat(files));
+        this.forceUpdate();
+      })
+      .catch((e) => errorService.handleError(e));
+    return;
+  }
+
   render() {
     return (
       <div>
         <div className="card">
           <img className="icon" src="/image/info.svg" />
           <div className="content">
-            <div className="title">Action details </div>
             <div className="details">
-              {this.state.action && (
+              {this.state.action ? (
                 <div>
+                  <div className="title">Action details </div>
                   <div className="action-section">
                     <div className="action-property-title">Hash/Size</div>
                     <div>{this.props.search.get("actionDigest")} bytes</div>
@@ -251,12 +306,29 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       <div>Default</div>
                     )}
                   </div>
+                  <div className="action-section">
+                    <div className="action-property-title">Input files</div>
+                    {this.state.inputDirs.length && (
+                      <div className="input-tree">
+                        {this.state.inputDirs.map((node) => (
+                          <InputNodeComponent
+                            node={node}
+                            treeShaToExpanded={this.state.treeShaToExpanded}
+                            treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                            handleFileClicked={this.handleFileClicked.bind(this)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
+              ) : (
+                <div>No action details were found.</div>
               )}
               <div className="action-line">
-                <div className="action-title">Command details</div>
                 {this.state.command && (
                   <div>
+                    <div className="action-title">Command details</div>
                     <div className="action-section">
                       <div className="action-property-title">Arguments</div>
                       {this.displayList(this.state.command.arguments)}
@@ -267,7 +339,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         {this.state.command.environmentVariables.map((variable) => (
                           <div>
                             <span className="prop-name">{variable.name}</span>
-                            <span className="prop-value">={variable.value}</span>
+                            <span className="metadata-detail">={variable.value}</span>
                           </div>
                         ))}
                       </div>
@@ -304,7 +376,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         <div className="action-list">
                           {this.state.actionResult.outputFiles.map((file) => (
                             <div>
-                              <span className="prop-value">{file.path}</span>
+                              <span
+                                className="prop-link clickable"
+                                onClick={this.handleOutputFileClicked.bind(this, file)}>
+                                {file.path}
+                              </span>
                               {file.isExecutable && <span className="detail"> (executable)</span>}
                             </div>
                           ))}
@@ -319,7 +395,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         <div className="action-list">
                           {this.state.actionResult.outputDirectories.map((dir) => (
                             <div>
-                              <span className="prop-value">{dir.path}</span>
+                              <span>{dir.path}</span>
                             </div>
                           ))}
                         </div>
