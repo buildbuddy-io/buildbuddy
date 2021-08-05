@@ -262,12 +262,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
     return (
       <div>
         <div className="card">
-          <img className="icon" src="/image/info.svg" />
           <div className="content">
             <div className="details">
+            <img className="icon" src="/image/info.svg" />
+                  <div className="title">Action details </div>
               {this.state.action ? (
                 <div>
-                  <div className="title">Action details </div>
                   <div className="action-section">
                     <div className="action-property-title">Hash/Size</div>
                     <div>{this.props.search.get("actionDigest")} bytes</div>
