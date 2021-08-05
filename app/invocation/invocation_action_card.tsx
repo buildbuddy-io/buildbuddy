@@ -112,6 +112,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
+  handleOutputFileClicked(file: build.bazel.remote.execution.v2.IOutputFile) {
+    rpcService.downloadBytestreamFile(
+      file.path,
+      "bytestream://" + this.getCacheAddress() + "/blobs/" + file.digest.hash + "/" + file.digest.sizeBytes,
+      this.props.model.getId()
+    );
+  }
+
   getCacheAddress() {
     let address = this.props.model.optionsMap.get("remote_executor").replace("grpc://", "");
     address = address.replace("grpcs://", "");
@@ -331,7 +339,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         {this.state.command.environmentVariables.map((variable) => (
                           <div>
                             <span className="prop-name">{variable.name}</span>
-                            <span className="prop-value">={variable.value}</span>
+                            <span className="metadata-detail">={variable.value}</span>
                           </div>
                         ))}
                       </div>
@@ -368,7 +376,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         <div className="action-list">
                           {this.state.actionResult.outputFiles.map((file) => (
                             <div>
-                              <span className="prop-value">{file.path}</span>
+                              <span
+                                className="prop-link clickable"
+                                onClick={this.handleOutputFileClicked.bind(this, file)}>
+                                {file.path}
+                              </span>
                               {file.isExecutable && <span className="detail"> (executable)</span>}
                             </div>
                           ))}
@@ -383,7 +395,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         <div className="action-list">
                           {this.state.actionResult.outputDirectories.map((dir) => (
                             <div>
-                              <span className="prop-value">{dir.path}</span>
+                              <span>{dir.path}</span>
                             </div>
                           ))}
                         </div>

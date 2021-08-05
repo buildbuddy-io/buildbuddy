@@ -85,12 +85,12 @@
 
 .action-list {
   display: block;
-  color: #222;
 }
 
 .action-section {
   display: flex;
   margin-bottom: 16px;
+  color: #222;
 }
 
 .action-section div {
@@ -435,6 +435,10 @@
 
 .prop-value {
   color: #444;
+}
+
+.prop-link:hover {
+  opacity: 0.7;
 }
 
 .prop-value .detail {
