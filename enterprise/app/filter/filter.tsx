@@ -83,7 +83,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           <OutlinedButton className="filter-menu-button icon-text-button" onClick={this.onOpenFilterMenu.bind(this)}>
             <img className="subtle-icon" src="/image/filter.svg" alt="" />
             {roleValue === "CI" && <span className="role-badge CI">CI</span>}
-            {roleValue === "CI_RUNNER" && <span className="role-badge CI_RUNNER">Workflows</span>}
+            {roleValue === "CI_RUNNER" && <span className="role-badge CI_RUNNER">Workflow</span>}
             {!roleValue && <span className="filter-menu-button-label">Filter...</span>}
           </OutlinedButton>
           <Popup
