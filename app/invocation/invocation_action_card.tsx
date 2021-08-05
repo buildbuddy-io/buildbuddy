@@ -80,7 +80,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
           actionResult: build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer)),
         });
       })
-      .catch((e) => errorService.handleError(e));
+      .catch(
+        this.setState({
+          actionResult: null,
+        });
+      );
   }
 
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
