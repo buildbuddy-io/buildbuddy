@@ -32,8 +32,8 @@ class Router {
     window.history.pushState({}, "", targetUrl);
   }
 
-  setQuery(searchParams: URLSearchParams) {
-    const search = `${searchParams}`;
+  setQuery(params: Record<string, string>) {
+    const search = getQueryString(params);
     let url = search ? `?${search}` : window.location.pathname;
     window.history.replaceState({}, "", url);
   }
@@ -123,7 +123,7 @@ class Router {
   }
 
   getWorkflowHistoryUrl(repo: string) {
-    return `${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}?workflows=true`;
+    return `${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}?role=CI_RUNNER`;
   }
 
   navigateToWorkflowHistory(repo: string) {

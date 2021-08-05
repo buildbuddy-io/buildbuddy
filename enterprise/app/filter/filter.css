@@ -1,33 +1,98 @@
 .global-filter {
   display: flex;
   transition: background-color 300ms;
-  border-bottom: 1px solid #eee;
+  border-radius: 8px;
+
+  --row-height: 40px;
 }
 
-.global-filter.container {
-  padding-top: 16px;
-  padding-bottom: 16px;
+.global-filter > * {
+  flex-shrink: 0;
 }
 
-.global-filter.is-filtering {
-  background-color: #e0f7fa;
+.global-filter .filter-menu-popup {
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
 }
 
-.global-filter .clear-filters-button,
-.global-filter .filter-icon-container {
-  width: 42px;
-  height: 42px;
+.global-filter .filter-menu-popup .text-input {
+  height: 32px;
+  min-width: 320px;
+}
+
+.global-filter .filter-menu-popup .input-row-title {
+  font-weight: 600;
+  font-size: 15px;
+  min-width: 80px;
+}
+
+.global-filter .filter-menu-popup .option-groups-row {
+  display: flex;
+}
+
+.global-filter .option-group-title {
+  font-weight: 600;
+  font-size: 15px;
+  background: white;
+  padding: 4px 16px;
+}
+
+.global-filter .option-group {
+  padding: 4px 0;
+  padding-right: 16px;
+}
+
+.global-filter .option-group-options {
+  display: flex;
+  flex-direction: column;
+}
+
+.global-filter .option-group-options label {
+  padding: 4px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  user-select: none;
+}
+
+.global-filter .option-group-options label > :not(:last-child) {
+  margin-right: 8px;
+}
+
+.global-filter .status-badge {
+  flex-grow: 1;
+  border: 1px solid #eee;
+  border-left: 4px solid var(--status-color);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+.global-filter .status-badge.succeeded {
+  --status-color: #8bc34a;
+}
+.global-filter .status-badge.failed {
+  --status-color: #f44336;
+}
+.global-filter .status-badge.in-progress {
+  --status-color: #03a9f4;
+}
+.global-filter .status-badge.disconnected {
+  --status-color: #aaa;
+}
+
+.global-filter .square {
+  width: var(--row-height);
+  height: var(--row-height);
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.global-filter .clear-filters-button {
-  color: #263238;
-}
-
-.global-filter .filter-icon-container img {
+.global-filter .subtle-icon {
   opacity: 0.5;
 }
 
@@ -35,16 +100,25 @@
   margin-right: 8px;
 }
 
-.global-filter .date-picker-container {
+.global-filter .popup-wrapper {
   position: relative;
 }
 
-.global-filter .date-picker-button > :not(:last-child) {
+.global-filter .icon-text-button {
+  max-height: var(--row-height);
+}
+
+.global-filter .icon-text-button > :not(:last-child) {
   margin-right: 8px;
 }
 
-.global-filter .date-picker-button img {
-  opacity: 0.5;
+.global-filter .filter-menu-button .role-badge {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.global-filter .filter-menu-button-label {
+  color: #616161;
 }
 
 .global-filter .date-picker-popup {

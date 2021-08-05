@@ -7,7 +7,10 @@ ts_library(
     srcs = glob(["*.tsx"]),
     deps = [
         "//app/components/button",
+        "//app/components/checkbox",
+        "//app/components/input",
         "//app/components/popup",
+        "//app/components/radio",
         "//app/format",
         "//app/router",
         "//app/util:proto",
