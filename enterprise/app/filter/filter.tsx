@@ -28,10 +28,6 @@ const DATE_PARAM_FORMAT = "YYYY-MM-DD";
 export default class FilterComponent extends React.Component<FilterProps, State> {
   state: State = {};
 
-  private onClickClearFilters() {
-    router.setQuery({});
-  }
-
   private onOpenDatePicker() {
     this.setState({ isDatePickerOpen: true });
   }
@@ -53,6 +49,12 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   private onCloseFilterMenu() {
     this.setState({ isFilterMenuOpen: false });
   }
+  private onClickClearFilters() {
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [ROLE_PARAM_NAME]: "",
+    });
+  }
 
   private onRoleChange(role: string) {
     router.setQuery({
@@ -68,23 +70,23 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const startDate = (startDateParam ? moment(startDateParam) : moment().subtract(7, "days")).toDate();
     const endDate = (endDateParam ? moment(endDateParam) : moment()).toDate();
 
-    const canClearFilters = Boolean(this.props.search.toString());
-
     const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
+    const isFiltering = Boolean(roleValue);
 
     return (
-      <div className={`global-filter ${canClearFilters ? "is-filtering" : ""}`}>
-        {canClearFilters && (
+      <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>
+        {isFiltering && (
           <FilledButton className="square" title="Clear filters" onClick={this.onClickClearFilters.bind(this)}>
             <img src="/image/x-white.svg" alt="" />
           </FilledButton>
         )}
         <div className="popup-wrapper">
-          <OutlinedButton className="filter-menu-button icon-text-button" onClick={this.onOpenFilterMenu.bind(this)}>
+          <OutlinedButton
+            className={`filter-menu-button icon-text-button ${isFiltering ? "" : "square"}`}
+            onClick={this.onOpenFilterMenu.bind(this)}>
             <img className="subtle-icon" src="/image/filter.svg" alt="" />
             {roleValue === "CI" && <span className="role-badge CI">CI</span>}
             {roleValue === "CI_RUNNER" && <span className="role-badge CI_RUNNER">Workflow</span>}
-            {!roleValue && <span className="filter-menu-button-label">Filter...</span>}
           </OutlinedButton>
           <Popup
             isOpen={this.state.isFilterMenuOpen}
