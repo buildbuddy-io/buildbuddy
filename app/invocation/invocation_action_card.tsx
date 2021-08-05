@@ -244,7 +244,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
               type: "dir",
             } as InputNode)
         );
-        let files: InputNode[] = dir.directories.map(
+        let files: InputNode[] = dir.files.map(
           (child) =>
             ({
               obj: child,
@@ -262,10 +262,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
     return (
       <div>
         <div className="card">
+        <img className="icon" src="/image/info.svg" />
           <div className="content">
+            <div className="title">Action details </div>
             <div className="details">
-            <img className="icon" src="/image/info.svg" />
-                  <div className="title">Action details </div>
               {this.state.action ? (
                 <div>
                   <div className="action-section">
