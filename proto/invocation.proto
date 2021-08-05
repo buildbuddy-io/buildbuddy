@@ -182,19 +182,21 @@ message InvocationQuery {
   repeated OverallStatus status = 9;
 }
 
+// OverallStatus is a status representing both the completion status and
+// success status of an invocation.
 enum OverallStatus {
   UNKNOWN_OVERALL_STATUS = 0;
 
-  // Filter value selecting `invocation_status == COMPLETE and success`.
+  // Status representing a completed, successful invocation.
   SUCCESS = 1;
 
-  // Filter value selecting `invocation_status == COMPLETE and not success`.
+  // Status representing a completed, unsuccessful invocation.
   FAILURE = 2;
 
-  // Filter value selecting `invocation_status == PARTIAL`.
+  // Status representing a partial invocation.
   IN_PROGRESS = 3;
 
-  // Filter value selecting `invocation_status == DISCONNECTED`.
+  // Status representing a disconnected invocation.
   DISCONNECTED = 4;
 }
 
