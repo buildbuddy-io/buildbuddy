@@ -179,11 +179,11 @@ message InvocationQuery {
 
   // Allowed invocation statuses. Must be explicitly specified, or no
   // invocations will be returned.
-  repeated StatusFilterValue statuses = 9;
+  repeated OverallStatus status = 9;
 }
 
-enum StatusFilterValue {
-  UNKNOWN_STATUS_FILTER_VALUE = 0;
+enum OverallStatus {
+  UNKNOWN_OVERALL_STATUS = 0;
 
   // Filter value selecting `invocation_status == COMPLETE and success`.
   SUCCESS = 1;
@@ -311,7 +311,7 @@ message InvocationStatQuery {
 
   // Allowed invocation statuses. Must be explicitly specified, or no
   // invocations will be returned.
-  repeated StatusFilterValue statuses = 9;
+  repeated OverallStatus status = 9;
 }
 
 message GetInvocationStatRequest {
