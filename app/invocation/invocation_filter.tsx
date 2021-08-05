@@ -12,8 +12,32 @@ export default class InvocationFilterComponent extends React.Component {
 
   handleFilterChange(event: any) {
     let value = event.target.value;
-    let params = this.props.hash == "#artifacts" ? { artifactFilter: value } : { targetFilter: value };
+    let params = {};
+    switch (this.filterType()) {
+      case "artifactFilter":
+        params = { artifactFilter: value };
+        break;
+      case "targetFilter":
+        params = { targetFilter: value };
+        break;
+      case "executionFilter":
+        params = { executionFilter: value };
+        break;
+    }
     router.replaceParams(params);
+  }
+
+  filterType() {
+    switch (this.props.hash) {
+      case "#artifacts":
+        return "artifactFilter";
+      case "#execution":
+        return "executionFilter";
+      case "#targets":
+        return "targetFilter";
+      default:
+        return "";
+    }
   }
 
   render() {
@@ -21,7 +45,7 @@ export default class InvocationFilterComponent extends React.Component {
       <div className="filter">
         <img src="/image/filter.svg" />
         <input
-          value={this.props.search.get(this.props.hash == "#artifacts" ? "artifactFilter" : "targetFilter") || ""}
+          value={this.props.search.get(this.filterType())}
           className="filter-input"
           placeholder="Filter..."
           onChange={this.handleFilterChange.bind(this)}

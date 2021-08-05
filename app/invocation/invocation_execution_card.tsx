@@ -11,6 +11,7 @@ import rpcService from "../service/rpc_service";
 interface Props {
   model: InvocationModel;
   inProgress: boolean;
+  filter: string;
 }
 
 interface State {
@@ -260,6 +261,15 @@ export default class ExecutionCardComponent extends React.Component {
         incompleteCount++;
       }
     }
+    console.log(this.props.filter);
+    const filteredActions = this.state.executions.filter(
+      (action) =>
+        !this.props.filter ||
+        `${action.actionDigest.hash}/${action.actionDigest.sizeBytes}`
+          .toLowerCase()
+          .includes(this.props.filter.toLowerCase())
+    );
+    console.log(filteredActions);
 
     return (
       <div className={`card expanded`}>
@@ -316,42 +326,48 @@ export default class ExecutionCardComponent extends React.Component {
               </span>
             </div>
           </div>
-          <div className="invocation-execution-table">
-            {this.state.executions.sort(this.sort.bind(this)).map((execution, index) => {
-              const status = getExecutionStatus(execution);
-              return (
-                <div
-                  key={index}
-                  className="invocation-execution-row clickable"
-                  onClick={this.handleActionDigestClick.bind(this, execution)}>
-                  <div className="invocation-execution-row-image">
-                    <img className={status.className} src={status.image} alt="" />
-                  </div>
-                  <div>
-                    <div className="invocation-execution-row-digest">
-                      {status.name} {execution?.actionDigest?.hash}/{execution?.actionDigest?.sizeBytes}
-                    </div>
-                    <div>{execution.commandSnippet}</div>
-                    <div className="invocation-execution-row-stats">
-                      <div>Worker: {execution?.executedActionMetadata?.worker}</div>
-                      <div>Total duration: {format.durationUsec(this.totalDuration(execution))}</div>
-                      <div>Queued duration: {format.durationUsec(this.queuedDuration(execution))}</div>
-                      <div>
-                        File download duration: {format.durationUsec(this.downloadDuration(execution))} (
-                        {format.bytes(execution?.ioStats?.fileDownloadSizeBytes)} across{" "}
-                        {execution?.ioStats?.fileDownloadCount} files)
+          <div>
+            {filteredActions.length ? (
+              <div className="invocation-execution-table">
+                {filteredActions.sort(this.sort.bind(this)).map((execution, index) => {
+                  const status = getExecutionStatus(execution);
+                  return (
+                    <div
+                      key={index}
+                      className="invocation-execution-row clickable"
+                      onClick={this.handleActionDigestClick.bind(this, execution)}>
+                      <div className="invocation-execution-row-image">
+                        <img className={status.className} src={status.image} alt="" />
                       </div>
-                      <div>Execution duration: {format.durationUsec(this.executionDuration(execution))}</div>
                       <div>
-                        File upload duration: {format.durationUsec(this.uploadDuration(execution))} (
-                        {format.bytes(execution?.ioStats?.fileUploadSizeBytes)} across{" "}
-                        {execution?.ioStats?.fileUploadCount} files)
+                        <div className="invocation-execution-row-digest">
+                          {status.name} {execution?.actionDigest?.hash}/{execution?.actionDigest?.sizeBytes}
+                        </div>
+                        <div>{execution.commandSnippet}</div>
+                        <div className="invocation-execution-row-stats">
+                          <div>Worker: {execution?.executedActionMetadata?.worker}</div>
+                          <div>Total duration: {format.durationUsec(this.totalDuration(execution))}</div>
+                          <div>Queued duration: {format.durationUsec(this.queuedDuration(execution))}</div>
+                          <div>
+                            File download duration: {format.durationUsec(this.downloadDuration(execution))} (
+                            {format.bytes(execution?.ioStats?.fileDownloadSizeBytes)} across{" "}
+                            {execution?.ioStats?.fileDownloadCount} files)
+                          </div>
+                          <div>Execution duration: {format.durationUsec(this.executionDuration(execution))}</div>
+                          <div>
+                            File upload duration: {format.durationUsec(this.uploadDuration(execution))} (
+                            {format.bytes(execution?.ioStats?.fileUploadSizeBytes)} across{" "}
+                            {execution?.ioStats?.fileUploadCount} files)
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            ) : (
+              <div>No matching actions.</div>
+            )}
           </div>
         </div>
       </div>

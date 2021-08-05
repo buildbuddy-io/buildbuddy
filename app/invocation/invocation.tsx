@@ -224,7 +224,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             role={this.state.model.getRole()}
           />
 
-          {(activeTab === "targets" || activeTab === "artifacts") && (
+          {(activeTab === "targets" || activeTab === "artifacts" || activeTab === "execution") && (
             <InvocationFilterComponent hash={this.props.hash} search={this.props.search} />
           )}
 
@@ -288,7 +288,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {activeTab == "timing" && <TimingCardComponent model={this.state.model} />}
 
           {activeTab == "execution" && (
-            <ExecutionCardComponent model={this.state.model} inProgress={this.state.inProgress} />
+            <ExecutionCardComponent
+              model={this.state.model}
+              inProgress={this.state.inProgress}
+              filter={this.props.search.get("executionFilter")}
+            />
           )}
 
           {activeTab == "action" && (
