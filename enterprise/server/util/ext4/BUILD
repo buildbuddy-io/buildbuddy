@@ -5,7 +5,10 @@ go_library(
     srcs = ["ext4.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/status"],
+    deps = [
+        "//server/util/log",
+        "//server/util/status",
+    ],
 )
 
 go_test(

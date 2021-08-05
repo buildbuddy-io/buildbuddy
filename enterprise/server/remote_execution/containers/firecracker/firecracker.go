@@ -775,7 +775,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 			return nonCmdExit(err)
 		}
 		wsPath := filepath.Join(containerHome, workspaceFSName)
-		if err := ext4.DirectoryToImage(ctx, c.actionWorkingDir, wsPath, workspaceSizeBytes+workspaceSlackBytes); err != nil {
+		if err := ext4.DirectoryToImage(ctx, actionWorkingDir, wsPath, workspaceSizeBytes+workspaceSlackBytes); err != nil {
 			return nonCmdExit(err)
 		}
 		if err := c.LoadSnapshot(ctx, wsPath, "" /*=instanceName*/, snapDigest); err == nil {
