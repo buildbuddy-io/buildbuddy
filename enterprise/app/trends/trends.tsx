@@ -7,6 +7,7 @@ import TrendsChartComponent from "./trends_chart";
 import CacheChartComponent from "./cache_chart";
 import { Subscription } from "rxjs";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
+import { parseStatusParam, STATUS_PARAM_NAME } from "../filter/filter_util";
 
 const BITS_PER_BYTE = 8;
 
@@ -90,6 +91,8 @@ export default class TrendsComponent extends React.Component<Props> {
     if (this.props.search.get("repo")) {
       request.query.repoUrl = this.props.search.get("repo");
     }
+
+    request.query.status = parseStatusParam(this.props.search.get(STATUS_PARAM_NAME));
 
     this.setState({ ...this.state, loading: true });
     rpcService.service.getTrend(request).then((response) => {
