@@ -51,6 +51,8 @@ const TrendsChartTooltip = ({
 export default class TrendsChartComponent extends React.Component {
   props: Props;
 
+  handleClick() {}
+
   render() {
     const hasSecondaryAxis = this.props.extractSecondaryValue && this.props.separateAxis;
 
@@ -77,7 +79,13 @@ export default class TrendsChartComponent extends React.Component {
                 />
               }
             />
-            <Bar yAxisId="primary" name={this.props.name} dataKey={this.props.extractValue} fill="#607D8B" />
+            <Bar
+              yAxisId="primary"
+              name={this.props.name}
+              dataKey={this.props.extractValue}
+              fill="#607D8B"
+              onClick={this.handleClick.bind(this)}
+            />
             {this.props.extractSecondaryValue && this.props.secondaryLine && (
               <Line
                 yAxisId={this.props.separateAxis ? "secondary" : "primary"}
