@@ -261,7 +261,7 @@ export default class ExecutionCardComponent extends React.Component {
         incompleteCount++;
       }
     }
-    console.log(this.props.filter);
+
     const filteredActions = this.state.executions.filter(
       (action) =>
         !this.props.filter ||
@@ -269,7 +269,6 @@ export default class ExecutionCardComponent extends React.Component {
           .toLowerCase()
           .includes(this.props.filter.toLowerCase())
     );
-    console.log(filteredActions);
 
     return (
       <div className={`card expanded`}>
