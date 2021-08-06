@@ -228,6 +228,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <InvocationFilterComponent hash={this.props.hash} search={this.props.search} />
           )}
 
+          {activeTab === "execution" && (
+            <InvocationFilterComponent
+              hash={this.props.hash}
+              search={this.props.search}
+              placeholder={"Filter by digest or command..."}
+            />
+          )}
+
           {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted.description && (
             <ErrorCardComponent model={this.state.model} />
           )}
@@ -288,7 +296,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {activeTab == "timing" && <TimingCardComponent model={this.state.model} />}
 
           {activeTab == "execution" && (
-            <ExecutionCardComponent model={this.state.model} inProgress={this.state.inProgress} />
+            <ExecutionCardComponent
+              model={this.state.model}
+              inProgress={this.state.inProgress}
+              filter={this.props.search.get("executionFilter")}
+            />
           )}
 
           {activeTab == "action" && (
