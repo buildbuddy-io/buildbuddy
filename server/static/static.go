@@ -66,7 +66,7 @@ func NewStaticFileServer(env environment.Env, fs fs.FS, rootPaths []string, appB
 		handler = handleRootPaths(env, rootPaths, template, version.AppVersion(), jsPath, handler)
 	}
 	return &StaticFileServer{
-		handler: handler,
+		handler: setCacheHeaders(handler),
 	}, nil
 }
 
@@ -88,6 +88,16 @@ func handleRootPaths(env environment.Env, rootPaths []string, template *template
 			return
 		}
 
+		h.ServeHTTP(w, r)
+	})
+}
+
+// Set cache headers if a static file request hash a `hash` query parameter.
+func setCacheHeaders(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if (r.URL.Query().Get("hash")) != "" {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable") // 1 year
+		}
 		h.ServeHTTP(w, r)
 	})
 }
