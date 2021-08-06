@@ -177,8 +177,8 @@ message InvocationQuery {
   // The timestamp up to which the build was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 8;
 
-  // Allowed invocation statuses. Must be explicitly specified, or no
-  // invocations will be returned.
+  // Status of the build. If multiple are specified, they are combined with
+  // "OR".
   repeated OverallStatus status = 9;
 }
 
@@ -311,8 +311,8 @@ message InvocationStatQuery {
   // The timestamp up to which the build was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 8;
 
-  // Allowed invocation statuses. Must be explicitly specified, or no
-  // invocations will be returned.
+  // Status of the build. If multiple are specified, they are combined with
+  // "OR".
   repeated OverallStatus status = 9;
 }
 
@@ -401,6 +401,16 @@ message TrendQuery {
   // The role played by the build. Ex: "CI". Multiple filters are combined with
   // OR.
   repeated string role = 6;
+
+  // The timestamp on or after which the build was last updated (inclusive).
+  google.protobuf.Timestamp updated_after = 7;
+
+  // The timestamp up to which the build was last updated (exclusive).
+  google.protobuf.Timestamp updated_before = 8;
+
+  // Status of the build. If multiple are specified, they are combined with
+  // "OR".
+  repeated OverallStatus status = 9;
 }
 
 message GetTrendRequest {
@@ -410,7 +420,8 @@ message GetTrendRequest {
 
   // The maximum number of past days to aggregate. If not set, the server will
   // pick an appropriate value. Probably 7.
-  int32 lookback_window_days = 3;
+  // DEPRECATED: Use `query.updated_after` and `query.updated_before` instead.
+  int32 lookback_window_days = 3 [deprecated = true];
 }
 
 message GetTrendResponse {
