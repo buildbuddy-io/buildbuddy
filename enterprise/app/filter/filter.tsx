@@ -57,6 +57,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
       [ROLE_PARAM_NAME]: "",
+      [STATUS_PARAM_NAME]: "",
     });
   }
 
@@ -86,12 +87,9 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     selected: Set<invocation.OverallStatus>
   ) {
     const name = statusToString(status);
-    const isOnlySelectedStatus = selected.has(status) && selected.size === 1;
-    // Disable if this is the last checkbox selected to prevent 0 statuses from being selected.
-    const enabled = !isOnlySelectedStatus;
     return (
-      <label onClick={enabled ? this.onStatusToggle.bind(this, status, selected) : undefined}>
-        <Checkbox checked={selected.has(status)} disabled={!enabled} />
+      <label onClick={this.onStatusToggle.bind(this, status, selected)}>
+        <Checkbox checked={selected.has(status)} />
         <span className={`status-badge ${name}`}>{label}</span>
       </label>
     );
@@ -105,9 +103,10 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const endDate = (endDateParam ? moment(endDateParam) : moment()).toDate();
 
     const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
-    const isFiltering = Boolean(roleValue);
+    const statusValue = this.props.search.get(STATUS_PARAM_NAME) || "";
 
-    const selectedStatuses = new Set(parseStatusParam(this.props.search.get(STATUS_PARAM_NAME)));
+    const isFiltering = Boolean(roleValue || statusValue);
+    const selectedStatuses = new Set(parseStatusParam(statusValue));
 
     return (
       <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>
@@ -121,6 +120,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             className={`filter-menu-button icon-text-button ${isFiltering ? "" : "square"}`}
             onClick={this.onOpenFilterMenu.bind(this)}>
             <img className="subtle-icon" src="/image/filter.svg" alt="" />
+            {selectedStatuses.has(invocation.OverallStatus.SUCCESS) && <span className="status-block SUCCESS" />}
+            {selectedStatuses.has(invocation.OverallStatus.FAILURE) && <span className="status-block FAILURE" />}
+            {selectedStatuses.has(invocation.OverallStatus.IN_PROGRESS) && (
+              <span className="status-block IN_PROGRESS" />
+            )}
+            {selectedStatuses.has(invocation.OverallStatus.DISCONNECTED) && (
+              <span className="status-block DISCONNECTED" />
+            )}
             {roleValue === "CI" && <span className="role-badge CI">CI</span>}
             {roleValue === "CI_RUNNER" && <span className="role-badge CI_RUNNER">Workflow</span>}
           </OutlinedButton>

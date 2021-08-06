@@ -31,27 +31,28 @@ export const ALL_STATUSES = [
   invocation.OverallStatus.DISCONNECTED,
 ];
 
-const STATUS_TO_STRING = Object.fromEntries(Object.entries(invocation.OverallStatus).map(([k, v]) => [v, k]));
+const STATUS_TO_STRING = Object.fromEntries(
+  Object.entries(invocation.OverallStatus).map(([k, v]) => [v, k.toLowerCase()])
+);
 
 export function statusToString(status: invocation.OverallStatus) {
   return STATUS_TO_STRING[status];
 }
 
 export function statusFromString(value: string) {
-  return (invocation.OverallStatus[value as any] as unknown) as invocation.OverallStatus;
+  return (invocation.OverallStatus[value.toUpperCase() as any] as unknown) as invocation.OverallStatus;
 }
 
-export function parseStatusParam(paramValue: string): invocation.OverallStatus[] {
-  if (!paramValue) return ALL_STATUSES;
-
-  const enumStringValues = paramValue.split(" ");
-  return enumStringValues.map((name) => statusFromString(name));
+export function parseStatusParam(paramValue?: string): invocation.OverallStatus[] {
+  if (!paramValue) return [];
+  return paramValue.split(" ").map((name) => statusFromString(name));
 }
 
 export function toStatusParam(statuses: Iterable<invocation.OverallStatus>): string {
-  const statusList = [...statuses];
-  if (statusList.length === ALL_STATUSES.length) return "";
-  return statusList.map(statusToString).sort().join(" ");
+  return [...statuses]
+    .map(statusToString)
+    .sort((a, b) => statusFromString(a) - statusFromString(b))
+    .join(" ");
 }
 
 function parseStartOfDay(value: string, offsetDays = 0): google.protobuf.Timestamp {
