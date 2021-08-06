@@ -186,6 +186,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 secondaryName="average build time seconds"
                 secondaryLine={true}
                 separateAxis={true}
+                clickableBars={true}
               />
               <TrendsChartComponent
                 title="Build duration"
@@ -201,6 +202,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatSecondaryHoverValue={(value) => (value || 0).toFixed() + " seconds slowest"}
                 name="average build time seconds"
                 secondaryName="slowest build time seconds"
+                clickableBars={true}
               />
 
               <CacheChartComponent
@@ -266,6 +268,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " users"}
                 name="users with builds"
+                clickableBars={true}
               />
               <TrendsChartComponent
                 title="Commits with builds"
@@ -275,6 +278,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " commits"}
                 name="commits with builds"
+                clickableBars={true}
               />
               <TrendsChartComponent
                 title="Hosts with builds"
@@ -284,6 +288,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " hosts"}
                 name="hosts with builds"
+                clickableBars={true}
               />
               <TrendsChartComponent
                 title="Repos with builds"
@@ -293,6 +298,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " repos"}
                 name="repos with builds"
+                clickableBars={true}
               />
             </>
           )}

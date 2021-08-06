@@ -1,5 +1,6 @@
 import React from "react";
 import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Bar, Line, Legend, Tooltip } from "recharts";
+import router from "../router/router";
 
 interface Props {
   title: string;
@@ -16,6 +17,8 @@ interface Props {
   secondaryName?: string;
   secondaryLine?: boolean;
   separateAxis?: boolean;
+
+  clickableBars?: boolean;
 }
 
 const TrendsChartTooltip = ({
@@ -84,7 +87,7 @@ export default class TrendsChartComponent extends React.Component {
               name={this.props.name}
               dataKey={this.props.extractValue}
               fill="#607D8B"
-              onClick={this.handleClick.bind(this)}
+              onClick={this.props.clickableBars ? this.handleClick.bind(this) : null}
             />
             {this.props.extractSecondaryValue && this.props.secondaryLine && (
               <Line
@@ -101,6 +104,7 @@ export default class TrendsChartComponent extends React.Component {
                 name={this.props.secondaryName}
                 dataKey={this.props.extractSecondaryValue}
                 fill="#03A9F4"
+                onClick={this.props.clickableBars ? this.handleClick.bind(this) : null}
               />
             )}
           </ComposedChart>
