@@ -291,6 +291,7 @@ func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName 
 // uploads together and falling back to bytestream uploads for large files.
 type BatchCASUploader struct {
 	ctx              context.Context
+	fileCache        interfaces.FileCache
 	byteStreamClient bspb.ByteStreamClient
 	casClient        repb.ContentAddressableStorageClient
 	eg               *errgroup.Group
@@ -312,9 +313,15 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 		return nil, status.InvalidArgumentError("Missing CAS client")
 	}
 
+	var fileCache interfaces.FileCache
+	if env.GetFileCache() != nil {
+		fileCache = env.GetFileCache()
+	}
+
 	eg, ctx := errgroup.WithContext(ctx)
 	return &BatchCASUploader{
 		ctx:              ctx,
+		fileCache:        fileCache,
 		eg:               eg,
 		byteStreamClient: bsClient,
 		casClient:        casClient,
@@ -389,6 +396,12 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Add output files to the filecache.
+	if ul.fileCache != nil {
+		ul.fileCache.AddFile(d, path)
+	}
+
 	// Note: uploader.Upload will close the file.
 	if err := ul.Upload(d, f); err != nil {
 		return nil, err

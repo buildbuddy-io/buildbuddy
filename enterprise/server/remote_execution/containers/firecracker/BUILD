@@ -54,6 +54,7 @@ go_test(
     tags = ["manual"],  # Don't include this target in wildcard patterns
     deps = [
         ":firecracker",
+        "//enterprise/server/remote_execution/filecache",
         "//proto:remote_execution_go_proto",
         "//server/backends/disk_cache",
         "//server/config",
