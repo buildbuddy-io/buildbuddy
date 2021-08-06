@@ -24,13 +24,6 @@ export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams
   };
 }
 
-export const ALL_STATUSES = [
-  invocation.OverallStatus.SUCCESS,
-  invocation.OverallStatus.FAILURE,
-  invocation.OverallStatus.IN_PROGRESS,
-  invocation.OverallStatus.DISCONNECTED,
-];
-
 const STATUS_TO_STRING = Object.fromEntries(
   Object.entries(invocation.OverallStatus).map(([k, v]) => [v, k.toLowerCase().replace(/_/g, "-")])
 );
