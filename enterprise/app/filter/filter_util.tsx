@@ -32,7 +32,7 @@ export const ALL_STATUSES = [
 ];
 
 const STATUS_TO_STRING = Object.fromEntries(
-  Object.entries(invocation.OverallStatus).map(([k, v]) => [v, k.toLowerCase()])
+  Object.entries(invocation.OverallStatus).map(([k, v]) => [v, k.toLowerCase().replace(/_/g, "-")])
 );
 
 export function statusToString(status: invocation.OverallStatus) {
@@ -40,7 +40,9 @@ export function statusToString(status: invocation.OverallStatus) {
 }
 
 export function statusFromString(value: string) {
-  return (invocation.OverallStatus[value.toUpperCase() as any] as unknown) as invocation.OverallStatus;
+  return (invocation.OverallStatus[
+    value.toUpperCase().replace(/-/g, "_") as any
+  ] as unknown) as invocation.OverallStatus;
 }
 
 export function parseStatusParam(paramValue?: string): invocation.OverallStatus[] {

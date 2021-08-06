@@ -120,13 +120,13 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             className={`filter-menu-button icon-text-button ${isFiltering ? "" : "square"}`}
             onClick={this.onOpenFilterMenu.bind(this)}>
             <img className="subtle-icon" src="/image/filter.svg" alt="" />
-            {selectedStatuses.has(invocation.OverallStatus.SUCCESS) && <span className="status-block SUCCESS" />}
-            {selectedStatuses.has(invocation.OverallStatus.FAILURE) && <span className="status-block FAILURE" />}
+            {selectedStatuses.has(invocation.OverallStatus.SUCCESS) && <span className="status-block success" />}
+            {selectedStatuses.has(invocation.OverallStatus.FAILURE) && <span className="status-block failure" />}
             {selectedStatuses.has(invocation.OverallStatus.IN_PROGRESS) && (
-              <span className="status-block IN_PROGRESS" />
+              <span className="status-block in-progress" />
             )}
             {selectedStatuses.has(invocation.OverallStatus.DISCONNECTED) && (
-              <span className="status-block DISCONNECTED" />
+              <span className="status-block disconnected" />
             )}
             {roleValue === "CI" && <span className="role-badge CI">CI</span>}
             {roleValue === "CI_RUNNER" && <span className="role-badge CI_RUNNER">Workflow</span>}

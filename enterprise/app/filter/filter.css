@@ -83,7 +83,7 @@
 .global-filter .failure {
   --status-color: #f44336;
 }
-.global-filter .in_progress {
+.global-filter .in-progress {
   --status-color: #03a9f4;
 }
 .global-filter .disconnected {
