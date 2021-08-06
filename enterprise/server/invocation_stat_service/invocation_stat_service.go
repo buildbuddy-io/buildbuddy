@@ -58,14 +58,6 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 		return nil, status.ResourceExhaustedErrorf("Too many rows.")
 	}
 
-	lookbackWindowDays := 7 * 24 * time.Hour
-	if w := req.GetLookbackWindowDays(); w != 0 {
-		if w < 1 || w > 365 {
-			return nil, status.InvalidArgumentErrorf("lookback_window_days must be between 0 and 366")
-		}
-		lookbackWindowDays = time.Duration(w*24) * time.Hour
-	}
-
 	q := query_builder.NewQuery(fmt.Sprintf("SELECT %s as name,", i.h.DateFromUsecTimestamp("updated_at_usec")) + `
 	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,
 	    COUNT(1) as total_num_builds,
@@ -112,7 +104,27 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 		q.AddWhereClause(fmt.Sprintf("(%s)", roleQuery), roleArgs...)
 	}
 
-	q.AddWhereClause(`updated_at_usec > ?`, timeutil.ToUsec(time.Now().Add(-lookbackWindowDays)))
+	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
+		q.AddWhereClause("updated_at_usec >= ?", timeutil.ToUsec(start.AsTime()))
+	} else {
+		// If no start time specified, respect the lookback window field if set,
+		// or default to 7 days.
+		lookbackWindowDays := 7 * 24 * time.Hour
+		if w := req.GetLookbackWindowDays(); w != 0 {
+			if w < 1 || w > 365 {
+				return nil, status.InvalidArgumentErrorf("lookback_window_days must be between 0 and 366")
+			}
+			lookbackWindowDays = time.Duration(w*24) * time.Hour
+		}
+		q.AddWhereClause("updated_at_usec >= ?", timeutil.ToUsec(time.Now().Add(-lookbackWindowDays)))
+	}
+
+	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
+		q.AddWhereClause("updated_at_usec < ?", timeutil.ToUsec(end.AsTime()))
+	}
+
+	addStatusPredicate(q, req.GetQuery().GetStatus())
+
 	q.AddWhereClause(`group_id = ?`, groupID)
 	q.SetGroupBy("name")
 	q.SetOrderBy("MAX(updated_at_usec)" /*ascending=*/, false)
@@ -202,6 +214,8 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		q.AddWhereClause("updated_at_usec < ?", timeutil.ToUsec(end.AsTime()))
 	}
 
+	addStatusPredicate(q, req.GetQuery().GetStatus())
+
 	q.AddWhereClause(`group_id = ?`, groupID)
 	q.SetGroupBy("name")
 	q.SetOrderBy("latest_build_time_usec" /*ascending=*/, false)
@@ -225,4 +239,28 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		rsp.InvocationStat = append(rsp.InvocationStat, stat)
 	}
 	return rsp, nil
+}
+
+func addStatusPredicate(q *query_builder.Query, statuses []inpb.OverallStatus) {
+	statusClauses := query_builder.OrClauses{}
+	for _, status := range statuses {
+		switch status {
+		case inpb.OverallStatus_SUCCESS:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 1)
+		case inpb.OverallStatus_FAILURE:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 0)
+		case inpb.OverallStatus_IN_PROGRESS:
+			statusClauses.AddOr(`invocation_status = ?`, int(inpb.Invocation_PARTIAL_INVOCATION_STATUS))
+		case inpb.OverallStatus_DISCONNECTED:
+			statusClauses.AddOr(`invocation_status = ?`, int(inpb.Invocation_DISCONNECTED_INVOCATION_STATUS))
+		case inpb.OverallStatus_UNKNOWN_OVERALL_STATUS:
+			continue
+		default:
+			continue
+		}
+	}
+	statusQuery, statusArgs := statusClauses.Build()
+	if statusQuery != "" {
+		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
+	}
 }

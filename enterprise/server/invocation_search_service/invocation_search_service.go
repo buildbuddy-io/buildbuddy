@@ -148,6 +148,28 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 		q.AddWhereClause("i.updated_at_usec < ?", timeutil.ToUsec(end.AsTime()))
 	}
 
+	statusClauses := query_builder.OrClauses{}
+	for _, status := range req.GetQuery().GetStatus() {
+		switch status {
+		case inpb.OverallStatus_SUCCESS:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 1)
+		case inpb.OverallStatus_FAILURE:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 0)
+		case inpb.OverallStatus_IN_PROGRESS:
+			statusClauses.AddOr(`invocation_status = ?`, int(inpb.Invocation_PARTIAL_INVOCATION_STATUS))
+		case inpb.OverallStatus_DISCONNECTED:
+			statusClauses.AddOr(`invocation_status = ?`, int(inpb.Invocation_DISCONNECTED_INVOCATION_STATUS))
+		case inpb.OverallStatus_UNKNOWN_OVERALL_STATUS:
+			continue
+		default:
+			continue
+		}
+	}
+	statusQuery, statusArgs := statusClauses.Build()
+	if statusQuery != "" {
+		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
+	}
+
 	// Always add permissions check.
 	addPermissionsCheckToQuery(tu, q)
 
