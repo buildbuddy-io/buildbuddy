@@ -1,7 +1,6 @@
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
-import errorService from "../errors/error_service";
 import { build } from "../../proto/remote_execution_ts_proto";
 import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
@@ -45,7 +44,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.fetchCommand(action);
         this.fetchInputRoot(action.inputRootDigest);
       })
-      .catch((e) => errorService.handleError(e));
+      .catch((e) => console.log(e));
   }
 
   fetchInputRoot(rootDigest: build.bazel.remote.execution.v2.IDigest) {
@@ -67,7 +66,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           inputDirs: inputDirs,
         });
       })
-      .catch((e) => errorService.handleError(e));
+      .catch((e) => console.log(e));
   }
 
   fetchActionResult() {
@@ -80,7 +79,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           actionResult: build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer)),
         });
       })
-      .catch((e) => errorService.handleError(e));
+      .catch((e) => console.log(e));
   }
 
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
@@ -98,7 +97,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           command: build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer)),
         });
       })
-      .catch((e) => errorService.handleError(e));
+      .catch((e) => console.log(e));
   }
 
   displayList(list: string[]) {
@@ -252,7 +251,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
               type: "dir",
             } as InputNode)
         );
-        let files: InputNode[] = dir.directories.map(
+        let files: InputNode[] = dir.files.map(
           (child) =>
             ({
               obj: child,
@@ -262,7 +261,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.state.treeShaToChildrenMap.set(digestString, dirs.concat(files));
         this.forceUpdate();
       })
-      .catch((e) => errorService.handleError(e));
+      .catch((e) => console.log(e));
     return;
   }
 
@@ -272,10 +271,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
         <div className="card">
           <img className="icon" src="/image/info.svg" />
           <div className="content">
+            <div className="title">Action details </div>
             <div className="details">
               {this.state.action ? (
                 <div>
-                  <div className="title">Action details </div>
                   <div className="action-section">
                     <div className="action-property-title">Hash/Size</div>
                     <div>{this.props.search.get("actionDigest")} bytes</div>
@@ -326,9 +325,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
                 <div>No action details were found.</div>
               )}
               <div className="action-line">
-                {this.state.command && (
+                <div className="action-title">Command details</div>
+                {this.state.command ? (
                   <div>
-                    <div className="action-title">Command details</div>
                     <div className="action-section">
                       <div className="action-property-title">Arguments</div>
                       {this.displayList(this.state.command.arguments)}
@@ -345,11 +344,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       </div>
                     </div>
                   </div>
+                ) : (
+                  <div>No command details were found.</div>
                 )}
               </div>
-              {this.state.actionResult && (
-                <div className="action-line">
-                  <div className="action-title">Result details</div>
+              <div className="action-line">
+                <div className="action-title">Result details</div>
+                {this.state.actionResult ? (
                   <div>
                     <div className="action-section">
                       <div className="action-property-title">Exit Code</div>
@@ -404,8 +405,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       )}
                     </div>
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div>No action result details found.</div>
+                )}
+              </div>
             </div>
           </div>
         </div>
