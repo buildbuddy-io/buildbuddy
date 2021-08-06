@@ -224,8 +224,16 @@ export default class InvocationComponent extends React.Component<Props, State> {
             role={this.state.model.getRole()}
           />
 
-          {(activeTab === "targets" || activeTab === "artifacts" || activeTab === "execution") && (
+          {(activeTab === "targets" || activeTab === "artifacts") && (
             <InvocationFilterComponent hash={this.props.hash} search={this.props.search} />
+          )}
+
+          {activeTab === "execution" && (
+            <InvocationFilterComponent
+              hash={this.props.hash}
+              search={this.props.search}
+              placeholder={"Filter by digest or command..."}
+            />
           )}
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted.description && (

@@ -5,6 +5,7 @@ import router from "../router/router";
 interface Props {
   hash: string;
   search: URLSearchParams;
+  placeholder?: string;
 }
 
 export default class InvocationFilterComponent extends React.Component {
@@ -47,7 +48,7 @@ export default class InvocationFilterComponent extends React.Component {
         <input
           value={this.props.search.get(this.filterType())}
           className="filter-input"
-          placeholder="Filter..."
+          placeholder={this.props.placeholder ? this.props.placeholder : "Filter..."}
           onChange={this.handleFilterChange.bind(this)}
         />
       </div>
