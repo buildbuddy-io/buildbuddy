@@ -267,7 +267,8 @@ export default class ExecutionCardComponent extends React.Component {
         !this.props.filter ||
         `${action.actionDigest.hash}/${action.actionDigest.sizeBytes}`
           .toLowerCase()
-          .includes(this.props.filter.toLowerCase())
+          .includes(this.props.filter.toLowerCase()) ||
+        action.commandSnippet.toLowerCase().includes(this.props.filter.toLowerCase())
     );
 
     return (
