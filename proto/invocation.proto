@@ -421,6 +421,7 @@ message GetTrendRequest {
   // The maximum number of past days to aggregate. If not set, the server will
   // pick an appropriate value. Probably 7.
   // DEPRECATED: Use `query.updated_after` and `query.updated_before` instead.
+  // TODO(bduffany): Delete this once clients no longer use it.
   int32 lookback_window_days = 3 [deprecated = true];
 }
 
