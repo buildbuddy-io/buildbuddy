@@ -77,16 +77,16 @@
   background-color: var(--status-color);
 }
 
-.global-filter .SUCCESS {
+.global-filter .success {
   --status-color: #8bc34a;
 }
-.global-filter .FAILURE {
+.global-filter .failure {
   --status-color: #f44336;
 }
-.global-filter .IN_PROGRESS {
+.global-filter .in_progress {
   --status-color: #03a9f4;
 }
-.global-filter .DISCONNECTED {
+.global-filter .disconnected {
   --status-color: #aaa;
 }
 
