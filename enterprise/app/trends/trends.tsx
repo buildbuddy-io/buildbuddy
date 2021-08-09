@@ -7,6 +7,9 @@ import TrendsChartComponent from "./trends_chart";
 import CacheChartComponent from "./cache_chart";
 import { Subscription } from "rxjs";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
+import FilterComponent from "../filter/filter";
+import capabilities from "../../../app/capabilities/capabilities";
+import { getProtoFilterParams } from "../filter/filter_util";
 
 const BITS_PER_BYTE = 8;
 
@@ -69,10 +72,20 @@ export default class TrendsComponent extends React.Component<Props> {
     request.lookbackWindowDays = this.getLimit();
     request.query = new invocation.TrendQuery();
 
-    if (this.state.filterOnlyCI) {
-      request.query.role = ["CI"];
+    if (capabilities.globalFilter) {
+      const filterParams = getProtoFilterParams(this.props.search);
+      if (!filterParams.role) {
+        request.query.role = ["", "CI"];
+      } else {
+        request.query.role = [filterParams.role];
+      }
     } else {
-      request.query.role = ["", "CI"];
+      // TODO(bduffany): Clean up this branch once the global filter is switched on
+      if (this.state.filterOnlyCI) {
+        request.query.role = ["CI"];
+      } else {
+        request.query.role = ["", "CI"];
+      }
     }
 
     if (this.props.search.get("user")) {
@@ -135,32 +148,38 @@ export default class TrendsComponent extends React.Component<Props> {
         <div className="container">
           <div className="trends-header">
             <div className="trends-title">Trends</div>
-            <div>
-              <CheckboxButton
-                className="show-changes-only-button"
-                onChange={this.handleCheckboxChange.bind(this)}
-                checked={this.state.filterOnlyCI}>
-                Only show CI builds
-              </CheckboxButton>
-            </div>
+            {capabilities.globalFilter ? (
+              <FilterComponent search={this.props.search} />
+            ) : (
+              <div>
+                <CheckboxButton
+                  className="show-changes-only-button"
+                  onChange={this.handleCheckboxChange.bind(this)}
+                  checked={this.state.filterOnlyCI}>
+                  Only show CI builds
+                </CheckboxButton>
+              </div>
+            )}
           </div>
-          <div className="tabs">
-            <div onClick={() => this.updateLimit(7)} className={`tab ${this.getLimit() == 7 ? "selected" : ""}`}>
-              7 days
+          {!capabilities.globalFilter && (
+            <div className="tabs">
+              <div onClick={() => this.updateLimit(7)} className={`tab ${this.getLimit() == 7 ? "selected" : ""}`}>
+                7 days
+              </div>
+              <div onClick={() => this.updateLimit(30)} className={`tab ${this.getLimit() == 30 ? "selected" : ""}`}>
+                30 days
+              </div>
+              <div onClick={() => this.updateLimit(90)} className={`tab ${this.getLimit() == 90 ? "selected" : ""}`}>
+                90 days
+              </div>
+              <div onClick={() => this.updateLimit(180)} className={`tab ${this.getLimit() == 180 ? "selected" : ""}`}>
+                180 days
+              </div>
+              <div onClick={() => this.updateLimit(365)} className={`tab ${this.getLimit() == 365 ? "selected" : ""}`}>
+                365 days
+              </div>
             </div>
-            <div onClick={() => this.updateLimit(30)} className={`tab ${this.getLimit() == 30 ? "selected" : ""}`}>
-              30 days
-            </div>
-            <div onClick={() => this.updateLimit(90)} className={`tab ${this.getLimit() == 90 ? "selected" : ""}`}>
-              90 days
-            </div>
-            <div onClick={() => this.updateLimit(180)} className={`tab ${this.getLimit() == 180 ? "selected" : ""}`}>
-              180 days
-            </div>
-            <div onClick={() => this.updateLimit(365)} className={`tab ${this.getLimit() == 365 ? "selected" : ""}`}>
-              365 days
-            </div>
-          </div>
+          )}
           {this.state.loading && <div className="loading"></div>}
           {!this.state.loading && (
             <>

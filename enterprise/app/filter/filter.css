@@ -1,7 +1,9 @@
 .global-filter {
   display: flex;
+  align-self: flex-start;
   transition: background-color 300ms;
   border-radius: 8px;
+  font-size: 15px;
 
   --row-height: 40px;
 }
