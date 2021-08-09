@@ -35,7 +35,6 @@ interface State {
 type PresetRange = {
   label: string;
   isSelected?: (range: Range) => boolean;
-  hasCustomRendering?: boolean;
   range: () => CustomDateRange;
 };
 
