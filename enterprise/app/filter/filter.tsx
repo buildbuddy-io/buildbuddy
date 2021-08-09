@@ -1,13 +1,22 @@
 import moment from "moment";
 import React from "react";
-import { DateRangePicker, defaultInputRanges, OnChangeProps, RangeWithKey } from "react-date-range";
+import { DateRangePicker, OnChangeProps, RangeWithKey } from "react-date-range";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Popup from "../../../app/components/popup/popup";
 import Radio from "../../../app/components/radio/radio";
-import TextInput from "../../../app/components/input/input";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import { formatDateRange } from "../../../app/format/format";
 import router from "../../../app/router/router";
+import { invocation } from "../../../proto/invocation_ts_proto";
+import {
+  parseStatusParam,
+  statusToString,
+  toStatusParam,
+  START_DATE_PARAM_NAME,
+  END_DATE_PARAM_NAME,
+  ROLE_PARAM_NAME,
+  STATUS_PARAM_NAME,
+} from "./filter_util";
 
 export interface FilterProps {
   search: URLSearchParams;
@@ -17,11 +26,6 @@ interface State {
   isDatePickerOpen?: boolean;
   isFilterMenuOpen?: boolean;
 }
-
-export const ROLE_PARAM_NAME = "role";
-export const STATUS_PARAM_NAME = "status";
-export const START_DATE_PARAM_NAME = "start";
-export const END_DATE_PARAM_NAME = "end";
 
 const DATE_PARAM_FORMAT = "YYYY-MM-DD";
 
@@ -53,6 +57,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
       [ROLE_PARAM_NAME]: "",
+      [STATUS_PARAM_NAME]: "",
     });
   }
 
@@ -63,6 +68,33 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     });
   }
 
+  private onStatusToggle(status: invocation.OverallStatus, selected: Set<invocation.OverallStatus>) {
+    selected = new Set(selected); // clone
+    if (selected.has(status)) {
+      selected.delete(status);
+    } else {
+      selected.add(status);
+    }
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [STATUS_PARAM_NAME]: toStatusParam(selected),
+    });
+  }
+
+  private renderStatusCheckbox(
+    label: string,
+    status: invocation.OverallStatus,
+    selected: Set<invocation.OverallStatus>
+  ) {
+    const name = statusToString(status);
+    return (
+      <label onClick={this.onStatusToggle.bind(this, status, selected)}>
+        <Checkbox checked={selected.has(status)} />
+        <span className={`status-badge ${name}`}>{label}</span>
+      </label>
+    );
+  }
+
   render() {
     const startDateParam = this.props.search.get(START_DATE_PARAM_NAME);
     const endDateParam = this.props.search.get(END_DATE_PARAM_NAME);
@@ -71,7 +103,10 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const endDate = (endDateParam ? moment(endDateParam) : moment()).toDate();
 
     const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
-    const isFiltering = Boolean(roleValue);
+    const statusValue = this.props.search.get(STATUS_PARAM_NAME) || "";
+
+    const isFiltering = Boolean(roleValue || statusValue);
+    const selectedStatuses = new Set(parseStatusParam(statusValue));
 
     return (
       <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>
@@ -85,6 +120,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             className={`filter-menu-button icon-text-button ${isFiltering ? "" : "square"}`}
             onClick={this.onOpenFilterMenu.bind(this)}>
             <img className="subtle-icon" src="/image/filter.svg" alt="" />
+            {selectedStatuses.has(invocation.OverallStatus.SUCCESS) && <span className="status-block success" />}
+            {selectedStatuses.has(invocation.OverallStatus.FAILURE) && <span className="status-block failure" />}
+            {selectedStatuses.has(invocation.OverallStatus.IN_PROGRESS) && (
+              <span className="status-block in-progress" />
+            )}
+            {selectedStatuses.has(invocation.OverallStatus.DISCONNECTED) && (
+              <span className="status-block disconnected" />
+            )}
             {roleValue === "CI" && <span className="role-badge CI">CI</span>}
             {roleValue === "CI_RUNNER" && <span className="role-badge CI_RUNNER">Workflow</span>}
           </OutlinedButton>
@@ -113,22 +156,10 @@ export default class FilterComponent extends React.Component<FilterProps, State>
               <div className="option-group">
                 <div className="option-group-title">Status</div>
                 <div className="option-group-options">
-                  <label>
-                    <Checkbox checked />
-                    <span className="status-badge succeeded">Succeeded</span>
-                  </label>
-                  <label>
-                    <Checkbox checked />
-                    <span className="status-badge failed">Failed</span>
-                  </label>
-                  <label>
-                    <Checkbox checked />
-                    <span className="status-badge in-progress">In progress</span>
-                  </label>
-                  <label>
-                    <Checkbox checked />
-                    <span className="status-badge disconnected">Disconnected</span>
-                  </label>
+                  {this.renderStatusCheckbox("Succeeded", invocation.OverallStatus.SUCCESS, selectedStatuses)}
+                  {this.renderStatusCheckbox("Failed", invocation.OverallStatus.FAILURE, selectedStatuses)}
+                  {this.renderStatusCheckbox("In progress", invocation.OverallStatus.IN_PROGRESS, selectedStatuses)}
+                  {this.renderStatusCheckbox("Disconnected", invocation.OverallStatus.DISCONNECTED, selectedStatuses)}
                 </div>
               </div>
             </div>

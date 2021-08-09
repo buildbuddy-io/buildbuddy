@@ -11,6 +11,7 @@ ts_library(
         "//app/auth",
         "//app/components/button",
         "//app/service",
+        "//enterprise/app/filter",
         "//proto:invocation_ts_proto",
         "@npm//@types/react",
         "@npm//moment",
