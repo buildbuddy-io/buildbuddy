@@ -13,6 +13,7 @@ ts_library(
         "//app/service",
         "//enterprise/app/filter",
         "//proto:invocation_ts_proto",
+        "//app/router",
         "@npm//@types/react",
         "@npm//moment",
         "@npm//react",
