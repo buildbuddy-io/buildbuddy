@@ -1,7 +1,17 @@
 import React from "react";
-import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Bar, Line, Legend, Tooltip } from "recharts";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Bar,
+  Line,
+  Legend,
+  Tooltip,
+  Cell,
+} from "recharts";
 import router from "../../../app/router/router";
-import moment from "moment";
 
 interface Props {
   title: string;
@@ -20,13 +30,13 @@ interface Props {
   separateAxis?: boolean;
 
   clickableBars?: boolean;
-  search?: URLSearchParams;
+  search: URLSearchParams;
+  hash?: string;
 }
 
 const TrendsChartTooltip = ({
   active,
   payload,
-  label,
   labelFormatter,
   valueFormatter,
   secondaryValueFormatter,
@@ -53,26 +63,18 @@ const TrendsChartTooltip = ({
   return null;
 };
 
-export const START_DATE_PARAM_NAME = "start";
-export const END_DATE_PARAM_NAME = "end";
-
-const DATE_PARAM_FORMAT = "YYYY-MM-DD";
+export const START_DATE = "2021-08-02";
+export const END_DATE = "2021-08-09";
 
 export default class TrendsChartComponent extends React.Component {
   props: Props;
 
-  handleClick() {
-    router.setQuery({
-      ...Object.fromEntries(this.props.search.entries()),
-      [START_DATE_PARAM_NAME]: moment(new Date("8/06/2021")).format(DATE_PARAM_FORMAT),
-      [END_DATE_PARAM_NAME]: moment(new Date("8/06/2021")).format(DATE_PARAM_FORMAT),
-    });
+  handleClick(date: any) {
+    router.navigateTo("/?start=" + date + "&end=" + date + this.props.hash);
   }
 
   render() {
     const hasSecondaryAxis = this.props.extractSecondaryValue && this.props.separateAxis;
-    const startDateParam = this.props.search.get(START_DATE_PARAM_NAME);
-    const endDateParam = this.props.search.get(END_DATE_PARAM_NAME);
     return (
       <div className="trend-chart">
         <div className="trend-chart-title">{this.props.title}</div>
@@ -96,13 +98,15 @@ export default class TrendsChartComponent extends React.Component {
                 />
               }
             />
-            <Bar
-              yAxisId="primary"
-              name={this.props.name}
-              dataKey={this.props.extractValue}
-              fill="#607D8B"
-              onClick={this.props.clickableBars ? this.handleClick.bind(this) : null}
-            />
+            <Bar yAxisId="primary" name={this.props.name} dataKey={this.props.extractValue} fill="#607D8B">
+              {this.props.data.map((date, index) => (
+                <Cell
+                  cursor="pointer"
+                  key={`cell-${index}`}
+                  onClick={this.props.clickableBars ? this.handleClick.bind(this, date) : null}
+                />
+              ))}
+            </Bar>
             {this.props.extractSecondaryValue && this.props.secondaryLine && (
               <Line
                 yAxisId={this.props.separateAxis ? "secondary" : "primary"}
@@ -117,9 +121,15 @@ export default class TrendsChartComponent extends React.Component {
                 yAxisId={this.props.separateAxis ? "secondary" : "primary"}
                 name={this.props.secondaryName}
                 dataKey={this.props.extractSecondaryValue}
-                fill="#03A9F4"
-                onClick={this.props.clickableBars ? this.handleClick.bind(this) : null}
-              />
+                fill="#03A9F4">
+                {this.props.data.map((date, index) => (
+                  <Cell
+                    cursor="pointer"
+                    key={`cell-${index}`}
+                    onClick={this.props.clickableBars ? this.handleClick.bind(this, date) : null}
+                  />
+                ))}
+              </Bar>
             )}
           </ComposedChart>
         </ResponsiveContainer>
