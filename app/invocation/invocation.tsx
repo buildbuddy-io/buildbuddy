@@ -228,14 +228,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <InvocationFilterComponent hash={this.props.hash} search={this.props.search} />
           )}
 
-          {activeTab === "execution" && (
-            <InvocationFilterComponent
-              hash={this.props.hash}
-              search={this.props.search}
-              placeholder={"Filter by digest or command..."}
-            />
-          )}
-
           {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted.description && (
             <ErrorCardComponent model={this.state.model} />
           )}
@@ -299,6 +291,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <ExecutionCardComponent
               model={this.state.model}
               inProgress={this.state.inProgress}
+              search={this.props.search}
               filter={this.props.search.get("executionFilter")}
             />
           )}
