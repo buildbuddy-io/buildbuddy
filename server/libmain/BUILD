@@ -29,6 +29,7 @@ go_library(
         "//server/environment",
         "//server/http/filters",
         "//server/http/protolet",
+        "//server/index",
         "//server/interfaces",
         "//server/nullauth",
         "//server/real_environment",

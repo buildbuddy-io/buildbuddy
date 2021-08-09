@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
+	"github.com/buildbuddy-io/buildbuddy/server/index"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -324,17 +325,17 @@ func StartAndRunServices(env environment.Env) {
 		log.Printf("Error raising open files limit: %s", err)
 	}
 
-	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
+	appBundleHash, err := index.AppBundleHash(env.GetAppFilesystem())
 	if err != nil {
 		log.Fatalf("Error reading app bundle hash: %s", err)
 	}
 
-	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
+	indexFileServer, err := index.NewIndexFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
 	if err != nil {
-		log.Fatalf("Error initializing static file server: %s", err)
+		log.Fatalf("Error initializing index file server: %s", err)
 	}
 
-	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, "")
+	appFileServer, err := static.NewStaticFileServer(env, env.GetAppFilesystem())
 	if err != nil {
 		log.Fatalf("Error initializing app server: %s", err)
 	}
@@ -372,8 +373,8 @@ func StartAndRunServices(env environment.Env) {
 
 	mux := tracing.NewHttpServeMux(http.NewServeMux())
 	// Register all of our HTTP handlers on the default mux.
-	mux.Handle("/", httpfilters.WrapExternalHandler(env, staticFileServer))
-	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
+	mux.Handle("/", httpfilters.WrapExternalHandler(env, indexFileServer))
+	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", appFileServer)))
 	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", buildBuddyProtoHandlers))
 	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, buildBuddyServer))
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
