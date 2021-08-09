@@ -122,6 +122,16 @@ proto_library(
 )
 
 proto_library(
+    name = "runner_proto",
+    srcs = [
+        "runner.proto",
+    ],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+proto_library(
     name = "vmexec_proto",
     srcs = ["vmexec.proto"],
 )
