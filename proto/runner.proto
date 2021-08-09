@@ -59,7 +59,6 @@ message RunRequest {
   string bazel_command = 4;
 }
 
-
 message RunResponse {
   // The response context.
   context.ResponseContext response_context = 1;
