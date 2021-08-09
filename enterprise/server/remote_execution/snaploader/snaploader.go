@@ -5,14 +5,20 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/klauspost/pgzip"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -89,6 +95,65 @@ func extractFiles(snapOpts *LoadSnapshotOptions) []string {
 	return files
 }
 
+func gzip(uncompressedFileName string) error {
+	start := time.Now()
+	defer func() {
+		log.Debugf("gzip(%q) took %s", uncompressedFileName, time.Since(start))
+	}()
+	compressedFileName := uncompressedFileName + ".gz"
+	if exists, err := disk.FileExists(compressedFileName); err == nil && exists {
+		return status.FailedPreconditionErrorf("%q already exists.", compressedFileName)
+	}
+	reader, err := os.Open(uncompressedFileName)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	compressedFile, err := os.OpenFile(compressedFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer compressedFile.Close()
+	writer, err := pgzip.NewWriterLevel(compressedFile, pgzip.BestSpeed)
+	if err != nil {
+		return err
+	}
+	defer writer.Close()
+	_, err = io.Copy(writer, reader)
+	return err
+}
+
+func gunzip(compressedFileName string) error {
+	start := time.Now()
+	defer func() {
+		log.Debugf("gunzip(%q) took %s", compressedFileName, time.Since(start))
+	}()
+	if !strings.HasSuffix(compressedFileName, ".gz") {
+		return status.FailedPreconditionErrorf("%q does not end with .gz", compressedFileName)
+	}
+	uncompressedFileName := strings.TrimSuffix(compressedFileName, ".gz")
+	if exists, err := disk.FileExists(uncompressedFileName); err == nil && exists {
+		return status.FailedPreconditionErrorf("%q already exists.", uncompressedFileName)
+	}
+	uncompressedFile, err := os.OpenFile(uncompressedFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer uncompressedFile.Close()
+	fileReader, err := os.Open(compressedFileName)
+	if err != nil {
+		return err
+	}
+	defer fileReader.Close()
+	reader, err := pgzip.NewReader(fileReader)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	_, err = io.Copy(uncompressedFile, reader)
+	return err
+}
+
 type Loader struct {
 	ctx              context.Context
 	env              environment.Env
@@ -156,6 +221,19 @@ func (l *Loader) UnpackSnapshot(outputDirectory string) error {
 	if _, err := dirtools.GetTree(l.ctx, l.env, l.instanceName, l.tree, outputDirectory, &dirtools.GetTreeOpts{}); err != nil {
 		return err
 	}
+	entries, err := os.ReadDir(outputDirectory)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		f := filepath.Join(outputDirectory, entry.Name())
+		if strings.HasSuffix(f, ".gz") {
+			if err := gunzip(f); err != nil {
+				return err
+			}
+			disk.DeleteLocalFileIfExists(f)
+		}
+	}
 	return nil
 }
 
@@ -176,10 +254,25 @@ func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, worki
 		return nil, err
 	}
 
+	memSnapFile := filepath.Join(snapDir, "full-mem.snap")
+	if err := gzip(memSnapFile); err != nil {
+		return nil, err
+	}
+	disk.DeleteLocalFileIfExists(memSnapFile)
+	if snapOpts.WorkspaceFSPath != "" {
+		workspaceFile := filepath.Join(snapDir, "workspacefs.ext4")
+		if err := gzip(workspaceFile); err != nil {
+			return nil, err
+		}
+		disk.DeleteLocalFileIfExists(workspaceFile)
+	}
+
+	uploadStart := time.Now()
 	_, td, err := cachetools.UploadDirectoryToCAS(ctx, env, instanceName, snapDir)
 	if err != nil {
 		return nil, err
 	}
+	log.Debugf("Uploading snapshot directory took %s", time.Since(uploadStart))
 	actionResult := &repb.ActionResult{
 		OutputDirectories: []*repb.OutputDirectory{{
 			Path:       "snapshot",
