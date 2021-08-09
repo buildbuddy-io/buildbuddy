@@ -187,7 +187,6 @@ export default class TrendsComponent extends React.Component<Props> {
                 secondaryLine={true}
                 separateAxis={true}
                 clickableBars={true}
-                search={this.props.search}
                 hash={""}
               />
               <TrendsChartComponent
@@ -205,7 +204,6 @@ export default class TrendsComponent extends React.Component<Props> {
                 name="average build time seconds"
                 secondaryName="slowest build time seconds"
                 clickableBars={true}
-                search={this.props.search}
                 hash={""}
               />
 
@@ -243,7 +241,6 @@ export default class TrendsComponent extends React.Component<Props> {
                 secondaryName="Mbps download throughput"
                 secondaryLine={true}
                 separateAxis={true}
-                search={this.props.search}
               />
 
               <TrendsChartComponent
@@ -263,7 +260,6 @@ export default class TrendsComponent extends React.Component<Props> {
                 secondaryName="Mbps upload throughput"
                 secondaryLine={true}
                 separateAxis={true}
-                search={this.props.search}
               />
 
               <TrendsChartComponent
@@ -275,7 +271,6 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverValue={(value) => (value || 0) + " users"}
                 name="users with builds"
                 clickableBars={true}
-                search={this.props.search}
                 hash={"#users"}
               />
               <TrendsChartComponent
@@ -287,7 +282,6 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverValue={(value) => (value || 0) + " commits"}
                 name="commits with builds"
                 clickableBars={true}
-                search={this.props.search}
                 hash={"#commits"}
               />
               <TrendsChartComponent
@@ -299,7 +293,6 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverValue={(value) => (value || 0) + " hosts"}
                 name="hosts with builds"
                 clickableBars={true}
-                search={this.props.search}
                 hash={"#hosts"}
               />
               <TrendsChartComponent
@@ -311,7 +304,6 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverValue={(value) => (value || 0) + " repos"}
                 name="repos with builds"
                 clickableBars={true}
-                search={this.props.search}
                 hash={"#repos"}
               />
             </>

@@ -30,7 +30,6 @@ interface Props {
   separateAxis?: boolean;
 
   clickableBars?: boolean;
-  search: URLSearchParams;
   hash?: string;
 }
 
@@ -62,9 +61,6 @@ const TrendsChartTooltip = ({
 
   return null;
 };
-
-export const START_DATE = "2021-08-02";
-export const END_DATE = "2021-08-09";
 
 export default class TrendsChartComponent extends React.Component {
   props: Props;
