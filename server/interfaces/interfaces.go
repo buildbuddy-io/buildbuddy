@@ -63,6 +63,8 @@ type Authenticator interface {
 	Logout(w http.ResponseWriter, r *http.Request)
 	// Handle a callback from authentication provider.
 	Auth(w http.ResponseWriter, r *http.Request)
+	// Handle a callback from authentication provider.
+	SAML(w http.ResponseWriter, r *http.Request)
 
 	// AuthenticatedHTTPContext authenticates the user using the credentials present in the HTTP request and creates a
 	// child context that contains the results.

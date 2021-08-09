@@ -181,6 +181,7 @@ type authConfig struct {
 	APIKeyGroupCacheTTL  string          `yaml:"api_key_group_cache_ttl" usage:"Override for the TTL for API Key to Group caching. Set to '0' to disable cache."`
 	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
+	SAMLConfig           SAMLConfig      `yaml:"saml" usage:"Configuration for setting up SAML auth support."`
 }
 
 type OauthProvider struct {
@@ -188,6 +189,11 @@ type OauthProvider struct {
 	ClientID     string `yaml:"client_id" usage:"The oauth client ID."`
 	ClientSecret string `yaml:"client_secret" usage:"The oauth client secret."`
 	Slug         string `yaml:"slug" usage:"The slug of this OIDC Provider."`
+}
+
+type SAMLConfig struct {
+	CertFile string `yaml:"cert_file" usage:"Path to a PEM encoded certificate file used for SAML auth."`
+	KeyFile  string `yaml:"key_file" usage:"Path to a PEM encoded certificate key file used for SAML auth."`
 }
 
 type SSLConfig struct {
@@ -652,6 +658,10 @@ func (c *Configurator) GetAuthOauthProviders() []OauthProvider {
 
 func (c *Configurator) GetAuthAPIKeyGroupCacheTTL() string {
 	return c.gc.Auth.APIKeyGroupCacheTTL
+}
+
+func (c *Configurator) GetSAMLConfig() *SAMLConfig {
+	return &c.gc.Auth.SAMLConfig
 }
 
 func (c *Configurator) GetSSLConfig() *SSLConfig {

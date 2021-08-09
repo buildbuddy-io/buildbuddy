@@ -383,6 +383,7 @@ func StartAndRunServices(env environment.Env) {
 		mux.Handle("/login/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.Login)))
 		mux.Handle("/auth/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.Auth)))
 		mux.Handle("/logout/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.Logout)))
+		mux.Handle("/saml/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.SAML)))
 	}
 
 	if githubConfig := env.GetConfigurator().GetGithubConfig(); githubConfig != nil {

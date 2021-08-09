@@ -164,6 +164,10 @@ func (a *TestAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
+func (a *TestAuthenticator) SAML(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+}
+
 func (a *TestAuthenticator) ParseAPIKeyFromString(input string) string {
 	matches := testApiKeyRegex.FindStringSubmatch(input)
 	if matches != nil && len(matches) > 1 {

@@ -2,7 +2,11 @@ package auth
 
 import (
 	"context"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+
 	"net/http"
 	"net/url"
 	"regexp"
@@ -22,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+	"github.com/crewjam/saml/samlsp"
 	"github.com/dgrijalva/jwt-go"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc/credentials"
@@ -254,6 +259,7 @@ func (a *oidcAuthenticator) verifyTokenAndExtractUser(ctx context.Context, jwt s
 	conf.SkipExpiryCheck = !checkExpiry
 	validToken, err := a.provider.Verifier(conf).Verify(ctx, jwt)
 	if err != nil {
+		log.Printf("Error verifying jwt: %+v %+v", jwt, err)
 		return nil, err
 	}
 	return extractToken(a.issuer, validToken)
@@ -711,7 +717,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	// Now try to verify the token again -- this time we check for expiry.
 	// If it succeeds, we're done! Otherwise we fall through to refreshing
 	// the token below.
-	if ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, true); err == nil {
+	if ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, false); err == nil {
 		claims, err := a.claimsFromSubID(ctx, ut.GetSubID())
 		return claims, ut, err
 	}
@@ -783,6 +789,103 @@ func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 	return nil
 }
 
+func (a *OpenIDAuthenticator) SAML(w http.ResponseWriter, r *http.Request) {
+	SAMLConfig := a.env.GetConfigurator().GetSAMLConfig()
+	if SAMLConfig == nil {
+		log.Printf("No SAML Config")
+		return // TODO handle error
+	}
+
+	keyPair, err := tls.LoadX509KeyPair(SAMLConfig.CertFile, SAMLConfig.KeyFile)
+	if err != nil {
+		panic(err) // TODO handle error
+	}
+	keyPair.Leaf, err = x509.ParseCertificate(keyPair.Certificate[0])
+	if err != nil {
+		panic(err) // TODO handle error
+	}
+
+	idpMetadataURL, err := url.Parse(a.getSAMLUrlFromRequest(r))
+	if err != nil {
+		panic(err) // TODO handle error
+	}
+	idpMetadata, err := samlsp.FetchMetadata(context.Background(), http.DefaultClient,
+		*idpMetadataURL)
+	if err != nil {
+		panic(err) // TODO handle error
+	}
+
+	rootURL, err := url.Parse("http://localhost:8080")
+	if err != nil {
+		panic(err) // TODO handle error
+	}
+
+	samlSP, _ := samlsp.New(samlsp.Options{
+		URL:         *rootURL,
+		Key:         keyPair.PrivateKey.(*rsa.PrivateKey),
+		Certificate: keyPair.Leaf,
+		IDPMetadata: idpMetadata,
+	})
+
+	samlSP.ServeHTTP(w, r)
+}
+
+func (a *OpenIDAuthenticator) getSAMLUrlFromRequest(r *http.Request) string {
+	if slug := r.URL.Query().Get(slugParam); slug == "samltest" {
+		return "https://samltest.id/saml/idp"
+	}
+	return ""
+}
+
+func (a *OpenIDAuthenticator) loginWithSAML(w http.ResponseWriter, r *http.Request) {
+	SAMLConfig := a.env.GetConfigurator().GetSAMLConfig()
+	if SAMLConfig == nil {
+		log.Printf("No SAML Config")
+		return // TODO handle error
+	}
+
+	keyPair, err := tls.LoadX509KeyPair(SAMLConfig.CertFile, SAMLConfig.KeyFile)
+	if err != nil {
+		panic(err) // TODO handle error
+	}
+	keyPair.Leaf, err = x509.ParseCertificate(keyPair.Certificate[0])
+	if err != nil {
+		panic(err) // TODO handle error
+	}
+
+	idpMetadataURL, err := url.Parse(a.getSAMLUrlFromRequest(r))
+	if err != nil {
+		panic(err) // TODO handle error
+	}
+	idpMetadata, err := samlsp.FetchMetadata(context.Background(), http.DefaultClient,
+		*idpMetadataURL)
+	if err != nil {
+		panic(err) // TODO handle error
+	}
+
+	rootURL, err := url.Parse("http://localhost:8080")
+	if err != nil {
+		panic(err) // TODO handle error
+	}
+
+	samlSP, _ := samlsp.New(samlsp.Options{
+		URL:         *rootURL,
+		Key:         keyPair.PrivateKey.(*rsa.PrivateKey),
+		Certificate: keyPair.Leaf,
+		IDPMetadata: idpMetadata,
+	})
+
+	session, err := samlSP.Session.GetSession(r)
+	if session != nil {
+		log.Printf("YOU'RE IN! %+v %+v", session, err)
+		http.Redirect(w, r, "/yourein", http.StatusTemporaryRedirect)
+
+		return
+	}
+
+	samlSP.HandleStartAuthFlow(w, r)
+}
+
 func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	issuer := r.URL.Query().Get(authIssuerParam)
 	auth := a.getAuthConfig(issuer)
@@ -790,11 +893,16 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	if slug := r.URL.Query().Get(slugParam); slug != "" {
 		auth = a.getAuthConfigForSlug(slug)
 		if auth == nil {
-			err := status.PermissionDeniedErrorf("No SSO config found for slug: %s", slug)
-			http.Error(w, err.Error(), http.StatusUnauthorized)
+
+			a.loginWithSAML(w, r)
 			return
+
+			// err := status.PermissionDeniedErrorf("No SSO config found for slug: %s", slug)
+			// http.Error(w, err.Error(), http.StatusUnauthorized)
+			// return
 		}
 		issuer = auth.getIssuer()
+
 	}
 
 	if auth == nil {
