@@ -464,7 +464,7 @@ export default class InvocationModel {
   }
 
   getDuration(completionTime: any, beginTime: any) {
-    if (!completionTime || !beginTime) return "";
+    if (!completionTime || !beginTime) return "0";
     let nanos = (+completionTime.nanos - +beginTime.nanos) / 1000000000;
     return `${(+completionTime.seconds - +beginTime.seconds + nanos).toFixed(3)}`;
   }
