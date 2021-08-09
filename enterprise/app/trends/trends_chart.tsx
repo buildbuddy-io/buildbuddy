@@ -94,7 +94,12 @@ export default class TrendsChartComponent extends React.Component {
                 />
               }
             />
-            <Bar yAxisId="primary" name={this.props.name} dataKey={this.props.extractValue} fill="#607D8B">
+            <Bar
+              className={this.props.clickableBars ? "trends-clickable-bar-primary" : ""}
+              yAxisId="primary"
+              name={this.props.name}
+              dataKey={this.props.extractValue}
+              fill="#607D8B">
               {this.props.data.map((date, index) => (
                 <Cell
                   cursor={this.props.clickableBars ? "pointer" : "default"}
@@ -114,6 +119,7 @@ export default class TrendsChartComponent extends React.Component {
             )}
             {this.props.extractSecondaryValue && !this.props.secondaryLine && (
               <Bar
+                className={this.props.clickableBars ? "trends-clickable-bar-secondary" : ""}
                 yAxisId={this.props.separateAxis ? "secondary" : "primary"}
                 name={this.props.secondaryName}
                 dataKey={this.props.extractSecondaryValue}

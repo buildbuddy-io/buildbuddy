@@ -42,3 +42,11 @@
 .trend-chart-hover-label {
   font-weight: 600;
 }
+
+.trends-clickable-bar-primary:hover {
+  fill: #7d9eaf;
+}
+
+.trends-clickable-bar-secondary:hover {
+  fill: #5bc4f5;
+}
