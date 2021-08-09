@@ -20,21 +20,14 @@ export interface ProtoFilterParams {
 }
 
 export function getProtoFilterParams(path: string, search: URLSearchParams): ProtoFilterParams {
-  search = withPageDefaults(path, search);
   return {
     role: search.get(ROLE_PARAM_NAME),
-    updatedAfter: parseStartOfDay(search.get(START_DATE_PARAM_NAME)),
+    updatedAfter: parseStartOfDay(
+      search.get(START_DATE_PARAM_NAME) || moment(getDefaultStartDateForPage(path)).format(DATE_PARAM_FORMAT)
+    ),
     updatedBefore: parseStartOfDay(search.get(END_DATE_PARAM_NAME), /*offsetDays=*/ +1),
     status: parseStatusParam(search.get(STATUS_PARAM_NAME)),
   };
-}
-
-export function withPageDefaults(path: string, search: URLSearchParams): URLSearchParams {
-  search = new URLSearchParams(Object.fromEntries(search.entries())); // clone
-  if (!search.get(START_DATE_PARAM_NAME)) {
-    search.set(START_DATE_PARAM_NAME, moment(getDefaultStartDateForPage(path)).format(DATE_PARAM_FORMAT));
-  }
-  return search;
 }
 
 export function getDefaultStartDateForPage(path: string): Date {
