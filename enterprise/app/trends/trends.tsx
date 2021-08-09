@@ -332,14 +332,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
 }
 
 function getDatesBetween(start: Date, end: Date): string[] {
-  let date = moment(start);
-  let endMoment = moment(end);
+  const endMoment = moment(end);
   const formattedDates = [];
-  while (date.isBefore(endMoment)) {
+  for (let date = moment(start); date.isBefore(endMoment); date = date.add(1, "days")) {
     formattedDates.push(date.format("YYYY-MM-DD"));
-    date = date.add(1, "days");
   }
-  console.log({ start, end });
-  console.log({ formattedDates });
   return formattedDates;
 }
