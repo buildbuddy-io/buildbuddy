@@ -158,13 +158,21 @@ func AppBundleHash(bundleFS fs.FS) (string, error) {
 }
 
 type healthChecker struct {
-	jsPath string
+	jsPath                   string
+	hasSuccessfullyFetchedJS bool
 }
 
 func (c *healthChecker) Check(ctx context.Context) error {
+	if c.hasSuccessfullyFetchedJS {
+		return nil
+	}
 	resp, err := http.Get(c.jsPath)
+	if err != nil {
+		return err
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		return status.UnavailableErrorf("Failed to fetch static app js content from url %s. HTTP error code: %s", c.jsPath, resp.Status)
 	}
-	return err
+	c.hasSuccessfullyFetchedJS = true
+	return nil
 }
