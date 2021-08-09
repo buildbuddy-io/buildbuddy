@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -67,9 +68,16 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	if err != nil {
 		t.Error(err)
 	}
+
 	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	env.SetActionCacheClient(repb.NewActionCacheClient(conn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+
+	fc, err := filecache.NewFileCache(testRootDir, int64(diskCacheSize))
+	if err != nil {
+		t.Error(err)
+	}
+	env.SetFileCache(fc)
 	return env
 }
 

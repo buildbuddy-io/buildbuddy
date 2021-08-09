@@ -132,3 +132,14 @@ go_library(
         "//server/util/log",
     ],
 )
+
+platform(
+    name = "firecracker",
+    constraint_values = [
+        "@bazel_tools//platforms:x86_64",
+        "@bazel_tools//platforms:linux",
+    ],
+    exec_properties = {
+        "workload-isolation-type": "firecracker",
+    },
+)

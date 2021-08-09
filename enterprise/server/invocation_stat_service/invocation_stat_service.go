@@ -109,6 +109,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 	} else {
 		// If no start time specified, respect the lookback window field if set,
 		// or default to 7 days.
+		// TODO(bduffany): Delete this once clients no longer need it.
 		lookbackWindowDays := 7 * 24 * time.Hour
 		if w := req.GetLookbackWindowDays(); w != 0 {
 			if w < 1 || w > 365 {
@@ -123,7 +124,11 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 		q.AddWhereClause("updated_at_usec < ?", timeutil.ToUsec(end.AsTime()))
 	}
 
-	addStatusPredicate(q, req.GetQuery().GetStatus())
+	statusClauses := toStatusClauses(req.GetQuery().GetStatus())
+	statusQuery, statusArgs := statusClauses.Build()
+	if statusQuery != "" {
+		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
+	}
 
 	q.AddWhereClause(`group_id = ?`, groupID)
 	q.SetGroupBy("name")
@@ -214,7 +219,11 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		q.AddWhereClause("updated_at_usec < ?", timeutil.ToUsec(end.AsTime()))
 	}
 
-	addStatusPredicate(q, req.GetQuery().GetStatus())
+	statusClauses := toStatusClauses(req.GetQuery().GetStatus())
+	statusQuery, statusArgs := statusClauses.Build()
+	if statusQuery != "" {
+		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
+	}
 
 	q.AddWhereClause(`group_id = ?`, groupID)
 	q.SetGroupBy("name")
@@ -241,8 +250,8 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	return rsp, nil
 }
 
-func addStatusPredicate(q *query_builder.Query, statuses []inpb.OverallStatus) {
-	statusClauses := query_builder.OrClauses{}
+func toStatusClauses(statuses []inpb.OverallStatus) *query_builder.OrClauses {
+	statusClauses := &query_builder.OrClauses{}
 	for _, status := range statuses {
 		switch status {
 		case inpb.OverallStatus_SUCCESS:
@@ -259,8 +268,5 @@ func addStatusPredicate(q *query_builder.Query, statuses []inpb.OverallStatus) {
 			continue
 		}
 	}
-	statusQuery, statusArgs := statusClauses.Build()
-	if statusQuery != "" {
-		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
-	}
+	return statusClauses
 }

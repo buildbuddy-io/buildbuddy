@@ -32,10 +32,8 @@ class Router {
     window.history.pushState({}, "", targetUrl);
   }
 
-  setQuery(params: Record<string, string>) {
-    const search = getQueryString(params);
-    let url = search ? `?${search}` : window.location.pathname;
-    window.history.replaceState({}, "", url);
+  setQuery(query: Record<string, string>) {
+    window.history.replaceState({}, "", getModifiedUrl({ query }));
   }
 
   navigateHome(hash?: string) {
