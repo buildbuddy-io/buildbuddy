@@ -97,7 +97,7 @@ export default class TrendsChartComponent extends React.Component {
             <Bar yAxisId="primary" name={this.props.name} dataKey={this.props.extractValue} fill="#607D8B">
               {this.props.data.map((date, index) => (
                 <Cell
-                  cursor="pointer"
+                  cursor={this.props.clickableBars ? "pointer" : "default"}
                   key={`cell-${index}`}
                   onClick={this.props.clickableBars ? this.handleClick.bind(this, date) : null}
                 />
@@ -120,7 +120,7 @@ export default class TrendsChartComponent extends React.Component {
                 fill="#03A9F4">
                 {this.props.data.map((date, index) => (
                   <Cell
-                    cursor="pointer"
+                    cursor={this.props.clickableBars ? "pointer" : "default"}
                     key={`cell-${index}`}
                     onClick={this.props.clickableBars ? this.handleClick.bind(this, date) : null}
                   />
