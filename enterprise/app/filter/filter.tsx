@@ -62,7 +62,6 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     this.setState({ isDatePickerOpen: false });
   }
   private onDateChange(range: OnChangeProps) {
-    console.log(range);
     const selection = (range as { selection: CustomDateRange }).selection;
     if (selection.isDefault) {
       router.setQuery({
@@ -161,7 +160,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           .add(-n + 1, "days")
           .toDate();
         return {
-          label: formatDateRange(start, now),
+          label: formatDateRange(start, now, { now }),
           isSelected: (range: Range) => {
             return (
               this.props.search.get(START_DATE_PARAM_NAME) &&

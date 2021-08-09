@@ -2,8 +2,6 @@ import Long from "long";
 import moment from "moment";
 import { isSameDay } from "date-fns";
 
-(window as any).moment = moment;
-
 export function percent(percent: number | Long) {
   if (!percent) return "0";
   return `${(+percent * 100).toFixed(0)}`;
@@ -121,7 +119,6 @@ const DATE_RANGE_SEPARATOR = "\u2013";
 export const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
 
 export function formatDateRange(startDate: Date, endDate: Date, { now = new Date() } = {}) {
-  // TODO: Use `new Intl.DateTimeFormat(...).formatRange` when supported by all browsers.
   let startFormat, endFormat;
 
   // Special cases for date range picker default options
