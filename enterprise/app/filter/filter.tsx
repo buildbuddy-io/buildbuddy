@@ -130,7 +130,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const startDateParam = this.props.search.get(START_DATE_PARAM_NAME);
     const endDateParam = this.props.search.get(END_DATE_PARAM_NAME);
 
-    const startDate = startDateParam ? moment(startDateParam).toDate() : getDefaultStartDateForPage(this.props.path);
+    const defaultStartDate = getDefaultStartDateForPage(this.props.path);
+    const startDate = startDateParam ? moment(startDateParam).toDate() : defaultStartDate;
     const endDate = endDateParam ? moment(endDateParam).toDate() : new Date();
 
     const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
@@ -140,7 +141,6 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const selectedStatuses = new Set(parseStatusParam(statusValue));
 
     const now = new Date();
-    const defaultStartDate = getDefaultStartDateForPage(this.props.path);
     const presetDateRanges: PresetRange[] = [
       {
         label: `Default (${formatDateRange(defaultStartDate, now, { now })})`,
