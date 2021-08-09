@@ -12,7 +12,6 @@ import {
   parseStatusParam,
   statusToString,
   toStatusParam,
-  withPageDefaults,
   DATE_PARAM_FORMAT,
   START_DATE_PARAM_NAME,
   END_DATE_PARAM_NAME,
