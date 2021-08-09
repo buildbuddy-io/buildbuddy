@@ -7,11 +7,11 @@ import format from "../../../app/format/format";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
-import FilterComponent, { ROLE_PARAM_NAME } from "../filter/filter";
+import FilterComponent from "../filter/filter";
 import OrgJoinRequestsComponent from "../org/org_join_requests";
 import HistoryInvocationCardComponent from "./history_invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
-import { getProtoFilterParams } from "../filter/filter_util";
+import { getProtoFilterParams, ROLE_PARAM_NAME } from "../filter/filter_util";
 
 interface State {
   invocations: invocation.Invocation[];
@@ -30,6 +30,7 @@ interface Props {
   repo?: string;
   commit?: string;
   user?: User;
+  path: string;
   search: URLSearchParams;
   hash: string;
 }
@@ -62,7 +63,7 @@ export default class HistoryComponent extends React.Component {
   }
 
   getBuilds(nextPage?: boolean) {
-    const filterParams = getProtoFilterParams(this.props.search);
+    const filterParams = getProtoFilterParams(this.props.path, this.props.search);
     let request = new invocation.SearchInvocationRequest({
       query: new invocation.InvocationQuery({
         host: this.props.hostname,
@@ -73,6 +74,7 @@ export default class HistoryComponent extends React.Component {
         role: filterParams.role,
         updatedAfter: filterParams.updatedAfter,
         updatedBefore: filterParams.updatedBefore,
+        status: filterParams.status,
       }),
       pageToken: nextPage ? this.state.pageToken : "",
       // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
@@ -103,13 +105,14 @@ export default class HistoryComponent extends React.Component {
     if (!aggregationType) return;
 
     this.setState({ invocationStat: [], loadingStats: true });
-    const filterParams = getProtoFilterParams(this.props.search);
+    const filterParams = getProtoFilterParams(this.props.path, this.props.search);
     const request = new invocation.GetInvocationStatRequest({
       aggregationType,
       query: new invocation.InvocationStatQuery({
         role: filterParams.role,
         updatedBefore: filterParams.updatedBefore,
         updatedAfter: filterParams.updatedAfter,
+        status: filterParams.status,
       }),
     });
     rpcService.service.getInvocationStat(request).then((response) => {
@@ -123,13 +126,14 @@ export default class HistoryComponent extends React.Component {
   }
 
   getSummaryStats() {
-    const filterParams = getProtoFilterParams(this.props.search);
+    const filterParams = getProtoFilterParams(this.props.path, this.props.search);
     const request = new invocation.GetInvocationStatRequest({
       aggregationType: invocation.AggType.GROUP_ID_AGGREGATION_TYPE,
       query: new invocation.InvocationQuery({
         role: filterParams.role,
         updatedAfter: filterParams.updatedAfter,
         updatedBefore: filterParams.updatedBefore,
+        status: filterParams.status,
       }),
     });
     rpcService.service.getInvocationStat(request).then((response) => {
@@ -292,7 +296,7 @@ export default class HistoryComponent extends React.Component {
                   <>{this.isFilteredToWorkflows() ? <span>Workflow runs</span> : <span>Builds</span>}</>
                 )}
               </div>
-              {capabilities.globalFilter && <FilterComponent search={this.props.search} />}
+              {capabilities.globalFilter && <FilterComponent path={this.props.path} search={this.props.search} />}
             </div>
             <div className="titles">
               <div className="title">

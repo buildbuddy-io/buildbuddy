@@ -12,6 +12,7 @@ ts_library(
         "@npm//date-fns",
         "@npm//long",
         "@npm//moment",
+        "@npm//tslib",
     ],
 )
 

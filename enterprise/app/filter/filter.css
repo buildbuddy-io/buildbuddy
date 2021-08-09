@@ -72,16 +72,23 @@
   padding: 2px 8px;
 }
 
-.global-filter .status-badge.succeeded {
+.global-filter .status-block {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background-color: var(--status-color);
+}
+
+.global-filter .success {
   --status-color: #8bc34a;
 }
-.global-filter .status-badge.failed {
+.global-filter .failure {
   --status-color: #f44336;
 }
-.global-filter .status-badge.in-progress {
+.global-filter .in-progress {
   --status-color: #03a9f4;
 }
-.global-filter .status-badge.disconnected {
+.global-filter .disconnected {
   --status-color: #aaa;
 }
 

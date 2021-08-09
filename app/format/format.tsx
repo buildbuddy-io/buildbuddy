@@ -2,6 +2,8 @@ import Long from "long";
 import moment from "moment";
 import { isSameDay } from "date-fns";
 
+(window as any).moment = moment;
+
 export function percent(percent: number | Long) {
   if (!percent) return "0";
   return `${(+percent * 100).toFixed(0)}`;
@@ -95,6 +97,9 @@ export function truncateList(list: string[]) {
   return list.join(", ");
 }
 
+/** Unix epoch expressed in local time. */
+export const LOCAL_EPOCH: Date = moment(0).toDate();
+
 export function formatTimestampUsec(timestamp: number | Long) {
   return formatTimestampMillis(+timestamp / 1000);
 }
@@ -113,10 +118,27 @@ export function formatTimestamp(timestamp: { seconds?: number | Long; nanos?: nu
 
 const DATE_RANGE_SEPARATOR = "\u2013";
 
-export function formatDateRange(startDate: Date, endDate: Date) {
+export const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
+
+export function formatDateRange(startDate: Date, endDate: Date, { now = new Date() } = {}) {
   // TODO: Use `new Intl.DateTimeFormat(...).formatRange` when supported by all browsers.
   let startFormat, endFormat;
-  const now = new Date();
+
+  // Special cases for date range picker default options
+  if (isSameDay(now, endDate)) {
+    if (isSameDay(startDate, LOCAL_EPOCH)) {
+      return "All time";
+    }
+    for (const n of LAST_N_DAYS_OPTIONS) {
+      const lastNDaysStartDate = moment(now)
+        .add(-n + 1, "days")
+        .toDate();
+      if (isSameDay(startDate, lastNDaysStartDate)) {
+        return `Last ${n} days`;
+      }
+    }
+  }
+
   if (startDate.getFullYear() === endDate.getFullYear()) {
     startFormat = "MMMM Do";
     endFormat = "MMMM Do, YYYY";

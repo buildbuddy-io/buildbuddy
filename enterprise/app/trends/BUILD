@@ -12,6 +12,7 @@ ts_library(
         "//app/capabilities",
         "//app/components/button",
         "//app/service",
+        "//app/util:proto",
         "//enterprise/app/filter",
         "//proto:invocation_ts_proto",
         "@npm//@types/react",
