@@ -130,16 +130,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   }
 
   render() {
-    const search = withPageDefaults(this.props.path, this.props.search);
+    const startDateParam = this.props.search.get(START_DATE_PARAM_NAME);
+    const endDateParam = this.props.search.get(END_DATE_PARAM_NAME);
 
-    const startDateParam = search.get(START_DATE_PARAM_NAME);
-    const endDateParam = search.get(END_DATE_PARAM_NAME);
+    const startDate = startDateParam ? moment(startDateParam).toDate() : getDefaultStartDateForPage(this.props.path);
+    const endDate = endDateParam ? moment(endDateParam).toDate() : new Date();
 
-    const startDate = moment(startDateParam).toDate();
-    const endDate = (endDateParam ? moment(endDateParam) : moment()).toDate();
-
-    const roleValue = search.get(ROLE_PARAM_NAME) || "";
-    const statusValue = search.get(STATUS_PARAM_NAME) || "";
+    const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
+    const statusValue = this.props.search.get(STATUS_PARAM_NAME) || "";
 
     const isFiltering = Boolean(roleValue || statusValue);
     const selectedStatuses = new Set(parseStatusParam(statusValue));
