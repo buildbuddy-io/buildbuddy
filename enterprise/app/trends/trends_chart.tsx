@@ -1,6 +1,7 @@
 import React from "react";
 import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Bar, Line, Legend, Tooltip } from "recharts";
-import router from "../router/router";
+import router from "../../../app/router/router";
+import moment from "moment";
 
 interface Props {
   title: string;
@@ -19,6 +20,7 @@ interface Props {
   separateAxis?: boolean;
 
   clickableBars?: boolean;
+  search?: URLSearchParams;
 }
 
 const TrendsChartTooltip = ({
@@ -51,14 +53,26 @@ const TrendsChartTooltip = ({
   return null;
 };
 
+export const START_DATE_PARAM_NAME = "start";
+export const END_DATE_PARAM_NAME = "end";
+
+const DATE_PARAM_FORMAT = "YYYY-MM-DD";
+
 export default class TrendsChartComponent extends React.Component {
   props: Props;
 
-  handleClick() {}
+  handleClick() {
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [START_DATE_PARAM_NAME]: moment(new Date("8/06/2021")).format(DATE_PARAM_FORMAT),
+      [END_DATE_PARAM_NAME]: moment(new Date("8/06/2021")).format(DATE_PARAM_FORMAT),
+    });
+  }
 
   render() {
     const hasSecondaryAxis = this.props.extractSecondaryValue && this.props.separateAxis;
-
+    const startDateParam = this.props.search.get(START_DATE_PARAM_NAME);
+    const endDateParam = this.props.search.get(END_DATE_PARAM_NAME);
     return (
       <div className="trend-chart">
         <div className="trend-chart-title">{this.props.title}</div>
