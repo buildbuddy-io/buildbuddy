@@ -13,18 +13,17 @@ export default class HistoryInvocationStatCardComponent extends React.Component 
   props: Props;
 
   handleStatClicked() {
-    console.log(this.props.invocationStat);
     if (this.props.type == invocation.AggType.USER_AGGREGATION_TYPE) {
-      router.navigateToUserHistory(this.props.invocationStat.name);
+      router.navigateToUserHistory(this.props.invocationStat.name, { preserveQuery: true });
     }
     if (this.props.type == invocation.AggType.HOSTNAME_AGGREGATION_TYPE) {
-      router.navigateToHostHistory(this.props.invocationStat.name);
+      router.navigateToHostHistory(this.props.invocationStat.name, { preserveQuery: true });
     }
     if (this.props.type == invocation.AggType.REPO_URL_AGGREGATION_TYPE) {
-      router.navigateToRepoHistory(this.props.invocationStat.name);
+      router.navigateToRepoHistory(this.props.invocationStat.name, { preserveQuery: true });
     }
     if (this.props.type == invocation.AggType.COMMIT_SHA_AGGREGATION_TYPE) {
-      router.navigateToCommitHistory(this.props.invocationStat.name);
+      router.navigateToCommitHistory(this.props.invocationStat.name, { preserveQuery: true });
     }
   }
 
