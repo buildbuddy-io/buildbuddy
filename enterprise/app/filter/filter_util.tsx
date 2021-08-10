@@ -10,7 +10,7 @@ import {
 } from "../../../app/router/router";
 
 // URL param value representing the empty role (""), which is the default.
-const DEFAULT_ROLE = "DEFAULT";
+const DEFAULT_ROLE_PARAM_VALUE = "DEFAULT";
 
 export interface ProtoFilterParams {
   role?: string[];
@@ -44,12 +44,12 @@ export function statusFromString(value: string) {
 
 export function parseRoleParam(paramValue?: string): string[] {
   if (!paramValue) return [];
-  return paramValue.split(" ").map((role) => (role === DEFAULT_ROLE ? "" : role));
+  return paramValue.split(" ").map((role) => (role === DEFAULT_ROLE_PARAM_VALUE ? "" : role));
 }
 
 export function toRoleParam(roles: Iterable<string>): string {
   return [...roles]
-    .map((role) => (role === "" ? DEFAULT_ROLE : role))
+    .map((role) => (role === "" ? DEFAULT_ROLE_PARAM_VALUE : role))
     .sort()
     .join(" ");
 }
