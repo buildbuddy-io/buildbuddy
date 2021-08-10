@@ -57,9 +57,6 @@ message TargetHistory {
   // If multiple targets were run at the same commit, the latest run will be
   // returned.
   repeated TargetStatus target_status = 3;
-
-  // The git branch the build was for.
-  string branch_name = 4;
 }
 
 // NB: TargetQuery params apply to both invocations and their child targets. For
