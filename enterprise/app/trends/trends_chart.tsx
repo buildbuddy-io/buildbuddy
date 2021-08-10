@@ -28,7 +28,7 @@ interface Props {
   secondaryLine?: boolean;
   separateAxis?: boolean;
 
-  barClicked?: any;
+  onBarClicked?: (date: string) => void;
 }
 
 const TrendsChartTooltip = ({
