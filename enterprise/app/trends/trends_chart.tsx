@@ -11,7 +11,6 @@ import {
   Tooltip,
   Cell,
 } from "recharts";
-import router from "../../../app/router/router";
 
 interface Props {
   title: string;
@@ -29,8 +28,7 @@ interface Props {
   secondaryLine?: boolean;
   separateAxis?: boolean;
 
-  clickableBars?: boolean;
-  hash?: string;
+  barClicked?: any;
 }
 
 const TrendsChartTooltip = ({
@@ -65,10 +63,6 @@ const TrendsChartTooltip = ({
 export default class TrendsChartComponent extends React.Component {
   props: Props;
 
-  handleClick(date: any) {
-    router.navigateTo("/?start=" + date + "&end=" + date + this.props.hash);
-  }
-
   render() {
     const hasSecondaryAxis = this.props.extractSecondaryValue && this.props.separateAxis;
     return (
@@ -95,16 +89,16 @@ export default class TrendsChartComponent extends React.Component {
               }
             />
             <Bar
-              className={this.props.clickableBars ? "trends-clickable-bar-primary" : ""}
+              className={this.props.barClicked ? "trends-clickable-bar-primary" : ""}
               yAxisId="primary"
               name={this.props.name}
               dataKey={this.props.extractValue}
               fill="#607D8B">
               {this.props.data.map((date, index) => (
                 <Cell
-                  cursor={this.props.clickableBars ? "pointer" : "default"}
+                  cursor={this.props.barClicked ? "pointer" : "default"}
                   key={`cell-${index}`}
-                  onClick={this.props.clickableBars ? this.handleClick.bind(this, date) : null}
+                  onClick={this.props.barClicked ? this.props.barClicked.bind(this, date) : null}
                 />
               ))}
             </Bar>
@@ -119,16 +113,16 @@ export default class TrendsChartComponent extends React.Component {
             )}
             {this.props.extractSecondaryValue && !this.props.secondaryLine && (
               <Bar
-                className={this.props.clickableBars ? "trends-clickable-bar-secondary" : ""}
+                className={this.props.barClicked ? "trends-clickable-bar-secondary" : ""}
                 yAxisId={this.props.separateAxis ? "secondary" : "primary"}
                 name={this.props.secondaryName}
                 dataKey={this.props.extractSecondaryValue}
                 fill="#03A9F4">
                 {this.props.data.map((date, index) => (
                   <Cell
-                    cursor={this.props.clickableBars ? "pointer" : "default"}
+                    cursor={this.props.barClicked ? "pointer" : "default"}
                     key={`cell-${index}`}
-                    onClick={this.props.clickableBars ? this.handleClick.bind(this, date) : null}
+                    onClick={this.props.barClicked ? this.props.barClicked.bind(this, date) : null}
                   />
                 ))}
               </Bar>

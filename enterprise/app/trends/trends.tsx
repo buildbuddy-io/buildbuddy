@@ -8,6 +8,7 @@ import CacheChartComponent from "./cache_chart";
 import { Subscription } from "rxjs";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
 import { getProtoFilterParams } from "../filter/filter_util";
+import router from "../../../app/router/router";
 
 const BITS_PER_BYTE = 8;
 
@@ -135,6 +136,10 @@ export default class TrendsComponent extends React.Component<Props> {
     });
   }
 
+  onBarClicked(hash: string, date: string) {
+    router.navigateTo("/?start=" + date + "&end=" + date + hash);
+  }
+
   render() {
     return (
       <div className="trends">
@@ -186,8 +191,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 secondaryName="average build time seconds"
                 secondaryLine={true}
                 separateAxis={true}
-                clickableBars={true}
-                hash={""}
+                barClicked={this.onBarClicked.bind(this, "")}
               />
               <TrendsChartComponent
                 title="Build duration"
@@ -203,8 +207,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatSecondaryHoverValue={(value) => (value || 0).toFixed() + " seconds slowest"}
                 name="average build time seconds"
                 secondaryName="slowest build time seconds"
-                clickableBars={true}
-                hash={""}
+                barClicked={this.onBarClicked.bind(this, "")}
               />
 
               <CacheChartComponent
@@ -270,8 +273,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " users"}
                 name="users with builds"
-                clickableBars={true}
-                hash={"#users"}
+                barClicked={this.onBarClicked.bind(this, "#users")}
               />
               <TrendsChartComponent
                 title="Commits with builds"
@@ -281,8 +283,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " commits"}
                 name="commits with builds"
-                clickableBars={true}
-                hash={"#commits"}
+                barClicked={this.onBarClicked.bind(this, "#commits")}
               />
               <TrendsChartComponent
                 title="Hosts with builds"
@@ -292,8 +293,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " hosts"}
                 name="hosts with builds"
-                clickableBars={true}
-                hash={"#hosts"}
+                barClicked={this.onBarClicked.bind(this, "#hosts")}
               />
               <TrendsChartComponent
                 title="Repos with builds"
@@ -303,8 +303,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " repos"}
                 name="repos with builds"
-                clickableBars={true}
-                hash={"#repos"}
+                barClicked={this.onBarClicked.bind(this, "#repos")}
               />
             </>
           )}
