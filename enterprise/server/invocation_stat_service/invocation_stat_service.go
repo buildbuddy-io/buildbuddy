@@ -97,7 +97,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 
 	roleClauses := query_builder.OrClauses{}
 	for _, role := range req.GetQuery().GetRole() {
-		roleClauses.AddOr("i.role = ?", role)
+		roleClauses.AddOr("role = ?", role)
 	}
 	if roleQuery, roleArgs := roleClauses.Build(); roleQuery != "" {
 		q.AddWhereClause("("+roleQuery+")", roleArgs...)
@@ -208,7 +208,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 
 	roleClauses := query_builder.OrClauses{}
 	for _, role := range req.GetQuery().GetRole() {
-		roleClauses.AddOr("i.role = ?", role)
+		roleClauses.AddOr("role = ?", role)
 	}
 	if roleQuery, roleArgs := roleClauses.Build(); roleQuery != "" {
 		q.AddWhereClause("("+roleQuery+")", roleArgs...)
