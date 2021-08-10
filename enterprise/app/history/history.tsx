@@ -321,11 +321,11 @@ export default class HistoryComponent extends React.Component {
                     Repos
                   </span>
                 )}
-								{(this.props.branch || this.props.hash == "#branches") && (
-										<span onClick={this.handleBranchesClicked.bind(this)} className="clickable">
-										Branches
-										</span>
-								)}
+                {(this.props.branch || this.props.hash == "#branches") && (
+                  <span onClick={this.handleBranchesClicked.bind(this)} className="clickable">
+                    Branches
+                  </span>
+                )}
                 {(this.props.commit || this.props.hash == "#commits") && (
                   <span onClick={this.handleCommitsClicked.bind(this)} className="clickable">
                     Commits

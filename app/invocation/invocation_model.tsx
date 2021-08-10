@@ -133,8 +133,7 @@ export default class InvocationModel {
           model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         }
         if (buildEvent.unstructuredCommandLine) {
-          model.unstructuredCommandLine =
-            buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+          model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
         }
       }
     }
