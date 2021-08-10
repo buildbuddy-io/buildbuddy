@@ -160,7 +160,12 @@ func (v *BEValues) populateWorkspaceInfoFromStructuredCommandLine(commandLine *c
 			case "CIRCLE_BRANCH", "GITHUB_HEAD_REF", "BUILDKITE_BRANCH", "TRAVIS_BRANCH", "GIT_BRANCH", "CI_COMMIT_BRANCH":
 				v.setStringValue(branchNameFieldName, value)
 			case "GITHUB_REF":
-				if strings.HasPrefix(value, "refs/heads/") {
+				// GITHUB_REF can contain tag information instead of branch information,
+				// so we have to check that this is a branch before attempting to strip
+				// the prefix. Additionally, if this is a pull request, we want to use
+				// the value from GITHUB_HEAD_REF instead, so if the branch name is
+				// already populated, we don't overwrite it.
+				if strings.HasPrefix(value, "refs/heads/") && v.getStringValue(branchNameFieldName) == "" {
 					v.setStringValue(branchNameFieldName, strings.TrimPrefix(value, "refs/heads/"))
 				}
 			case "CIRCLE_SHA1", "GITHUB_SHA", "BUILDKITE_COMMIT", "TRAVIS_COMMIT", "GIT_COMMIT", "CI_COMMIT_SHA", "COMMIT_SHA":
