@@ -191,7 +191,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 secondaryName="average build time seconds"
                 secondaryLine={true}
                 separateAxis={true}
-                barClicked={this.onBarClicked.bind(this, "")}
+                onBarClicked={this.onBarClicked.bind(this, "")}
               />
               <TrendsChartComponent
                 title="Build duration"
@@ -207,7 +207,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatSecondaryHoverValue={(value) => (value || 0).toFixed() + " seconds slowest"}
                 name="average build time seconds"
                 secondaryName="slowest build time seconds"
-                barClicked={this.onBarClicked.bind(this, "")}
+                onBarClicked={this.onBarClicked.bind(this, "")}
               />
 
               <CacheChartComponent
@@ -273,7 +273,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " users"}
                 name="users with builds"
-                barClicked={this.onBarClicked.bind(this, "#users")}
+                onBarClicked={this.onBarClicked.bind(this, "#users")}
               />
               <TrendsChartComponent
                 title="Commits with builds"
@@ -283,7 +283,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " commits"}
                 name="commits with builds"
-                barClicked={this.onBarClicked.bind(this, "#commits")}
+                onBarClicked={this.onBarClicked.bind(this, "#commits")}
               />
               <TrendsChartComponent
                 title="Hosts with builds"
@@ -293,7 +293,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " hosts"}
                 name="hosts with builds"
-                barClicked={this.onBarClicked.bind(this, "#hosts")}
+                onBarClicked={this.onBarClicked.bind(this, "#hosts")}
               />
               <TrendsChartComponent
                 title="Repos with builds"
@@ -303,7 +303,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " repos"}
                 name="repos with builds"
-                barClicked={this.onBarClicked.bind(this, "#repos")}
+                onBarClicked={this.onBarClicked.bind(this, "#repos")}
               />
             </>
           )}

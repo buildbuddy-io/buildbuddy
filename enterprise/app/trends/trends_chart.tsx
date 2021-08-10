@@ -89,16 +89,16 @@ export default class TrendsChartComponent extends React.Component {
               }
             />
             <Bar
-              className={this.props.barClicked ? "trends-clickable-bar-primary" : ""}
+              className={this.props.onBarClicked ? "trends-clickable-bar-primary" : ""}
               yAxisId="primary"
               name={this.props.name}
               dataKey={this.props.extractValue}
               fill="#607D8B">
               {this.props.data.map((date, index) => (
                 <Cell
-                  cursor={this.props.barClicked ? "pointer" : "default"}
+                  cursor={this.props.onBarClicked ? "pointer" : "default"}
                   key={`cell-${index}`}
-                  onClick={this.props.barClicked ? this.props.barClicked.bind(this, date) : null}
+                  onClick={this.props.onBarClicked ? this.props.onBarClicked.bind(this, date) : null}
                 />
               ))}
             </Bar>
@@ -114,16 +114,16 @@ export default class TrendsChartComponent extends React.Component {
             )}
             {this.props.extractSecondaryValue && !this.props.secondaryLine && (
               <Bar
-                className={this.props.barClicked ? "trends-clickable-bar-secondary" : ""}
+                className={this.props.onBarClicked ? "trends-clickable-bar-secondary" : ""}
                 yAxisId={this.props.separateAxis ? "secondary" : "primary"}
                 name={this.props.secondaryName}
                 dataKey={this.props.extractSecondaryValue}
                 fill="#03A9F4">
                 {this.props.data.map((date, index) => (
                   <Cell
-                    cursor={this.props.barClicked ? "pointer" : "default"}
+                    cursor={this.props.onBarClicked ? "pointer" : "default"}
                     key={`cell-${index}`}
-                    onClick={this.props.barClicked ? this.props.barClicked.bind(this, date) : null}
+                    onClick={this.props.onBarClicked ? this.props.onBarClicked.bind(this, date) : null}
                   />
                 ))}
               </Bar>
