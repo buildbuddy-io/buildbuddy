@@ -56,8 +56,7 @@ class Router {
    *
    * - Creates a new browser history entry.
    * - Preserves global filter params.
-   * - The current `path` is preserved, but the `hash` part of the URL
-   *   is not preserved.
+   * - Preserves the current `path`, but not the `hash`.
    */
   navigateToQueryParam(key: string, value: string) {
     const url = new URL(window.location.href);
