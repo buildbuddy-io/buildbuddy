@@ -48,28 +48,28 @@ export default class HistoryInvocationCardComponent extends React.Component {
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
   handleUserClicked(event: any, invocation: invocation.Invocation) {
-    router.navigateToUserHistory(invocation.user, { preserveQuery: true });
+    router.navigateToUserHistory(invocation.user);
     event.stopPropagation();
     event.preventDefault();
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
   handleHostClicked(event: any, invocation: invocation.Invocation) {
-    router.navigateToHostHistory(invocation.host, { preserveQuery: true });
+    router.navigateToHostHistory(invocation.host);
     event.stopPropagation();
     event.preventDefault();
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
   handleCommitClicked(event: any, invocation: invocation.Invocation) {
-    router.navigateToCommitHistory(invocation.commitSha, { preserveQuery: true });
+    router.navigateToCommitHistory(invocation.commitSha);
     event.stopPropagation();
     event.preventDefault();
   }
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
   handleRepoClicked(event: any, invocation: invocation.Invocation) {
-    router.navigateToRepoHistory(invocation.repoUrl, { preserveQuery: true });
+    router.navigateToRepoHistory(invocation.repoUrl);
     event.stopPropagation();
     event.preventDefault();
   }

@@ -100,46 +100,24 @@ class Router {
     this.navigateTo(Path.invocationPath + invocationId);
   }
 
-  navigateToUserHistory(user: string, { preserveQuery = false } = {}) {
+  navigateToUserHistory(user: string) {
     if (!capabilities.canNavigateToPath(Path.userHistoryPath)) {
       alert(
         `User history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
       );
       return;
     }
-    this.navigateTo(Path.userHistoryPath + user + (preserveQuery ? window.location.search : ""));
+    this.navigateTo(Path.userHistoryPath + user);
   }
 
-  navigateToHostHistory(host: string, { preserveQuery = false } = {}) {
+  navigateToHostHistory(host: string) {
     if (!capabilities.canNavigateToPath(Path.hostHistoryPath)) {
       alert(
         `Host history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
       );
       return;
     }
-    this.navigateTo(Path.hostHistoryPath + host + (preserveQuery ? window.location.search : ""));
-  }
-
-  navigateToRepoHistory(repo: string, { preserveQuery = false } = {}) {
-    if (!capabilities.canNavigateToPath(Path.repoHistoryPath)) {
-      alert(
-        `Repo history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
-      );
-      return;
-    }
-    this.navigateTo(
-      `${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}${preserveQuery ? window.location.search : ""}`
-    );
-  }
-
-  navigateToCommitHistory(commit: string, { preserveQuery = false } = {}) {
-    if (!capabilities.canNavigateToPath(Path.commitHistoryPath)) {
-      alert(
-        `Commit history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
-      );
-      return;
-    }
-    this.navigateTo(Path.commitHistoryPath + commit + (preserveQuery ? window.location.search : ""));
+    this.navigateTo(Path.hostHistoryPath + host);
   }
 
   getWorkflowHistoryUrl(repo: string) {
@@ -148,6 +126,26 @@ class Router {
 
   navigateToWorkflowHistory(repo: string) {
     this.navigateTo(this.getWorkflowHistoryUrl(repo));
+  }
+
+  navigateToRepoHistory(repo: string) {
+    if (!capabilities.canNavigateToPath(Path.repoHistoryPath)) {
+      alert(
+        `Repo history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
+      );
+      return;
+    }
+    this.navigateTo(`${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}`);
+  }
+
+  navigateToCommitHistory(commit: string) {
+    if (!capabilities.canNavigateToPath(Path.commitHistoryPath)) {
+      alert(
+        `Commit history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
+      );
+      return;
+    }
+    this.navigateTo(Path.commitHistoryPath + commit);
   }
 
   navigateToCreateOrg() {
