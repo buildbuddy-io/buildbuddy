@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "build_event_publisher",
+    srcs = ["build_event_publisher.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//enterprise/server/auth",
+        "//proto:build_event_stream_go_proto",
+        "//proto:build_events_go_proto",
+        "//proto:publish_build_event_go_proto",
+        "//server/util/grpc_client",
+        "//server/util/log",
+        "//server/util/status",
+        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//metadata",
+    ],
+)
