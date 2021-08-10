@@ -182,6 +182,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           invocationId={this.props.invocationId}
           hash={this.props.hash}
           configuredEvent={this.state.model.configuredMap.get(targetLabel)}
+          skippedEvent={this.state.model.skippedMap.get(targetLabel)}
           completedEvent={completed}
           testResultEvents={this.state.model.testResultMap.get(targetLabel)}
           testSummaryEvent={this.state.model.testSummaryMap.get(targetLabel)}
