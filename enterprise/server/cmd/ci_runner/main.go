@@ -76,17 +76,18 @@ const (
 )
 
 var (
-	besBackend    = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
-	besResultsURL = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
-	triggerEvent  = flag.String("trigger_event", "", "Event type that triggered the action runner.")
-	pushedRepoURL = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
-	pushedBranch  = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
-	commitSHA     = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
-	targetRepoURL = flag.String("target_repo_url", "", "URL of the target repo.")
-	targetBranch  = flag.String("target_branch", "", "Branch to check action triggers against.")
-	workflowID    = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
-	actionName    = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
-	invocationID  = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
+	besBackend      = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
+	besResultsURL   = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
+	triggerEvent    = flag.String("trigger_event", "", "Event type that triggered the action runner.")
+	pushedRepoURL   = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
+	pushedBranch    = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
+	commitSHA       = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
+	targetRepoURL   = flag.String("target_repo_url", "", "URL of the target repo.")
+	targetBranch    = flag.String("target_branch", "", "Branch to check action triggers against.")
+	workflowID      = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
+	actionName      = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
+	invocationID    = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
+	bazelSubCommand = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
 
 	bazelCommand      = flag.String("bazel_command", bazeliskBinaryName, "Bazel command to use.")
 	bazelStartupFlags = flag.String("bazel_startup_flags", "", "Startup flags to pass to bazel. The value can include spaces and will be properly tokenized.")
@@ -103,6 +104,18 @@ type workspace struct {
 	// of any action's logs yet.
 	reportedInitMetrics bool
 
+	// The machine's hostname.
+	hostname string
+
+	// The operating user's username.
+	username string
+
+	// The buildbuddy API key, or "" if none was found.
+	buildbuddyAPIKey string
+
+	// An invocation ID that should be forced, or "" if any is allowed.
+	forcedInvocationID string
+
 	// An error that occurred while setting up the workspace, which should be
 	// reported for all action logs instead of actually executing the action.
 	setupError error
@@ -118,12 +131,18 @@ type workspace struct {
 }
 
 func main() {
-	ws := &workspace{startTime: time.Now()}
+	flag.Parse()
+
+	ws := &workspace{
+		startTime:          time.Now(),
+		buildbuddyAPIKey:   os.Getenv(buildbuddyAPIKeyEnvVarName),
+		forcedInvocationID: *invocationID,
+	}
+
 	// Write setup logs to the current task's stderr (to make debugging easier),
 	// and also to a buffer to be flushed to the first workflow action's logs.
 	ws.log = io.MultiWriter(os.Stderr, &ws.logBuf)
-
-	flag.Parse()
+	ws.hostname, ws.username = getHostAndUserName()
 
 	if *bazelCommand == "" {
 		*bazelCommand = bazeliskBinaryName
@@ -150,48 +169,50 @@ func main() {
 		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
 	}
 
-	ws.RunAllActions(ctx, cfg)
+	var actions []*config.Action
+	if *bazelSubCommand != "" {
+		actions = []*config.Action{{
+			Name: "run",
+			BazelCommands: []string{
+				*bazelSubCommand,
+			},
+		}}
+	} else if *actionName != "" {
+		// If a specific action was specified, filter to configured
+		// actions with a matching action name.
+		actions = filterActions(cfg.Actions, func(action *config.Action) bool {
+			return action.Name == *actionName
+		})
+	} else {
+		// If no action was specified; filter to configured actions that
+		// match any trigger.
+		actions = filterActions(cfg.Actions, func(action *config.Action) bool {
+			match := matchesAnyTrigger(action, *triggerEvent, *targetBranch)
+			if !match {
+				log.Debugf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *targetBranch, actionDebugString(action))
+			}
+			return match
+		})
+	}
+	if *invocationID != "" && len(actions) > 1 {
+		fatal(status.InvalidArgumentError("Cannot specify --invocationID when running multiple actions"))
+	}
+
+	ws.RunAllActions(ctx, actions)
 }
 
-// RunAllActions runs all triggered actions in the BuildBuddy config in serial, creating
-// a synthetic invocation for each one.
-func (ws *workspace) RunAllActions(ctx context.Context, cfg *config.BuildBuddyConfig) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		log.Errorf("failed to get hostname: %s", err)
-		hostname = ""
-	}
-	user, err := user.Current()
-	username := ""
-	if err != nil {
-		log.Errorf("failed to get user: %s", err)
-	} else {
-		username = user.Username
-	}
-
-	for _, action := range cfg.Actions {
+// RunAllActions runs the specified actions in serial, creating a synthetic
+// invocation for each one.
+func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action) {
+	for _, action := range actions {
 		startTime := time.Now()
 
-		if *actionName != "" {
-			if action.Name != *actionName {
-				continue
-			}
-		} else if !matchesAnyTrigger(action, *triggerEvent, *targetBranch) {
-			log.Debugf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *targetBranch, actionDebugString(action))
-			continue
-		}
-
-		iid := ""
-		// Respect the invocation ID flag only when running a single action
-		// (via ExecuteWorkflow).
-		if *actionName != "" {
-			iid = *invocationID
-		} else {
+		iid := ws.forcedInvocationID
+		if iid == "" {
 			iid = newUUID()
 		}
 
-		buildbuddyAPIKey := os.Getenv(buildbuddyAPIKeyEnvVarName)
-		bep, err := build_event_publisher.New(*besBackend, buildbuddyAPIKey, iid)
+		bep, err := build_event_publisher.New(*besBackend, ws.buildbuddyAPIKey, iid)
 		if err != nil {
 			fatal(status.UnavailableErrorf("failed to initialize build event publisher: %s", err))
 		}
@@ -206,8 +227,8 @@ func (ws *workspace) RunAllActions(ctx context.Context, cfg *config.BuildBuddyCo
 			log:          newInvocationLog(),
 			bep:          bep,
 			invocationID: iid,
-			hostname:     hostname,
-			username:     username,
+			hostname:     ws.hostname,
+			username:     ws.username,
 		}
 		exitCode := 0
 		exitCodeName := "OK"
@@ -581,6 +602,32 @@ func ensurePath() error {
 		return nil
 	}
 	return os.Setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+}
+
+func getHostAndUserName() (string, string) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Errorf("failed to get hostname: %s", err)
+		hostname = ""
+	}
+	user, err := user.Current()
+	username := ""
+	if err != nil {
+		log.Errorf("failed to get user: %s", err)
+	} else {
+		username = user.Username
+	}
+	return hostname, username
+}
+
+func filterActions(actions []*config.Action, fn func(action *config.Action) bool) []*config.Action {
+	matched := make([]*config.Action, 0)
+	for _, action := range actions {
+		if fn(action) {
+			matched = append(matched, action)
+		}
+	}
+	return matched
 }
 
 func (ws *workspace) setup(ctx context.Context) error {
