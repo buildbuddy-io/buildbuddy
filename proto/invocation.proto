@@ -168,8 +168,9 @@ message InvocationQuery {
   // The commit sha used for the build.
   string commit_sha = 5;
 
-  // The ROLE metadata set on the build.
-  string role = 6;
+  // The ROLE metadata set on the build. If multiple filters are specified, they
+  // are combined with "OR".
+  repeated string role = 6;
 
   // The timestamp on or after which the build was last updated (inclusive).
   google.protobuf.Timestamp updated_after = 7;
@@ -302,8 +303,9 @@ message InvocationStatQuery {
   // The commit sha used for the build.
   string commit_sha = 5;
 
-  // The role played by the build. Ex: "CI"
-  string role = 6;
+  // The role played by the build. Ex: "CI". If multiple role filters are
+  // specified, they are combined with "OR".
+  repeated string role = 6;
 
   // The timestamp on or after which the build was last updated (inclusive).
   google.protobuf.Timestamp updated_after = 7;
@@ -398,8 +400,8 @@ message TrendQuery {
   // The commit sha used for the build.
   string commit_sha = 5;
 
-  // The role played by the build. Ex: "CI". Multiple filters are combined with
-  // OR.
+  // The role played by the build. Ex: "CI". If multiple filters are specified,
+  // they are combined with "OR".
   repeated string role = 6;
 
   // The timestamp on or after which the build was last updated (inclusive).

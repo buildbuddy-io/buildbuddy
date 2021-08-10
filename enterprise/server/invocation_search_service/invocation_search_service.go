@@ -138,8 +138,12 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	if group_id := req.GetQuery().GetGroupId(); group_id != "" {
 		q.AddWhereClause("i.group_id = ?", group_id)
 	}
-	if role := req.GetQuery().GetRole(); role != "" {
-		q.AddWhereClause("i.role = ?", role)
+	roleClauses := query_builder.OrClauses{}
+	for _, role := range req.GetQuery().GetRole() {
+		roleClauses.AddOr("i.role = ?", role)
+	}
+	if roleQuery, roleArgs := roleClauses.Build(); roleQuery != "" {
+		q.AddWhereClause("("+roleQuery+")", roleArgs...)
 	}
 	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
 		q.AddWhereClause("i.updated_at_usec >= ?", timeutil.ToUsec(start.AsTime()))

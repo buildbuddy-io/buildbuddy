@@ -9,8 +9,11 @@ import {
   STATUS_PARAM_NAME,
 } from "../../../app/router/router";
 
+// URL param value representing the empty role (""), which is the default.
+const DEFAULT_ROLE = "DEFAULT";
+
 export interface ProtoFilterParams {
-  role?: string;
+  role?: string[];
   updatedAfter?: google.protobuf.Timestamp;
   updatedBefore?: google.protobuf.Timestamp;
   status?: invocation.OverallStatus[];
@@ -18,9 +21,9 @@ export interface ProtoFilterParams {
 
 export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams {
   return {
-    role: search.get(ROLE_PARAM_NAME),
     updatedAfter: parseStartOfDay(search.get(START_DATE_PARAM_NAME)),
     updatedBefore: parseStartOfDay(search.get(END_DATE_PARAM_NAME), /*offsetDays=*/ +1),
+    role: parseRoleParam(search.get(ROLE_PARAM_NAME)),
     status: parseStatusParam(search.get(STATUS_PARAM_NAME)),
   };
 }
@@ -37,6 +40,18 @@ export function statusFromString(value: string) {
   return (invocation.OverallStatus[
     value.toUpperCase().replace(/-/g, "_") as any
   ] as unknown) as invocation.OverallStatus;
+}
+
+export function parseRoleParam(paramValue?: string): string[] {
+  if (!paramValue) return [];
+  return paramValue.split(" ").map((role) => (role === DEFAULT_ROLE ? "" : role));
+}
+
+export function toRoleParam(roles: Iterable<string>): string {
+  return [...roles]
+    .map((role) => (role === "" ? DEFAULT_ROLE : role))
+    .sort()
+    .join(" ");
 }
 
 export function parseStatusParam(paramValue?: string): invocation.OverallStatus[] {
