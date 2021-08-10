@@ -154,7 +154,7 @@ export default class HistoryComponent extends React.Component {
     this.getBuilds();
 
     this.subscription = rpcService.events.subscribe({
-      next: (name) => name == "refresh" && (this.props.hash ? this.getStats() : this.getBuilds()),
+      next: (name) => name == "refresh" && this.handleSidebarItemClicked(),
     });
     this.subscription.add(fromEvent(window, "storage").subscribe(this.handleStorage.bind(this)));
   }
@@ -173,6 +173,32 @@ export default class HistoryComponent extends React.Component {
 
   handleStorage() {
     this.setState({ invocationIdToCompare: localStorage["invocation_id_to_compare"] });
+  }
+
+  handleSidebarItemClicked() {
+    if (this.props.username) {
+      this.handleUsersClicked();
+      return;
+    }
+    if (this.props.hostname) {
+      this.handleHostsClicked();
+      return;
+    }
+    if (this.props.commit) {
+      this.handleCommitsClicked();
+      return;
+    }
+    if (this.props.repo) {
+      this.handleReposClicked();
+      return;
+    }
+
+    if (this.props.hash) {
+      this.getStats();
+      return;
+    }
+
+    this.getBuilds();
   }
 
   handleInvocationClicked(invocation: invocation.Invocation) {
