@@ -6,17 +6,14 @@ import Popup from "../../../app/components/popup/popup";
 import Radio from "../../../app/components/radio/radio";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import { formatDateRange } from "../../../app/format/format";
-import router from "../../../app/router/router";
-import { invocation } from "../../../proto/invocation_ts_proto";
-import {
-  parseStatusParam,
-  statusToString,
-  toStatusParam,
+import router, {
   START_DATE_PARAM_NAME,
   END_DATE_PARAM_NAME,
   ROLE_PARAM_NAME,
   STATUS_PARAM_NAME,
-} from "./filter_util";
+} from "../../../app/router/router";
+import { invocation } from "../../../proto/invocation_ts_proto";
+import { parseStatusParam, statusToString, toStatusParam } from "./filter_util";
 
 export interface FilterProps {
   search: URLSearchParams;

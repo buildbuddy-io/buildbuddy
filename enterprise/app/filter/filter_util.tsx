@@ -2,11 +2,12 @@ import * as proto from "../../../app/util/proto";
 import { google } from "../../../proto/timestamp_ts_proto";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import moment from "moment";
-
-export const ROLE_PARAM_NAME = "role";
-export const STATUS_PARAM_NAME = "status";
-export const START_DATE_PARAM_NAME = "start";
-export const END_DATE_PARAM_NAME = "end";
+import {
+  ROLE_PARAM_NAME,
+  START_DATE_PARAM_NAME,
+  END_DATE_PARAM_NAME,
+  STATUS_PARAM_NAME,
+} from "../../../app/router/router";
 
 export interface ProtoFilterParams {
   role?: string;

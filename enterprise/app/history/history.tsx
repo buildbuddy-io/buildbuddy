@@ -4,14 +4,14 @@ import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import LinkButton from "../../../app/components/button/link_button";
 import format from "../../../app/format/format";
-import router from "../../../app/router/router";
+import router, { ROLE_PARAM_NAME } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import FilterComponent from "../filter/filter";
 import OrgJoinRequestsComponent from "../org/org_join_requests";
 import HistoryInvocationCardComponent from "./history_invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
-import { getProtoFilterParams, ROLE_PARAM_NAME } from "../filter/filter_util";
+import { getProtoFilterParams } from "../filter/filter_util";
 
 interface State {
   invocations: invocation.Invocation[];
