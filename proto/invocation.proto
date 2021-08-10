@@ -179,6 +179,7 @@ message InvocationQuery {
 
   // The timestamp up to which the build was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 8;
+
   // The git branch used for the build.
   string branch_name = 9;
 }
@@ -294,6 +295,7 @@ message InvocationStatQuery {
 
   // The timestamp up to which the build was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 8;
+
   // The git branch used for the build.
   string branch_name = 9;
 }
