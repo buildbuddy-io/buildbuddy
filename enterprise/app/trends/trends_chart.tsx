@@ -104,6 +104,7 @@ export default class TrendsChartComponent extends React.Component {
             </Bar>
             {this.props.extractSecondaryValue && this.props.secondaryLine && (
               <Line
+                activeDot={{ pointerEvents: "none" }}
                 yAxisId={this.props.separateAxis ? "secondary" : "primary"}
                 name={this.props.secondaryName}
                 dot={false}
