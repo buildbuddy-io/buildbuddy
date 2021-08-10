@@ -15,23 +15,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
-	"google.golang.org/grpc/metadata"
 	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -194,10 +189,12 @@ func (ws *workspace) RunAllActions(ctx context.Context, cfg *config.BuildBuddyCo
 		} else {
 			iid = newUUID()
 		}
-		bep := newBuildEventPublisher(&bepb.StreamId{
-			InvocationId: iid,
-			BuildId:      newUUID(),
-		})
+
+		buildbuddyAPIKey := os.Getenv(buildbuddyAPIKeyEnvVarName)
+		bep, err := build_event_publisher.New(*besBackend, buildbuddyAPIKey, iid)
+		if err != nil {
+			fatal(status.UnavailableErrorf("failed to initialize build event publisher: %s", err))
+		}
 		bep.Start(ctx)
 
 		// NB: Anything logged to `ar.log` gets output to both the stdout of this binary
@@ -205,11 +202,12 @@ func (ws *workspace) RunAllActions(ctx context.Context, cfg *config.BuildBuddyCo
 		// the user to see in the invocation UI needs to go in that log, instead of
 		// the global `log.Print`.
 		ar := &actionRunner{
-			action:   action,
-			log:      newInvocationLog(),
-			bep:      bep,
-			hostname: hostname,
-			username: username,
+			action:       action,
+			log:          newInvocationLog(),
+			bep:          bep,
+			invocationID: iid,
+			hostname:     hostname,
+			username:     username,
 		}
 		exitCode := 0
 		exitCodeName := "OK"
@@ -297,161 +295,14 @@ func (invLog *invocationLog) Printf(format string, vals ...interface{}) {
 	invLog.Write([]byte(fmt.Sprintf(format+"\n", vals...)))
 }
 
-// buildEventPublisher publishes Bazel build events for a single build event stream.
-type buildEventPublisher struct {
-	err      error
-	streamID *bepb.StreamId
-	done     chan struct{}
-	events   chan *bespb.BuildEvent
-	mu       sync.Mutex
-}
-
-func newBuildEventPublisher(streamID *bepb.StreamId) *buildEventPublisher {
-	return &buildEventPublisher{
-		streamID: streamID,
-		// We probably won't ever saturate this buffer since we only need to
-		// publish a few events for the actions themselves and progress events
-		// are rate-limited. Also, events are sent to the server with low
-		// latency compared to the rate limiting interval.
-		events: make(chan *bespb.BuildEvent, 256),
-		done:   make(chan struct{}, 1),
-	}
-}
-
-// Start the event publishing loop in the background. Stops handling new events
-// as soon as the first call to `Wait()` occurs.
-func (bep *buildEventPublisher) Start(ctx context.Context) {
-	go bep.run(ctx)
-}
-func (bep *buildEventPublisher) run(ctx context.Context) {
-	defer func() {
-		bep.done <- struct{}{}
-	}()
-
-	conn, err := grpc_client.DialTarget(*besBackend)
-	if err != nil {
-		bep.setError(status.WrapError(err, "error dialing bes_backend"))
-		return
-	}
-	defer conn.Close()
-	besClient := pepb.NewPublishBuildEventClient(conn)
-	buildbuddyAPIKey := os.Getenv(buildbuddyAPIKeyEnvVarName)
-	if buildbuddyAPIKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, buildbuddyAPIKey)
-	}
-	stream, err := besClient.PublishBuildToolEventStream(ctx)
-	if err != nil {
-		bep.setError(status.WrapError(err, "error opening build event stream"))
-		return
-	}
-
-	doneReceiving := make(chan struct{}, 1)
-	go func() {
-		for {
-			_, err := stream.Recv()
-			if err == nil {
-				continue
-			}
-			if err == io.EOF {
-				log.Debug("Received all acks from server.")
-			} else {
-				log.Errorf("Error receiving acks from the server: %s", err)
-				bep.setError(err)
-			}
-			doneReceiving <- struct{}{}
-			return
-		}
-	}()
-
-	for seqNo := int64(1); ; seqNo++ {
-		event := <-bep.events
-		if event == nil {
-			// Wait() was called, meaning no more events to publish.
-			// Send ComponentStreamFinished event before closing the stream.
-			start := time.Now()
-			err = stream.Send(&pepb.PublishBuildToolEventStreamRequest{
-				OrderedBuildEvent: &pepb.OrderedBuildEvent{
-					StreamId:       bep.streamID,
-					SequenceNumber: seqNo,
-					Event: &bepb.BuildEvent{
-						EventTime: ptypes.TimestampNow(),
-						Event: &bepb.BuildEvent_ComponentStreamFinished{ComponentStreamFinished: &bepb.BuildEvent_BuildComponentStreamFinished{
-							Type: bepb.BuildEvent_BuildComponentStreamFinished_FINISHED,
-						}},
-					},
-				},
-			})
-			log.Debugf("BEP: published FINISHED event (#%d) in %s", seqNo, time.Since(start))
-
-			if err != nil {
-				bep.setError(err)
-				return
-			}
-			break
-		}
-
-		bazelEvent, err := ptypes.MarshalAny(event)
-		if err != nil {
-			bep.setError(status.WrapError(err, "failed to marshal bazel event"))
-			return
-		}
-		start := time.Now()
-		err = stream.Send(&pepb.PublishBuildToolEventStreamRequest{
-			OrderedBuildEvent: &pepb.OrderedBuildEvent{
-				StreamId:       bep.streamID,
-				SequenceNumber: seqNo,
-				Event: &bepb.BuildEvent{
-					EventTime: ptypes.TimestampNow(),
-					Event:     &bepb.BuildEvent_BazelEvent{BazelEvent: bazelEvent},
-				},
-			},
-		})
-		log.Debugf("BEP: published event (#%d) in %s", seqNo, time.Since(start))
-		if err != nil {
-			bep.setError(err)
-			return
-		}
-	}
-	// After successfully transmitting all events, close our side of the stream
-	// and wait for server ACKs before closing the connection.
-	if err := stream.CloseSend(); err != nil {
-		bep.setError(status.WrapError(err, "failed to close build event stream"))
-		return
-	}
-	<-doneReceiving
-}
-func (bep *buildEventPublisher) Publish(e *bespb.BuildEvent) error {
-	bep.mu.Lock()
-	defer bep.mu.Unlock()
-	if bep.err != nil {
-		return status.WrapError(bep.err, "cannot publish event due to previous error")
-	}
-	bep.events <- e
-	return nil
-}
-func (bep *buildEventPublisher) Wait() error {
-	bep.events <- nil
-	<-bep.done
-	return bep.err
-}
-func (bep *buildEventPublisher) getError() error {
-	bep.mu.Lock()
-	defer bep.mu.Unlock()
-	return bep.err
-}
-func (bep *buildEventPublisher) setError(err error) {
-	bep.mu.Lock()
-	defer bep.mu.Unlock()
-	bep.err = err
-}
-
 // actionRunner runs a single action in the BuildBuddy config.
 type actionRunner struct {
-	action   *config.Action
-	log      *invocationLog
-	bep      *buildEventPublisher
-	username string
-	hostname string
+	action       *config.Action
+	log          *invocationLog
+	bep          *build_event_publisher.Publisher
+	invocationID string
+	username     string
+	hostname     string
 
 	mu            sync.Mutex // protects(progressCount)
 	progressCount int32
@@ -461,7 +312,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 	ar.log.Printf("Running action %q", ar.action.Name)
 
 	// Only print this to the local logs -- it's mostly useful for development purposes.
-	log.Infof("Invocation URL:  %s", invocationURL(ar.bep.streamID.InvocationId))
+	log.Infof("Invocation URL:  %s", invocationURL(ar.invocationID))
 
 	// NOTE: In this func we return immediately with an error of nil if event publishing fails,
 	// because that error is instead surfaced in the caller func when calling
@@ -479,7 +330,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 			{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
 		},
 		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
-			Uuid:            ar.bep.streamID.InvocationId,
+			Uuid:            ar.invocationID,
 			StartTimeMillis: timeutil.ToMillis(startTime),
 		}},
 	}

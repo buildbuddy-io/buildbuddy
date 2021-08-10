@@ -7,10 +7,13 @@ import Select, { Option } from "../components/select/select";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { google } from "../../proto/grpc_code_ts_proto";
 import rpcService from "../service/rpc_service";
+import InvocationFilterComponent from "./invocation_filter";
 
 interface Props {
   model: InvocationModel;
   inProgress: boolean;
+  search: URLSearchParams;
+  filter: string;
 }
 
 interface State {
@@ -261,97 +264,119 @@ export default class ExecutionCardComponent extends React.Component {
       }
     }
 
-    return (
-      <div className={`card expanded`}>
-        <div className="content">
-          <div className="invocation-content-header">
-            <div className="title">
-              Remotely executed actions ({!!incompleteCount && <span>{incompleteCount} in progress, </span>}
-              {completedCount} completed)
-            </div>
+    const filteredActions = this.state.executions.filter(
+      (action) =>
+        !this.props.filter ||
+        `${action.actionDigest.hash}/${action.actionDigest.sizeBytes}`
+          .toLowerCase()
+          .includes(this.props.filter.toLowerCase()) ||
+        action.commandSnippet.toLowerCase().includes(this.props.filter.toLowerCase())
+    );
 
-            <div className="invocation-sort-controls">
-              <span className="invocation-sort-title">Sort by</span>
-              <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
-                <Option value="total-duration">Total Duration</Option>
-                <Option value="queued-duration">Queued Duration</Option>
-                <Option value="download-duration">Download Duration</Option>
-                <Option value="execution-duration">Execution Duration</Option>
-                <Option value="upload-duration">Upload Duration</Option>
-                <Option value="files-downloaded">Files Downloaded</Option>
-                <Option value="files-uploaded">Files Uploaded</Option>
-                <Option value="file-size-downloaded">File Size Downloaded</Option>
-                <Option value="file-size-uploaded">File Size Uploaded</Option>
-                <Option value="queue-start">Queue Start Time</Option>
-                <Option value="execution-start">Execution Start Time</Option>
-                <Option value="execution-end">Execution End Time</Option>
-                <Option value="worker">Worker</Option>
-                <Option value="command">Command Snippet</Option>
-                <Option value="action">Action Digest</Option>
-                <Option value="status">Status</Option>
-              </Select>
-              <span className="group-container">
-                <div>
-                  <input
-                    id="direction-asc"
-                    checked={this.state.direction == "asc"}
-                    onChange={this.handleInputChange.bind(this)}
-                    value="asc"
-                    name="direction"
-                    type="radio"
-                  />
-                  <label htmlFor="direction-asc">Asc</label>
-                </div>
-                <div>
-                  <input
-                    id="direction-desc"
-                    checked={this.state.direction == "desc"}
-                    onChange={this.handleInputChange.bind(this)}
-                    value="desc"
-                    name="direction"
-                    type="radio"
-                  />
-                  <label htmlFor="direction-desc">Desc</label>
-                </div>
-              </span>
-            </div>
-          </div>
-          <div className="invocation-execution-table">
-            {this.state.executions.sort(this.sort.bind(this)).map((execution, index) => {
-              const status = getExecutionStatus(execution);
-              return (
-                <div
-                  key={index}
-                  className="invocation-execution-row clickable"
-                  onClick={this.handleActionDigestClick.bind(this, execution)}>
-                  <div className="invocation-execution-row-image">
-                    <img className={status.className} src={status.image} alt="" />
+    return (
+      <div>
+        <InvocationFilterComponent
+          hash={"#execution"}
+          search={this.props.search}
+          placeholder={"Filter by digest or command..."}
+        />
+        <div className={`card expanded`}>
+          <div className="content">
+            <div className="invocation-content-header">
+              <div className="title">
+                Remotely executed actions ({!!incompleteCount && <span>{incompleteCount} in progress, </span>}
+                {completedCount} completed)
+              </div>
+
+              <div className="invocation-sort-controls">
+                <span className="invocation-sort-title">Sort by</span>
+                <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
+                  <Option value="total-duration">Total Duration</Option>
+                  <Option value="queued-duration">Queued Duration</Option>
+                  <Option value="download-duration">Download Duration</Option>
+                  <Option value="execution-duration">Execution Duration</Option>
+                  <Option value="upload-duration">Upload Duration</Option>
+                  <Option value="files-downloaded">Files Downloaded</Option>
+                  <Option value="files-uploaded">Files Uploaded</Option>
+                  <Option value="file-size-downloaded">File Size Downloaded</Option>
+                  <Option value="file-size-uploaded">File Size Uploaded</Option>
+                  <Option value="queue-start">Queue Start Time</Option>
+                  <Option value="execution-start">Execution Start Time</Option>
+                  <Option value="execution-end">Execution End Time</Option>
+                  <Option value="worker">Worker</Option>
+                  <Option value="command">Command Snippet</Option>
+                  <Option value="action">Action Digest</Option>
+                  <Option value="status">Status</Option>
+                </Select>
+                <span className="group-container">
+                  <div>
+                    <input
+                      id="direction-asc"
+                      checked={this.state.direction == "asc"}
+                      onChange={this.handleInputChange.bind(this)}
+                      value="asc"
+                      name="direction"
+                      type="radio"
+                    />
+                    <label htmlFor="direction-asc">Asc</label>
                   </div>
                   <div>
-                    <div className="invocation-execution-row-digest">
-                      {status.name} {execution?.actionDigest?.hash}/{execution?.actionDigest?.sizeBytes}
-                    </div>
-                    <div>{execution.commandSnippet}</div>
-                    <div className="invocation-execution-row-stats">
-                      <div>Worker: {execution?.executedActionMetadata?.worker}</div>
-                      <div>Total duration: {format.durationUsec(this.totalDuration(execution))}</div>
-                      <div>Queued duration: {format.durationUsec(this.queuedDuration(execution))}</div>
-                      <div>
-                        File download duration: {format.durationUsec(this.downloadDuration(execution))} (
-                        {format.bytes(execution?.ioStats?.fileDownloadSizeBytes)} across{" "}
-                        {execution?.ioStats?.fileDownloadCount} files)
-                      </div>
-                      <div>Execution duration: {format.durationUsec(this.executionDuration(execution))}</div>
-                      <div>
-                        File upload duration: {format.durationUsec(this.uploadDuration(execution))} (
-                        {format.bytes(execution?.ioStats?.fileUploadSizeBytes)} across{" "}
-                        {execution?.ioStats?.fileUploadCount} files)
-                      </div>
-                    </div>
+                    <input
+                      id="direction-desc"
+                      checked={this.state.direction == "desc"}
+                      onChange={this.handleInputChange.bind(this)}
+                      value="desc"
+                      name="direction"
+                      type="radio"
+                    />
+                    <label htmlFor="direction-desc">Desc</label>
                   </div>
+                </span>
+              </div>
+            </div>
+            <div>
+              {filteredActions.length ? (
+                <div className="invocation-execution-table">
+                  {filteredActions.sort(this.sort.bind(this)).map((execution, index) => {
+                    const status = getExecutionStatus(execution);
+                    return (
+                      <div
+                        key={index}
+                        className="invocation-execution-row clickable"
+                        onClick={this.handleActionDigestClick.bind(this, execution)}>
+                        <div className="invocation-execution-row-image">
+                          <img className={status.className} src={status.image} alt="" />
+                        </div>
+                        <div>
+                          <div className="invocation-execution-row-digest">
+                            {status.name} {execution?.actionDigest?.hash}/{execution?.actionDigest?.sizeBytes}
+                          </div>
+                          <div>{execution.commandSnippet}</div>
+                          <div className="invocation-execution-row-stats">
+                            <div>Worker: {execution?.executedActionMetadata?.worker}</div>
+                            <div>Total duration: {format.durationUsec(this.totalDuration(execution))}</div>
+                            <div>Queued duration: {format.durationUsec(this.queuedDuration(execution))}</div>
+                            <div>
+                              File download duration: {format.durationUsec(this.downloadDuration(execution))} (
+                              {format.bytes(execution?.ioStats?.fileDownloadSizeBytes)} across{" "}
+                              {execution?.ioStats?.fileDownloadCount} files)
+                            </div>
+                            <div>Execution duration: {format.durationUsec(this.executionDuration(execution))}</div>
+                            <div>
+                              File upload duration: {format.durationUsec(this.uploadDuration(execution))} (
+                              {format.bytes(execution?.ioStats?.fileUploadSizeBytes)} across{" "}
+                              {execution?.ioStats?.fileUploadCount} files)
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              ) : (
+                <div>No matching actions.</div>
+              )}
+            </div>
           </div>
         </div>
       </div>

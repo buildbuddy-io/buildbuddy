@@ -7,45 +7,90 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/stretchr/testify/assert"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	_ "github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-func makeRootDir(t *testing.T) string {
-	rootDir, err := ioutil.TempDir("/tmp", "buildbuddy_docker_test_*")
+func makeDir(t *testing.T, prefix string) string {
+	dir, err := ioutil.TempDir(prefix, "d-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		os.RemoveAll(rootDir)
+		os.RemoveAll(dir)
 	})
-	return rootDir
+	return dir
 }
 
-func makeWorkDir(t *testing.T, rootDir string) string {
-	workDir, err := ioutil.TempDir(rootDir, "ws_*")
+func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
+	env := testenv.GetTestEnv(t)
+	diskCacheSize := 10_000_000_000 // 10GB
+	testRootDir := makeDir(t, "/tmp")
+	dc, err := disk_cache.NewDiskCache(env, &config.DiskConfig{RootDirectory: testRootDir}, int64(diskCacheSize))
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
 	}
-	return workDir
+	env.SetCache(dc)
+	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
+	if err != nil {
+		t.Error(err)
+	}
+	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
+	if err != nil {
+		t.Error(err)
+	}
+	actionCacheServer, err := action_cache_server.NewActionCacheServer(env)
+	if err != nil {
+		t.Error(err)
+	}
+	grpcServer, runFunc := env.LocalGRPCServer()
+	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
+	repb.RegisterActionCacheServer(grpcServer, actionCacheServer)
+	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
+	go runFunc()
+
+	conn, err := env.LocalGRPCConn(ctx)
+	if err != nil {
+		t.Error(err)
+	}
+
+	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+	env.SetActionCacheClient(repb.NewActionCacheClient(conn))
+	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+
+	fc, err := filecache.NewFileCache(testRootDir, int64(diskCacheSize))
+	if err != nil {
+		t.Error(err)
+	}
+	env.SetFileCache(fc)
+	return env
 }
 
 func TestFirecrackerRun(t *testing.T) {
-	rootDir := makeRootDir(t)
-	workDir := makeWorkDir(t, rootDir)
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := makeDir(t, "/tmp")
+	workDir := makeDir(t, rootDir)
 
 	path := filepath.Join(workDir, "world.txt")
 	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
@@ -66,7 +111,7 @@ func TestFirecrackerRun(t *testing.T) {
 		MemSizeMB:              2500,
 		EnableNetworking:       false,
 	}
-	c, err := firecracker.NewContainer(ctx, opts)
+	c, err := firecracker.NewContainer(env, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,14 +125,15 @@ func TestFirecrackerRun(t *testing.T) {
 }
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
-	rootDir := makeRootDir(t)
-	workDir := makeWorkDir(t, rootDir)
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := makeDir(t, "/tmp")
+	workDir := makeDir(t, rootDir)
 
 	path := filepath.Join(workDir, "world.txt")
 	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         "docker.io/library/busybox",
 		ActionWorkingDirectory: workDir,
@@ -95,7 +141,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		MemSizeMB:              100,
 		EnableNetworking:       false,
 	}
-	c, err := firecracker.NewContainer(ctx, opts)
+	c, err := firecracker.NewContainer(env, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,8 +189,9 @@ func TestFirecrackerFileMapping(t *testing.T) {
 	numFiles := 100
 	fileSizeBytes := int64(1000)
 	ctx := context.Background()
+	env := getTestEnv(ctx, t)
 
-	rootDir := makeRootDir(t)
+	rootDir := makeDir(t, "/tmp")
 	subDirs := []string{"a", "b", "c", "d", "e"}
 	files := make([]string, 0, numFiles)
 
@@ -180,7 +227,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		MemSizeMB:              100,
 		EnableNetworking:       false,
 	}
-	c, err := firecracker.NewContainer(ctx, opts)
+	c, err := firecracker.NewContainer(env, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,4 +246,92 @@ func TestFirecrackerFileMapping(t *testing.T) {
 			t.Fatalf("File %q not found in workspace.", fullPath)
 		}
 	}
+}
+
+func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := makeDir(t, "/tmp")
+	workDir := makeDir(t, rootDir)
+
+	path := filepath.Join(workDir, "world.txt")
+	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GREETING", Value: "Hello"},
+		},
+	}
+	expectedResult := &interfaces.CommandResult{
+		ExitCode:           0,
+		Stdout:             []byte("Hello world"),
+		Stderr:             []byte("foo"),
+		CommandDebugString: "(firecracker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
+	}
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         "docker.io/library/busybox",
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              100,
+		EnableNetworking:       false,
+		AllowSnapshotStart:     true,
+	}
+	c, err := firecracker.NewContainer(env, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Run will handle the full lifecycle: no need to call Remove() here.
+	firstRunStart := time.Now()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory)
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+	firstRunDuration := time.Since(firstRunStart)
+	assert.Equal(t, expectedResult, res)
+
+	// Now do the same thing again, but with a twist. The attached
+	// files and command run will be different. This command would
+	// fail if the new workspace were not properly attached.
+	workDir = makeDir(t, rootDir)
+	opts.ActionWorkingDirectory = workDir
+
+	path = filepath.Join(workDir, "mars.txt")
+	if err := ioutil.WriteFile(path, []byte("mars"), 0660); err != nil {
+		t.Fatal(err)
+	}
+	cmd = &repb.Command{
+		Arguments: []string{"sh", "-c", `printf "$GREETING from $(cat mars.txt)" && printf "bar" >&2`},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GREETING", Value: "Hello"},
+		},
+	}
+	expectedResult = &interfaces.CommandResult{
+		ExitCode:           0,
+		Stdout:             []byte("Hello from mars"),
+		Stderr:             []byte("bar"),
+		CommandDebugString: "(firecracker) [sh -c printf \"$GREETING from $(cat mars.txt)\" && printf \"bar\" >&2]",
+	}
+
+	// This should resume the previous snapshot.
+	c, err = firecracker.NewContainer(env, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Run will handle the full lifecycle: no need to call Remove() here.
+	secondRunStart := time.Now()
+	res = c.Run(ctx, cmd, opts.ActionWorkingDirectory)
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+	secondRunDuration := time.Since(secondRunStart)
+
+	assert.Equal(t, expectedResult, res)
+
+	// This should be significantly faster because it's started from a
+	// snapshot.
+	assert.Less(t, secondRunDuration, firstRunDuration/2)
 }

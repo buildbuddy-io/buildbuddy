@@ -765,7 +765,9 @@ func getTree(ctx context.Context, env environment.Env, instanceName string, root
 			if !ok {
 				return digest.MissingDigestError(child.GetDigest())
 			}
-			fetchDirFn(childDir, newRoot)
+			if err := fetchDirFn(childDir, newRoot); err != nil {
+				return err
+			}
 		}
 		for _, symlinkNode := range dir.GetSymlinks() {
 			if err := os.Symlink(symlinkNode.GetTarget(), symlinkNode.GetName()); err != nil {

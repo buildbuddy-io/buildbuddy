@@ -8,8 +8,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis",
     visibility = ["//visibility:public"],
     deps = [
-        "//server/testutil/app",
+        "//enterprise/server/util/redisutil",
+        "//server/testutil/testfs",
         "//server/util/log",
+        "@com_github_go_redis_redis_v8//:redis",
         "@com_github_stretchr_testify//assert",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],

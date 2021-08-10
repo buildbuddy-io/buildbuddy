@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -27,7 +28,9 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 		outputFile,
 		fmt.Sprintf("%dK", sizeBytes/1e3),
 	}
-	if out, err := exec.CommandContext(ctx, args[0], args[1:]...).CombinedOutput(); err != nil {
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Errorf("Error running %q: %s %s", cmd.String(), err, out)
 		return status.InternalErrorf("%s: %s", err, out)
 	}
 	return nil

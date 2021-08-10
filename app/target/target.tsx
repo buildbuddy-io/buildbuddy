@@ -19,6 +19,7 @@ interface Props {
 
   configuredEvent: invocation.InvocationEvent;
   completedEvent: invocation.InvocationEvent;
+  skippedEvent: invocation.InvocationEvent;
   testResultEvents: invocation.InvocationEvent[];
   testSummaryEvent: invocation.InvocationEvent;
   actionEvents: invocation.InvocationEvent[];
@@ -41,17 +42,37 @@ export default class TargetComponent extends React.Component {
   }
 
   getStatusIcon(status: build_event_stream.TestStatus) {
+    if (this.props?.skippedEvent) {
+      return "/image/skip-forward.svg";
+    }
+
+    if (!this.props?.testSummaryEvent) {
+      return this.props?.completedEvent?.buildEvent?.completed?.success
+        ? "/image/check-circle.svg"
+        : "/image/x-circle.svg";
+    }
+
     switch (status) {
       case build_event_stream.TestStatus.PASSED:
         return "/image/check-circle.svg";
       case build_event_stream.TestStatus.FLAKY:
-        return "/image/help-circle.svg";
+        return "/image/flaky.svg";
+      case build_event_stream.TestStatus.TIMEOUT:
+        return "/image/clock.svg";
       default:
         return "/image/x-circle.svg";
     }
   }
 
   getStatusTitle(status: build_event_stream.TestStatus) {
+    if (this.props?.skippedEvent) {
+      return "Skipped";
+    }
+
+    if (!this.props?.testSummaryEvent) {
+      return this.props?.completedEvent?.buildEvent?.completed?.success ? "Success" : "Failure";
+    }
+
     switch (status) {
       case build_event_stream.TestStatus.PASSED:
         return "Passed";
@@ -125,6 +146,16 @@ export default class TargetComponent extends React.Component {
     return b.buildEvent.action.exitCode - a.buildEvent.action.exitCode;
   }
 
+  getTime() {
+    if (this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis) {
+      return format.formatTimestampMillis(this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis);
+    }
+    if (this.props?.completedEvent?.eventTime?.seconds) {
+      return format.formatTimestampMillis(+this.props?.completedEvent?.eventTime.seconds * 1000);
+    }
+    return format.formatTimestampMillis(+this.props?.configuredEvent?.eventTime?.seconds * 1000);
+  }
+
   render() {
     let resultEvents = this.props.testResultEvents?.sort(this.resultSort) || [];
     let actionEvents = this.props.actionEvents?.sort(this.actionSort) || [];
@@ -132,7 +163,6 @@ export default class TargetComponent extends React.Component {
     for (const resultEvent of resultEvents) {
       files = files.concat(resultEvent?.buildEvent?.testResult?.testActionOutput || []);
     }
-    console.log(actionEvents);
     return (
       <div>
         <div className="shelf">
@@ -155,37 +185,17 @@ export default class TargetComponent extends React.Component {
             </div>
             <div className="titles">
               <div className="title">{this.props.targetLabel}</div>
-              <div className="subtitle">
-                {this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis
-                  ? format.formatTimestampMillis(
-                      this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis
-                    )
-                  : format.formatTimestampMillis(+this.props?.completedEvent?.eventTime.seconds * 1000)}
-              </div>
+              <div className="subtitle">{this.getTime()}</div>
             </div>
             <div className="details">
-              {this.props?.testSummaryEvent && (
-                <div className="detail">
-                  <img
-                    className="icon"
-                    src={this.getStatusIcon(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
-                  />
-                  {this.getStatusTitle(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
-                </div>
-              )}
-              {!this.props?.testSummaryEvent && (
-                <div className="detail">
-                  <img
-                    className="icon"
-                    src={
-                      this.props?.completedEvent?.buildEvent?.completed?.success
-                        ? "/image/check-circle.svg"
-                        : "/image/x-circle.svg"
-                    }
-                  />
-                  {this.props?.completedEvent?.buildEvent?.completed?.success ? "Succeeded" : "Failed"}
-                </div>
-              )}
+              <div className="detail">
+                <img
+                  className="icon status"
+                  src={this.getStatusIcon(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
+                />
+                {this.getStatusTitle(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
+              </div>
+
               {this.props?.testSummaryEvent && (
                 <div className="detail">
                   <img className="icon" src="/image/hash.svg" />

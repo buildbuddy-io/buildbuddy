@@ -57,6 +57,10 @@
   transition: 200ms ease;
 }
 
+.outlined-button:focus {
+  border: 1px solid rgba(20, 20, 20, 0.5);
+}
+
 .outlined-button.destructive {
   color: #c62828;
 }

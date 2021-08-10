@@ -1,0 +1,8 @@
+.checkbox-input {
+  --checkbox-size: 16px;
+
+  cursor: pointer;
+  margin: 0;
+  width: var(--checkbox-size);
+  height: var(--checkbox-size);
+}

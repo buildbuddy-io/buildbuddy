@@ -1,5 +1,6 @@
 load("@npm//@bazel/typescript:index.bzl", "ts_library")
 load("@npm//@bazel/esbuild:index.bzl", "esbuild")
+load("//rules/sha:index.bzl", "sha")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -56,6 +57,8 @@ genrule(
         "//app/components/modal:modal.css",
         "//app/components/popup:popup.css",
         "//app/components/select:select.css",
+        "//app/components/radio:radio.css",
+        "//app/components/checkbox:checkbox.css",
     ],
     outs = ["style.css"],
     cmd_bash = """
@@ -68,8 +71,6 @@ genrule(
         cat out > $@;
     """,
 )
-
-load("//rules/sha:index.bzl", "sha")
 
 sha(
     name = "sha",

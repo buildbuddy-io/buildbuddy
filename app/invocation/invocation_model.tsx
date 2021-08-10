@@ -26,6 +26,7 @@ export default class InvocationModel {
   failedTest: build_event_stream.BuildEvent[] = [];
   brokenTest: build_event_stream.BuildEvent[] = [];
   flakyTest: build_event_stream.BuildEvent[] = [];
+  timeoutTest: build_event_stream.BuildEvent[] = [];
   files: build_event_stream.NamedSetOfFiles[] = [];
   structuredCommandLine: command_line.CommandLine[] = [];
   finished: build_event_stream.BuildFinished;
@@ -50,6 +51,7 @@ export default class InvocationModel {
   buildMetadataMap = new Map<string, string>();
   configuredMap = new Map<string, invocation.InvocationEvent>();
   completedMap = new Map<string, invocation.InvocationEvent>();
+  skippedMap = new Map<string, invocation.InvocationEvent>();
   testResultMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
   testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
   actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
@@ -96,8 +98,12 @@ export default class InvocationModel {
         if (buildEvent.started) model.started = buildEvent.started as build_event_stream.BuildStarted;
         if (buildEvent.expanded) model.expanded = buildEvent as build_event_stream.BuildEvent;
         if (buildEvent.finished) model.finished = buildEvent.finished as build_event_stream.BuildFinished;
-        if (buildEvent.aborted && buildEvent.aborted.reason.toString().toLowerCase() != "skipped")
+        if (buildEvent.aborted && buildEvent.aborted.reason == build_event_stream.Aborted.AbortReason.SKIPPED) {
+          model.skipped.push(buildEvent as build_event_stream.BuildEvent);
+          model.skippedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
+        } else if (buildEvent.aborted) {
           model.aborted = buildEvent as build_event_stream.BuildEvent;
+        }
         if (buildEvent.buildToolLogs) model.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         if (buildEvent.workspaceStatus) {
           model.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
@@ -127,7 +133,8 @@ export default class InvocationModel {
           model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         }
         if (buildEvent.unstructuredCommandLine) {
-          model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+          model.unstructuredCommandLine =
+            buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
         }
       }
     }
@@ -141,6 +148,8 @@ export default class InvocationModel {
         model.brokenTest.push(buildEvent as build_event_stream.BuildEvent);
       } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.PASSED) {
         model.succeededTest.push(buildEvent as build_event_stream.BuildEvent);
+      } else if (testResult && testResult.overallStatus == build_event_stream.TestStatus.TIMEOUT) {
+        model.timeoutTest.push(buildEvent as build_event_stream.BuildEvent);
       } else if (testResult) {
         model.failedTest.push(buildEvent as build_event_stream.BuildEvent);
       }
@@ -149,10 +158,6 @@ export default class InvocationModel {
         model.succeeded.push(buildEvent as build_event_stream.BuildEvent);
       } else {
         model.failed.push(buildEvent as build_event_stream.BuildEvent);
-      }
-
-      if (buildEvent.aborted && buildEvent.aborted.reason.toString().toLowerCase() == "skipped") {
-        model.skipped.push(buildEvent as build_event_stream.BuildEvent);
       }
     }
 
@@ -447,18 +452,18 @@ export default class InvocationModel {
   getStatusIcon() {
     let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
     if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
-      return <img className="icon" src="/image/help-circle.svg" />;
+      return <img className="icon status" src="/image/help-circle.svg" />;
     }
     if (!this.started) {
-      return <img className="icon" src="/image/help-circle.svg" />;
+      return <img className="icon status" src="/image/help-circle.svg" />;
     }
     if (!this.finished) {
-      return <img className="icon" src="/image/play-circle.svg" />;
+      return <img className="icon status" src="/image/play-circle.svg" />;
     }
     return this.finished.exitCode.code == 0 ? (
-      <img className="icon" src="/image/check-circle.svg" />
+      <img className="icon status" src="/image/check-circle.svg" />
     ) : (
-      <img className="icon" src="/image/x-circle.svg" />
+      <img className="icon status" src="/image/x-circle.svg" />
     );
   }
 
@@ -471,7 +476,7 @@ export default class InvocationModel {
   }
 
   getDuration(completionTime: any, beginTime: any) {
-    if (!completionTime || !beginTime) return "";
+    if (!completionTime || !beginTime) return "0";
     let nanos = (+completionTime.nanos - +beginTime.nanos) / 1000000000;
     return `${(+completionTime.seconds - +beginTime.seconds + nanos).toFixed(3)}`;
   }

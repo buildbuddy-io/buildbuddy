@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "firecracker",
     srcs = [
+        "containeropts.go",
         "firecracker.go",
         "firecracker_darwin.go",
     ],
@@ -16,6 +17,7 @@ go_library(
         "@io_bazel_rules_go//go/platform:darwin": [
             "//enterprise/server/remote_execution/container",
             "//proto:remote_execution_go_proto",
+            "//server/environment",
             "//server/interfaces",
             "//server/util/status",
         ],
@@ -23,11 +25,14 @@ go_library(
             "//enterprise:bundle",
             "//enterprise/server/remote_execution/commandutil",
             "//enterprise/server/remote_execution/container",
+            "//enterprise/server/remote_execution/snaploader",
+            "//enterprise/server/util/container",
             "//enterprise/server/util/ext4",
             "//enterprise/server/util/networking",
             "//enterprise/server/util/vsock",
             "//proto:remote_execution_go_proto",
             "//proto:vmexec_go_proto",
+            "//server/environment",
             "//server/interfaces",
             "//server/util/disk",
             "//server/util/log",
@@ -49,11 +54,18 @@ go_test(
     tags = ["manual"],  # Don't include this target in wildcard patterns
     deps = [
         ":firecracker",
+        "//enterprise/server/remote_execution/filecache",
         "//proto:remote_execution_go_proto",
+        "//server/backends/disk_cache",
+        "//server/config",
         "//server/interfaces",
+        "//server/remote_cache/action_cache_server",
+        "//server/remote_cache/byte_stream_server",
+        "//server/remote_cache/content_addressable_storage_server",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/util/disk",
         "@com_github_stretchr_testify//assert",
+        "@go_googleapis//google/bytestream:bytestream_go_proto",
     ],
 )

@@ -1,8 +1,51 @@
+.input-tree {
+  width: 200px;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 6px 4px 4px 14px;
+  flex-shrink: 0;
+  max-height: 250px;
+  overflow: scroll;
+  box-sizing: border-box;
+}
+
+.input-tree-node {
+  margin-bottom: 2px;
+  cursor: pointer;
+}
+
+.input-tree-node-name:hover {
+  opacity: 0.5;
+}
+
+.input-tree-node-children {
+  border-left: 1px solid #ccc;
+  padding-left: 10px;
+  margin-left: 8px;
+}
+
+.input-tree-node-name {
+  display: flex;
+  font-size: 12px;
+}
+
+.input-tree-node-label {
+  padding-top: 1px;
+}
+
+.file-icon {
+  margin-right: 8px;
+  margin-left: 0px;
+  padding-top: 1.5px;
+}
+
 .action-timeline {
   display: flex;
   border-radius: 4px;
+  height: 8px;
   overflow: hidden;
-  margin: 4px 0;
+  margin-top: 6px;
+  margin-bottom: 10px;
 }
 
 .action-timeline .timeline-event {
@@ -12,9 +55,11 @@
   width: 0;
 }
 
-.action-timeline .timeline-event-label {
-  width: 100%;
-  padding: 2px 4px;
+.action-timeline .timeline-event-gray {
+  width: 80%;
+  text-align: right;
+  font-size: 12px;
+  color: rgb(38, 50, 56, 0.7);
   box-sizing: border-box;
   text-overflow: ellipsis;
   overflow: hidden;
@@ -40,16 +85,17 @@
 
 .action-list {
   display: block;
-  color: #222;
 }
 
 .action-section {
   display: flex;
   margin-bottom: 16px;
+  color: #222;
 }
 
 .action-section div {
   flex-grow: 1;
+  font-size: 13px;
 }
 
 .action-section div.action-property-title {
@@ -60,6 +106,7 @@
   text-align: right;
   margin-right: 16px;
   font-weight: 700;
+  font-size: 14px;
 }
 
 .cache-sections {
@@ -370,6 +417,15 @@
 .metadata-detail {
   font-weight: 300;
   color: #444;
+  display: flex;
+  justify-content: space-between;
+}
+
+.metadata-detail .bar-description {
+  font-weight: 200;
+  font-size: 11;
+  margin-right: 2px;
+  opacity: 0.7;
 }
 
 .prop-name {
@@ -379,6 +435,10 @@
 
 .prop-value {
   color: #444;
+}
+
+.prop-link:hover {
+  opacity: 0.7;
 }
 
 .prop-value .detail {
@@ -445,4 +505,8 @@ svg.invocation-query-graph .nodes text {
 svg.invocation-query-graph .nodes rect {
   rx: 8px;
   ry: 8px;
+}
+
+.invocation .build-logs-card .loading.loading-dark {
+  background: transparent;
 }

@@ -318,17 +318,27 @@ func TestBasicActionIO(t *testing.T) {
 }
 
 func TestComplexActionIO(t *testing.T) {
-	t.Skip() // TODO: De-flake and re-enable.
-
 	tmpDir := testfs.MakeTempDir(t)
-	sizes := []int{
-		10e1, 10e2, 10e3, 10e4, 10e5, 10e6,
-		10e1, 10e2, 10e3, 10e4, 10e5, 10e6,
+	// Write a mix of small and large files, to ensure we can handle batching
+	// lots of small files that fit within the gRPC limit, as well as individual
+	// that exceed the gRPC limit.
+	smallSizes := []int{
+		1e2, 1e3, 1e4, 1e5, 1e6,
+		1e2, 1e3, 1e4, 1e5, 1e6,
 	}
-	inputDirs := []string{"" /*input root*/, "a", "b", "a/child", "b/child"}
+	largeSizes := []int{1e7}
+	// Write files to several different directories to ensure we handle directory
+	// creation properly.
+	dirLayout := map[string][]int{
+		"" /*root*/ : smallSizes,
+		"a":          smallSizes,
+		"b":          smallSizes,
+		"a/child":    smallSizes,
+		"b/child":    largeSizes,
+	}
 	outputFiles := []string{}
 	contents := map[string]string{}
-	for _, dir := range inputDirs {
+	for dir, sizes := range dirLayout {
 		if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0777); err != nil {
 			assert.FailNow(t, err.Error())
 		}
@@ -386,7 +396,7 @@ func TestComplexActionIO(t *testing.T) {
 	}
 	missing := []string{}
 	for parent, nSkippedBytes := range skippedBytes {
-		for _, dir := range inputDirs {
+		for dir, sizes := range dirLayout {
 			for i, _ := range sizes {
 				inputRelPath := filepath.Join(dir, fmt.Sprintf("file_%d.input", i))
 				outputRelPath := filepath.Join(parent, dir, fmt.Sprintf("file_%d.output", i))

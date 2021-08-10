@@ -11,7 +11,7 @@ import FilterComponent from "../filter/filter";
 import OrgJoinRequestsComponent from "../org/org_join_requests";
 import HistoryInvocationCardComponent from "./history_invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
-import { getProtoFilterParams } from "../filter/filter_util";
+import { getProtoFilterParams, ROLE_PARAM_NAME } from "../filter/filter_util";
 
 interface State {
   invocations: invocation.Invocation[];
@@ -60,7 +60,7 @@ export default class HistoryComponent extends React.Component {
   ]);
 
   private isFilteredToWorkflows() {
-    return this.props.search?.get("workflows") === "true";
+    return this.props.search?.get(ROLE_PARAM_NAME) === "CI_RUNNER";
   }
 
   getBuilds(nextPage?: boolean) {
@@ -73,9 +73,10 @@ export default class HistoryComponent extends React.Component {
         branchName: this.props.branch,
         commitSha: this.props.commit,
         groupId: this.props.user?.selectedGroup?.id,
-        role: this.isFilteredToWorkflows() ? "CI_RUNNER" : "",
+        role: filterParams.role,
         updatedAfter: filterParams.updatedAfter,
         updatedBefore: filterParams.updatedBefore,
+        status: filterParams.status,
       }),
       pageToken: nextPage ? this.state.pageToken : "",
       // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
@@ -110,8 +111,10 @@ export default class HistoryComponent extends React.Component {
     const request = new invocation.GetInvocationStatRequest({
       aggregationType,
       query: new invocation.InvocationStatQuery({
+        role: filterParams.role,
         updatedBefore: filterParams.updatedBefore,
         updatedAfter: filterParams.updatedAfter,
+        status: filterParams.status,
       }),
     });
     rpcService.service.getInvocationStat(request).then((response) => {
@@ -129,8 +132,10 @@ export default class HistoryComponent extends React.Component {
     const request = new invocation.GetInvocationStatRequest({
       aggregationType: invocation.AggType.GROUP_ID_AGGREGATION_TYPE,
       query: new invocation.InvocationQuery({
+        role: filterParams.role,
         updatedAfter: filterParams.updatedAfter,
         updatedBefore: filterParams.updatedBefore,
+        status: filterParams.status,
       }),
     });
     rpcService.service.getInvocationStat(request).then((response) => {
@@ -153,7 +158,7 @@ export default class HistoryComponent extends React.Component {
     this.getBuilds();
 
     this.subscription = rpcService.events.subscribe({
-      next: (name) => name == "refresh" && (this.props.hash ? this.getStats() : this.getBuilds()),
+      next: (name) => name == "refresh" && this.handleSidebarItemClicked(),
     });
     this.subscription.add(fromEvent(window, "storage").subscribe(this.handleStorage.bind(this)));
   }
@@ -161,8 +166,6 @@ export default class HistoryComponent extends React.Component {
   componentDidUpdate(prevProps: Props) {
     if (this.props.hash !== prevProps.hash || this.props.search !== prevProps.search) {
       this.getStats();
-    }
-    if (this.props.search !== prevProps.search) {
       this.getSummaryStats();
       this.getBuilds();
     }
@@ -174,6 +177,32 @@ export default class HistoryComponent extends React.Component {
 
   handleStorage() {
     this.setState({ invocationIdToCompare: localStorage["invocation_id_to_compare"] });
+  }
+
+  handleSidebarItemClicked() {
+    if (this.props.username) {
+      this.handleUsersClicked();
+      return;
+    }
+    if (this.props.hostname) {
+      this.handleHostsClicked();
+      return;
+    }
+    if (this.props.commit) {
+      this.handleCommitsClicked();
+      return;
+    }
+    if (this.props.repo) {
+      this.handleReposClicked();
+      return;
+    }
+
+    if (this.props.hash) {
+      this.getStats();
+      return;
+    }
+
+    this.getBuilds();
   }
 
   handleInvocationClicked(invocation: invocation.Invocation) {
@@ -263,48 +292,51 @@ export default class HistoryComponent extends React.Component {
       <div className="history">
         <div className="shelf">
           <div className="container">
-            {!this.props.user?.isInDefaultGroup() && this.state.invocations.length > 0 && (
+            {!capabilities.globalFilter && !this.props.user?.isInDefaultGroup() && this.state.invocations.length > 0 && (
               <div
                 onClick={this.handleCreateOrgClicked.bind(this)}
                 className={`org-button ${!this.props.user?.selectedGroup?.ownedDomain && "clickable"}`}>
                 {this.props.user?.selectedGroup?.ownedDomain || "Create Organization"}
               </div>
             )}
-            <div className="breadcrumbs">
-              {this.props.user && this.props.user?.selectedGroupName() && (
-                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
-                  {this.props.user?.selectedGroupName()}
-                </span>
-              )}
-              {(this.props.username || this.props.hash == "#users") && (
-                <span onClick={this.handleUsersClicked.bind(this)} className="clickable">
-                  Users
-                </span>
-              )}
-              {(this.props.hostname || this.props.hash == "#hosts") && (
-                <span onClick={this.handleHostsClicked.bind(this)} className="clickable">
-                  Hosts
-                </span>
-              )}
-              {(this.props.repo || this.props.hash == "#repos") && (
-                <span onClick={this.handleReposClicked.bind(this)} className="clickable">
-                  Repos
-                </span>
-              )}
-              {(this.props.branch || this.props.hash == "#branches") && (
-                <span onClick={this.handleBranchesClicked.bind(this)} className="clickable">
-                  Branches
-                </span>
-              )}
-              {(this.props.commit || this.props.hash == "#commits") && (
-                <span onClick={this.handleCommitsClicked.bind(this)} className="clickable">
-                  Commits
-                </span>
-              )}
-              {scope && <span>{scope}</span>}
-              {!this.props.username && !this.props.hostname && this.props.hash == "" && (
-                <>{this.isFilteredToWorkflows() ? <span>Workflow runs</span> : <span>Builds</span>}</>
-              )}
+            <div className="top-bar">
+              <div className="breadcrumbs">
+                {this.props.user && this.props.user?.selectedGroupName() && (
+                  <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
+                    {this.props.user?.selectedGroupName()}
+                  </span>
+                )}
+                {(this.props.username || this.props.hash == "#users") && (
+                  <span onClick={this.handleUsersClicked.bind(this)} className="clickable">
+                    Users
+                  </span>
+                )}
+                {(this.props.hostname || this.props.hash == "#hosts") && (
+                  <span onClick={this.handleHostsClicked.bind(this)} className="clickable">
+                    Hosts
+                  </span>
+                )}
+                {(this.props.repo || this.props.hash == "#repos") && (
+                  <span onClick={this.handleReposClicked.bind(this)} className="clickable">
+                    Repos
+                  </span>
+                )}
+								{(this.props.branch || this.props.hash == "#branches") && (
+										<span onClick={this.handleBranchesClicked.bind(this)} className="clickable">
+										Branches
+										</span>
+								)}
+                {(this.props.commit || this.props.hash == "#commits") && (
+                  <span onClick={this.handleCommitsClicked.bind(this)} className="clickable">
+                    Commits
+                  </span>
+                )}
+                {scope && <span>{scope}</span>}
+                {!this.props.username && !this.props.hostname && this.props.hash == "" && (
+                  <>{this.isFilteredToWorkflows() ? <span>Workflow runs</span> : <span>Builds</span>}</>
+                )}
+              </div>
+              {capabilities.globalFilter && <FilterComponent search={this.props.search} />}
             </div>
             <div className="titles">
               <div className="title">
@@ -423,7 +455,6 @@ export default class HistoryComponent extends React.Component {
           )}
         </div>
         {this.props.hash === "#users" && <OrgJoinRequestsComponent user={this.props.user} />}
-        {capabilities.globalFilter && <FilterComponent search={this.props.search} />}
         {this.state.invocations.length > 0 && (
           <div className="container nopadding-dense">
             {!slice &&

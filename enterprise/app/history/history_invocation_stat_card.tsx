@@ -78,6 +78,10 @@ export default class HistoryInvocationStatCardComponent extends React.Component 
   }
 
   render() {
+    if (!this.props.invocationStat.name) {
+      return null;
+    }
+
     return (
       <div onClick={this.handleStatClicked.bind(this)} className={`clickable card ${this.getClass()}`}>
         <div className="content">

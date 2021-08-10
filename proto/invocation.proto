@@ -180,8 +180,30 @@ message InvocationQuery {
   // The timestamp up to which the build was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 8;
 
+  // Status of the build. If multiple are specified, they are combined with
+  // "OR".
+  repeated OverallStatus status = 9;
+
   // The git branch used for the build.
-  string branch_name = 9;
+  string branch_name = 10;
+}
+
+// OverallStatus is a status representing both the completion status and
+// success status of an invocation.
+enum OverallStatus {
+  UNKNOWN_OVERALL_STATUS = 0;
+
+  // Status representing a completed, successful invocation.
+  SUCCESS = 1;
+
+  // Status representing a completed, unsuccessful invocation.
+  FAILURE = 2;
+
+  // Status representing a partial invocation.
+  IN_PROGRESS = 3;
+
+  // Status representing a disconnected invocation.
+  DISCONNECTED = 4;
 }
 
 message InvocationSort {
@@ -296,8 +318,12 @@ message InvocationStatQuery {
   // The timestamp up to which the build was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 8;
 
+  // Status of the build. If multiple are specified, they are combined with
+  // "OR".
+  repeated OverallStatus status = 9;
+
   // The git branch used for the build.
-  string branch_name = 9;
+  string branch_name = 10;
 }
 
 message GetInvocationStatRequest {
@@ -389,8 +415,18 @@ message TrendQuery {
   // OR.
   repeated string role = 6;
 
+  // The timestamp on or after which the build was last updated (inclusive).
+  google.protobuf.Timestamp updated_after = 7;
+
+  // The timestamp up to which the build was last updated (exclusive).
+  google.protobuf.Timestamp updated_before = 8;
+
+  // Status of the build. If multiple are specified, they are combined with
+  // "OR".
+  repeated OverallStatus status = 9;
+
   // The git branch used for the build.
-  string branch_name = 7;
+  string branch_name = 10;
 }
 
 message GetTrendRequest {
@@ -400,7 +436,9 @@ message GetTrendRequest {
 
   // The maximum number of past days to aggregate. If not set, the server will
   // pick an appropriate value. Probably 7.
-  int32 lookback_window_days = 3;
+  // DEPRECATED: Use `query.updated_after` and `query.updated_before` instead.
+  // TODO(bduffany): Delete this once clients no longer use it.
+  int32 lookback_window_days = 3 [deprecated = true];
 }
 
 message GetTrendResponse {

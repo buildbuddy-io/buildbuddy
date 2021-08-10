@@ -28,9 +28,6 @@ const (
 	gRPCMaxSize        = int64(4000000)
 )
 
-// TODO(tylerw): This could probably go into util/ and be used by the BuildBuddy
-// UI to introspect cache objects.
-
 func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.InstanceNameDigest, out io.Writer) error {
 	if bsClient == nil {
 		return status.FailedPreconditionError("ByteStreamClient not configured")
@@ -294,6 +291,7 @@ func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName 
 // uploads together and falling back to bytestream uploads for large files.
 type BatchCASUploader struct {
 	ctx              context.Context
+	fileCache        interfaces.FileCache
 	byteStreamClient bspb.ByteStreamClient
 	casClient        repb.ContentAddressableStorageClient
 	eg               *errgroup.Group
@@ -315,9 +313,15 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 		return nil, status.InvalidArgumentError("Missing CAS client")
 	}
 
+	var fileCache interfaces.FileCache
+	if env.GetFileCache() != nil {
+		fileCache = env.GetFileCache()
+	}
+
 	eg, ctx := errgroup.WithContext(ctx)
 	return &BatchCASUploader{
 		ctx:              ctx,
+		fileCache:        fileCache,
 		eg:               eg,
 		byteStreamClient: bsClient,
 		casClient:        casClient,
@@ -392,6 +396,12 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Add output files to the filecache.
+	if ul.fileCache != nil {
+		ul.fileCache.AddFile(d, path)
+	}
+
 	// Note: uploader.Upload will close the file.
 	if err := ul.Upload(d, f); err != nil {
 		return nil, err
@@ -436,30 +446,31 @@ func (*bytesReadSeekCloser) Close() error { return nil }
 // UploadDirectoryToCAS uploads all the files in a given directory to the CAS
 // as well as the directory structure, and returns the digest of the root
 // Directory proto that can be used to fetch the uploaded contents.
-func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName, rootDirPath string) (*repb.Digest, error) {
+func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName, rootDirPath string) (*repb.Digest, *repb.Digest, error) {
 	ul, err := NewBatchCASUploader(ctx, env, instanceName)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Recursively find and upload all descendant dirs.
 	visited, rootDirectoryDigest, err := uploadDir(ul, rootDirPath, nil /*=visited*/)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(visited) == 0 {
-		return nil, status.InternalError("empty directory list after uploading directory tree; this should never happen")
+		return nil, nil, status.InternalError("empty directory list after uploading directory tree; this should never happen")
 	}
 	// Upload the tree, which consists of the root dir as well as all descendant
 	// dirs.
 	rootTree := &repb.Tree{Root: visited[0], Children: visited[1:]}
-	if _, err := ul.UploadProto(rootTree); err != nil {
-		return nil, err
+	treeDigest, err := ul.UploadProto(rootTree)
+	if err != nil {
+		return nil, nil, err
 	}
 	if err := ul.Wait(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return rootDirectoryDigest, nil
+	return rootDirectoryDigest, treeDigest, nil
 }
 
 func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) ([]*repb.Directory, *repb.Digest, error) {

@@ -260,7 +260,8 @@ button {
   margin-right: 8px;
 }
 
-.shelf .details img.buildkite {
+.shelf .details img.buildkite,
+.shelf .details img.status {
   opacity: 1;
 }
 
@@ -433,6 +434,14 @@ button {
 
 .card.card-failure {
   border-left: 6px solid #f44336;
+}
+
+.card.card-flaky {
+  border-left: 6px solid #ff6f00;
+}
+
+.card.card-timeout {
+  border-left: 6px solid #616161;
 }
 
 .card.card-broken {
@@ -1891,6 +1900,7 @@ code .comment {
   flex-direction: column;
   flex-grow: 1;
   overflow: auto;
+  overflow-y: scroll;
   background-color: #fff;
 }
 

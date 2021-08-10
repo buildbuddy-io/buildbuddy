@@ -1,0 +1,8 @@
+.radio-input {
+  --radio-size: 16px;
+
+  cursor: pointer;
+  margin: 0;
+  width: var(--radio-size);
+  height: var(--radio-size);
+}

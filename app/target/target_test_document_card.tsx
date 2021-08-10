@@ -42,11 +42,12 @@ export default class TargetTestDocumentCardComponent extends React.Component {
     )?.uri;
 
     if (!testXMLUrl) {
+      this.setState({ testDocument: null });
       return;
     }
 
     if (!testXMLUrl.startsWith("bytestream://")) {
-      this.setState({ ...this.state, cacheEnabled: false });
+      this.setState({ testDocument: null, cacheEnabled: false });
       return;
     }
 
@@ -55,11 +56,11 @@ export default class TargetTestDocumentCardComponent extends React.Component {
       .then((contents: string) => {
         let parser = new DOMParser();
         let xmlDoc = parser.parseFromString(contents, "text/xml");
-        this.setState({ ...this.state, testDocument: xmlDoc });
+        this.setState({ testDocument: xmlDoc });
       })
       .catch(() => {
         this.setState({
-          ...this.state,
+          testDocument: null,
           testLog: "Error loading bytestream test.xml!",
         });
       });

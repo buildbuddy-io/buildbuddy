@@ -833,6 +833,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "com_github_firecracker_microvm_firecracker_go_sdk",
+        build_directives = [
+            "gazelle:resolve go github.com/containernetworking/cni/pkg/types/current @com_github_containernetworking_cni//pkg/types/current",
+        ],
         importpath = "github.com/firecracker-microvm/firecracker-go-sdk",
         replace = "github.com/tylerwilliams/firecracker-go-sdk",
         sum = "h1:HF6zrfB8fk6VtdbbyP7NGH00VyhQyFscoDjW0kz6z5g=",
@@ -1960,6 +1963,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:eSvu8Tmq6j2psUJqJrLcWH6K3w5Dwc+qipbaA6eVEN4=",
         version = "v1.11.13",
     )
+    go_repository(
+        name = "com_github_klauspost_pgzip",
+        importpath = "github.com/klauspost/pgzip",
+        sum = "h1:qnWYvvKqedOF2ulHpMG72XQol4ILEJ8k2wwRl/Km8oE=",
+        version = "v1.2.5",
+    )
+
     go_repository(
         name = "com_github_konsorten_go_windows_terminal_sequences",
         importpath = "github.com/konsorten/go-windows-terminal-sequences",
