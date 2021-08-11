@@ -237,13 +237,9 @@ export default class FilterComponent extends React.Component<FilterProps, State>
               // visible month to the Unix epoch... so always show the end
               // date when initially rendering the component
               shownDate={endDate}
-              staticRanges={
-                // We've added a custom "isDefault" prop to the date range
-                // that gets sent to our event handler, so casting to any
-                // here. (Also, the typings for this function are wrong,
-                // so we'd need the `any` regardless.)
-                presetDateRanges as any
-              }
+              // We want our `CustomDateRange` type here, which is compatible
+              // with the `StaticRange` type, so the cast to `any` is OK here.
+              staticRanges={presetDateRanges as any}
               // Disable textbox inputs, like "days from today", or "days until today".
               inputRanges={[]}
             />
