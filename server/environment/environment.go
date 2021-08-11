@@ -69,5 +69,6 @@ type Env interface {
 	GetMetricsCollector() interfaces.MetricsCollector
 	GetRepoDownloader() interfaces.RepoDownloader
 	GetWorkflowService() interfaces.WorkflowService
+	GetRunnerService() interfaces.RunnerService
 	GetGitProviders() interfaces.GitProviders
 }
