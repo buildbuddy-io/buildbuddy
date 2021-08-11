@@ -15,12 +15,14 @@ import router, {
 } from "../../../app/router/router";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import {
+  parseRoleParam,
+  toRoleParam,
   parseStatusParam,
-  statusToString,
   toStatusParam,
-  DATE_PARAM_FORMAT,
+  statusToString,
   getEndDate,
   getStartDate,
+  DATE_PARAM_FORMAT,
   DEFAULT_LAST_N_DAYS,
 } from "./filter_util";
 
@@ -94,10 +96,16 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     });
   }
 
-  private onRoleChange(role: string) {
+  private onRoleToggle(role: string, selected: Set<string>) {
+    selected = new Set(selected); // clone
+    if (selected.has(role)) {
+      selected.delete(role);
+    } else {
+      selected.add(role);
+    }
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
-      [ROLE_PARAM_NAME]: role,
+      [ROLE_PARAM_NAME]: toRoleParam(selected),
     });
   }
 
@@ -112,6 +120,15 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       ...Object.fromEntries(this.props.search.entries()),
       [STATUS_PARAM_NAME]: toStatusParam(selected),
     });
+  }
+
+  private renderRoleCheckbox(label: string, role: string, selected: Set<string>) {
+    return (
+      <label onClick={this.onRoleToggle.bind(this, role, selected)}>
+        <Checkbox checked={selected.has(role)} />
+        <span className={`role-badge ${role || "DEFAULT"}`}>{label}</span>
+      </label>
+    );
   }
 
   private renderStatusCheckbox(
@@ -136,6 +153,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const statusValue = this.props.search.get(STATUS_PARAM_NAME) || "";
 
     const isFiltering = Boolean(roleValue || statusValue);
+    const selectedRoles = new Set(parseRoleParam(roleValue));
     const selectedStatuses = new Set(parseStatusParam(statusValue));
 
     const isDateRangeSelected =
@@ -181,8 +199,9 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             {selectedStatuses.has(invocation.OverallStatus.DISCONNECTED) && (
               <span className="status-block disconnected" />
             )}
-            {roleValue === "CI" && <span className="role-badge CI">CI</span>}
-            {roleValue === "CI_RUNNER" && <span className="role-badge CI_RUNNER">Workflow</span>}
+            {selectedRoles.has("") && <span className="role-badge DEFAULT">Default</span>}
+            {selectedRoles.has("CI") && <span className="role-badge CI">CI</span>}
+            {selectedRoles.has("CI_RUNNER") && <span className="role-badge CI_RUNNER">Workflow</span>}
           </OutlinedButton>
           <Popup
             isOpen={this.state.isFilterMenuOpen}
@@ -192,18 +211,9 @@ export default class FilterComponent extends React.Component<FilterProps, State>
               <div className="option-group">
                 <div className="option-group-title">Role</div>
                 <div className="option-group-options">
-                  <label onClick={this.onRoleChange.bind(this, "")}>
-                    <Radio value="" checked={roleValue === ""} />
-                    <span>Any</span>
-                  </label>
-                  <label onClick={this.onRoleChange.bind(this, "CI")}>
-                    <Radio value="CI" checked={roleValue === "CI"} />
-                    <span className="role-badge CI">CI</span>
-                  </label>
-                  <label onClick={this.onRoleChange.bind(this, "CI_RUNNER")}>
-                    <Radio value="CI_RUNNER" checked={roleValue === "CI_RUNNER"} />
-                    <span className="role-badge CI_RUNNER">Workflow</span>
-                  </label>
+                  {this.renderRoleCheckbox("Default", "", selectedRoles)}
+                  {this.renderRoleCheckbox("CI", "CI", selectedRoles)}
+                  {this.renderRoleCheckbox("Workflow", "CI_RUNNER", selectedRoles)}
                 </div>
               </div>
               <div className="option-group">

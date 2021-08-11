@@ -77,7 +77,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     if (capabilities.globalFilter) {
       const filterParams = getProtoFilterParams(this.props.search);
       if (filterParams.role) {
-        request.query.role = [filterParams.role];
+        request.query.role = filterParams.role;
       } else {
         // Note: Technically we're filtering out workflows and unknown roles,
         // even though the user has selected "All roles". But we do this to

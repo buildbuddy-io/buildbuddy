@@ -93,6 +93,10 @@
   --status-color: #aaa;
 }
 
+.global-filter .role-badge.DEFAULT {
+  background: #eee;
+}
+
 .global-filter .square {
   width: var(--row-height);
   height: var(--row-height);
