@@ -1,4 +1,6 @@
 import React from "react";
+import capabilities from "../../../app/capabilities/capabilities";
+
 import {
   ResponsiveContainer,
   ComposedChart,
