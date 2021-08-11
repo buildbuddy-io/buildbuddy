@@ -35,7 +35,7 @@ export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams
 
 export function getDefaultStartDate(): Date {
   return moment()
-    .add(-30 + 1, "days")
+    .add(-DEFAULT_LAST_N_DAYS + 1, "days")
     .toDate();
 }
 
