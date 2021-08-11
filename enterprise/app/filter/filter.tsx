@@ -150,10 +150,9 @@ export default class FilterComponent extends React.Component<FilterProps, State>
         .toDate();
       return {
         label: formatDateRange(start, now, { now }),
-        isSelected: () => {
+        isSelected: () =>
           this.props.search.get(LAST_N_DAYS_PARAM_NAME) === String(n) ||
-            (!isDateRangeSelected && n === DEFAULT_LAST_N_DAYS);
-        },
+          (!isDateRangeSelected && n === DEFAULT_LAST_N_DAYS),
         range: () => ({
           startDate: start,
           endDate: now,
