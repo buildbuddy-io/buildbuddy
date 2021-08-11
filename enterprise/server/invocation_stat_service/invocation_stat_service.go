@@ -42,7 +42,7 @@ func (i *InvocationStatService) getAggColumn(aggType inpb.AggType) string {
 	case inpb.AggType_COMMIT_SHA_AGGREGATION_TYPE:
 		return "commit_sha"
 	case inpb.AggType_DATE_AGGREGATION_TYPE:
-		return i.h.DateFromUsecTimestamp("updated_at_usec")
+		return i.h.PTDateFromUsecTimestamp("updated_at_usec")
 	default:
 		log.Errorf("Unknown aggregation column type: %s", aggType)
 		return ""
@@ -58,7 +58,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 		return nil, status.ResourceExhaustedErrorf("Too many rows.")
 	}
 
-	q := query_builder.NewQuery(fmt.Sprintf("SELECT %s as name,", i.h.DateFromUsecTimestamp("updated_at_usec")) + `
+	q := query_builder.NewQuery(fmt.Sprintf("SELECT %s as name,", i.h.PTDateFromUsecTimestamp("updated_at_usec")) + `
 	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,
 	    COUNT(1) as total_num_builds,
 	    SUM(CASE WHEN duration_usec > 0 THEN 1 ELSE 0 END) as completed_invocation_count,
