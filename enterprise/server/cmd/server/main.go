@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
@@ -128,6 +129,12 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 		github.NewProvider(),
 		bitbucket.NewProvider(),
 	})
+
+	runnerService, err := runner.New(env)
+	if err != nil {
+		log.Fatalf("Error setting up runner: %s", err)
+	}
+	env.SetRunnerService(runnerService)
 
 	env.SetSplashPrinter(&splash.Printer{})
 }
