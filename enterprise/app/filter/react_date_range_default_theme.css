@@ -19,13 +19,18 @@
 }
 
 .rdrDateDisplayItem input {
-  cursor: pointer;
   height: 2.5em;
   line-height: 2.5em;
   border: 0px;
   background: transparent;
   width: 100%;
-  color: #849095;
+  color: black;
+  text-align: left;
+  padding: 0 8px;
+}
+
+.rdrDateDisplayItem input::placeholder {
+  color: #90a4ae;
 }
 
 .rdrDateDisplayItemActive {
@@ -33,7 +38,7 @@
 }
 
 .rdrDateDisplayItemActive input {
-  color: #7d888d;
+  color: black;
 }
 
 .rdrMonthAndYearWrapper {
@@ -80,7 +85,7 @@
   padding: 0;
   border: 0;
   border-radius: 5px;
-  background: #eff2f7;
+  background: #eceff1;
 }
 
 .rdrNextPrevButton:hover {
@@ -311,7 +316,7 @@
 .rdrDefinedRangesWrapper {
   font-size: 12px;
   width: 226px;
-  border-right: solid 1px #eff2f7;
+  border-right: solid 1px #eceff1;
   background: #fff;
 }
 
@@ -325,14 +330,14 @@
   cursor: pointer;
   display: block;
   outline: 0;
-  border-bottom: 1px solid #eff2f7;
+  border-bottom: 1px solid #eceff1;
   padding: 0;
   background: #fff;
 }
 
 .rdrStaticRange:hover .rdrStaticRangeLabel,
 .rdrStaticRange:focus .rdrStaticRangeLabel {
-  background: #eff2f7;
+  background: #eceff1;
 }
 
 .rdrStaticRangeLabel {

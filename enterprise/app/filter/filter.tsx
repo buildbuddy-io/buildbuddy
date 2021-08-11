@@ -254,6 +254,11 @@ export default class FilterComponent extends React.Component<FilterProps, State>
               staticRanges={presetDateRanges as any}
               // Disable textbox inputs, like "days from today", or "days until today".
               inputRanges={[]}
+              editableDateInputs
+              color="#263238"
+              rangeColors={["#263238"]}
+              startDatePlaceholder="Start date"
+              endDatePlaceholder="End date"
             />
           </Popup>
         </div>
