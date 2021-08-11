@@ -9,7 +9,6 @@ import { Subscription } from "rxjs";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
 import { getProtoFilterParams } from "../filter/filter_util";
 import router from "../../../app/router/router";
-import capabilities from "../../../app/capabilities/capabilities";
 
 const BITS_PER_BYTE = 8;
 
@@ -138,9 +137,7 @@ export default class TrendsComponent extends React.Component<Props> {
   }
 
   onBarClicked(hash: string, date: string) {
-    if (capabilities.globalFilter) {
-      router.navigateTo("/?start=" + date + "&end=" + date + hash);
-    }
+    router.navigateTo("/?start=" + date + "&end=" + date + hash);
   }
 
   render() {
@@ -194,7 +191,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 secondaryName="average build time seconds"
                 secondaryLine={true}
                 separateAxis={true}
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "") : null}
+                onBarClicked={this.onBarClicked.bind(this, "")}
               />
               <TrendsChartComponent
                 title="Build duration"
@@ -210,7 +207,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatSecondaryHoverValue={(value) => (value || 0).toFixed() + " seconds slowest"}
                 name="average build time seconds"
                 secondaryName="slowest build time seconds"
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "") : null}
+                onBarClicked={this.onBarClicked.bind(this, "")}
               />
 
               <CacheChartComponent
@@ -276,7 +273,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " users"}
                 name="users with builds"
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#users") : null}
+                onBarClicked={this.onBarClicked.bind(this, "#users")}
               />
               <TrendsChartComponent
                 title="Commits with builds"
@@ -286,7 +283,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " commits"}
                 name="commits with builds"
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#commits") : null}
+                onBarClicked={this.onBarClicked.bind(this, "#commits")}
               />
               <TrendsChartComponent
                 title="Hosts with builds"
@@ -296,7 +293,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " hosts"}
                 name="hosts with builds"
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#hosts") : null}
+                onBarClicked={this.onBarClicked.bind(this, "#hosts")}
               />
               <TrendsChartComponent
                 title="Repos with builds"
@@ -306,7 +303,7 @@ export default class TrendsComponent extends React.Component<Props> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " repos"}
                 name="repos with builds"
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#repos") : null}
+                onBarClicked={this.onBarClicked.bind(this, "#repos")}
               />
             </>
           )}
