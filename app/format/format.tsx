@@ -95,6 +95,9 @@ export function truncateList(list: string[]) {
   return list.join(", ");
 }
 
+/** Unix epoch expressed in local time. */
+export const LOCAL_EPOCH: Date = moment(0).toDate();
+
 export function formatTimestampUsec(timestamp: number | Long) {
   return formatTimestampMillis(+timestamp / 1000);
 }
@@ -113,10 +116,17 @@ export function formatTimestamp(timestamp: { seconds?: number | Long; nanos?: nu
 
 const DATE_RANGE_SEPARATOR = "\u2013";
 
-export function formatDateRange(startDate: Date, endDate: Date) {
-  // TODO: Use `new Intl.DateTimeFormat(...).formatRange` when supported by all browsers.
+export function formatDateRange(startDate: Date, endDate: Date, { now = new Date() } = {}) {
   let startFormat, endFormat;
-  const now = new Date();
+
+  // Special cases for date range picker default options
+  if (isSameDay(now, endDate)) {
+    if (isSameDay(startDate, LOCAL_EPOCH)) {
+      return "All time";
+    }
+    return `Last ${differenceInCalendarDays(startDate, endDate) + 1} days`;
+  }
+
   if (startDate.getFullYear() === endDate.getFullYear()) {
     startFormat = "MMMM Do";
     endFormat = "MMMM Do, YYYY";
@@ -165,6 +175,10 @@ export function formatRole(role: string): string | null {
 
 export function formatWithCommas(num: number | Long) {
   return (+num).toLocaleString("en-US");
+}
+
+function differenceInCalendarDays(start: Date, end: Date) {
+  return moment(end).diff(start, "days");
 }
 
 export default {

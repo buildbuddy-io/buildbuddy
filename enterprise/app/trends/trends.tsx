@@ -7,7 +7,10 @@ import TrendsChartComponent from "./trends_chart";
 import CacheChartComponent from "./cache_chart";
 import { Subscription } from "rxjs";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
+import FilterComponent from "../filter/filter";
+import capabilities from "../../../app/capabilities/capabilities";
 import { getProtoFilterParams } from "../filter/filter_util";
+import * as proto from "../../../app/util/proto";
 
 const BITS_PER_BYTE = 8;
 
@@ -18,21 +21,21 @@ interface Props {
 }
 
 interface State {
-  stats: invocation.TrendStat[];
+  stats: invocation.ITrendStat[];
   loading: boolean;
-  dateToStatMap: Map<string, invocation.TrendStat>;
-  lastNDates: string[];
+  dateToStatMap: Map<string, invocation.ITrendStat>;
+  dates: string[];
   filterOnlyCI: boolean;
 }
 
-export default class TrendsComponent extends React.Component<Props> {
+export default class TrendsComponent extends React.Component<Props, State> {
   props: Props;
 
   state: State = {
     stats: [],
     loading: true,
-    dateToStatMap: new Map<string, invocation.TrendStat>(),
-    lastNDates: [],
+    dateToStatMap: new Map<string, invocation.ITrendStat>(),
+    dates: [],
     filterOnlyCI: false,
   };
 
@@ -66,14 +69,32 @@ export default class TrendsComponent extends React.Component<Props> {
   }
 
   fetchStats() {
+    // TODO(bduffany): Cancel in-progress request
+
     let request = new invocation.GetTrendRequest();
-    request.lookbackWindowDays = this.getLimit();
     request.query = new invocation.TrendQuery();
 
-    if (this.state.filterOnlyCI) {
-      request.query.role = ["CI"];
+    if (capabilities.globalFilter) {
+      const filterParams = getProtoFilterParams(this.props.search);
+      if (filterParams.role) {
+        request.query.role = [filterParams.role];
+      } else {
+        // Note: Technically we're filtering out workflows and unknown roles,
+        // even though the user has selected "All roles". But we do this to
+        // avoid double-counting build times for workflows and their nested CI runs.
+        request.query.role = ["", "CI"];
+      }
+      request.query.updatedBefore = filterParams.updatedBefore;
+      request.query.updatedAfter = filterParams.updatedAfter;
+      request.query.status = filterParams.status;
     } else {
-      request.query.role = ["", "CI"];
+      // TODO(bduffany): Clean up this branch once the global filter is switched on
+      if (this.state.filterOnlyCI) {
+        request.query.role = ["CI"];
+      } else {
+        request.query.role = ["", "CI"];
+      }
+      request.lookbackWindowDays = this.getLimit();
     }
 
     if (this.props.search.get("user")) {
@@ -92,24 +113,25 @@ export default class TrendsComponent extends React.Component<Props> {
       request.query.repoUrl = this.props.search.get("repo");
     }
 
-    const filterParams = getProtoFilterParams(this.props.search);
-    request.query.updatedBefore = filterParams.updatedBefore;
-    request.query.updatedAfter = filterParams.updatedAfter;
-    request.query.status = filterParams.status;
-
     this.setState({ ...this.state, loading: true });
     rpcService.service.getTrend(request).then((response) => {
       console.log(response);
-      const lastNDates = this.getLastNDates(request.lookbackWindowDays);
-      let dateToStatMap = new Map<string, invocation.TrendStat>();
+      const dateToStatMap = new Map<string, invocation.ITrendStat>();
       for (let stat of response.trendStat) {
-        dateToStatMap.set(stat.name, stat as invocation.TrendStat);
+        dateToStatMap.set(stat.name, stat);
       }
       this.setState({
         ...this.state,
         stats: response.trendStat,
-        lastNDates: lastNDates,
-        dateToStatMap: dateToStatMap,
+        dates: capabilities.globalFilter
+          ? getDatesBetween(
+              // Start date should always be defined.
+              proto.timestampToDate(request.query.updatedAfter),
+              // End date may not be defined -- default to today.
+              request.query.updatedBefore ? proto.timestampToDate(request.query.updatedBefore) : new Date()
+            )
+          : this.getLastNDates(request.lookbackWindowDays),
+        dateToStatMap,
         loading: false,
       });
     });
@@ -141,38 +163,44 @@ export default class TrendsComponent extends React.Component<Props> {
         <div className="container">
           <div className="trends-header">
             <div className="trends-title">Trends</div>
-            <div>
-              <CheckboxButton
-                className="show-changes-only-button"
-                onChange={this.handleCheckboxChange.bind(this)}
-                checked={this.state.filterOnlyCI}>
-                Only show CI builds
-              </CheckboxButton>
-            </div>
+            {capabilities.globalFilter ? (
+              <FilterComponent search={this.props.search} />
+            ) : (
+              <div>
+                <CheckboxButton
+                  className="show-changes-only-button"
+                  onChange={this.handleCheckboxChange.bind(this)}
+                  checked={this.state.filterOnlyCI}>
+                  Only show CI builds
+                </CheckboxButton>
+              </div>
+            )}
           </div>
-          <div className="tabs">
-            <div onClick={() => this.updateLimit(7)} className={`tab ${this.getLimit() == 7 ? "selected" : ""}`}>
-              7 days
+          {!capabilities.globalFilter && (
+            <div className="tabs">
+              <div onClick={() => this.updateLimit(7)} className={`tab ${this.getLimit() == 7 ? "selected" : ""}`}>
+                7 days
+              </div>
+              <div onClick={() => this.updateLimit(30)} className={`tab ${this.getLimit() == 30 ? "selected" : ""}`}>
+                30 days
+              </div>
+              <div onClick={() => this.updateLimit(90)} className={`tab ${this.getLimit() == 90 ? "selected" : ""}`}>
+                90 days
+              </div>
+              <div onClick={() => this.updateLimit(180)} className={`tab ${this.getLimit() == 180 ? "selected" : ""}`}>
+                180 days
+              </div>
+              <div onClick={() => this.updateLimit(365)} className={`tab ${this.getLimit() == 365 ? "selected" : ""}`}>
+                365 days
+              </div>
             </div>
-            <div onClick={() => this.updateLimit(30)} className={`tab ${this.getLimit() == 30 ? "selected" : ""}`}>
-              30 days
-            </div>
-            <div onClick={() => this.updateLimit(90)} className={`tab ${this.getLimit() == 90 ? "selected" : ""}`}>
-              90 days
-            </div>
-            <div onClick={() => this.updateLimit(180)} className={`tab ${this.getLimit() == 180 ? "selected" : ""}`}>
-              180 days
-            </div>
-            <div onClick={() => this.updateLimit(365)} className={`tab ${this.getLimit() == 365 ? "selected" : ""}`}>
-              365 days
-            </div>
-          </div>
+          )}
           {this.state.loading && <div className="loading"></div>}
           {!this.state.loading && (
             <>
               <TrendsChartComponent
                 title="Builds"
-                data={this.state.lastNDates}
+                data={this.state.dates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.totalNumBuilds}
                 extractSecondaryValue={(date) => {
                   let stat = this.state.dateToStatMap.get(date);
@@ -189,7 +217,7 @@ export default class TrendsComponent extends React.Component<Props> {
               />
               <TrendsChartComponent
                 title="Build duration"
-                data={this.state.lastNDates}
+                data={this.state.dates}
                 extractValue={(date) => {
                   let stat = this.state.dateToStatMap.get(date);
                   return +stat?.totalBuildTimeUsec / +stat?.completedInvocationCount / 1000000;
@@ -205,7 +233,7 @@ export default class TrendsComponent extends React.Component<Props> {
 
               <CacheChartComponent
                 title="Action Cache"
-                data={this.state.lastNDates}
+                data={this.state.dates}
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
                 extractHits={(date) => +this.state.dateToStatMap.get(date)?.actionCacheHits}
@@ -213,7 +241,7 @@ export default class TrendsComponent extends React.Component<Props> {
               />
               <CacheChartComponent
                 title="Content Adressable Store"
-                data={this.state.lastNDates}
+                data={this.state.dates}
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
                 extractHits={(date) => +this.state.dateToStatMap.get(date)?.casCacheHits}
@@ -222,7 +250,7 @@ export default class TrendsComponent extends React.Component<Props> {
 
               <TrendsChartComponent
                 title="Cache read throughput"
-                data={this.state.lastNDates}
+                data={this.state.dates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.totalDownloadSizeBytes / 1000000}
                 extractSecondaryValue={(date) =>
                   BITS_PER_BYTE *
@@ -241,7 +269,7 @@ export default class TrendsComponent extends React.Component<Props> {
 
               <TrendsChartComponent
                 title="Cache write throughput"
-                data={this.state.lastNDates}
+                data={this.state.dates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.totalUploadSizeBytes / 1000000}
                 extractSecondaryValue={(date) =>
                   BITS_PER_BYTE *
@@ -260,7 +288,7 @@ export default class TrendsComponent extends React.Component<Props> {
 
               <TrendsChartComponent
                 title="Users with builds"
-                data={this.state.lastNDates}
+                data={this.state.dates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.userCount}
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
@@ -269,7 +297,7 @@ export default class TrendsComponent extends React.Component<Props> {
               />
               <TrendsChartComponent
                 title="Commits with builds"
-                data={this.state.lastNDates}
+                data={this.state.dates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.commitCount}
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
@@ -278,7 +306,7 @@ export default class TrendsComponent extends React.Component<Props> {
               />
               <TrendsChartComponent
                 title="Hosts with builds"
-                data={this.state.lastNDates}
+                data={this.state.dates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.hostCount}
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
@@ -287,7 +315,7 @@ export default class TrendsComponent extends React.Component<Props> {
               />
               <TrendsChartComponent
                 title="Repos with builds"
-                data={this.state.lastNDates}
+                data={this.state.dates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.repoCount}
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
@@ -300,4 +328,13 @@ export default class TrendsComponent extends React.Component<Props> {
       </div>
     );
   }
+}
+
+function getDatesBetween(start: Date, end: Date): string[] {
+  const endMoment = moment(end);
+  const formattedDates = [];
+  for (let date = moment(start); date.isBefore(endMoment); date = date.add(1, "days")) {
+    formattedDates.push(date.format("YYYY-MM-DD"));
+  }
+  return formattedDates;
 }

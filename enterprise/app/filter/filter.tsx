@@ -1,6 +1,6 @@
 import moment from "moment";
 import React from "react";
-import { DateRangePicker, OnChangeProps, RangeWithKey } from "react-date-range";
+import { DateRangePicker, OnChangeProps, Range } from "react-date-range";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Popup from "../../../app/components/popup/popup";
 import Radio from "../../../app/components/radio/radio";
@@ -11,9 +11,18 @@ import router, {
   END_DATE_PARAM_NAME,
   ROLE_PARAM_NAME,
   STATUS_PARAM_NAME,
+  LAST_N_DAYS_PARAM_NAME,
 } from "../../../app/router/router";
 import { invocation } from "../../../proto/invocation_ts_proto";
-import { parseStatusParam, statusToString, toStatusParam } from "./filter_util";
+import {
+  parseStatusParam,
+  statusToString,
+  toStatusParam,
+  DATE_PARAM_FORMAT,
+  getEndDate,
+  getStartDate,
+  DEFAULT_LAST_N_DAYS,
+} from "./filter_util";
 
 export interface FilterProps {
   search: URLSearchParams;
@@ -24,7 +33,24 @@ interface State {
   isFilterMenuOpen?: boolean;
 }
 
-const DATE_PARAM_FORMAT = "YYYY-MM-DD";
+type PresetRange = {
+  label: string;
+  isSelected?: (range: Range) => boolean;
+  range: () => CustomDateRange;
+};
+
+/**
+ * CustomDateRange is a react-date-range `Range` extended with some custom properties.
+ */
+type CustomDateRange = Range & {
+  /**
+   * For the "last {N} days" options, the number of days to look
+   * back (relative to today).
+   */
+  days?: number;
+};
+
+const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
 
 export default class FilterComponent extends React.Component<FilterProps, State> {
   state: State = {};
@@ -36,11 +62,21 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     this.setState({ isDatePickerOpen: false });
   }
   private onDateChange(range: OnChangeProps) {
-    const selection = (range as { selection: RangeWithKey }).selection;
+    const selection = (range as { selection: CustomDateRange }).selection;
+    if (selection.days) {
+      router.setQuery({
+        ...Object.fromEntries(this.props.search.entries()),
+        [START_DATE_PARAM_NAME]: "",
+        [END_DATE_PARAM_NAME]: "",
+        [LAST_N_DAYS_PARAM_NAME]: String(selection.days),
+      });
+      return;
+    }
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
       [START_DATE_PARAM_NAME]: moment(selection.startDate).format(DATE_PARAM_FORMAT),
       [END_DATE_PARAM_NAME]: moment(selection.endDate).format(DATE_PARAM_FORMAT),
+      [LAST_N_DAYS_PARAM_NAME]: "",
     });
   }
 
@@ -93,17 +129,37 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   }
 
   render() {
-    const startDateParam = this.props.search.get(START_DATE_PARAM_NAME);
-    const endDateParam = this.props.search.get(END_DATE_PARAM_NAME);
-
-    const startDate = (startDateParam ? moment(startDateParam) : moment().subtract(7, "days")).toDate();
-    const endDate = (endDateParam ? moment(endDateParam) : moment()).toDate();
+    const startDate = getStartDate(this.props.search);
+    const endDate = getEndDate(this.props.search) || new Date();
 
     const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
     const statusValue = this.props.search.get(STATUS_PARAM_NAME) || "";
 
     const isFiltering = Boolean(roleValue || statusValue);
     const selectedStatuses = new Set(parseStatusParam(statusValue));
+
+    const isDateRangeSelected =
+      this.props.search.get(LAST_N_DAYS_PARAM_NAME) ||
+      this.props.search.get(START_DATE_PARAM_NAME) ||
+      this.props.search.get(END_DATE_PARAM_NAME);
+
+    const now = new Date();
+    const presetDateRanges: PresetRange[] = LAST_N_DAYS_OPTIONS.map((n) => {
+      const start = moment(now)
+        .add(-n + 1, "days")
+        .toDate();
+      return {
+        label: formatDateRange(start, now, { now }),
+        isSelected: () =>
+          this.props.search.get(LAST_N_DAYS_PARAM_NAME) === String(n) ||
+          (!isDateRangeSelected && n === DEFAULT_LAST_N_DAYS),
+        range: () => ({
+          startDate: start,
+          endDate: now,
+          days: n,
+        }),
+      };
+    });
 
     return (
       <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>
@@ -174,6 +230,13 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             <DateRangePicker
               ranges={[{ startDate, endDate, key: "selection" }]}
               onChange={this.onDateChange.bind(this)}
+              // When showing "All time" we don't want to set the currently
+              // visible month to the Unix epoch... so always show the end
+              // date when initially rendering the component
+              shownDate={endDate}
+              // We want our `CustomDateRange` type here, which is compatible
+              // with the `StaticRange` type, so the cast to `any` is OK here.
+              staticRanges={presetDateRanges as any}
               // Disable textbox inputs, like "days from today", or "days until today".
               inputRanges={[]}
             />
