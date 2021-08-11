@@ -3,14 +3,16 @@ import { google } from "../../../proto/timestamp_ts_proto";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import moment from "moment";
 import { Path } from "../../../app/router/router";
-import { LOCAL_EPOCH } from "../../../app/format/format";
 
 export const ROLE_PARAM_NAME = "role";
 export const STATUS_PARAM_NAME = "status";
+export const LAST_N_DAYS_PARAM_NAME = "days";
 export const START_DATE_PARAM_NAME = "start";
 export const END_DATE_PARAM_NAME = "end";
 
 export const DATE_PARAM_FORMAT = "YYYY-MM-DD";
+
+export const DEFAULT_LAST_N_DAYS = 30;
 
 export interface ProtoFilterParams {
   role?: string;
@@ -19,24 +21,41 @@ export interface ProtoFilterParams {
   status?: invocation.OverallStatus[];
 }
 
-export function getProtoFilterParams(path: string, search: URLSearchParams): ProtoFilterParams {
+export const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
+
+export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams {
+  const endDate = getEndDate(search);
   return {
     role: search.get(ROLE_PARAM_NAME),
-    updatedAfter: parseStartOfDay(
-      search.get(START_DATE_PARAM_NAME) || moment(getDefaultStartDateForPage(path)).format(DATE_PARAM_FORMAT)
-    ),
-    updatedBefore: parseStartOfDay(search.get(END_DATE_PARAM_NAME), /*offsetDays=*/ +1),
+    updatedAfter: proto.dateToTimestamp(getStartDate(search)),
+    updatedBefore: endDate ? proto.dateToTimestamp(endDate) : undefined,
     status: parseStatusParam(search.get(STATUS_PARAM_NAME)),
   };
 }
 
-export function getDefaultStartDateForPage(path: string): Date {
-  if (path === Path.trendsPath) {
+export function getDefaultStartDate(): Date {
+  return moment()
+    .add(-30 + 1, "days")
+    .toDate();
+}
+
+export function getStartDate(search: URLSearchParams): Date {
+  if (search.get(START_DATE_PARAM_NAME)) {
+    return moment(search.get(START_DATE_PARAM_NAME)).toDate();
+  }
+  if (search.get(LAST_N_DAYS_PARAM_NAME)) {
     return moment()
-      .add(-30 + 1, "days")
+      .add(-Number(search.get(LAST_N_DAYS_PARAM_NAME)) + 1, "days")
       .toDate();
   }
-  return LOCAL_EPOCH;
+  return getDefaultStartDate();
+}
+
+export function getEndDate(search: URLSearchParams): Date {
+  if (!search.get(END_DATE_PARAM_NAME)) {
+    return undefined;
+  }
+  return moment(search.get(END_DATE_PARAM_NAME)).add(1, "days").toDate();
 }
 
 const STATUS_TO_STRING = Object.fromEntries(
@@ -63,10 +82,4 @@ export function toStatusParam(statuses: Iterable<invocation.OverallStatus>): str
     .map(statusToString)
     .sort((a, b) => statusFromString(a) - statusFromString(b))
     .join(" ");
-}
-
-function parseStartOfDay(value: string, offsetDays = 0): google.protobuf.Timestamp {
-  if (!value) return undefined;
-
-  return proto.dateToTimestamp(moment(value).add(offsetDays, "days").toDate());
 }

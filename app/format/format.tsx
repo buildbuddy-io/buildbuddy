@@ -116,8 +116,6 @@ export function formatTimestamp(timestamp: { seconds?: number | Long; nanos?: nu
 
 const DATE_RANGE_SEPARATOR = "\u2013";
 
-export const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
-
 export function formatDateRange(startDate: Date, endDate: Date, { now = new Date() } = {}) {
   let startFormat, endFormat;
 
@@ -126,14 +124,7 @@ export function formatDateRange(startDate: Date, endDate: Date, { now = new Date
     if (isSameDay(startDate, LOCAL_EPOCH)) {
       return "All time";
     }
-    for (const n of LAST_N_DAYS_OPTIONS) {
-      const lastNDaysStartDate = moment(now)
-        .add(-n + 1, "days")
-        .toDate();
-      if (isSameDay(startDate, lastNDaysStartDate)) {
-        return `Last ${n} days`;
-      }
-    }
+    return `Last ${differenceInCalendarDays(startDate, endDate) + 1} days`;
   }
 
   if (startDate.getFullYear() === endDate.getFullYear()) {
@@ -184,6 +175,10 @@ export function formatRole(role: string): string | null {
 
 export function formatWithCommas(num: number | Long) {
   return (+num).toLocaleString("en-US");
+}
+
+function differenceInCalendarDays(start: Date, end: Date) {
+  return moment(end).diff(start, "days");
 }
 
 export default {

@@ -76,7 +76,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     request.query = new invocation.TrendQuery();
 
     if (capabilities.globalFilter) {
-      const filterParams = getProtoFilterParams(this.props.path, this.props.search);
+      const filterParams = getProtoFilterParams(this.props.search);
       if (filterParams.role) {
         request.query.role = [filterParams.role];
       } else {
@@ -165,7 +165,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
           <div className="trends-header">
             <div className="trends-title">Trends</div>
             {capabilities.globalFilter ? (
-              <FilterComponent path={this.props.path} search={this.props.search} disableWorkflows />
+              <FilterComponent path={this.props.path} search={this.props.search} />
             ) : (
               <div>
                 <CheckboxButton

@@ -5,7 +5,7 @@ import FilledButton, { OutlinedButton } from "../../../app/components/button/but
 import Popup from "../../../app/components/popup/popup";
 import Radio from "../../../app/components/radio/radio";
 import Checkbox from "../../../app/components/checkbox/checkbox";
-import { formatDateRange, LAST_N_DAYS_OPTIONS } from "../../../app/format/format";
+import { formatDateRange } from "../../../app/format/format";
 import router from "../../../app/router/router";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import {
@@ -17,14 +17,15 @@ import {
   END_DATE_PARAM_NAME,
   ROLE_PARAM_NAME,
   STATUS_PARAM_NAME,
-  getDefaultStartDateForPage,
+  LAST_N_DAYS_PARAM_NAME,
+  getEndDate,
+  getStartDate,
+  DEFAULT_LAST_N_DAYS,
 } from "./filter_util";
-import { isSameDay } from "date-fns";
 
 export interface FilterProps {
   path: string;
   search: URLSearchParams;
-  disableWorkflows?: boolean;
 }
 
 interface State {
@@ -43,12 +44,13 @@ type PresetRange = {
  */
 type CustomDateRange = Range & {
   /**
-   * isDefault is set to true on the "Clear selection" button so we can
-   * handle clicks on that button and clear the date params rather than
-   * setting them to some absolute date.
+   * For the "last {N} days" options, the number of days to look
+   * back (relative to today).
    */
-  isDefault?: boolean;
+  days?: number;
 };
+
+const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
 
 export default class FilterComponent extends React.Component<FilterProps, State> {
   state: State = {};
@@ -61,13 +63,12 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   }
   private onDateChange(range: OnChangeProps) {
     const selection = (range as { selection: CustomDateRange }).selection;
-    if (selection.isDefault) {
+    if (selection.days) {
       router.setQuery({
         ...Object.fromEntries(this.props.search.entries()),
-        // Clear URL params when clicking the "clear date selection" button,
-        // as opposed to setting them to the actual default dates.
         [START_DATE_PARAM_NAME]: "",
         [END_DATE_PARAM_NAME]: "",
+        [LAST_N_DAYS_PARAM_NAME]: String(selection.days),
       });
       return;
     }
@@ -75,6 +76,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       ...Object.fromEntries(this.props.search.entries()),
       [START_DATE_PARAM_NAME]: moment(selection.startDate).format(DATE_PARAM_FORMAT),
       [END_DATE_PARAM_NAME]: moment(selection.endDate).format(DATE_PARAM_FORMAT),
+      [LAST_N_DAYS_PARAM_NAME]: "",
     });
   }
 
@@ -127,12 +129,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   }
 
   render() {
-    const startDateParam = this.props.search.get(START_DATE_PARAM_NAME);
-    const endDateParam = this.props.search.get(END_DATE_PARAM_NAME);
-
-    const defaultStartDate = getDefaultStartDateForPage(this.props.path);
-    const startDate = startDateParam ? moment(startDateParam).toDate() : defaultStartDate;
-    const endDate = endDateParam ? moment(endDateParam).toDate() : new Date();
+    const startDate = getStartDate(this.props.search);
+    const endDate = getEndDate(this.props.search) || new Date();
 
     const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
     const statusValue = this.props.search.get(STATUS_PARAM_NAME) || "";
@@ -140,39 +138,31 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const isFiltering = Boolean(roleValue || statusValue);
     const selectedStatuses = new Set(parseStatusParam(statusValue));
 
+    const isDateRangeSelected =
+      this.props.search.get(LAST_N_DAYS_PARAM_NAME) ||
+      this.props.search.get(START_DATE_PARAM_NAME) ||
+      this.props.search.get(END_DATE_PARAM_NAME);
+
     const now = new Date();
-    const presetDateRanges: PresetRange[] = [
-      {
-        label: `Default (${formatDateRange(defaultStartDate, now, { now })})`,
+    const presetDateRanges: PresetRange[] = LAST_N_DAYS_OPTIONS.map((n) => {
+      const start = moment(now)
+        .add(-n + 1, "days")
+        .toDate();
+      return {
+        label: formatDateRange(start, now, { now }),
         isSelected: () => {
-          return !this.props.search.get(START_DATE_PARAM_NAME) && !this.props.search.get(END_DATE_PARAM_NAME);
+          return (
+            this.props.search.get(LAST_N_DAYS_PARAM_NAME) === String(n) ||
+            (!isDateRangeSelected && n === DEFAULT_LAST_N_DAYS)
+          );
         },
         range: () => ({
-          isDefault: true,
-          startDate: defaultStartDate,
+          startDate: start,
           endDate: now,
+          days: n,
         }),
-      },
-      ...LAST_N_DAYS_OPTIONS.map((n) => {
-        const start = moment(now)
-          .add(-n + 1, "days")
-          .toDate();
-        return {
-          label: formatDateRange(start, now, { now }),
-          isSelected: (range: Range) => {
-            return (
-              this.props.search.get(START_DATE_PARAM_NAME) &&
-              isSameDay(start, range.startDate) &&
-              isSameDay(now, range.endDate)
-            );
-          },
-          range: () => ({
-            startDate: start,
-            endDate: now,
-          }),
-        };
-      }),
-    ];
+      };
+    });
 
     return (
       <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>
@@ -213,13 +203,10 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                     <Radio value="CI" checked={roleValue === "CI"} />
                     <span className="role-badge CI">CI</span>
                   </label>
-                  {/* TODO(bduffany): Figure out how to deal with workflows for the trends page */}
-                  {!this.props.disableWorkflows && (
-                    <label onClick={this.onRoleChange.bind(this, "CI_RUNNER")}>
-                      <Radio value="CI_RUNNER" checked={roleValue === "CI_RUNNER"} />
-                      <span className="role-badge CI_RUNNER">Workflow</span>
-                    </label>
-                  )}
+                  <label onClick={this.onRoleChange.bind(this, "CI_RUNNER")}>
+                    <Radio value="CI_RUNNER" checked={roleValue === "CI_RUNNER"} />
+                    <span className="role-badge CI_RUNNER">Workflow</span>
+                  </label>
                 </div>
               </div>
               <div className="option-group">

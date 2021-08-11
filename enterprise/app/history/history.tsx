@@ -63,7 +63,7 @@ export default class HistoryComponent extends React.Component {
   }
 
   getBuilds(nextPage?: boolean) {
-    const filterParams = getProtoFilterParams(this.props.path, this.props.search);
+    const filterParams = getProtoFilterParams(this.props.search);
     let request = new invocation.SearchInvocationRequest({
       query: new invocation.InvocationQuery({
         host: this.props.hostname,
@@ -71,15 +71,17 @@ export default class HistoryComponent extends React.Component {
         repoUrl: this.props.repo,
         commitSha: this.props.commit,
         groupId: this.props.user?.selectedGroup?.id,
-        role: filterParams.role,
-        updatedAfter: filterParams.updatedAfter,
-        updatedBefore: filterParams.updatedBefore,
-        status: filterParams.status,
       }),
       pageToken: nextPage ? this.state.pageToken : "",
       // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
       count: 126,
     });
+    if (capabilities.globalFilter) {
+      request.query.role = filterParams.role;
+      request.query.updatedAfter = filterParams.updatedAfter;
+      request.query.updatedBefore = filterParams.updatedBefore;
+      request.query.status = filterParams.status;
+    }
 
     this.setState({
       ...this.state,
@@ -105,16 +107,16 @@ export default class HistoryComponent extends React.Component {
     if (!aggregationType) return;
 
     this.setState({ invocationStat: [], loadingStats: true });
-    const filterParams = getProtoFilterParams(this.props.path, this.props.search);
-    const request = new invocation.GetInvocationStatRequest({
-      aggregationType,
-      query: new invocation.InvocationStatQuery({
+    const request = new invocation.GetInvocationStatRequest({ aggregationType });
+    if (capabilities.globalFilter) {
+      const filterParams = getProtoFilterParams(this.props.search);
+      request.query = new invocation.InvocationStatQuery({
         role: filterParams.role,
         updatedBefore: filterParams.updatedBefore,
         updatedAfter: filterParams.updatedAfter,
         status: filterParams.status,
-      }),
-    });
+      });
+    }
     rpcService.service.getInvocationStat(request).then((response) => {
       if (aggregationType != this.hashToAggregationTypeMap.get(this.props.hash)) return;
       console.log(response);
@@ -126,16 +128,18 @@ export default class HistoryComponent extends React.Component {
   }
 
   getSummaryStats() {
-    const filterParams = getProtoFilterParams(this.props.path, this.props.search);
+    const filterParams = getProtoFilterParams(this.props.search);
     const request = new invocation.GetInvocationStatRequest({
       aggregationType: invocation.AggType.GROUP_ID_AGGREGATION_TYPE,
-      query: new invocation.InvocationQuery({
+    });
+    if (capabilities.globalFilter) {
+      request.query = new invocation.InvocationQuery({
         role: filterParams.role,
         updatedAfter: filterParams.updatedAfter,
         updatedBefore: filterParams.updatedBefore,
         status: filterParams.status,
-      }),
-    });
+      });
+    }
     rpcService.service.getInvocationStat(request).then((response) => {
       this.setState({ summaryStat: response.invocationStat });
     });
