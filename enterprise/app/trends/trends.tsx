@@ -16,7 +16,6 @@ const BITS_PER_BYTE = 8;
 
 interface Props {
   user: User;
-  path: string;
   hash: string;
   search: URLSearchParams;
 }

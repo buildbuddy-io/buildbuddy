@@ -179,7 +179,6 @@ export default class EnterpriseRootComponent extends React.Component {
                   <HistoryComponent
                     user={this.state.user}
                     username={historyUser}
-                    path={this.state.path}
                     hash={this.state.hash}
                     search={this.state.search}
                   />
@@ -188,7 +187,6 @@ export default class EnterpriseRootComponent extends React.Component {
                   <HistoryComponent
                     user={this.state.user}
                     hostname={historyHost}
-                    path={this.state.path}
                     hash={this.state.hash}
                     search={this.state.search}
                   />
@@ -197,7 +195,6 @@ export default class EnterpriseRootComponent extends React.Component {
                   <HistoryComponent
                     user={this.state.user}
                     repo={historyRepo}
-                    path={this.state.path}
                     hash={this.state.hash}
                     search={this.state.search}
                   />
@@ -206,7 +203,6 @@ export default class EnterpriseRootComponent extends React.Component {
                   <HistoryComponent
                     user={this.state.user}
                     commit={historyCommit}
-                    path={this.state.path}
                     hash={this.state.hash}
                     search={this.state.search}
                   />
@@ -229,25 +225,13 @@ export default class EnterpriseRootComponent extends React.Component {
                 )}
                 {trends && (
                   <Suspense fallback={<div className="loading" />}>
-                    <TrendsComponent
-                      user={this.state.user}
-                      path={this.state.path}
-                      search={this.state.search}
-                      hash={this.state.hash}
-                    />
+                    <TrendsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
                   </Suspense>
                 )}
                 {executors && (
                   <ExecutorsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
                 )}
-                {home && (
-                  <HistoryComponent
-                    user={this.state.user}
-                    path={this.state.path}
-                    hash={this.state.hash}
-                    search={this.state.search}
-                  />
-                )}
+                {home && <HistoryComponent user={this.state.user} hash={this.state.hash} search={this.state.search} />}
                 {workflows && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                 {code && (
                   <Suspense fallback={<div className="loading" />}>

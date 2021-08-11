@@ -24,7 +24,6 @@ import {
 } from "./filter_util";
 
 export interface FilterProps {
-  path: string;
   search: URLSearchParams;
 }
 

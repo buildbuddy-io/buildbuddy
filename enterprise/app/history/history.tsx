@@ -30,7 +30,6 @@ interface Props {
   repo?: string;
   commit?: string;
   user?: User;
-  path: string;
   search: URLSearchParams;
   hash: string;
 }
