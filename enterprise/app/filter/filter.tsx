@@ -146,8 +146,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   }
 
   render() {
+    const now = new Date();
     const startDate = getStartDate(this.props.search);
-    const endDate = getEndDate(this.props.search) || new Date();
+    // Not using `getEndDate` here because it's set to "start of day after the one specified
+    // in the URL" which causes an off-by-one error if we were to render that directly in
+    // the calendar.
+    const endDate = this.props.search.get(END_DATE_PARAM_NAME)
+      ? moment(this.props.search.get(END_DATE_PARAM_NAME)).toDate()
+      : now;
 
     const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
     const statusValue = this.props.search.get(STATUS_PARAM_NAME) || "";
@@ -161,7 +167,6 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       this.props.search.get(START_DATE_PARAM_NAME) ||
       this.props.search.get(END_DATE_PARAM_NAME);
 
-    const now = new Date();
     const presetDateRanges: PresetRange[] = LAST_N_DAYS_OPTIONS.map((n) => {
       const start = moment(now)
         .add(-n + 1, "days")
