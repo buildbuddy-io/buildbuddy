@@ -413,9 +413,16 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 	return dbh, nil
 }
 
-func (h *DBHandle) DateFromUsecTimestamp(fieldName string) string {
+// PTDateFromUsecTimestamp returns an SQL expression that converts the value
+// of the given field from a Unix timestamp (in microseconds since the Unix
+// Epoch) to a date in Pacific time (as a string in "YYYY-MM-DD" format).
+func (h *DBHandle) PTDateFromUsecTimestamp(fieldName string) string {
 	if h.dialect == sqliteDialect {
-		return "DATE(" + fieldName + "/1000000, 'unixepoch')"
+		// Note: sqlite doesn't have proper time zone support, but we can manually
+		// compute PDT as UTC-7. This may cause some UI bugs for timestamps that
+		// actually fell on dates during which PDT was not being observed (meaning
+		// PST was being observed) -- but this should only affect local development.
+		return "DATE(" + fieldName + "/1000000, 'unixepoch', '-7 hours')"
 	}
-	return "DATE(FROM_UNIXTIME(" + fieldName + "/1000000))"
+	return "DATE(CONVERT_TZ(FROM_UNIXTIME(" + fieldName + "/1000000), 'UTC', 'America/Los_Angeles'))"
 }
