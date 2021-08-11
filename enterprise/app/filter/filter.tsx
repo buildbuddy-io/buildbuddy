@@ -151,10 +151,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       return {
         label: formatDateRange(start, now, { now }),
         isSelected: () => {
-          return (
-            this.props.search.get(LAST_N_DAYS_PARAM_NAME) === String(n) ||
-            (!isDateRangeSelected && n === DEFAULT_LAST_N_DAYS)
-          );
+          this.props.search.get(LAST_N_DAYS_PARAM_NAME) === String(n) ||
+            (!isDateRangeSelected && n === DEFAULT_LAST_N_DAYS);
         },
         range: () => ({
           startDate: start,
