@@ -322,6 +322,10 @@
   margin-top: 32px;
 }
 
+.invocation-execution-empty-actions {
+  margin-top: 8px;
+}
+
 .invocation-top-right-buttons {
   display: flex;
   align-items: center;
@@ -393,6 +397,11 @@
 }
 
 .invocation-sort-title {
+  margin-right: 8px;
+  margin-left: 12px;
+}
+
+.invocation-filter-title {
   margin-right: 8px;
 }
 
