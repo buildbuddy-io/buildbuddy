@@ -164,7 +164,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
           <div className="trends-header">
             <div className="trends-title">Trends</div>
             {capabilities.globalFilter ? (
-              <FilterComponent path={this.props.path} search={this.props.search} />
+              <FilterComponent search={this.props.search} />
             ) : (
               <div>
                 <CheckboxButton

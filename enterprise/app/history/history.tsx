@@ -4,14 +4,14 @@ import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import LinkButton from "../../../app/components/button/link_button";
 import format from "../../../app/format/format";
-import router from "../../../app/router/router";
+import router, { ROLE_PARAM_NAME } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import FilterComponent from "../filter/filter";
 import OrgJoinRequestsComponent from "../org/org_join_requests";
 import HistoryInvocationCardComponent from "./history_invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
-import { getProtoFilterParams, ROLE_PARAM_NAME } from "../filter/filter_util";
+import { getProtoFilterParams } from "../filter/filter_util";
 
 interface State {
   invocations: invocation.Invocation[];
@@ -158,7 +158,7 @@ export default class HistoryComponent extends React.Component {
     this.getBuilds();
 
     this.subscription = rpcService.events.subscribe({
-      next: (name) => name == "refresh" && (this.props.hash ? this.getStats() : this.getBuilds()),
+      next: (name) => name == "refresh" && this.handleSidebarItemClicked(),
     });
     this.subscription.add(fromEvent(window, "storage").subscribe(this.handleStorage.bind(this)));
   }
@@ -177,6 +177,32 @@ export default class HistoryComponent extends React.Component {
 
   handleStorage() {
     this.setState({ invocationIdToCompare: localStorage["invocation_id_to_compare"] });
+  }
+
+  handleSidebarItemClicked() {
+    if (this.props.username) {
+      this.handleUsersClicked();
+      return;
+    }
+    if (this.props.hostname) {
+      this.handleHostsClicked();
+      return;
+    }
+    if (this.props.commit) {
+      this.handleCommitsClicked();
+      return;
+    }
+    if (this.props.repo) {
+      this.handleReposClicked();
+      return;
+    }
+
+    if (this.props.hash) {
+      this.getStats();
+      return;
+    }
+
+    this.getBuilds();
   }
 
   handleInvocationClicked(invocation: invocation.Invocation) {
@@ -299,7 +325,7 @@ export default class HistoryComponent extends React.Component {
                   <>{this.isFilteredToWorkflows() ? <span>Workflow runs</span> : <span>Builds</span>}</>
                 )}
               </div>
-              {capabilities.globalFilter && <FilterComponent path={this.props.path} search={this.props.search} />}
+              {capabilities.globalFilter && <FilterComponent search={this.props.search} />}
             </div>
             <div className="titles">
               <div className="title">

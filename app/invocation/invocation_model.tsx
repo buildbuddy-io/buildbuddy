@@ -51,6 +51,7 @@ export default class InvocationModel {
   buildMetadataMap = new Map<string, string>();
   configuredMap = new Map<string, invocation.InvocationEvent>();
   completedMap = new Map<string, invocation.InvocationEvent>();
+  skippedMap = new Map<string, invocation.InvocationEvent>();
   testResultMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
   testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
   actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
@@ -97,8 +98,12 @@ export default class InvocationModel {
         if (buildEvent.started) model.started = buildEvent.started as build_event_stream.BuildStarted;
         if (buildEvent.expanded) model.expanded = buildEvent as build_event_stream.BuildEvent;
         if (buildEvent.finished) model.finished = buildEvent.finished as build_event_stream.BuildFinished;
-        if (buildEvent.aborted && buildEvent.aborted.reason.toString().toLowerCase() != "skipped")
+        if (buildEvent.aborted && buildEvent.aborted.reason == build_event_stream.Aborted.AbortReason.SKIPPED) {
+          model.skipped.push(buildEvent as build_event_stream.BuildEvent);
+          model.skippedMap.set(buildEvent.id.targetCompleted.label, event as invocation.InvocationEvent);
+        } else if (buildEvent.aborted) {
           model.aborted = buildEvent as build_event_stream.BuildEvent;
+        }
         if (buildEvent.buildToolLogs) model.toolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         if (buildEvent.workspaceStatus) {
           model.workspaceStatus = buildEvent.workspaceStatus as build_event_stream.WorkspaceStatus;
@@ -153,10 +158,6 @@ export default class InvocationModel {
         model.succeeded.push(buildEvent as build_event_stream.BuildEvent);
       } else {
         model.failed.push(buildEvent as build_event_stream.BuildEvent);
-      }
-
-      if (buildEvent.aborted && buildEvent.aborted.reason.toString().toLowerCase() == "skipped") {
-        model.skipped.push(buildEvent as build_event_stream.BuildEvent);
       }
     }
 
@@ -463,7 +464,7 @@ export default class InvocationModel {
   }
 
   getDuration(completionTime: any, beginTime: any) {
-    if (!completionTime || !beginTime) return "";
+    if (!completionTime || !beginTime) return "0";
     let nanos = (+completionTime.nanos - +beginTime.nanos) / 1000000000;
     return `${(+completionTime.seconds - +beginTime.seconds + nanos).toFixed(3)}`;
   }

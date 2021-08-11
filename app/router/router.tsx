@@ -1,6 +1,23 @@
 import capabilities from "../capabilities/capabilities";
 import format from "../format/format";
 
+// Query params for the global filter.
+// These should be preserved when navigating between pages in the app.
+
+export const ROLE_PARAM_NAME = "role";
+export const STATUS_PARAM_NAME = "status";
+export const START_DATE_PARAM_NAME = "start";
+export const END_DATE_PARAM_NAME = "end";
+export const LAST_N_DAYS_PARAM_NAME = "days";
+
+const GLOBAL_FILTER_PARAM_NAMES = [
+  ROLE_PARAM_NAME,
+  STATUS_PARAM_NAME,
+  START_DATE_PARAM_NAME,
+  END_DATE_PARAM_NAME,
+  LAST_N_DAYS_PARAM_NAME,
+];
+
 class Router {
   register(pathChangeHandler: VoidFunction) {
     history.pushState = ((f) =>
@@ -22,16 +39,44 @@ class Router {
     });
   }
 
+  /**
+   * Updates the URL relative to the origin. The new URL is formed by appending
+   * the given string onto `window.location.origin` verbatim.
+   *
+   * - Creates a new browser history entry.
+   * - Preserves global filter params.
+   */
   navigateTo(path: string) {
-    var newUrl = window.location.protocol + "//" + window.location.host + path;
-    window.history.pushState({}, "", newUrl);
+    const oldUrl = new URL(window.location.href);
+    const newUrl = new URL(window.location.origin + path);
+    // Preserve global filter params.
+    for (const key of GLOBAL_FILTER_PARAM_NAMES) {
+      if (!newUrl.searchParams.get(key) && oldUrl.searchParams.get(key)) {
+        newUrl.searchParams.set(key, oldUrl.searchParams.get(key));
+      }
+    }
+    window.history.pushState({}, "", newUrl.href);
   }
 
+  /**
+   * Sets the given query param.
+   *
+   * - Creates a new browser history entry.
+   * - Preserves global filter params.
+   * - Preserves the current `path`, but not the `hash`.
+   */
   navigateToQueryParam(key: string, value: string) {
-    let targetUrl = `?${key}=${value}`;
-    window.history.pushState({}, "", targetUrl);
+    const url = new URL(window.location.href);
+    url.searchParams.set(key, value);
+    window.history.pushState({}, "", url.href);
   }
 
+  /**
+   * Replaces the current URL query.
+   *
+   * - Does not create a new browser history entry.
+   * - Preserves global filter params.
+   */
   setQuery(query: Record<string, string>) {
     window.history.replaceState({}, "", getModifiedUrl({ query }));
   }

@@ -3,7 +3,11 @@
   align-self: flex-start;
   transition: background-color 300ms;
   border-radius: 8px;
+<<<<<<< HEAD
   font-size: 15px;
+=======
+  margin-left: auto;
+>>>>>>> master
 
   --row-height: 40px;
 }
