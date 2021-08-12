@@ -23,7 +23,7 @@ message RequestContext {
   // UTC time zone, and the same date as evaluated in the local time zone.
   //
   // Ex: if the current timezone offset is UTC-7, this should be set to
-  // 7 * 60 = 420.
+  // -((-7) * 60) = 420.
   //
   // See also
   // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/getTimezoneOffset
