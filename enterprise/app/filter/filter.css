@@ -1,7 +1,9 @@
 .global-filter {
   display: flex;
+  align-self: flex-start;
   transition: background-color 300ms;
   border-radius: 8px;
+  font-size: 15px;
   margin-left: auto;
 
   --row-height: 40px;
@@ -89,6 +91,10 @@
 }
 .global-filter .disconnected {
   --status-color: #aaa;
+}
+
+.global-filter .role-badge.DEFAULT {
+  background: #eee;
 }
 
 .global-filter .square {

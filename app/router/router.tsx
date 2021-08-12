@@ -8,8 +8,15 @@ export const ROLE_PARAM_NAME = "role";
 export const STATUS_PARAM_NAME = "status";
 export const START_DATE_PARAM_NAME = "start";
 export const END_DATE_PARAM_NAME = "end";
+export const LAST_N_DAYS_PARAM_NAME = "days";
 
-const GLOBAL_FILTER_PARAM_NAMES = [ROLE_PARAM_NAME, STATUS_PARAM_NAME, START_DATE_PARAM_NAME, END_DATE_PARAM_NAME];
+const GLOBAL_FILTER_PARAM_NAMES = [
+  ROLE_PARAM_NAME,
+  STATUS_PARAM_NAME,
+  START_DATE_PARAM_NAME,
+  END_DATE_PARAM_NAME,
+  LAST_N_DAYS_PARAM_NAME,
+];
 
 class Router {
   register(pathChangeHandler: VoidFunction) {

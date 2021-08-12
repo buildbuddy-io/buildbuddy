@@ -236,6 +236,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		}
 	}
 
+	if cmdResult.ExitCode != 0 {
+		log.Debugf("%q finished with non-zero exit code (%d). Stdout: %s, Stderr: %s", taskID, cmdResult.ExitCode, cmdResult.Stdout, cmdResult.Stderr)
+	}
+
 	// Only upload action outputs if the error is something that the client can
 	// use the action outputs to debug.
 	isActionableClientErr := gstatus.Code(cmdResult.Error) == codes.DeadlineExceeded

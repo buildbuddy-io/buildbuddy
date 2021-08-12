@@ -97,11 +97,10 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 
 	roleClauses := query_builder.OrClauses{}
 	for _, role := range req.GetQuery().GetRole() {
-		roleClauses.AddOr(`role = ?`, role)
+		roleClauses.AddOr("role = ?", role)
 	}
-	roleQuery, roleArgs := roleClauses.Build()
-	if roleQuery != "" {
-		q.AddWhereClause(fmt.Sprintf("(%s)", roleQuery), roleArgs...)
+	if roleQuery, roleArgs := roleClauses.Build(); roleQuery != "" {
+		q.AddWhereClause("("+roleQuery+")", roleArgs...)
 	}
 
 	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
@@ -207,8 +206,12 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		q.AddWhereClause("commit = ?", commitSHA)
 	}
 
-	if role := req.GetQuery().GetRole(); role != "" {
-		q.AddWhereClause("role = ?", role)
+	roleClauses := query_builder.OrClauses{}
+	for _, role := range req.GetQuery().GetRole() {
+		roleClauses.AddOr("role = ?", role)
+	}
+	if roleQuery, roleArgs := roleClauses.Build(); roleQuery != "" {
+		q.AddWhereClause("("+roleQuery+")", roleArgs...)
 	}
 
 	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
