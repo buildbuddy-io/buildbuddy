@@ -5,7 +5,9 @@ import { context } from "../../proto/context_ts_proto";
 class RpcService {
   service: buildbuddy.service.BuildBuddyService;
   events: Subject<string>;
-  requestContext: context.RequestContext;
+  requestContext = new context.RequestContext({
+    timezoneOffsetMinutes: new Date().getTimezoneOffset(),
+  });
 
   constructor() {
     this.service = this.autoAttachRequestContext(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this)));

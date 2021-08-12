@@ -413,16 +413,15 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 	return dbh, nil
 }
 
-// PTDateFromUsecTimestamp returns an SQL expression that converts the value
+// DateFromUsecTimestamp returns an SQL expression that converts the value
 // of the given field from a Unix timestamp (in microseconds since the Unix
-// Epoch) to a date in Pacific time (as a string in "YYYY-MM-DD" format).
-func (h *DBHandle) PTDateFromUsecTimestamp(fieldName string) string {
+// Epoch) to a date offset by the given UTC offset. The offset is defined
+// according to the description here:
+// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/getTimezoneOffset
+func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string {
 	if h.dialect == sqliteDialect {
-		// Note: sqlite doesn't have proper time zone support, but we can manually
-		// compute PDT as UTC-7. This may cause some UI bugs for timestamps that
-		// actually fell on dates during which PDT was not being observed (meaning
-		// PST was being observed) -- but this should only affect local development.
-		return "DATE(" + fieldName + "/1000000, 'unixepoch', '-7 hours')"
+		return fmt.Sprintf("DATE(%s/1000000, 'unixepoch', '%d minutes')", fieldName, -timezoneOffsetMinutes)
 	}
-	return "DATE(CONVERT_TZ(FROM_UNIXTIME(" + fieldName + "/1000000), 'UTC', 'America/Los_Angeles'))"
+	offsetUsec := int64(timezoneOffsetMinutes) * 60 * 1e6
+	return fmt.Sprintf("DATE(FROM_UNIXTIME((%s + (%d))/1000000))", fieldName, -offsetUsec)
 }

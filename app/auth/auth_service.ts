@@ -94,19 +94,17 @@ export class AuthService {
   emitUser(user: User) {
     console.log("User", user);
     this.user = user;
-    rpcService.requestContext = this.getRequestContext();
+    this.updateRequestContext();
     this.userStream.next(user);
   }
 
-  getRequestContext() {
+  updateRequestContext() {
     let cookieName = "userId";
     let match = document.cookie.match("(^|[^;]+)\\s*" + cookieName + "\\s*=\\s*([^;]+)");
     let userIdFromCookie = match ? match.pop() : "";
-    let requestContext = new context.RequestContext();
-    requestContext.userId = new user_id.UserId();
-    requestContext.userId.id = userIdFromCookie;
-    requestContext.groupId = this.user?.selectedGroup?.id || "";
-    return requestContext;
+    rpcService.requestContext.userId = new user_id.UserId();
+    rpcService.requestContext.userId.id = userIdFromCookie;
+    rpcService.requestContext.groupId = this.user?.selectedGroup?.id || "";
   }
 
   async setSelectedGroupId(groupId: string, { reload = false }: { reload?: boolean } = {}) {
