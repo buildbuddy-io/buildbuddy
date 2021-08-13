@@ -40,6 +40,7 @@ export class AuthService {
         this.emitUser(this.userFromResponse(response));
       })
       .catch((error: any) => {
+        // TODO(siggisim): Remove "not found" string matching after the next release.
         if (BuildBuddyError.parse(error).code == "Unauthenticated" || error.includes("not found")) {
           this.createUser();
         } else {
