@@ -11,7 +11,6 @@ import FilterComponent from "../filter/filter";
 import capabilities from "../../../app/capabilities/capabilities";
 import { getProtoFilterParams } from "../filter/filter_util";
 import router from "../../../app/router/router";
-import capabilities from "../../../app/capabilities/capabilities";
 import * as proto from "../../../app/util/proto";
 
 const BITS_PER_BYTE = 8;
