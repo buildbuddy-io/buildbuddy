@@ -67,7 +67,7 @@ export class AuthService {
         this.refreshUser();
       })
       .catch((error: any) => {
-        if (BuildBuddyError.parse(error).code == "Unauthenticated" || error.includes("No user token")) {
+        if (BuildBuddyError.parse(error).code == "Unauthenticated") {
           console.log("User was not created because no auth cookie was set, this is normal.");
           this.emitUser(null);
         } else {

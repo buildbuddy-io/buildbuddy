@@ -766,7 +766,7 @@ func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces
 func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
 	t, ok := ctx.Value(contextUserKey).(*userToken)
 	if !ok {
-		// WARNING: app/auth/auth_service.ts depends on this string containing the text "No user token" or using status UNAUTHENTICATED.
+		// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
 		return status.UnauthenticatedError("No user token available to fill user")
 	}
 
