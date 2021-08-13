@@ -75,7 +75,7 @@ func NewGithubClient(env environment.Env, token string) *GithubClient {
 func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	githubConfig := c.env.GetConfigurator().GetGithubConfig()
 	if githubConfig == nil {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("Missing GitHub config"))
+		redirectWithError(w, r, status.PermissionDeniedError("Missing GitHub config"))
 		return
 	}
 
@@ -145,7 +145,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 	dbHandle := c.env.GetDBHandle()
 	if dbHandle == nil {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("No database configured"))
+		redirectWithError(w, r, status.PermissionDeniedError("No database configured"))
 		return
 	}
 
@@ -252,6 +252,6 @@ func getCookie(r *http.Request, name string) string {
 }
 
 func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
-	log.Warningf(err.Error())
+	log.Warning(err.Error())
 	http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
 }

@@ -868,7 +868,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	// Extract the ID Token (JWT) from OAuth2 token.
 	jwt, ok := oauth2Token.Extra("id_token").(string)
 	if !ok {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("ID Token not present in auth response"))
+		redirectWithError(w, r, status.PermissionDeniedError("ID Token not present in auth response"))
 		return
 	}
 
@@ -925,6 +925,6 @@ func UserFromTrustedJWT(ctx context.Context) (interfaces.UserInfo, error) {
 }
 
 func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
-	log.Warningf(err.Error())
+	log.Warning(err.Error())
 	http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
 }
