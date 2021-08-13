@@ -133,8 +133,7 @@ export default class InvocationModel {
           model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         }
         if (buildEvent.unstructuredCommandLine) {
-          model.unstructuredCommandLine =
-            buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+          model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
         }
       }
     }
@@ -269,8 +268,10 @@ export default class InvocationModel {
     return this.buildMetadataMap.get("COMMIT_SHA") || this.workspaceStatusMap.get("COMMIT_SHA") || this.getGithubSHA();
   }
 
-  getBranch() {
-    return this.buildMetadataMap.get("GIT_BRANCH") || this.workspaceStatusMap.get("GIT_BRANCH") || this.getGithubRef();
+  getBranchName() {
+    return (
+      this.buildMetadataMap.get("GIT_BRANCH") || this.workspaceStatusMap.get("GIT_BRANCH") || this.getGithubBranch()
+    );
   }
 
   getGithubUser() {
@@ -295,6 +296,16 @@ export default class InvocationModel {
 
   getGithubRef() {
     return this.clientEnvMap.get("GITHUB_REF");
+  }
+
+  getGithubBranch() {
+    if (this.clientEnvMap.get("GITHUB_HEAD_REF")) {
+      return this.clientEnvMap.get("GITHUB_HEAD_REF");
+    }
+    if (this.clientEnvMap.get("GITHUB_REF") && this.clientEnvMap.get("GITHUB_REF").startsWith("refs/heads/")) {
+      return this.clientEnvMap.get("GITHUB_REF").slice("refs/heads/".length);
+    }
+    return "";
   }
 
   getGithubRun() {
