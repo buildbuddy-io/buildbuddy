@@ -86,6 +86,9 @@ message TargetQuery {
   // The type of target to return.
   // For example: TEST.
   api.v1.TargetType target_type = 6;
+
+  // The git branch the build was for.
+  string branch_name = 7;
 }
 
 message GetTargetRequest {
