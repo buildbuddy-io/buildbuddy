@@ -9,6 +9,7 @@ ts_library(
         "//app/capabilities",
         "//app/errors",
         "//app/service",
+        "//app/util:errors",
         "//proto:context_ts_proto",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
