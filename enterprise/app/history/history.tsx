@@ -28,7 +28,6 @@ interface Props {
   hostname?: string;
   username?: string;
   repo?: string;
-  branch?: string;
   commit?: string;
   user?: User;
   search: URLSearchParams;
@@ -55,7 +54,6 @@ export default class HistoryComponent extends React.Component {
     ["#users", invocation.AggType.USER_AGGREGATION_TYPE],
     ["#hosts", invocation.AggType.HOSTNAME_AGGREGATION_TYPE],
     ["#repos", invocation.AggType.REPO_URL_AGGREGATION_TYPE],
-    ["#branches", invocation.AggType.BRANCH_AGGREGATION_TYPE],
     ["#commits", invocation.AggType.COMMIT_SHA_AGGREGATION_TYPE],
   ]);
 
@@ -70,7 +68,6 @@ export default class HistoryComponent extends React.Component {
         host: this.props.hostname,
         user: this.props.username,
         repoUrl: this.props.repo,
-        branchName: this.props.branch,
         commitSha: this.props.commit,
         groupId: this.props.user?.selectedGroup?.id,
       }),
@@ -152,7 +149,6 @@ export default class HistoryComponent extends React.Component {
       this.props.username ||
       this.props.hostname ||
       format.formatGitUrl(this.props.repo) ||
-      this.props.branch ||
       format.formatCommitHash(this.props.commit) ||
       this.props.user?.selectedGroupName()
     } Build History | BuildBuddy`;
@@ -229,10 +225,6 @@ export default class HistoryComponent extends React.Component {
     router.navigateHome("#repos");
   }
 
-  handleBranchesClicked() {
-    router.navigateHome("#branches");
-  }
-
   handleCommitsClicked() {
     router.navigateHome("#commits");
   }
@@ -284,12 +276,10 @@ export default class HistoryComponent extends React.Component {
       this.props.username ||
       this.props.hostname ||
       format.formatCommitHash(this.props.commit) ||
-      this.props.branch ||
       format.formatGitUrl(this.props.repo);
     let viewType = "build history";
     if (this.props.hash == "#users") viewType = "users";
     if (this.props.hash == "#repos") viewType = "repos";
-    if (this.props.hash == "#branches") viewType = "branches";
     if (this.props.hash == "#commits") viewType = "commits";
     if (this.props.hash == "#hosts") viewType = "hosts";
     return (
@@ -323,11 +313,6 @@ export default class HistoryComponent extends React.Component {
                 {(this.props.repo || this.props.hash == "#repos") && (
                   <span onClick={this.handleReposClicked.bind(this)} className="clickable">
                     Repos
-                  </span>
-                )}
-                {(this.props.branch || this.props.hash == "#branches") && (
-                  <span onClick={this.handleBranchesClicked.bind(this)} className="clickable">
-                    Branches
                   </span>
                 )}
                 {(this.props.commit || this.props.hash == "#commits") && (
@@ -373,16 +358,6 @@ export default class HistoryComponent extends React.Component {
                     <span>Workflow runs of {format.formatGitUrl(this.props.repo)}</span>
                   </a>
                 )}
-                {this.props.branch && (
-                  <span>
-                    <a target="_blank" href={`${this.getRepoUrl()}/tree/${this.props.branch}`}>
-                      <span>Builds from branch {this.props.branch}</span>
-                      <a className="history-trends-button" href={`/trends/?branch=${this.props.branch}`}>
-                        View trends
-                      </a>
-                    </a>
-                  </span>
-                )}
                 {this.props.commit && (
                   <span>
                     <a target="_blank" href={`https://github.com/search?q=hash%3A${this.props.commit}`}>
@@ -396,7 +371,6 @@ export default class HistoryComponent extends React.Component {
                 {!this.props.hostname &&
                   !this.props.username &&
                   !this.props.repo &&
-                  !this.props.branch &&
                   !this.props.commit &&
                   `${this.props.user?.selectedGroupName() || "User"}'s ${viewType}`}
               </div>

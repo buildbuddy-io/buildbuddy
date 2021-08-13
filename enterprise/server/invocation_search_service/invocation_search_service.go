@@ -132,9 +132,6 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	if url := req.GetQuery().GetRepoUrl(); url != "" {
 		q.AddWhereClause("i.repo_url = ?", url)
 	}
-	if branch := req.GetQuery().GetBranchName(); branch != "" {
-		q.AddWhereClause("i.branch_name = ?", branch)
-	}
 	if sha := req.GetQuery().GetCommitSha(); sha != "" {
 		q.AddWhereClause("i.commit_sha = ?", sha)
 	}
