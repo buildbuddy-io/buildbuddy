@@ -543,7 +543,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		return nil, err
 	}
 
-	// PermissionDenied, Unauthenticated, Unimplemented both imply that this is an
+	// PermissionDenied, Unauthenticated, Unimplemented all imply that this is an
 	// anonymous execution, so ignore those.
 	user, err := auth.UserFromTrustedJWT(ctx)
 	if err != nil && !status.IsPermissionDeniedError(err) && !status.IsUnauthenticatedError(err) && !status.IsUnimplementedError(err) {
