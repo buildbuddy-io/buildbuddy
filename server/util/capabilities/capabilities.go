@@ -5,10 +5,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/grpc/codes"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	gstatus "google.golang.org/grpc/status"
 )
 
 var (
