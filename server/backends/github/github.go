@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 const (
@@ -73,8 +75,7 @@ func NewGithubClient(env environment.Env, token string) *GithubClient {
 func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	githubConfig := c.env.GetConfigurator().GetGithubConfig()
 	if githubConfig == nil {
-		log.Warningf("Missing GitHub config; redirecting to home page.")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		redirectWithError(w, r, status.PermissionDeniedErrorf("Missing GitHub config"))
 		return
 	}
 
@@ -98,8 +99,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 	// Verify "state" cookie matches
 	if r.FormValue("state") != getCookie(r, stateCookieName) {
-		log.Warningf("Github link state mismatch: %s != %s", r.FormValue("state"), getCookie(r, stateCookieName))
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		redirectWithError(w, r, status.PermissionDeniedErrorf("GitHub link state mismatch: %s != %s", r.FormValue("state"), getCookie(r, stateCookieName)))
 		return
 	}
 
@@ -114,8 +114,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
-		log.Warningf("Error creating request: %v", err)
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		redirectWithError(w, r, status.PermissionDeniedErrorf("Error creating request: %s", err.Error()))
 		return
 	}
 
@@ -123,16 +122,14 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Warningf("Error getting access token: %v", err)
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		redirectWithError(w, r, status.PermissionDeniedErrorf("Error getting access token: %s", err.Error()))
 		return
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Warningf("Error reading Github response: %v", err)
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		redirectWithError(w, r, status.PermissionDeniedErrorf("Error reading GitHub response: %s", err.Error()))
 		return
 	}
 
@@ -142,15 +139,13 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	// Restore group ID from cookie.
 	groupID := getCookie(r, groupIDCookieName)
 	if err := perms.AuthorizeGroupAccess(r.Context(), c.env, groupID); err != nil {
-		log.Warningf("Group auth failed; not linking GitHub account: %s", err)
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		redirectWithError(w, r, status.PermissionDeniedErrorf("Group auth failed; not linking GitHub account: %s", err.Error()))
 		return
 	}
 
 	dbHandle := c.env.GetDBHandle()
 	if dbHandle == nil {
-		log.Warningf("No database configured")
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		redirectWithError(w, r, status.PermissionDeniedErrorf("No database configured"))
 		return
 	}
 
@@ -158,8 +153,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		"UPDATE Groups SET github_token = ? WHERE group_id = ?",
 		accessTokenResponse.AccessToken, groupID).Error
 	if err != nil {
-		log.Warningf("Error linking github account to user: %v", err)
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		redirectWithError(w, r, status.PermissionDeniedErrorf("Error linking github account to user: %v", err))
 		return
 	}
 
@@ -255,4 +249,9 @@ func getCookie(r *http.Request, name string) string {
 		return c.Value
 	}
 	return ""
+}
+
+func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
+	log.Warningf(err.Error())
+	http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
 }
