@@ -748,7 +748,7 @@ func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, e
 		}
 		return claims, nil
 	}
-	// WARNING: app/auth/auth_service.ts depends on this string containing the text "not found" or using status UNAUTHENTICATED.
+	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
 	return nil, status.UnauthenticatedError("User not found")
 }
 
@@ -929,6 +929,6 @@ func UserFromTrustedJWT(ctx context.Context) (interfaces.UserInfo, error) {
 		}
 		return claims, nil
 	}
-	// WARNING: app/auth/auth_service.ts depends on this string containing the text "not found" or using status UNAUTHENTICATED.
+	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
 	return nil, status.UnauthenticatedError("User not found")
 }

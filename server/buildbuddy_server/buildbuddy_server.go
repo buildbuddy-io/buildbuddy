@@ -148,7 +148,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		return nil, err
 	}
 	if tu == nil {
-		// WARNING: app/auth/auth_service.ts depends on this string containing the text "not found" or using status UNAUTHENTICATED.
+		// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
 		return nil, status.UnauthenticatedError("User not found")
 	}
 	return &uspb.GetUserResponse{
