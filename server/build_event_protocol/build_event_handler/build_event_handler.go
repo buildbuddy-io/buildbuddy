@@ -507,7 +507,6 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 	i.DurationUsec = p.DurationUsec
 	i.Host = p.Host
 	i.RepoURL = p.RepoUrl
-	i.BranchName = p.BranchName
 	i.CommitSHA = p.CommitSha
 	i.Role = p.Role
 	i.Command = p.Command
@@ -535,7 +534,6 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	out.DurationUsec = i.DurationUsec
 	out.Host = i.Host
 	out.RepoUrl = i.RepoURL
-	out.BranchName = i.BranchName
 	out.CommitSha = i.CommitSHA
 	out.Role = i.Role
 	out.Command = i.Command

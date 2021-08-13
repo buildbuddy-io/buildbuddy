@@ -99,7 +99,6 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 			CreatedAtUsec: ti.CreatedAtUsec,
 			UpdatedAtUsec: ti.UpdatedAtUsec,
 			RepoUrl:       ti.RepoURL,
-			BranchName:    ti.BranchName,
 			CommitSha:     ti.CommitSHA,
 			Role:          ti.Role,
 		}
