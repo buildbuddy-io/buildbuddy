@@ -504,6 +504,9 @@ func (d *UserDB) getDefaultGroupConfig() *defaultGroupConfig {
 func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) error {
 	groupIDs := make([]string, 0)
 
+	if u.Email == "" {
+		return status.FailedPreconditionErrorf("Auth token does not contain an email address")
+	}
 	emailParts := strings.Split(u.Email, "@")
 	if len(emailParts) != 2 {
 		return status.FailedPreconditionErrorf("Invalid email address: %s", u.Email)
