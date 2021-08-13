@@ -310,7 +310,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               />
               <TrendsChartComponent
                 title="Branches with builds"
-                data={this.state.lastNDates}
+                data={this.state.dates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.branchCount}
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
