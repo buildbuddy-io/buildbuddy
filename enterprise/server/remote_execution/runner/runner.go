@@ -152,7 +152,7 @@ type CommandRunner struct {
 	diskUsageBytes   int64
 }
 
-func (r *CommandRunner) PrepareForTask(task *repb.ExecutionTask) error {
+func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.ExecutionTask) error {
 	r.Workspace.SetTask(task)
 	// Clean outputs for the current task if applicable, in case
 	// those paths were written as read-only inputs in a previous action.
@@ -164,6 +164,12 @@ func (r *CommandRunner) PrepareForTask(task *repb.ExecutionTask) error {
 	}
 	if err := r.Workspace.CreateOutputDirs(); err != nil {
 		return status.UnavailableErrorf("Error creating output directory: %s", err.Error())
+	}
+
+	// Pull the container image before Run() is called, so that we don't
+	// use up the whole exec ctx timeout with a slow container pull.
+	if err := r.Container.PullImageIfNecessary(ctx); err != nil {
+		return status.UnavailableErrorf("Error pulling container: %s", err)
 	}
 	return nil
 }

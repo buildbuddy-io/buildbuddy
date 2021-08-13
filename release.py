@@ -20,7 +20,10 @@ except ImportError:
     from urllib import urlencode
     from urllib2 import urlopen, Request
     from urllib2 import HTTPError
-
+try:
+    input = raw_input
+except NameError:
+    pass
 
 """
 release.py - A simple script to create a release.
@@ -68,15 +71,15 @@ def bump_patch_version(version):
 
 def yes_or_no(question):
     while "the answer is invalid":
-        reply = str(raw_input(question+' (y/n): ')).lower().strip()
-        if reply[:1] == 'y':
+        reply = input(question+" (y/n): ").lower().strip()
+        if reply[:1] == "y":
             return True
-        if reply[:1] == 'n':
+        if reply[:1] == "n":
             return False
 
 def confirm_new_version(version):
     while not yes_or_no("Please confirm you want to release version %s" % version):
-        version = str(raw_input('What version do you want to release?\n')).lower().strip()
+        version = input('What version do you want to release?\n').lower().strip()
     return version
 
 def update_version_in_file(old_version, new_version, version_file):
@@ -130,7 +133,13 @@ def update_docker_image(new_version, update_latest_tag):
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
     p = subprocess.Popen(release_notes_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    return "".join(p.stdout.readlines())
+    buf = ""
+    while True:
+        line = p.stdout.readline()
+        if not line:
+            break
+        buf += line.decode("utf-8")
+    return buf
 
 def github_make_request(
         auth_token=None,
@@ -251,7 +260,7 @@ def main():
         old_version = read_version(version_file)
         new_version = bump_patch_version(old_version)
         release_notes = generate_release_notes(old_version)
-        print("release notes:\n" + release_notes)
+        print("release notes:\n %s" % release_notes)
         print('I found existing version: %s' % old_version)
         new_version = confirm_new_version(new_version)
         print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))

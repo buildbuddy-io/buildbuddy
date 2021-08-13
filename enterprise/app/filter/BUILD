@@ -19,6 +19,7 @@ ts_library(
         "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//@types/react-date-range",
+        "@npm//date-fns",
         "@npm//moment",
         "@npm//react",
         "@npm//react-date-range",
