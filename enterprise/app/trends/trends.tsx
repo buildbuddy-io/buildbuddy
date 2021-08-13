@@ -109,6 +109,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
       request.query.commitSha = this.props.search.get("commit");
     }
 
+    if (this.props.search.get("branch")) {
+      request.query.branchName = this.props.search.get("branch");
+    }
+
     if (this.props.search.get("repo")) {
       request.query.repoUrl = this.props.search.get("repo");
     }
@@ -303,6 +307,15 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " commits"}
                 name="commits with builds"
+              />
+              <TrendsChartComponent
+                title="Branches with builds"
+                data={this.state.lastNDates}
+                extractValue={(date) => +this.state.dateToStatMap.get(date)?.branchCount}
+                extractLabel={this.formatShortDate}
+                formatHoverLabel={this.formatLongDate}
+                formatHoverValue={(value) => (value || 0) + " branches"}
+                name="branches with builds"
               />
               <TrendsChartComponent
                 title="Hosts with builds"

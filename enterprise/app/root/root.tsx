@@ -50,6 +50,7 @@ export default class EnterpriseRootComponent extends React.Component {
       Path.userHistoryPath,
       Path.hostHistoryPath,
       Path.repoHistoryPath,
+      Path.branchHistoryPath,
       Path.commitHistoryPath,
       Path.workflowsPath,
       Path.settingsPath,
@@ -95,6 +96,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let historyUser = this.state.user && router.getHistoryUser(this.state.path);
     let historyHost = this.state.user && router.getHistoryHost(this.state.path);
     let historyRepo = this.state.user && router.getHistoryRepo(this.state.path);
+    let historyBranch = this.state.user && router.getHistoryBranch(this.state.path);
     let historyCommit = this.state.user && router.getHistoryCommit(this.state.path);
     let settings = this.state.path.startsWith("/settings");
     let org = this.state.path.startsWith("/org/");
@@ -119,6 +121,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !historyHost &&
       !historyUser &&
       !historyRepo &&
+      !historyBranch &&
       !historyCommit;
 
     let setup =
@@ -195,6 +198,14 @@ export default class EnterpriseRootComponent extends React.Component {
                   <HistoryComponent
                     user={this.state.user}
                     repo={historyRepo}
+                    hash={this.state.hash}
+                    search={this.state.search}
+                  />
+                )}
+                {historyBranch && (
+                  <HistoryComponent
+                    user={this.state.user}
+                    branch={historyBranch}
                     hash={this.state.hash}
                     search={this.state.search}
                   />
