@@ -7,6 +7,7 @@ ts_library(
     srcs = glob(["*.ts"]),
     deps = [
         "//app/capabilities",
+        "//app/errors",
         "//app/service",
         "//proto:context_ts_proto",
         "//proto:group_ts_proto",

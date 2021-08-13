@@ -5,6 +5,8 @@ import { user_id } from "../../proto/user_id_ts_proto";
 import { user } from "../../proto/user_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
+import errorService from "../errors/error_service";
+import { BuildBuddyError } from "../../app/util/errors";
 
 const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
 
@@ -38,9 +40,7 @@ export class AuthService {
         this.emitUser(this.userFromResponse(response));
       })
       .catch((error: any) => {
-        console.log(error);
-        // TODO(siggisim): make this more robust.
-        if (error.includes("not found")) {
+        if (BuildBuddyError.parse(error).code == "Unauthenticated" || error.includes("not found")) {
           this.createUser();
         } else {
           this.onUserRpcError(error);
@@ -67,14 +67,18 @@ export class AuthService {
         this.refreshUser();
       })
       .catch((error: any) => {
-        this.onUserRpcError(error);
+        if (BuildBuddyError.parse(error).code == "Unauthenticated" || error.includes("No user token")) {
+          console.log("User was not created because no auth cookie was set, this is normal.");
+          this.emitUser(null);
+        } else {
+          this.onUserRpcError(error);
+        }
       });
   }
 
   onUserRpcError(error: any) {
-    console.log(error);
+    errorService.handleError(error);
     this.emitUser(null);
-    // TODO(siggisim): figure out what we should do in this case.
   }
 
   userFromResponse(response: user.GetUserResponse) {
