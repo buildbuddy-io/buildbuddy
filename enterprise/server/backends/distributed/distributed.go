@@ -49,6 +49,10 @@ type hintedHandoffOrder struct {
 	isolation *dcpb.Isolation
 }
 
+func (o *hintedHandoffOrder) String() string {
+	return fmt.Sprintf("{digest:%q prefix:%q isolation:{%s}}", o.d.GetHash(), o.prefix, o.isolation)
+}
+
 type Cache struct {
 	local                interfaces.Cache
 	log                  log.Logger
@@ -179,7 +183,7 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 			ctx, cancel := background.ExtendContextForFinalization(handoffOrder.ctx, 10*time.Second)
 			err := c.sendFile(ctx, handoffOrder.d, handoffOrder.prefix, handoffOrder.isolation, peer)
 			if err != nil {
-				c.log.Warningf("unable to complete hinted handoff to peer: %q: %s (order %+v)", peer, err, handoffOrder)
+				c.log.Warningf("unable to complete hinted handoff to peer: %q: %s (order %s)", peer, err, handoffOrder)
 				return
 			}
 			c.log.Debugf("completed hinted handoff to peer: %q", peer)
