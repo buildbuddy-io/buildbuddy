@@ -283,10 +283,8 @@ export default class ExecutionCardComponent extends React.Component {
       )
       .filter(
         (action) =>
-          this.state.statusFilter.includes("all") ||
-          getExecutionStatus(action).name.toLowerCase().includes(this.state.statusFilter.toLowerCase()) ||
-          (getExecutionStatus(action).name.toLowerCase().includes("failed") &&
-            this.state.statusFilter.includes("error"))
+          this.state.statusFilter === "all" ||
+          getExecutionStatus(action).name.toLowerCase().startsWith(this.state.statusFilter)
       );
 
     return (
@@ -313,6 +311,7 @@ export default class ExecutionCardComponent extends React.Component {
                   <Option value="queued">Queued</Option>
                   <Option value="executing">Executing</Option>
                   <Option value="succeeded">Succeeded</Option>
+                  <Option value="failed">Failed</Option>
                   <Option value="error">Errored</Option>
                 </Select>
                 <span className="invocation-sort-title">Sort by</span>
