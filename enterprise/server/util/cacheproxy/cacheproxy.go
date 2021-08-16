@@ -436,6 +436,11 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, isol
 		}
 	}()
 	err = <-firstError
+
+	// If we get an EOF, and we're expecting one - don't return an error.
+	if err == io.EOF && d.GetSizeBytes() == offset {
+		return reader, nil
+	}
 	return reader, err
 }
 

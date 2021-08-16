@@ -40,10 +40,10 @@ func runByteStreamServer(ctx context.Context, env *testenv.TestEnv, t *testing.T
 	return clientConn
 }
 
-func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.InstanceNameDigest, out io.Writer) error {
+func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.InstanceNameDigest, out io.Writer, offset int64) error {
 	req := &bspb.ReadRequest{
 		ResourceName: digest.DownloadResourceName(d.Digest, d.GetInstanceName()),
-		ReadOffset:   0,
+		ReadOffset:   offset,
 		ReadLimit:    d.GetSizeBytes(),
 	}
 	stream, err := bsClient.Read(ctx, req)
@@ -81,6 +81,7 @@ func TestRPCRead(t *testing.T) {
 		wantError          error
 		instanceNameDigest *digest.InstanceNameDigest
 		wantData           string
+		offset             int64
 	}{
 		{ // Simple Read
 			instanceNameDigest: digest.NewInstanceNameDigest(&repb.Digest{
@@ -89,6 +90,7 @@ func TestRPCRead(t *testing.T) {
 			}, ""),
 			wantData:  randStr(1234),
 			wantError: nil,
+			offset:    0,
 		},
 		{ // Large Read
 			instanceNameDigest: digest.NewInstanceNameDigest(&repb.Digest{
@@ -97,6 +99,7 @@ func TestRPCRead(t *testing.T) {
 			}, ""),
 			wantData:  randStr(1000 * 1000 * 100),
 			wantError: nil,
+			offset:    0,
 		},
 		{ // 0 length read
 			instanceNameDigest: digest.NewInstanceNameDigest(&repb.Digest{
@@ -105,6 +108,25 @@ func TestRPCRead(t *testing.T) {
 			}, ""),
 			wantData:  "",
 			wantError: nil,
+			offset:    0,
+		},
+		{ // Offset
+			instanceNameDigest: digest.NewInstanceNameDigest(&repb.Digest{
+				Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
+				SizeBytes: 1234,
+			}, ""),
+			wantData:  randStr(1234),
+			wantError: nil,
+			offset:    1,
+		},
+		{ // Max offset
+			instanceNameDigest: digest.NewInstanceNameDigest(&repb.Digest{
+				Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
+				SizeBytes: 1234,
+			}, ""),
+			wantData:  randStr(1234),
+			wantError: nil,
+			offset:    1234,
 		},
 	}
 
@@ -121,13 +143,13 @@ func TestRPCRead(t *testing.T) {
 
 		// Now read it back with the bytestream API.
 		var buf bytes.Buffer
-		gotErr := readBlob(ctx, bsClient, tc.instanceNameDigest, &buf)
+		gotErr := readBlob(ctx, bsClient, tc.instanceNameDigest, &buf, tc.offset)
 		if gstatus.Code(gotErr) != gstatus.Code(tc.wantError) {
 			t.Errorf("got %v; want %v", gotErr, tc.wantError)
 			//			continue
 		}
 		got := string(buf.Bytes())
-		if got != tc.wantData {
+		if got != tc.wantData[tc.offset:] {
 			t.Errorf("got %.100s; want %.100s", got, tc.wantData)
 		}
 	}
