@@ -1,4 +1,4 @@
-FROM gcr.io/cloud-marketplace/google/debian10@sha256:daeac4ec3dea7b7ad6f0fb689c44c02cbc43f3b6af2f0f8d43f499ac790d9298
+FROM gcr.io/cloud-marketplace/google/debian10@sha256:3242ff21417c7722482c2085f86f28ed4f76cde00bf880f15fc1795975bc2a81
 
 COPY data/firecracker /usr/bin/firecracker
 COPY data/jailer /usr/bin/jailer
