@@ -103,9 +103,6 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		ht.TrackEmptyHit()
 		return nil
 	}
-	if req.ReadOffset == d.GetSizeBytes() {
-		return nil
-	}
 	reader, err := cache.Reader(ctx, d, req.ReadOffset)
 	if err != nil {
 		ht.TrackMiss(d)
