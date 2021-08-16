@@ -162,14 +162,15 @@ func TestReaderMaxOffset(t *testing.T) {
 	}
 	readSeeker.Seek(0, 0)
 
+	instanceName := "foo"
 	// Set the random bytes in the cache (with a prefix)
-	err = te.GetCache().WithPrefix("foo").Set(ctx, d, buf.Bytes())
+	err = te.GetCache().WithPrefix(instanceName).Set(ctx, d, buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Remote-read the random bytes back.
-	r, err := c.RemoteReader(ctx, peer, "foo", &dcpb.Isolation{}, d, d.GetSizeBytes())
+	r, err := c.RemoteReader(ctx, peer, instanceName, &dcpb.Isolation{}, d, d.GetSizeBytes())
 	if err != nil {
 		t.Fatal(err)
 	}
