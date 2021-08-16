@@ -178,6 +178,39 @@ func TestReadWrite(t *testing.T) {
 	}
 }
 
+func TestReadOffset(t *testing.T) {
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDir := getTmpDir(t)
+	te := getTestEnv(t, emptyUserMap)
+	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := getAnonContext(t, te)
+	d, r := testdigest.NewRandomDigestReader(t, 100)
+	// Use Writer() to set the bytes in the cache.
+	wc, err := dc.Writer(ctx, d)
+	if err != nil {
+		t.Fatalf("Error getting %q writer: %s", d.GetHash(), err.Error())
+	}
+	if _, err := io.Copy(wc, r); err != nil {
+		t.Fatalf("Error copying bytes to cache: %s", err.Error())
+	}
+	if err := wc.Close(); err != nil {
+		t.Fatalf("Error closing writer: %s", err.Error())
+	}
+	// Use Reader() to get the bytes from the cache.
+	reader, err := dc.Reader(ctx, d, d.GetSizeBytes())
+	if err != nil {
+		t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
+	}
+	d2 := testdigest.ReadDigestAndClose(t, reader)
+	if "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" != d2.GetHash() {
+		t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+	}
+
+}
+
 func TestSizeLimit(t *testing.T) {
 	maxSizeBytes := int64(1000) // 1000 bytes
 	rootDir := getTmpDir(t)

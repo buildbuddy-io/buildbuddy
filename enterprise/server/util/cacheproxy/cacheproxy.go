@@ -436,6 +436,10 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer, prefix string, isol
 		}
 	}()
 	err = <-firstError
+
+	if err == io.EOF {
+		return reader, nil
+	}
 	return reader, err
 }
 
