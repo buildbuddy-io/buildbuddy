@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -154,7 +155,7 @@ func isTest(t *target) bool {
 	return strings.HasSuffix(strings.ToLower(t.ruleType), "test")
 }
 
-func (t *TargetTracker) testTargetsInAtleastState(state targetState) bool {
+func (t *TargetTracker) testTargetsInAtLeastState(state targetState) bool {
 	for _, t := range t.targets {
 		if isTest(t) && t.state < state {
 			return false
@@ -163,16 +164,7 @@ func (t *TargetTracker) testTargetsInAtleastState(state targetState) bool {
 	return true
 }
 
-func (t *TargetTracker) writeTestTargets(ctx context.Context) error {
-	var permissions *perms.UserGroupPerm
-	if auth := t.env.GetAuthenticator(); auth != nil {
-		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
-			permissions = perms.GroupAuthPermissions(u.GetGroupID())
-		}
-	}
-	if permissions == nil {
-		return status.FailedPreconditionError("Permissions were nil -- not writing target data.")
-	}
+func (t *TargetTracker) writeTestTargets(ctx context.Context, permissions *perms.UserGroupPerm) error {
 	repoURL := t.buildEventAccumulator.RepoURL()
 	knownTargets, err := readRepoTargets(ctx, t.env, repoURL)
 	if err != nil {
@@ -222,16 +214,7 @@ func (t *TargetTracker) writeTestTargets(ctx context.Context) error {
 	return nil
 }
 
-func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context) error {
-	var permissions *perms.UserGroupPerm
-	if auth := t.env.GetAuthenticator(); auth != nil {
-		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
-			permissions = perms.GroupAuthPermissions(u.GetGroupID())
-		}
-	}
-	if permissions == nil {
-		return status.FailedPreconditionError("Permissions were nil -- not writing target data.")
-	}
+func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions *perms.UserGroupPerm) error {
 	repoURL := t.buildEventAccumulator.RepoURL()
 	invocationPK := md5Int64(t.buildEventAccumulator.InvocationID())
 	newTargetStatuses := make([]*tables.TargetStatus, 0)
@@ -274,45 +257,47 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 		}
 	case *build_event_stream.BuildEvent_Configured:
 		t.handleEvent(event)
-	case *build_event_stream.BuildEvent_WorkspaceStatus:
-		if t.testTargetsInAtleastState(targetStateConfigured) {
-			if t.buildEventAccumulator.Role() == "CI" {
-				eg, gctx := errgroup.WithContext(ctx)
-				t.errGroup = eg
-				t.errGroup.Go(func() error { return t.writeTestTargets(gctx) })
-			}
-		} else {
-			// This should not happen, but it seems it can happen with certain targets.
-			// For now, we will log the targets that do not meet the required state
-			// so we can better understand whats happening to them.
-			log.Printf("Not all targets reached state: %d, targets: %+v", targetStateConfigured, t.targets)
-		}
 	case *build_event_stream.BuildEvent_Completed:
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_TestResult:
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_TestSummary:
 		t.handleEvent(event)
-		if !t.testTargetsInAtleastState(targetStateSummary) || t.buildEventAccumulator.Role() != "CI" || t.errGroup == nil {
-			break
-		}
-		// Synchronization point: make sure that all targets were read (or written).
-		if err := t.errGroup.Wait(); err != nil {
-			log.Printf("Error getting targets: %s", err.Error())
-			break
-		}
-		eg, gctx := errgroup.WithContext(ctx)
-		t.errGroup = eg
-		t.errGroup.Go(func() error { return t.writeTestTargetStatuses(gctx) })
 	case *build_event_stream.BuildEvent_Finished:
-		if t.errGroup == nil {
-			break
+		go t.writeTargetsAndStatuses(ctx)
+	}
+}
+
+func (t *TargetTracker) writeTargetsAndStatuses(ctx context.Context) {
+	ctx, cancel := background.ExtendContextForFinalization(ctx, 30*time.Second)
+	defer cancel()
+
+	iid := t.buildEventAccumulator.InvocationID()
+
+	if t.buildEventAccumulator.Role() != "CI" {
+		log.Debugf("Skipping target tracking for %s because it's not a CI build", iid)
+		return
+	}
+
+	var permissions *perms.UserGroupPerm
+	if auth := t.env.GetAuthenticator(); auth != nil {
+		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
+			permissions = perms.GroupAuthPermissions(u.GetGroupID())
 		}
-		// Synchronization point: make sure that all statuses were written.
-		if err := t.errGroup.Wait(); err != nil {
-			// Debug because this logs when unauthorized/non-CI builds skip writing targets.
-			log.Debugf("Error writing target statuses: %s", err.Error())
-		}
+	}
+	if permissions == nil {
+		log.Debugf("Skipping target tracking for %s because it's not authenticated", iid)
+		return
+	}
+
+	err := t.writeTestTargets(ctx, permissions)
+	if err != nil {
+		log.Warningf("Error writing %s test targets: %s", iid, err.Error())
+	}
+
+	err = t.writeTestTargetStatuses(ctx, permissions)
+	if err != nil {
+		log.Warningf("Error writing %s target statuses: %s", iid, err.Error())
 	}
 }
 
