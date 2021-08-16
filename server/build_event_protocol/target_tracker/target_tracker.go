@@ -155,15 +155,6 @@ func isTest(t *target) bool {
 	return strings.HasSuffix(strings.ToLower(t.ruleType), "test")
 }
 
-func (t *TargetTracker) testTargetsInAtLeastState(state targetState) bool {
-	for _, t := range t.targets {
-		if isTest(t) && t.state < state {
-			return false
-		}
-	}
-	return true
-}
-
 func (t *TargetTracker) writeTestTargets(ctx context.Context, permissions *perms.UserGroupPerm) error {
 	repoURL := t.buildEventAccumulator.RepoURL()
 	knownTargets, err := readRepoTargets(ctx, t.env, repoURL)
