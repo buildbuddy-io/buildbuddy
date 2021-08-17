@@ -1,5 +1,17 @@
 import React from "react";
-import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Bar, Line, Legend, Tooltip } from "recharts";
+
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Bar,
+  Line,
+  Legend,
+  Tooltip,
+  Cell,
+} from "recharts";
 
 interface Props {
   title: string;
@@ -16,12 +28,13 @@ interface Props {
   secondaryName?: string;
   secondaryLine?: boolean;
   separateAxis?: boolean;
+
+  onBarClicked?: (date: string) => void;
 }
 
 const TrendsChartTooltip = ({
   active,
   payload,
-  label,
   labelFormatter,
   valueFormatter,
   secondaryValueFormatter,
@@ -53,7 +66,6 @@ export default class TrendsChartComponent extends React.Component {
 
   render() {
     const hasSecondaryAxis = this.props.extractSecondaryValue && this.props.separateAxis;
-
     return (
       <div className="trend-chart">
         <div className="trend-chart-title">{this.props.title}</div>
@@ -77,9 +89,23 @@ export default class TrendsChartComponent extends React.Component {
                 />
               }
             />
-            <Bar yAxisId="primary" name={this.props.name} dataKey={this.props.extractValue} fill="#607D8B" />
+            <Bar
+              className={this.props.onBarClicked ? "trends-clickable-bar-primary" : ""}
+              yAxisId="primary"
+              name={this.props.name}
+              dataKey={this.props.extractValue}
+              fill="#607D8B">
+              {this.props.data.map((date, index) => (
+                <Cell
+                  cursor={this.props.onBarClicked ? "pointer" : "default"}
+                  key={`cell-${index}`}
+                  onClick={this.props.onBarClicked ? this.props.onBarClicked.bind(this, date) : null}
+                />
+              ))}
+            </Bar>
             {this.props.extractSecondaryValue && this.props.secondaryLine && (
               <Line
+                activeDot={{ pointerEvents: "none" }}
                 yAxisId={this.props.separateAxis ? "secondary" : "primary"}
                 name={this.props.secondaryName}
                 dot={false}
@@ -89,11 +115,19 @@ export default class TrendsChartComponent extends React.Component {
             )}
             {this.props.extractSecondaryValue && !this.props.secondaryLine && (
               <Bar
+                className={this.props.onBarClicked ? "trends-clickable-bar-secondary" : ""}
                 yAxisId={this.props.separateAxis ? "secondary" : "primary"}
                 name={this.props.secondaryName}
                 dataKey={this.props.extractSecondaryValue}
-                fill="#03A9F4"
-              />
+                fill="#03A9F4">
+                {this.props.data.map((date, index) => (
+                  <Cell
+                    cursor={this.props.onBarClicked ? "pointer" : "default"}
+                    key={`cell-${index}`}
+                    onClick={this.props.onBarClicked ? this.props.onBarClicked.bind(this, date) : null}
+                  />
+                ))}
+              </Bar>
             )}
           </ComposedChart>
         </ResponsiveContainer>
