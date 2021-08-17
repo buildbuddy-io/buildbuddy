@@ -748,9 +748,8 @@ func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, e
 		}
 		return claims, nil
 	}
-	// NB: DO NOT CHANGE THIS ERROR MESSAGE. The client app matches it in
-	// order to trigger the CreateUser flow.
-	return nil, status.PermissionDeniedError("User not found")
+	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
+	return nil, status.UnauthenticatedError("User not found")
 }
 
 func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
@@ -767,7 +766,8 @@ func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces
 func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
 	t, ok := ctx.Value(contextUserKey).(*userToken)
 	if !ok {
-		return status.FailedPreconditionErrorf("No user token available to fill user")
+		// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
+		return status.UnauthenticatedError("No user token available to fill user")
 	}
 
 	pk, err := tables.PrimaryKeyForTable("Users")
@@ -921,7 +921,8 @@ func UserFromTrustedJWT(ctx context.Context) (interfaces.UserInfo, error) {
 		}
 		return claims, nil
 	}
-	return nil, status.PermissionDeniedError("User not found")
+	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
+	return nil, status.UnauthenticatedError("User not found")
 }
 
 func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
