@@ -252,7 +252,9 @@ export default class SidebarComponent extends React.Component {
                 src={this.props.user?.displayUser?.profileImageUrl || "/image/user-regular.svg"}
               />
               <div className="sidebar-profile-name">
-                <div className="sidebar-profile-user">{this.props.user?.displayUser?.name?.full}</div>
+                <div className="sidebar-profile-user">
+                  {this.props.user?.displayUser?.name?.full || this.props.user?.displayUser?.email}
+                </div>
                 <div className="sidebar-profile-org">{this.props.user?.selectedGroupName()}</div>
               </div>
               <img

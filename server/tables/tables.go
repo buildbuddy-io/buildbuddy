@@ -2,6 +2,7 @@ package tables
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -225,7 +226,7 @@ func (u *User) ToProto() *uspb.DisplayUser {
 			Id: u.UserID,
 		},
 		Name: &uspb.Name{
-			Full:  u.FirstName + " " + u.LastName,
+			Full:  strings.TrimSpace(u.FirstName + " " + u.LastName),
 			First: u.FirstName,
 			Last:  u.LastName,
 		},

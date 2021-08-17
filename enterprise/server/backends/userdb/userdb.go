@@ -53,10 +53,15 @@ func newAPIKeyToken() string {
 }
 
 func singleUserGroup(u *tables.User) (*tables.Group, error) {
+	name := u.Email
+	if u.FirstName != "" || u.LastName != "" {
+		name = strings.TrimSpace(strings.Join([]string{u.FirstName, u.LastName}, " "))
+	}
+
 	return &tables.Group{
 		GroupID:    strings.Replace(u.UserID, "US", "GR", 1),
 		UserID:     u.UserID,
-		Name:       strings.Join([]string{u.FirstName, u.LastName}, " "),
+		Name:       name,
 		WriteToken: randomToken(10),
 	}, nil
 }
