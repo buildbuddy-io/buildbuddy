@@ -88,11 +88,11 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 	}
 
 	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
-		q.AddWhereClause("repo = ?", repoURL)
+		q.AddWhereClause("repo_url = ?", repoURL)
 	}
 
 	if commitSHA := req.GetQuery().GetCommitSha(); commitSHA != "" {
-		q.AddWhereClause("commit = ?", commitSHA)
+		q.AddWhereClause("commit_sha = ?", commitSHA)
 	}
 
 	roleClauses := query_builder.OrClauses{}
@@ -199,11 +199,11 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
-		q.AddWhereClause("repo = ?", repoURL)
+		q.AddWhereClause("repo_url = ?", repoURL)
 	}
 
 	if commitSHA := req.GetQuery().GetCommitSha(); commitSHA != "" {
-		q.AddWhereClause("commit = ?", commitSHA)
+		q.AddWhereClause("commit_sha = ?", commitSHA)
 	}
 
 	roleClauses := query_builder.OrClauses{}
