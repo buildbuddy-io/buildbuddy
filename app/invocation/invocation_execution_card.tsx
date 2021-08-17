@@ -21,6 +21,7 @@ interface State {
   executions: execution_stats.Execution[];
   sort: string;
   direction: "asc" | "desc";
+  statusFilter: string;
 }
 
 const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage;
@@ -71,6 +72,7 @@ export default class ExecutionCardComponent extends React.Component {
     loading: true,
     sort: "status",
     direction: "desc",
+    statusFilter: "all",
   };
 
   timeoutRef: number;
@@ -229,6 +231,12 @@ export default class ExecutionCardComponent extends React.Component {
     });
   }
 
+  handleStatusFilterChange(event: any) {
+    this.setState({
+      statusFilter: event.target.value,
+    });
+  }
+
   handleActionDigestClick(execution: execution_stats.Execution) {
     router.navigateTo(
       "/invocation/" +
@@ -264,14 +272,20 @@ export default class ExecutionCardComponent extends React.Component {
       }
     }
 
-    const filteredActions = this.state.executions.filter(
-      (action) =>
-        !this.props.filter ||
-        `${action.actionDigest.hash}/${action.actionDigest.sizeBytes}`
-          .toLowerCase()
-          .includes(this.props.filter.toLowerCase()) ||
-        action.commandSnippet.toLowerCase().includes(this.props.filter.toLowerCase())
-    );
+    const filteredActions = this.state.executions
+      .filter(
+        (action) =>
+          !this.props.filter ||
+          `${action.actionDigest.hash}/${action.actionDigest.sizeBytes}`
+            .toLowerCase()
+            .includes(this.props.filter.toLowerCase()) ||
+          action.commandSnippet.toLowerCase().includes(this.props.filter.toLowerCase())
+      )
+      .filter(
+        (action) =>
+          this.state.statusFilter === "all" ||
+          getExecutionStatus(action).name.toLowerCase().startsWith(this.state.statusFilter)
+      );
 
     return (
       <div>
@@ -289,6 +303,17 @@ export default class ExecutionCardComponent extends React.Component {
               </div>
 
               <div className="invocation-sort-controls">
+                <span className="invocation-filter-title">Show</span>
+                <Select onChange={this.handleStatusFilterChange.bind(this)} value={this.state.statusFilter}>
+                  <Option value="all">All</Option>
+                  <Option value="starting">Starting</Option>
+                  <Option value="cache check">Cache Check</Option>
+                  <Option value="queued">Queued</Option>
+                  <Option value="executing">Executing</Option>
+                  <Option value="succeeded">Succeeded</Option>
+                  <Option value="failed">Failed</Option>
+                  <Option value="error">Errored</Option>
+                </Select>
                 <span className="invocation-sort-title">Sort by</span>
                 <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
                   <Option value="total-duration">Total Duration</Option>
@@ -374,7 +399,7 @@ export default class ExecutionCardComponent extends React.Component {
                   })}
                 </div>
               ) : (
-                <div>No matching actions.</div>
+                <div className="invocation-execution-empty-actions">No matching actions.</div>
               )}
             </div>
           </div>
