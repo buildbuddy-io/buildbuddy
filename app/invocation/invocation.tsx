@@ -291,7 +291,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {isBazelInvocation && (activeTab == "all" || activeTab == "execution") && (
+          {isBazelInvocation && activeTab == "execution" && (
             <ExecutionCardComponent
               model={this.state.model}
               inProgress={this.state.inProgress}
