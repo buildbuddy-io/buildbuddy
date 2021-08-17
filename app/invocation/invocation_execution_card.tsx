@@ -289,7 +289,7 @@ export default class ExecutionCardComponent extends React.Component {
     return (
       <div>
         <div className={`card expanded`}>
-        <img className="icon" src="/image/cloud-regular.svg" />
+          <img className="icon" src="/image/cloud-regular.svg" />
           <div className="content">
             <div className="invocation-content-header">
               <div className="title">
