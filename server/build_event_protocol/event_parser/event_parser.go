@@ -227,6 +227,9 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	if url, ok := envVarMap["BUILDKITE_REPO"]; ok && url != "" {
 		invocation.RepoUrl = url
 	}
+	if url, ok := envVarMap["REPO_URL"]; ok && url != "" {
+		invocation.RepoUrl = url
+	}
 	if url, ok := envVarMap["CIRCLE_REPOSITORY_URL"]; ok && url != "" {
 		invocation.RepoUrl = url
 	}
@@ -264,6 +267,9 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 		invocation.CommitSha = sha
 	}
 	if sha, ok := envVarMap["GITHUB_SHA"]; ok && sha != "" {
+		invocation.CommitSha = sha
+	}
+	if sha, ok := envVarMap["COMMIT_SHA"]; ok && sha != "" {
 		invocation.CommitSha = sha
 	}
 	if ci, ok := envVarMap["CI"]; ok && ci != "" {
