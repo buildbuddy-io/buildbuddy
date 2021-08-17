@@ -8,8 +8,9 @@ export class ErrorService {
     let searchParams = new URLSearchParams(window.location.search);
     if (searchParams.has(ERROR_SEARCH_PARAM)) {
       this.handleError(searchParams.get(ERROR_SEARCH_PARAM));
+      searchParams.delete(ERROR_SEARCH_PARAM);
+      router.replaceParams(Object.fromEntries(searchParams.entries()));
     }
-    router.replaceParams({ ERROR_SEARCH_PARAM: undefined });
   }
 
   handleError(e: any) {
