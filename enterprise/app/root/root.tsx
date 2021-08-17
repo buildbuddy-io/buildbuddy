@@ -10,6 +10,7 @@ import WorkflowsComponent from "../workflows/workflows";
 import InvocationComponent from "../../../app/invocation/invocation";
 import MenuComponent from "../../../app/menu/menu";
 import router, { Path } from "../../../app/router/router";
+import errorService from "../../../app/errors/error_service";
 import HistoryComponent from "../history/history";
 import LoginComponent from "../login/login";
 import CreateOrgComponent from "../org/create_org";
@@ -67,6 +68,10 @@ export default class EnterpriseRootComponent extends React.Component {
     authService.register();
     router.register(this.handlePathChange.bind(this));
     faviconService.setDefaultFavicon();
+  }
+
+  componentDidMount() {
+    errorService.register();
   }
 
   handlePathChange() {

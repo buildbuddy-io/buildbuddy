@@ -14,7 +14,7 @@ export class BuildBuddyError extends Error {
     const pattern = /code = (.*?) desc = (.*)$/;
     const match = error.match(pattern);
     if (!match) {
-      return new BuildBuddyError("Unknown", "Internal error");
+      return new BuildBuddyError("Unknown", error || "Internal error");
     }
 
     const [_, code, description] = match;
