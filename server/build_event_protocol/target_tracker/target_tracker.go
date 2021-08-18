@@ -427,6 +427,9 @@ func insertTargets(ctx context.Context, env environment.Env, targets []*tables.T
 }
 
 func chunkStatusesBy(items []*tables.TargetStatus, chunkSize int) (chunks [][]*tables.TargetStatus) {
+	if len(items) == 0 {
+		return nil
+	}
 	for chunkSize < len(items) {
 		items, chunks = items[chunkSize:], append(chunks, items[0:chunkSize:chunkSize])
 	}
