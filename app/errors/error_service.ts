@@ -1,5 +1,5 @@
 import router from "../router/router";
-import { BuildBuddyError } from "../util/errors";
+import { BuildBuddyError, ErrorCode } from "../util/errors";
 import alertService from "../alert/alert_service";
 
 const ERROR_SEARCH_PARAM = "error";
@@ -13,11 +13,14 @@ export class ErrorService {
     }
   }
 
-  handleError(e: any) {
+  handleError(e: any, options?: { ignoreErrorCodes: ErrorCode[] }) {
     console.error(e);
-
-    const message = String(e instanceof BuildBuddyError ? e : BuildBuddyError.parse(e));
-    alertService.error(message);
+    const error = e instanceof BuildBuddyError ? e : BuildBuddyError.parse(e);
+    if (options?.ignoreErrorCodes?.includes(error.code)) {
+      console.log("Ignoring error code: " + error.code);
+      return;
+    }
+    alertService.error(String(error));
   }
 }
 

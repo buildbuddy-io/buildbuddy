@@ -77,7 +77,8 @@ export default class InvocationLogsModel {
         // chunk, and more may be available. Try fetching it immediately.
         this.fetchTail(response.nextChunkId);
       },
-      error: (e) => errorService.handleError(e),
+      error: (e) =>
+        errorService.handleError(e, { ignoreErrorCodes: ["NotFound", "PermissionDenied", "Unauthenticated"] }),
     });
   }
 }
