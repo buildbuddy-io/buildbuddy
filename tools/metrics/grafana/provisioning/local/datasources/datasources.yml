@@ -6,8 +6,6 @@ datasources:
   - access: proxy
   - uid: prom
   - isDefault: true
-  # When running docker with --net=host, need to use 127.0.0.1 instead
-  # of localhost.
-  - url: http://127.0.0.1:9100
+  - url: http://host.docker.internal:9100
   - version: 1
   - editable: false
