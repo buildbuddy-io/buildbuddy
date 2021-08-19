@@ -44,17 +44,14 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-const (
-	defaultInstanceName = ""
-)
-
 var (
-	server        = flag.String("server", "", "BuildBuddy server target")
-	pushGateway   = flag.String("push_gateway", "", "Optional address of Prometheus Pushgateway for recording results. Results are only reported for predefined workloads.")
-	apiKey        = flag.String("api_key", "", "API key to use")
-	summary       = flag.Bool("summary", true, "Whether to show summary at the end of the run.")
-	verbose       = flag.Bool("verbose", false, "Print detailed information for each executed command")
-	rawResultsDir = flag.String("raw_results_dir", "", "If specified, raw per-command data will be written as a CSV file into this directory.")
+	server             = flag.String("server", "", "BuildBuddy server target")
+	pushGateway        = flag.String("push_gateway", "", "Optional address of Prometheus Pushgateway for recording results. Results are only reported for predefined workloads.")
+	apiKey             = flag.String("api_key", "", "API key to use")
+	remoteInstanceName = flag.String("remote_instance_name", "", "Remote instance name to set in RBE RPCs.")
+	summary            = flag.Bool("summary", true, "Whether to show summary at the end of the run.")
+	verbose            = flag.Bool("verbose", false, "Print detailed information for each executed command")
+	rawResultsDir      = flag.String("raw_results_dir", "", "If specified, raw per-command data will be written as a CSV file into this directory.")
 
 	prepareConcurrency      = flag.Int("prepare_concurrency", 100, "Number of workers to start to prepare commands to be executed")
 	commandAcceptTimeout    = flag.Duration("command_accept_timeout", 30*time.Second, "Amount of time to wait for server to accept a command before considering an execution to be failed.")
@@ -221,7 +218,7 @@ func addFileWithRandomContent(ctx context.Context, byteStreamClient bspb.ByteStr
 	var err error
 	for {
 		reader := bytes.NewReader(data)
-		d, err = cachetools.UploadBlob(ctx, byteStreamClient, defaultInstanceName, reader)
+		d, err = cachetools.UploadBlob(ctx, byteStreamClient, *remoteInstanceName, reader)
 		if err == nil {
 			break
 		}
@@ -264,7 +261,7 @@ func prepareCommand(ctx context.Context, rbeClient *rbeclient.Client, byteStream
 
 	log.Debugf("Uploading input root for %q.", name)
 
-	inputRootDigest, err := cachetools.UploadProto(ctx, byteStreamClient, defaultInstanceName, dir)
+	inputRootDigest, err := cachetools.UploadProto(ctx, byteStreamClient, *remoteInstanceName, dir)
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not upload directory descriptor: %s", err)
 	}
@@ -282,7 +279,7 @@ func prepareCommand(ctx context.Context, rbeClient *rbeclient.Client, byteStream
 		Arguments: commandArgs,
 		Platform:  &repb.Platform{Properties: platformProps},
 	}
-	cmd, err := rbeClient.PrepareCommand(ctx, defaultInstanceName, name, inputRootDigest, command)
+	cmd, err := rbeClient.PrepareCommand(ctx, *remoteInstanceName, name, inputRootDigest, command)
 	if err != nil {
 		return nil, status.UnknownErrorf("could not prepare command %q: %v", name, err)
 	}
