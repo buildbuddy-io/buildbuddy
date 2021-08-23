@@ -12,7 +12,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -20,15 +19,176 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"golang.org/x/sys/unix"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
+
+// XXX: check for any security implications
+
+type CASFS struct {
+	scratchDir  string
+	fileFetcher *dirtools.BatchFileFetcher
+
+	instanceName string
+
+	server *fuse.Server // Not set until FS is mounted.
+
+	root *Node
+
+	mu            sync.Mutex
+	loopbackFiles []*instrumentedLoopbackFile
+}
+
+func New(fileFetcher *dirtools.BatchFileFetcher, scratchDir string) *CASFS {
+	cfs := &CASFS{
+		scratchDir:  scratchDir,
+		fileFetcher: fileFetcher,
+	}
+	root := &Node{cfs: cfs}
+	cfs.root = root
+	return cfs
+}
+
+func (cfs *CASFS) Mount(dir string) error {
+	server, err := fs.Mount(dir, cfs.root, &fs.Options{
+		MountOptions: fuse.MountOptions{
+			// Needed for docker.
+			AllowOther:    true,
+			Debug:         true,
+			DisableXAttrs: true,
+		},
+	})
+	if err != nil {
+		return status.UnknownErrorf("could not mount CAS FS at %q: %s", dir, err)
+	}
+	cfs.server = server
+	return nil
+}
+
+func (cfs *CASFS) PrepareLayout(ctx context.Context, instanceName string, fsLayout *container.FilesystemLayout) error {
+	if len(fsLayout.Inputs) == 0 {
+		return nil
+	}
+	rootDirectory := fsLayout.Inputs[0]
+	rootDirectoryDigest, err := digest.ComputeForMessage(rootDirectory)
+	if err != nil {
+		return err
+	}
+	if rootDirectoryDigest.Hash == digest.EmptySha256 {
+		return nil
+	}
+
+	dirMap, err := dirtools.BuildDirMap(fsLayout.Inputs)
+	if err != nil {
+		return err
+	}
+
+	//log.Infof("Set instance name to %q", instanceName)
+	cfs.instanceName = instanceName
+	var walkDir func(dir *repb.Directory, node *Node) error
+	walkDir = func(dir *repb.Directory, parentNode *Node) error {
+		for _, childDirNode := range dir.Directories {
+			//log.Infof("Walk %q", childDirNode.Name)
+			child := &Node{cfs: cfs, parent: parentNode}
+			log.Infof("Input directory: %s", child.relativePath())
+
+			inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR})
+			if !parentNode.AddChild(childDirNode.Name, inode, false) {
+				return status.UnknownErrorf("could not add child %q", childDirNode.Name)
+			}
+			childDir, ok := dirMap[digest.NewKey(childDirNode.Digest)]
+			if !ok {
+				return status.NotFoundErrorf("could not find dir %q", childDirNode.Digest)
+			}
+			if err := walkDir(childDir, child); err != nil {
+				return err
+			}
+		}
+		for _, childFileNode := range dir.Files {
+			//if childFileNode.Name == "process_wrapper" {
+			//	log.Infof("Parent: %s", parentNode.relativePath())
+			//	log.Infof("FULL PROTO %d:\n%s", i, proto.MarshalTextString(childFileNode))
+			//}
+			child := &Node{cfs: cfs, parent: parentNode, fileNode: childFileNode}
+			log.Infof("Input file: %s", child.relativePath())
+			inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG})
+			if !parentNode.AddChild(childFileNode.Name, inode, false) {
+				return status.UnknownErrorf("could not add child %q", childFileNode.Name)
+			}
+		}
+		if len(dir.Symlinks) > 0 {
+			return status.FailedPreconditionErrorf("symlinks are not supported")
+		}
+		return nil
+	}
+
+	dir, ok := dirMap[digest.NewKey(rootDirectoryDigest)]
+	if !ok {
+		return status.NotFoundErrorf("could not find root dir digest %q", rootDirectoryDigest.String())
+	}
+
+	err = walkDir(dir, cfs.root)
+	if err != nil {
+		return err
+	}
+
+	outputDirs := make(map[string]struct{})
+	for _, dir := range fsLayout.OutputDirs {
+		log.Infof("Output dir: %s", dir)
+		outputDirs[dir] = struct{}{}
+	}
+	for _, file := range fsLayout.OutputFiles {
+		log.Infof("Output file: %s", file)
+		outputDirs[filepath.Dir(file)] = struct{}{}
+	}
+	for dir := range outputDirs {
+		log.Infof("Process output dir %q", dir)
+		parts := strings.Split(dir, string(os.PathSeparator))
+		node := cfs.root
+		for _, p := range parts {
+			childNode := node.GetChild(p)
+			if childNode == nil {
+				child := &Node{cfs: cfs, parent: node}
+				inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR})
+				if !node.AddChild(p, inode, false) {
+					return status.UnknownErrorf("could not add child %q", p)
+				}
+				node = child
+			} else {
+				node = childNode.Operations().(*Node)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (cfs *CASFS) Unmount() error {
+	if cfs.server == nil {
+		return nil
+	}
+
+	cfs.mu.Lock()
+	readBytes := 0
+	wroteBytes := 0
+	for _, lf := range cfs.loopbackFiles {
+		lf.mu.Lock()
+		readBytes += lf.readBytes
+		wroteBytes += lf.wroteBytes
+		lf.mu.Unlock()
+	}
+	cfs.mu.Unlock()
+
+	log.Warningf("WORKSPACE %s (total read %s, wrote %s)", cfs.scratchDir, units.HumanSize(float64(readBytes)), units.HumanSize(float64(wroteBytes)))
+
+	return cfs.server.Unmount()
+}
 
 type Node struct {
 	fs.Inode
 
 	cfs    *CASFS
 	parent *Node
-
-	name string
 
 	mu            sync.Mutex
 	fileNode      *repb.FileNode
@@ -37,99 +197,21 @@ type Node struct {
 }
 
 func (n *Node) relativePath() string {
-	var paths []string
-	var visit func(n *Node)
-	visit = func(n *Node) {
-		if n.parent != nil {
-			visit(n.parent)
-		}
-		paths = append(paths, n.name)
-	}
-	visit(n)
-	return filepath.Join(paths...)
+	return n.Path(nil)
 }
 
 func (n *Node) fullPath() string {
 	return filepath.Join(n.cfs.scratchDir, n.relativePath())
 }
 
-type instrumentedLoopbackFile struct {
-	fs.FileHandle
-	fullPath   string
-	fd         int
-	mu         sync.Mutex
-	readBytes  int
-	wroteBytes int
-	released   bool
-}
-
-type instrumentedReadResult struct {
-	fuse.ReadResult
-	lf *instrumentedLoopbackFile
-}
-
-func (r *instrumentedReadResult) Bytes(buf []byte) ([]byte, fuse.Status) {
-	b, s := r.ReadResult.Bytes(buf)
-	r.lf.mu.Lock()
-	r.lf.readBytes += len(b)
-	r.lf.mu.Unlock()
-	return b, s
-}
-
-func (r *instrumentedReadResult) Size() int {
-	return r.ReadResult.Size()
-}
-
-func (r *instrumentedReadResult) Done() {
-	r.ReadResult.Done()
-}
-
-func (f *instrumentedLoopbackFile) Read(ctx context.Context, buf []byte, off int64) (res fuse.ReadResult, errno syscall.Errno) {
-	res, errno = f.FileHandle.(fs.FileReader).Read(ctx, buf, off)
-	res = &instrumentedReadResult{res, f}
-	return
-}
-
-func (f *instrumentedLoopbackFile) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
-	n, err := f.FileHandle.(fs.FileWriter).Write(ctx, data, off)
-	f.mu.Lock()
-	f.wroteBytes += len(data)
-	f.mu.Unlock()
-	return n, err
-}
-
-func (f *instrumentedLoopbackFile) Allocate(ctx context.Context, off uint64, size uint64, mode uint32) syscall.Errno {
-	return fs.ToErrno(syscall.Fallocate(f.fd, mode, int64(off), int64(size)))
-}
-
-func (f *instrumentedLoopbackFile) Release(ctx context.Context) syscall.Errno {
-	errno := f.FileHandle.(fs.FileReleaser).Release(ctx)
-	f.mu.Lock()
-	f.released = true
-	f.mu.Unlock()
-	return errno
-}
-
-func (f *instrumentedLoopbackFile) Flush(ctx context.Context) syscall.Errno {
-	errno := f.FileHandle.(fs.FileFlusher).Flush(ctx)
-	//log.Warningf("FLUSH DONE %s", f.fullPath)
-	return errno
-}
-
-func (f *instrumentedLoopbackFile) Fsync(ctx context.Context, flags uint32) (errno syscall.Errno) {
-	errno = f.FileHandle.(fs.FileFsyncer).Fsync(ctx, flags)
-	//log.Warningf("FSYNC DONE %s", f.fullPath)
-	return errno
-}
-
 func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
-	n.mu.Lock()
-	n.mu.Unlock()
-
 	// Don't allow writes to input files.
 	if n.fileNode != nil && (int(flags)&(os.O_WRONLY|os.O_RDWR)) != 0 {
 		return nil, 0, syscall.EPERM
 	}
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
 
 	relPath := n.relativePath()
 	fullPath := filepath.Join(n.cfs.scratchDir, relPath)
@@ -139,6 +221,7 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 			hash = fmt.Sprintf(" (%s)", n.fileNode.GetDigest().GetHash())
 		}
 		log.Infof("Open %q%s: serve from local file %q", n.relativePath(), hash, n.fullPath())
+		log.Warningf("ALTERNATIVE %q", n.Path(nil))
 		fd, err := syscall.Open(n.fullPath(), int(flags), 0)
 		if err != nil {
 			log.Warningf("open %q%s failed: %s", n.relativePath(), hash, err)
@@ -153,6 +236,7 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 
 	if n.fileNode != nil {
 		log.Infof("Open %q: fetch %s from CAS", n.relativePath(), n.fileNode.GetDigest().GetHash())
+		log.Warningf("ALTERNATIVE %q", n.Path(nil))
 
 		fileMap := dirtools.FileMap{
 			digest.NewKey(n.fileNode.GetDigest()): {&dirtools.FilePointer{
@@ -210,7 +294,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	n.cfs.mu.Lock()
 	n.cfs.loopbackFiles = append(n.cfs.loopbackFiles, lf)
 	n.cfs.mu.Unlock()
-	child := &Node{cfs: n.cfs, name: name, parent: n, localFile: fullPath}
+	child := &Node{cfs: n.cfs, parent: n, localFile: fullPath}
 	inode := n.cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG})
 	if !n.AddChild(name, inode, false) {
 		log.Warningf("could not add child %q", name)
@@ -236,13 +320,6 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 		return syscall.EPERM
 	}
 
-	existingSrcINode := n.GetChild(name)
-	if existingSrcINode == nil {
-		log.Warningf("Source inode not found")
-		return syscall.EINVAL
-	}
-	existingSrcNode := existingSrcINode.Operations().(*Node)
-
 	// TODO(vadim): don't allow directory rename to affect input files
 
 	existingTargetNode := newParent.EmbeddedInode().GetChild(newName)
@@ -260,15 +337,7 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 	p1 := filepath.Join(n.fullPath(), name)
 	p2 := filepath.Join(n.cfs.scratchDir, newParent.EmbeddedInode().Path(nil), newName)
 
-	err := os.Rename(p1, p2)
-	if err == nil {
-		// Would it be better to create a new INode?
-		existingSrcNode.mu.Lock()
-		existingSrcNode.name = newName
-		existingSrcNode.mu.Unlock()
-	}
-
-	return fs.ToErrno(err)
+	return fs.ToErrno(os.Rename(p1, p2))
 }
 
 func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
@@ -333,7 +402,7 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 	//	log.Infof("Could not create %q: %s", fullPath, err)
 	//	return nil, fs.ToErrno(err)
 	//}
-	child := &Node{cfs: n.cfs, name: name, parent: n}
+	child := &Node{cfs: n.cfs, parent: n}
 	inode := n.cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR})
 	if !n.AddChild(name, inode, false) {
 		log.Warningf("could not add child %q", name)
@@ -375,7 +444,7 @@ func (n *Node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
 	src := filepath.Join(n.relativePath(), name)
 	log.Infof("Symlink %s -> %s", src, target)
-	child := &Node{cfs: n.cfs, name: name, parent: n, symlinkTarget: target}
+	child := &Node{cfs: n.cfs, parent: n, symlinkTarget: target}
 	inode := n.cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK})
 	if !n.AddChild(name, inode, false) {
 		log.Warningf("could not add child %q", name)
@@ -433,168 +502,93 @@ func (n *Node) CopyFileRange(ctx context.Context, fhIn fs.FileHandle, offIn uint
 	return uint32(bytesCopied), fs.ToErrno(err)
 }
 
-// XXX: check for any security implications
-// XXX: implement fallocate?
-
-type CASFS struct {
-	scratchDir  string
-	fileFetcher *dirtools.BatchFileFetcher
-
-	instanceName string
-
-	server *fuse.Server // Not set until FS is mounted.
-
-	root *Node
-
-	mu            sync.Mutex
-	loopbackFiles []*instrumentedLoopbackFile
+type instrumentedReadResult struct {
+	fuse.ReadResult
+	lf *instrumentedLoopbackFile
 }
 
-func New(fileFetcher *dirtools.BatchFileFetcher, scratchDir string) *CASFS {
-	cfs := &CASFS{
-		scratchDir:  scratchDir,
-		fileFetcher: fileFetcher,
-	}
-	root := &Node{cfs: cfs}
-	cfs.root = root
-	return cfs
+func (r *instrumentedReadResult) Bytes(buf []byte) ([]byte, fuse.Status) {
+	b, s := r.ReadResult.Bytes(buf)
+	r.lf.mu.Lock()
+	r.lf.readBytes += len(b)
+	r.lf.mu.Unlock()
+	return b, s
 }
 
-func (cfs *CASFS) Mount(dir string) error {
-	server, err := fs.Mount(dir, cfs.root, &fs.Options{
-		MountOptions: fuse.MountOptions{
-			MaxWrite: fuse.MAX_KERNEL_WRITE,
-			// Needed for docker.
-			AllowOther:    true,
-			Debug:         true,
-			DisableXAttrs: true,
-		},
-	})
-	if err != nil {
-		return status.UnknownErrorf("could not mount CAS FS at %q: %s", dir, err)
-	}
-	cfs.server = server
-	return nil
+func (r *instrumentedReadResult) Size() int {
+	return r.ReadResult.Size()
 }
 
-func (cfs *CASFS) PrepareLayout(ctx context.Context, instanceName string, fsLayout *container.FilesystemLayout) error {
-	if len(fsLayout.Inputs) == 0 {
-		return nil
-	}
-	rootDirectory := fsLayout.Inputs[0]
-	rootDirectoryDigest, err := digest.ComputeForMessage(rootDirectory)
-	if err != nil {
-		return err
-	}
-	if rootDirectoryDigest.Hash == digest.EmptySha256 {
-		return nil
-	}
+func (r *instrumentedReadResult) Done() {
+	r.ReadResult.Done()
+}
 
-	dirMap, err := dirtools.BuildDirMap(fsLayout.Inputs)
-	if err != nil {
-		return err
-	}
+type instrumentedLoopbackFile struct {
+	fs.FileHandle
+	fullPath string
+	fd       int
 
-	//log.Infof("Set instance name to %q", instanceName)
-	cfs.instanceName = instanceName
-	var walkDir func(dir *repb.Directory, node *Node) error
-	walkDir = func(dir *repb.Directory, parentNode *Node) error {
-		for _, childDirNode := range dir.Directories {
-			//log.Infof("Walk %q", childDirNode.Name)
-			child := &Node{cfs: cfs, name: childDirNode.Name, parent: parentNode}
-			log.Infof("Input directory: %s", child.relativePath())
+	mu         sync.Mutex
+	readBytes  int
+	wroteBytes int
+}
 
-			inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR})
-			if !parentNode.AddChild(childDirNode.Name, inode, false) {
-				return status.UnknownErrorf("could not add child %q", childDirNode.Name)
-			}
-			childDir, ok := dirMap[digest.NewKey(childDirNode.Digest)]
-			if !ok {
-				return status.NotFoundErrorf("could not find dir %q", childDirNode.Digest)
-			}
-			if err := walkDir(childDir, child); err != nil {
-				return err
-			}
-		}
-		for _, childFileNode := range dir.Files {
-			//if childFileNode.Name == "process_wrapper" {
-			//	log.Infof("Parent: %s", parentNode.relativePath())
-			//	log.Infof("FULL PROTO %d:\n%s", i, proto.MarshalTextString(childFileNode))
-			//}
-			child := &Node{cfs: cfs, name: childFileNode.Name, parent: parentNode, fileNode: childFileNode}
-			log.Infof("Input file: %s", child.relativePath())
-			inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG})
-			if !parentNode.AddChild(childFileNode.Name, inode, false) {
-				return status.UnknownErrorf("could not add child %q", childFileNode.Name)
-			}
-		}
-		if len(dir.Symlinks) > 0 {
-			return status.FailedPreconditionErrorf("symlinks are not supported")
-		}
-		return nil
-	}
-
-	dir, ok := dirMap[digest.NewKey(rootDirectoryDigest)]
+func (f *instrumentedLoopbackFile) Allocate(ctx context.Context, off uint64, size uint64, mode uint32) syscall.Errno {
+	fa, ok := f.FileHandle.(fs.FileAllocater)
 	if !ok {
-		return status.NotFoundErrorf("could not find root dir digest %q", rootDirectoryDigest.String())
+		log.Error("Handle does not implement FileAllocator")
+		return syscall.EINVAL
 	}
-
-	err = walkDir(dir, cfs.root)
-	if err != nil {
-		return err
-	}
-
-	outputDirs := make(map[string]struct{})
-	for _, dir := range fsLayout.OutputDirs {
-		log.Infof("Output dir: %s", dir)
-		outputDirs[dir] = struct{}{}
-	}
-	for _, file := range fsLayout.OutputFiles {
-		log.Infof("Output file: %s", file)
-		outputDirs[filepath.Dir(file)] = struct{}{}
-	}
-	for dir := range outputDirs {
-		log.Infof("Process output dir %q", dir)
-		parts := strings.Split(dir, string(os.PathSeparator))
-		node := cfs.root
-		for _, p := range parts {
-			childNode := node.GetChild(p)
-			if childNode == nil {
-				child := &Node{cfs: cfs, name: p, parent: node}
-				inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR})
-				if !node.AddChild(p, inode, false) {
-					return status.UnknownErrorf("could not add child %q", p)
-				}
-				node = child
-			} else {
-				node = childNode.Operations().(*Node)
-			}
-		}
-	}
-
-	return nil
+	return fa.Allocate(ctx, off, size, mode)
 }
 
-func (cfs *CASFS) Unmount() error {
-	if cfs.server == nil {
-		return nil
+func (f *instrumentedLoopbackFile) Release(ctx context.Context) syscall.Errno {
+	fr, ok := f.FileHandle.(fs.FileReleaser)
+	if !ok {
+		log.Error("Handle does not implement FileReleaser")
+		return syscall.EINVAL
 	}
+	return fr.Release(ctx)
+}
 
-	cfs.mu.Lock()
-	readBytes := 0
-	wroteBytes := 0
-	for _, lf := range cfs.loopbackFiles {
-		lf.mu.Lock()
-		readBytes += lf.readBytes
-		wroteBytes += lf.wroteBytes
-		if !lf.released {
-			log.Warningf("NOT RELEASED %q", lf.fullPath)
-		}
-		lf.mu.Unlock()
+func (f *instrumentedLoopbackFile) Flush(ctx context.Context) syscall.Errno {
+	ff, ok := f.FileHandle.(fs.FileFlusher)
+	if !ok {
+		log.Error("Handle does not implement FileFlusher")
+		return syscall.EINVAL
 	}
-	cfs.mu.Unlock()
+	return ff.Flush(ctx)
+}
 
-	log.Warningf("WORKSPACE %s (total read %s, wrote %s)", cfs.scratchDir, units.HumanSize(float64(readBytes)), units.HumanSize(float64(wroteBytes)))
+func (f *instrumentedLoopbackFile) Fsync(ctx context.Context, flags uint32) syscall.Errno {
+	fs, ok := f.FileHandle.(fs.FileFsyncer)
+	if !ok {
+		log.Error("Handle does not implement FileFsyncer")
+		return syscall.EINVAL
+	}
+	return fs.Fsync(ctx, flags)
+}
 
-	return cfs.server.Unmount()
+func (f *instrumentedLoopbackFile) Read(ctx context.Context, buf []byte, off int64) (res fuse.ReadResult, errno syscall.Errno) {
+	fr, ok := f.FileHandle.(fs.FileReader)
+	if !ok {
+		log.Error("Handle does not implement FileReader")
+		return nil, syscall.EINVAL
+	}
+	res, errno = fr.Read(ctx, buf, off)
+	res = &instrumentedReadResult{res, f}
+	return
+}
+
+func (f *instrumentedLoopbackFile) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
+	fw, ok := f.FileHandle.(fs.FileWriter)
+	if !ok {
+		log.Error("Handle does not implement FileWriter")
+		return 0, syscall.EINVAL
+	}
+	n, err := fw.Write(ctx, data, off)
+	f.mu.Lock()
+	f.wroteBytes += len(data)
+	f.mu.Unlock()
+	return n, err
 }

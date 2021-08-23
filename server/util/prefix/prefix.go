@@ -21,9 +21,7 @@ func addPrefix(prefix, key string) string {
 func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (string, error) {
 	if auth := env.GetAuthenticator(); auth != nil {
 		if u, err := auth.AuthenticatedUser(ctx); err == nil {
-			log.Warningf("AUTH SUCCESS")
 			if u.GetGroupID() != "" {
-				log.Warningf("GROUP ID %s", u.GetGroupID())
 				return addPrefix(u.GetGroupID(), key), nil
 			} else if u.GetUserID() != "" {
 				return addPrefix(u.GetUserID(), key), nil
@@ -32,11 +30,9 @@ func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (s
 	}
 
 	if !env.GetConfigurator().GetAnonymousUsageEnabled() {
-		log.Warningf("NO ANON")
 		return "", status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 	}
 
-	log.Warningf("ANON")
 	return addPrefix(interfaces.AuthAnonymousUser, key), nil
 }
 
