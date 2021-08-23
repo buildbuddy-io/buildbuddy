@@ -342,28 +342,6 @@ func (t *TelemetryLog) TableName() string {
 	return "TelemetryLog"
 }
 
-type ExecutionNode struct {
-	Model
-	GroupID               string `gorm:"primaryKey;default:''"`
-	Host                  string `gorm:"primaryKey"`
-	Port                  int32  `gorm:"primaryKey;autoIncrement:false"`
-	OS                    string
-	Arch                  string
-	Pool                  string
-	Version               string
-	Constraints           string
-	AssignableMemoryBytes int64
-	AssignableMilliCPU    int64
-	SchedulerHostPort     string
-	UserID                string
-	Perms                 int
-	ExecutorID            string
-}
-
-func (n *ExecutionNode) TableName() string {
-	return "ExecutionNodes"
-}
-
 type ExecutionTask struct {
 	TaskID         string `gorm:"primaryKey"`
 	Arch           string
@@ -526,15 +504,6 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		})
 	}
 
-	executorsTable := (&ExecutionNode{}).TableName()
-	// If the table doesn't have group_id column yet, drop the whole table so that GORM re-creates it with a new
-	// primary key that includes group_id.
-	if m.HasTable(executorsTable) && !m.HasColumn(&ExecutionNode{}, "group_id") {
-		if err := m.DropTable(executorsTable); err != nil {
-			return nil, err
-		}
-	}
-
 	return postMigrate, nil
 }
 
@@ -576,7 +545,6 @@ func init() {
 	registerTable("TO", &Token{})
 	registerTable("EX", &Execution{})
 	registerTable("TL", &TelemetryLog{})
-	registerTable("EN", &ExecutionNode{})
 	registerTable("ET", &ExecutionTask{})
 	registerTable("CL", &CacheLog{})
 	registerTable("TA", &Target{})
