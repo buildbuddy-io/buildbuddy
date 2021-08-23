@@ -139,7 +139,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     if (!this.state.model.hasChunkedEventLogs()) {
       return false;
     }
-    return this.logsModel.isFetching();
+    return this.logsModel.isFetching() && !this.logsModel.getLogs();
   }
 
   render() {
