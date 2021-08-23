@@ -79,7 +79,7 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 	}
 	q := query_builder.NewQuery(`SELECT t.target_id, t.label, t.rule_type, ts.target_type,
                                      ts.test_size, ts.status, ts.start_time_usec, ts.duration_usec,
-                                     i.invocation_id, i.commit_sha, i.repo_url, i.created_at_usec
+                                     i.invocation_id, i.commit_sha, i.branch_name, i.repo_url, i.created_at_usec
                                      FROM Targets as t
                                      JOIN TargetStatuses AS ts ON t.target_id = ts.target_id
                                      JOIN Invocations AS i ON ts.invocation_pk = i.invocation_pk`)
@@ -115,6 +115,9 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 	if targetType := tq.GetTargetType(); targetType != cmpb.TargetType_TARGET_TYPE_UNSPECIFIED {
 		q.AddWhereClause("ts.target_type = ?", int32(targetType))
 	}
+	if branchName := tq.GetBranchName(); branchName != "" {
+		q.AddWhereClause("i.branch_name = ?", branchName)
+	}
 	q.SetOrderBy("t.label ASC, i.created_at_usec", false /*=ascending*/)
 	queryStr, args := q.Build()
 
@@ -133,6 +136,7 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 				Label         string
 				RuleType      string
 				CommitSHA     string
+				BranchName    string
 				RepoURL       string
 				InvocationID  string
 				TargetID      int64

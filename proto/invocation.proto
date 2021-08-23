@@ -85,6 +85,9 @@ message Invocation {
 
   // This field indicates to the client if we have chunked event logs
   bool has_chunked_event_logs = 22;
+
+  // The name of the git branch for this invocation, if any
+  string branch_name = 23;
 }
 
 message InvocationEvent {
@@ -181,6 +184,9 @@ message InvocationQuery {
   // Status of the build. If multiple are specified, they are combined with
   // "OR".
   repeated OverallStatus status = 9;
+
+  // The git branch used for the build.
+  string branch_name = 10;
 }
 
 // OverallStatus is a status representing both the completion status and
@@ -255,6 +261,7 @@ enum AggType {
   REPO_URL_AGGREGATION_TYPE = 4;
   COMMIT_SHA_AGGREGATION_TYPE = 5;
   DATE_AGGREGATION_TYPE = 6;
+  BRANCH_AGGREGATION_TYPE = 7;
 }
 
 message InvocationStat {
@@ -316,6 +323,9 @@ message InvocationStatQuery {
   // Status of the build. If multiple are specified, they are combined with
   // "OR".
   repeated OverallStatus status = 9;
+
+  // The git branch used for the build.
+  string branch_name = 10;
 }
 
 message GetInvocationStatRequest {
@@ -381,6 +391,9 @@ message TrendStat {
   int64 total_upload_size_bytes = 17;
   int64 total_download_usec = 18;
   int64 total_upload_usec = 19;
+
+  // The number of unique branches that were built.
+  int64 branch_count = 20;
 }
 
 message TrendQuery {
@@ -413,6 +426,9 @@ message TrendQuery {
   // Status of the build. If multiple are specified, they are combined with
   // "OR".
   repeated OverallStatus status = 9;
+
+  // The git branch used for the build.
+  string branch_name = 10;
 }
 
 message GetTrendRequest {

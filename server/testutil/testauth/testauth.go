@@ -145,7 +145,7 @@ func (a *TestAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.U
 			return u, nil
 		}
 	}
-	return nil, status.PermissionDeniedError("User not found")
+	return nil, status.UnauthenticatedError("User not found")
 }
 
 func (a *TestAuthenticator) FillUser(ctx context.Context, user *tables.User) error {

@@ -183,6 +183,16 @@ class Router {
     this.navigateTo(`${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}`);
   }
 
+  navigateToBranchHistory(branch: string) {
+    if (!capabilities.canNavigateToPath(Path.branchHistoryPath)) {
+      alert(
+        `Branch history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
+      );
+      return;
+    }
+    this.navigateTo(Path.branchHistoryPath + branch);
+  }
+
   navigateToCommitHistory(commit: string) {
     if (!capabilities.canNavigateToPath(Path.commitHistoryPath)) {
       alert(
@@ -250,6 +260,10 @@ class Router {
     return repoComponent ? atob(repoComponent) : "";
   }
 
+  getHistoryBranch(path: string) {
+    return this.getLastPathComponent(path, Path.branchHistoryPath);
+  }
+
   getHistoryCommit(path: string) {
     return this.getLastPathComponent(path, Path.commitHistoryPath);
   }
@@ -298,6 +312,7 @@ export class Path {
   static userHistoryPath = "/history/user/";
   static hostHistoryPath = "/history/host/";
   static repoHistoryPath = "/history/repo/";
+  static branchHistoryPath = "/history/branch/";
   static commitHistoryPath = "/history/commit/";
   static setupPath = "/docs/setup/";
   static settingsPath = "/settings/";

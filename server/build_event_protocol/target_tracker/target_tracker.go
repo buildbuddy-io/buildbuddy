@@ -154,7 +154,7 @@ func isTest(t *target) bool {
 	return strings.HasSuffix(strings.ToLower(t.ruleType), "test")
 }
 
-func (t *TargetTracker) testTargetsInAtleastState(state targetState) bool {
+func (t *TargetTracker) testTargetsInAtLeastState(state targetState) bool {
 	for _, t := range t.targets {
 		if isTest(t) && t.state < state {
 			return false
@@ -163,16 +163,16 @@ func (t *TargetTracker) testTargetsInAtleastState(state targetState) bool {
 	return true
 }
 
-func (t *TargetTracker) writeTestTargets(ctx context.Context) error {
-	var permissions *perms.UserGroupPerm
+func (t *TargetTracker) permissionsFromContext(ctx context.Context) (*perms.UserGroupPerm, error) {
 	if auth := t.env.GetAuthenticator(); auth != nil {
 		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
-			permissions = perms.GroupAuthPermissions(u.GetGroupID())
+			return perms.GroupAuthPermissions(u.GetGroupID()), nil
 		}
 	}
-	if permissions == nil {
-		return status.FailedPreconditionError("Permissions were nil -- not writing target data.")
-	}
+	return nil, status.UnauthenticatedError("Context did not contain auth information")
+}
+
+func (t *TargetTracker) writeTestTargets(ctx context.Context, permissions *perms.UserGroupPerm) error {
 	repoURL := t.buildEventAccumulator.RepoURL()
 	knownTargets, err := readRepoTargets(ctx, t.env, repoURL)
 	if err != nil {
@@ -209,29 +209,20 @@ func (t *TargetTracker) writeTestTargets(ctx context.Context) error {
 	}
 	if len(updatedTargets) > 0 {
 		if err := updateTargets(ctx, t.env, updatedTargets); err != nil {
-			log.Warningf("Error updating targets: %s", err.Error())
+			log.Warningf("Error updating %q targets: %s", t.buildEventAccumulator.InvocationID(), err.Error())
 			return err
 		}
 	}
 	if len(newTargets) > 0 {
 		if err := insertTargets(ctx, t.env, newTargets); err != nil {
-			log.Warningf("Error inserting targets: %s", err.Error())
+			log.Warningf("Error inserting %q targets: %s", t.buildEventAccumulator.InvocationID(), err.Error())
 			return err
 		}
 	}
 	return nil
 }
 
-func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context) error {
-	var permissions *perms.UserGroupPerm
-	if auth := t.env.GetAuthenticator(); auth != nil {
-		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
-			permissions = perms.GroupAuthPermissions(u.GetGroupID())
-		}
-	}
-	if permissions == nil {
-		return status.FailedPreconditionError("Permissions were nil -- not writing target data.")
-	}
+func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions *perms.UserGroupPerm) error {
 	repoURL := t.buildEventAccumulator.RepoURL()
 	invocationPK := md5Int64(t.buildEventAccumulator.InvocationID())
 	newTargetStatuses := make([]*tables.TargetStatus, 0)
@@ -250,7 +241,7 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context) error {
 		})
 	}
 	if err := insertOrUpdateTargetStatuses(ctx, t.env, newTargetStatuses); err != nil {
-		log.Warningf("Error inserting target statuses: %s", err.Error())
+		log.Warningf("Error inserting %q target statuses: %s", t.buildEventAccumulator.InvocationID(), err.Error())
 		return err
 	}
 	return nil
@@ -263,56 +254,77 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 	//  - write statuses for the targets at this invocation
 	switch event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Expanded:
-		// This event announces all the upcoming targets we'll get information about.
-		// For each target, we'll create a "target" object, keyed by the target label,
-		// and each target will "listen" for followup events on the specified ID.
-		for _, child := range event.GetChildren() {
-			label := child.GetTargetConfigured().GetLabel()
-			childTarget := newTarget(label)
-			t.targets[label] = childTarget
-			t.openClosures[protoID(child)] = childTarget.updateFromEvent
-		}
+		t.handleExpandedEvent(event)
 	case *build_event_stream.BuildEvent_Configured:
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_WorkspaceStatus:
-		if t.testTargetsInAtleastState(targetStateConfigured) {
-			if t.buildEventAccumulator.Role() == "CI" {
-				eg, gctx := errgroup.WithContext(ctx)
-				t.errGroup = eg
-				t.errGroup.Go(func() error { return t.writeTestTargets(gctx) })
-			}
-		} else {
-			// This should not happen, but it seems it can happen with certain targets.
-			// For now, we will log the targets that do not meet the required state
-			// so we can better understand whats happening to them.
-			log.Printf("Not all targets reached state: %d, targets: %+v", targetStateConfigured, t.targets)
-		}
+		t.handleWorkspaceStatusEvent(ctx, event)
 	case *build_event_stream.BuildEvent_Completed:
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_TestResult:
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_TestSummary:
 		t.handleEvent(event)
-		if !t.testTargetsInAtleastState(targetStateSummary) || t.buildEventAccumulator.Role() != "CI" || t.errGroup == nil {
-			break
-		}
-		// Synchronization point: make sure that all targets were read (or written).
-		if err := t.errGroup.Wait(); err != nil {
-			log.Printf("Error getting targets: %s", err.Error())
-			break
-		}
-		eg, gctx := errgroup.WithContext(ctx)
-		t.errGroup = eg
-		t.errGroup.Go(func() error { return t.writeTestTargetStatuses(gctx) })
 	case *build_event_stream.BuildEvent_Finished:
-		if t.errGroup == nil {
-			break
-		}
-		// Synchronization point: make sure that all statuses were written.
-		if err := t.errGroup.Wait(); err != nil {
-			// Debug because this logs when unauthorized/non-CI builds skip writing targets.
-			log.Debugf("Error writing target statuses: %s", err.Error())
-		}
+		t.handleFinishedEvent(ctx, event)
+	}
+}
+
+func (t *TargetTracker) handleExpandedEvent(event *build_event_stream.BuildEvent) {
+	// This event announces all the upcoming targets we'll get information about.
+	// For each target, we'll create a "target" object, keyed by the target label,
+	// and each target will "listen" for followup events on the specified ID.
+	for _, child := range event.GetChildren() {
+		label := child.GetTargetConfigured().GetLabel()
+		childTarget := newTarget(label)
+		t.targets[label] = childTarget
+		t.openClosures[protoID(child)] = childTarget.updateFromEvent
+	}
+}
+
+func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+	if !t.testTargetsInAtLeastState(targetStateConfigured) {
+		// This should not happen, but it seems it can happen with certain targets.
+		// For now, we will log the targets that do not meet the required state
+		// so we can better understand whats happening to them.
+		log.Warningf("Not all targets for %q reached state: %d, targets: %+v", t.buildEventAccumulator.InvocationID(), targetStateConfigured, t.targets)
+		return
+	}
+	if t.buildEventAccumulator.Role() != "CI" {
+		log.Debugf("Not tracking targets for %q because it's not a CI build", t.buildEventAccumulator.InvocationID())
+		return
+	}
+	permissions, err := t.permissionsFromContext(ctx)
+	if err != nil {
+		log.Debugf("Not tracking targets for %q because it's not authenticated: %s", t.buildEventAccumulator.InvocationID(), err.Error())
+		return
+	}
+	eg, gctx := errgroup.WithContext(ctx)
+	t.errGroup = eg
+	t.errGroup.Go(func() error { return t.writeTestTargets(gctx, permissions) })
+}
+
+func (t *TargetTracker) handleFinishedEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+	if t.buildEventAccumulator.Role() != "CI" {
+		log.Debugf("Not tracking target statuses for %q because it's not a CI build", t.buildEventAccumulator.InvocationID())
+		return
+	}
+	permissions, err := t.permissionsFromContext(ctx)
+	if err != nil {
+		log.Debugf("Not tracking targets for %q because it's not authenticated: %s", t.buildEventAccumulator.InvocationID(), err.Error())
+		return
+	}
+	if t.errGroup == nil {
+		log.Warningf("Not tracking target statuses for %q because targets were not reported", t.buildEventAccumulator.InvocationID())
+		return
+	}
+	// Synchronization point: make sure that all targets were read (or written).
+	if err := t.errGroup.Wait(); err != nil {
+		log.Warningf("Error getting %q targets: %s", t.buildEventAccumulator.InvocationID(), err.Error())
+		return
+	}
+	if err := t.writeTestTargetStatuses(ctx, permissions); err != nil {
+		log.Debugf("Error writing %q target statuses: %s", t.buildEventAccumulator.InvocationID(), err.Error())
 	}
 }
 
@@ -415,6 +427,9 @@ func insertTargets(ctx context.Context, env environment.Env, targets []*tables.T
 }
 
 func chunkStatusesBy(items []*tables.TargetStatus, chunkSize int) (chunks [][]*tables.TargetStatus) {
+	if len(items) == 0 {
+		return nil
+	}
 	for chunkSize < len(items) {
 		items, chunks = items[chunkSize:], append(chunks, items[0:chunkSize:chunkSize])
 	}

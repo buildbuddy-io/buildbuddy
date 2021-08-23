@@ -56,8 +56,6 @@ class ExecutorDeploy extends React.Component<ExecutorDeployProps, ExecutorDeploy
             </Option>
           ))}
         </Select>
-        {/* enable_work_streaming is temporary and will be removed before launch. 
-            presence of api_key will implicitely enable work streaming. */}
         <code>
           <pre>
             {`docker run --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \\

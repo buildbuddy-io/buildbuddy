@@ -44,6 +44,8 @@ func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggTy
 		return "commit_sha"
 	case inpb.AggType_DATE_AGGREGATION_TYPE:
 		return i.h.DateFromUsecTimestamp("updated_at_usec", reqCtx.GetTimezoneOffsetMinutes())
+	case inpb.AggType_BRANCH_AGGREGATION_TYPE:
+		return "branch_name"
 	default:
 		log.Errorf("Unknown aggregation column type: %s", aggType)
 		return ""
@@ -68,6 +70,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 	    COUNT(DISTINCT commit_sha) as commit_count,
 	    COUNT(DISTINCT host) as host_count,
 	    COUNT(DISTINCT repo_url) as repo_count,
+	    COUNT(DISTINCT branch_name) as branch_count,
 	    MAX(duration_usec) as max_duration_usec,
 	    SUM(action_cache_hits) as action_cache_hits,
 	    SUM(action_cache_misses) as action_cache_misses,
@@ -90,11 +93,15 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 	}
 
 	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
-		q.AddWhereClause("repo = ?", repoURL)
+		q.AddWhereClause("repo_url = ?", repoURL)
+	}
+
+	if branchName := req.GetQuery().GetBranchName(); branchName != "" {
+		q.AddWhereClause("branch_name = ?", branchName)
 	}
 
 	if commitSHA := req.GetQuery().GetCommitSha(); commitSHA != "" {
-		q.AddWhereClause("commit = ?", commitSHA)
+		q.AddWhereClause("commit_sha = ?", commitSHA)
 	}
 
 	roleClauses := query_builder.OrClauses{}
@@ -201,11 +208,15 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
-		q.AddWhereClause("repo = ?", repoURL)
+		q.AddWhereClause("repo_url = ?", repoURL)
+	}
+
+	if branchName := req.GetQuery().GetBranchName(); branchName != "" {
+		q.AddWhereClause("branch = ?", branchName)
 	}
 
 	if commitSHA := req.GetQuery().GetCommitSha(); commitSHA != "" {
-		q.AddWhereClause("commit = ?", commitSHA)
+		q.AddWhereClause("commit_sha = ?", commitSHA)
 	}
 
 	roleClauses := query_builder.OrClauses{}

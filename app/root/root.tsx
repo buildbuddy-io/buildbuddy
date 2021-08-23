@@ -7,6 +7,7 @@ import capabilities from "../capabilities/capabilities";
 import router, { Path } from "../router/router";
 import authService from "../auth/auth_service";
 import { User } from "../auth/auth_service";
+import errorService from "../errors/error_service";
 import faviconService from "../favicon/favicon";
 import CompareInvocationsComponent from "../compare/compare_invocations";
 import AlertComponent from "../alert/alert";
@@ -39,6 +40,10 @@ export default class RootComponent extends React.Component {
       next: (user: User) => this.setState({ ...this.state, user }),
     });
     faviconService.setDefaultFavicon();
+  }
+
+  componentDidMount() {
+    errorService.register();
   }
 
   handlePathChange() {

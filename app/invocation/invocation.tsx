@@ -139,7 +139,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     if (!this.state.model.hasChunkedEventLogs()) {
       return false;
     }
-    return this.logsModel.isFetching();
+    return this.logsModel.isFetching() && !this.logsModel.getLogs();
   }
 
   render() {
@@ -223,10 +223,15 @@ export default class InvocationComponent extends React.Component<Props, State> {
             hash={this.props.hash}
             denseMode={this.props.preferences.denseModeEnabled}
             role={this.state.model.getRole()}
+            rbeEnabled={this.state.model.getIsRBEEnabled() ? true : false}
           />
 
-          {(activeTab === "targets" || activeTab === "artifacts") && (
-            <InvocationFilterComponent hash={this.props.hash} search={this.props.search} />
+          {(activeTab === "targets" || activeTab === "artifacts" || activeTab === "execution") && (
+            <InvocationFilterComponent
+              hash={this.props.hash}
+              search={this.props.search}
+              placeholder={activeTab == "execution" ? "Filter by digest or command..." : ""}
+            />
           )}
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted.description && (
@@ -286,9 +291,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {activeTab == "timing" && <TimingCardComponent model={this.state.model} />}
-
-          {activeTab == "execution" && (
+          {isBazelInvocation && activeTab == "execution" && (
             <ExecutionCardComponent
               model={this.state.model}
               inProgress={this.state.inProgress}
@@ -296,6 +299,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
               filter={this.props.search.get("executionFilter")}
             />
           )}
+
+          {activeTab == "timing" && <TimingCardComponent model={this.state.model} />}
 
           {activeTab == "action" && (
             <InvocationActionCardComponent model={this.state.model} search={this.props.search} />
