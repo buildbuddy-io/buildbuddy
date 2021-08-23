@@ -419,9 +419,10 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 // according to the description here:
 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/getTimezoneOffset
 func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string {
-	if h.dialect == sqliteDialect {
-		return fmt.Sprintf("DATE(%s/1000000, 'unixepoch', '%d minutes')", fieldName, -timezoneOffsetMinutes)
-	}
 	offsetUsec := int64(timezoneOffsetMinutes) * 60 * 1e6
-	return fmt.Sprintf("DATE(FROM_UNIXTIME((%s + (%d))/1000000))", fieldName, -offsetUsec)
+	timestampExpr := fmt.Sprintf("(%s + (%d))/1000000", fieldName, -offsetUsec)
+	if h.dialect == sqliteDialect {
+		return fmt.Sprintf("DATE(%s, 'unixepoch')", timestampExpr)
+	}
+	return fmt.Sprintf("DATE(FROM_UNIXTIME(%s))", timestampExpr)
 }
