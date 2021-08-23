@@ -19,7 +19,7 @@ export default class BuildLogsCardComponent extends React.Component<Props> {
         <div className="content">
           <div className="title">Build logs </div>
           <div className="details">
-            {this.props.loading && !this.props.value ? (
+            {this.props.loading ? (
               // "terminal" class makes sure the loading container's size
               // is the same as the terminal that will take its place.
               <div className="terminal">
