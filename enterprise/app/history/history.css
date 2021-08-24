@@ -33,3 +33,9 @@
 .history .breadcrumbs {
   margin-bottom: 0;
 }
+
+.history .details.loading-details {
+  display: flex;
+  margin-top: 16px;
+  gap: 8px;
+}
