@@ -47,7 +47,6 @@ go_test(
         "//proto:publish_build_event_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
-        "//server/util/testing/flags",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_stretchr_testify//assert",
         "@io_bazel_rules_go//proto/wkt:any_go_proto",
