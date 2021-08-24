@@ -31,9 +31,13 @@ type CommandContainer interface {
 	// Exec, then Remove.
 	Run(ctx context.Context, command *repb.Command, workingDir string) *interfaces.CommandResult
 
-	// PullImageIfNecessary pulls the container image if it is not already
-	// available locally.
-	PullImageIfNecessary(ctx context.Context) error
+	// IsImageCached returns whether the configured image is cached locally.
+	IsImageCached(ctx context.Context) (bool, error)
+
+	// PullImage pulls the container image from the remote. It always
+	// re-authenticates the request, but may serve the image from a local cache
+	// if needed.
+	PullImage(ctx context.Context) error
 
 	// Create creates a new container and starts a top-level process inside it
 	// (`sleep infinity`) so that it stays alive and running until explicitly
@@ -61,6 +65,19 @@ type CommandContainer interface {
 	Stats(ctx context.Context) (*Stats, error)
 }
 
+// PullImageIfNecessary pulls the image configured for the container if it
+// is not cached locally.
+func PullImageIfNecessary(ctx context.Context, ctr CommandContainer) error {
+	isCached, err := ctr.IsImageCached(ctx)
+	if err != nil {
+		return err
+	}
+	if isCached {
+		return nil
+	}
+	return ctr.PullImage(ctx)
+}
+
 // TracedCommandContainer is a wrapper that creates tracing spans for all CommandContainer methods.
 type TracedCommandContainer struct {
 	delegate CommandContainer
@@ -73,10 +90,16 @@ func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command,
 	return t.delegate.Run(ctx, command, workingDir)
 }
 
-func (t *TracedCommandContainer) PullImageIfNecessary(ctx context.Context) error {
+func (t *TracedCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.PullImageIfNecessary(ctx)
+	return t.delegate.IsImageCached(ctx)
+}
+
+func (t *TracedCommandContainer) PullImage(ctx context.Context) error {
+	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer span.End()
+	return t.delegate.PullImage(ctx)
 }
 
 func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) error {

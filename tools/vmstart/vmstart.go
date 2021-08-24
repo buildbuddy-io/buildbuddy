@@ -110,8 +110,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error creating container: %s", err)
 	}
-	if err := c.PullImageIfNecessary(ctx); err != nil {
-		log.Fatalf("Unable to PullImageIfNecessary: %s", err)
+	if err := c.PullImage(ctx); err != nil {
+		log.Fatalf("Unable to pull image: %s", err)
 	}
 	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
 		log.Fatalf("Unable to Create container: %s", err)

@@ -35,11 +35,12 @@ func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	return c.Run(ctx, cmd, c.WorkDir)
 }
 
-func (c *bareCommandContainer) PullImageIfNecessary(ctx context.Context) error { return nil }
-func (c *bareCommandContainer) Start(ctx context.Context) error                { return nil }
-func (c *bareCommandContainer) Remove(ctx context.Context) error               { return nil }
-func (c *bareCommandContainer) Pause(ctx context.Context) error                { return nil }
-func (c *bareCommandContainer) Unpause(ctx context.Context) error              { return nil }
+func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }
+func (c *bareCommandContainer) PullImage(ctx context.Context) error             { return nil }
+func (c *bareCommandContainer) Start(ctx context.Context) error                 { return nil }
+func (c *bareCommandContainer) Remove(ctx context.Context) error                { return nil }
+func (c *bareCommandContainer) Pause(ctx context.Context) error                 { return nil }
+func (c *bareCommandContainer) Unpause(ctx context.Context) error               { return nil }
 
 func (c *bareCommandContainer) Stats(ctx context.Context) (*container.Stats, error) {
 	return &container.Stats{}, nil

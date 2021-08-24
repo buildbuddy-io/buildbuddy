@@ -85,7 +85,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	// explicitly pull the image before running to avoid the
 	// pull output logs spilling into the execution logs.
-	if err := r.PullImageIfNecessary(ctx); err != nil {
+	if err := container.PullImageIfNecessary(ctx, r); err != nil {
 		result.Error = wrapDockerErr(err, fmt.Sprintf("failed to pull docker image %q", r.image))
 		return result
 	}
@@ -264,15 +264,18 @@ func errMsg(err error) string {
 	return err.Error()
 }
 
-func (r *dockerCommandContainer) PullImageIfNecessary(ctx context.Context) error {
+func (r *dockerCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
 	_, _, err := r.client.ImageInspectWithRaw(ctx, r.image)
 	if err == nil {
-		return nil
+		return true, nil
 	}
 	if !dockerclient.IsErrNotFound(err) {
-		return err
+		return false, err
 	}
+	return false, nil
+}
 
+func (r *dockerCommandContainer) PullImage(ctx context.Context) error {
 	// TODO: find a way to implement this without calling the Docker CLI.
 	// Currently it's a bit involved to replicate the exact protocols that the
 	// CLI uses to pull images.

@@ -16,12 +16,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
-func hashString(input string) (string, error) {
-	h := sha256.New()
-	if _, err := h.Write([]byte(input)); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
+const (
+	diskImageFileName = "containerfs.ext4"
+)
+
+func hashString(input string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(input)))
 }
 
 func hashFile(filename string) (string, error) {
@@ -37,36 +37,60 @@ func hashFile(filename string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
-// getOrCreateContainerImage will look for a cached filesystem of the specified
-// containerImage in the user's cache directory -- if none is found one will be
-// created and cached.
-func GetOrCreateImage(ctx context.Context, workspaceDir, containerImage string) (string, error) {
-	hashedContainerName, err := hashString(containerImage)
+// CachedDiskImagePath looks for an existing cached disk image and returns the
+// path to it, if it exists. It returns "" (with no error) if the disk image
+// does not exist and no other errors occurred while looking for the image.
+func CachedDiskImagePath(workspaceDir, containerImage string) (string, error) {
+	hashedContainerName := hashString(containerImage)
+	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
+	files, err := os.ReadDir(containerImagesPath)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
 	if err != nil {
 		return "", err
 	}
-	containerFileName := "containerfs.ext4"
-	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
-	if files, err := os.ReadDir(containerImagesPath); err == nil {
-		sort.Slice(files, func(i, j int) bool {
-			var iUnix int64
-			if fi, err := files[i].Info(); err == nil {
-				iUnix = fi.ModTime().Unix()
-			}
-			var jUnix int64
-			if fi, err := files[j].Info(); err == nil {
-				jUnix = fi.ModTime().Unix()
-			}
-			return iUnix < jUnix
-		})
-		if len(files) > 0 {
-			containerImagePath := filepath.Join(containerImagesPath, files[len(files)-1].Name(), containerFileName)
-			if exists, err := disk.FileExists(containerImagePath); err == nil && exists {
-				log.Debugf("Found existing %q container at path %q", containerImage, containerImagePath)
-				return containerImagePath, nil
-			}
-		}
+	if len(files) == 0 {
+		return "", nil
 	}
+	sort.Slice(files, func(i, j int) bool {
+		var iUnix int64
+		if fi, err := files[i].Info(); err == nil {
+			iUnix = fi.ModTime().Unix()
+		}
+		var jUnix int64
+		if fi, err := files[j].Info(); err == nil {
+			jUnix = fi.ModTime().Unix()
+		}
+		return iUnix < jUnix
+	})
+	diskImagePath := filepath.Join(containerImagesPath, files[len(files)-1].Name(), diskImageFileName)
+	exists, err := disk.FileExists(diskImagePath)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
+		return "", nil
+	}
+	log.Debugf("Found existing %q disk image at path %q", containerImage, diskImagePath)
+	return diskImagePath, nil
+}
+
+// CreateDiskImage pulls the image from the container registry and creates an
+// ext4 disk image from the container image in the user's local cache directory.
+// If the image is already available locally, the image is not re-downloaded
+// from the registry. The path to the disk image is returned.
+func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string) (string, error) {
+	existingPath, err := CachedDiskImagePath(workspaceDir, containerImage)
+	if err != nil {
+		return "", err
+	}
+	if existingPath != "" {
+		return existingPath, nil
+	}
+
+	hashedContainerName := hashString(containerImage)
+	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
 
 	// container not found -- write one!
 	tmpImagePath, err := convertContainerToExt4FS(ctx, workspaceDir, containerImage)
@@ -81,7 +105,7 @@ func GetOrCreateImage(ctx context.Context, workspaceDir, containerImage string) 
 	if err := disk.EnsureDirectoryExists(containerImageHome); err != nil {
 		return "", err
 	}
-	containerImagePath := filepath.Join(containerImageHome, containerFileName)
+	containerImagePath := filepath.Join(containerImageHome, diskImageFileName)
 	if err := os.Rename(tmpImagePath, containerImagePath); err != nil {
 		return "", err
 	}

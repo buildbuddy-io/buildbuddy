@@ -146,8 +146,8 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := c.PullImageIfNecessary(ctx); err != nil {
-		t.Fatalf("unable to PullImageIfNecessary: %s", err)
+	if err := c.PullImage(ctx); err != nil {
+		t.Fatalf("unable to pull image: %s", err)
 	}
 
 	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
