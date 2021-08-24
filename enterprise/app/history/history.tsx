@@ -84,7 +84,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       }),
       pageToken: nextPage ? this.state.pageToken : "",
       // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
-      count: 10,
+      count: 126,
     });
     if (capabilities.globalFilter) {
       request.query.role = filterParams.role;
