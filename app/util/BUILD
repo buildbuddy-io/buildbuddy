@@ -21,6 +21,14 @@ ts_library(
 )
 
 ts_library(
+    name = "async",
+    srcs = ["async.ts"],
+    deps = [
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
     name = "clipboard",
     srcs = ["clipboard.ts"],
 )

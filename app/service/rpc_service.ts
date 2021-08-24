@@ -1,16 +1,35 @@
 import { Subject } from "rxjs";
 import { buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
 import { context } from "../../proto/context_ts_proto";
+import { CancelablePromise, CancelableService } from "../util/async";
+import * as protobufjs from "protobufjs";
+
+export { CancelablePromise } from "../util/async";
+
+/**
+ * IBuildBuddyService includes only the RPC methods from BuildBuddyService
+ * (and excludes the methods inherited from protobufjs).
+ */
+type IBuildBuddyService = Omit<buildbuddy.service.BuildBuddyService, keyof protobufjs.rpc.Service>;
+
+/**
+ * ExtendedBuildBuddyService is an extended version of BuildBuddyService with
+ * the following differences:
+ *
+ * - `requestContext` field is automatically appended to all requests
+ * - All RPC methods return a `CancelablePromise` instead of a `Promise`.
+ */
+type ExtendedBuildBuddyService = CancelableService<IBuildBuddyService>;
 
 class RpcService {
-  service: buildbuddy.service.BuildBuddyService;
+  service: ExtendedBuildBuddyService;
   events: Subject<string>;
   requestContext = new context.RequestContext({
     timezoneOffsetMinutes: new Date().getTimezoneOffset(),
   });
 
   constructor() {
-    this.service = this.autoAttachRequestContext(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this)));
+    this.service = this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this)));
     this.events = new Subject();
 
     (window as any)._rpcService = this;
@@ -84,16 +103,14 @@ class RpcService {
     request.send(requestData);
   }
 
-  private autoAttachRequestContext(
-    service: buildbuddy.service.BuildBuddyService
-  ): buildbuddy.service.BuildBuddyService {
+  private getExtendedService(service: buildbuddy.service.BuildBuddyService): ExtendedBuildBuddyService {
     const extendedService = Object.create(service);
     for (const rpcName of getRpcMethodNames(buildbuddy.service.BuildBuddyService)) {
       extendedService[rpcName] = (request: Record<string, any>) => {
         if (this.requestContext && !request.requestContext) {
           request.requestContext = this.requestContext;
         }
-        return (service as any)[rpcName](request);
+        return new CancelablePromise((service as any)[rpcName](request));
       };
     }
     return extendedService;
