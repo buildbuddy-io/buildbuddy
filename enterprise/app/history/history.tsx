@@ -1,5 +1,5 @@
 import React from "react";
-import { fromEvent, Subscription } from "rxjs";
+import { from, fromEvent, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import LinkButton from "../../../app/components/button/link_button";
@@ -15,15 +15,28 @@ import { getProtoFilterParams } from "../filter/filter_util";
 import Spinner from "../../../app/components/spinner/spinner";
 
 interface State {
-  invocations: invocation.IInvocation[];
-  summaryStat: invocation.IInvocationStat[];
-  invocationStat: invocation.IInvocationStat[];
-  loading: boolean;
-  loadingStats: boolean;
-  loadingSummaryStats: boolean;
-  hoveredInvocationId: string;
-  pageToken: string;
-  invocationIdToCompare: string;
+  /**
+   * Invocations are individual invocation cards that are fetched in history views
+   * that aren't aggregate (sliced) views.
+   */
+  invocations?: invocation.IInvocation[];
+  loadingInvocations?: boolean;
+  /**
+   * Stats summarizing the fetched invocations. Not fetched for aggregate (sliced) views.
+   */
+  summaryStat?: invocation.IInvocationStat;
+  loadingSummaryStat?: boolean;
+
+  /**
+   * Stats fetched for aggregate views. Each stat corresponds to a single rendered card
+   * displaying the stats for each repo, user, etc.
+   */
+  aggregateStats?: invocation.IInvocationStat[];
+  loadingAggregateStats?: boolean;
+
+  hoveredInvocationId?: string;
+  pageToken?: string;
+  invocationIdToCompare?: string;
 }
 
 interface Props {
@@ -39,18 +52,11 @@ interface Props {
 
 export default class HistoryComponent extends React.Component<Props, State> {
   state: State = {
-    invocations: [],
-    summaryStat: [],
-    invocationStat: [],
-    loading: true,
-    loadingStats: false,
-    loadingSummaryStats: true,
-    hoveredInvocationId: null,
-    pageToken: "",
     invocationIdToCompare: localStorage["invocation_id_to_compare"],
   };
 
-  subscription: Subscription;
+  refreshSubscription = new Subscription();
+  fetchSubscription = new Subscription();
 
   hashToAggregationTypeMap = new Map<string, invocation.AggType>([
     ["#users", invocation.AggType.USER_AGGREGATION_TYPE],
@@ -64,7 +70,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
     return this.props.search?.get(ROLE_PARAM_NAME) === "CI_RUNNER";
   }
 
-  getBuilds(nextPage?: boolean) {
+  getInvocations(nextPage?: boolean) {
     const filterParams = getProtoFilterParams(this.props.search);
     let request = new invocation.SearchInvocationRequest({
       query: new invocation.InvocationQuery({
@@ -77,7 +83,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       }),
       pageToken: nextPage ? this.state.pageToken : "",
       // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
-      count: 126,
+      count: 10,
     });
     if (capabilities.globalFilter) {
       request.query.role = filterParams.role;
@@ -87,27 +93,32 @@ export default class HistoryComponent extends React.Component<Props, State> {
     }
 
     this.setState({
-      loading: true,
-      invocations: nextPage ? this.state.invocations : [],
+      loadingInvocations: true,
     });
+    if (!nextPage) {
+      this.setState({ invocations: undefined, pageToken: undefined });
+    }
 
-    rpcService.service.searchInvocation(request).then((response) => {
-      console.log(response);
-      this.setState({
-        invocations: nextPage
-          ? this.state.invocations.concat(response.invocation as invocation.Invocation[])
-          : response.invocation,
-        pageToken: response.nextPageToken,
-        loading: false,
-      });
-    });
+    this.fetchSubscription.add(
+      from<Promise<invocation.SearchInvocationResponse>>(rpcService.service.searchInvocation(request)).subscribe({
+        next: (response) => {
+          console.log(response);
+          this.setState({
+            invocations: nextPage
+              ? this.state.invocations.concat(response.invocation as invocation.Invocation[])
+              : response.invocation,
+            pageToken: response.nextPageToken,
+          });
+        },
+        complete: () => this.setState({ loadingInvocations: false }),
+      })
+    );
   }
 
-  getStats() {
-    let aggregationType = this.hashToAggregationTypeMap.get(this.props.hash);
-    if (!aggregationType) return;
+  getAggregateStats() {
+    this.setState({ aggregateStats: undefined, loadingAggregateStats: true });
 
-    this.setState({ invocationStat: [], loadingStats: true });
+    const aggregationType = this.hashToAggregationTypeMap.get(this.props.hash);
     const request = new invocation.GetInvocationStatRequest({ aggregationType });
     if (capabilities.globalFilter) {
       const filterParams = getProtoFilterParams(this.props.search);
@@ -118,18 +129,20 @@ export default class HistoryComponent extends React.Component<Props, State> {
         status: filterParams.status,
       });
     }
-    rpcService.service.getInvocationStat(request).then((response) => {
-      if (aggregationType != this.hashToAggregationTypeMap.get(this.props.hash)) return;
-      console.log(response);
-      this.setState({
-        invocationStat: response.invocationStat,
-        loadingStats: false,
-      });
-    });
+
+    this.fetchSubscription.add(
+      from<Promise<invocation.GetInvocationStatResponse>>(rpcService.service.getInvocationStat(request)).subscribe({
+        next: (response) => {
+          console.log(response);
+          this.setState({ aggregateStats: response.invocationStat });
+        },
+        complete: () => this.setState({ loadingAggregateStats: false }),
+      })
+    );
   }
 
-  getSummaryStats() {
-    this.setState({ summaryStat: [], loadingSummaryStats: true });
+  getSummaryStat() {
+    this.setState({ summaryStat: undefined, loadingSummaryStat: true });
 
     const filterParams = getProtoFilterParams(this.props.search);
     const request = new invocation.GetInvocationStatRequest({
@@ -143,10 +156,13 @@ export default class HistoryComponent extends React.Component<Props, State> {
         status: filterParams.status,
       });
     }
-    rpcService.service
-      .getInvocationStat(request)
-      .then((response) => this.setState({ summaryStat: response.invocationStat }))
-      .finally(() => this.setState({ loadingSummaryStats: false }));
+
+    this.fetchSubscription?.add(
+      from<Promise<invocation.GetInvocationStatResponse>>(rpcService.service.getInvocationStat(request)).subscribe({
+        next: (response) => this.setState({ summaryStat: response.invocationStat?.[0] }),
+        complete: () => this.setState({ loadingSummaryStat: false }),
+      })
+    );
   }
 
   componentDidMount() {
@@ -159,26 +175,44 @@ export default class HistoryComponent extends React.Component<Props, State> {
       this.props.user?.selectedGroupName()
     } Build History | BuildBuddy`;
 
-    this.getStats();
-    this.getSummaryStats();
-    this.getBuilds();
+    this.refreshSubscription.add(
+      rpcService.events.subscribe({
+        next: (name) => name == "refresh" && this.handleSidebarItemClicked(),
+      })
+    );
+    this.refreshSubscription.add(fromEvent(window, "storage").subscribe(this.handleStorage.bind(this)));
 
-    this.subscription = rpcService.events.subscribe({
-      next: (name) => name == "refresh" && this.handleSidebarItemClicked(),
-    });
-    this.subscription.add(fromEvent(window, "storage").subscribe(this.handleStorage.bind(this)));
+    this.fetch();
   }
 
   componentDidUpdate(prevProps: Props) {
     if (this.props.hash !== prevProps.hash || this.props.search !== prevProps.search) {
-      this.getStats();
-      this.getSummaryStats();
-      this.getBuilds();
+      this.fetch();
     }
   }
 
   componentWillUnmount() {
-    this.subscription?.unsubscribe();
+    this.refreshSubscription.unsubscribe();
+    this.fetchSubscription.unsubscribe();
+  }
+
+  fetch() {
+    this.fetchSubscription.unsubscribe();
+    this.fetchSubscription = new Subscription();
+
+    this.setState({
+      invocations: undefined,
+      summaryStat: undefined,
+      aggregateStats: undefined,
+      pageToken: undefined,
+    });
+
+    if (this.isAggregateView()) {
+      this.getAggregateStats();
+    } else {
+      this.getSummaryStat();
+      this.getInvocations();
+    }
   }
 
   handleStorage() {
@@ -203,12 +237,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       return;
     }
 
-    if (this.props.hash) {
-      this.getStats();
-      return;
-    }
-
-    this.getBuilds();
+    this.fetch();
   }
 
   handleInvocationClicked(invocation: invocation.Invocation) {
@@ -255,7 +284,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   handleLoadNextPageClicked() {
-    this.getBuilds(true);
+    this.getInvocations(true);
   }
 
   getInvocationStatusClass(selectedInvocation: invocation.IInvocation) {
@@ -279,15 +308,18 @@ export default class HistoryComponent extends React.Component<Props, State> {
     return undefined;
   }
 
+  isAggregateView() {
+    return Boolean(this.props.hash);
+  }
+
   render() {
-    let slice = this.props.hash != "";
     let scope =
       this.props.username ||
       this.props.hostname ||
       format.formatCommitHash(this.props.commit) ||
       this.props.branch ||
       format.formatGitUrl(this.props.repo);
-    let viewType = "build history";
+    let viewType = "";
     if (this.props.hash == "#users") viewType = "users";
     if (this.props.hash == "#repos") viewType = "repos";
     if (this.props.hash == "#branches") viewType = "branches";
@@ -402,47 +434,50 @@ export default class HistoryComponent extends React.Component<Props, State> {
                   `${this.props.user?.selectedGroupName() || "User"}'s ${viewType}`}
               </div>
             </div>
-            {this.state.loadingSummaryStats && (
+            {this.state.loadingSummaryStat && (
               <div className="details loading-details">
                 <Spinner />
                 <div>Loading stats...</div>
               </div>
             )}
-            {!scope &&
-              !slice &&
-              this.state.summaryStat.map((stat) => (
-                <div className="details">
-                  <div className="detail">
-                    <img className="icon" src="/image/hash.svg" />
-                    {format.formatWithCommas(stat.totalNumBuilds)} recent builds
-                  </div>
-                  <div className="detail">
-                    <img className="icon" src="/image/check-circle.svg" />
-                    {format.formatWithCommas(stat.totalNumSucessfulBuilds)} passed
-                  </div>
-                  <div className="detail">
-                    <img className="icon" src="/image/x-circle.svg" />
-                    {format.formatWithCommas(stat.totalNumFailingBuilds)} failed
-                  </div>
-                  <div className="detail">
-                    <img className="icon" src="/image/percent.svg" />
-                    {format.percent(
-                      +stat.totalNumSucessfulBuilds / (+stat.totalNumSucessfulBuilds + +stat.totalNumFailingBuilds)
-                    )}{" "}
-                    passed
-                  </div>
-                  <div className="detail">
-                    <img className="icon" src="/image/clock-regular.svg" />
-                    {format.durationUsec(stat.totalBuildTimeUsec)} total
-                  </div>
-                  <div className="detail">
-                    <img className="icon" src="/image/clock-regular.svg" />
-                    {format.durationUsec(+stat.totalBuildTimeUsec / +stat.totalNumBuilds)} avg.
-                  </div>
+            {this.state.summaryStat && (
+              <div className="details">
+                <div className="detail">
+                  <img className="icon" src="/image/hash.svg" />
+                  {format.formatWithCommas(this.state.summaryStat.totalNumBuilds)} recent builds
                 </div>
-              ))}
+                <div className="detail">
+                  <img className="icon" src="/image/check-circle.svg" />
+                  {format.formatWithCommas(this.state.summaryStat.totalNumSucessfulBuilds)} passed
+                </div>
+                <div className="detail">
+                  <img className="icon" src="/image/x-circle.svg" />
+                  {format.formatWithCommas(this.state.summaryStat.totalNumFailingBuilds)} failed
+                </div>
+                <div className="detail">
+                  <img className="icon" src="/image/percent.svg" />
+                  {format.percent(
+                    Number(this.state.summaryStat.totalNumSucessfulBuilds) /
+                      (Number(this.state.summaryStat.totalNumSucessfulBuilds) +
+                        Number(this.state.summaryStat.totalNumFailingBuilds))
+                  )}{" "}
+                  passed
+                </div>
+                <div className="detail">
+                  <img className="icon" src="/image/clock-regular.svg" />
+                  {format.durationUsec(this.state.summaryStat.totalBuildTimeUsec)} total
+                </div>
+                <div className="detail">
+                  <img className="icon" src="/image/clock-regular.svg" />
+                  {format.durationUsec(
+                    Number(this.state.summaryStat.totalBuildTimeUsec) / Number(this.state.summaryStat.totalNumBuilds)
+                  )}{" "}
+                  avg.
+                </div>
+              </div>
+            )}
           </div>
-          {this.state.invocations.length > 0 && !slice && (
+          {Boolean(this.state.invocations?.length) && (
             <div className="container nopadding-dense">
               <div className={`grid ${this.state.invocations.length < 20 ? "grid-grow" : ""}`}>
                 {this.state.invocations.map((invocation) => (
@@ -466,95 +501,97 @@ export default class HistoryComponent extends React.Component<Props, State> {
           )}
         </div>
         {this.props.hash === "#users" && <OrgJoinRequestsComponent user={this.props.user} />}
-        {this.state.invocations.length > 0 && (
+        {Boolean(this.state.invocations?.length || this.state.aggregateStats?.length) && (
           <div className="container nopadding-dense">
-            {!slice &&
-              this.state.invocations.map((invocation) => (
-                <a href={`/invocation/${invocation.invocationId}`} onClick={(e) => e.preventDefault()}>
-                  <HistoryInvocationCardComponent
-                    className={this.state.hoveredInvocationId == invocation.invocationId ? "card-hovered" : ""}
-                    onMouseOver={this.handleMouseOver.bind(this, invocation)}
-                    onMouseOut={this.handleMouseOut.bind(this, invocation)}
-                    invocation={invocation}
-                    isSelectedForCompare={invocation.invocationId === this.state.invocationIdToCompare}
-                  />
-                </a>
-              ))}
-            {!slice && this.state.pageToken && (
+            {this.state.invocations?.map((invocation) => (
+              <a href={`/invocation/${invocation.invocationId}`} onClick={(e) => e.preventDefault()}>
+                <HistoryInvocationCardComponent
+                  className={this.state.hoveredInvocationId == invocation.invocationId ? "card-hovered" : ""}
+                  onMouseOver={this.handleMouseOver.bind(this, invocation)}
+                  onMouseOut={this.handleMouseOut.bind(this, invocation)}
+                  invocation={invocation}
+                  isSelectedForCompare={invocation.invocationId === this.state.invocationIdToCompare}
+                />
+              </a>
+            ))}
+            {this.state.pageToken && (
               <button
                 className="load-more"
-                disabled={this.state.loading}
+                disabled={this.state.loadingInvocations}
                 onClick={this.handleLoadNextPageClicked.bind(this)}>
-                {this.state.loading ? "Loading..." : "Load more"}
+                {this.state.loadingInvocations ? "Loading..." : "Load more"}
               </button>
             )}
-            {slice &&
-              this.state.invocationStat.map((invocationStat) => (
-                <HistoryInvocationStatCardComponent
-                  type={this.hashToAggregationTypeMap.get(this.props.hash)}
-                  invocationStat={invocationStat}
-                />
-              ))}
+            {this.state.aggregateStats?.map((invocationStat) => (
+              <HistoryInvocationStatCardComponent
+                type={this.hashToAggregationTypeMap.get(this.props.hash)}
+                invocationStat={invocationStat}
+              />
+            ))}
           </div>
         )}
-        {this.state.invocations.length == 0 && this.state.loading && <div className="loading"></div>}
-        {this.state.invocations.length == 0 && !this.state.loading && this.isFilteredToWorkflows() && (
-          <div className="container narrow">
-            <div className="empty-state history">
-              <h2>No workflow runs yet!</h2>
-              <p>
-                Push commits or send pull requests to{" "}
-                <a href={this.props.repo} target="_new" className="text-link">
-                  {format.formatGitUrl(this.props.repo)}
-                </a>{" "}
-                to trigger BuildBuddy workflows.
-              </p>
-              <p>
-                By default, BuildBuddy will run <code className="inline-code">bazel test //...</code> on pushes to your
-                main branch and on pull request branches.
-              </p>
-              <div>
-                <LinkButton href="https://docs.buildbuddy.io/docs/workflows-config" target="_new">
-                  Learn more
-                </LinkButton>
-              </div>
-            </div>
-          </div>
+        {((this.state.loadingInvocations && !this.state.invocations?.length) || this.state.loadingAggregateStats) && (
+          <div className="loading"></div>
         )}
-        {this.state.invocations.length == 0 && !this.state.loading && !this.isFilteredToWorkflows() && (
-          <div className="container narrow">
-            <div className="empty-state history">
-              <h2>No builds found!</h2>
-              <p>
-                Seems like you haven't connected Bazel to your BuildBuddy account yet.
-                <br />
-                <br />
-                <a className="button" href="/docs/setup">
-                  Click here to get started
-                </a>
-              </p>
-            </div>
-          </div>
-        )}
-        {this.state.invocations.length > 0 &&
-          !this.state.loading &&
-          !this.state.loadingStats &&
-          slice &&
-          this.state.invocationStat.length == 0 && (
+        {!this.isAggregateView() &&
+          !this.state.loadingInvocations &&
+          !this.state.invocations?.length &&
+          this.isFilteredToWorkflows() && (
             <div className="container narrow">
               <div className="empty-state history">
-                <h2>No {viewType} found!</h2>
+                <h2>No workflow runs yet!</h2>
                 <p>
-                  You can associate builds with {viewType} using build metadata.
+                  Push commits or send pull requests to{" "}
+                  <a href={this.props.repo} target="_new" className="text-link">
+                    {format.formatGitUrl(this.props.repo)}
+                  </a>{" "}
+                  to trigger BuildBuddy workflows.
+                </p>
+                <p>
+                  By default, BuildBuddy will run <code className="inline-code">bazel test //...</code> on pushes to
+                  your main branch and on pull request branches.
+                </p>
+                <div>
+                  <LinkButton href="https://docs.buildbuddy.io/docs/workflows-config" target="_new">
+                    Learn more
+                  </LinkButton>
+                </div>
+              </div>
+            </div>
+          )}
+        {!this.isAggregateView() &&
+          !this.state.loadingInvocations &&
+          !this.state.invocations?.length &&
+          !this.isFilteredToWorkflows() && (
+            <div className="container narrow">
+              <div className="empty-state history">
+                <h2>No builds found!</h2>
+                <p>
+                  Seems like you haven't connected Bazel to your BuildBuddy account yet.
                   <br />
                   <br />
-                  <a className="button" href="https://www.buildbuddy.io/docs/guide-metadata" target="_blank">
-                    View build metadata guide
+                  <a className="button" href="/docs/setup">
+                    Click here to get started
                   </a>
                 </p>
               </div>
             </div>
           )}
+        {this.isAggregateView() && !this.state.loadingAggregateStats && !this.state.aggregateStats?.length && (
+          <div className="container narrow">
+            <div className="empty-state history">
+              <h2>No {viewType} found!</h2>
+              <p>
+                You can associate builds with {viewType} using build metadata.
+                <br />
+                <br />
+                <a className="button" href="https://www.buildbuddy.io/docs/guide-metadata" target="_blank">
+                  View build metadata guide
+                </a>
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
