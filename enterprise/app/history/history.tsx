@@ -16,20 +16,21 @@ import Spinner from "../../../app/components/spinner/spinner";
 
 interface State {
   /**
-   * Invocations are individual invocation cards that are fetched in history views
-   * that aren't aggregate (sliced) views.
+   * Invocations corresponding to individual invocation cards.
+   * Not fetched for aggregate (sliced) views.
    */
   invocations?: invocation.IInvocation[];
   loadingInvocations?: boolean;
   /**
-   * Stats summarizing the fetched invocations. Not fetched for aggregate (sliced) views.
+   * Stats summarizing the fetched invocations.
+   * Not fetched for aggregate (sliced) views.
    */
   summaryStat?: invocation.IInvocationStat;
   loadingSummaryStat?: boolean;
 
   /**
-   * Stats fetched for aggregate views. Each stat corresponds to a single rendered card
-   * displaying the stats for each repo, user, etc.
+   * Stats fetched for aggregate views.
+   * Each stat corresponds to a single rendered card displaying the stats for each repo, user, etc.
    */
   aggregateStats?: invocation.IInvocationStat[];
   loadingAggregateStats?: boolean;
