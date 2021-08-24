@@ -30,7 +30,7 @@ interface State {
 
   /**
    * Stats fetched for aggregate views.
-   * Each stat corresponds to a single rendered card displaying the stats for each repo, user, etc.
+   * Each stat corresponds to a card displaying the stats for a single repo (or user, etc.)
    */
   aggregateStats?: invocation.IInvocationStat[];
   loadingAggregateStats?: boolean;
