@@ -12,13 +12,15 @@ import OrgJoinRequestsComponent from "../org/org_join_requests";
 import HistoryInvocationCardComponent from "./history_invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
 import { getProtoFilterParams } from "../filter/filter_util";
+import Spinner from "../../../app/components/spinner/spinner";
 
 interface State {
-  invocations: invocation.Invocation[];
-  summaryStat: invocation.InvocationStat[];
-  invocationStat: invocation.InvocationStat[];
+  invocations: invocation.IInvocation[];
+  summaryStat: invocation.IInvocationStat[];
+  invocationStat: invocation.IInvocationStat[];
   loading: boolean;
   loadingStats: boolean;
+  loadingSummaryStats: boolean;
   hoveredInvocationId: string;
   pageToken: string;
   invocationIdToCompare: string;
@@ -35,15 +37,14 @@ interface Props {
   hash: string;
 }
 
-export default class HistoryComponent extends React.Component {
-  props: Props;
-
+export default class HistoryComponent extends React.Component<Props, State> {
   state: State = {
     invocations: [],
     summaryStat: [],
     invocationStat: [],
     loading: true,
     loadingStats: false,
+    loadingSummaryStats: true,
     hoveredInvocationId: null,
     pageToken: "",
     invocationIdToCompare: localStorage["invocation_id_to_compare"],
@@ -86,7 +87,6 @@ export default class HistoryComponent extends React.Component {
     }
 
     this.setState({
-      ...this.state,
       loading: true,
       invocations: nextPage ? this.state.invocations : [],
     });
@@ -94,7 +94,6 @@ export default class HistoryComponent extends React.Component {
     rpcService.service.searchInvocation(request).then((response) => {
       console.log(response);
       this.setState({
-        ...this.state,
         invocations: nextPage
           ? this.state.invocations.concat(response.invocation as invocation.Invocation[])
           : response.invocation,
@@ -130,6 +129,8 @@ export default class HistoryComponent extends React.Component {
   }
 
   getSummaryStats() {
+    this.setState({ summaryStat: [], loadingSummaryStats: true });
+
     const filterParams = getProtoFilterParams(this.props.search);
     const request = new invocation.GetInvocationStatRequest({
       aggregationType: invocation.AggType.GROUP_ID_AGGREGATION_TYPE,
@@ -142,12 +143,13 @@ export default class HistoryComponent extends React.Component {
         status: filterParams.status,
       });
     }
-    rpcService.service.getInvocationStat(request).then((response) => {
-      this.setState({ summaryStat: response.invocationStat });
-    });
+    rpcService.service
+      .getInvocationStat(request)
+      .then((response) => this.setState({ summaryStat: response.invocationStat }))
+      .finally(() => this.setState({ loadingSummaryStats: false }));
   }
 
-  componentWillMount() {
+  componentDidMount() {
     document.title = `${
       this.props.username ||
       this.props.hostname ||
@@ -239,13 +241,12 @@ export default class HistoryComponent extends React.Component {
 
   handleMouseOver(invocation: invocation.Invocation) {
     this.setState({
-      ...this.state,
       hoveredInvocationId: invocation.invocationId,
     });
   }
 
-  handleMouseOut(invocation: invocation.Invocation) {
-    this.setState({ ...this.state, hoveredInvocationId: null });
+  handleMouseOut(invocation: invocation.IInvocation) {
+    this.setState({ hoveredInvocationId: null });
   }
 
   handleCreateOrgClicked() {
@@ -257,7 +258,7 @@ export default class HistoryComponent extends React.Component {
     this.getBuilds(true);
   }
 
-  getInvocationStatusClass(selectedInvocation: invocation.Invocation) {
+  getInvocationStatusClass(selectedInvocation: invocation.IInvocation) {
     if (selectedInvocation.invocationStatus == invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS) {
       return "grid-block-in-progress";
     }
@@ -401,6 +402,12 @@ export default class HistoryComponent extends React.Component {
                   `${this.props.user?.selectedGroupName() || "User"}'s ${viewType}`}
               </div>
             </div>
+            {this.state.loadingSummaryStats && (
+              <div className="details loading-details">
+                <Spinner />
+                <div>Loading stats...</div>
+              </div>
+            )}
             {!scope &&
               !slice &&
               this.state.summaryStat.map((stat) => (
