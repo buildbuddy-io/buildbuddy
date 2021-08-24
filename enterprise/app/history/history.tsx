@@ -320,7 +320,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       format.formatCommitHash(this.props.commit) ||
       this.props.branch ||
       format.formatGitUrl(this.props.repo);
-    let viewType = "";
+    let viewType = "build history";
     if (this.props.hash == "#users") viewType = "users";
     if (this.props.hash == "#repos") viewType = "repos";
     if (this.props.hash == "#branches") viewType = "branches";
