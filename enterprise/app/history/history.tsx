@@ -72,6 +72,13 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   getInvocations(nextPage?: boolean) {
+    this.setState({
+      loadingInvocations: true,
+    });
+    if (!nextPage) {
+      this.setState({ invocations: undefined, pageToken: undefined });
+    }
+
     const filterParams = getProtoFilterParams(this.props.search);
     let request = new invocation.SearchInvocationRequest({
       query: new invocation.InvocationQuery({
@@ -91,13 +98,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
       request.query.updatedAfter = filterParams.updatedAfter;
       request.query.updatedBefore = filterParams.updatedBefore;
       request.query.status = filterParams.status;
-    }
-
-    this.setState({
-      loadingInvocations: true,
-    });
-    if (!nextPage) {
-      this.setState({ invocations: undefined, pageToken: undefined });
     }
 
     this.fetchSubscription.add(
