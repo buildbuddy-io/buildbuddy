@@ -143,13 +143,13 @@ func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo
 		ws.task.GetExecuteRequest().GetInstanceName(),
 	)
 
-	opts := &dirtools.GetTreeOpts{}
+	opts := &dirtools.DownloadTreeOpts{}
 	if ws.opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
 
-	txInfo, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, ws.env, rootInstanceDigest, ws.rootDir, opts)
+	txInfo, err := dirtools.DownloadTreeFromRootDirectoryDigest(ctx, ws.env, rootInstanceDigest, ws.rootDir, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +157,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo
 		ws.Inputs[path] = digest
 	}
 	mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
-	log.Debugf("GetTree downloaded %s in %s [%2.2f MB/sec]", units.HumanSize(float64(txInfo.BytesTransferred)), txInfo.TransferDuration, mbps)
+	log.Debugf("DownloadTree downloaded %s in %s [%2.2f MB/sec]", units.HumanSize(float64(txInfo.BytesTransferred)), txInfo.TransferDuration, mbps)
 
 	return txInfo, nil
 }

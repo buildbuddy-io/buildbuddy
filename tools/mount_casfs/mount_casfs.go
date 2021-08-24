@@ -35,6 +35,7 @@ var (
 // XXX: don't use fatal, it messes up the signal handler
 func main() {
 	flag.Parse()
+	log.Configure(log.Opts{Level: "debug", EnableShortFileName: true})
 
 	if *server == "" {
 		log.Fatalf("--server is required")
@@ -93,7 +94,7 @@ func main() {
 		log.Fatalf("Could not create temp scratch dir: %s", err)
 	}
 
-	dirs, err := dirtools.GetDirsFromRootDirectoryDigest(ctx, casClient, digest.NewInstanceNameDigest(action.GetInputRootDigest(), *remoteInstanceName))
+	dirs, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, casClient, digest.NewInstanceNameDigest(action.GetInputRootDigest(), *remoteInstanceName))
 	if err != nil {
 		log.Fatalf("Could not fetch input root structure: %s", err)
 	}
@@ -104,13 +105,13 @@ func main() {
 		OutputFiles: command.GetOutputFiles(),
 	}
 
-	fs := casfs.New(fileFetcher, scratchDir)
+	fs := casfs.New(scratchDir, &casfs.Options{Verbose: true, LogFUSEOps: true})
 	err = fs.Mount(*dir)
 	if err != nil {
 		log.Fatalf("Could not mount filesystem at %q: %s", *dir, err)
 	}
 
-	err = fs.PrepareLayout(context.Background(), "", layout)
+	err = fs.PrepareForTask(context.Background(), fileFetcher, *actionID, layout)
 	if err != nil {
 		log.Fatalf("Could not prepare layout: %s", err)
 	}

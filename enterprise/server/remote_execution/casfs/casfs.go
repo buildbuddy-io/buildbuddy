@@ -23,26 +23,32 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-// XXX: check for any security implications
-
 type CASFS struct {
-	scratchDir  string
-	fileFetcher *dirtools.BatchFileFetcher
-
-	instanceName string
+	scratchDir string
+	verbose    bool
+	logFUSEOps bool
 
 	server *fuse.Server // Not set until FS is mounted.
 
 	root *Node
 
-	mu            sync.Mutex
-	loopbackFiles []*instrumentedLoopbackFile
+	mu             sync.Mutex
+	internalTaskID string
+	fileFetcher    *dirtools.BatchFileFetcher
+	bytesRead      int
+	bytesWritten   int
 }
 
-func New(fileFetcher *dirtools.BatchFileFetcher, scratchDir string) *CASFS {
+type Options struct {
+	Verbose    bool
+	LogFUSEOps bool
+}
+
+func New(scratchDir string, options *Options) *CASFS {
 	cfs := &CASFS{
-		scratchDir:  scratchDir,
-		fileFetcher: fileFetcher,
+		scratchDir: scratchDir,
+		verbose:    options.Verbose,
+		logFUSEOps: options.LogFUSEOps,
 	}
 	root := &Node{cfs: cfs}
 	cfs.root = root
@@ -54,7 +60,7 @@ func (cfs *CASFS) Mount(dir string) error {
 		MountOptions: fuse.MountOptions{
 			// Needed for docker.
 			AllowOther:    true,
-			Debug:         true,
+			Debug:         cfs.logFUSEOps,
 			DisableXAttrs: true,
 		},
 	})
@@ -65,11 +71,11 @@ func (cfs *CASFS) Mount(dir string) error {
 	return nil
 }
 
-func (cfs *CASFS) PrepareLayout(ctx context.Context, instanceName string, fsLayout *container.FilesystemLayout) error {
-	if len(fsLayout.Inputs) == 0 {
-		return nil
-	}
-	rootDirectory := fsLayout.Inputs[0]
+func (cfs *CASFS) PrepareForTask(ctx context.Context, fileFetcher *dirtools.BatchFileFetcher, taskID string, fsLayout *container.FilesystemLayout) error {
+	cfs.mu.Lock()
+	defer cfs.mu.Unlock()
+
+	rootDirectory := fsLayout.Inputs.GetRoot()
 	rootDirectoryDigest, err := digest.ComputeForMessage(rootDirectory)
 	if err != nil {
 		return err
@@ -83,18 +89,18 @@ func (cfs *CASFS) PrepareLayout(ctx context.Context, instanceName string, fsLayo
 		return err
 	}
 
-	//log.Infof("Set instance name to %q", instanceName)
-	cfs.instanceName = instanceName
+	cfs.internalTaskID = taskID
 	var walkDir func(dir *repb.Directory, node *Node) error
 	walkDir = func(dir *repb.Directory, parentNode *Node) error {
-		for _, childDirNode := range dir.Directories {
+		for _, childDirNode := range dir.GetDirectories() {
 			//log.Infof("Walk %q", childDirNode.Name)
 			child := &Node{cfs: cfs, parent: parentNode}
-			log.Infof("Input directory: %s", child.relativePath())
-
 			inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR})
 			if !parentNode.AddChild(childDirNode.Name, inode, false) {
 				return status.UnknownErrorf("could not add child %q", childDirNode.Name)
+			}
+			if cfs.verbose {
+				log.Debugf("[%s] Input directory: %s", cfs.taskID(), child.relativePath())
 			}
 			childDir, ok := dirMap[digest.NewKey(childDirNode.Digest)]
 			if !ok {
@@ -104,45 +110,48 @@ func (cfs *CASFS) PrepareLayout(ctx context.Context, instanceName string, fsLayo
 				return err
 			}
 		}
-		for _, childFileNode := range dir.Files {
-			//if childFileNode.Name == "process_wrapper" {
-			//	log.Infof("Parent: %s", parentNode.relativePath())
-			//	log.Infof("FULL PROTO %d:\n%s", i, proto.MarshalTextString(childFileNode))
-			//}
+		for _, childFileNode := range dir.GetFiles() {
 			child := &Node{cfs: cfs, parent: parentNode, fileNode: childFileNode}
-			log.Infof("Input file: %s", child.relativePath())
 			inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG})
 			if !parentNode.AddChild(childFileNode.Name, inode, false) {
 				return status.UnknownErrorf("could not add child %q", childFileNode.Name)
 			}
+			if cfs.verbose {
+				log.Debugf("[%s] Input file: %s", cfs.taskID(), child.relativePath())
+			}
 		}
-		if len(dir.Symlinks) > 0 {
-			return status.FailedPreconditionErrorf("symlinks are not supported")
+		for _, childSymlinkNode := range dir.GetSymlinks() {
+			child := &Node{cfs: cfs, parent: parentNode, symlinkTarget: childSymlinkNode.GetTarget()}
+			inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK})
+			if !parentNode.AddChild(childSymlinkNode.Name, inode, false) {
+				return status.UnknownErrorf("could not add child %q", childSymlinkNode.Name)
+			}
+			if cfs.verbose {
+				log.Debugf("[%s] Input symlink: %s", cfs.taskID(), child.relativePath())
+			}
 		}
 		return nil
 	}
 
-	dir, ok := dirMap[digest.NewKey(rootDirectoryDigest)]
-	if !ok {
-		return status.NotFoundErrorf("could not find root dir digest %q", rootDirectoryDigest.String())
-	}
-
-	err = walkDir(dir, cfs.root)
+	err = walkDir(rootDirectory, cfs.root)
 	if err != nil {
 		return err
 	}
 
 	outputDirs := make(map[string]struct{})
 	for _, dir := range fsLayout.OutputDirs {
-		log.Infof("Output dir: %s", dir)
+		if cfs.verbose {
+			log.Debugf("[%s] Output dir: %s", cfs.taskID(), dir)
+		}
 		outputDirs[dir] = struct{}{}
 	}
 	for _, file := range fsLayout.OutputFiles {
-		log.Infof("Output file: %s", file)
+		if cfs.verbose {
+			log.Debugf("[%s] Output file: %s", cfs.taskID(), file)
+		}
 		outputDirs[filepath.Dir(file)] = struct{}{}
 	}
 	for dir := range outputDirs {
-		log.Infof("Process output dir %q", dir)
 		parts := strings.Split(dir, string(os.PathSeparator))
 		node := cfs.root
 		for _, p := range parts {
@@ -160,7 +169,45 @@ func (cfs *CASFS) PrepareLayout(ctx context.Context, instanceName string, fsLayo
 		}
 	}
 
+	cfs.fileFetcher = fileFetcher
+
 	return nil
+}
+
+func (cfs *CASFS) fetchFiles(filesToFetch dirtools.FileMap, opts *dirtools.DownloadTreeOpts) error {
+	cfs.mu.Lock()
+	ff := cfs.fileFetcher
+	taskID := cfs.internalTaskID
+	cfs.mu.Unlock()
+	if ff == nil {
+		return status.FailedPreconditionErrorf("[%s] file fetcher is not set", taskID)
+	}
+	return ff.FetchFiles(filesToFetch, opts)
+}
+
+func (cfs *CASFS) taskID() string {
+	cfs.mu.Lock()
+	defer cfs.mu.Unlock()
+	return cfs.internalTaskID
+}
+
+func (cfs *CASFS) CountReadBytes(n int) {
+	cfs.mu.Lock()
+	defer cfs.mu.Unlock()
+	cfs.bytesRead += n
+}
+
+func (cfs *CASFS) CountWrittenBytes(n int) {
+	cfs.mu.Lock()
+	defer cfs.mu.Unlock()
+	cfs.bytesWritten += n
+}
+
+func (cfs *CASFS) FinishTask() {
+	cfs.mu.Lock()
+	defer cfs.mu.Unlock()
+	cfs.fileFetcher = nil
+	cfs.internalTaskID = "unset"
 }
 
 func (cfs *CASFS) Unmount() error {
@@ -169,17 +216,11 @@ func (cfs *CASFS) Unmount() error {
 	}
 
 	cfs.mu.Lock()
-	readBytes := 0
-	wroteBytes := 0
-	for _, lf := range cfs.loopbackFiles {
-		lf.mu.Lock()
-		readBytes += lf.readBytes
-		wroteBytes += lf.wroteBytes
-		lf.mu.Unlock()
-	}
+	readBytes := cfs.bytesRead
+	wroteBytes := cfs.bytesWritten
 	cfs.mu.Unlock()
 
-	log.Warningf("WORKSPACE %s (total read %s, wrote %s)", cfs.scratchDir, units.HumanSize(float64(readBytes)), units.HumanSize(float64(wroteBytes)))
+	log.Infof("[%s] Unmounting. Total read %s, wrote %s.", cfs.taskID(), units.HumanSize(float64(readBytes)), units.HumanSize(float64(wroteBytes)))
 
 	return cfs.server.Unmount()
 }
@@ -190,23 +231,29 @@ type Node struct {
 	cfs    *CASFS
 	parent *Node
 
-	mu            sync.Mutex
+	// Whether this node represents an input to the action.
+	// Modifications to inputs are denied.
+	isInput bool
+
 	fileNode      *repb.FileNode
-	localFile     string
 	symlinkTarget string
+
+	mu          sync.Mutex
+	scratchFile string
 }
 
 func (n *Node) relativePath() string {
 	return n.Path(nil)
 }
 
-func (n *Node) fullPath() string {
+func (n *Node) scratchPath() string {
 	return filepath.Join(n.cfs.scratchDir, n.relativePath())
 }
 
 func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
 	// Don't allow writes to input files.
-	if n.fileNode != nil && (int(flags)&(os.O_WRONLY|os.O_RDWR)) != 0 {
+	if n.isInput && (int(flags)&(os.O_WRONLY|os.O_RDWR)) != 0 {
+		log.Warningf("[%s] Denied attempt to write to input file %q", n.cfs.taskID(), n.relativePath())
 		return nil, 0, syscall.EPERM
 	}
 
@@ -214,61 +261,56 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	defer n.mu.Unlock()
 
 	relPath := n.relativePath()
-	fullPath := filepath.Join(n.cfs.scratchDir, relPath)
-	if n.localFile != "" {
+	scratchPath := n.scratchPath()
+	if n.scratchFile != "" {
 		hash := ""
 		if n.fileNode != nil {
 			hash = fmt.Sprintf(" (%s)", n.fileNode.GetDigest().GetHash())
 		}
-		log.Infof("Open %q%s: serve from local file %q", n.relativePath(), hash, n.fullPath())
-		log.Warningf("ALTERNATIVE %q", n.Path(nil))
-		fd, err := syscall.Open(n.fullPath(), int(flags), 0)
+		if n.cfs.verbose {
+			log.Debugf("[%s] Open %q%s: serve from scratch file %q", n.cfs.taskID(), relPath, hash, scratchPath)
+		}
+		fd, err := syscall.Open(scratchPath, int(flags), 0)
 		if err != nil {
-			log.Warningf("open %q%s failed: %s", n.relativePath(), hash, err)
+			log.Warningf("[%s] Open %q%s failed: %s", n.cfs.taskID(), scratchPath, hash, err)
 			return nil, 0, syscall.EIO
 		}
-		lf := &instrumentedLoopbackFile{FileHandle: fs.NewLoopbackFile(fd), fd: fd, fullPath: fullPath}
-		n.cfs.mu.Lock()
-		n.cfs.loopbackFiles = append(n.cfs.loopbackFiles, lf)
-		n.cfs.mu.Unlock()
+		lf := &instrumentedLoopbackFile{FileHandle: fs.NewLoopbackFile(fd), cfs: n.cfs, fd: fd, fullPath: scratchPath}
 		return lf, 0, 0
 	}
 
 	if n.fileNode != nil {
-		log.Infof("Open %q: fetch %s from CAS", n.relativePath(), n.fileNode.GetDigest().GetHash())
-		log.Warningf("ALTERNATIVE %q", n.Path(nil))
+		if n.cfs.verbose {
+			log.Debugf("[%s] Open %q: fetch %s from CAS", n.cfs.taskID(), relPath, n.fileNode.GetDigest().GetHash())
+		}
 
 		fileMap := dirtools.FileMap{
 			digest.NewKey(n.fileNode.GetDigest()): {&dirtools.FilePointer{
-				FullPath:     fullPath,
+				FullPath:     scratchPath,
 				RelativePath: relPath,
 				FileNode:     n.fileNode,
 			}},
 		}
 
-		// XXX: Should we pre-create these dirs?
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0777); err != nil {
-			log.Infof("Could not make dir %q", fullPath)
+		if err := os.MkdirAll(filepath.Dir(scratchPath), 0755); err != nil {
+			log.Warningf("[%s] Could not make dirs for %q: %s", n.cfs.taskID(), scratchPath, err)
 			return nil, 0, syscall.EINVAL
 		}
 
-		err := n.cfs.fileFetcher.FetchFiles(n.cfs.instanceName, fileMap, &dirtools.GetTreeOpts{})
+		err := n.cfs.fetchFiles(fileMap, &dirtools.DownloadTreeOpts{})
 		if err != nil {
-			log.Warningf("fetch failed: %s", err)
+			log.Warningf("[%s] Open fetch %q failed: %s", n.cfs.taskID(), n.fileNode.GetDigest().GetHash(), err)
 			return nil, 0, syscall.EIO
 		}
 
-		n.localFile = fullPath
+		n.scratchFile = scratchPath
 
-		fd, err := syscall.Open(fullPath, int(flags), 0)
+		fd, err := syscall.Open(scratchPath, int(flags), 0)
 		if err != nil {
-			log.Warningf("open failed: %s", err)
+			log.Warningf("[%s] Open %q failed: %s", n.cfs.taskID(), scratchPath, err)
 			return nil, 0, syscall.EIO
 		}
-		lf := &instrumentedLoopbackFile{FileHandle: fs.NewLoopbackFile(fd), fd: fd, fullPath: fullPath}
-		n.cfs.mu.Lock()
-		n.cfs.loopbackFiles = append(n.cfs.loopbackFiles, lf)
-		n.cfs.mu.Unlock()
+		lf := &instrumentedLoopbackFile{FileHandle: fs.NewLoopbackFile(fd), cfs: n.cfs, fd: fd, fullPath: scratchPath}
 		return lf, 0, 0
 	}
 
@@ -276,34 +318,32 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 }
 
 func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (node *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
-	log.Infof("Create %q", filepath.Join(n.relativePath(), name))
+	if n.cfs.verbose {
+		log.Debugf("[%s] Create %q", n.cfs.taskID(), filepath.Join(n.relativePath(), name))
+	}
 
-	fullPath := filepath.Join(n.fullPath(), name)
-	// XXX: Should we pre-create these dirs?
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0777); err != nil {
-		log.Infof("Could not make dir %q", fullPath)
+	scratchPath := filepath.Join(n.scratchPath(), name)
+	if err := os.MkdirAll(filepath.Dir(scratchPath), 0755); err != nil {
+		log.Infof("[%s] Could not make dirs for %q: %s", n.cfs.taskID(), scratchPath, err)
 		return nil, 0, 0, syscall.EINVAL
 	}
 
-	fd, err := syscall.Open(fullPath, int(flags), mode)
+	fd, err := syscall.Open(scratchPath, int(flags), mode)
 	if err != nil {
-		log.Infof("Could not open %q: %s", fullPath, err)
+		log.Warningf("[%s] Could not open %q: %s", n.cfs.taskID(), scratchPath, err)
 		return nil, nil, 0, fs.ToErrno(err)
 	}
-	lf := &instrumentedLoopbackFile{FileHandle: fs.NewLoopbackFile(fd), fd: fd, fullPath: fullPath}
-	n.cfs.mu.Lock()
-	n.cfs.loopbackFiles = append(n.cfs.loopbackFiles, lf)
-	n.cfs.mu.Unlock()
-	child := &Node{cfs: n.cfs, parent: n, localFile: fullPath}
+	lf := &instrumentedLoopbackFile{FileHandle: fs.NewLoopbackFile(fd), cfs: n.cfs, fd: fd, fullPath: scratchPath}
+	child := &Node{cfs: n.cfs, parent: n, scratchFile: scratchPath}
 	inode := n.cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG})
 	if !n.AddChild(name, inode, false) {
-		log.Warningf("could not add child %q", name)
+		log.Warningf("[%s] Could not add child %q to %q", n.cfs.taskID(), name, n.relativePath())
 		return nil, nil, 0, syscall.EIO
 	}
 
 	st := syscall.Stat_t{}
 	if err := syscall.Fstat(fd, &st); err != nil {
-		syscall.Close(fd)
+		_ = syscall.Close(fd)
 		return nil, nil, 0, fs.ToErrno(err)
 	}
 	out.FromStat(&st)
@@ -312,11 +352,27 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 }
 
 func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
-	newParentNode := newParent.EmbeddedInode().Operations().(*Node)
-	log.Infof("Rename %q => %q", filepath.Join(n.relativePath(), name), filepath.Join(newParentNode.relativePath(), newName))
+	newParentNode, ok := newParent.EmbeddedInode().Operations().(*Node)
+	if !ok {
+		log.Warningf("[%s] Parent is not a *Node", n.cfs.taskID())
+		return syscall.EINVAL
+	}
+	if n.cfs.verbose {
+		log.Debugf("[%s] Rename %q => %q", n.cfs.taskID(), filepath.Join(n.relativePath(), name), filepath.Join(newParentNode.relativePath(), newName))
+	}
 
-	// Don't allow input files to be renamed.
-	if n.fileNode != nil && (int(flags)&(os.O_WRONLY|os.O_RDWR)) != 0 {
+	existingSrcINode := n.GetChild(name)
+	if existingSrcINode == nil {
+		log.Warningf("[%s] Child %q not found in %q", n.cfs.taskID(), name, n.relativePath())
+		return syscall.EINVAL
+	}
+	existingSrcNode, ok := existingSrcINode.Operations().(*Node)
+	if !ok {
+		log.Warningf("[%s] Source is not a *Node", n.cfs.taskID())
+		return syscall.EINVAL
+	}
+	if existingSrcNode.isInput {
+		log.Warningf("[%s] Denied attempt to rename input file %q", n.cfs.taskID(), filepath.Join(n.relativePath(), name))
 		return syscall.EPERM
 	}
 
@@ -326,108 +382,106 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 	if existingTargetNode != nil {
 		existingNode, ok := existingTargetNode.Operations().(*Node)
 		if !ok {
+			log.Warningf("[%s] Existing target is not a *Node", n.cfs.taskID())
 			return syscall.EINVAL
 		}
 		// Don't allow a rename to overwrite an input file.
 		if existingNode.fileNode != nil {
+			log.Warningf("[%s] Denied attempt to rename over input file %q", n.cfs.taskID(), existingNode.relativePath())
 			return syscall.EPERM
 		}
 	}
 
-	p1 := filepath.Join(n.fullPath(), name)
+	p1 := filepath.Join(n.scratchPath(), name)
 	p2 := filepath.Join(n.cfs.scratchDir, newParent.EmbeddedInode().Path(nil), newName)
 
 	return fs.ToErrno(os.Rename(p1, p2))
 }
 
 func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	//log.Infof("Getattr %q", n.relativePath())
-
-	// XXX check if the fuse lib code automatically sets the file type so we don't need to set it?
-
 	if n.fileNode != nil {
 		out.Size = uint64(n.fileNode.GetDigest().SizeBytes)
-		out.Mode = fuse.S_IFREG | 0444
+		out.Mode = 0444
 		if n.fileNode.GetIsExecutable() {
 			out.Mode |= 0111
 		}
 		return fs.OK
-	} else if n.localFile != "" {
-		s, err := os.Lstat(n.fullPath())
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.scratchFile != "" {
+		s, err := os.Lstat(n.scratchPath())
 		if err != nil {
 			return fs.ToErrno(err)
 		}
-		out.Mode = fuse.S_IFREG | uint32(s.Mode().Perm())
+		out.Mode = uint32(s.Mode().Perm())
 		out.Size = uint64(s.Size())
 		return fs.OK
-	} else {
-		out.Mode = fuse.S_IFDIR | 0777
-		return fs.OK
 	}
+
+	// Symlink or directory.
+	out.Mode = 0777
+	return fs.OK
 }
 
 func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
-	log.Infof("Setattr %q", n.relativePath())
-
 	// Do not allow modifying attributes of input files.
-	if n.fileNode != nil {
+	if n.isInput {
+		log.Warningf("[%s] Denied attempt to change input file attributes %q", n.cfs.taskID(), n.relativePath())
 		return syscall.EPERM
 	}
 
 	if m, ok := in.GetMode(); ok {
-		if err := os.Chmod(n.fullPath(), os.FileMode(m)); err != nil {
+		if err := os.Chmod(n.scratchPath(), os.FileMode(m)); err != nil {
 			return fs.ToErrno(err)
 		}
 	}
 
-	// TODO: support setting size
+	// TODO(vadim): support setting size
 
 	return n.Getattr(ctx, f, out)
 }
 
 func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	log.Infof("Mkdir %q", filepath.Join(n.relativePath(), name))
+	if n.cfs.verbose {
+		log.Debugf("Mkdir %q", filepath.Join(n.relativePath(), name))
+	}
 
-	fullPath := filepath.Join(n.fullPath(), name)
+	scratchPath := filepath.Join(n.scratchPath(), name)
 
-	log.Infof("Mkdir %q", fullPath)
-
-	// XXX: get rid of this, pre-create output dirs instead
-	if err := os.MkdirAll(fullPath, 0777); err != nil {
-		log.Infof("Could not create %q: %s", fullPath, err)
+	if err := os.MkdirAll(scratchPath, 0755); err != nil {
+		log.Warningf("[%s] Could not make dirs for %q: %s", n.cfs.taskID(), scratchPath, err)
 		return nil, fs.ToErrno(err)
 	}
 
-	//if err := os.Mkdir(fullPath, os.FileMode(mode)); err != nil {
-	//	log.Infof("Could not create %q: %s", fullPath, err)
-	//	return nil, fs.ToErrno(err)
-	//}
 	child := &Node{cfs: n.cfs, parent: n}
 	inode := n.cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR})
 	if !n.AddChild(name, inode, false) {
-		log.Warningf("could not add child %q", name)
+		log.Warningf("[%s] Mkdir could not add child %q to %q", n.cfs.taskID(), name, n.relativePath())
 		return nil, syscall.EIO
 	}
-	log.Infof("Successfully created %q", fullPath)
 	return inode, 0
 }
 
 func (n *Node) Rmdir(ctx context.Context, name string) syscall.Errno {
-	log.Infof("Rmdir %q", filepath.Join(n.relativePath(), name))
-	fullPath := filepath.Join(n.fullPath(), name)
-	log.Infof("Rmdir %q", fullPath)
+	if n.cfs.verbose {
+		log.Debugf("[%s] Rmdir %q", n.cfs.taskID(), filepath.Join(n.relativePath(), name))
+	}
+	fullPath := filepath.Join(n.scratchPath(), name)
 	return fs.ToErrno(os.Remove(fullPath))
 }
 
 func (n *Node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	if n.cfs.verbose {
+		log.Debugf("[%s] Readdir %q", n.cfs.taskID(), n.relativePath())
+	}
 	// The default implementation has a bug that can return entries in a different order across multiple readdir calls.
-	log.Infof("Readdir %q", n.relativePath())
 	var names []string
 	for k := range n.Children() {
 		names = append(names, k)
 	}
 	sort.Strings(names)
-	r := []fuse.DirEntry{}
+	var r []fuse.DirEntry
 	for _, k := range names {
 		ch := n.Children()[k]
 		entry := fuse.DirEntry{
@@ -435,7 +489,6 @@ func (n *Node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 			Name: k,
 			Ino:  ch.StableAttr().Ino,
 		}
-		log.Infof("Entry: %+v", entry)
 		r = append(r, entry)
 	}
 	return fs.NewListDirStream(r), 0
@@ -443,11 +496,13 @@ func (n *Node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 
 func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
 	src := filepath.Join(n.relativePath(), name)
-	log.Infof("Symlink %s -> %s", src, target)
+	if n.cfs.verbose {
+		log.Debugf("[%s] Symlink %q -> %q", n.cfs.taskID(), src, target)
+	}
 	child := &Node{cfs: n.cfs, parent: n, symlinkTarget: target}
 	inode := n.cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK})
 	if !n.AddChild(name, inode, false) {
-		log.Warningf("could not add child %q", name)
+		log.Warningf("[%s] Symlink could not add child %q to %q", n.cfs.taskID(), name, n.relativePath())
 		return nil, syscall.EIO
 	}
 
@@ -455,6 +510,9 @@ func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.Entry
 }
 
 func (n *Node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
+	if n.cfs.verbose {
+		log.Debugf("[%s] Readlink %q", n.cfs.taskID(), n.relativePath())
+	}
 	if n.symlinkTarget != "" {
 		return []byte(n.symlinkTarget), 0
 	}
@@ -462,26 +520,34 @@ func (n *Node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 }
 
 func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
+	relPath := filepath.Join(n.relativePath(), name)
+	if n.cfs.verbose {
+		log.Debugf("[%s] Unlink %q", n.cfs.taskID(), relPath)
+	}
 	existingTargetNode := n.GetChild(name)
 	if existingTargetNode == nil {
+		log.Warningf("[%s] Child %q does not exist in %q", n.cfs.taskID(), name, n.relativePath())
 		return syscall.EINVAL
 	}
 
 	existingNode, ok := existingTargetNode.Operations().(*Node)
 	if !ok {
+		log.Warningf("[%s] Existing node is not a *Node", n.cfs.taskID())
 		return syscall.EINVAL
 	}
 
 	if existingNode.fileNode != nil {
+		log.Warningf("[%s] Denied attempt to unlink input file %q", n.cfs.taskID(), relPath)
 		return syscall.EPERM
 	}
 
-	if existingNode.localFile != "" {
-		log.Infof("Unlink %q", existingNode.fullPath())
-		return fs.ToErrno(os.Remove(existingNode.fullPath()))
+	if existingNode.scratchFile != "" {
+		return fs.ToErrno(os.Remove(existingNode.scratchPath()))
 	}
 
-	// XXX: handle directories and symlinks
+	if existingNode.symlinkTarget != "" {
+		return fs.OK
+	}
 
 	return syscall.ENOTSUP
 }
@@ -489,10 +555,12 @@ func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
 func (n *Node) CopyFileRange(ctx context.Context, fhIn fs.FileHandle, offIn uint64, out *fs.Inode, fhOut fs.FileHandle, offOut uint64, len uint64, flags uint64) (uint32, syscall.Errno) {
 	lfIn, ok := fhIn.(*instrumentedLoopbackFile)
 	if !ok {
+		log.Warningf("[%s] In is not a *instrumentedLoopbackFile", n.cfs.taskID())
 		return 0, syscall.ENOSYS
 	}
 	lfOut, ok := fhOut.(*instrumentedLoopbackFile)
 	if !ok {
+		log.Warningf("[%s] Out is not a *instrumentedLoopbackFile", n.cfs.taskID())
 		return 0, syscall.ENOSYS
 	}
 
@@ -509,9 +577,7 @@ type instrumentedReadResult struct {
 
 func (r *instrumentedReadResult) Bytes(buf []byte) ([]byte, fuse.Status) {
 	b, s := r.ReadResult.Bytes(buf)
-	r.lf.mu.Lock()
-	r.lf.readBytes += len(b)
-	r.lf.mu.Unlock()
+	r.lf.cfs.CountReadBytes(len(b))
 	return b, s
 }
 
@@ -525,12 +591,9 @@ func (r *instrumentedReadResult) Done() {
 
 type instrumentedLoopbackFile struct {
 	fs.FileHandle
+	cfs      *CASFS
 	fullPath string
 	fd       int
-
-	mu         sync.Mutex
-	readBytes  int
-	wroteBytes int
 }
 
 func (f *instrumentedLoopbackFile) Allocate(ctx context.Context, off uint64, size uint64, mode uint32) syscall.Errno {
@@ -587,8 +650,6 @@ func (f *instrumentedLoopbackFile) Write(ctx context.Context, data []byte, off i
 		return 0, syscall.EINVAL
 	}
 	n, err := fw.Write(ctx, data, off)
-	f.mu.Lock()
-	f.wroteBytes += len(data)
-	f.mu.Unlock()
+	f.cfs.CountWrittenBytes(len(data))
 	return n, err
 }

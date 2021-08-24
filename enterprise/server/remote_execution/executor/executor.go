@@ -203,7 +203,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		task.GetAction().GetInputRootDigest(),
 		task.GetExecuteRequest().GetInstanceName(),
 	)
-	dirs, err := dirtools.GetDirsFromRootDirectoryDigest(ctx, s.env.GetContentAddressableStorageClient(), rootInstanceDigest)
+	dirs, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, s.env.GetContentAddressableStorageClient(), rootInstanceDigest)
 	if err != nil {
 		return finishWithErrFn(err)
 	}

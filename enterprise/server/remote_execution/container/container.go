@@ -23,7 +23,7 @@ type Stats struct {
 }
 
 type FilesystemLayout struct {
-	Inputs      []*repb.Directory
+	Inputs      *repb.Tree
 	OutputDirs  []string
 	OutputFiles []string
 }

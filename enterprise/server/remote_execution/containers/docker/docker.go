@@ -95,14 +95,14 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
-	fileFetcher := dirtools.NewBatchFileFetcher(ctx, "", r.env.GetFileCache(), r.env.GetByteStreamClient(), r.env.GetContentAddressableStorageClient())
-	casfs := casfs.New(fileFetcher, workDir)
+	casfs := casfs.New(workDir, &casfs.Options{})
 	log.Warningf("Mounting CAS FS at %q", casFsDir)
 	if err := casfs.Mount(casFsDir); err != nil {
 		result.Error = status.UnavailableErrorf("unable to mount CASFS at %q: %s", casFsDir, err)
 		return result
 	}
-	err = casfs.PrepareLayout(ctx, "", fsLayout)
+	fileFetcher := dirtools.NewBatchFileFetcher(ctx, "", r.env.GetFileCache(), r.env.GetByteStreamClient(), r.env.GetContentAddressableStorageClient())
+	err = casfs.PrepareForTask(ctx, fileFetcher, "taskID", fsLayout)
 	if err != nil {
 		result.Error = status.UnavailableErrorf("unable to prepare CASFS layout at %q: %s", casFsDir, err)
 		return result
