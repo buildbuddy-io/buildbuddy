@@ -1,13 +1,13 @@
 package git
 
 import (
+	"net"
 	"net/url"
 	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/whilp/git-urls"
 )
 
 const (
@@ -17,8 +17,8 @@ const (
 )
 
 var (
-	startsWithDomainRegexp    = regexp.MustCompile(`^[^/]+\.[^/]+`)
-	startsWithLocalhostRegexp = regexp.MustCompile(`^localhost(:|/|$)`)
+	SchemeRegexp                         = regexp.MustCompile(`^(([a-z0-9+.-]+:)?/)?/`)
+	MissingSlashBetweenPortAndPathRegexp = regexp.MustCompile(`^(([a-z0-9+.-]+:)?//([0-9a-zA-Z%._~-]+(:[0-9a-zA-Z%._~-]*)?@)?[0-9a-zA-Z%._~-]+:[0-9]*[^0-9/@])[^@]*$`)
 )
 
 // AuthRepoURL returns a Git repo URL with the given credentials set. The
@@ -60,28 +60,111 @@ func StripRepoURLCredentials(repoURL string) string {
 }
 
 func OwnerRepoFromRepoURL(repoURL string) (string, error) {
-	u, err := ParseRepoURL(repoURL)
+	u, err := NormalizeRepoURL(repoURL)
 	if err != nil {
 		return "", status.WrapErrorf(err, "failed to parse repo URL %q", repoURL)
 	}
-	path := u.Path
-	path = strings.TrimSuffix(path, ".git")
-	path = strings.TrimPrefix(path, "/")
-	return path, nil
+	return strings.TrimPrefix(u.Path, "/"), nil
 }
 
-func ParseRepoURL(repoURL string) (*url.URL, error) {
-	// The giturls package covers most edge cases, but it's a bit unforgiving if
-	// the URL either doesn't look like "git@" or if it fails to specify an
-	// explicit protocol. Here, we attempt to salvage the situation if the URL
-	// looks like a domain without a protocol -- we prepend https:// except
-	// for localhost, which in most cases uses http:// since most people forgo
-	// the hassle of setting up HTTPS locally.
+func ParseRepoURL(repo string) (*url.URL, error) {
+	// We assume https:// when scheme is missing for all domains except localhost,
+	// which in most cases uses http:// since most people forgo the hassle of
+	// setting up HTTPS locally. We assume "github.com" if no scheme or domain is
+	// specified and the path is relative. We strip any trailing slash.
 
-	if startsWithLocalhostRegexp.MatchString(repoURL) {
-		repoURL = "http://" + repoURL
-	} else if !(strings.Contains(repoURL, "@") || strings.Contains(repoURL, "//")) && startsWithDomainRegexp.MatchString(repoURL) {
-		repoURL = "https://" + repoURL
+	log.Debugf("URL: [%s]", repo)
+	if SchemeRegexp.FindStringIndex(repo) == nil {
+		// convert e.g. user@host:port/path/to/repo -> //user@host:port/path/to/repo
+		log.Debugf("convert e.g. user@host:port/path/to/repo -> //user@host:port/path/to/repo")
+		repo = "//" + repo
+		log.Debugf("New URL: [%s]", repo)
 	}
-	return giturls.Parse(repoURL)
+	if matches := MissingSlashBetweenPortAndPathRegexp.FindStringSubmatchIndex(repo); matches != nil {
+		// convert e.g. //user@host:path/to/repo -> //user@host:/path/to/repo
+		log.Debugf("convert e.g. //user@host:path/to/repo -> //user@host:/path/to/repo")
+		repo = repo[:matches[3]-1] + "/" + repo[matches[3]-1:]
+		log.Debugf("New URL: [%s]", repo)
+	}
+
+	repoURL, err := url.Parse(repo)
+	if err != nil {
+		return nil, err
+	}
+
+	repoURL.Path = strings.TrimSuffix(repoURL.Path, "/")
+
+	// convert e.g file://buildbuddy-io/buildbuddy -> buildbuddy-io/buildbuddy
+	// and e.g //buildbuddy-io/buildbuddy -> buildbuddy-io/buildbuddy
+	if (repoURL.Scheme == "file" || repoURL.Scheme == "") && repoURL.Host != "" && repoURL.Hostname() != "localhost" && !strings.ContainsAny(repoURL.Host, ".:") && repoURL.Path != "" && !strings.Contains(repoURL.Path[1:], "/") {
+		log.Debugf("convert e.g file://buildbuddy-io/buildbuddy -> buildbuddy-io/buildbuddy")
+		repoURL.Scheme = ""
+		repoURL.Path = repoURL.Host + repoURL.Path
+		repoURL.Host = ""
+	}
+
+	if repoURL.Scheme == "" && repoURL.Host == "" && !strings.HasPrefix(repoURL.Path, "/") {
+		if components := strings.Split(repoURL.Path, "/"); strings.ContainsAny(components[0], ".:") || components[0] == "localhost" {
+			// convert e.g gitlab.com/buildbuddy-io/buildbuddy -> //gitlab.com/buildbuddy-io/buildbuddy
+			log.Debugf("convert e.g gitlab.com/buildbuddy-io/buildbuddy -> //gitlab.com/buildbuddy-io/buildbuddy")
+			repoURL.Host = components[0]
+			repoURL.Path = repoURL.Path[len(components[0]):]
+		} else if len(components) == 2 {
+			// convert e.g buildbuddy-io/buildbuddy -> //github.com/buildbuddy-io/buildbuddy
+			log.Debugf("convert e.g buildbuddy-io/buildbuddy -> //github.com/buildbuddy-io/buildbuddy")
+			repoURL.Host = "github.com"
+			repoURL.Path = "/" + repoURL.Path
+		}
+	}
+
+	// strip trailing ":" on hosts that lack a port.
+	host, port, err := net.SplitHostPort(repoURL.Host)
+	if err == nil && port == "" {
+		log.Debugf("Stripping trailing \":\" from [%s]: host: [%s], port: [%s]", repoURL.Host, host, port)
+		repoURL.Host = strings.TrimSuffix(net.JoinHostPort(host, port), ":")
+	}
+
+	// assume missing scheme
+	if repoURL.Scheme == "" {
+		if repoURL.Hostname() == "localhost" {
+			// assume http for missing localhost scheme.
+			log.Debugf("assume http for missing localhost scheme.")
+			repoURL.Scheme = "http"
+		} else if repoURL.Host == "" {
+			// assume file for missing empty host scheme.
+			log.Debugf("assume file for missing empty host scheme.")
+			repoURL.Scheme = "file"
+		} else if repoURL.User.Username() != "" {
+			// assume ssh for missing scheme with user specified.
+			log.Debugf("assume ssh for missing scheme with user specified.")
+			repoURL.Scheme = "ssh"
+		} else {
+			// assume https for all other missing scheme cases.
+			log.Debugf("assume https for missing scheme.")
+			repoURL.Scheme = "https"
+		}
+	}
+
+	return repoURL, nil
+}
+
+func NormalizeRepoURL(repo string) (*url.URL, error) {
+	// We coerce https scheme for all domains except localhost. We remove the user
+	// info. We strip the ".git" suffix, if it exists.
+	repoURL, err := ParseRepoURL(repo)
+	if err != nil {
+		return nil, err
+	}
+
+	// coerce https for all but localhost
+	if repoURL.Scheme != "https" && repoURL.Hostname() == "localhost" {
+		repoURL.Scheme = "http"
+	} else {
+		repoURL.Scheme = "https"
+	}
+
+	repoURL.User = nil
+	repoURL.Path = strings.TrimSuffix(repoURL.Path, ".git")
+
+	return repoURL, nil
 }
