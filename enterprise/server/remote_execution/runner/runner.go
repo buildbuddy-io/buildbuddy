@@ -115,6 +115,8 @@ type state int
 
 // CommandRunner represents a command container and attached workspace.
 type CommandRunner struct {
+	env environment.Env
+
 	// ACL controls who can use this runner.
 	ACL *aclpb.ACL
 	// PlatformProperties holds the platform properties for the last
@@ -152,6 +154,10 @@ type CommandRunner struct {
 	diskUsageBytes   int64
 }
 
+func (r *CommandRunner) pullCredentials() *container.PullCredentials {
+	return container.GetPullCredentials(r.env, r.PlatformProperties)
+}
+
 func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.ExecutionTask) error {
 	r.Workspace.SetTask(task)
 	// Clean outputs for the current task if applicable, in case
@@ -168,7 +174,7 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.Execution
 
 	// Pull the container image before Run() is called, so that we don't
 	// use up the whole exec ctx timeout with a slow container pull.
-	if err := r.Container.PullImageIfNecessary(ctx); err != nil {
+	if err := r.Container.PullImageIfNecessary(ctx, r.pullCredentials()); err != nil {
 		return status.UnavailableErrorf("Error pulling container: %s", err)
 	}
 	return nil
@@ -179,13 +185,13 @@ func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfa
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
 		// TODO: Remove this `Run` method and call lifecycle methods directly.
-		return r.Container.Run(ctx, command, r.Workspace.Path())
+		return r.Container.Run(ctx, command, r.Workspace.Path(), r.pullCredentials())
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
 	switch r.state {
 	case initial:
-		if err := r.Container.PullImageIfNecessary(ctx); err != nil {
+		if err := r.Container.PullImageIfNecessary(ctx, r.pullCredentials()); err != nil {
 			return commandutil.ErrorResult(err)
 		}
 		if err := r.Container.Create(ctx, r.Workspace.Path()); err != nil {
@@ -502,7 +508,8 @@ func (p *Pool) WarmupDefaultImage() {
 		}
 
 		eg.Go(func() error {
-			if err := c.PullImageIfNecessary(egCtx); err != nil {
+			creds := container.GetPullCredentials(p.env, platProps)
+			if err := c.PullImageIfNecessary(egCtx, creds); err != nil {
 				return err
 			}
 			log.Infof("Warmup: %s pulled default image %q in %s", containerType, image, time.Since(start))
@@ -590,6 +597,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		return nil, err
 	}
 	r := &CommandRunner{
+		env:                p.env,
 		ACL:                ACLForUser(user),
 		PlatformProperties: props,
 		InstanceName:       instanceName,

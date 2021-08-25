@@ -765,7 +765,7 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 //
 // It is approximately the same as calling PullImageIfNecessary, Create,
 // Exec, then Remove.
-func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string, creds *container.PullCredentials) *interfaces.CommandResult {
 	start := time.Now()
 	defer func() {
 		log.Debugf("Run took %s", time.Since(start))
@@ -789,7 +789,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 	// If a snapshot was already loaded, then c.machine will be set, so
 	// there's no need to Create the machine.
 	if c.machine == nil {
-		if err := c.PullImageIfNecessary(ctx); err != nil {
+		if err := c.PullImageIfNecessary(ctx, creds); err != nil {
 			return nonCmdExit(err)
 		}
 
@@ -937,7 +937,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 // PullImageIfNecessary pulls the container image if it is not already
 // available locally.
-func (c *FirecrackerContainer) PullImageIfNecessary(ctx context.Context) error {
+func (c *FirecrackerContainer) PullImageIfNecessary(ctx context.Context, creds *container.PullCredentials) error {
 	start := time.Now()
 	defer func() {
 		log.Debugf("PullImageIfNecessary took %s", time.Since(start))
@@ -945,7 +945,7 @@ func (c *FirecrackerContainer) PullImageIfNecessary(ctx context.Context) error {
 	if c.containerFSPath != "" {
 		return nil
 	}
-	containerFSPath, err := containerutil.GetOrCreateImage(ctx, c.jailerRoot, c.containerImage)
+	containerFSPath, err := containerutil.GetOrCreateImage(ctx, c.jailerRoot, c.containerImage, creds)
 	if err != nil {
 		return err
 	}
