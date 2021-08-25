@@ -58,9 +58,9 @@ export default class HistoryComponent extends React.Component<Props, State> {
 
   refreshSubscription = new Subscription();
 
-  invocationsPromise: CancelablePromise;
-  summaryStatPromise: CancelablePromise;
-  aggregateStatsPromise: CancelablePromise;
+  invocationsRpc: CancelablePromise;
+  summaryStatRpc: CancelablePromise;
+  aggregateStatsRpc: CancelablePromise;
 
   hashToAggregationTypeMap = new Map<string, invocation.AggType>([
     ["#users", invocation.AggType.USER_AGGREGATION_TYPE],
@@ -103,7 +103,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       request.query.status = filterParams.status;
     }
 
-    this.invocationsPromise = rpcService.service
+    this.invocationsRpc = rpcService.service
       .searchInvocation(request)
       .then((response) => {
         console.log(response);
@@ -132,7 +132,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       });
     }
 
-    this.aggregateStatsPromise = rpcService.service
+    this.aggregateStatsRpc = rpcService.service
       .getInvocationStat(request)
       .then((response) => {
         console.log(response);
@@ -157,7 +157,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       });
     }
 
-    this.summaryStatPromise = rpcService.service
+    this.summaryStatRpc = rpcService.service
       .getInvocationStat(request)
       .then((response) => this.setState({ summaryStat: response.invocationStat?.[0] }))
       .finally(() => this.setState({ loadingSummaryStat: false }));
@@ -194,10 +194,10 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   fetch() {
-    // Cancel any in-flight RPCs from previous fetch.
-    this.invocationsPromise?.cancel();
-    this.summaryStatPromise?.cancel();
-    this.aggregateStatsPromise?.cancel();
+    // Cancel any in-flight RPC callbacks.
+    this.invocationsRpc?.cancel();
+    this.summaryStatRpc?.cancel();
+    this.aggregateStatsRpc?.cancel();
 
     this.setState({
       invocations: undefined,
