@@ -8,7 +8,7 @@ export { CancelablePromise } from "../util/async";
 
 /**
  * IBuildBuddyService includes only the RPC methods from BuildBuddyService
- * (and excludes the methods inherited from protobufjs).
+ * (and excludes any utility methods inherited from protobufjs).
  */
 type IBuildBuddyService = Omit<buildbuddy.service.BuildBuddyService, keyof protobufjs.rpc.Service>;
 
@@ -16,7 +16,7 @@ type IBuildBuddyService = Omit<buildbuddy.service.BuildBuddyService, keyof proto
  * ExtendedBuildBuddyService is an extended version of BuildBuddyService with
  * the following differences:
  *
- * - `requestContext` field is automatically appended to all requests
+ * - The `requestContext` field is automatically set on each request.
  * - All RPC methods return a `CancelablePromise` instead of a `Promise`.
  */
 type ExtendedBuildBuddyService = CancelableService<IBuildBuddyService>;

@@ -60,15 +60,27 @@ export class CancelablePromise<T = unknown> implements Promise<T> {
   }
 }
 
-type Service = Record<any, (...args: any) => Promise<any>>;
-
-type PromiseTypeArg<T> = T extends Promise<infer U> ? U : never;
+/**
+ * Interface in which every method takes a single request parameter
+ * and returns a promise wrapping the response.
+ */
+interface PromiseBasedService {
+  [methodName: string]: (request: any) => Promise<any>;
+}
 
 /**
- * Utility type that converts all return types of methods from Promise to CancelablePromise.
+ * Extracts the type argument from a `Promise` type.
+ *
+ * For example, `PromiseTypeArg<Promise<string>>` returns `string`.
  */
-export type CancelableService<S extends Service> = {
-  [MethodName in keyof S]: (
-    request: Parameters<S[MethodName]>[0]
-  ) => CancelablePromise<PromiseTypeArg<ReturnType<S[MethodName]>>>;
+type PromiseTypeArgument<T> = T extends Promise<infer U> ? U : never;
+
+/**
+ * Utility type that adapts a `PromiseBasedService` so that `CancelablePromise` is
+ * returned from all methods, instead of `Promise`.
+ */
+export type CancelableService<Service extends PromiseBasedService> = {
+  [MethodName in keyof Service]: (
+    request: Parameters<Service[MethodName]>[0]
+  ) => CancelablePromise<PromiseTypeArgument<ReturnType<Service[MethodName]>>>;
 };
