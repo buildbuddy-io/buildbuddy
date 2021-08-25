@@ -12,7 +12,6 @@ export class CancelablePromise<T = unknown> implements Promise<T> {
 
   constructor(private promise: PromiseLike<T>) {}
 
-  /** @override */
   then<U, V = never>(
     onfulfilled: (value: T) => U | PromiseLike<U>,
     onrejected?: (reason: any) => V | PromiseLike<V>
@@ -35,12 +34,10 @@ export class CancelablePromise<T = unknown> implements Promise<T> {
     return cancelable;
   }
 
-  /** @override */
   catch<U>(onrejected?: (reason: any) => U | PromiseLike<U>): CancelablePromise<T | U> {
     return this.then(undefined, onrejected);
   }
 
-  /** @override */
   finally(onfinally: () => void): CancelablePromise<T> {
     this.then(
       () => {
