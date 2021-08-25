@@ -33,6 +33,7 @@ import (
 	gstatus "google.golang.org/grpc/status"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -507,6 +508,9 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 	i.DurationUsec = p.DurationUsec
 	i.Host = p.Host
 	i.RepoURL = p.RepoUrl
+	if norm, err := gitutil.NormalizeRepoURL(p.RepoUrl); err == nil {
+		i.RepoURL = norm.String()
+	}
 	i.BranchName = p.BranchName
 	i.CommitSHA = p.CommitSha
 	i.Role = p.Role
