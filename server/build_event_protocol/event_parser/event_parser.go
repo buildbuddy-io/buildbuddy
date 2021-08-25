@@ -7,7 +7,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/terminal"
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
@@ -221,39 +220,21 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	}
 	if url, ok := envVarMap["TRAVIS_REPO_SLUG"]; ok && url != "" {
 		invocation.RepoUrl = url
-		if norm, err := gitutil.NormalizeRepoURL(url); err == nil {
-			invocation.RepoUrl = norm.String()
-		}
 	}
 	if url, ok := envVarMap["GIT_URL"]; ok && url != "" {
 		invocation.RepoUrl = url
-		if norm, err := gitutil.NormalizeRepoURL(url); err == nil {
-			invocation.RepoUrl = norm.String()
-		}
 	}
 	if url, ok := envVarMap["BUILDKITE_REPO"]; ok && url != "" {
 		invocation.RepoUrl = url
-		if norm, err := gitutil.NormalizeRepoURL(url); err == nil {
-			invocation.RepoUrl = norm.String()
-		}
 	}
 	if url, ok := envVarMap["REPO_URL"]; ok && url != "" {
 		invocation.RepoUrl = url
-		if norm, err := gitutil.NormalizeRepoURL(url); err == nil {
-			invocation.RepoUrl = norm.String()
-		}
 	}
 	if url, ok := envVarMap["CIRCLE_REPOSITORY_URL"]; ok && url != "" {
 		invocation.RepoUrl = url
-		if norm, err := gitutil.NormalizeRepoURL(url); err == nil {
-			invocation.RepoUrl = norm.String()
-		}
 	}
 	if url, ok := envVarMap["GITHUB_REPOSITORY"]; ok && url != "" {
 		invocation.RepoUrl = url
-		if norm, err := gitutil.NormalizeRepoURL(url); err == nil {
-			invocation.RepoUrl = norm.String()
-		}
 	}
 	if branch, ok := envVarMap["TRAVIS_BRANCH"]; ok && branch != "" {
 		invocation.BranchName = branch
@@ -301,9 +282,6 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	// Gitlab CI Environment Variables
 	// https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
 	if url, ok := envVarMap["CI_REPOSITORY_URL"]; ok && url != "" {
-		if norm, err := gitutil.NormalizeRepoURL(url); err == nil {
-			invocation.RepoUrl = norm.String()
-		}
 		invocation.RepoUrl = url
 	}
 	if branch, ok := envVarMap["CI_COMMIT_BRANCH"]; ok && branch != "" {
@@ -332,9 +310,6 @@ func fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.Works
 			invocation.Role = item.Value
 		case "REPO_URL":
 			invocation.RepoUrl = item.Value
-			if norm, err := gitutil.NormalizeRepoURL(item.Value); err == nil {
-				invocation.RepoUrl = norm.String()
-			}
 		case "GIT_BRANCH":
 			invocation.BranchName = item.Value
 		case "COMMIT_SHA":
@@ -352,9 +327,6 @@ func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inp
 	}
 	if url, ok := metadata["REPO_URL"]; ok && url != "" {
 		invocation.RepoUrl = url
-		if norm, err := gitutil.NormalizeRepoURL(url); err == nil {
-			invocation.RepoUrl = norm.String()
-		}
 	}
 	if user, ok := metadata["USER"]; ok && user != "" {
 		invocation.User = user
