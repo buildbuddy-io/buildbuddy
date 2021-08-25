@@ -126,12 +126,12 @@ func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo
 		ws.task.GetExecuteRequest().GetInstanceName(),
 	)
 
-	opts := &dirtools.GetTreeOpts{}
+	opts := &dirtools.DownloadTreeOpts{}
 	if ws.opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
-	txInfo, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, ws.env, rootInstanceDigest, ws.rootDir, opts)
+	txInfo, err := dirtools.DownloadTreeFromRootDirectoryDigest(ctx, ws.env, rootInstanceDigest, ws.rootDir, opts)
 	if err == nil {
 		for path, digest := range txInfo.Transfers {
 			ws.Inputs[path] = digest

@@ -326,7 +326,7 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := cachetools.GetBlobAsProto(ctx, c.gRPClientSource.GetByteStreamClient(), treeDigest, tree); err != nil {
 			return err
 		}
-		if _, err := dirtools.GetTree(ctx, env, res.InstanceName, tree, path, &dirtools.GetTreeOpts{}); err != nil {
+		if _, err := dirtools.DownloadTree(ctx, env, res.InstanceName, tree, path, &dirtools.DownloadTreeOpts{}); err != nil {
 			return err
 		}
 	}
