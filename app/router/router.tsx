@@ -255,7 +255,7 @@ class Router {
   getHistoryRepo(path: string) {
     let repoComponent = this.getLastPathComponent(path, Path.repoHistoryPath);
     if (repoComponent?.includes("/")) {
-      return `https://github.com/${repoComponent}.git`;
+      return `https://github.com/${repoComponent}`;
     }
     return repoComponent ? atob(repoComponent) : "";
   }
