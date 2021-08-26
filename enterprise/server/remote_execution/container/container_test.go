@@ -13,7 +13,7 @@ import (
 func TestGetPullCredentials(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 
-	env.GetConfigurator().GetExecutorConfig().ImageRegistries = []config.ImageRegistryConfig{
+	env.GetConfigurator().GetExecutorConfig().ContainerRegistries = []config.ContainerRegistryConfig{
 		{
 			Hostnames: []string{"gcr.io", "us.gcr.io", "eu.gcr.io", "asia.gcr.io", "marketplace.gcr.io"},
 			Username:  "gcruser",

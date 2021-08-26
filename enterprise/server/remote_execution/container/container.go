@@ -90,7 +90,7 @@ func GetPullCredentials(env environment.Env, props *platform.Properties) *PullCr
 
 	// TODO(bduffany): Accept credentials from platform props as well.
 
-	regCfgs := env.GetConfigurator().GetExecutorConfig().ImageRegistries
+	regCfgs := env.GetConfigurator().GetExecutorConfig().ContainerRegistries
 	if len(regCfgs) == 0 {
 		return nil
 	}
