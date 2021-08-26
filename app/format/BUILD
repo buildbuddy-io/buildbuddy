@@ -30,6 +30,6 @@ ts_library(
 
 jasmine_node_test(
     name = "format_test",
-    srcs = [":format_test_ts"],
     templated_args = ["--bazel_patch_module_resolver"],
+    deps = [":format_test_ts"],
 )
