@@ -1,5 +1,3 @@
-import * as protobufjs from "protobufjs";
-
 /**
  * Promise extended with a `cancel()` method that effectively unregisters all callback
  * functions in the chain.
