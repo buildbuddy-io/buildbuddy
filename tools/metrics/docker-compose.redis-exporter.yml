@@ -1,0 +1,5 @@
+version: "3.3"
+services:
+  redis-exporter:
+    image: oliver006/redis_exporter@sha256:5ad3dccb264a8b6db595164b9f4f5dbf301927c22d9d1ffe289e00e1642c2b9f
+    network_mode: "host"
