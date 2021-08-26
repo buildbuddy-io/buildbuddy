@@ -1,16 +1,10 @@
 import { Subject } from "rxjs";
 import { buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
 import { context } from "../../proto/context_ts_proto";
-import { CancelablePromise, CancelableService } from "../util/async";
+import { CancelablePromise } from "../util/async";
 import * as protobufjs from "protobufjs";
 
 export { CancelablePromise } from "../util/async";
-
-/**
- * IBuildBuddyService includes only the RPC methods from BuildBuddyService
- * (and excludes any utility methods inherited from protobufjs).
- */
-type IBuildBuddyService = Omit<buildbuddy.service.BuildBuddyService, keyof protobufjs.rpc.Service>;
 
 /**
  * ExtendedBuildBuddyService is an extended version of BuildBuddyService with
@@ -19,7 +13,7 @@ type IBuildBuddyService = Omit<buildbuddy.service.BuildBuddyService, keyof proto
  * - The `requestContext` field is automatically set on each request.
  * - All RPC methods return a `CancelablePromise` instead of a `Promise`.
  */
-type ExtendedBuildBuddyService = CancelableService<IBuildBuddyService>;
+type ExtendedBuildBuddyService = CancelableService<buildbuddy.service.BuildBuddyService>;
 
 class RpcService {
   service: ExtendedBuildBuddyService;
@@ -120,5 +114,25 @@ class RpcService {
 function getRpcMethodNames(serviceClass: Function) {
   return new Set(Object.keys(serviceClass.prototype).filter((key) => key !== "constructor"));
 }
+
+type Rpc<Request, Response> = (request: Request) => Promise<Response>;
+
+type CancelableRpc<Request, Response> = (request: Request) => CancelablePromise<Response>;
+
+/**
+ * Utility type that adapts a `PromiseBasedService` so that `CancelablePromise` is
+ * returned from all methods, instead of `Promise`.
+ */
+type CancelableService<Service extends protobufjs.rpc.Service> = protobufjs.rpc.Service &
+  {
+    // Loop over all methods in the service, except for the ones inherited from the base
+    // service (we don't want to modify those at all).
+    [MethodName in keyof Omit<Service, keyof protobufjs.rpc.Service>]: Service[MethodName] extends Rpc<
+      infer Request,
+      infer Response
+    >
+      ? CancelableRpc<Request, Response>
+      : never;
+  };
 
 export default new RpcService();

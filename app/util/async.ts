@@ -1,3 +1,5 @@
+import * as protobufjs from "protobufjs";
+
 /**
  * Promise extended with a `cancel()` method that effectively unregisters all callback
  * functions in the chain.
@@ -59,28 +61,3 @@ export class CancelablePromise<T = unknown> implements Promise<T> {
     if (this.parent) this.parent.cancel();
   }
 }
-
-/**
- * Interface in which every method takes a single request parameter
- * and returns a promise wrapping the response.
- */
-interface PromiseBasedService {
-  [methodName: string]: (request: any) => Promise<any>;
-}
-
-/**
- * Extracts the type argument from a `Promise` type.
- *
- * For example, `PromiseTypeArg<Promise<string>>` returns `string`.
- */
-type PromiseTypeArgument<T> = T extends Promise<infer U> ? U : never;
-
-/**
- * Utility type that adapts a `PromiseBasedService` so that `CancelablePromise` is
- * returned from all methods, instead of `Promise`.
- */
-export type CancelableService<Service extends PromiseBasedService> = {
-  [MethodName in keyof Service]: (
-    request: Parameters<Service[MethodName]>[0]
-  ) => CancelablePromise<PromiseTypeArgument<ReturnType<Service[MethodName]>>>;
-};
