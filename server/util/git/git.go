@@ -73,18 +73,13 @@ func ParseRepoURL(repo string) (*url.URL, error) {
 	// setting up HTTPS locally. We assume "github.com" if no scheme or domain is
 	// specified and the path is relative. We strip any trailing slash.
 
-	log.Debugf("URL: [%s]", repo)
 	if SchemeRegexp.FindStringIndex(repo) == nil {
 		// convert e.g. user@host:port/path/to/repo -> //user@host:port/path/to/repo
-		log.Debugf("convert e.g. user@host:port/path/to/repo -> //user@host:port/path/to/repo")
 		repo = "//" + repo
-		log.Debugf("New URL: [%s]", repo)
 	}
 	if matches := MissingSlashBetweenPortAndPathRegexp.FindStringSubmatchIndex(repo); matches != nil {
 		// convert e.g. //user@host:path/to/repo -> //user@host:/path/to/repo
-		log.Debugf("convert e.g. //user@host:path/to/repo -> //user@host:/path/to/repo")
 		repo = repo[:matches[3]-1] + "/" + repo[matches[3]-1:]
-		log.Debugf("New URL: [%s]", repo)
 	}
 
 	repoURL, err := url.Parse(repo)
@@ -97,7 +92,6 @@ func ParseRepoURL(repo string) (*url.URL, error) {
 	// convert e.g file://buildbuddy-io/buildbuddy -> buildbuddy-io/buildbuddy
 	// and e.g //buildbuddy-io/buildbuddy -> buildbuddy-io/buildbuddy
 	if (repoURL.Scheme == "file" || repoURL.Scheme == "") && repoURL.Host != "" && repoURL.Hostname() != "localhost" && !strings.ContainsAny(repoURL.Host, ".:") && repoURL.Path != "" && !strings.Contains(repoURL.Path[1:], "/") {
-		log.Debugf("convert e.g file://buildbuddy-io/buildbuddy -> buildbuddy-io/buildbuddy")
 		repoURL.Scheme = ""
 		repoURL.Path = repoURL.Host + repoURL.Path
 		repoURL.Host = ""
@@ -106,12 +100,10 @@ func ParseRepoURL(repo string) (*url.URL, error) {
 	if repoURL.Scheme == "" && repoURL.Host == "" && !strings.HasPrefix(repoURL.Path, "/") {
 		if components := strings.Split(repoURL.Path, "/"); strings.ContainsAny(components[0], ".:") || components[0] == "localhost" {
 			// convert e.g gitlab.com/buildbuddy-io/buildbuddy -> //gitlab.com/buildbuddy-io/buildbuddy
-			log.Debugf("convert e.g gitlab.com/buildbuddy-io/buildbuddy -> //gitlab.com/buildbuddy-io/buildbuddy")
 			repoURL.Host = components[0]
 			repoURL.Path = repoURL.Path[len(components[0]):]
 		} else if len(components) == 2 {
 			// convert e.g buildbuddy-io/buildbuddy -> //github.com/buildbuddy-io/buildbuddy
-			log.Debugf("convert e.g buildbuddy-io/buildbuddy -> //github.com/buildbuddy-io/buildbuddy")
 			repoURL.Host = "github.com"
 			repoURL.Path = "/" + repoURL.Path
 		}
@@ -120,7 +112,6 @@ func ParseRepoURL(repo string) (*url.URL, error) {
 	// strip trailing ":" on hosts that lack a port.
 	host, port, err := net.SplitHostPort(repoURL.Host)
 	if err == nil && port == "" {
-		log.Debugf("Stripping trailing \":\" from [%s]: host: [%s], port: [%s]", repoURL.Host, host, port)
 		repoURL.Host = strings.TrimSuffix(net.JoinHostPort(host, port), ":")
 	}
 
@@ -128,19 +119,15 @@ func ParseRepoURL(repo string) (*url.URL, error) {
 	if repoURL.Scheme == "" {
 		if repoURL.Hostname() == "localhost" {
 			// assume http for missing localhost scheme.
-			log.Debugf("assume http for missing localhost scheme.")
 			repoURL.Scheme = "http"
 		} else if repoURL.Host == "" {
 			// assume file for missing empty host scheme.
-			log.Debugf("assume file for missing empty host scheme.")
 			repoURL.Scheme = "file"
 		} else if repoURL.User.Username() != "" {
 			// assume ssh for missing scheme with user specified.
-			log.Debugf("assume ssh for missing scheme with user specified.")
 			repoURL.Scheme = "ssh"
 		} else {
 			// assume https for all other missing scheme cases.
-			log.Debugf("assume https for missing scheme.")
 			repoURL.Scheme = "https"
 		}
 	}
