@@ -2,6 +2,7 @@ import React from "react";
 import { from, fromEvent, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
+import Button from "../../../app/components/button/button";
 import LinkButton from "../../../app/components/button/link_button";
 import format from "../../../app/format/format";
 import router, { ROLE_PARAM_NAME } from "../../../app/router/router";
@@ -269,6 +270,10 @@ export default class HistoryComponent extends React.Component<Props, State> {
     router.navigateHome("#commits");
   }
 
+  handleClearFiltersClicked() {
+    router.clearFilters();
+  }
+
   handleMouseOver(invocation: invocation.Invocation) {
     this.setState({
       hoveredInvocationId: invocation.invocationId,
@@ -534,7 +539,23 @@ export default class HistoryComponent extends React.Component<Props, State> {
         {((this.state.loadingInvocations && !this.state.invocations?.length) || this.state.loadingAggregateStats) && (
           <div className="loading"></div>
         )}
-        {!this.isAggregateView() &&
+        {router.isFiltering() &&
+          !this.state.loadingInvocations &&
+          !this.state.invocations?.length &&
+          !this.state.loadingAggregateStats &&
+          !this.state.aggregateStats?.length && (
+            <div className="container narrow">
+              <div className="empty-state history">
+                <h2>No matching builds</h2>
+                <p>No builds matched the current filters or selected dates.</p>
+                <div>
+                  <Button onClick={this.handleClearFiltersClicked.bind(this)}>Clear filters</Button>
+                </div>
+              </div>
+            </div>
+          )}
+        {!router.isFiltering() &&
+          !this.isAggregateView() &&
           !this.state.loadingInvocations &&
           !this.state.invocations?.length &&
           this.isFilteredToWorkflows() && (
@@ -560,7 +581,8 @@ export default class HistoryComponent extends React.Component<Props, State> {
               </div>
             </div>
           )}
-        {!this.isAggregateView() &&
+        {!router.isFiltering() &&
+          !this.isAggregateView() &&
           !this.state.loadingInvocations &&
           !this.state.invocations?.length &&
           !this.isFilteredToWorkflows() && (
@@ -578,21 +600,24 @@ export default class HistoryComponent extends React.Component<Props, State> {
               </div>
             </div>
           )}
-        {this.isAggregateView() && !this.state.loadingAggregateStats && !this.state.aggregateStats?.length && (
-          <div className="container narrow">
-            <div className="empty-state history">
-              <h2>No {viewType} found!</h2>
-              <p>
-                You can associate builds with {viewType} using build metadata.
-                <br />
-                <br />
-                <a className="button" href="https://www.buildbuddy.io/docs/guide-metadata" target="_blank">
-                  View build metadata guide
-                </a>
-              </p>
+        {!router.isFiltering() &&
+          this.isAggregateView() &&
+          !this.state.loadingAggregateStats &&
+          !this.state.aggregateStats?.length && (
+            <div className="container narrow">
+              <div className="empty-state history">
+                <h2>No {viewType} found!</h2>
+                <p>
+                  You can associate builds with {viewType} using build metadata.
+                  <br />
+                  <br />
+                  <a className="button" href="https://www.buildbuddy.io/docs/guide-metadata" target="_blank">
+                    View build metadata guide
+                  </a>
+                </p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
       </div>
     );
   }
