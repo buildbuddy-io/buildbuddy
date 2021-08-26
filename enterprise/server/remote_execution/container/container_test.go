@@ -30,18 +30,30 @@ func TestGetPullCredentials(t *testing.T) {
 		imageRef            string
 		expectedCredentials *container.PullCredentials
 	}{
+		// Creds shouldn't be returned if there's no container image requested
 		{"", nil},
+		// Creds shouldn't be returned if the registry is unrecognized
 		{"unrecognized-registry.io/foo/bar", nil},
 		{"unrecognized-registry.io/foo/bar:latest", nil},
 		{"unrecognized-registry.io/foo/bar@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", nil},
+		// Images with no domain should get defaulted to docker.io (Docker and
+		// other tools like `skopeo` assume docker.io as the default registry)
 		{"alpine", creds("dockeruser", "dockerpass")},
 		{"alpine:latest", creds("dockeruser", "dockerpass")},
 		{"alpine@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", creds("dockeruser", "dockerpass")},
+		// docker.io supports both `/image` and `/library/image` -- make sure we
+		// handle both
+		{"docker.io/alpine", creds("dockeruser", "dockerpass")},
 		{"docker.io/alpine:latest", creds("dockeruser", "dockerpass")},
+		{"docker.io/alpine@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", creds("dockeruser", "dockerpass")},
 		{"docker.io/library/alpine:latest", creds("dockeruser", "dockerpass")},
 		{"docker.io/library/alpine@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", creds("dockeruser", "dockerpass")},
+		// Non-docker registries should work as well
+		{"gcr.io/foo/bar", creds("gcruser", "gcrpass")},
 		{"gcr.io/foo/bar:latest", creds("gcruser", "gcrpass")},
 		{"gcr.io/foo/bar@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", creds("gcruser", "gcrpass")},
+		// Subdomains should work too
+		{"marketplace.gcr.io/foo/bar", creds("gcruser", "gcrpass")},
 		{"marketplace.gcr.io/foo/bar:latest", creds("gcruser", "gcrpass")},
 		{"marketplace.gcr.io/foo/bar@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", creds("gcruser", "gcrpass")},
 	} {
