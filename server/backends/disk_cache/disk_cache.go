@@ -40,10 +40,10 @@ const (
 	// check the cache size.
 	janitorCheckPeriod = 100 * time.Millisecond
 
-	defaultPartitionID       = "default"
+	DefaultPartitionID       = "default"
 	PartitionDirectoryPrefix = "PT"
 	HashPrefixDirPrefixLen   = 4
-	v2Dir                    = "v2"
+	V2Dir                    = "v2"
 )
 
 var (
@@ -70,7 +70,7 @@ func MigrateToV2Layout(rootDir string) error {
 		}
 		if d.IsDir() {
 			// Don't need to do anything for files already under the v2 directory.
-			if relPath == v2Dir {
+			if relPath == V2Dir {
 				return filepath.SkipDir
 			}
 			return nil
@@ -85,9 +85,9 @@ func MigrateToV2Layout(rootDir string) error {
 			return status.InternalErrorf("File %q is an invalid digest", path)
 		}
 
-		newRoot := filepath.Join(rootDir, v2Dir)
+		newRoot := filepath.Join(rootDir, V2Dir)
 		if !strings.HasPrefix(relPath, PartitionDirectoryPrefix) {
-			newRoot = filepath.Join(newRoot, PartitionDirectoryPrefix+defaultPartitionID)
+			newRoot = filepath.Join(newRoot, PartitionDirectoryPrefix+DefaultPartitionID)
 		}
 
 		newDir := filepath.Join(newRoot, filepath.Dir(relPath), info.Name()[0:HashPrefixDirPrefixLen])
@@ -137,10 +137,10 @@ func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSize
 	for _, pc := range config.Partitions {
 		rootDir := config.RootDirectory
 		if config.UseV2Layout {
-			rootDir = filepath.Join(rootDir, v2Dir)
+			rootDir = filepath.Join(rootDir, V2Dir)
 		}
 
-		if pc.ID != defaultPartitionID || config.UseV2Layout {
+		if pc.ID != DefaultPartitionID || config.UseV2Layout {
 			if pc.ID == "" {
 				return nil, status.InvalidArgumentError("Non-default partition %q must have a valid ID")
 			}
@@ -152,21 +152,21 @@ func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSize
 			return nil, err
 		}
 		partitions[pc.ID] = p
-		if pc.ID == defaultPartitionID {
+		if pc.ID == DefaultPartitionID {
 			defaultPartition = p
 		}
 	}
 	if defaultPartition == nil {
 		rootDir := config.RootDirectory
 		if config.UseV2Layout {
-			rootDir = filepath.Join(rootDir, v2Dir, PartitionDirectoryPrefix+defaultPartitionID)
+			rootDir = filepath.Join(rootDir, V2Dir, PartitionDirectoryPrefix+DefaultPartitionID)
 		}
-		p, err := newPartition(defaultPartitionID, rootDir, defaultMaxSizeBytes, config.UseV2Layout)
+		p, err := newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, config.UseV2Layout)
 		if err != nil {
 			return nil, err
 		}
 		defaultPartition = p
-		partitions[defaultPartitionID] = p
+		partitions[DefaultPartitionID] = p
 	}
 
 	c := &DiskCache{
@@ -431,7 +431,7 @@ func (p *partition) initializeCache() error {
 				// Originally there was just one "partition" with its contents under the root directory.
 				// Additional partition directories live under the root as well and they need to be ignored
 				// when initializing the default partition.
-				if p.id == defaultPartitionID && strings.HasPrefix(d.Name(), PartitionDirectoryPrefix) {
+				if p.id == DefaultPartitionID && strings.HasPrefix(d.Name(), PartitionDirectoryPrefix) {
 					return filepath.SkipDir
 				}
 				return nil

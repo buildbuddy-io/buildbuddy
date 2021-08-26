@@ -613,7 +613,7 @@ func TestV2Layout(t *testing.T) {
 	err = dc.Set(ctx, d, buf)
 	require.NoError(t, err)
 
-	userRoot := filepath.Join(rootDir, interfaces.AuthAnonymousUser)
+	userRoot := filepath.Join(rootDir, disk_cache.V2Dir, disk_cache.PartitionDirectoryPrefix+disk_cache.DefaultPartitionID, interfaces.AuthAnonymousUser)
 	dPath := filepath.Join(userRoot, d.GetHash()[0:disk_cache.HashPrefixDirPrefixLen], d.GetHash())
 	require.FileExists(t, dPath)
 
