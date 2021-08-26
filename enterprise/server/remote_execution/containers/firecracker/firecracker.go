@@ -949,7 +949,7 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 func (c *FirecrackerContainer) PullImage(ctx context.Context) error {
 	start := time.Now()
 	defer func() {
-		log.Debugf("PullImageIfNecessary took %s", time.Since(start))
+		log.Debugf("PullImage took %s", time.Since(start))
 	}()
 	if c.containerFSPath != "" {
 		return nil
