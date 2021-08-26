@@ -450,7 +450,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
               <div className="details">
                 <div className="detail">
                   <img className="icon" src="/image/hash.svg" />
-                  {format.formatWithCommas(this.state.summaryStat.totalNumBuilds)} recent builds
+                  {format.formatWithCommas(this.state.summaryStat.totalNumBuilds)} builds
                 </div>
                 <div className="detail">
                   <img className="icon" src="/image/check-circle.svg" />
