@@ -60,6 +60,7 @@ var (
 func MigrateToV2Layout(rootDir string) error {
 	log.Info("Starting digest migration.")
 	numMigrated := 0
+	start := time.Now()
 	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -102,12 +103,17 @@ func MigrateToV2Layout(rootDir string) error {
 		}
 
 		numMigrated++
+		if numMigrated%1_000_000 == 0 {
+			log.Infof("Migrated %d files in %s.", numMigrated, time.Since(start))
+			log.Infof("Most recent migration: %q -> %q", path, newPath)
+		}
+
 		return nil
 	}
 	if err := filepath.WalkDir(rootDir, walkFn); err != nil {
 		return err
 	}
-	log.Infof("Migrated %d digests.", numMigrated)
+	log.Infof("Migrated %d digests in %s.", numMigrated, time.Since(start))
 	return nil
 }
 
