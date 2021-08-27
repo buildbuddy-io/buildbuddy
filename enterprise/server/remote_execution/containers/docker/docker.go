@@ -15,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -47,6 +48,9 @@ type DockerOptions struct {
 
 // dockerCommandContainer containerizes a command's execution using a Docker container.
 type dockerCommandContainer struct {
+	env            environment.Env
+	imageCacheAuth *container.ImageCacheAuthenticator
+
 	image string
 	// hostRootDir is the path on the _host_ machine ("node", in k8s land) of the
 	// root data dir for builds. We need this information because we are interfacing
@@ -63,12 +67,14 @@ type dockerCommandContainer struct {
 	workDir string
 }
 
-func NewDockerContainer(client *dockerclient.Client, image, hostRootDir string, options *DockerOptions) *dockerCommandContainer {
+func NewDockerContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, client *dockerclient.Client, image, hostRootDir string, options *DockerOptions) *dockerCommandContainer {
 	return &dockerCommandContainer{
-		image:       image,
-		hostRootDir: hostRootDir,
-		client:      client,
-		options:     options,
+		env:            env,
+		imageCacheAuth: imageCacheAuth,
+		image:          image,
+		hostRootDir:    hostRootDir,
+		client:         client,
+		options:        options,
 	}
 }
 
@@ -86,7 +92,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	// explicitly pull the image before running to avoid the
 	// pull output logs spilling into the execution logs.
-	if err := container.PullImageIfNecessary(ctx, r, creds); err != nil {
+	if err := container.PullImageIfNecessary(ctx, r.env, r.imageCacheAuth, r, creds, r.image); err != nil {
 		result.Error = wrapDockerErr(err, fmt.Sprintf("failed to pull docker image %q", r.image))
 		return result
 	}

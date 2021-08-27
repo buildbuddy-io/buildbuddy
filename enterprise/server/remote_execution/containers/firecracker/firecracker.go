@@ -287,6 +287,7 @@ type FirecrackerContainer struct {
 	jailerRoot           string            // the root dir the jailer will work in
 	machine              *fcclient.Machine // the firecracker machine object.
 	env                  environment.Env
+	imageCacheAuth       *container.ImageCacheAuthenticator
 	pausedSnapshotDigest *repb.Digest
 	allowSnapshotStart   bool
 }
@@ -311,7 +312,7 @@ func (c *FirecrackerContainer) ConfigurationHash() (*repb.Digest, error) {
 	}, nil
 }
 
-func NewContainer(env environment.Env, opts ContainerOpts) (*FirecrackerContainer, error) {
+func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
 	// WARNING: because of the limitation on the length of unix sock file
 	// paths (103), this directory path needs to be short. Specifically, a
 	// full sock path will look like:
@@ -346,6 +347,7 @@ func NewContainer(env environment.Env, opts ContainerOpts) (*FirecrackerContaine
 		containerImage:     opts.ContainerImage,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
 		env:                env,
+		imageCacheAuth:     imageCacheAuth,
 		allowSnapshotStart: opts.AllowSnapshotStart,
 	}
 
@@ -789,7 +791,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 	// If a snapshot was already loaded, then c.machine will be set, so
 	// there's no need to Create the machine.
 	if c.machine == nil {
-		if err := c.PullImage(ctx, creds); err != nil {
+		if err := container.PullImageIfNecessary(ctx, c.env, c.imageCacheAuth, c, creds, c.containerImage); err != nil {
 			return nonCmdExit(err)
 		}
 
