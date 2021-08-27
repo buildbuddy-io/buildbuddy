@@ -92,4 +92,7 @@ func TestNormalizeRepoURL(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "https://github.com/buildbuddy-io/buildbuddy", url.String())
 	}
+	url, err := gitutil.NormalizeRepoURL("")
+	assert.NoError(t, err)
+	assert.Equal(t, "", url.String())
 }
