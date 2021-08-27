@@ -335,7 +335,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
     // Note: we don't show summary stats for scoped views because the summary stats
     // don't currently get filtered by the scope as well.
     // TODO(bduffany): Make sure scope-filtered queries are optimized and remove this limitation.
-    const hideSummaryStats = !this.isAggregateView() && Boolean(scope);
+    const hideSummaryStats = Boolean(scope);
 
     return (
       <div className="history">
