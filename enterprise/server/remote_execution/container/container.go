@@ -2,19 +2,30 @@ package container
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
+	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/docker/distribution/reference"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+const (
+	// Default TTL for tokens granting access to locally cached images, before
+	// re-authentication with the remote registry is required.
+	defaultImageCacheTokenTTL = 15 * time.Minute
 )
 
 // Stats holds represents a container's held resources.
@@ -79,6 +90,88 @@ func (p PullCredentials) String() string {
 		return ""
 	}
 	return p.Username + ":" + p.Password
+}
+
+// ImageCacheToken is a claim to be able to access a locally cached image.
+type ImageCacheToken struct {
+	GroupID      string
+	ImageRef     string
+	UserHash     string
+	PasswordHash string
+}
+
+// NewImageCacheToken returns the token representing the authenticated group ID,
+// pull credentials, and image ref. For the same sets of those values, the
+// same token is always returned.
+func NewImageCacheToken(ctx context.Context, env environment.Env, creds PullCredentials, imageRef string) (ImageCacheToken, error) {
+	groupID := ""
+	u, err := perms.AuthenticatedUser(ctx, env)
+	if err != nil {
+		if !status.IsUnauthenticatedError(err) && !status.IsPermissionDeniedError(err) {
+			return ImageCacheToken{}, err
+		}
+		// Anonymous user.
+	} else {
+		groupID = u.GetGroupID()
+	}
+	return ImageCacheToken{
+		GroupID:      groupID,
+		ImageRef:     imageRef,
+		UserHash:     hashString(creds.Username),
+		PasswordHash: hashString(creds.Password),
+	}, nil
+}
+
+func hashString(value string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
+}
+
+// ImageCacheAuthenticator grants access to short-lived tokens for accessing
+// locally cached images without needing to re-authenticate with the remote
+// registry (which can be slow).
+type ImageCacheAuthenticator struct {
+	opts ImageCacheAuthenticatorOpts
+
+	mu               sync.Mutex // protects(tokenExpireTimes)
+	tokenExpireTimes map[ImageCacheToken]time.Time
+}
+
+type ImageCacheAuthenticatorOpts struct {
+	// TokenTTL controls how long tokens can be used to access locally cached
+	// images until re-authentication with the remote registry is required.
+	TokenTTL time.Duration
+}
+
+func NewImageCacheAuthenticator(opts ImageCacheAuthenticatorOpts) *ImageCacheAuthenticator {
+	if opts.TokenTTL == 0 {
+		opts.TokenTTL = defaultImageCacheTokenTTL
+	}
+	return &ImageCacheAuthenticator{
+		opts:             opts,
+		tokenExpireTimes: map[ImageCacheToken]time.Time{},
+	}
+}
+
+func (a *ImageCacheAuthenticator) IsAuthorized(token ImageCacheToken) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.purgeExpiredTokens()
+	_, ok := a.tokenExpireTimes[token]
+	return ok
+}
+
+func (a *ImageCacheAuthenticator) Refresh(token ImageCacheToken) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.tokenExpireTimes[token] = time.Now().Add(a.opts.TokenTTL)
+}
+
+func (a *ImageCacheAuthenticator) purgeExpiredTokens() {
+	for token, expireTime := range a.tokenExpireTimes {
+		if time.Now().After(expireTime) {
+			delete(a.tokenExpireTimes, token)
+		}
+	}
 }
 
 // GetPullCredentials returns the image pull credentials for the given image

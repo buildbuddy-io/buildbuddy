@@ -11,6 +11,8 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/util/log",
+        "//server/util/perms",
+        "//server/util/status",
         "//server/util/tracing",
         "@com_github_docker_distribution//reference",
         "@io_opentelemetry_go_otel//attribute",
@@ -25,7 +27,9 @@ go_test(
         ":container",
         "//enterprise/server/remote_execution/platform",
         "//server/config",
+        "//server/testutil/testauth",
         "//server/testutil/testenv",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
