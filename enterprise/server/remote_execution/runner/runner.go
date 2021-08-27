@@ -174,7 +174,7 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.Execution
 
 	// Pull the container image before Run() is called, so that we don't
 	// use up the whole exec ctx timeout with a slow container pull.
-	if err := r.Container.PullImageIfNecessary(ctx, r.pullCredentials()); err != nil {
+	if err := container.PullImageIfNecessary(ctx, r.Container, r.pullCredentials()); err != nil {
 		return status.UnavailableErrorf("Error pulling container: %s", err)
 	}
 	return nil
@@ -191,7 +191,7 @@ func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfa
 	// Get the container to "ready" state so that we can exec commands in it.
 	switch r.state {
 	case initial:
-		if err := r.Container.PullImageIfNecessary(ctx, r.pullCredentials()); err != nil {
+		if err := container.PullImageIfNecessary(ctx, r.Container, r.pullCredentials()); err != nil {
 			return commandutil.ErrorResult(err)
 		}
 		if err := r.Container.Create(ctx, r.Workspace.Path()); err != nil {
@@ -509,7 +509,7 @@ func (p *Pool) WarmupDefaultImage() {
 
 		eg.Go(func() error {
 			creds := container.GetPullCredentials(p.env, platProps)
-			if err := c.PullImageIfNecessary(egCtx, creds); err != nil {
+			if err := container.PullImageIfNecessary(egCtx, c, creds); err != nil {
 				return err
 			}
 			log.Infof("Warmup: %s pulled default image %q in %s", containerType, image, time.Since(start))

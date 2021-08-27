@@ -358,7 +358,10 @@ func (r *containerdCommandContainer) Exec(ctx context.Context, cmd *repb.Command
 	res.Error = status.UnimplementedError("not implemented")
 	return res
 }
-func (r *containerdCommandContainer) PullImageIfNecessary(ctx context.Context, creds container.PullCredentials) error {
+func (r *containerdCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
+	return false, status.UnimplementedError("not implemented")
+}
+func (r *containerdCommandContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
 	return status.UnimplementedError("not implemented")
 }
 func (r *containerdCommandContainer) Start(ctx context.Context) error {

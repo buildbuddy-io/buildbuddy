@@ -46,9 +46,13 @@ type CommandContainer interface {
 	// Exec, then Remove.
 	Run(ctx context.Context, command *repb.Command, workingDir string, creds PullCredentials) *interfaces.CommandResult
 
-	// PullImageIfNecessary pulls the container image if it is not already
-	// available locally.
-	PullImageIfNecessary(ctx context.Context, creds PullCredentials) error
+	// IsImageCached returns whether the configured image is cached locally.
+	IsImageCached(ctx context.Context) (bool, error)
+
+	// PullImage pulls the container image from the remote. It always
+	// re-authenticates the request, but may serve the image from a local cache
+	// if needed.
+	PullImage(ctx context.Context, creds PullCredentials) error
 
 	// Create creates a new container and starts a top-level process inside it
 	// (`sleep infinity`) so that it stays alive and running until explicitly
@@ -74,6 +78,19 @@ type CommandContainer interface {
 
 	// Stats returns the current resource usage of this container.
 	Stats(ctx context.Context) (*Stats, error)
+}
+
+// PullImageIfNecessary pulls the image configured for the container if it
+// is not cached locally.
+func PullImageIfNecessary(ctx context.Context, ctr CommandContainer, creds PullCredentials) error {
+	isCached, err := ctr.IsImageCached(ctx)
+	if err != nil {
+		return err
+	}
+	if isCached {
+		return nil
+	}
+	return ctr.PullImage(ctx, creds)
 }
 
 type PullCredentials struct {
@@ -223,10 +240,16 @@ func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command,
 	return t.delegate.Run(ctx, command, workingDir, creds)
 }
 
-func (t *TracedCommandContainer) PullImageIfNecessary(ctx context.Context, creds PullCredentials) error {
+func (t *TracedCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.PullImageIfNecessary(ctx, creds)
+	return t.delegate.IsImageCached(ctx)
+}
+
+func (t *TracedCommandContainer) PullImage(ctx context.Context, creds PullCredentials) error {
+	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer span.End()
+	return t.delegate.PullImage(ctx, creds)
 }
 
 func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) error {

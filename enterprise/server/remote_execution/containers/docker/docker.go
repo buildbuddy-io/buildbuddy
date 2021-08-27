@@ -86,7 +86,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	// explicitly pull the image before running to avoid the
 	// pull output logs spilling into the execution logs.
-	if err := r.PullImageIfNecessary(ctx, creds); err != nil {
+	if err := container.PullImageIfNecessary(ctx, r, creds); err != nil {
 		result.Error = wrapDockerErr(err, fmt.Sprintf("failed to pull docker image %q", r.image))
 		return result
 	}
@@ -265,15 +265,18 @@ func errMsg(err error) string {
 	return err.Error()
 }
 
-func (r *dockerCommandContainer) PullImageIfNecessary(ctx context.Context, creds container.PullCredentials) error {
+func (r *dockerCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
 	_, _, err := r.client.ImageInspectWithRaw(ctx, r.image)
 	if err == nil {
-		return nil
+		return true, nil
 	}
 	if !dockerclient.IsErrNotFound(err) {
-		return err
+		return false, err
 	}
+	return false, nil
+}
 
+func (r *dockerCommandContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
 	if !creds.IsEmpty() {
 		authCfg := dockertypes.AuthConfig{
 			Username: creds.Username,

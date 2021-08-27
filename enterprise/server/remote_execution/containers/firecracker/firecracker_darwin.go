@@ -34,7 +34,11 @@ func (c *firecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	return &interfaces.CommandResult{}
 }
 
-func (c *firecrackerContainer) PullImageIfNecessary(ctx context.Context, creds container.PullCredentials) error {
+func (c *firecrackerContainer) IsImageCached(ctx context.Context) (bool, error) {
+	return false, status.UnimplementedError("Not yet implemented.")
+}
+
+func (c *firecrackerContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 
