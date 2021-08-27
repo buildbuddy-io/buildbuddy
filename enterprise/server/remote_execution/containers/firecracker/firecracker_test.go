@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -117,7 +118,7 @@ func TestFirecrackerRun(t *testing.T) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory)
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
@@ -146,7 +147,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := c.PullImage(ctx); err != nil {
+	if err := container.PullImageIfNecessary(ctx, c, container.PullCredentials{}); err != nil {
 		t.Fatalf("unable to pull image: %s", err)
 	}
 
@@ -232,7 +233,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory)
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
 	if res.Error != nil {
 		t.Fatalf("error: %s", res.Error)
 	}
@@ -285,7 +286,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	}
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	firstRunStart := time.Now()
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory)
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
@@ -323,7 +324,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	secondRunStart := time.Now()
-	res = c.Run(ctx, cmd, opts.ActionWorkingDirectory)
+	res = c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
