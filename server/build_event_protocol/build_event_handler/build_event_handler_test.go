@@ -164,6 +164,7 @@ func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
+	assert.Equal(t, "", invocation.RepoUrl)
 
 	assertAPIKeyRedacted(t, invocation, "USER1")
 }
@@ -204,6 +205,7 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
+	assert.Equal(t, "", invocation.RepoUrl)
 
 	assertAPIKeyRedacted(t, invocation, "USER1")
 }
