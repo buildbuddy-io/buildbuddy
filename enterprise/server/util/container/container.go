@@ -97,7 +97,7 @@ func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string, c
 		if err != nil {
 			// We don't know whether an authentication error occurred unless we do
 			// brittle parsing of the command output. So for now just return
-			// UnavailableError which is the "lowest common denominator" of errors.
+			// UnavailableError which is the "least common denominator" of errors.
 			return "", status.UnavailableErrorf(
 				"Failed to authenticate with container registry for image %q: %s: %s",
 				containerImage, err, string(b),
