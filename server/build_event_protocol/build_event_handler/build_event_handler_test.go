@@ -363,6 +363,7 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 	// Look up the invocation and make sure we redacted correctly
 	invocation, err := build_event_handler.LookupInvocation(te, ctx, "test-invocation-id")
 	assert.NoError(t, err)
+	assert.Equal(t, "https://github.com/acme-inc/acme", invocation.RepoUrl)
 	txt := proto.MarshalTextString(invocation)
 	assert.NotContains(t, txt, "secret_env_value", "Env secrets should not appear in invocation")
 	assert.NotContains(t, txt, "githubToken", "URL secrets should not appear in invocation")
