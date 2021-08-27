@@ -20,7 +20,7 @@ Thanks to everyone using open source, cloud-hosted, and enterprise BuildBuddy. W
 
 ![](images/global_filter.png)
 
-- **Date picker** - To compliment the new global filter, we've also added a date picker. The date picker allows you to select a time range and see builds, trends, etc. for exactly the time period you're interested in.
+- **Date picker** - To complement the new global filter, we've also added a date picker. The date picker allows you to select a time range and see builds, trends, etc. for exactly the time period you're interested in.
 
 ![](images/date_picker.png)
 
