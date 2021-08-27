@@ -255,7 +255,7 @@ class Router {
   getHistoryRepo(path: string) {
     let repoComponent = this.getLastPathComponent(path, Path.repoHistoryPath);
     if (repoComponent?.includes("/")) {
-      return `https://github.com/${repoComponent}.git`;
+      return `https://github.com/${repoComponent}`;
     }
     return repoComponent ? atob(repoComponent) : "";
   }
@@ -266,6 +266,22 @@ class Router {
 
   getHistoryCommit(path: string) {
     return this.getLastPathComponent(path, Path.commitHistoryPath);
+  }
+
+  isFiltering() {
+    const url = new URL(window.location.href);
+    for (const param of GLOBAL_FILTER_PARAM_NAMES) {
+      if (url.searchParams.has(param)) return true;
+    }
+    return false;
+  }
+
+  clearFilters() {
+    const url = new URL(window.location.href);
+    for (const param of GLOBAL_FILTER_PARAM_NAMES) {
+      url.searchParams.delete(param);
+    }
+    this.replaceParams(Object.fromEntries(url.searchParams.entries()));
   }
 }
 

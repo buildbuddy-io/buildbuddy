@@ -15,13 +15,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
-	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis/v8"
@@ -30,7 +27,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 
-	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -196,67 +192,26 @@ func (k *nodePoolKey) redisUnclaimedTasksKey() string {
 }
 
 type nodePool struct {
-	env                     environment.Env
-	rdb                     *redis.Client
-	mu                      sync.Mutex
-	lastFetch               time.Time
-	fetchExecutorsFromRedis bool
-	nodes                   []*executionNode
-	key                     nodePoolKey
+	env       environment.Env
+	rdb       *redis.Client
+	mu        sync.Mutex
+	lastFetch time.Time
+	nodes     []*executionNode
+	key       nodePoolKey
 	// Executors that are currently connected to this instance of the scheduler server.
 	connectedExecutors []*executionNode
 }
 
-func newNodePool(env environment.Env, key nodePoolKey, fetchExecutorsFromRedis bool) *nodePool {
+func newNodePool(env environment.Env, key nodePoolKey) *nodePool {
 	np := &nodePool{
-		env:                     env,
-		key:                     key,
-		rdb:                     env.GetRemoteExecutionRedisClient(),
-		fetchExecutorsFromRedis: fetchExecutorsFromRedis,
+		env: env,
+		key: key,
+		rdb: env.GetRemoteExecutionRedisClient(),
 	}
 	return np
 }
 
-// TODO(tylerw): if/when we have "enough" execution nodes, we could do some of the
-// coarse filtering (in sql) by constraints.
-func (np *nodePool) fetchExecutionNodesFromDB(ctx context.Context) ([]*executionNode, error) {
-	db := np.env.GetDBHandle()
-	if db == nil {
-		return nil, status.FailedPreconditionError("database not configured")
-	}
-
-	sql := `SELECT * FROM ExecutionNodes WHERE os = ? AND pool = ? AND arch = ?`
-	args := []interface{}{np.key.os, np.key.pool, np.key.arch}
-	if np.key.groupID != "" {
-		sql += ` AND group_id = ?`
-		args = append(args, np.key.groupID)
-	}
-	sql += ` LIMIT 1000`
-
-	rows, err := db.WithContext(ctx).Raw(sql, args...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	executionNodes := make([]*executionNode, 0)
-	for rows.Next() {
-		en := tables.ExecutionNode{}
-		if err := db.ScanRows(rows, &en); err != nil {
-			return nil, err
-		}
-		node := &executionNode{
-			executorID:            en.ExecutorID,
-			schedulerHostPort:     en.SchedulerHostPort,
-			assignableMemoryBytes: en.AssignableMemoryBytes,
-			assignableMilliCpu:    en.AssignableMilliCPU,
-		}
-		executionNodes = append(executionNodes, node)
-	}
-	return executionNodes, nil
-}
-
-func (np *nodePool) fetchExecutionNodesFromRedis(ctx context.Context) ([]*executionNode, error) {
+func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, error) {
 	redisExecutors, err := np.rdb.HGetAll(ctx, np.key.redisPoolKey()).Result()
 	if err != nil {
 		return nil, err
@@ -277,13 +232,6 @@ func (np *nodePool) fetchExecutionNodesFromRedis(ctx context.Context) ([]*execut
 	}
 
 	return executors, nil
-}
-
-func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, error) {
-	if np.fetchExecutorsFromRedis {
-		return np.fetchExecutionNodesFromRedis(ctx)
-	}
-	return np.fetchExecutionNodesFromDB(ctx)
 }
 
 func (np *nodePool) RefreshNodes(ctx context.Context) error {
@@ -582,9 +530,6 @@ func (s *SchedulerServer) checkPreconditions(node *scpb.ExecutionNode) error {
 		return status.FailedPreconditionErrorf("Cannot register node with empty host/port: %s:%d", node.GetHost(), node.GetPort())
 	}
 
-	if s.env.GetDBHandle() == nil {
-		return status.FailedPreconditionError("No database configured")
-	}
 	return nil
 }
 
@@ -613,31 +558,11 @@ func (s *SchedulerServer) RemoveConnectedExecutor(ctx context.Context, handle ex
 	log.Infof("Scheduler: unregistered worker node: %q", addr)
 }
 
-func (s *SchedulerServer) deleteNodeFromDB(ctx context.Context, node *scpb.ExecutionNode) error {
-	if err := s.checkPreconditions(node); err != nil {
-		return err
-	}
-	return s.env.GetDBHandle().WithContext(ctx).Exec("DELETE FROM ExecutionNodes WHERE host = ? and port = ?",
-		node.GetHost(), node.GetPort()).Error
-}
-
-func (s *SchedulerServer) deleteNodeFromRedis(ctx context.Context, node *scpb.ExecutionNode, poolKey nodePoolKey) error {
+func (s *SchedulerServer) deleteNode(ctx context.Context, node *scpb.ExecutionNode, poolKey nodePoolKey) error {
 	if err := s.checkPreconditions(node); err != nil {
 		return err
 	}
 	return s.rdb.HDel(ctx, poolKey.redisPoolKey(), node.GetExecutorId()).Err()
-}
-
-func (s *SchedulerServer) deleteNode(ctx context.Context, node *scpb.ExecutionNode, poolKey nodePoolKey) error {
-	err := s.deleteNodeFromDB(ctx, node)
-	if err != nil {
-		return err
-	}
-	err = s.deleteNodeFromRedis(ctx, node, poolKey)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle executor_handle.ExecutorHandle, node *scpb.ExecutionNode) error {
@@ -668,38 +593,6 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle execu
 
 }
 
-func (s *SchedulerServer) insertOrUpdateNodeInDB(ctx context.Context, executorHandle executor_handle.ExecutorHandle, node *scpb.ExecutionNode, permissions int) error {
-	host := node.GetHost()
-	port := node.GetPort()
-	groupID := executorHandle.GroupID()
-
-	tableNode := &tables.ExecutionNode{
-		Host:                  host,
-		Port:                  port,
-		AssignableMemoryBytes: node.GetAssignableMemoryBytes(),
-		AssignableMilliCPU:    node.GetAssignableMilliCpu(),
-		OS:                    node.GetOs(),
-		Arch:                  node.GetArch(),
-		Pool:                  node.GetPool(),
-		SchedulerHostPort:     s.ownHostPort,
-		GroupID:               groupID,
-		Version:               node.GetVersion(),
-		Perms:                 permissions,
-		ExecutorID:            node.GetExecutorId(),
-	}
-
-	return s.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
-		var existing tables.ExecutionNode
-		if err := tx.Where("group_id = ? AND host = ? AND port = ?", groupID, host, port).First(&existing).Error; err != nil {
-			if db.IsRecordNotFound(err) {
-				return tx.Create(tableNode).Error
-			}
-			return err
-		}
-		return tx.Model(&existing).Where("group_id = ? AND host = ? AND port = ?", groupID, host, port).Updates(tableNode).Error
-	})
-}
-
 func (s *SchedulerServer) redisKeyForExecutorPools(groupID string) string {
 	key := "executorPools/"
 	if s.enableUserOwnedExecutors {
@@ -708,7 +601,19 @@ func (s *SchedulerServer) redisKeyForExecutorPools(groupID string) string {
 	return key
 }
 
-func (s *SchedulerServer) insertOrUpdateNodeInRedis(ctx context.Context, executorHandle executor_handle.ExecutorHandle, node *scpb.ExecutionNode, poolKey nodePoolKey, acl *aclpb.ACL) error {
+func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle executor_handle.ExecutorHandle, node *scpb.ExecutionNode, poolKey nodePoolKey) error {
+	if err := s.checkPreconditions(node); err != nil {
+		return err
+	}
+
+	permissions := 0
+	if s.requireExecutorAuthorization {
+		permissions = perms.GROUP_WRITE | perms.GROUP_READ
+	} else {
+		permissions = perms.OTHERS_READ
+	}
+	acl := perms.ToACLProto(nil /* userID= */, executorHandle.GroupID(), permissions)
+
 	groupID := executorHandle.GroupID()
 
 	r := &scpb.RegisteredExecutionNode{
@@ -727,30 +632,6 @@ func (s *SchedulerServer) insertOrUpdateNodeInRedis(ctx context.Context, executo
 	pipe.HSet(ctx, poolRedisKey, node.GetExecutorId(), b)
 	pipe.SAdd(ctx, s.redisKeyForExecutorPools(groupID), poolRedisKey)
 	_, err = pipe.Exec(ctx)
-	return err
-}
-
-func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle executor_handle.ExecutorHandle, node *scpb.ExecutionNode, poolKey nodePoolKey) error {
-	if err := s.checkPreconditions(node); err != nil {
-		return err
-	}
-
-	permissions := 0
-	if s.requireExecutorAuthorization {
-		permissions = perms.GROUP_WRITE | perms.GROUP_READ
-	} else {
-		permissions = perms.OTHERS_READ
-	}
-	acl := perms.ToACLProto(nil /* userID= */, executorHandle.GroupID(), permissions)
-
-	err := s.insertOrUpdateNodeInDB(ctx, executorHandle, node, permissions)
-	if err != nil {
-		return err
-	}
-	err = s.insertOrUpdateNodeInRedis(ctx, executorHandle, node, poolKey, acl)
-	if err != nil {
-		return err
-	}
 	return err
 }
 
@@ -979,7 +860,7 @@ func (s *SchedulerServer) getOrCreatePool(key nodePoolKey) *nodePool {
 	if ok {
 		return nodePool
 	}
-	nodePool = newNodePool(s.env, key, s.env.GetConfigurator().GetRemoteExecutionConfig().UseRedisForExecutorPools)
+	nodePool = newNodePool(s.env, key)
 	s.pools[key] = nodePool
 	return nodePool
 }
@@ -1426,52 +1307,6 @@ func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupI
 	return executionNodes, nil
 }
 
-func (s *SchedulerServer) getExecutionNodesFromDB(ctx context.Context, groupID string) ([]*scpb.ExecutionNode, error) {
-	db := s.env.GetDBHandle()
-	if db == nil {
-		return nil, status.FailedPreconditionError("database not configured")
-	}
-
-	// If executor auth is not enabled, executors do not belong to any group.
-	if !s.requireExecutorAuthorization {
-		groupID = ""
-	}
-
-	q := query_builder.NewQuery("SELECT * FROM ExecutionNodes")
-	q.AddWhereClause("group_id = ?", groupID)
-	if err := perms.AddPermissionsCheckToQuery(ctx, s.env, q); err != nil {
-		return nil, err
-	}
-	query, args := q.Build()
-	rows, err := db.WithContext(ctx).Raw(query, args...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	executionNodes := make([]*scpb.ExecutionNode, 0)
-	for rows.Next() {
-		en := tables.ExecutionNode{}
-		if err := db.ScanRows(rows, &en); err != nil {
-			return nil, err
-		}
-		node := &scpb.ExecutionNode{
-			Host:                  en.Host,
-			Port:                  en.Port,
-			AssignableMemoryBytes: en.AssignableMemoryBytes,
-			AssignableMilliCpu:    en.AssignableMilliCPU,
-			Os:                    en.OS,
-			Arch:                  en.Arch,
-			Pool:                  en.Pool,
-			ExecutorId:            en.ExecutorID,
-			Version:               en.Version,
-		}
-		executionNodes = append(executionNodes, node)
-	}
-
-	return executionNodes, nil
-}
-
 func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error) {
 	groupID := req.GetRequestContext().GetGroupId()
 	if groupID == "" {
@@ -1483,19 +1318,9 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		groupID = ""
 	}
 
-	var executionNodes []*scpb.ExecutionNode
-	if s.env.GetConfigurator().GetRemoteExecutionConfig().UseRedisForExecutorPools {
-		ns, err := s.getExecutionNodesFromRedis(ctx, groupID)
-		if err != nil {
-			return nil, err
-		}
-		executionNodes = ns
-	} else {
-		ns, err := s.getExecutionNodesFromDB(ctx, groupID)
-		if err != nil {
-			return nil, err
-		}
-		executionNodes = ns
+	executionNodes, err := s.getExecutionNodesFromRedis(ctx, groupID)
+	if err != nil {
+		return nil, err
 	}
 
 	userOwnedExecutorsEnabled := s.enableUserOwnedExecutors

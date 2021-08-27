@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -80,7 +81,7 @@ func CachedDiskImagePath(workspaceDir, containerImage string) (string, error) {
 // ext4 disk image from the container image in the user's local cache directory.
 // If the image is already available locally, the image is not re-downloaded
 // from the registry. The path to the disk image is returned.
-func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string) (string, error) {
+func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
 	existingPath, err := CachedDiskImagePath(workspaceDir, containerImage)
 	if err != nil {
 		return "", err
@@ -93,7 +94,7 @@ func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string) (
 	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
 
 	// container not found -- write one!
-	tmpImagePath, err := convertContainerToExt4FS(ctx, workspaceDir, containerImage)
+	tmpImagePath, err := convertContainerToExt4FS(ctx, workspaceDir, containerImage, creds)
 	if err != nil {
 		return "", err
 	}
@@ -117,7 +118,7 @@ func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string) (
 // image from an OCI container image reference.
 // NB: We use modern tools (not docker), that do not require root access. This
 // allows this binary to convert images even when not running as root.
-func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage string) (string, error) {
+func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
 	// Make a temp directory to work in. Delete it when this fuction returns.
 	rootUnpackDir, err := os.MkdirTemp(workspaceDir, "container-unpack-*")
 	if err != nil {
@@ -137,7 +138,11 @@ func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage 
 	// /tmp/bundle/rootfs/ has the goods
 	dockerImageRef := fmt.Sprintf("docker://%s", containerImage)
 	ociOutputRef := fmt.Sprintf("oci:%s:latest", ociImageDir)
-	if out, err := exec.CommandContext(ctx, "skopeo", "copy", dockerImageRef, ociOutputRef).CombinedOutput(); err != nil {
+	skopeoArgs := []string{"copy", dockerImageRef, ociOutputRef}
+	if srcCreds := creds.String(); srcCreds != "" {
+		skopeoArgs = append(skopeoArgs, "--src-creds", srcCreds)
+	}
+	if out, err := exec.CommandContext(ctx, "skopeo", skopeoArgs...).CombinedOutput(); err != nil {
 		return "", status.InternalErrorf("skopeo copy error: %q: %s", string(out), err)
 	}
 

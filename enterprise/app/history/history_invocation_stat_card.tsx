@@ -5,13 +5,11 @@ import router from "../../../app/router/router";
 import format from "../../../app/format/format";
 
 interface Props {
-  invocationStat: invocation.InvocationStat;
+  invocationStat: invocation.IInvocationStat;
   type: invocation.AggType;
 }
 
-export default class HistoryInvocationStatCardComponent extends React.Component {
-  props: Props;
-
+export default class HistoryInvocationStatCardComponent extends React.Component<Props> {
   handleStatClicked() {
     console.log(this.props.invocationStat);
     if (this.props.type == invocation.AggType.USER_AGGREGATION_TYPE) {

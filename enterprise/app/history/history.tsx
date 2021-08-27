@@ -1,7 +1,8 @@
 import React from "react";
-import { fromEvent, Subscription } from "rxjs";
+import { from, fromEvent, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
+import Button from "../../../app/components/button/button";
 import LinkButton from "../../../app/components/button/link_button";
 import format from "../../../app/format/format";
 import router, { ROLE_PARAM_NAME } from "../../../app/router/router";
@@ -12,16 +13,32 @@ import OrgJoinRequestsComponent from "../org/org_join_requests";
 import HistoryInvocationCardComponent from "./history_invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
 import { getProtoFilterParams } from "../filter/filter_util";
+import Spinner from "../../../app/components/spinner/spinner";
 
 interface State {
-  invocations: invocation.Invocation[];
-  summaryStat: invocation.InvocationStat[];
-  invocationStat: invocation.InvocationStat[];
-  loading: boolean;
-  loadingStats: boolean;
-  hoveredInvocationId: string;
-  pageToken: string;
-  invocationIdToCompare: string;
+  /**
+   * Invocations corresponding to individual invocation cards.
+   * Not fetched for aggregate (sliced) views.
+   */
+  invocations?: invocation.IInvocation[];
+  loadingInvocations?: boolean;
+  /**
+   * Stats summarizing the fetched invocations.
+   * Not fetched for aggregate (sliced) views.
+   */
+  summaryStat?: invocation.IInvocationStat;
+  loadingSummaryStat?: boolean;
+
+  /**
+   * Stats fetched for aggregate views.
+   * Each stat corresponds to a card displaying the stats for a single repo (or user, etc.)
+   */
+  aggregateStats?: invocation.IInvocationStat[];
+  loadingAggregateStats?: boolean;
+
+  hoveredInvocationId?: string;
+  pageToken?: string;
+  invocationIdToCompare?: string;
 }
 
 interface Props {
@@ -35,21 +52,13 @@ interface Props {
   hash: string;
 }
 
-export default class HistoryComponent extends React.Component {
-  props: Props;
-
+export default class HistoryComponent extends React.Component<Props, State> {
   state: State = {
-    invocations: [],
-    summaryStat: [],
-    invocationStat: [],
-    loading: true,
-    loadingStats: false,
-    hoveredInvocationId: null,
-    pageToken: "",
     invocationIdToCompare: localStorage["invocation_id_to_compare"],
   };
 
-  subscription: Subscription;
+  refreshSubscription = new Subscription();
+  fetchSubscription = new Subscription();
 
   hashToAggregationTypeMap = new Map<string, invocation.AggType>([
     ["#users", invocation.AggType.USER_AGGREGATION_TYPE],
@@ -63,7 +72,14 @@ export default class HistoryComponent extends React.Component {
     return this.props.search?.get(ROLE_PARAM_NAME) === "CI_RUNNER";
   }
 
-  getBuilds(nextPage?: boolean) {
+  getInvocations(nextPage?: boolean) {
+    this.setState({
+      loadingInvocations: true,
+    });
+    if (!nextPage) {
+      this.setState({ invocations: undefined, pageToken: undefined });
+    }
+
     const filterParams = getProtoFilterParams(this.props.search);
     let request = new invocation.SearchInvocationRequest({
       query: new invocation.InvocationQuery({
@@ -85,30 +101,26 @@ export default class HistoryComponent extends React.Component {
       request.query.status = filterParams.status;
     }
 
-    this.setState({
-      ...this.state,
-      loading: true,
-      invocations: nextPage ? this.state.invocations : [],
-    });
-
-    rpcService.service.searchInvocation(request).then((response) => {
-      console.log(response);
-      this.setState({
-        ...this.state,
-        invocations: nextPage
-          ? this.state.invocations.concat(response.invocation as invocation.Invocation[])
-          : response.invocation,
-        pageToken: response.nextPageToken,
-        loading: false,
-      });
-    });
+    this.fetchSubscription.add(
+      from<Promise<invocation.SearchInvocationResponse>>(rpcService.service.searchInvocation(request)).subscribe({
+        next: (response) => {
+          console.log(response);
+          this.setState({
+            invocations: nextPage
+              ? this.state.invocations.concat(response.invocation as invocation.Invocation[])
+              : response.invocation,
+            pageToken: response.nextPageToken,
+          });
+        },
+        complete: () => this.setState({ loadingInvocations: false }),
+      })
+    );
   }
 
-  getStats() {
-    let aggregationType = this.hashToAggregationTypeMap.get(this.props.hash);
-    if (!aggregationType) return;
+  getAggregateStats() {
+    this.setState({ aggregateStats: undefined, loadingAggregateStats: true });
 
-    this.setState({ invocationStat: [], loadingStats: true });
+    const aggregationType = this.hashToAggregationTypeMap.get(this.props.hash);
     const request = new invocation.GetInvocationStatRequest({ aggregationType });
     if (capabilities.globalFilter) {
       const filterParams = getProtoFilterParams(this.props.search);
@@ -119,17 +131,21 @@ export default class HistoryComponent extends React.Component {
         status: filterParams.status,
       });
     }
-    rpcService.service.getInvocationStat(request).then((response) => {
-      if (aggregationType != this.hashToAggregationTypeMap.get(this.props.hash)) return;
-      console.log(response);
-      this.setState({
-        invocationStat: response.invocationStat,
-        loadingStats: false,
-      });
-    });
+
+    this.fetchSubscription.add(
+      from<Promise<invocation.GetInvocationStatResponse>>(rpcService.service.getInvocationStat(request)).subscribe({
+        next: (response) => {
+          console.log(response);
+          this.setState({ aggregateStats: response.invocationStat });
+        },
+        complete: () => this.setState({ loadingAggregateStats: false }),
+      })
+    );
   }
 
-  getSummaryStats() {
+  getSummaryStat() {
+    this.setState({ summaryStat: undefined, loadingSummaryStat: true });
+
     const filterParams = getProtoFilterParams(this.props.search);
     const request = new invocation.GetInvocationStatRequest({
       aggregationType: invocation.AggType.GROUP_ID_AGGREGATION_TYPE,
@@ -142,12 +158,16 @@ export default class HistoryComponent extends React.Component {
         status: filterParams.status,
       });
     }
-    rpcService.service.getInvocationStat(request).then((response) => {
-      this.setState({ summaryStat: response.invocationStat });
-    });
+
+    this.fetchSubscription?.add(
+      from<Promise<invocation.GetInvocationStatResponse>>(rpcService.service.getInvocationStat(request)).subscribe({
+        next: (response) => this.setState({ summaryStat: response.invocationStat?.[0] }),
+        complete: () => this.setState({ loadingSummaryStat: false }),
+      })
+    );
   }
 
-  componentWillMount() {
+  componentDidMount() {
     document.title = `${
       this.props.username ||
       this.props.hostname ||
@@ -157,26 +177,44 @@ export default class HistoryComponent extends React.Component {
       this.props.user?.selectedGroupName()
     } Build History | BuildBuddy`;
 
-    this.getStats();
-    this.getSummaryStats();
-    this.getBuilds();
+    this.refreshSubscription.add(
+      rpcService.events.subscribe({
+        next: (name) => name == "refresh" && this.handleSidebarItemClicked(),
+      })
+    );
+    this.refreshSubscription.add(fromEvent(window, "storage").subscribe(this.handleStorage.bind(this)));
 
-    this.subscription = rpcService.events.subscribe({
-      next: (name) => name == "refresh" && this.handleSidebarItemClicked(),
-    });
-    this.subscription.add(fromEvent(window, "storage").subscribe(this.handleStorage.bind(this)));
+    this.fetch();
   }
 
   componentDidUpdate(prevProps: Props) {
     if (this.props.hash !== prevProps.hash || this.props.search !== prevProps.search) {
-      this.getStats();
-      this.getSummaryStats();
-      this.getBuilds();
+      this.fetch();
     }
   }
 
   componentWillUnmount() {
-    this.subscription?.unsubscribe();
+    this.refreshSubscription.unsubscribe();
+    this.fetchSubscription.unsubscribe();
+  }
+
+  fetch() {
+    this.fetchSubscription.unsubscribe();
+    this.fetchSubscription = new Subscription();
+
+    this.setState({
+      invocations: undefined,
+      summaryStat: undefined,
+      aggregateStats: undefined,
+      pageToken: undefined,
+    });
+
+    if (this.isAggregateView()) {
+      this.getAggregateStats();
+    } else {
+      this.getSummaryStat();
+      this.getInvocations();
+    }
   }
 
   handleStorage() {
@@ -201,12 +239,7 @@ export default class HistoryComponent extends React.Component {
       return;
     }
 
-    if (this.props.hash) {
-      this.getStats();
-      return;
-    }
-
-    this.getBuilds();
+    this.fetch();
   }
 
   handleInvocationClicked(invocation: invocation.Invocation) {
@@ -237,15 +270,18 @@ export default class HistoryComponent extends React.Component {
     router.navigateHome("#commits");
   }
 
+  handleClearFiltersClicked() {
+    router.clearFilters();
+  }
+
   handleMouseOver(invocation: invocation.Invocation) {
     this.setState({
-      ...this.state,
       hoveredInvocationId: invocation.invocationId,
     });
   }
 
-  handleMouseOut(invocation: invocation.Invocation) {
-    this.setState({ ...this.state, hoveredInvocationId: null });
+  handleMouseOut(invocation: invocation.IInvocation) {
+    this.setState({ hoveredInvocationId: null });
   }
 
   handleCreateOrgClicked() {
@@ -254,10 +290,10 @@ export default class HistoryComponent extends React.Component {
   }
 
   handleLoadNextPageClicked() {
-    this.getBuilds(true);
+    this.getInvocations(true);
   }
 
-  getInvocationStatusClass(selectedInvocation: invocation.Invocation) {
+  getInvocationStatusClass(selectedInvocation: invocation.IInvocation) {
     if (selectedInvocation.invocationStatus == invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS) {
       return "grid-block-in-progress";
     }
@@ -278,8 +314,11 @@ export default class HistoryComponent extends React.Component {
     return undefined;
   }
 
+  isAggregateView() {
+    return Boolean(this.props.hash);
+  }
+
   render() {
-    let slice = this.props.hash != "";
     let scope =
       this.props.username ||
       this.props.hostname ||
@@ -292,6 +331,12 @@ export default class HistoryComponent extends React.Component {
     if (this.props.hash == "#branches") viewType = "branches";
     if (this.props.hash == "#commits") viewType = "commits";
     if (this.props.hash == "#hosts") viewType = "hosts";
+
+    // Note: we don't show summary stats for scoped views because the summary stats
+    // don't currently get filtered by the scope as well.
+    // TODO(bduffany): Make sure scope-filtered queries are optimized and remove this limitation.
+    const hideSummaryStats = Boolean(scope);
+
     return (
       <div className="history">
         <div className="shelf">
@@ -401,41 +446,50 @@ export default class HistoryComponent extends React.Component {
                   `${this.props.user?.selectedGroupName() || "User"}'s ${viewType}`}
               </div>
             </div>
-            {!scope &&
-              !slice &&
-              this.state.summaryStat.map((stat) => (
-                <div className="details">
-                  <div className="detail">
-                    <img className="icon" src="/image/hash.svg" />
-                    {format.formatWithCommas(stat.totalNumBuilds)} recent builds
-                  </div>
-                  <div className="detail">
-                    <img className="icon" src="/image/check-circle.svg" />
-                    {format.formatWithCommas(stat.totalNumSucessfulBuilds)} passed
-                  </div>
-                  <div className="detail">
-                    <img className="icon" src="/image/x-circle.svg" />
-                    {format.formatWithCommas(stat.totalNumFailingBuilds)} failed
-                  </div>
-                  <div className="detail">
-                    <img className="icon" src="/image/percent.svg" />
-                    {format.percent(
-                      +stat.totalNumSucessfulBuilds / (+stat.totalNumSucessfulBuilds + +stat.totalNumFailingBuilds)
-                    )}{" "}
-                    passed
-                  </div>
-                  <div className="detail">
-                    <img className="icon" src="/image/clock-regular.svg" />
-                    {format.durationUsec(stat.totalBuildTimeUsec)} total
-                  </div>
-                  <div className="detail">
-                    <img className="icon" src="/image/clock-regular.svg" />
-                    {format.durationUsec(+stat.totalBuildTimeUsec / +stat.totalNumBuilds)} avg.
-                  </div>
+            {this.state.loadingSummaryStat && !hideSummaryStats && (
+              <div className="details loading-details">
+                <Spinner />
+                <div>Loading stats...</div>
+              </div>
+            )}
+            {this.state.summaryStat && !hideSummaryStats && (
+              <div className="details">
+                <div className="detail">
+                  <img className="icon" src="/image/hash.svg" />
+                  {format.formatWithCommas(this.state.summaryStat.totalNumBuilds)} builds
                 </div>
-              ))}
+                <div className="detail">
+                  <img className="icon" src="/image/check-circle.svg" />
+                  {format.formatWithCommas(this.state.summaryStat.totalNumSucessfulBuilds)} passed
+                </div>
+                <div className="detail">
+                  <img className="icon" src="/image/x-circle.svg" />
+                  {format.formatWithCommas(this.state.summaryStat.totalNumFailingBuilds)} failed
+                </div>
+                <div className="detail">
+                  <img className="icon" src="/image/percent.svg" />
+                  {format.percent(
+                    Number(this.state.summaryStat.totalNumSucessfulBuilds) /
+                      (Number(this.state.summaryStat.totalNumSucessfulBuilds) +
+                        Number(this.state.summaryStat.totalNumFailingBuilds))
+                  )}{" "}
+                  passed
+                </div>
+                <div className="detail">
+                  <img className="icon" src="/image/clock-regular.svg" />
+                  {format.durationUsec(this.state.summaryStat.totalBuildTimeUsec)} total
+                </div>
+                <div className="detail">
+                  <img className="icon" src="/image/clock-regular.svg" />
+                  {format.durationUsec(
+                    Number(this.state.summaryStat.totalBuildTimeUsec) / Number(this.state.summaryStat.totalNumBuilds)
+                  )}{" "}
+                  avg.
+                </div>
+              </div>
+            )}
           </div>
-          {this.state.invocations.length > 0 && !slice && (
+          {Boolean(this.state.invocations?.length) && (
             <div className="container nopadding-dense">
               <div className={`grid ${this.state.invocations.length < 20 ? "grid-grow" : ""}`}>
                 {this.state.invocations.map((invocation) => (
@@ -459,81 +513,103 @@ export default class HistoryComponent extends React.Component {
           )}
         </div>
         {this.props.hash === "#users" && <OrgJoinRequestsComponent user={this.props.user} />}
-        {this.state.invocations.length > 0 && (
+        {Boolean(this.state.invocations?.length || this.state.aggregateStats?.length) && (
           <div className="container nopadding-dense">
-            {!slice &&
-              this.state.invocations.map((invocation) => (
-                <a href={`/invocation/${invocation.invocationId}`} onClick={(e) => e.preventDefault()}>
-                  <HistoryInvocationCardComponent
-                    className={this.state.hoveredInvocationId == invocation.invocationId ? "card-hovered" : ""}
-                    onMouseOver={this.handleMouseOver.bind(this, invocation)}
-                    onMouseOut={this.handleMouseOut.bind(this, invocation)}
-                    invocation={invocation}
-                    isSelectedForCompare={invocation.invocationId === this.state.invocationIdToCompare}
-                  />
-                </a>
-              ))}
-            {!slice && this.state.pageToken && (
+            {this.state.invocations?.map((invocation) => (
+              <a href={`/invocation/${invocation.invocationId}`} onClick={(e) => e.preventDefault()}>
+                <HistoryInvocationCardComponent
+                  className={this.state.hoveredInvocationId == invocation.invocationId ? "card-hovered" : ""}
+                  onMouseOver={this.handleMouseOver.bind(this, invocation)}
+                  onMouseOut={this.handleMouseOut.bind(this, invocation)}
+                  invocation={invocation}
+                  isSelectedForCompare={invocation.invocationId === this.state.invocationIdToCompare}
+                />
+              </a>
+            ))}
+            {this.state.pageToken && (
               <button
                 className="load-more"
-                disabled={this.state.loading}
+                disabled={this.state.loadingInvocations}
                 onClick={this.handleLoadNextPageClicked.bind(this)}>
-                {this.state.loading ? "Loading..." : "Load more"}
+                {this.state.loadingInvocations ? "Loading..." : "Load more"}
               </button>
             )}
-            {slice &&
-              this.state.invocationStat.map((invocationStat) => (
-                <HistoryInvocationStatCardComponent
-                  type={this.hashToAggregationTypeMap.get(this.props.hash)}
-                  invocationStat={invocationStat}
-                />
-              ))}
+            {this.state.aggregateStats?.map((invocationStat) => (
+              <HistoryInvocationStatCardComponent
+                type={this.hashToAggregationTypeMap.get(this.props.hash)}
+                invocationStat={invocationStat}
+              />
+            ))}
           </div>
         )}
-        {this.state.invocations.length == 0 && this.state.loading && <div className="loading"></div>}
-        {this.state.invocations.length == 0 && !this.state.loading && this.isFilteredToWorkflows() && (
-          <div className="container narrow">
-            <div className="empty-state history">
-              <h2>No workflow runs yet!</h2>
-              <p>
-                Push commits or send pull requests to{" "}
-                <a href={this.props.repo} target="_new" className="text-link">
-                  {format.formatGitUrl(this.props.repo)}
-                </a>{" "}
-                to trigger BuildBuddy workflows.
-              </p>
-              <p>
-                By default, BuildBuddy will run <code className="inline-code">bazel test //...</code> on pushes to your
-                main branch and on pull request branches.
-              </p>
-              <div>
-                <LinkButton href="https://docs.buildbuddy.io/docs/workflows-config" target="_new">
-                  Learn more
-                </LinkButton>
+        {((this.state.loadingInvocations && !this.state.invocations?.length) || this.state.loadingAggregateStats) && (
+          <div className="loading"></div>
+        )}
+        {router.isFiltering() &&
+          !this.state.loadingInvocations &&
+          !this.state.invocations?.length &&
+          !this.state.loadingAggregateStats &&
+          !this.state.aggregateStats?.length && (
+            <div className="container narrow">
+              <div className="empty-state history">
+                <h2>No matching builds</h2>
+                <p>No builds matched the current filters or selected dates.</p>
+                <div>
+                  <Button onClick={this.handleClearFiltersClicked.bind(this)}>Clear filters</Button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
-        {this.state.invocations.length == 0 && !this.state.loading && !this.isFilteredToWorkflows() && (
-          <div className="container narrow">
-            <div className="empty-state history">
-              <h2>No builds found!</h2>
-              <p>
-                Seems like you haven't connected Bazel to your BuildBuddy account yet.
-                <br />
-                <br />
-                <a className="button" href="/docs/setup">
-                  Click here to get started
-                </a>
-              </p>
+          )}
+        {!router.isFiltering() &&
+          !this.isAggregateView() &&
+          !this.state.loadingInvocations &&
+          !this.state.invocations?.length &&
+          this.isFilteredToWorkflows() && (
+            <div className="container narrow">
+              <div className="empty-state history">
+                <h2>No workflow runs yet!</h2>
+                <p>
+                  Push commits or send pull requests to{" "}
+                  <a href={this.props.repo} target="_new" className="text-link">
+                    {format.formatGitUrl(this.props.repo)}
+                  </a>{" "}
+                  to trigger BuildBuddy workflows.
+                </p>
+                <p>
+                  By default, BuildBuddy will run <code className="inline-code">bazel test //...</code> on pushes to
+                  your main branch and on pull request branches.
+                </p>
+                <div>
+                  <LinkButton href="https://docs.buildbuddy.io/docs/workflows-config" target="_new">
+                    Learn more
+                  </LinkButton>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
-        {this.state.invocations.length > 0 &&
-          !this.state.loading &&
-          !this.state.loadingStats &&
-          slice &&
-          this.state.invocationStat.length == 0 && (
+          )}
+        {!router.isFiltering() &&
+          !this.isAggregateView() &&
+          !this.state.loadingInvocations &&
+          !this.state.invocations?.length &&
+          !this.isFilteredToWorkflows() && (
+            <div className="container narrow">
+              <div className="empty-state history">
+                <h2>No builds found!</h2>
+                <p>
+                  Seems like you haven't connected Bazel to your BuildBuddy account yet.
+                  <br />
+                  <br />
+                  <a className="button" href="/docs/setup">
+                    Click here to get started
+                  </a>
+                </p>
+              </div>
+            </div>
+          )}
+        {!router.isFiltering() &&
+          this.isAggregateView() &&
+          !this.state.loadingAggregateStats &&
+          !this.state.aggregateStats?.length && (
             <div className="container narrow">
               <div className="empty-state history">
                 <h2>No {viewType} found!</h2>

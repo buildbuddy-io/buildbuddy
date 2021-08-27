@@ -22,7 +22,7 @@ func NewContainer(env environment.Env, opts ContainerOpts) (*firecrackerContaine
 	return c, nil
 }
 
-func (c *firecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string) *interfaces.CommandResult {
+func (c *firecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string, creds container.PullCredentials) *interfaces.CommandResult {
 	return &interfaces.CommandResult{}
 }
 
@@ -38,7 +38,7 @@ func (c *firecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 	return false, status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *firecrackerContainer) PullImage(ctx context.Context) error {
+func (c *firecrackerContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 

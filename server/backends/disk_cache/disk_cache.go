@@ -2,6 +2,7 @@ package disk_cache
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -39,9 +40,82 @@ const (
 	// check the cache size.
 	janitorCheckPeriod = 100 * time.Millisecond
 
-	defaultPartitionID       = "default"
+	DefaultPartitionID       = "default"
 	PartitionDirectoryPrefix = "PT"
+	HashPrefixDirPrefixLen   = 4
+	V2Dir                    = "v2"
 )
+
+var (
+	migrateDiskCacheToV2AndExit = flag.Bool("migrate_disk_cache_to_v2_and_exit", false, "If true, attempt to migrate disk cache to v2 layout.")
+)
+
+// MigrateToV2Layout restructures the files under the root directory to conform to the "v2" layout.
+// Difference between v1 and v2:
+//  - Digests are now placed under a subdirectory based on the first 4 characters of the hash to avoid directories
+//    with large number of files.
+//  - Files in the default partition are now placed under a "PTdefault" partition subdirectory to be consistent with
+//    other partitions.
+// TODO(vadim): make this automatic so we can migrate onprem customers
+func MigrateToV2Layout(rootDir string) error {
+	log.Info("Starting digest migration.")
+	numMigrated := 0
+	start := time.Now()
+	walkFn := func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relPath, err := filepath.Rel(rootDir, path)
+		if err != nil {
+			return status.InternalErrorf("Could not compute %q relative to %q", path, rootDir)
+		}
+		if d.IsDir() {
+			// Don't need to do anything for files already under the v2 directory.
+			if relPath == V2Dir {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		if len(info.Name()) < HashPrefixDirPrefixLen {
+			return status.InternalErrorf("File %q is an invalid digest", path)
+		}
+
+		newRoot := filepath.Join(rootDir, V2Dir)
+		if !strings.HasPrefix(relPath, PartitionDirectoryPrefix) {
+			newRoot = filepath.Join(newRoot, PartitionDirectoryPrefix+DefaultPartitionID)
+		}
+
+		newDir := filepath.Join(newRoot, filepath.Dir(relPath), info.Name()[0:HashPrefixDirPrefixLen])
+		newPath := filepath.Join(newDir, info.Name())
+
+		if err := os.MkdirAll(newDir, 0755); err != nil {
+			return status.InternalErrorf("Could not create destination dir %q: %s", newDir, err)
+		}
+
+		if err := os.Rename(path, newPath); err != nil {
+			return status.InternalErrorf("Could not rename %q -> %q: %s", path, newPath, err)
+		}
+
+		numMigrated++
+		if numMigrated%1_000_000 == 0 {
+			log.Infof("Migrated %d files in %s.", numMigrated, time.Since(start))
+			log.Infof("Most recent migration: %q -> %q", path, newPath)
+		}
+
+		return nil
+	}
+	if err := filepath.WalkDir(rootDir, walkFn); err != nil {
+		return err
+	}
+	log.Infof("Migrated %d digests in %s.", numMigrated, time.Since(start))
+	return nil
+}
 
 // DiskCache stores data on disk as files.
 // It is broken up into partitions which are independent and maintain their own LRUs.
@@ -56,33 +130,49 @@ type DiskCache struct {
 }
 
 func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSizeBytes int64) (*DiskCache, error) {
+	if *migrateDiskCacheToV2AndExit {
+		if err := MigrateToV2Layout(config.RootDirectory); err != nil {
+			log.Errorf("Migration failed: %s", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	partitions := make(map[string]*partition)
 	var defaultPartition *partition
 	for _, pc := range config.Partitions {
 		rootDir := config.RootDirectory
-		if pc.ID != defaultPartitionID {
+		if config.UseV2Layout {
+			rootDir = filepath.Join(rootDir, V2Dir)
+		}
+
+		if pc.ID != DefaultPartitionID || config.UseV2Layout {
 			if pc.ID == "" {
 				return nil, status.InvalidArgumentError("Non-default partition %q must have a valid ID")
 			}
 			rootDir = filepath.Join(rootDir, PartitionDirectoryPrefix+pc.ID)
 		}
 
-		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes)
+		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes, config.UseV2Layout)
 		if err != nil {
 			return nil, err
 		}
 		partitions[pc.ID] = p
-		if pc.ID == defaultPartitionID {
+		if pc.ID == DefaultPartitionID {
 			defaultPartition = p
 		}
 	}
 	if defaultPartition == nil {
-		p, err := newPartition(defaultPartitionID, config.RootDirectory, defaultMaxSizeBytes)
+		rootDir := config.RootDirectory
+		if config.UseV2Layout {
+			rootDir = filepath.Join(rootDir, V2Dir, PartitionDirectoryPrefix+DefaultPartitionID)
+		}
+		p, err := newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, config.UseV2Layout)
 		if err != nil {
 			return nil, err
 		}
 		defaultPartition = p
-		partitions[defaultPartitionID] = p
+		partitions[DefaultPartitionID] = p
 	}
 
 	c := &DiskCache{
@@ -200,25 +290,27 @@ func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser,
 // serialize this ledger, we regenerate it from scratch on startup by looking
 // at the filesystem.
 type partition struct {
-	id           string
-	mu           sync.RWMutex
-	rootDir      string
-	lru          *lru.LRU
-	fileChannel  chan *fileRecord
-	diskIsMapped bool
-	lastGCTime   time.Time
+	id                      string
+	nestDigestsByHashPrefix bool
+	mu                      sync.RWMutex
+	rootDir                 string
+	lru                     *lru.LRU
+	fileChannel             chan *fileRecord
+	diskIsMapped            bool
+	lastGCTime              time.Time
 }
 
-func newPartition(id string, rootDir string, maxSizeBytes int64) (*partition, error) {
+func newPartition(id string, rootDir string, maxSizeBytes int64, nestDigestsByHashPrefix bool) (*partition, error) {
 	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: evictFn, SizeFn: sizeFn})
 	if err != nil {
 		return nil, err
 	}
 	c := &partition{
-		id:          id,
-		lru:         l,
-		rootDir:     rootDir,
-		fileChannel: make(chan *fileRecord),
+		id:                      id,
+		nestDigestsByHashPrefix: nestDigestsByHashPrefix,
+		lru:                     l,
+		rootDir:                 rootDir,
+		fileChannel:             make(chan *fileRecord),
 	}
 	if err := c.initializeCache(); err != nil {
 		return nil, err
@@ -345,7 +437,7 @@ func (p *partition) initializeCache() error {
 				// Originally there was just one "partition" with its contents under the root directory.
 				// Additional partition directories live under the root as well and they need to be ignored
 				// when initializing the default partition.
-				if p.id == defaultPartitionID && strings.HasPrefix(d.Name(), PartitionDirectoryPrefix) {
+				if p.id == DefaultPartitionID && strings.HasPrefix(d.Name(), PartitionDirectoryPrefix) {
 					return filepath.SkipDir
 				}
 				return nil
@@ -405,8 +497,16 @@ func (p *partition) key(ctx context.Context, cachePrefix string, d *repb.Digest)
 	if err != nil {
 		return "", err
 	}
-
-	return filepath.Join(p.rootDir, userPrefix+cachePrefix+hash), nil
+	hashPrefixDir := ""
+	if p.nestDigestsByHashPrefix {
+		// Should never be the case.
+		if len(hash) < HashPrefixDirPrefixLen {
+			alert.UnexpectedEvent("disk_cache_digest_too_short", "digest hash %q is too short", hash)
+			return "", status.FailedPreconditionErrorf("digest hash %q is way too short!", hash)
+		}
+		hashPrefixDir = hash[0:HashPrefixDirPrefixLen] + "/"
+	}
+	return filepath.Join(p.rootDir, userPrefix+cachePrefix+hashPrefixDir+hash), nil
 }
 
 // Adds a single file, using the provided path, to the LRU.
