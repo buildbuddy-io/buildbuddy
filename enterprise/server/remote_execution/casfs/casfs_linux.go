@@ -4,6 +4,7 @@ import (
 	"context"
 	"syscall"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/hanwen/go-fuse/v2/fs"
 	"golang.org/x/sys/unix"
 )
