@@ -80,13 +80,30 @@ func CachedDiskImagePath(workspaceDir, containerImage string) (string, error) {
 // CreateDiskImage pulls the image from the container registry and creates an
 // ext4 disk image from the container image in the user's local cache directory.
 // If the image is already available locally, the image is not re-downloaded
-// from the registry. The path to the disk image is returned.
+// from the registry, but the credentials are still authenticated with the
+// remote registry to ensure that the image can be accessed. The path to the
+// disk image is returned.
 func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
 	existingPath, err := CachedDiskImagePath(workspaceDir, containerImage)
 	if err != nil {
 		return "", err
 	}
 	if existingPath != "" {
+		// Image is cached. Authenticate with the remote registry to be sure
+		// the credentials are valid.
+
+		cmd := exec.CommandContext(ctx, "skopeo", "inspect", "--raw", fmt.Sprintf("docker://%s", containerImage))
+		b, err := cmd.CombinedOutput()
+		if err != nil {
+			// We don't know whether an authentication error occurred unless we do
+			// brittle parsing of the command output. So for now just return
+			// UnavailableError which is the "lowest common denominator" of errors.
+			return "", status.UnavailableErrorf(
+				"Failed to authenticate with container registry for image %q: %s: %s",
+				containerImage, err, string(b),
+			)
+		}
+
 		return existingPath, nil
 	}
 
