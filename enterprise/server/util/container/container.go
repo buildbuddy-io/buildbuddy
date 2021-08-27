@@ -92,7 +92,11 @@ func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string, c
 		// Image is cached. Authenticate with the remote registry to be sure
 		// the credentials are valid.
 
-		cmd := exec.CommandContext(ctx, "skopeo", "inspect", "--raw", fmt.Sprintf("docker://%s", containerImage))
+		inspectArgs := []string{"inspect", "--raw", fmt.Sprintf("docker://%s", containerImage)}
+		if !creds.IsEmpty() {
+			inspectArgs = append(inspectArgs, "--creds", creds.String())
+		}
+		cmd := exec.CommandContext(ctx, "skopeo", inspectArgs...)
 		b, err := cmd.CombinedOutput()
 		if err != nil {
 			// We don't know whether an authentication error occurred unless we do
