@@ -101,7 +101,7 @@ func NewImageCacheToken(ctx context.Context, env environment.Env, creds *PullCre
 	}
 	credsHash := ""
 	if creds != nil {
-		credsHash = hashString(creds.Username) + hashString(creds.Password)
+		credsHash = hashString(hashString(creds.Username) + hashString(creds.Password))
 	}
 	return ImageCacheToken{
 		GroupID:         groupID,
