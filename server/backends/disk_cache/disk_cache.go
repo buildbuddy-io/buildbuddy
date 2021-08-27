@@ -61,6 +61,7 @@ func MigrateToV2Layout(rootDir string) error {
 	log.Info("Starting digest migration.")
 	numMigrated := 0
 	start := time.Now()
+	var dirsToDelete []string
 	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -73,6 +74,9 @@ func MigrateToV2Layout(rootDir string) error {
 			// Don't need to do anything for files already under the v2 directory.
 			if relPath == V2Dir {
 				return filepath.SkipDir
+			}
+			if path != rootDir {
+				dirsToDelete = append(dirsToDelete, path)
 			}
 			return nil
 		}
@@ -112,6 +116,11 @@ func MigrateToV2Layout(rootDir string) error {
 	}
 	if err := filepath.WalkDir(rootDir, walkFn); err != nil {
 		return err
+	}
+	for i := len(dirsToDelete) - 1; i >= 0; i-- {
+		if err := os.Remove(dirsToDelete[i]); err != nil {
+			log.Warningf("Could not delete directory %q: %s", dirsToDelete[i], err)
+		}
 	}
 	log.Infof("Migrated %d digests in %s.", numMigrated, time.Since(start))
 	return nil
