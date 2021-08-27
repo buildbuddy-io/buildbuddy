@@ -711,7 +711,13 @@ func TestV2LayoutMigration(t *testing.T) {
 	{
 		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "prefix")
 		require.NoError(t, err)
-		buf, err := ic.Get(ctx, &repb.Digest{Hash: testHash, SizeBytes: 5})
+
+		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
+		ok, err := ic.Contains(ctx, d)
+		require.NoError(t, err)
+		require.True(t, ok, "digest should be in the cache")
+
+		buf, err := ic.Get(ctx, d)
 		require.NoError(t, err)
 		require.Equal(t, []byte("test2"), buf)
 	}
@@ -721,7 +727,13 @@ func TestV2LayoutMigration(t *testing.T) {
 		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 		require.NoError(t, err)
 		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "" /*=instanceName*/)
-		buf, err := ic.Get(ctx, &repb.Digest{Hash: testHash, SizeBytes: 5})
+
+		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
+		ok, err := ic.Contains(ctx, d)
+		require.NoError(t, err)
+		require.True(t, ok, "digest should be in the cache")
+
+		buf, err := ic.Get(ctx, d)
 		require.NoError(t, err)
 		require.Equal(t, []byte("test3"), buf)
 	}
@@ -732,7 +744,13 @@ func TestV2LayoutMigration(t *testing.T) {
 		require.NoError(t, err)
 		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "prefix" /*=instanceName*/)
 		require.NoError(t, err)
-		buf, err := ic.Get(ctx, &repb.Digest{Hash: testHash, SizeBytes: 5})
+
+		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
+		ok, err := ic.Contains(ctx, d)
+		require.NoError(t, err)
+		require.True(t, ok, "digest should be in the cache")
+
+		buf, err := ic.Get(ctx, d)
 		require.NoError(t, err)
 		require.Equal(t, []byte("test4"), buf)
 	}
