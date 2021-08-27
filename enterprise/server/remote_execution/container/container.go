@@ -25,10 +25,6 @@ const (
 	defaultImageCacheTokenTTL = 15 * time.Minute
 )
 
-var (
-	emptyCredentials = PullCredentials{}
-)
-
 // Stats holds represents a container's held resources.
 type Stats struct {
 	MemoryUsageBytes int64
@@ -83,28 +79,35 @@ type PullCredentials struct {
 }
 
 // ImageCacheToken is a claim to be able to access a locally cached image.
-type ImageCacheToken string
+type ImageCacheToken struct {
+	GroupID         string
+	ImageRef        string
+	CredentialsHash string
+}
 
 // NewImageCacheToken returns the token representing the authenticated group ID,
 // pull credentials, and image ref. For the same sets of those values, the
 // same token is always returned.
 func NewImageCacheToken(ctx context.Context, env environment.Env, creds *PullCredentials, imageRef string) (ImageCacheToken, error) {
-	u, err := perms.AuthenticatedUser(ctx, env)
-	if err != nil && !status.IsUnauthenticatedError(err) && !status.IsPermissionDeniedError(err) {
-		return "", err
-	}
 	groupID := ""
-	if u != nil {
+	u, err := perms.AuthenticatedUser(ctx, env)
+	if err != nil {
+		if !status.IsUnauthenticatedError(err) && !status.IsPermissionDeniedError(err) {
+			return ImageCacheToken{}, err
+		}
+		// Anonymous user.
+	} else {
 		groupID = u.GetGroupID()
 	}
-	if creds == nil {
-		creds = &emptyCredentials
+	credsHash := ""
+	if creds != nil {
+		credsHash = hashString(creds.Username) + hashString(creds.Password)
 	}
-	return ImageCacheToken(
-		hashString(
-			hashString(groupID) + hashString(creds.Username) + hashString(creds.Password) + hashString(imageRef),
-		),
-	), nil
+	return ImageCacheToken{
+		GroupID:         groupID,
+		ImageRef:        imageRef,
+		CredentialsHash: credsHash,
+	}, nil
 }
 
 func hashString(value string) string {

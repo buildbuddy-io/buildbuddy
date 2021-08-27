@@ -32,7 +32,6 @@ func TestImageCacheAuthenticator(t *testing.T) {
 			&container.PullCredentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
 		)
-		t.Log("token1: " + token1)
 
 		require.NoError(t, err)
 
@@ -48,7 +47,6 @@ func TestImageCacheAuthenticator(t *testing.T) {
 			&container.PullCredentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
 		)
-		t.Log("token1: " + token1)
 
 		require.NoError(t, err)
 
@@ -65,7 +63,6 @@ func TestImageCacheAuthenticator(t *testing.T) {
 			&container.PullCredentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
 		)
-		t.Log("token2: " + token2)
 
 		require.NoError(t, err)
 
@@ -84,7 +81,6 @@ func TestImageCacheAuthenticator(t *testing.T) {
 			/* creds=*/ nil,
 			"alpine:latest",
 		)
-		t.Log("anonToken: " + anonToken)
 
 		require.NoError(t, err)
 
@@ -104,7 +100,6 @@ func TestImageCacheAuthenticator(t *testing.T) {
 			/* creds=*/ nil,
 			"alpine:latest",
 		)
-		t.Log("anonToken: " + anonToken)
 
 		require.NoError(t, err)
 
@@ -128,7 +123,6 @@ func TestImageCacheAuthenticator(t *testing.T) {
 			&container.PullCredentials{Username: "user1", Password: "pass1"},
 			"gcr.io/org1/image:latest",
 		)
-		t.Log("immediatelyExpiredToken: " + immediatelyExpiredToken)
 
 		require.NoError(t, err)
 
