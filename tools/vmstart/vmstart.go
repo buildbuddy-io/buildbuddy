@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -110,7 +111,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error creating container: %s", err)
 	}
-	if err := c.PullImageIfNecessary(ctx); err != nil {
+	if err := c.PullImageIfNecessary(ctx, container.PullCredentials{}); err != nil {
 		log.Fatalf("Unable to PullImageIfNecessary: %s", err)
 	}
 	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {

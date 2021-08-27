@@ -87,7 +87,9 @@ func ParseRepoURL(repo string) (*url.URL, error) {
 		return nil, err
 	}
 
-	repoURL.Path = strings.TrimSuffix(repoURL.Path, "/")
+	if repoURL.Path != "/" {
+		repoURL.Path = strings.TrimSuffix(repoURL.Path, "/")
+	}
 
 	// convert e.g file://buildbuddy-io/buildbuddy -> buildbuddy-io/buildbuddy
 	// and e.g //buildbuddy-io/buildbuddy -> buildbuddy-io/buildbuddy
@@ -116,7 +118,7 @@ func ParseRepoURL(repo string) (*url.URL, error) {
 	}
 
 	// assume missing scheme
-	if repoURL.Scheme == "" {
+	if repoURL.String() != "" && repoURL.Scheme == "" {
 		if repoURL.Hostname() == "localhost" {
 			// assume http for missing localhost scheme.
 			repoURL.Scheme = "http"
@@ -146,7 +148,7 @@ func NormalizeRepoURL(repo string) (*url.URL, error) {
 	// coerce https for all but localhost
 	if repoURL.Scheme != "https" && repoURL.Hostname() == "localhost" {
 		repoURL.Scheme = "http"
-	} else {
+	} else if repoURL.String() != "" {
 		repoURL.Scheme = "https"
 	}
 

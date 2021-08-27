@@ -164,6 +164,7 @@ func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
+	assert.Equal(t, "", invocation.RepoUrl)
 
 	assertAPIKeyRedacted(t, invocation, "USER1")
 }
@@ -204,6 +205,7 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
+	assert.Equal(t, "", invocation.RepoUrl)
 
 	assertAPIKeyRedacted(t, invocation, "USER1")
 }
@@ -361,6 +363,7 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 	// Look up the invocation and make sure we redacted correctly
 	invocation, err := build_event_handler.LookupInvocation(te, ctx, "test-invocation-id")
 	assert.NoError(t, err)
+	assert.Equal(t, "https://github.com/acme-inc/acme", invocation.RepoUrl)
 	txt := proto.MarshalTextString(invocation)
 	assert.NotContains(t, txt, "secret_env_value", "Env secrets should not appear in invocation")
 	assert.NotContains(t, txt, "githubToken", "URL secrets should not appear in invocation")

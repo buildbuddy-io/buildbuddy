@@ -290,6 +290,10 @@ func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *b
 		log.Warningf("Not all targets for %q reached state: %d, targets: %+v", t.buildEventAccumulator.InvocationID(), targetStateConfigured, t.targets)
 		return
 	}
+	if t.buildEventAccumulator.Command() != "test" {
+		log.Debugf("Not tracking targets for %q because it's not a test", t.buildEventAccumulator.InvocationID())
+		return
+	}
 	if t.buildEventAccumulator.Role() != "CI" {
 		log.Debugf("Not tracking targets for %q because it's not a CI build", t.buildEventAccumulator.InvocationID())
 		return
@@ -305,6 +309,10 @@ func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *b
 }
 
 func (t *TargetTracker) handleFinishedEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+	if t.buildEventAccumulator.Command() != "test" {
+		log.Debugf("Not tracking targets statuses for %q because it's not a test", t.buildEventAccumulator.InvocationID())
+		return
+	}
 	if t.buildEventAccumulator.Role() != "CI" {
 		log.Debugf("Not tracking target statuses for %q because it's not a CI build", t.buildEventAccumulator.InvocationID())
 		return

@@ -267,6 +267,22 @@ class Router {
   getHistoryCommit(path: string) {
     return this.getLastPathComponent(path, Path.commitHistoryPath);
   }
+
+  isFiltering() {
+    const url = new URL(window.location.href);
+    for (const param of GLOBAL_FILTER_PARAM_NAMES) {
+      if (url.searchParams.has(param)) return true;
+    }
+    return false;
+  }
+
+  clearFilters() {
+    const url = new URL(window.location.href);
+    for (const param of GLOBAL_FILTER_PARAM_NAMES) {
+      url.searchParams.delete(param);
+    }
+    this.replaceParams(Object.fromEntries(url.searchParams.entries()));
+  }
 }
 
 // If a repo matches https://github.com/{owner}/{repo} or https://github.com/{owner}/{repo}.git
