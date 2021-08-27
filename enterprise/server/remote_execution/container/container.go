@@ -22,7 +22,7 @@ type Stats struct {
 	// are frozen when not in use, reducing their CPU usage to 0.
 }
 
-type FilesystemLayout struct {
+type FileSystemLayout struct {
 	Inputs      *repb.Tree
 	OutputDirs  []string
 	OutputFiles []string

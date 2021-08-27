@@ -40,7 +40,9 @@ type CASFS struct {
 }
 
 type Options struct {
-	Verbose    bool
+	// Verbose enables logging of most per-file operations.
+	Verbose bool
+	// LogFUSEOps enabled logging of all operations received by the go fuse server from the kernel.
 	LogFUSEOps bool
 }
 
@@ -70,7 +72,11 @@ func (cfs *CASFS) Mount(dir string) error {
 	return nil
 }
 
-func (cfs *CASFS) PrepareForTask(ctx context.Context, fileFetcher *dirtools.BatchFileFetcher, taskID string, fsLayout *container.FilesystemLayout) error {
+// PrepareForTask prepares the virtual filesystem layout according to the provided `fsLayout`.
+// The passed `fileFetcher` is expected to be configured with appropriate credentials necessary to be able to interact
+// with the CAS for the given task.
+// The passed `taskID` os only used for logging purposes.
+func (cfs *CASFS) PrepareForTask(ctx context.Context, fileFetcher *dirtools.BatchFileFetcher, taskID string, fsLayout *container.FileSystemLayout) error {
 	cfs.mu.Lock()
 	defer cfs.mu.Unlock()
 
@@ -95,7 +101,7 @@ func (cfs *CASFS) PrepareForTask(ctx context.Context, fileFetcher *dirtools.Batc
 			child := &Node{cfs: cfs, parent: parentNode}
 			inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR})
 			if !parentNode.AddChild(childDirNode.Name, inode, false) {
-				return status.UnknownErrorf("could not add child %q", childDirNode.Name)
+				return status.UnknownErrorf("could not add child %q to %q, already exists", childDirNode.Name, parentNode.relativePath())
 			}
 			if cfs.verbose {
 				log.Debugf("[%s] Input directory: %s", cfs.taskID(), child.relativePath())
@@ -112,7 +118,7 @@ func (cfs *CASFS) PrepareForTask(ctx context.Context, fileFetcher *dirtools.Batc
 			child := &Node{cfs: cfs, parent: parentNode, fileNode: childFileNode}
 			inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG})
 			if !parentNode.AddChild(childFileNode.Name, inode, false) {
-				return status.UnknownErrorf("could not add child %q", childFileNode.Name)
+				return status.UnknownErrorf("could not add child %q to %q, already exists", childFileNode.Name, parentNode.relativePath())
 			}
 			if cfs.verbose {
 				log.Debugf("[%s] Input file: %s", cfs.taskID(), child.relativePath())
@@ -122,7 +128,7 @@ func (cfs *CASFS) PrepareForTask(ctx context.Context, fileFetcher *dirtools.Batc
 			child := &Node{cfs: cfs, parent: parentNode, symlinkTarget: childSymlinkNode.GetTarget()}
 			inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK})
 			if !parentNode.AddChild(childSymlinkNode.Name, inode, false) {
-				return status.UnknownErrorf("could not add child %q", childSymlinkNode.Name)
+				return status.UnknownErrorf("could not add child %q to %q, already exists", childSymlinkNode.Name, parentNode.relativePath())
 			}
 			if cfs.verbose {
 				log.Debugf("[%s] Input symlink: %s", cfs.taskID(), child.relativePath())
@@ -158,7 +164,7 @@ func (cfs *CASFS) PrepareForTask(ctx context.Context, fileFetcher *dirtools.Batc
 				child := &Node{cfs: cfs, parent: node}
 				inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR})
 				if !node.AddChild(p, inode, false) {
-					return status.UnknownErrorf("could not add child %q", p)
+					return status.UnknownErrorf("could not add child %q, already exists", p)
 				}
 				node = child
 			} else {
@@ -236,15 +242,15 @@ type Node struct {
 	fileNode      *repb.FileNode
 	symlinkTarget string
 
-	mu          sync.Mutex
-	scratchFile string
+	mu              sync.Mutex
+	scratchFilePath string
 }
 
 func (n *Node) relativePath() string {
 	return n.Path(nil)
 }
 
-func (n *Node) scratchPath() string {
+func (n *Node) computeScratchPath() string {
 	return filepath.Join(n.cfs.scratchDir, n.relativePath())
 }
 
@@ -259,8 +265,8 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	defer n.mu.Unlock()
 
 	relPath := n.relativePath()
-	scratchPath := n.scratchPath()
-	if n.scratchFile != "" {
+	scratchPath := n.computeScratchPath()
+	if n.scratchFilePath != "" {
 		hash := ""
 		if n.fileNode != nil {
 			hash = fmt.Sprintf(" (%s)", n.fileNode.GetDigest().GetHash())
@@ -301,7 +307,7 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 			return nil, 0, syscall.EIO
 		}
 
-		n.scratchFile = scratchPath
+		n.scratchFilePath = scratchPath
 
 		fd, err := syscall.Open(scratchPath, int(flags), 0)
 		if err != nil {
@@ -320,7 +326,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 		log.Debugf("[%s] Create %q", n.cfs.taskID(), filepath.Join(n.relativePath(), name))
 	}
 
-	scratchPath := filepath.Join(n.scratchPath(), name)
+	scratchPath := filepath.Join(n.computeScratchPath(), name)
 	if err := os.MkdirAll(filepath.Dir(scratchPath), 0755); err != nil {
 		log.Infof("[%s] Could not make dirs for %q: %s", n.cfs.taskID(), scratchPath, err)
 		return nil, 0, 0, syscall.EINVAL
@@ -332,16 +338,19 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 		return nil, nil, 0, fs.ToErrno(err)
 	}
 	lf := &instrumentedLoopbackFile{FileHandle: fs.NewLoopbackFile(fd), cfs: n.cfs, fd: fd, fullPath: scratchPath}
-	child := &Node{cfs: n.cfs, parent: n, scratchFile: scratchPath}
+	child := &Node{cfs: n.cfs, parent: n, scratchFilePath: scratchPath}
 	inode := n.cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG})
 	if !n.AddChild(name, inode, false) {
-		log.Warningf("[%s] Could not add child %q to %q", n.cfs.taskID(), name, n.relativePath())
+		log.Warningf("[%s] Could not add child %q to %q, already exists", n.cfs.taskID(), name, n.relativePath())
 		return nil, nil, 0, syscall.EIO
 	}
 
 	st := syscall.Stat_t{}
 	if err := syscall.Fstat(fd, &st); err != nil {
-		_ = syscall.Close(fd)
+		closeErr := syscall.Close(fd)
+		if closeErr != nil {
+			log.Warningf("[%s] Could not close file descriptor for %q: %s", scratchPath, closeErr)
+		}
 		return nil, nil, 0, fs.ToErrno(err)
 	}
 	out.FromStat(&st)
@@ -390,7 +399,7 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 		}
 	}
 
-	p1 := filepath.Join(n.scratchPath(), name)
+	p1 := filepath.Join(n.computeScratchPath(), name)
 	p2 := filepath.Join(n.cfs.scratchDir, newParent.EmbeddedInode().Path(nil), newName)
 
 	return fs.ToErrno(os.Rename(p1, p2))
@@ -405,8 +414,8 @@ func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) 
 		}
 		return fs.OK
 	}
-	if n.scratchFile != "" {
-		s, err := os.Lstat(n.scratchPath())
+	if n.scratchFilePath != "" {
+		s, err := os.Lstat(n.computeScratchPath())
 		if err != nil {
 			return fs.ToErrno(err)
 		}
@@ -427,7 +436,7 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 	}
 
 	if m, ok := in.GetMode(); ok {
-		if err := os.Chmod(n.scratchPath(), os.FileMode(m)); err != nil {
+		if err := os.Chmod(n.computeScratchPath(), os.FileMode(m)); err != nil {
 			return fs.ToErrno(err)
 		}
 	}
@@ -442,7 +451,7 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 		log.Debugf("Mkdir %q", filepath.Join(n.relativePath(), name))
 	}
 
-	scratchPath := filepath.Join(n.scratchPath(), name)
+	scratchPath := filepath.Join(n.computeScratchPath(), name)
 
 	if err := os.MkdirAll(scratchPath, 0755); err != nil {
 		log.Warningf("[%s] Could not make dirs for %q: %s", n.cfs.taskID(), scratchPath, err)
@@ -452,7 +461,7 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 	child := &Node{cfs: n.cfs, parent: n}
 	inode := n.cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR})
 	if !n.AddChild(name, inode, false) {
-		log.Warningf("[%s] Mkdir could not add child %q to %q", n.cfs.taskID(), name, n.relativePath())
+		log.Warningf("[%s] Mkdir could not add child %q to %q, already exists", n.cfs.taskID(), name, n.relativePath())
 		return nil, syscall.EIO
 	}
 	return inode, 0
@@ -462,7 +471,7 @@ func (n *Node) Rmdir(ctx context.Context, name string) syscall.Errno {
 	if n.cfs.verbose {
 		log.Debugf("[%s] Rmdir %q", n.cfs.taskID(), filepath.Join(n.relativePath(), name))
 	}
-	fullPath := filepath.Join(n.scratchPath(), name)
+	fullPath := filepath.Join(n.computeScratchPath(), name)
 	return fs.ToErrno(os.Remove(fullPath))
 }
 
@@ -500,7 +509,7 @@ func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.Entry
 	child := &Node{cfs: n.cfs, parent: n, symlinkTarget: target}
 	inode := n.cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK})
 	if !n.AddChild(name, inode, false) {
-		log.Warningf("[%s] Symlink could not add child %q to %q", n.cfs.taskID(), name, n.relativePath())
+		log.Warningf("[%s] Symlink could not add child %q to %q, already exists", n.cfs.taskID(), name, n.relativePath())
 		return nil, syscall.EIO
 	}
 
@@ -539,8 +548,8 @@ func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
 		return syscall.EPERM
 	}
 
-	if existingNode.scratchFile != "" {
-		return fs.ToErrno(os.Remove(existingNode.scratchPath()))
+	if existingNode.scratchFilePath != "" {
+		return fs.ToErrno(os.Remove(existingNode.computeScratchPath()))
 	}
 
 	if existingNode.symlinkTarget != "" {
