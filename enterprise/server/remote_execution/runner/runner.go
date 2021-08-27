@@ -174,12 +174,12 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.Execution
 	return nil
 }
 
-func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+func (r *CommandRunner) Run(ctx context.Context, task *repb.ExecutionTask, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
 		// TODO: Remove this `Run` method and call lifecycle methods directly.
-		return r.Container.Run(ctx, command, r.Workspace.Path())
+		return r.Container.Run(ctx, task, r.Workspace.Path(), fsLayout)
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
@@ -199,11 +199,11 @@ func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfa
 		return commandutil.ErrorResult(status.FailedPreconditionErrorf("unexpected runner state %d; this should never happen", r.state))
 	}
 
-	if r.supportsPersistentWorkers(ctx, command) {
-		return r.sendPersistentWorkRequest(ctx, command)
+	if r.supportsPersistentWorkers(ctx, task.GetCommand()) {
+		return r.sendPersistentWorkRequest(ctx, task, fsLayout)
 	}
 
-	return r.Container.Exec(ctx, command, nil, nil)
+	return r.Container.Exec(ctx, task, fsLayout, nil, nil)
 }
 
 func (r *CommandRunner) Remove(ctx context.Context) error {
@@ -582,9 +582,6 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	}
 	wsOpts := &workspace.Opts{Preserve: props.PreserveWorkspace}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
-	if err != nil {
-		return nil, err
-	}
 	ctr, err := p.newContainer(ctx, props, task.GetCommand())
 	if err != nil {
 		return nil, err
@@ -607,7 +604,8 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd
 	case platform.DockerContainerType:
 		opts := p.dockerOptions()
 		opts.ForceRoot = props.DockerForceRoot
-		ctr = docker.NewDockerContainer(
+		opts.EnableCASFS = props.EnableCASFS
+		ctr = docker.NewDockerContainer(p.env,
 			p.dockerClient, props.ContainerImage, p.hostBuildRoot(), opts)
 	case platform.ContainerdContainerType:
 		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
@@ -899,7 +897,8 @@ func (r *CommandRunner) supportsPersistentWorkers(ctx context.Context, command *
 	return len(flagFiles) > 0
 }
 
-func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, task *repb.ExecutionTask, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
+	command := task.GetCommand()
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(persistentworker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -917,7 +916,7 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 		command.Arguments = append(workerArgs, "--persistent_worker")
 
 		go func() {
-			res := r.Container.Exec(ctx, command, stdinReader, stdoutWriter)
+			res := r.Container.Exec(ctx, task, fsLayout, stdinReader, stdoutWriter)
 			stdinWriter.Close()
 			stdoutReader.Close()
 			log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)

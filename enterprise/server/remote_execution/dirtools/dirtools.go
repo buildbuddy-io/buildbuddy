@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/sync/errgroup"
@@ -641,7 +640,7 @@ func fetchDir(ctx context.Context, bsClient bspb.ByteStreamClient, reqDigest *di
 	return dir, nil
 }
 
-func dirMapFromTree(tree *repb.Tree) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
+func DirMapFromTree(tree *repb.Tree) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
 	dirMap = make(map[digest.Key]*repb.Directory, 1+len(tree.Children))
 
 	rootDigest, err = digest.ComputeForMessage(tree.Root)
@@ -659,18 +658,6 @@ func dirMapFromTree(tree *repb.Tree) (rootDigest *repb.Digest, dirMap map[digest
 	}
 
 	return rootDigest, dirMap, nil
-}
-
-func BuildDirMap(tree *repb.Tree) (map[digest.Key]*repb.Directory, error) {
-	dirMap := make(map[digest.Key]*repb.Directory)
-	for _, dir := range tree.GetChildren() {
-		d, err := digest.ComputeForMessage(dir)
-		if err != nil {
-			return nil, err
-		}
-		dirMap[digest.NewKey(d)] = dir
-	}
-	return dirMap, nil
 }
 
 func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, d *digest.InstanceNameDigest) (*repb.Tree, error) {
@@ -713,33 +700,6 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 	}, nil
 }
 
-func dirMapFromRootDirectoryDigest(ctx context.Context, env environment.Env, d *digest.InstanceNameDigest) (map[digest.Key]*repb.Directory, error) {
-	tree, err := GetTreeFromRootDirectoryDigest(ctx, env.GetContentAddressableStorageClient(), d)
-	if err != nil {
-		return nil, err
-	}
-
-	dirMap := make(map[digest.Key]*repb.Directory, 0)
-	addDir := func(dir *repb.Directory) error {
-		d, err := digest.ComputeForMessage(dir)
-		if err != nil {
-			return err
-		}
-		dirMap[digest.NewKey(d)] = dir
-		return nil
-	}
-
-	if err := addDir(tree.GetRoot()); err != nil {
-		return nil, err
-	}
-	for _, child := range tree.GetChildren() {
-		if err := addDir(child); err != nil {
-			return nil, err
-		}
-	}
-	return dirMap, nil
-}
-
 type DownloadTreeOpts struct {
 	// Skip specifies file paths to skip, along with their digests. If the digest
 	// of a file to be downloaded doesn't match the digest of the file in this
@@ -754,29 +714,12 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 
-	rootDirectoryDigest, dirMap, err := dirMapFromTree(tree)
+	rootDirectoryDigest, dirMap, err := DirMapFromTree(tree)
 	if err != nil {
 		return nil, err
 	}
 
 	return downloadTree(ctx, env, instanceName, rootDirectoryDigest, rootDir, dirMap, startTime, txInfo, opts)
-}
-
-func DownloadTreeFromRootDirectoryDigest(ctx context.Context, env environment.Env, d *digest.InstanceNameDigest, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
-	txInfo := &TransferInfo{}
-	startTime := time.Now()
-
-	// IO: fetch the tree
-	dirMap, err := dirMapFromRootDirectoryDigest(ctx, env, d)
-	if err != nil {
-		log.Debugf("Failed to fetch root directory tree: %s", err)
-		if gstatus.Code(err) == codes.NotFound {
-			return nil, digest.MissingDigestError(d.Digest)
-		}
-		return nil, err
-	}
-
-	return downloadTree(ctx, env, d.GetInstanceName(), d.Digest, rootDir, dirMap, startTime, txInfo, opts)
 }
 
 func downloadTree(ctx context.Context, env environment.Env, instanceName string, rootDirectoryDigest *repb.Digest, rootDir string, dirMap map[digest.Key]*repb.Directory, startTime time.Time, txInfo *TransferInfo, opts *DownloadTreeOpts) (*TransferInfo, error) {

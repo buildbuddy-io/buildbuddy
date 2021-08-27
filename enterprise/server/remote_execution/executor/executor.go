@@ -7,6 +7,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -52,10 +54,11 @@ const (
 )
 
 type Executor struct {
-	env        environment.Env
-	runnerPool *runner.Pool
-	id         string
-	name       string
+	env         environment.Env
+	runnerPool  *runner.Pool
+	id          string
+	name        string
+	enableCASFS bool
 }
 
 type Options struct {
@@ -80,12 +83,12 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 	if err != nil {
 		return nil, err
 	}
-
 	s := &Executor{
-		env:        env,
-		id:         id,
-		name:       name,
-		runnerPool: runnerPool,
+		env:         env,
+		id:          id,
+		name:        name,
+		runnerPool:  runnerPool,
+		enableCASFS: executorConfig.EnableCASFS,
 	}
 	if hc := env.GetHealthChecker(); hc != nil {
 		hc.RegisterShutdownFunction(runnerPool.Shutdown)
@@ -194,9 +197,25 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	}()
 
 	md.InputFetchStartTimestamp = ptypes.TimestampNow()
-	rxInfo, err := r.Workspace.DownloadInputs(ctx)
+
+	rootInstanceDigest := digest.NewInstanceNameDigest(
+		task.GetAction().GetInputRootDigest(),
+		task.GetExecuteRequest().GetInstanceName(),
+	)
+	inputTree, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, s.env.GetContentAddressableStorageClient(), rootInstanceDigest)
 	if err != nil {
 		return finishWithErrFn(err)
+	}
+
+	enableCASFS := r.PlatformProperties.EnableCASFS && s.enableCASFS
+	rxInfo := &dirtools.TransferInfo{}
+	// Don't download inputs if the FUSE-based filesystem is enabled.
+	// TODO(vadim): integrate CASFS stats
+	if !enableCASFS {
+		rxInfo, err = r.Workspace.DownloadInputs(ctx, inputTree)
+		if err != nil {
+			return finishWithErrFn(err)
+		}
 	}
 	md.InputFetchCompletedTimestamp = ptypes.TimestampNow()
 
@@ -216,9 +235,15 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	ctx, cancel := context.WithTimeout(ctx, execDuration)
 	defer cancel()
 
+	layout := &container.FileSystemLayout{
+		Inputs:      inputTree,
+		OutputDirs:  task.GetCommand().GetOutputDirectories(),
+		OutputFiles: task.GetCommand().GetOutputFiles(),
+	}
+
 	cmdResultChan := make(chan *interfaces.CommandResult, 1)
 	go func() {
-		cmdResultChan <- r.Run(ctx, task.GetCommand())
+		cmdResultChan <- r.Run(ctx, task, layout)
 	}()
 
 	// Run a timer that periodically sends update messages back

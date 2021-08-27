@@ -79,16 +79,7 @@ func (cfs *CASFS) PrepareForTask(ctx context.Context, fileFetcher *dirtools.Batc
 	cfs.mu.Lock()
 	defer cfs.mu.Unlock()
 
-	rootDirectory := fsLayout.Inputs.GetRoot()
-	rootDirectoryDigest, err := digest.ComputeForMessage(rootDirectory)
-	if err != nil {
-		return err
-	}
-	if rootDirectoryDigest.Hash == digest.EmptySha256 {
-		return nil
-	}
-
-	dirMap, err := dirtools.BuildDirMap(fsLayout.Inputs)
+	_, dirMap, err := dirtools.DirMapFromTree(fsLayout.Inputs)
 	if err != nil {
 		return err
 	}
@@ -136,7 +127,7 @@ func (cfs *CASFS) PrepareForTask(ctx context.Context, fileFetcher *dirtools.Batc
 		return nil
 	}
 
-	err = walkDir(rootDirectory, cfs.root)
+	err = walkDir(fsLayout.Inputs.GetRoot(), cfs.root)
 	if err != nil {
 		return err
 	}

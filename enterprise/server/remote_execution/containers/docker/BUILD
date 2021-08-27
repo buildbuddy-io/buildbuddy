@@ -7,9 +7,12 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/remote_execution/casfs",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/dirtools",
         "//proto:remote_execution_go_proto",
+        "//server/environment",
         "//server/interfaces",
         "//server/util/log",
         "//server/util/random",

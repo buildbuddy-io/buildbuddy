@@ -40,6 +40,7 @@ go_test(
     srcs = ["runner_test.go"],
     deps = [
         ":runner",
+        "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/tasksize",
