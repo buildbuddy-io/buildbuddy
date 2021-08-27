@@ -510,24 +510,6 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 	return nil
 }
 
-type BatchFileFetcher struct {
-	ctx          context.Context
-	instanceName string
-	fileCache    interfaces.FileCache
-	bsClient     bspb.ByteStreamClient
-	casClient    repb.ContentAddressableStorageClient
-}
-
-func NewBatchFileFetcher(ctx context.Context, instanceName string, fileCache interfaces.FileCache, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient) *BatchFileFetcher {
-	return &BatchFileFetcher{
-		ctx:          ctx,
-		instanceName: instanceName,
-		fileCache:    fileCache,
-		bsClient:     bsClient,
-		casClient:    casClient,
-	}
-}
-
 func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeOpts) error {
 	req := &repb.BatchReadBlobsRequest{
 		InstanceName: ff.instanceName,
