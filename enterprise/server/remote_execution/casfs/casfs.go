@@ -349,7 +349,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	if err := syscall.Fstat(fd, &st); err != nil {
 		closeErr := syscall.Close(fd)
 		if closeErr != nil {
-			log.Warningf("[%s] Could not close file descriptor for %q: %s", scratchPath, closeErr)
+			log.Warningf("[%s] Could not close file descriptor for %q: %s", n.cfs.taskID(), scratchPath, closeErr)
 		}
 		return nil, nil, 0, fs.ToErrno(err)
 	}
