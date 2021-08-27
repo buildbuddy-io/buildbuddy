@@ -338,7 +338,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         {this.state.command.environmentVariables.map((variable) => (
                           <div>
                             <span className="prop-name">{variable.name}</span>
-                            <span className="metadata-detail">={variable.value}</span>
+                            <span className="env-detail">={variable.value}</span>
                           </div>
                         ))}
                       </div>
