@@ -99,7 +99,7 @@ func main() {
 		log.Fatalf("Could not fetch input root structure: %s", err)
 	}
 
-	layout := &container.FilesystemLayout{
+	layout := &container.FileSystemLayout{
 		Inputs:      dirs,
 		OutputDirs:  command.GetOutputDirectories(),
 		OutputFiles: command.GetOutputFiles(),

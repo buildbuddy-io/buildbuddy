@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/sync/errgroup"
@@ -457,6 +456,24 @@ func linkFileFromFileCache(d *repb.Digest, fp *FilePointer, fc interfaces.FileCa
 // addressed by the digest.
 type FileMap map[digest.Key][]*FilePointer
 
+type BatchFileFetcher struct {
+	ctx          context.Context
+	instanceName string
+	fileCache    interfaces.FileCache
+	bsClient     bspb.ByteStreamClient
+	casClient    repb.ContentAddressableStorageClient
+}
+
+func NewBatchFileFetcher(ctx context.Context, instanceName string, fileCache interfaces.FileCache, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient) *BatchFileFetcher {
+	return &BatchFileFetcher{
+		ctx:          ctx,
+		instanceName: instanceName,
+		fileCache:    fileCache,
+		bsClient:     bsClient,
+		casClient:    casClient,
+	}
+}
+
 func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.BatchReadBlobsRequest, filesToFetch FileMap, opts *DownloadTreeOpts) error {
 	var rsp, err = ff.casClient.BatchReadBlobs(ctx, req)
 	if err != nil {
@@ -490,24 +507,6 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 		}
 	}
 	return nil
-}
-
-type BatchFileFetcher struct {
-	ctx          context.Context
-	instanceName string
-	fileCache    interfaces.FileCache
-	bsClient     bspb.ByteStreamClient
-	casClient    repb.ContentAddressableStorageClient
-}
-
-func NewBatchFileFetcher(ctx context.Context, instanceName string, fileCache interfaces.FileCache, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient) *BatchFileFetcher {
-	return &BatchFileFetcher{
-		ctx:          ctx,
-		instanceName: instanceName,
-		fileCache:    fileCache,
-		bsClient:     bsClient,
-		casClient:    casClient,
-	}
 }
 
 func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeOpts) error {
@@ -641,7 +640,7 @@ func fetchDir(ctx context.Context, bsClient bspb.ByteStreamClient, reqDigest *di
 	return dir, nil
 }
 
-func dirMapFromTree(tree *repb.Tree) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
+func DirMapFromTree(tree *repb.Tree) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
 	dirMap = make(map[digest.Key]*repb.Directory, 1+len(tree.Children))
 
 	rootDigest, err = digest.ComputeForMessage(tree.Root)
@@ -701,54 +700,6 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 	}, nil
 }
 
-func BuildDirMap(tree *repb.Tree) (map[digest.Key]*repb.Directory, error) {
-	dirMap := make(map[digest.Key]*repb.Directory)
-	for _, dir := range tree.GetChildren() {
-		d, err := digest.ComputeForMessage(dir)
-		if err != nil {
-			return nil, err
-		}
-		dirMap[digest.NewKey(d)] = dir
-	}
-	return dirMap, nil
-}
-
-func GetDirMapFromRootDirectoryDigest(ctx context.Context, env environment.Env, d *digest.InstanceNameDigest) (map[digest.Key]*repb.Directory, error) {
-	dirMap := make(map[digest.Key]*repb.Directory, 0)
-	nextPageToken := ""
-	for {
-		stream, err := env.GetContentAddressableStorageClient().GetTree(ctx, &repb.GetTreeRequest{
-			RootDigest:   d.Digest,
-			InstanceName: d.GetInstanceName(),
-			PageToken:    nextPageToken,
-		})
-		if err != nil {
-			return nil, err
-		}
-		for {
-			rsp, err := stream.Recv()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return nil, err
-			}
-			nextPageToken = rsp.GetNextPageToken()
-			for _, child := range rsp.GetDirectories() {
-				d, err := digest.ComputeForMessage(child)
-				if err != nil {
-					return nil, err
-				}
-				dirMap[digest.NewKey(d)] = child
-			}
-		}
-		if nextPageToken == "" {
-			break
-		}
-	}
-	return dirMap, nil
-}
-
 type DownloadTreeOpts struct {
 	// Skip specifies file paths to skip, along with their digests. If the digest
 	// of a file to be downloaded doesn't match the digest of the file in this
@@ -763,29 +714,12 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 
-	rootDirectoryDigest, dirMap, err := dirMapFromTree(tree)
+	rootDirectoryDigest, dirMap, err := DirMapFromTree(tree)
 	if err != nil {
 		return nil, err
 	}
 
 	return downloadTree(ctx, env, instanceName, rootDirectoryDigest, rootDir, dirMap, startTime, txInfo, opts)
-}
-
-func DownloadTreeFromRootDirectoryDigest(ctx context.Context, env environment.Env, d *digest.InstanceNameDigest, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
-	txInfo := &TransferInfo{}
-	startTime := time.Now()
-
-	// IO: fetch the tree
-	dirMap, err := GetDirMapFromRootDirectoryDigest(ctx, env, d)
-	if err != nil {
-		log.Debugf("Failed to fetch root directory tree: %s", err)
-		if gstatus.Code(err) == codes.NotFound {
-			return nil, digest.MissingDigestError(d.Digest)
-		}
-		return nil, err
-	}
-
-	return downloadTree(ctx, env, d.GetInstanceName(), d.Digest, rootDir, dirMap, startTime, txInfo, opts)
 }
 
 func downloadTree(ctx context.Context, env environment.Env, instanceName string, rootDirectoryDigest *repb.Digest, rootDir string, dirMap map[digest.Key]*repb.Directory, startTime time.Time, txInfo *TransferInfo, opts *DownloadTreeOpts) (*TransferInfo, error) {
@@ -836,27 +770,17 @@ func downloadTree(ctx context.Context, env environment.Env, instanceName string,
 				return err
 			}
 		}
-		//for _, symlinkNode := range dir.GetSymlinks() {
-		//if err := os.Symlink(symlinkNode.GetTarget(), symlinkNode.GetName()); err != nil {
-		//	return err
-		//}
-		//}
+		for _, symlinkNode := range dir.GetSymlinks() {
+			if err := os.Symlink(symlinkNode.GetTarget(), symlinkNode.GetName()); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	// Create the directory structure and track files to download.
 	if err := fetchDirFn(dirMap[digest.NewKey(rootDirectoryDigest)], rootDir); err != nil {
 		return nil, err
 	}
-
-	//log.Infof("FILES TO FETCH:")
-	//
-	//for _, v := range filesToFetch {
-	//	var paths []string
-	//	for _, fp := range v {
-	//		paths = append(paths, fp.RelativePath+"=>"+fp.FullPath)
-	//	}
-	//	//log.Infof("FILES: %s", strings.Join(paths, ", "))
-	//}
 
 	ff := NewBatchFileFetcher(ctx, instanceName, env.GetFileCache(), env.GetByteStreamClient(), env.GetContentAddressableStorageClient())
 

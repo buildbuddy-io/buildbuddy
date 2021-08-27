@@ -22,7 +22,7 @@ type Stats struct {
 	// are frozen when not in use, reducing their CPU usage to 0.
 }
 
-type FilesystemLayout struct {
+type FileSystemLayout struct {
 	Inputs      *repb.Tree
 	OutputDirs  []string
 	OutputFiles []string
@@ -35,7 +35,7 @@ type CommandContainer interface {
 	//
 	// It is approximately the same as calling PullImageIfNecessary, Create,
 	// Exec, then Remove.
-	Run(ctx context.Context, command *repb.Command, workingDir string, fsLayout *FilesystemLayout) *interfaces.CommandResult
+	Run(ctx context.Context, task *repb.ExecutionTask, workingDir string, fsLayout *FileSystemLayout) *interfaces.CommandResult
 
 	// PullImageIfNecessary pulls the container image if it is not already
 	// available locally.
@@ -54,7 +54,7 @@ type CommandContainer interface {
 	// the executed process.
 	// If stdout is non-nil, the stdout of the executed process will be written to the
 	// stdout writer.
-	Exec(ctx context.Context, command *repb.Command, fsLayout *FilesystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult
+	Exec(ctx context.Context, task *repb.ExecutionTask, fsLayout *FileSystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult
 	// Unpause un-freezes a container so that it can be used to execute commands.
 	Unpause(ctx context.Context) error
 	// Pause freezes a container so that it no longer consumes CPU resources.
@@ -73,10 +73,10 @@ type TracedCommandContainer struct {
 	implAttr attribute.KeyValue
 }
 
-func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, fsLayout *FilesystemLayout) *interfaces.CommandResult {
+func (t *TracedCommandContainer) Run(ctx context.Context, task *repb.ExecutionTask, workingDir string, fsLayout *FileSystemLayout) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Run(ctx, command, workingDir, fsLayout)
+	return t.delegate.Run(ctx, task, workingDir, fsLayout)
 }
 
 func (t *TracedCommandContainer) PullImageIfNecessary(ctx context.Context) error {
@@ -91,10 +91,10 @@ func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) 
 	return t.delegate.Create(ctx, workingDir)
 }
 
-func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, fsLayout *FilesystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (t *TracedCommandContainer) Exec(ctx context.Context, task *repb.ExecutionTask, fsLayout *FileSystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Exec(ctx, command, fsLayout, stdin, stdout)
+	return t.delegate.Exec(ctx, task, fsLayout, stdin, stdout)
 }
 
 func (t *TracedCommandContainer) Unpause(ctx context.Context) error {

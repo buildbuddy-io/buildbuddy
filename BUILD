@@ -143,3 +143,14 @@ platform(
         "workload-isolation-type": "firecracker",
     },
 )
+
+platform(
+    name = "casfs",
+    constraint_values = [
+        "@bazel_tools//platforms:x86_64",
+        "@bazel_tools//platforms:linux",
+    ],
+    exec_properties = {
+        "enable-casfs": "true",
+    },
+)

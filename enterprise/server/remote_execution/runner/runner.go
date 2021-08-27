@@ -163,9 +163,9 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.Execution
 			return err
 		}
 	}
-	//if err := r.Workspace.CreateOutputDirs(); err != nil {
-	//	return status.UnavailableErrorf("Error creating output directory: %s", err.Error())
-	//}
+	if err := r.Workspace.CreateOutputDirs(); err != nil {
+		return status.UnavailableErrorf("Error creating output directory: %s", err.Error())
+	}
 
 	// Pull the container image before Run() is called, so that we don't
 	// use up the whole exec ctx timeout with a slow container pull.
@@ -175,17 +175,13 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.Execution
 	return nil
 }
 
-func (r *CommandRunner) CreateOutputDirs() error {
-	return r.Workspace.CreateOutputDirs()
-}
-
-func (r *CommandRunner) Run(ctx context.Context, command *repb.Command, fsLayout *container.FilesystemLayout) *interfaces.CommandResult {
+func (r *CommandRunner) Run(ctx context.Context, task *repb.ExecutionTask, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
 	//log.Infof("Run command:\n%s", proto.MarshalTextString(command))
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
 		// TODO: Remove this `Run` method and call lifecycle methods directly.
-		return r.Container.Run(ctx, command, r.Workspace.Path(), fsLayout)
+		return r.Container.Run(ctx, task, r.Workspace.Path(), fsLayout)
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
@@ -205,11 +201,11 @@ func (r *CommandRunner) Run(ctx context.Context, command *repb.Command, fsLayout
 		return commandutil.ErrorResult(status.FailedPreconditionErrorf("unexpected runner state %d; this should never happen", r.state))
 	}
 
-	if r.supportsPersistentWorkers(ctx, command) {
-		return r.sendPersistentWorkRequest(ctx, command)
+	if r.supportsPersistentWorkers(ctx, task.GetCommand()) {
+		return r.sendPersistentWorkRequest(ctx, task, fsLayout)
 	}
 
-	return r.Container.Exec(ctx, command, fsLayout, nil, nil)
+	return r.Container.Exec(ctx, task, fsLayout, nil, nil)
 }
 
 func (r *CommandRunner) Remove(ctx context.Context) error {
@@ -617,6 +613,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd
 	case platform.DockerContainerType:
 		opts := p.dockerOptions()
 		opts.ForceRoot = props.DockerForceRoot
+		opts.EnableCASFS = props.EnableCASFS
 		ctr = docker.NewDockerContainer(p.env,
 			p.dockerClient, props.ContainerImage, p.hostBuildRoot(), opts)
 	case platform.ContainerdContainerType:
@@ -909,7 +906,8 @@ func (r *CommandRunner) supportsPersistentWorkers(ctx context.Context, command *
 	return len(flagFiles) > 0
 }
 
-func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, task *repb.ExecutionTask, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
+	command := task.GetCommand()
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(persistentworker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -927,8 +925,7 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 		command.Arguments = append(workerArgs, "--persistent_worker")
 
 		go func() {
-			// XXX what should the layout be here? do we need to update it per command?
-			res := r.Container.Exec(ctx, command, nil, stdinReader, stdoutWriter)
+			res := r.Container.Exec(ctx, task, fsLayout, stdinReader, stdoutWriter)
 			stdinWriter.Close()
 			stdoutReader.Close()
 			log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)

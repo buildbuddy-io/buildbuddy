@@ -2,7 +2,14 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "casfs",
-    srcs = ["casfs.go"],
+    srcs = ["casfs.go"] + select({
+        "@io_bazel_rules_go//go/platform:darwin": [
+            "casfs_darwin.go",
+        ],
+        "@io_bazel_rules_go//go/platform:linux": [
+            "casfs_linux.go",
+        ],
+    }),
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs",
     visibility = ["//visibility:public"],
     deps = [

@@ -99,7 +99,8 @@ func formatCommand(args []string) string {
 	return strings.Join(quoted, " ")
 }
 
-func (r *containerdCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, fsLayout *container.FilesystemLayout) *interfaces.CommandResult {
+func (r *containerdCommandContainer) Run(ctx context.Context, task *repb.ExecutionTask, workDir string, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
+	command := task.GetCommand()
 	result := &interfaces.CommandResult{
 		ExitCode:           commandutil.NoExitCode,
 		CommandDebugString: "(containerd) " + formatCommand(command.Arguments),
@@ -176,20 +177,20 @@ func (r *containerdCommandContainer) Run(ctx context.Context, command *repb.Comm
 
 	// Create and run the container task.
 	var stdout, stderr bytes.Buffer
-	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, &stdout, &stderr)))
+	cdTask, err := container.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, &stdout, &stderr)))
 	if err != nil {
 		result.Error = err
 		return result
 	}
 	cleanupFns = append(cleanupFns, func(ctx context.Context) error {
-		if err := cleanupProcess(ctx, task); err != nil {
+		if err := cleanupProcess(ctx, cdTask); err != nil {
 			return status.InternalErrorf("Failed to clean up process: %s", err)
 		}
 		return nil
 	})
 	log.Debugf("Starting command in container: %s", result.CommandDebugString)
 	start := time.Now()
-	result.ExitCode, result.Error = run(ctx, task)
+	result.ExitCode, result.Error = run(ctx, cdTask)
 	log.Debugf("Command completed in %s", time.Since(start))
 	result.Stdout = stdout.Bytes()
 	result.Stderr = stderr.Bytes()
@@ -353,7 +354,7 @@ func cleanupProcess(ctx context.Context, proc containerd.Process) error {
 func (r *containerdCommandContainer) Create(ctx context.Context, workDir string) error {
 	return status.UnimplementedError("not implemented")
 }
-func (r *containerdCommandContainer) Exec(ctx context.Context, cmd *repb.Command, fsLayout *container.FilesystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (r *containerdCommandContainer) Exec(ctx context.Context, task *repb.ExecutionTask, fsLayout *container.FileSystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	res := &interfaces.CommandResult{}
 	res.Error = status.UnimplementedError("not implemented")
 	return res

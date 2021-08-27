@@ -46,6 +46,7 @@ type DockerOptions struct {
 	ForceRoot               bool
 	DockerMountMode         string
 	InheritUserIDs          bool
+	EnableCASFS             bool
 }
 
 // dockerCommandContainer containerizes a command's execution using a Docker container.
@@ -77,7 +78,8 @@ func NewDockerContainer(env environment.Env, client *dockerclient.Client, image,
 	}
 }
 
-func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, fsLayout *container.FilesystemLayout) *interfaces.CommandResult {
+func (r *dockerCommandContainer) Run(ctx context.Context, task *repb.ExecutionTask, workDir string, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
+	command := task.GetCommand()
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -89,30 +91,33 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
-	casFsDir := workDir + "_casfs"
-	if err := os.Mkdir(casFsDir, 0755); err != nil {
-		result.Error = status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
-		return result
-	}
-
-	casfs := casfs.New(workDir, &casfs.Options{})
-	log.Warningf("Mounting CAS FS at %q", casFsDir)
-	if err := casfs.Mount(casFsDir); err != nil {
-		result.Error = status.UnavailableErrorf("unable to mount CASFS at %q: %s", casFsDir, err)
-		return result
-	}
-	fileFetcher := dirtools.NewBatchFileFetcher(ctx, "", r.env.GetFileCache(), r.env.GetByteStreamClient(), r.env.GetContentAddressableStorageClient())
-	err = casfs.PrepareForTask(ctx, fileFetcher, "taskID", fsLayout)
-	if err != nil {
-		result.Error = status.UnavailableErrorf("unable to prepare CASFS layout at %q: %s", casFsDir, err)
-		return result
-	}
-	defer func() {
-		err := casfs.Unmount()
-		if err != nil {
-			log.Warningf("CASFS unmount failed: %s", err)
+	containerRootDir := workDir
+	if r.options.EnableCASFS && r.env.GetConfigurator().GetExecutorConfig().EnableCASFS {
+		casfsDir := workDir + "_casfs"
+		if err := os.Mkdir(casfsDir, 0755); err != nil {
+			result.Error = status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
+			return result
 		}
-	}()
+
+		cfs := casfs.New(workDir, &casfs.Options{})
+		if err := cfs.Mount(casfsDir); err != nil {
+			result.Error = status.UnavailableErrorf("unable to mount CASFS at %q: %s", casfsDir, err)
+			return result
+		}
+		fileFetcher := dirtools.NewBatchFileFetcher(ctx, task.GetExecuteRequest().GetInstanceName(), r.env.GetFileCache(), r.env.GetByteStreamClient(), r.env.GetContentAddressableStorageClient())
+		err = cfs.PrepareForTask(ctx, fileFetcher, task.GetExecutionId(), fsLayout)
+		if err != nil {
+			result.Error = status.UnavailableErrorf("unable to prepare CASFS layout at %q: %s", casfsDir, err)
+			return result
+		}
+		defer func() {
+			err := cfs.Unmount()
+			if err != nil {
+				log.Warningf("CASFS unmount failed: %s", err)
+			}
+		}()
+		containerRootDir = casfsDir
+	}
 
 	// explicitly pull the image before running to avoid the
 	// pull output logs spilling into the execution logs.
@@ -121,15 +126,10 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
-	log.Infof("Command arguments: %s", command.GetArguments())
-	for _, c := range command.GetArguments() {
-		fmt.Printf("%s\n", c)
-	}
-
 	containerCfg, err := r.containerConfig(
 		command.GetArguments(),
 		commandutil.EnvStringList(command),
-		casFsDir,
+		containerRootDir,
 	)
 	if err != nil {
 		result.Error = err
@@ -138,7 +138,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 	createResponse, err := r.client.ContainerCreate(
 		ctx,
 		containerCfg,
-		r.hostConfig(casFsDir),
+		r.hostConfig(containerRootDir),
 		/*networkingConfig=*/ nil,
 		/*platform=*/ nil,
 		containerName,
@@ -202,9 +202,9 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 			return result
 		}
 	}
-	log.Infof("RESULT ERROR: %s", result.Error)
-	log.Infof("STDOUT: %s", string(result.Stdout))
-	log.Infof("STDERR: %s", string(result.Stderr))
+	//log.Infof("RESULT ERROR: %v", result.Error)
+	//log.Infof("STDOUT: %s", string(result.Stdout))
+	//log.Infof("STDERR: %s", string(result.Stderr))
 	return result
 }
 
@@ -255,8 +255,6 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	}
 
 	containerRoot := filepath.Join(r.hostRootDir, filepath.Base(workDir))
-	log.Infof("CONTAINER ROOT: %s", containerRoot)
-
 	binds := []string{
 		fmt.Sprintf(
 			"%s:%s%s",
@@ -271,8 +269,6 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	if r.options.EnableSiblingContainers {
 		binds = append(binds, fmt.Sprintf("%s:%s%s", r.options.Socket, r.options.Socket, mountMode))
 	}
-
-	log.Warningf("BINDS: %s", binds)
 
 	return &dockercontainer.HostConfig{
 		NetworkMode: networkMode,
@@ -379,11 +375,11 @@ func (r *dockerCommandContainer) create(ctx context.Context, workDir string) err
 	return nil
 }
 
-func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command, fsLayout *container.FilesystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (r *dockerCommandContainer) Exec(ctx context.Context, task *repb.ExecutionTask, fsLayout *container.FileSystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	var res *interfaces.CommandResult
 	// Ignore error from this function; it is returned as part of res.
-	commandutil.RetryIfTextFileBusy(func() error {
-		res = r.exec(ctx, command, stdin, stdout)
+	_ = commandutil.RetryIfTextFileBusy(func() error {
+		res = r.exec(ctx, task.GetCommand(), stdin, stdout)
 		return res.Error
 	})
 	return res

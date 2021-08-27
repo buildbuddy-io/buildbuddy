@@ -54,10 +54,11 @@ const (
 )
 
 type Executor struct {
-	env        environment.Env
-	runnerPool *runner.Pool
-	id         string
-	name       string
+	env         environment.Env
+	runnerPool  *runner.Pool
+	id          string
+	name        string
+	enableCASFS bool
 }
 
 type Options struct {
@@ -83,17 +84,18 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 		return nil, err
 	}
 	s := &Executor{
-		env:        env,
-		id:         id,
-		name:       name,
-		runnerPool: runnerPool,
+		env:         env,
+		id:          id,
+		name:        name,
+		runnerPool:  runnerPool,
+		enableCASFS: executorConfig.EnableCASFS,
 	}
 	if hc := env.GetHealthChecker(); hc != nil {
 		hc.RegisterShutdownFunction(runnerPool.Shutdown)
 	} else {
 		return nil, status.FailedPreconditionError("Missing health checker in env")
 	}
-	//go s.runnerPool.WarmupDefaultImage()
+	go s.runnerPool.WarmupDefaultImage()
 	return s, nil
 }
 
@@ -181,14 +183,11 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		}
 	}
 
-	log.Infof("GET RUNNER")
-
 	r, err := s.runnerPool.Get(ctx, task)
 	if err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error creating runner for command: %s", err.Error()))
 	}
 	if err := r.PrepareForTask(ctx, task); err != nil {
-		log.Infof("PREPARE FAILED: %s", err)
 		return finishWithErrFn(err)
 	}
 
@@ -203,22 +202,23 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		task.GetAction().GetInputRootDigest(),
 		task.GetExecuteRequest().GetInstanceName(),
 	)
-	dirs, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, s.env.GetContentAddressableStorageClient(), rootInstanceDigest)
+	inputTree, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, s.env.GetContentAddressableStorageClient(), rootInstanceDigest)
 	if err != nil {
 		return finishWithErrFn(err)
 	}
 
-	rxInfo, err := r.Workspace.DownloadInputs(ctx)
-	if err != nil {
-		return finishWithErrFn(err)
+	// also check flag
+	enableCASFS := r.PlatformProperties.EnableCASFS && s.enableCASFS
+	rxInfo := &dirtools.TransferInfo{}
+	// Don't download inputs if the FUSE-based filesystem is enabled.
+	// TODO(vadim): integrate CASFS stats
+	if !enableCASFS {
+		rxInfo, err = r.Workspace.DownloadInputs(ctx, inputTree)
+		if err != nil {
+			return finishWithErrFn(err)
+		}
 	}
 	md.InputFetchCompletedTimestamp = ptypes.TimestampNow()
-
-	log.Warningf("CREATE OUTPUT DIRS")
-	if err := r.Workspace.CreateOutputDirs(); err != nil {
-		return err
-	}
-	log.Warningf("CREATE OUTPUT DIRS DONE")
 
 	if err := stateChangeFn(repb.ExecutionStage_EXECUTING, operation.InProgressExecuteResponse()); err != nil {
 		return err // CHECK (these errors should not happen).
@@ -236,18 +236,15 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	ctx, cancel := context.WithTimeout(ctx, execDuration)
 	defer cancel()
 
-	log.Warningf("EXEC %s", taskID)
-
-	layout := &container.FilesystemLayout{
-		Inputs:      dirs,
+	layout := &container.FileSystemLayout{
+		Inputs:      inputTree,
 		OutputDirs:  task.GetCommand().GetOutputDirectories(),
 		OutputFiles: task.GetCommand().GetOutputFiles(),
 	}
 
 	cmdResultChan := make(chan *interfaces.CommandResult, 1)
 	go func() {
-		cmdResultChan <- r.Run(ctx, task.GetCommand(), layout)
-		log.Warningf("EXEC DONE %s", taskID)
+		cmdResultChan <- r.Run(ctx, task, layout)
 	}()
 
 	// Run a timer that periodically sends update messages back
@@ -289,25 +286,19 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	actionResult := &repb.ActionResult{}
 	actionResult.ExitCode = int32(cmdResult.ExitCode)
 
-	log.Warningf("UPLOAD OUTPUTS %s", taskID)
-
 	txInfo, err := r.Workspace.UploadOutputs(ctx, actionResult, cmdResult)
 	if err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
 	}
-	log.Warningf("UPLOAD OUTPUTS DONE")
 	md.OutputUploadCompletedTimestamp = ptypes.TimestampNow()
 	md.WorkerCompletedTimestamp = ptypes.TimestampNow()
 	actionResult.ExecutionMetadata = md
 
 	if !task.GetAction().GetDoNotCache() && cmdResult.Error == nil && cmdResult.ExitCode == 0 {
-		log.Warningf("UPLOAD ACTION RESULT %s", taskID)
 		if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
 			return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
 		}
 	}
-
-	log.Warningf("DONE %s", taskID)
 
 	metrics.RemoteExecutionCount.With(prometheus.Labels{
 		metrics.ExitCodeLabel: fmt.Sprintf("%d", actionResult.ExitCode),
@@ -327,18 +318,17 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	execSummary := &espb.ExecutionSummary{
 		IoStats: &espb.IOStats{
 			// Download
-			//FileDownloadCount:        rxInfo.FileCount,
-			//FileDownloadSizeBytes:    rxInfo.BytesTransferred,
-			//FileDownloadDurationUsec: rxInfo.TransferDuration.Microseconds(),
-			//// Upload
-			//FileUploadCount:        txInfo.FileCount,
-			//FileUploadSizeBytes:    txInfo.BytesTransferred,
-			//FileUploadDurationUsec: txInfo.TransferDuration.Microseconds(),
+			FileDownloadCount:        rxInfo.FileCount,
+			FileDownloadSizeBytes:    rxInfo.BytesTransferred,
+			FileDownloadDurationUsec: rxInfo.TransferDuration.Microseconds(),
+			// Upload
+			FileUploadCount:        txInfo.FileCount,
+			FileUploadSizeBytes:    txInfo.BytesTransferred,
+			FileUploadDurationUsec: txInfo.TransferDuration.Microseconds(),
 		},
 		ExecutedActionMetadata: md,
 	}
 	code := gstatus.Code(cmdResult.Error)
-	log.Warningf("SEND COMPLETED %s", taskID)
 	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, execSummary, code)); err != nil {
 		logActionResult(taskID, md)
 		return finishWithErrFn(err) // CHECK (these errors should not happen).

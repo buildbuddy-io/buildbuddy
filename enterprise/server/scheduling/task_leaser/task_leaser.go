@@ -136,7 +136,6 @@ func (t *TaskLeaser) Close(taskErr error) error {
 
 	closeLeaseCleanly := taskErr == nil || isBazelRetryableError(taskErr)
 	closedCleanly := false
-	closeLeaseCleanly = true
 
 	if closeLeaseCleanly {
 		req := &scpb.LeaseTaskRequest{

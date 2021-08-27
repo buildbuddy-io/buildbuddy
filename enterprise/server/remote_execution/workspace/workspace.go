@@ -13,12 +13,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
-	"github.com/docker/go-units"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -108,27 +106,11 @@ func (ws *Workspace) CreateOutputDirs() error {
 		return WorkspaceMarkedForRemovalError
 	}
 
-	var dirsToCreate []string
-	for _, outputFile := range ws.task.GetCommand().GetOutputFiles() {
-		fullPath := filepath.Join(ws.Path(), outputFile)
-		dirsToCreate = append(dirsToCreate, filepath.Dir(fullPath))
-	}
-	for _, outputDir := range ws.task.GetCommand().GetOutputDirectories() {
-		fullPath := filepath.Join(ws.Path(), outputDir)
-		dirsToCreate = append(dirsToCreate, fullPath)
-	}
-	for _, dir := range dirsToCreate {
-		if err := disk.EnsureDirectoryExists(dir); err != nil {
-			return err
-		}
-	}
-	return nil
+	return ws.dirHelper.CreateOutputDirs()
 }
 
 // DownloadInputs downloads any missing inputs for the current action.
-func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo, error) {
-	log.Warningf("DOWNLOAD INPUTS")
-	defer log.Warningf("DOWNLOAD INPUTS DONE")
+func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirtools.TransferInfo, error) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
@@ -138,28 +120,20 @@ func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	rootInstanceDigest := digest.NewInstanceNameDigest(
-		ws.task.GetAction().GetInputRootDigest(),
-		ws.task.GetExecuteRequest().GetInstanceName(),
-	)
-
 	opts := &dirtools.DownloadTreeOpts{}
 	if ws.opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
-
-	txInfo, err := dirtools.DownloadTreeFromRootDirectoryDigest(ctx, ws.env, rootInstanceDigest, ws.rootDir, opts)
-	if err != nil {
-		return nil, err
+	txInfo, err := dirtools.DownloadTree(ctx, ws.env, ws.task.GetExecuteRequest().GetInstanceName(), tree, ws.rootDir, opts)
+	if err == nil {
+		for path, digest := range txInfo.Transfers {
+			ws.Inputs[path] = digest
+		}
+		mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
+		log.Debugf("GetTree downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
-	for path, digest := range txInfo.Transfers {
-		ws.Inputs[path] = digest
-	}
-	mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
-	log.Debugf("DownloadTree downloaded %s in %s [%2.2f MB/sec]", units.HumanSize(float64(txInfo.BytesTransferred)), txInfo.TransferDuration, mbps)
-
-	return txInfo, nil
+	return txInfo, err
 }
 
 // UploadOutputs uploads any outputs created by the last executed command
@@ -219,8 +193,7 @@ func (ws *Workspace) Remove() error {
 	// immediately fail since we've set the removing bit.
 	ws.mu.Unlock()
 
-	return nil
-	//return os.RemoveAll(ws.rootDir)
+	return os.RemoveAll(ws.rootDir)
 }
 
 // Size computes the current workspace size in bytes.
