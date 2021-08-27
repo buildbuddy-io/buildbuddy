@@ -23,9 +23,7 @@ export default class InputNodeComponent extends React.Component<Props, State> {
     return (
       <div className={`input-tree-node`}>
         <div
-          className={`input-tree-node-name ${expanded ? "input-tree-node-expanded" : ""} ${
-            this.props.node.type == "file" ? "input-tree-node-file" : "input-tree-node-folder"
-          }`}
+          className={`input-tree-node-name ${expanded ? "input-tree-node-expanded" : ""}`}
           onClick={() => this.props.handleFileClicked(this.props.node)}>
           <span>
             {this.props.node.type == "file" ? (

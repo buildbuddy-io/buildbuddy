@@ -376,10 +376,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       {this.state.actionResult.outputFiles ? (
                         <div className="action-list">
                           {this.state.actionResult.outputFiles.map((file) => (
-                            <div>
+                            <div className="file-name clickable" onClick={this.handleOutputFileClicked.bind(this, file)}>
+                              <span>
+                                <img className="file-icon" src="/image/download.svg" />
+                              </span>
                               <span
-                                className="prop-link clickable"
-                                onClick={this.handleOutputFileClicked.bind(this, file)}>
+                                className="prop-link">
                                 {file.path}
                               </span>
                               {file.isExecutable && <span className="detail"> (executable)</span>}

@@ -39,6 +39,14 @@
   padding-top: 1.5px;
 }
 
+.file-name {
+  display: flex;
+}
+
+.file-name:hover {
+  opacity: .5;
+}
+
 .action-timeline {
   display: flex;
   border-radius: 4px;
