@@ -98,6 +98,7 @@ type DiskConfig struct {
 	RootDirectory     string                      `yaml:"root_directory" usage:"The root directory to store all blobs in, if using disk based storage."`
 	Partitions        []DiskCachePartition        `yaml:"partitions"`
 	PartitionMappings []DiskCachePartitionMapping `yaml:"partition_mappings"`
+	UseV2Layout       bool                        `yaml:"use_v2_layout" usage:"If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description."`
 }
 
 type GCSConfig struct {
