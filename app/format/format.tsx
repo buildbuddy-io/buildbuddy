@@ -17,6 +17,11 @@ export function durationMillis(duration: number | Long) {
   return durationSec(seconds);
 }
 
+export function durationSecToMillis(duration: number | Long) {
+  let millis = +duration * 1000;
+  return `${millis.toFixed(0)} ms`;
+}
+
 export function durationSec(duration: number | Long) {
   let seconds = +duration;
   if (!seconds || seconds < 0) {
@@ -185,6 +190,7 @@ export default {
   compactDurationSec,
   durationSec,
   durationMillis,
+  durationSecToMillis,
   durationUsec,
   sentenceCase,
   percent,
