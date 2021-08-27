@@ -206,7 +206,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
                   {event.name} @ {format.formatTimestamp(event.timestamp)}
                 </span>
                 <span className="bar-description">
-                  ({duration > 1 ? format.compactDurationSec(duration) : format.durationSecToMillis(duration)}, {(weight * 100).toFixed(0)}%)
+                  ({duration > 1 ? format.compactDurationSec(duration) : format.durationSecToMillis(duration)},{" "}
+                  {(weight * 100).toFixed(0)}%)
                 </span>
               </div>
               <div className="action-timeline">
@@ -376,14 +377,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       {this.state.actionResult.outputFiles ? (
                         <div className="action-list">
                           {this.state.actionResult.outputFiles.map((file) => (
-                            <div className="file-name clickable" onClick={this.handleOutputFileClicked.bind(this, file)}>
+                            <div
+                              className="file-name clickable"
+                              onClick={this.handleOutputFileClicked.bind(this, file)}>
                               <span>
                                 <img className="file-icon" src="/image/download.svg" />
                               </span>
-                              <span
-                                className="prop-link">
-                                {file.path}
-                              </span>
+                              <span className="prop-link">{file.path}</span>
                               {file.isExecutable && <span className="detail"> (executable)</span>}
                             </div>
                           ))}
