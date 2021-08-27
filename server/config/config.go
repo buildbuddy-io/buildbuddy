@@ -240,9 +240,9 @@ type ExecutorConfig struct {
 }
 
 type ContainerRegistryConfig struct {
-	Hostnames []string `yaml:"hostnames"`
-	Username  string   `yaml:"username"`
-	Password  string   `yaml:"password"`
+	Hostnames []string `yaml:"hostnames" json:"hostnames"`
+	Username  string   `yaml:"username" json:"username"`
+	Password  string   `yaml:"password" json:"password"`
 }
 
 func (c *ExecutorConfig) GetAppTarget() string {

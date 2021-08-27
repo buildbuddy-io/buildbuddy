@@ -154,7 +154,7 @@ type CommandRunner struct {
 	diskUsageBytes   int64
 }
 
-func (r *CommandRunner) pullCredentials() *container.PullCredentials {
+func (r *CommandRunner) pullCredentials() container.PullCredentials {
 	return container.GetPullCredentials(r.env, r.PlatformProperties)
 }
 

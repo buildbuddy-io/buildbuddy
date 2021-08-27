@@ -28,14 +28,14 @@ func TestGetPullCredentials(t *testing.T) {
 
 	for _, testCase := range []struct {
 		imageRef            string
-		expectedCredentials *container.PullCredentials
+		expectedCredentials container.PullCredentials
 	}{
 		// Creds shouldn't be returned if there's no container image requested
-		{"", nil},
+		{"", container.PullCredentials{}},
 		// Creds shouldn't be returned if the registry is unrecognized
-		{"unrecognized-registry.io/foo/bar", nil},
-		{"unrecognized-registry.io/foo/bar:latest", nil},
-		{"unrecognized-registry.io/foo/bar@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", nil},
+		{"unrecognized-registry.io/foo/bar", container.PullCredentials{}},
+		{"unrecognized-registry.io/foo/bar:latest", container.PullCredentials{}},
+		{"unrecognized-registry.io/foo/bar@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", container.PullCredentials{}},
 		// Images with no domain should get defaulted to docker.io (Docker and
 		// other tools like `skopeo` assume docker.io as the default registry)
 		{"alpine", creds("dockeruser", "dockerpass")},
@@ -61,10 +61,14 @@ func TestGetPullCredentials(t *testing.T) {
 
 		creds := container.GetPullCredentials(env, props)
 
-		assert.Equal(t, testCase.expectedCredentials, creds)
+		assert.Equal(
+			t, testCase.expectedCredentials, creds,
+			"unexpected credentials for image ref %q: %q",
+			testCase.imageRef, testCase.expectedCredentials,
+		)
 	}
 }
 
-func creds(user, pass string) *container.PullCredentials {
-	return &container.PullCredentials{Username: user, Password: pass}
+func creds(user, pass string) container.PullCredentials {
+	return container.PullCredentials{Username: user, Password: pass}
 }

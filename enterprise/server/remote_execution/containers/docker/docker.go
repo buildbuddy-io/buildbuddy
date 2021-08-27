@@ -72,7 +72,7 @@ func NewDockerContainer(client *dockerclient.Client, image, hostRootDir string, 
 	}
 }
 
-func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds *container.PullCredentials) *interfaces.CommandResult {
+func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -265,7 +265,7 @@ func errMsg(err error) string {
 	return err.Error()
 }
 
-func (r *dockerCommandContainer) PullImageIfNecessary(ctx context.Context, creds *container.PullCredentials) error {
+func (r *dockerCommandContainer) PullImageIfNecessary(ctx context.Context, creds container.PullCredentials) error {
 	_, _, err := r.client.ImageInspectWithRaw(ctx, r.image)
 	if err == nil {
 		return nil

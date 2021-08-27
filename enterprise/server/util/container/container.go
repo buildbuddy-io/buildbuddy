@@ -41,7 +41,7 @@ func hashFile(filename string) (string, error) {
 // getOrCreateContainerImage will look for a cached filesystem of the specified
 // containerImage in the user's cache directory -- if none is found one will be
 // created and cached.
-func GetOrCreateImage(ctx context.Context, workspaceDir, containerImage string, creds *container.PullCredentials) (string, error) {
+func GetOrCreateImage(ctx context.Context, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
 	hashedContainerName, err := hashString(containerImage)
 	if err != nil {
 		return "", err
@@ -94,7 +94,7 @@ func GetOrCreateImage(ctx context.Context, workspaceDir, containerImage string, 
 // image from an OCI container image reference.
 // NB: We use modern tools (not docker), that do not require root access. This
 // allows this binary to convert images even when not running as root.
-func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage string, creds *container.PullCredentials) (string, error) {
+func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
 	// Make a temp directory to work in. Delete it when this fuction returns.
 	rootUnpackDir, err := os.MkdirTemp(workspaceDir, "container-unpack-*")
 	if err != nil {
