@@ -331,6 +331,12 @@ export default class HistoryComponent extends React.Component<Props, State> {
     if (this.props.hash == "#branches") viewType = "branches";
     if (this.props.hash == "#commits") viewType = "commits";
     if (this.props.hash == "#hosts") viewType = "hosts";
+
+    // Note: we don't show summary stats for scoped views because the summary stats
+    // don't currently get filtered by the scope as well.
+    // TODO(bduffany): Make sure scope-filtered queries are optimized and remove this limitation.
+    const hideSummaryStats = !this.isAggregateView() && Boolean(scope);
+
     return (
       <div className="history">
         <div className="shelf">
@@ -440,13 +446,13 @@ export default class HistoryComponent extends React.Component<Props, State> {
                   `${this.props.user?.selectedGroupName() || "User"}'s ${viewType}`}
               </div>
             </div>
-            {this.state.loadingSummaryStat && (
+            {this.state.loadingSummaryStat && !hideSummaryStats && (
               <div className="details loading-details">
                 <Spinner />
                 <div>Loading stats...</div>
               </div>
             )}
-            {this.state.summaryStat && (
+            {this.state.summaryStat && !hideSummaryStats && (
               <div className="details">
                 <div className="detail">
                   <img className="icon" src="/image/hash.svg" />
