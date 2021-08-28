@@ -341,13 +341,15 @@ export default class HistoryComponent extends React.Component<Props, State> {
       <div className="history">
         <div className="shelf">
           <div className="container">
-            {!capabilities.globalFilter && !this.props.user?.isInDefaultGroup() && this.state.invocations.length > 0 && (
-              <div
-                onClick={this.handleCreateOrgClicked.bind(this)}
-                className={`org-button ${!this.props.user?.selectedGroup?.ownedDomain && "clickable"}`}>
-                {this.props.user?.selectedGroup?.ownedDomain || "Create Organization"}
-              </div>
-            )}
+            {!capabilities.globalFilter &&
+              !this.props.user?.isInDefaultGroup() &&
+              Boolean(this.state.invocations?.length) && (
+                <div
+                  onClick={this.handleCreateOrgClicked.bind(this)}
+                  className={`org-button ${!this.props.user?.selectedGroup?.ownedDomain && "clickable"}`}>
+                  {this.props.user?.selectedGroup?.ownedDomain || "Create Organization"}
+                </div>
+              )}
             <div className="top-bar">
               <div className="breadcrumbs">
                 {this.props.user && this.props.user?.selectedGroupName() && (
