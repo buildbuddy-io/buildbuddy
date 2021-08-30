@@ -131,9 +131,7 @@ export default class ArtifactsCardComponent extends React.Component {
               <div className="invocation-section">
                 <div className="invocation-section-title">GitHub user</div>
                 <div>
-                  <a href={`https://github.com/${this.props.model.getGithubUser()}`}>
-                    {this.props.model.getGithubUser()}
-                  </a>
+                  <a href={`${this.props.model.getGithubUser()}`}>{this.props.model.getGithubUser()}</a>
                 </div>
               </div>
             )}
@@ -142,9 +140,7 @@ export default class ArtifactsCardComponent extends React.Component {
               <div className="invocation-section">
                 <div className="invocation-section-title">GitHub repo</div>
                 <div>
-                  <a href={`https://github.com/${this.props.model.getGithubRepo()}`}>
-                    {this.props.model.getGithubRepo()}
-                  </a>
+                  <a href={`${this.props.model.getGithubRepo()}`}>{this.props.model.getGithubRepo()}</a>
                 </div>
               </div>
             )}
@@ -153,8 +149,7 @@ export default class ArtifactsCardComponent extends React.Component {
               <div className="invocation-section">
                 <div className="invocation-section-title">GitHub branch</div>
                 <div>
-                  <a
-                    href={`https://github.com/${this.props.model.getGithubRepo()}/tree/${this.props.model.getGithubBranch()}`}>
+                  <a href={`${this.props.model.getGithubRepo()}/tree/${this.props.model.getGithubBranch()}`}>
                     {this.props.model.getGithubBranch()}
                   </a>
                 </div>
@@ -165,8 +160,7 @@ export default class ArtifactsCardComponent extends React.Component {
               <div className="invocation-section">
                 <div className="invocation-section-title">GitHub commit</div>
                 <div>
-                  <a
-                    href={`https://github.com/${this.props.model.getGithubRepo()}/commit/${this.props.model.getGithubSHA()}`}>
+                  <a href={`${this.props.model.getGithubRepo()}/commit/${this.props.model.getGithubSHA()}`}>
                     {this.props.model.getGithubSHA()}
                   </a>
                 </div>
@@ -177,8 +171,7 @@ export default class ArtifactsCardComponent extends React.Component {
               <div className="invocation-section">
                 <div className="invocation-section-title">GitHub run</div>
                 <div>
-                  <a
-                    href={`https://github.com/${this.props.model.getGithubRepo()}/actions/runs/${this.props.model.getGithubRun()}`}>
+                  <a href={`${this.props.model.getGithubRepo()}/actions/runs/${this.props.model.getGithubRun()}`}>
                     {this.props.model.getGithubRun()}
                   </a>
                 </div>
