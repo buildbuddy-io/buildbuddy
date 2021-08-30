@@ -12,6 +12,7 @@
 .input-tree-node {
   margin-bottom: 2px;
   cursor: pointer;
+  user-select: none;
 }
 
 .input-tree-node-name:hover {
@@ -20,7 +21,7 @@
 
 .input-tree-node-children {
   border-left: 1px solid #ccc;
-  padding-left: 10px;
+  padding-left: 8px;
   margin-left: 8px;
 }
 

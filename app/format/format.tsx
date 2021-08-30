@@ -17,11 +17,6 @@ export function durationMillis(duration: number | Long) {
   return durationSec(seconds);
 }
 
-export function durationSecToMillis(duration: number | Long) {
-  let millis = +duration * 1000;
-  return `${millis.toFixed(0)} ms`;
-}
-
 export function durationSec(duration: number | Long) {
   let seconds = +duration;
   if (!seconds || seconds < 0) {
@@ -71,7 +66,10 @@ export function compactDurationSec(duration: number | Long) {
   if (seconds > 60) {
     return `${(seconds / 60).toFixed(0)}m`;
   }
-  return `${seconds.toFixed(0)}s`;
+  if (seconds >= 1) {
+    return `${seconds.toFixed(0)}s`;
+  }
+  return `${(seconds * 1000).toFixed(0)}ms`;
 }
 
 export function bytes(bytes: number | Long) {
@@ -190,7 +188,6 @@ export default {
   compactDurationSec,
   durationSec,
   durationMillis,
-  durationSecToMillis,
   durationUsec,
   sentenceCase,
   percent,
