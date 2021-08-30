@@ -2,11 +2,14 @@ package redact
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/golang/protobuf/proto"
+	"github.com/mattn/go-shellwords"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
@@ -27,7 +30,9 @@ const (
 )
 
 var (
-	urlSecretRegex = regexp.MustCompile(`[a-zA-Z-0-9-_=]+\@`)
+	urlSecretRegex         = regexp.MustCompile(`[a-zA-Z-0-9-_=]+\@`)
+	shellOptionPrefixRegex = regexp.MustCompile("^--.+?=")
+	needsQuoteRegex        = regexp.MustCompile(`[^@%\-_+:,./0-9a-zA-Z]`)
 
 	knownGitRepoURLKeys = []string{
 		"REPO_URL", "GIT_URL", "TRAVIS_REPO_SLUG", "BUILDKITE_REPO",
@@ -42,6 +47,10 @@ var (
 		"TRAVIS_COMMIT", "GIT_COMMIT", "CI_COMMIT_SHA", "COMMIT_SHA", "CI", "CI_RUNNER",
 		"CIRCLE_BRANCH", "GITHUB_HEAD_REF", "BUILDKITE_BRANCH", "TRAVIS_BRANCH",
 		"GIT_BRANCH", "CI_COMMIT_BRANCH",
+	}
+
+	redactedPlatformProps = []string{
+		"container-registry-username", "container-registry-password",
 	}
 )
 
@@ -145,6 +154,16 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 				option.OptionValue = parts[0] + envVarSeparator + envVarRedactedPlaceholder
 				option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + envVarRedactedPlaceholder
 			}
+
+			// Redact sensitive platform props
+			if option.OptionName == "remote_default_exec_properties" {
+				for _, propName := range redactedPlatformProps {
+					if strings.HasPrefix(option.OptionValue, propName+"=") {
+						option.OptionValue = propName + "=<REDACTED>"
+						option.CombinedForm = "--remote_default_exec_properties=" + propName + "=<REDACTED>"
+					}
+				}
+			}
 		}
 	}
 	return envVarMap
@@ -190,6 +209,55 @@ func parseAllowedEnv(optionsDescription string) []string {
 	return []string{}
 }
 
+// Quotes shell words following the set of "safe" characters defined here:
+// https://github.com/bazelbuild/bazel/blob/19ee1aad6d5e9a747e10acdfc29e6c10ef7e946a/src/main/java/com/google/devtools/build/lib/util/ShellEscaper.java
+func quoteShellWord(word string) string {
+	if match := needsQuoteRegex.FindString(word); len(match) > 0 {
+		word = strings.ReplaceAll(word, "'", `\'`)
+		word = "'" + word + "'"
+	}
+	return word
+}
+
+func redactOptionsDescription(optionsDescription string) string {
+	options, err := shellwords.Parse(optionsDescription)
+	if err != nil {
+		alert.UnexpectedEvent("invalid_bazel_options_description", "Invalid options description")
+		return optionsDescription
+	}
+	// Redact platform props
+	for i, option := range options {
+		if !strings.HasPrefix(option, "--remote_default_exec_properties=") {
+			continue
+		}
+		propAssignment := strings.TrimPrefix(option, "--remote_default_exec_properties=")
+		for _, propName := range redactedPlatformProps {
+			if strings.HasPrefix(propAssignment, propName+"=") {
+				options[i] = fmt.Sprintf("--remote_default_exec_properties=%s=<REDACTED>", propName)
+				break
+			}
+		}
+	}
+	// Re-quote option values, since shellwords quotes when parsing.
+	// Also strip URL secrets.
+	for i, option := range options {
+		optionPrefix := ""
+		optionValue := option
+
+		prefixMatch := shellOptionPrefixRegex.FindAllString(option, -1)
+		if len(prefixMatch) > 0 {
+			optionPrefix = prefixMatch[0]
+			optionValue = strings.TrimPrefix(option, optionPrefix)
+		}
+
+		optionValue = stripURLSecrets(optionValue)
+
+		options[i] = optionPrefix + quoteShellWord(optionValue)
+	}
+
+	return strings.Join(options, " ")
+}
+
 // StreamingRedactor processes a stream of build events and redacts them as they are
 // received by the event handler.
 type StreamingRedactor struct {
@@ -214,7 +282,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		}
 	case *bespb.BuildEvent_Started:
 		{
-			p.Started.OptionsDescription = stripURLSecrets(p.Started.OptionsDescription)
+			p.Started.OptionsDescription = redactOptionsDescription(p.Started.OptionsDescription)
 			r.allowedEnvVars = append(r.allowedEnvVars, parseAllowedEnv(p.Started.OptionsDescription)...)
 		}
 	case *bespb.BuildEvent_UnstructuredCommandLine:
