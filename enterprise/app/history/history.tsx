@@ -136,7 +136,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       from<Promise<invocation.GetInvocationStatResponse>>(rpcService.service.getInvocationStat(request)).subscribe({
         next: (response) => {
           console.log(response);
-          this.setState({ aggregateStats: response.invocationStat });
+          this.setState({ aggregateStats: response.invocationStat.filter((stat) => stat.name) });
         },
         complete: () => this.setState({ loadingAggregateStats: false }),
       })
