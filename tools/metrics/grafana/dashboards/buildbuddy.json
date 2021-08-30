@@ -15,8 +15,8 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "id": 1,
-  "iteration": 1630343383014,
+  "id": 2,
+  "iteration": 1630346094925,
   "links": [],
   "panels": [
     {
@@ -3387,7 +3387,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 190,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3504,7 +3504,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 159,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3626,7 +3626,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 210,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3759,7 +3759,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 178,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3871,7 +3871,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 31,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3979,7 +3979,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 35,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4086,7 +4086,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 33,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4194,7 +4194,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 102,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4301,7 +4301,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 129,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4411,7 +4411,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 180,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4476,7 +4476,7 @@
           }
         }
       ],
-      "repeatIteration": 1630343383014,
+      "repeatIteration": 1630346094925,
       "repeatPanelId": 28,
       "scopedVars": {
         "pool": {
@@ -5213,7 +5213,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 274,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5334,7 +5334,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 276,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5442,7 +5442,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 290,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5550,7 +5550,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 292,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5658,7 +5658,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 278,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5766,7 +5766,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 280,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5831,7 +5831,7 @@
           }
         }
       ],
-      "repeatIteration": 1630343383014,
+      "repeatIteration": 1630346094925,
       "repeatPanelId": 264,
       "scopedVars": {
         "pool": {
@@ -6407,7 +6407,7 @@
             },
             "overrides": []
           },
-          "fill": 1,
+          "fill": 0,
           "fillGradient": 0,
           "grid": {},
           "gridPos": {
@@ -6431,7 +6431,7 @@
             "values": false
           },
           "lines": true,
-          "linewidth": 2,
+          "linewidth": 1,
           "links": [],
           "nullPointMode": "null as zero",
           "options": {
@@ -6517,18 +6517,14 @@
           "dashLength": 10,
           "dashes": false,
           "datasource": "Prometheus",
-          "editable": true,
-          "error": false,
           "fieldConfig": {
             "defaults": {
-              "custom": {},
-              "links": []
+              "custom": {}
             },
             "overrides": []
           },
-          "fill": 7,
+          "fill": 0,
           "fillGradient": 0,
-          "grid": {},
           "gridPos": {
             "h": 9,
             "w": 12,
@@ -6536,56 +6532,46 @@
             "y": 13
           },
           "hiddenSeries": false,
-          "id": 502,
-          "isNew": true,
+          "id": 542,
           "legend": {
-            "alignAsTable": false,
             "avg": false,
-            "current": true,
-            "hideEmpty": false,
-            "hideZero": true,
+            "current": false,
             "max": false,
             "min": false,
-            "rightSide": false,
             "show": true,
             "total": false,
-            "values": true
+            "values": false
           },
           "lines": true,
-          "linewidth": 2,
-          "links": [],
-          "nullPointMode": "connected",
+          "linewidth": 1,
+          "nullPointMode": "null",
           "options": {
             "alertThreshold": true
           },
           "percentage": false,
           "pluginVersion": "7.3.5",
-          "pointradius": 5,
+          "pointradius": 2,
           "points": false,
           "renderer": "flot",
           "seriesOverrides": [],
           "spaceLength": 10,
-          "stack": true,
+          "stack": false,
           "steppedLine": false,
           "targets": [
             {
               "expr": "sum (redis_db_keys{instance=~\"$instance\"}) by (db, instance)",
-              "format": "time_series",
               "interval": "",
-              "intervalFactor": 2,
-              "legendFormat": "{{ db }}, {{ instance }}",
-              "refId": "A",
-              "step": 240,
-              "target": ""
+              "legendFormat": "{{db}}@{{instance}}",
+              "queryType": "randomWalk",
+              "refId": "A"
             }
           ],
           "thresholds": [],
           "timeFrom": null,
           "timeRegions": [],
           "timeShift": null,
-          "title": "Total Items per DB",
+          "title": "Total items per DB",
           "tooltip": {
-            "msResolution": false,
             "shared": true,
             "sort": 0,
             "value_type": "individual"
@@ -6600,14 +6586,16 @@
           },
           "yaxes": [
             {
-              "format": "none",
+              "$$hashKey": "object:203",
+              "format": "short",
               "label": null,
               "logBase": 1,
               "max": null,
-              "min": null,
+              "min": "0",
               "show": true
             },
             {
+              "$$hashKey": "object:204",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -6651,10 +6639,10 @@
             },
             "overrides": []
           },
-          "fill": 1,
+          "fill": 0,
           "fillGradient": 0,
           "gridPos": {
-            "h": 10,
+            "h": 9,
             "w": 24,
             "x": 0,
             "y": 22
@@ -6668,7 +6656,7 @@
             "current": false,
             "max": false,
             "min": false,
-            "show": true,
+            "show": false,
             "total": false,
             "values": false
           },
@@ -6692,6 +6680,7 @@
             {
               "expr": "sum(redis_connected_clients{instance=~\"$instance\"})",
               "format": "time_series",
+              "interval": "",
               "intervalFactor": 2,
               "legendFormat": "",
               "metric": "",
@@ -6703,7 +6692,7 @@
           "timeFrom": null,
           "timeRegions": [],
           "timeShift": null,
-          "title": "Clients",
+          "title": "Total number of clients",
           "tooltip": {
             "shared": true,
             "sort": 0,
@@ -6720,11 +6709,12 @@
           "yaxes": [
             {
               "$$hashKey": "object:188",
+              "decimals": 0,
               "format": "short",
               "label": null,
               "logBase": 1,
               "max": null,
-              "min": null,
+              "min": "0",
               "show": true
             },
             {
@@ -6758,14 +6748,14 @@
             },
             "overrides": []
           },
-          "fill": 0,
+          "fill": 10,
           "fillGradient": 0,
           "grid": {},
           "gridPos": {
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 32
+            "y": 31
           },
           "hiddenSeries": false,
           "id": 496,
@@ -6799,7 +6789,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(redis_commands_total{instance=~\"$instance\"} [1m])) by (cmd)",
+              "expr": "sum(rate(redis_commands_total{instance=~\"$instance\"} [${window}])) by (cmd)",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -6830,7 +6820,8 @@
           },
           "yaxes": [
             {
-              "format": "short",
+              "$$hashKey": "object:487",
+              "format": "ops",
               "label": null,
               "logBase": 1,
               "max": null,
@@ -6838,6 +6829,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:488",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -6866,14 +6858,14 @@
             },
             "overrides": []
           },
-          "fill": 2,
+          "fill": 10,
           "fillGradient": 0,
           "grid": {},
           "gridPos": {
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 42
+            "y": 41
           },
           "hiddenSeries": false,
           "id": 500,
@@ -6903,11 +6895,11 @@
           "renderer": "flot",
           "seriesOverrides": [],
           "spaceLength": 10,
-          "stack": false,
+          "stack": true,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(irate(redis_commands_duration_seconds_total{instance =~ \"$instance\"}[1m])) by (cmd)\n  /\nsum(irate(redis_commands_total{instance =~ \"$instance\"}[1m])) by (cmd)\n",
+              "expr": "sum(irate(redis_commands_duration_seconds_total{instance =~ \"$instance\"}[${window}])) by (cmd)\n  /\nsum(irate(redis_commands_total{instance =~ \"$instance\"}[${window}])) by (cmd)\n",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -6974,14 +6966,14 @@
             },
             "overrides": []
           },
-          "fill": 8,
+          "fill": 10,
           "fillGradient": 0,
           "grid": {},
           "gridPos": {
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 42
+            "y": 41
           },
           "hiddenSeries": false,
           "id": 504,
@@ -7015,7 +7007,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(irate(redis_commands_duration_seconds_total{instance=~\"$instance\"}[1m])) by (cmd) != 0",
+              "expr": "sum(irate(redis_commands_duration_seconds_total{instance=~\"$instance\"}[${window}])) by (cmd) != 0",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -7046,6 +7038,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:516",
               "format": "s",
               "label": null,
               "logBase": 1,
@@ -7054,6 +7047,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:517",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -8597,7 +8591,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8709,7 +8703,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8819,7 +8813,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8929,7 +8923,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8994,7 +8988,7 @@
           }
         }
       ],
-      "repeatIteration": 1630343383014,
+      "repeatIteration": 1630346094925,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -9064,7 +9058,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9176,7 +9170,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9286,7 +9280,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9396,7 +9390,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9461,7 +9455,7 @@
           }
         }
       ],
-      "repeatIteration": 1630343383014,
+      "repeatIteration": 1630346094925,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -9801,7 +9795,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 73,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9911,7 +9905,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 79,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9976,7 +9970,7 @@
           }
         }
       ],
-      "repeatIteration": 1630343383014,
+      "repeatIteration": 1630346094925,
       "repeatPanelId": 71,
       "scopedVars": {
         "job": {
@@ -10062,7 +10056,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 73,
           "repeatedByRow": true,
           "scopedVars": {
@@ -10172,7 +10166,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1630343383014,
+          "repeatIteration": 1630346094925,
           "repeatPanelId": 79,
           "repeatedByRow": true,
           "scopedVars": {
@@ -10237,7 +10231,7 @@
           }
         }
       ],
-      "repeatIteration": 1630343383014,
+      "repeatIteration": 1630346094925,
       "repeatPanelId": 71,
       "scopedVars": {
         "job": {
