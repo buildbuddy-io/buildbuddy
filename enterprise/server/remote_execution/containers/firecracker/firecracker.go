@@ -765,7 +765,7 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 //
 // It is approximately the same as calling PullImageIfNecessary, Create,
 // Exec, then Remove.
-func (c *FirecrackerContainer) Run(ctx context.Context, task *repb.ExecutionTask, actionWorkingDir string, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Run(ctx context.Context, task *repb.ExecutionTask, actionWorkingDir string, creds container.PullCredentials, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
 	start := time.Now()
 	defer func() {
 		log.Debugf("Run took %s", time.Since(start))
@@ -789,7 +789,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, task *repb.ExecutionTask
 	// If a snapshot was already loaded, then c.machine will be set, so
 	// there's no need to Create the machine.
 	if c.machine == nil {
-		if err := c.PullImageIfNecessary(ctx); err != nil {
+		if err := c.PullImage(ctx, creds); err != nil {
 			return nonCmdExit(err)
 		}
 
@@ -936,17 +936,26 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, task *repb.ExecutionTas
 	return result
 }
 
-// PullImageIfNecessary pulls the container image if it is not already
-// available locally.
-func (c *FirecrackerContainer) PullImageIfNecessary(ctx context.Context) error {
+func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) {
+	diskImagePath, err := containerutil.CachedDiskImagePath(c.jailerRoot, c.containerImage)
+	if err != nil {
+		return false, err
+	}
+	return diskImagePath != "", nil
+}
+
+// PullImage pulls the container image from the remote. It always
+// re-authenticates the request, but may serve the image from a local cache
+// in order to avoid re-downloading the image.
+func (c *FirecrackerContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
 	start := time.Now()
 	defer func() {
-		log.Debugf("PullImageIfNecessary took %s", time.Since(start))
+		log.Debugf("PullImage took %s", time.Since(start))
 	}()
 	if c.containerFSPath != "" {
 		return nil
 	}
-	containerFSPath, err := containerutil.GetOrCreateImage(ctx, c.jailerRoot, c.containerImage)
+	containerFSPath, err := containerutil.CreateDiskImage(ctx, c.jailerRoot, c.containerImage, creds)
 	if err != nil {
 		return err
 	}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -23,6 +24,8 @@ import (
 
 var (
 	image              = flag.String("image", "docker.io/library/busybox", "The default container to run.")
+	registryUser       = flag.String("container_registry_user", "", "User to use when pulling the image")
+	registryPassword   = flag.String("container_registry_password", "", "Password to use when pulling the image")
 	cacheTarget        = flag.String("cache_target", "grpcs://remote.buildbuddy.dev", "The remote cache target")
 	remoteInstanceName = flag.String("remote_instance_name", "", "The remote_instance_name for caching snapshots")
 	forceVMIdx         = flag.Int("force_vm_idx", -1, "VM index to force to avoid network conflicts -- random by default")
@@ -110,7 +113,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error creating container: %s", err)
 	}
-	if err := c.PullImageIfNecessary(ctx); err != nil {
+	creds := container.PullCredentials{Username: *registryUser, Password: *registryPassword}
+	if err := container.PullImageIfNecessary(ctx, c, creds); err != nil {
 		log.Fatalf("Unable to PullImageIfNecessary: %s", err)
 	}
 	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {

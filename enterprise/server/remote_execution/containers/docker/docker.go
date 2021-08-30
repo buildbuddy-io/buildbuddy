@@ -3,6 +3,7 @@ package docker
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -78,7 +79,7 @@ func NewDockerContainer(env environment.Env, client *dockerclient.Client, image,
 	}
 }
 
-func (r *dockerCommandContainer) Run(ctx context.Context, task *repb.ExecutionTask, workDir string, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
+func (r *dockerCommandContainer) Run(ctx context.Context, task *repb.ExecutionTask, workDir string, creds container.PullCredentials, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
 	command := task.GetCommand()
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
@@ -121,7 +122,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, task *repb.ExecutionTa
 
 	// explicitly pull the image before running to avoid the
 	// pull output logs spilling into the execution logs.
-	if err := r.PullImageIfNecessary(ctx); err != nil {
+	if err := container.PullImageIfNecessary(ctx, r, creds); err != nil {
 		result.Error = wrapDockerErr(err, fmt.Sprintf("failed to pull docker image %q", r.image))
 		return result
 	}
@@ -300,13 +301,38 @@ func errMsg(err error) string {
 	return err.Error()
 }
 
-func (r *dockerCommandContainer) PullImageIfNecessary(ctx context.Context) error {
+func (r *dockerCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
 	_, _, err := r.client.ImageInspectWithRaw(ctx, r.image)
 	if err == nil {
-		return nil
+		return true, nil
 	}
 	if !dockerclient.IsErrNotFound(err) {
-		return err
+		return false, err
+	}
+	return false, nil
+}
+
+func (r *dockerCommandContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
+	if !creds.IsEmpty() {
+		authCfg := dockertypes.AuthConfig{
+			Username: creds.Username,
+			Password: creds.Password,
+		}
+		auth, err := encodeAuthToBase64(authCfg)
+		if err != nil {
+			return err
+		}
+		rc, err := r.client.ImagePull(ctx, r.image, dockertypes.ImagePullOptions{
+			RegistryAuth: auth,
+		})
+		if err != nil {
+			return err
+		}
+		defer rc.Close()
+		if _, err := io.Copy(io.Discard, rc); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	// TODO: find a way to implement this without calling the Docker CLI.
@@ -490,4 +516,13 @@ type statsResponse struct {
 		} `json:"stats"`
 		Usage int64 `json:"usage"`
 	} `json:"memory_stats"`
+}
+
+// encodeAuthToBase64 serializes the auth configuration as JSON base64 payload
+func encodeAuthToBase64(authConfig dockertypes.AuthConfig) (string, error) {
+	buf, err := json.Marshal(authConfig)
+	if err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(buf), nil
 }

@@ -99,7 +99,7 @@ func formatCommand(args []string) string {
 	return strings.Join(quoted, " ")
 }
 
-func (r *containerdCommandContainer) Run(ctx context.Context, task *repb.ExecutionTask, workDir string, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
+func (r *containerdCommandContainer) Run(ctx context.Context, task *repb.ExecutionTask, workDir string, creds container.PullCredentials, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
 	command := task.GetCommand()
 	result := &interfaces.CommandResult{
 		ExitCode:           commandutil.NoExitCode,
@@ -359,7 +359,10 @@ func (r *containerdCommandContainer) Exec(ctx context.Context, task *repb.Execut
 	res.Error = status.UnimplementedError("not implemented")
 	return res
 }
-func (r *containerdCommandContainer) PullImageIfNecessary(ctx context.Context) error {
+func (r *containerdCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
+	return false, status.UnimplementedError("not implemented")
+}
+func (r *containerdCommandContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
 	return status.UnimplementedError("not implemented")
 }
 func (r *containerdCommandContainer) Start(ctx context.Context) error {

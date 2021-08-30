@@ -21,7 +21,7 @@ func NewBareCommandContainer() container.CommandContainer {
 	return &bareCommandContainer{}
 }
 
-func (c *bareCommandContainer) Run(ctx context.Context, task *repb.ExecutionTask, workDir string, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
+func (c *bareCommandContainer) Run(ctx context.Context, task *repb.ExecutionTask, workDir string, creds container.PullCredentials, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
 	return commandutil.Run(ctx, task.GetCommand(), workDir)
 }
 
@@ -32,14 +32,17 @@ func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error
 
 func (c *bareCommandContainer) Exec(ctx context.Context, task *repb.ExecutionTask, fsLayout *container.FileSystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	// TODO(siggisim): Wire up stdin/stdout to support persistent workers on bare commands.
-	return c.Run(ctx, task, c.WorkDir, fsLayout)
+	return commandutil.Run(ctx, task.GetCommand(), c.WorkDir)
 }
 
-func (c *bareCommandContainer) PullImageIfNecessary(ctx context.Context) error { return nil }
-func (c *bareCommandContainer) Start(ctx context.Context) error                { return nil }
-func (c *bareCommandContainer) Remove(ctx context.Context) error               { return nil }
-func (c *bareCommandContainer) Pause(ctx context.Context) error                { return nil }
-func (c *bareCommandContainer) Unpause(ctx context.Context) error              { return nil }
+func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }
+func (c *bareCommandContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
+	return nil
+}
+func (c *bareCommandContainer) Start(ctx context.Context) error   { return nil }
+func (c *bareCommandContainer) Remove(ctx context.Context) error  { return nil }
+func (c *bareCommandContainer) Pause(ctx context.Context) error   { return nil }
+func (c *bareCommandContainer) Unpause(ctx context.Context) error { return nil }
 
 func (c *bareCommandContainer) Stats(ctx context.Context) (*container.Stats, error) {
 	return &container.Stats{}, nil

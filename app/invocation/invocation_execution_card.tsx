@@ -7,7 +7,6 @@ import Select, { Option } from "../components/select/select";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { google } from "../../proto/grpc_code_ts_proto";
 import rpcService from "../service/rpc_service";
-import InvocationFilterComponent from "./invocation_filter";
 
 interface Props {
   model: InvocationModel;
@@ -289,11 +288,6 @@ export default class ExecutionCardComponent extends React.Component {
 
     return (
       <div>
-        <InvocationFilterComponent
-          hash={"#execution"}
-          search={this.props.search}
-          placeholder={"Filter by digest or command..."}
-        />
         <div className={`card expanded`}>
           <div className="content">
             <div className="invocation-content-header">

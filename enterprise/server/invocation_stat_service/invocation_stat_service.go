@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
@@ -29,7 +30,7 @@ func NewInvocationStatService(env environment.Env, h *db.DBHandle) *InvocationSt
 	}
 }
 
-func (i *InvocationStatService) getAggColumn(aggType inpb.AggType) string {
+func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggType inpb.AggType) string {
 	switch aggType {
 	case inpb.AggType_USER_AGGREGATION_TYPE:
 		return "user"
@@ -42,7 +43,7 @@ func (i *InvocationStatService) getAggColumn(aggType inpb.AggType) string {
 	case inpb.AggType_COMMIT_SHA_AGGREGATION_TYPE:
 		return "commit_sha"
 	case inpb.AggType_DATE_AGGREGATION_TYPE:
-		return i.h.DateFromUsecTimestamp("updated_at_usec")
+		return i.h.DateFromUsecTimestamp("updated_at_usec", reqCtx.GetTimezoneOffsetMinutes())
 	case inpb.AggType_BRANCH_AGGREGATION_TYPE:
 		return "branch_name"
 	default:
@@ -60,7 +61,8 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 		return nil, status.ResourceExhaustedErrorf("Too many rows.")
 	}
 
-	q := query_builder.NewQuery(fmt.Sprintf("SELECT %s as name,", i.h.DateFromUsecTimestamp("updated_at_usec")) + `
+	reqCtx := req.GetRequestContext()
+	q := query_builder.NewQuery(fmt.Sprintf("SELECT %s as name,", i.h.DateFromUsecTimestamp("updated_at_usec", reqCtx.GetTimezoneOffsetMinutes())) + `
 	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,
 	    COUNT(1) as total_num_builds,
 	    SUM(CASE WHEN duration_usec > 0 THEN 1 ELSE 0 END) as completed_invocation_count,
@@ -181,7 +183,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		limit = l
 	}
 
-	aggColumn := i.getAggColumn(req.AggregationType)
+	aggColumn := i.getAggColumn(req.GetRequestContext(), req.AggregationType)
 	q := query_builder.NewQuery(fmt.Sprintf("SELECT %s as name,", aggColumn) + `
 	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,
 	    MAX(updated_at_usec) as latest_build_time_usec,

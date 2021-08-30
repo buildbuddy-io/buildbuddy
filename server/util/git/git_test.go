@@ -45,7 +45,7 @@ func TestStripRepoURLCredentials(t *testing.T) {
 		{"10.3.1.5/foo/bar.git", "https://10.3.1.5/foo/bar.git"},
 		{"localhost:8888/foo/bar.git", "http://localhost:8888/foo/bar.git"},
 		{"/home/user/local-repo", "file:///home/user/local-repo"},
-		{"unknown", "file://unknown"},
+		{"unknown", "https://unknown"},
 	} {
 		str := gitutil.StripRepoURLCredentials(testCase.url)
 
@@ -71,4 +71,28 @@ func TestOwnerRepoFromRepoURL(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "org/repo", ownerRepo)
 	}
+}
+
+func TestNormalizeRepoURL(t *testing.T) {
+	for _, s := range []string{
+		"ssh://github.com/buildbuddy-io/buildbuddy",
+		"ssh://github.com/buildbuddy-io/buildbuddy.git",
+		"git://github.com/buildbuddy-io/buildbuddy",
+		"git://github.com/buildbuddy-io/buildbuddy.git",
+		"git@github.com:buildbuddy-io/buildbuddy.git",
+		"https://NOTREALTOKEN:@github.com/buildbuddy-io/buildbuddy",
+		"https://buildbuddy:NOTREALTOKEN@github.com/buildbuddy-io/buildbuddy.git",
+		"https://github.com/buildbuddy-io/buildbuddy",
+		"ssh://git@github.com/buildbuddy-io/buildbuddy.git",
+		"buildbuddy-io/buildbuddy",
+		"file://buildbuddy-io/buildbuddy",
+	} {
+		url, err := gitutil.NormalizeRepoURL(s)
+
+		assert.NoError(t, err)
+		assert.Equal(t, "https://github.com/buildbuddy-io/buildbuddy", url.String())
+	}
+	url, err := gitutil.NormalizeRepoURL("")
+	assert.NoError(t, err)
+	assert.Equal(t, "", url.String())
 }

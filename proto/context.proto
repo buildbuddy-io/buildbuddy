@@ -18,6 +18,16 @@ message RequestContext {
   // 3. The user's self-owned group, if it exists.
   // 4. Any group with a write token.
   string group_id = 2;
+
+  // The difference, in minutes, between the current date as evaluated in the
+  // UTC time zone, and the same date as evaluated in the local time zone.
+  //
+  // Ex: if the current timezone offset is UTC-7, this should be set to
+  // -((-7) * 60) = 420.
+  //
+  // See also
+  // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/getTimezoneOffset
+  int32 timezone_offset_minutes = 3;
 }
 
 message ResponseContext {

@@ -413,9 +413,16 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 	return dbh, nil
 }
 
-func (h *DBHandle) DateFromUsecTimestamp(fieldName string) string {
+// DateFromUsecTimestamp returns an SQL expression that converts the value
+// of the given field from a Unix timestamp (in microseconds since the Unix
+// Epoch) to a date offset by the given UTC offset. The offset is defined
+// according to the description here:
+// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/getTimezoneOffset
+func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string {
+	offsetUsec := int64(timezoneOffsetMinutes) * 60 * 1e6
+	timestampExpr := fmt.Sprintf("(%s + (%d))/1000000", fieldName, -offsetUsec)
 	if h.dialect == sqliteDialect {
-		return "DATE(" + fieldName + "/1000000, 'unixepoch')"
+		return fmt.Sprintf("DATE(%s, 'unixepoch')", timestampExpr)
 	}
-	return "DATE(FROM_UNIXTIME(" + fieldName + "/1000000))"
+	return fmt.Sprintf("DATE(FROM_UNIXTIME(%s))", timestampExpr)
 }

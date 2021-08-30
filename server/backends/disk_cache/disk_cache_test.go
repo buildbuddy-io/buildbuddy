@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -592,4 +593,170 @@ func TestNonDefaultPartition(t *testing.T) {
 		dPath := filepath.Join(userRoot, instanceName, d.GetHash())
 		require.FileExists(t, dPath)
 	}
+}
+
+func TestV2Layout(t *testing.T) {
+	maxSizeBytes := int64(100_000_000) // 100MB
+	rootDir := getTmpDir(t)
+	te := getTestEnv(t, emptyUserMap)
+
+	diskConfig := &config.DiskConfig{
+		RootDirectory: rootDir,
+		UseV2Layout:   true,
+	}
+	dc, err := disk_cache.NewDiskCache(te, diskConfig, maxSizeBytes)
+	require.NoError(t, err)
+
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+
+	err = dc.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	userRoot := filepath.Join(rootDir, disk_cache.V2Dir, disk_cache.PartitionDirectoryPrefix+disk_cache.DefaultPartitionID, interfaces.AuthAnonymousUser)
+	dPath := filepath.Join(userRoot, d.GetHash()[0:disk_cache.HashPrefixDirPrefixLen], d.GetHash())
+	require.FileExists(t, dPath)
+
+	ok, err := dc.Contains(ctx, d)
+	require.NoError(t, err)
+	require.Truef(t, ok, "digest should be in the cache")
+
+	_, err = dc.Get(ctx, d)
+	require.NoError(t, err)
+}
+
+func TestV2LayoutMigration(t *testing.T) {
+	maxSizeBytes := int64(100_000_000) // 100MB
+	rootDir := getTmpDir(t)
+	testAPIKey := "AK2222"
+	testGroup := "GR7890"
+	testUsers := testauth.TestUsers(testAPIKey, testGroup)
+	te := getTestEnv(t, testUsers)
+
+	type test struct {
+		oldPath string
+		newPath string
+		data    string
+	}
+
+	tests := []test{
+		{
+			oldPath: "ANON/7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620",
+			newPath: "v2/PTdefault/ANON/7e09/7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620",
+			data:    "test1",
+		},
+		{
+			oldPath: "ANON/prefix/7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620",
+			newPath: "v2/PTdefault/ANON/prefix/7e09/7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620",
+			data:    "test2",
+		},
+		{
+			oldPath: "PTFOO/GR7890/7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620",
+			newPath: "v2/PTFOO/GR7890/7e09/7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620",
+			data:    "test3",
+		},
+		{
+			oldPath: "PTFOO/GR7890/prefix/7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620",
+			newPath: "v2/PTFOO/GR7890/prefix/7e09/7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620",
+			data:    "test4",
+		},
+	}
+
+	expectedContents := make(map[string]string)
+	for _, test := range tests {
+		p := filepath.Join(rootDir, test.oldPath)
+		err := os.MkdirAll(filepath.Dir(p), 0755)
+		require.NoError(t, err)
+		err = os.WriteFile(p, []byte(test.data), 0644)
+		require.NoError(t, err)
+		expectedContents[test.newPath] = test.data
+	}
+	err := disk_cache.MigrateToV2Layout(rootDir)
+	require.NoError(t, err)
+	testfs.AssertExactFileContents(t, rootDir, expectedContents)
+
+	// Now create a cache on top of the migrated files and verify it works as expected.
+	diskConfig := &config.DiskConfig{
+		RootDirectory: rootDir,
+		UseV2Layout:   true,
+		Partitions: []config.DiskCachePartition{
+			{
+				ID:           "default",
+				MaxSizeBytes: 10_000_000,
+			},
+			{
+				ID:           "FOO",
+				MaxSizeBytes: 10_000_000,
+			},
+		},
+		PartitionMappings: []config.DiskCachePartitionMapping{
+			{
+				GroupID:     testGroup,
+				Prefix:      "",
+				PartitionID: "FOO",
+			},
+		},
+	}
+	dc, err := disk_cache.NewDiskCache(te, diskConfig, maxSizeBytes)
+	require.NoError(t, err)
+
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+	testHash := "7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620"
+	{
+		buf, err := dc.Get(ctx, &repb.Digest{Hash: testHash, SizeBytes: 5})
+		require.NoError(t, err)
+		require.Equal(t, []byte("test1"), buf)
+	}
+
+	{
+		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "prefix")
+		require.NoError(t, err)
+
+		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
+		ok, err := ic.Contains(ctx, d)
+		require.NoError(t, err)
+		require.True(t, ok, "digest should be in the cache")
+
+		buf, err := ic.Get(ctx, d)
+		require.NoError(t, err)
+		require.Equal(t, []byte("test2"), buf)
+	}
+
+	{
+		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
+		require.NoError(t, err)
+		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "" /*=instanceName*/)
+
+		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
+		ok, err := ic.Contains(ctx, d)
+		require.NoError(t, err)
+		require.True(t, ok, "digest should be in the cache")
+
+		buf, err := ic.Get(ctx, d)
+		require.NoError(t, err)
+		require.Equal(t, []byte("test3"), buf)
+	}
+
+	{
+		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
+		require.NoError(t, err)
+		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "prefix" /*=instanceName*/)
+		require.NoError(t, err)
+
+		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
+		ok, err := ic.Contains(ctx, d)
+		require.NoError(t, err)
+		require.True(t, ok, "digest should be in the cache")
+
+		buf, err := ic.Get(ctx, d)
+		require.NoError(t, err)
+		require.Equal(t, []byte("test4"), buf)
+	}
+
+	// Run the migration again, nothing should happen.
+	err = disk_cache.MigrateToV2Layout(rootDir)
+	require.NoError(t, err)
+	testfs.AssertExactFileContents(t, rootDir, expectedContents)
 }
