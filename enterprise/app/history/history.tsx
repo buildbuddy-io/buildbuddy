@@ -6,7 +6,7 @@ import Button from "../../../app/components/button/button";
 import LinkButton from "../../../app/components/button/link_button";
 import format from "../../../app/format/format";
 import router, { ROLE_PARAM_NAME } from "../../../app/router/router";
-import rpcService from "../../../app/service/rpc_service";
+import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import FilterComponent from "../filter/filter";
 import OrgJoinRequestsComponent from "../org/org_join_requests";
@@ -58,7 +58,10 @@ export default class HistoryComponent extends React.Component<Props, State> {
   };
 
   refreshSubscription = new Subscription();
-  fetchSubscription = new Subscription();
+
+  invocationsRpc: CancelablePromise;
+  summaryStatRpc: CancelablePromise;
+  aggregateStatsRpc: CancelablePromise;
 
   hashToAggregationTypeMap = new Map<string, invocation.AggType>([
     ["#users", invocation.AggType.USER_AGGREGATION_TYPE],
@@ -101,20 +104,18 @@ export default class HistoryComponent extends React.Component<Props, State> {
       request.query.status = filterParams.status;
     }
 
-    this.fetchSubscription.add(
-      from<Promise<invocation.SearchInvocationResponse>>(rpcService.service.searchInvocation(request)).subscribe({
-        next: (response) => {
-          console.log(response);
-          this.setState({
-            invocations: nextPage
-              ? this.state.invocations.concat(response.invocation as invocation.Invocation[])
-              : response.invocation,
-            pageToken: response.nextPageToken,
-          });
-        },
-        complete: () => this.setState({ loadingInvocations: false }),
+    this.invocationsRpc = rpcService.service
+      .searchInvocation(request)
+      .then((response) => {
+        console.log(response);
+        this.setState({
+          invocations: nextPage
+            ? this.state.invocations.concat(response.invocation as invocation.Invocation[])
+            : response.invocation,
+          pageToken: response.nextPageToken,
+        });
       })
-    );
+      .finally(() => this.setState({ loadingInvocations: false }));
   }
 
   getAggregateStats() {
@@ -132,15 +133,13 @@ export default class HistoryComponent extends React.Component<Props, State> {
       });
     }
 
-    this.fetchSubscription.add(
-      from<Promise<invocation.GetInvocationStatResponse>>(rpcService.service.getInvocationStat(request)).subscribe({
-        next: (response) => {
-          console.log(response);
-          this.setState({ aggregateStats: response.invocationStat.filter((stat) => stat.name) });
-        },
-        complete: () => this.setState({ loadingAggregateStats: false }),
+    this.aggregateStatsRpc = rpcService.service
+      .getInvocationStat(request)
+      .then((response) => {
+        console.log(response);
+        this.setState({ aggregateStats: response.invocationStat.filter((stat) => stat.name) });
       })
-    );
+      .finally(() => this.setState({ loadingAggregateStats: false }));
   }
 
   getSummaryStat() {
@@ -159,12 +158,10 @@ export default class HistoryComponent extends React.Component<Props, State> {
       });
     }
 
-    this.fetchSubscription?.add(
-      from<Promise<invocation.GetInvocationStatResponse>>(rpcService.service.getInvocationStat(request)).subscribe({
-        next: (response) => this.setState({ summaryStat: response.invocationStat?.[0] }),
-        complete: () => this.setState({ loadingSummaryStat: false }),
-      })
-    );
+    this.summaryStatRpc = rpcService.service
+      .getInvocationStat(request)
+      .then((response) => this.setState({ summaryStat: response.invocationStat?.[0] }))
+      .finally(() => this.setState({ loadingSummaryStat: false }));
   }
 
   componentDidMount() {
@@ -195,12 +192,13 @@ export default class HistoryComponent extends React.Component<Props, State> {
 
   componentWillUnmount() {
     this.refreshSubscription.unsubscribe();
-    this.fetchSubscription.unsubscribe();
   }
 
   fetch() {
-    this.fetchSubscription.unsubscribe();
-    this.fetchSubscription = new Subscription();
+    // Cancel any in-flight RPC callbacks.
+    this.invocationsRpc?.cancel();
+    this.summaryStatRpc?.cancel();
+    this.aggregateStatsRpc?.cancel();
 
     this.setState({
       invocations: undefined,

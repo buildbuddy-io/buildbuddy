@@ -1,16 +1,29 @@
 import { Subject } from "rxjs";
 import { buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
 import { context } from "../../proto/context_ts_proto";
+import { CancelablePromise } from "../util/async";
+import * as protobufjs from "protobufjs";
+
+export { CancelablePromise } from "../util/async";
+
+/**
+ * ExtendedBuildBuddyService is an extended version of BuildBuddyService with
+ * the following differences:
+ *
+ * - The `requestContext` field is automatically set on each request.
+ * - All RPC methods return a `CancelablePromise` instead of a `Promise`.
+ */
+type ExtendedBuildBuddyService = CancelableService<buildbuddy.service.BuildBuddyService>;
 
 class RpcService {
-  service: buildbuddy.service.BuildBuddyService;
+  service: ExtendedBuildBuddyService;
   events: Subject<string>;
   requestContext = new context.RequestContext({
     timezoneOffsetMinutes: new Date().getTimezoneOffset(),
   });
 
   constructor() {
-    this.service = this.autoAttachRequestContext(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this)));
+    this.service = this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this)));
     this.events = new Subject();
 
     (window as any)._rpcService = this;
@@ -84,16 +97,14 @@ class RpcService {
     request.send(requestData);
   }
 
-  private autoAttachRequestContext(
-    service: buildbuddy.service.BuildBuddyService
-  ): buildbuddy.service.BuildBuddyService {
+  private getExtendedService(service: buildbuddy.service.BuildBuddyService): ExtendedBuildBuddyService {
     const extendedService = Object.create(service);
     for (const rpcName of getRpcMethodNames(buildbuddy.service.BuildBuddyService)) {
       extendedService[rpcName] = (request: Record<string, any>) => {
         if (this.requestContext && !request.requestContext) {
           request.requestContext = this.requestContext;
         }
-        return (service as any)[rpcName](request);
+        return new CancelablePromise((service as any)[rpcName](request));
       };
     }
     return extendedService;
@@ -103,5 +114,25 @@ class RpcService {
 function getRpcMethodNames(serviceClass: Function) {
   return new Set(Object.keys(serviceClass.prototype).filter((key) => key !== "constructor"));
 }
+
+type Rpc<Request, Response> = (request: Request) => Promise<Response>;
+
+type CancelableRpc<Request, Response> = (request: Request) => CancelablePromise<Response>;
+
+/**
+ * Utility type that adapts a `PromiseBasedService` so that `CancelablePromise` is
+ * returned from all methods, instead of `Promise`.
+ */
+type CancelableService<Service extends protobufjs.rpc.Service> = protobufjs.rpc.Service &
+  {
+    // Loop over all methods in the service, except for the ones inherited from the base
+    // service (we don't want to modify those at all).
+    [MethodName in keyof Omit<Service, keyof protobufjs.rpc.Service>]: Service[MethodName] extends Rpc<
+      infer Request,
+      infer Response
+    >
+      ? CancelableRpc<Request, Response>
+      : never;
+  };
 
 export default new RpcService();
