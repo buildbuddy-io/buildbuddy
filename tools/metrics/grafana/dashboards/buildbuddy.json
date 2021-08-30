@@ -15,8 +15,8 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "id": 1,
-  "iteration": 1625776480136,
+  "id": 2,
+  "iteration": 1630097828030,
   "links": [],
   "panels": [
     {
@@ -333,7 +333,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:59",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -342,7 +341,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:60",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -393,7 +391,7 @@
             "h": 8,
             "w": 9,
             "x": 0,
-            "y": 9
+            "y": 3
           },
           "hiddenSeries": false,
           "id": 13,
@@ -490,7 +488,7 @@
             "h": 8,
             "w": 10,
             "x": 9,
-            "y": 9
+            "y": 3
           },
           "hiddenSeries": false,
           "id": 25,
@@ -586,7 +584,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 17
+            "y": 11
           },
           "hiddenSeries": false,
           "id": 65,
@@ -697,7 +695,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 3
+            "y": 4
           },
           "hiddenSeries": false,
           "id": 230,
@@ -754,7 +752,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:146",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -763,7 +760,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:147",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -795,7 +791,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 3
+            "y": 4
           },
           "hiddenSeries": false,
           "id": 310,
@@ -858,7 +854,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:33",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -867,7 +862,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:34",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -899,7 +893,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 11
+            "y": 12
           },
           "hiddenSeries": false,
           "id": 312,
@@ -956,7 +950,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:93",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -965,7 +958,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:94",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2092,7 +2084,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:101",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2101,7 +2092,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:102",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2190,7 +2180,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:183",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2199,7 +2188,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:184",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2319,7 +2307,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:141",
               "format": "percentunit",
               "label": null,
               "logBase": 1,
@@ -2328,7 +2315,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:142",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2398,7 +2384,6 @@
           },
           "seriesOverrides": [
             {
-              "$$hashKey": "object:140",
               "alias": "Executor instances",
               "linewidth": 3
             }
@@ -2441,7 +2426,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:170",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2450,7 +2434,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:171",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2559,7 +2542,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:199",
               "format": "µs",
               "label": null,
               "logBase": 1,
@@ -2568,7 +2550,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:200",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2689,7 +2670,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:281",
               "format": "percentunit",
               "label": null,
               "logBase": 1,
@@ -2698,7 +2678,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:282",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2794,7 +2773,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:250",
               "format": "ops",
               "label": "",
               "logBase": 1,
@@ -2803,7 +2781,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:251",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2901,7 +2878,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:279",
               "format": "binBps",
               "label": null,
               "logBase": 1,
@@ -2910,7 +2886,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:280",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -3007,7 +2982,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:312",
               "format": "binBps",
               "label": null,
               "logBase": 1,
@@ -3016,7 +2990,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:313",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -3114,7 +3087,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:371",
               "decimals": 0,
               "format": "short",
               "label": null,
@@ -3124,7 +3096,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:372",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -3220,7 +3191,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:408",
               "decimals": 0,
               "format": "short",
               "label": null,
@@ -3230,7 +3200,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:409",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -3329,7 +3298,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:445",
               "format": "s",
               "label": null,
               "logBase": 1,
@@ -3338,7 +3306,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:446",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -3373,7 +3340,7 @@
         "x": 0,
         "y": 8
       },
-      "id": 423,
+      "id": 507,
       "panels": [
         {
           "aliasColors": {
@@ -3396,10 +3363,10 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 7
+            "y": 8
           },
           "hiddenSeries": false,
-          "id": 424,
+          "id": 508,
           "legend": {
             "avg": false,
             "current": false,
@@ -3420,7 +3387,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 190,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3436,14 +3403,14 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "count(buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"} > 0) / count(buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"})",
+              "expr": "count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"}))",
               "interval": "",
               "legendFormat": "Working",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "1 - count(buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"} > 0) / count(buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"})",
+              "expr": "1 - count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{job=\"buildbuddy-${pool}\"}))",
               "interval": "",
               "legendFormat": "Idle",
               "refId": "B"
@@ -3469,7 +3436,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:141",
               "format": "percentunit",
               "label": null,
               "logBase": 1,
@@ -3478,7 +3444,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:142",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -3514,10 +3479,10 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 7
+            "y": 8
           },
           "hiddenSeries": false,
-          "id": 425,
+          "id": 509,
           "legend": {
             "avg": false,
             "current": false,
@@ -3539,7 +3504,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 159,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3560,7 +3525,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "avg(buildbuddy_remote_execution_queue_length{job=\"buildbuddy-${pool}\"})",
+              "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{job=\"buildbuddy-${pool}\"}))",
               "interval": "",
               "legendFormat": "Avg executor queue length",
               "queryType": "randomWalk",
@@ -3593,7 +3558,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:170",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -3602,7 +3566,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:171",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -3639,10 +3602,10 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 16
+            "y": 17
           },
           "hiddenSeries": false,
-          "id": 426,
+          "id": 510,
           "legend": {
             "avg": false,
             "current": false,
@@ -3663,7 +3626,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 210,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3714,7 +3677,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:199",
               "format": "µs",
               "label": null,
               "logBase": 1,
@@ -3723,7 +3685,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:200",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -3773,10 +3734,10 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 16
+            "y": 17
           },
           "hiddenSeries": false,
-          "id": 427,
+          "id": 511,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -3798,7 +3759,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 178,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3847,7 +3808,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:281",
               "format": "percentunit",
               "label": null,
               "logBase": 1,
@@ -3856,7 +3816,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:282",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -3888,10 +3847,10 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 24
+            "y": 25
           },
           "hiddenSeries": false,
-          "id": 428,
+          "id": 512,
           "legend": {
             "avg": false,
             "current": false,
@@ -3912,7 +3871,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 31,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3955,7 +3914,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:250",
               "format": "ops",
               "label": "",
               "logBase": 1,
@@ -3964,7 +3922,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:251",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -3998,10 +3955,10 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 24
+            "y": 25
           },
           "hiddenSeries": false,
-          "id": 429,
+          "id": 513,
           "legend": {
             "avg": false,
             "current": false,
@@ -4022,7 +3979,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 35,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4065,7 +4022,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:279",
               "format": "binBps",
               "label": null,
               "logBase": 1,
@@ -4074,7 +4030,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:280",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -4107,10 +4062,10 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 32
+            "y": 33
           },
           "hiddenSeries": false,
-          "id": 430,
+          "id": 514,
           "legend": {
             "avg": false,
             "current": false,
@@ -4131,7 +4086,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 33,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4174,7 +4129,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:312",
               "format": "binBps",
               "label": null,
               "logBase": 1,
@@ -4183,7 +4137,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:313",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -4216,10 +4169,10 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 32
+            "y": 33
           },
           "hiddenSeries": false,
-          "id": 431,
+          "id": 515,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -4241,7 +4194,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 102,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4257,9 +4210,9 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (job, instance) (buildbuddy_remote_execution_queue_length{job=\"buildbuddy-${pool}\"})",
+              "expr": "sum by (pod_name) (buildbuddy_remote_execution_queue_length{job=\"buildbuddy-${pool}\"})",
               "interval": "",
-              "legendFormat": "{{job}} @ {{instance}}",
+              "legendFormat": "{{pod_name}}",
               "queryType": "randomWalk",
               "refId": "A"
             }
@@ -4268,7 +4221,7 @@
           "timeFrom": null,
           "timeRegions": [],
           "timeShift": null,
-          "title": "Executor queue length by instance",
+          "title": "Executor queue length by pod",
           "tooltip": {
             "shared": true,
             "sort": 0,
@@ -4284,7 +4237,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:371",
               "decimals": 0,
               "format": "short",
               "label": null,
@@ -4294,7 +4246,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:372",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -4326,10 +4277,10 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 40
+            "y": 41
           },
           "hiddenSeries": false,
-          "id": 432,
+          "id": 516,
           "legend": {
             "avg": false,
             "current": false,
@@ -4350,7 +4301,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 129,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4366,7 +4317,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "quantile(0.5, buildbuddy_remote_execution_queue_length{job=\"buildbuddy-${pool}\"})",
+              "expr": "quantile(0.5, sum by (pod_name) (buildbuddy_remote_execution_queue_length{job=\"buildbuddy-${pool}\"}))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -4393,7 +4344,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:408",
               "decimals": 0,
               "format": "short",
               "label": null,
@@ -4403,7 +4353,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:409",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -4435,10 +4384,10 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 40
+            "y": 41
           },
           "hiddenSeries": false,
-          "id": 433,
+          "id": 517,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -4462,7 +4411,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 180,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4505,7 +4454,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:445",
               "format": "s",
               "label": null,
               "logBase": 1,
@@ -4514,7 +4462,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:446",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -4529,7 +4476,7 @@
           }
         }
       ],
-      "repeatIteration": 1625776480136,
+      "repeatIteration": 1630097828030,
       "repeatPanelId": 28,
       "scopedVars": {
         "pool": {
@@ -4650,7 +4597,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:146",
               "decimals": 0,
               "format": "short",
               "label": null,
@@ -4660,7 +4606,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:147",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -4758,7 +4703,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:179",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -4767,7 +4711,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:180",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -4865,7 +4808,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:52",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -4874,7 +4816,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:53",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -4972,7 +4913,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:133",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -4981,7 +4921,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:134",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -5079,7 +5018,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:559",
               "format": "bytes",
               "label": null,
               "logBase": 1,
@@ -5088,7 +5026,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:560",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -5186,7 +5123,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:697",
               "format": "bytes",
               "label": null,
               "logBase": 1,
@@ -5195,7 +5131,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:698",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -5230,7 +5165,7 @@
         "x": 0,
         "y": 10
       },
-      "id": 434,
+      "id": 518,
       "panels": [
         {
           "aliasColors": {
@@ -5256,7 +5191,7 @@
             "y": 9
           },
           "hiddenSeries": false,
-          "id": 435,
+          "id": 519,
           "legend": {
             "avg": false,
             "current": false,
@@ -5278,7 +5213,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 274,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5333,7 +5268,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:146",
               "decimals": 0,
               "format": "short",
               "label": null,
@@ -5343,7 +5277,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:147",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -5380,7 +5313,7 @@
             "y": 9
           },
           "hiddenSeries": false,
-          "id": 436,
+          "id": 520,
           "legend": {
             "avg": false,
             "current": false,
@@ -5401,7 +5334,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 276,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5444,7 +5377,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:179",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -5453,7 +5385,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:180",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -5490,7 +5421,7 @@
             "y": 17
           },
           "hiddenSeries": false,
-          "id": 437,
+          "id": 521,
           "legend": {
             "avg": false,
             "current": false,
@@ -5511,7 +5442,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 290,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5554,7 +5485,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:52",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -5563,7 +5493,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:53",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -5600,7 +5529,7 @@
             "y": 17
           },
           "hiddenSeries": false,
-          "id": 438,
+          "id": 522,
           "legend": {
             "avg": false,
             "current": false,
@@ -5621,7 +5550,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 292,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5664,7 +5593,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:133",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -5673,7 +5601,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:134",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -5710,7 +5637,7 @@
             "y": 25
           },
           "hiddenSeries": false,
-          "id": 439,
+          "id": 523,
           "legend": {
             "avg": false,
             "current": false,
@@ -5731,7 +5658,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 278,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5774,7 +5701,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:559",
               "format": "bytes",
               "label": null,
               "logBase": 1,
@@ -5783,7 +5709,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:560",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -5820,7 +5745,7 @@
             "y": 25
           },
           "hiddenSeries": false,
-          "id": 440,
+          "id": 524,
           "legend": {
             "avg": false,
             "current": false,
@@ -5841,7 +5766,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 280,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5884,7 +5809,6 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:697",
               "format": "bytes",
               "label": null,
               "logBase": 1,
@@ -5893,7 +5817,6 @@
               "show": true
             },
             {
-              "$$hashKey": "object:698",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -5908,7 +5831,7 @@
           }
         }
       ],
-      "repeatIteration": 1625776480136,
+      "repeatIteration": 1630097828030,
       "repeatPanelId": 264,
       "scopedVars": {
         "pool": {
@@ -5966,7 +5889,7 @@
             "h": 13,
             "w": 24,
             "x": 0,
-            "y": 79
+            "y": 85
           },
           "hiddenSeries": false,
           "id": 40,
@@ -6077,7 +6000,7 @@
             "h": 14,
             "w": 24,
             "x": 0,
-            "y": 92
+            "y": 98
           },
           "hiddenSeries": false,
           "id": 76,
@@ -6178,7 +6101,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 106
+            "y": 112
           },
           "hiddenSeries": false,
           "id": 42,
@@ -6276,7 +6199,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 106
+            "y": 112
           },
           "hiddenSeries": false,
           "id": 46,
@@ -6374,7 +6297,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 114
+            "y": 120
           },
           "hiddenSeries": false,
           "id": 44,
@@ -6465,6 +6388,697 @@
         "x": 0,
         "y": 12
       },
+      "id": 458,
+      "panels": [
+        {
+          "aliasColors": {
+            "max": "#BF1B00"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "editable": true,
+          "error": false,
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "links": []
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "grid": {},
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 13
+          },
+          "hiddenSeries": false,
+          "id": 498,
+          "isNew": true,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "hideEmpty": false,
+            "hideZero": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 2,
+          "links": [],
+          "nullPointMode": "null as zero",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "redis_memory_used_bytes{instance=~\"$instance\"}",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "used, {{ instance }}",
+              "metric": "",
+              "refId": "A",
+              "step": 240,
+              "target": ""
+            },
+            {
+              "expr": "redis_memory_max_bytes{instance=~\"$instance\"}",
+              "format": "time_series",
+              "hide": false,
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "max, {{ instance }}",
+              "refId": "B",
+              "step": 240
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Total memory usage",
+          "tooltip": {
+            "msResolution": false,
+            "shared": true,
+            "sort": 0,
+            "value_type": "cumulative"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "bytes",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": 0,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "editable": true,
+          "error": false,
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "links": []
+            },
+            "overrides": []
+          },
+          "fill": 7,
+          "fillGradient": 0,
+          "grid": {},
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 12,
+            "y": 13
+          },
+          "hiddenSeries": false,
+          "id": 502,
+          "isNew": true,
+          "legend": {
+            "alignAsTable": false,
+            "avg": false,
+            "current": true,
+            "hideEmpty": false,
+            "hideZero": true,
+            "max": false,
+            "min": false,
+            "rightSide": false,
+            "show": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 2,
+          "links": [],
+          "nullPointMode": "connected",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": true,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum (redis_db_keys{instance=~\"$instance\"}) by (db, instance)",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "{{ db }}, {{ instance }}",
+              "refId": "A",
+              "step": 240,
+              "target": ""
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Total Items per DB",
+          "tooltip": {
+            "msResolution": false,
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "none",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "cacheTimeout": null,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": null,
+                "filterable": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 22
+          },
+          "hiddenSeries": false,
+          "hideTimeOverride": true,
+          "id": 506,
+          "interval": null,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "links": [],
+          "maxDataPoints": 100,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum(redis_connected_clients{instance=~\"$instance\"})",
+              "format": "time_series",
+              "intervalFactor": 2,
+              "legendFormat": "",
+              "metric": "",
+              "refId": "A",
+              "step": 2
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": "1m",
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Clients",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "description": "",
+          "editable": true,
+          "error": false,
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "links": []
+            },
+            "overrides": []
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "grid": {},
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 32
+          },
+          "hiddenSeries": false,
+          "id": 496,
+          "isNew": true,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "hideEmpty": false,
+            "hideZero": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "links": [],
+          "nullPointMode": "connected",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": true,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum(rate(redis_commands_total{instance=~\"$instance\"} [1m])) by (cmd)",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "{{ cmd }}",
+              "metric": "redis_command_calls_total",
+              "refId": "A",
+              "step": 240
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Total commands per second",
+          "tooltip": {
+            "msResolution": true,
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "editable": true,
+          "error": false,
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "links": []
+            },
+            "overrides": []
+          },
+          "fill": 2,
+          "fillGradient": 0,
+          "grid": {},
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 42
+          },
+          "hiddenSeries": false,
+          "id": 500,
+          "isNew": true,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "hideEmpty": false,
+            "hideZero": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "links": [],
+          "nullPointMode": "connected",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum(irate(redis_commands_duration_seconds_total{instance =~ \"$instance\"}[1m])) by (cmd)\n  /\nsum(irate(redis_commands_total{instance =~ \"$instance\"}[1m])) by (cmd)\n",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "{{ cmd }}",
+              "metric": "redis_command_calls_total",
+              "refId": "A",
+              "step": 240
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Average time spent by command per second",
+          "tooltip": {
+            "msResolution": true,
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "s",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "editable": true,
+          "error": false,
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "links": []
+            },
+            "overrides": []
+          },
+          "fill": 8,
+          "fillGradient": 0,
+          "grid": {},
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 12,
+            "y": 42
+          },
+          "hiddenSeries": false,
+          "id": 504,
+          "isNew": true,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "hideEmpty": false,
+            "hideZero": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "links": [],
+          "nullPointMode": "connected",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": true,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "sum(irate(redis_commands_duration_seconds_total{instance=~\"$instance\"}[1m])) by (cmd) != 0",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "{{ cmd }}",
+              "metric": "redis_command_calls_total",
+              "refId": "A",
+              "step": 240
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Total Time Spent by Command / sec",
+          "tooltip": {
+            "msResolution": true,
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "format": "s",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        }
+      ],
+      "title": "Redis",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "datasource": null,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
       "id": 48,
       "panels": [
         {
@@ -6485,7 +7099,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 123
+            "y": 43
           },
           "hiddenSeries": false,
           "id": 50,
@@ -6583,7 +7197,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 123
+            "y": 43
           },
           "hiddenSeries": false,
           "id": 53,
@@ -6681,7 +7295,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 131
+            "y": 51
           },
           "hiddenSeries": false,
           "id": 51,
@@ -6779,7 +7393,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 131
+            "y": 51
           },
           "hiddenSeries": false,
           "id": 55,
@@ -6868,7 +7482,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 14
       },
       "id": 107,
       "panels": [
@@ -7477,7 +8091,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 15
       },
       "id": 83,
       "panels": [
@@ -7931,9 +8545,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 16
       },
-      "id": 441,
+      "id": 525,
       "panels": [
         {
           "aliasColors": {},
@@ -7957,7 +8571,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 442,
+          "id": 526,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -7982,7 +8596,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8070,7 +8684,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 443,
+          "id": 527,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -8094,7 +8708,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8180,7 +8794,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 444,
+          "id": 528,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -8204,7 +8818,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8290,7 +8904,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 445,
+          "id": 529,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -8314,7 +8928,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8379,7 +8993,7 @@
           }
         }
       ],
-      "repeatIteration": 1625776480136,
+      "repeatIteration": 1630097828030,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -8398,9 +9012,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 17
       },
-      "id": 446,
+      "id": 530,
       "panels": [
         {
           "aliasColors": {},
@@ -8424,7 +9038,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 447,
+          "id": 531,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -8449,7 +9063,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8537,7 +9151,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 448,
+          "id": 532,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -8561,7 +9175,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8647,7 +9261,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 449,
+          "id": 533,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -8671,7 +9285,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8757,7 +9371,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 450,
+          "id": 534,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -8781,7 +9395,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8846,7 +9460,7 @@
           }
         }
       ],
-      "repeatIteration": 1625776480136,
+      "repeatIteration": 1630097828030,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -8865,7 +9479,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 18
       },
       "id": 71,
       "panels": [
@@ -9119,9 +9733,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 19
       },
-      "id": 451,
+      "id": 535,
       "panels": [
         {
           "aliasColors": {
@@ -9161,7 +9775,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 452,
+          "id": 536,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9186,7 +9800,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 73,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9271,7 +9885,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 453,
+          "id": 537,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9296,7 +9910,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 79,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9361,7 +9975,7 @@
           }
         }
       ],
-      "repeatIteration": 1625776480136,
+      "repeatIteration": 1630097828030,
       "repeatPanelId": 71,
       "scopedVars": {
         "job": {
@@ -9380,9 +9994,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 20
       },
-      "id": 454,
+      "id": 538,
       "panels": [
         {
           "aliasColors": {
@@ -9422,7 +10036,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 455,
+          "id": 539,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9447,7 +10061,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 73,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9532,7 +10146,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 456,
+          "id": 540,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9557,7 +10171,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1625776480136,
+          "repeatIteration": 1630097828030,
           "repeatPanelId": 79,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9622,7 +10236,7 @@
           }
         }
       ],
-      "repeatIteration": 1625776480136,
+      "repeatIteration": 1630097828030,
       "repeatPanelId": 71,
       "scopedVars": {
         "job": {
@@ -9641,7 +10255,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 21
       },
       "id": 8,
       "panels": [
@@ -9957,6 +10571,37 @@
         "queryValue": "",
         "skipUrlSync": false,
         "type": "custom"
+      },
+      {
+        "allValue": null,
+        "current": {
+          "selected": true,
+          "text": [
+            "host.docker.internal:9121"
+          ],
+          "value": [
+            "host.docker.internal:9121"
+          ]
+        },
+        "datasource": "Prometheus",
+        "definition": "label_values(redis_up, instance)",
+        "error": null,
+        "hide": 0,
+        "includeAll": false,
+        "label": "Redis Instance",
+        "multi": true,
+        "name": "instance",
+        "options": [],
+        "query": "label_values(redis_up, instance)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "tagValuesQuery": "",
+        "tags": [],
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
       }
     ]
   },
