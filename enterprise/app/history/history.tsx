@@ -137,7 +137,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       .getInvocationStat(request)
       .then((response) => {
         console.log(response);
-        this.setState({ aggregateStats: response.invocationStat });
+        this.setState({ aggregateStats: response.invocationStat.filter((stat) => stat.name) });
       })
       .finally(() => this.setState({ loadingAggregateStats: false }));
   }
@@ -329,17 +329,25 @@ export default class HistoryComponent extends React.Component<Props, State> {
     if (this.props.hash == "#branches") viewType = "branches";
     if (this.props.hash == "#commits") viewType = "commits";
     if (this.props.hash == "#hosts") viewType = "hosts";
+
+    // Note: we don't show summary stats for scoped views because the summary stats
+    // don't currently get filtered by the scope as well.
+    // TODO(bduffany): Make sure scope-filtered queries are optimized and remove this limitation.
+    const hideSummaryStats = Boolean(scope);
+
     return (
       <div className="history">
         <div className="shelf">
           <div className="container">
-            {!capabilities.globalFilter && !this.props.user?.isInDefaultGroup() && this.state.invocations.length > 0 && (
-              <div
-                onClick={this.handleCreateOrgClicked.bind(this)}
-                className={`org-button ${!this.props.user?.selectedGroup?.ownedDomain && "clickable"}`}>
-                {this.props.user?.selectedGroup?.ownedDomain || "Create Organization"}
-              </div>
-            )}
+            {!capabilities.globalFilter &&
+              !this.props.user?.isInDefaultGroup() &&
+              Boolean(this.state.invocations?.length) && (
+                <div
+                  onClick={this.handleCreateOrgClicked.bind(this)}
+                  className={`org-button ${!this.props.user?.selectedGroup?.ownedDomain && "clickable"}`}>
+                  {this.props.user?.selectedGroup?.ownedDomain || "Create Organization"}
+                </div>
+              )}
             <div className="top-bar">
               <div className="breadcrumbs">
                 {this.props.user && this.props.user?.selectedGroupName() && (
@@ -438,17 +446,17 @@ export default class HistoryComponent extends React.Component<Props, State> {
                   `${this.props.user?.selectedGroupName() || "User"}'s ${viewType}`}
               </div>
             </div>
-            {this.state.loadingSummaryStat && (
+            {this.state.loadingSummaryStat && !hideSummaryStats && (
               <div className="details loading-details">
                 <Spinner />
                 <div>Loading stats...</div>
               </div>
             )}
-            {this.state.summaryStat && (
+            {this.state.summaryStat && !hideSummaryStats && (
               <div className="details">
                 <div className="detail">
                   <img className="icon" src="/image/hash.svg" />
-                  {format.formatWithCommas(this.state.summaryStat.totalNumBuilds)} recent builds
+                  {format.formatWithCommas(this.state.summaryStat.totalNumBuilds)} builds
                 </div>
                 <div className="detail">
                   <img className="icon" src="/image/check-circle.svg" />

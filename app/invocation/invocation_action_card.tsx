@@ -206,7 +206,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                   {event.name} @ {format.formatTimestamp(event.timestamp)}
                 </span>
                 <span className="bar-description">
-                  ({format.compactDurationSec(duration)}, {(weight * 100).toFixed(0)}%)
+                  {format.compactDurationSec(duration)} ({(weight * 100).toFixed(1)}%)
                 </span>
               </div>
               <div className="action-timeline">
@@ -338,7 +338,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         {this.state.command.environmentVariables.map((variable) => (
                           <div>
                             <span className="prop-name">{variable.name}</span>
-                            <span className="metadata-detail">={variable.value}</span>
+                            <span className="prop-value">={variable.value}</span>
                           </div>
                         ))}
                       </div>
@@ -376,12 +376,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       {this.state.actionResult.outputFiles ? (
                         <div className="action-list">
                           {this.state.actionResult.outputFiles.map((file) => (
-                            <div>
-                              <span
-                                className="prop-link clickable"
-                                onClick={this.handleOutputFileClicked.bind(this, file)}>
-                                {file.path}
+                            <div
+                              className="file-name clickable"
+                              onClick={this.handleOutputFileClicked.bind(this, file)}>
+                              <span>
+                                <img className="file-icon" src="/image/download.svg" />
                               </span>
+                              <span className="prop-link">{file.path}</span>
                               {file.isExecutable && <span className="detail"> (executable)</span>}
                             </div>
                           ))}

@@ -12,6 +12,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/tools/vmstart",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/firecracker",
         "//proto:remote_execution_go_proto",
         "//server/config",

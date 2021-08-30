@@ -290,27 +290,27 @@ func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser,
 // serialize this ledger, we regenerate it from scratch on startup by looking
 // at the filesystem.
 type partition struct {
-	id                      string
-	nestDigestsByHashPrefix bool
-	mu                      sync.RWMutex
-	rootDir                 string
-	lru                     *lru.LRU
-	fileChannel             chan *fileRecord
-	diskIsMapped            bool
-	lastGCTime              time.Time
+	id           string
+	useV2Layout  bool
+	mu           sync.RWMutex
+	rootDir      string
+	lru          *lru.LRU
+	fileChannel  chan *fileRecord
+	diskIsMapped bool
+	lastGCTime   time.Time
 }
 
-func newPartition(id string, rootDir string, maxSizeBytes int64, nestDigestsByHashPrefix bool) (*partition, error) {
+func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool) (*partition, error) {
 	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: evictFn, SizeFn: sizeFn})
 	if err != nil {
 		return nil, err
 	}
 	c := &partition{
-		id:                      id,
-		nestDigestsByHashPrefix: nestDigestsByHashPrefix,
-		lru:                     l,
-		rootDir:                 rootDir,
-		fileChannel:             make(chan *fileRecord),
+		id:          id,
+		useV2Layout: useV2Layout,
+		lru:         l,
+		rootDir:     rootDir,
+		fileChannel: make(chan *fileRecord),
 	}
 	if err := c.initializeCache(); err != nil {
 		return nil, err
@@ -437,7 +437,7 @@ func (p *partition) initializeCache() error {
 				// Originally there was just one "partition" with its contents under the root directory.
 				// Additional partition directories live under the root as well and they need to be ignored
 				// when initializing the default partition.
-				if p.id == DefaultPartitionID && strings.HasPrefix(d.Name(), PartitionDirectoryPrefix) {
+				if !p.useV2Layout && p.id == DefaultPartitionID && strings.HasPrefix(d.Name(), PartitionDirectoryPrefix) {
 					return filepath.SkipDir
 				}
 				return nil
@@ -498,7 +498,8 @@ func (p *partition) key(ctx context.Context, cachePrefix string, d *repb.Digest)
 		return "", err
 	}
 	hashPrefixDir := ""
-	if p.nestDigestsByHashPrefix {
+	// Under the V2 layout, we nest hashes under a subdirectory named after the hash prefix.
+	if p.useV2Layout {
 		// Should never be the case.
 		if len(hash) < HashPrefixDirPrefixLen {
 			alert.UnexpectedEvent("disk_cache_digest_too_short", "digest hash %q is too short", hash)
