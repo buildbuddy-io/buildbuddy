@@ -238,7 +238,7 @@ type ExecutorConfig struct {
 	EnableFirecracker         bool                      `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
 	HostExecutorRootDirectory string                    `yaml:"host_executor_root_directory" usage:"Path on the host where the executor container root directory is mounted."`
 	ContainerRegistries       []ContainerRegistryConfig `yaml:"container_registries"`
-	EnableCASFS               bool             `yaml:"enable_casfs" usage:"Whether FUSE based CAS filesystem is enabled."`
+	EnableCASFS               bool                      `yaml:"enable_casfs" usage:"Whether FUSE based CAS filesystem is enabled."`
 }
 
 type ContainerRegistryConfig struct {
