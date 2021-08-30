@@ -238,7 +238,7 @@ func redactOptionsDescription(optionsDescription string) string {
 			}
 		}
 	}
-	// Re-quote option values, since shellwords quotes when parsing.
+	// Re-quote option values, since shellwords unquotes when parsing.
 	// Also strip URL secrets.
 	for i, option := range options {
 		optionPrefix := ""
