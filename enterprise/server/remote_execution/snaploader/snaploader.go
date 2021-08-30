@@ -218,7 +218,7 @@ func (l *Loader) GetConfigurationData() ([]byte, error) {
 // UnpackSnapshot unpacks all of the files in a snapshot to the specified output
 // directory.
 func (l *Loader) UnpackSnapshot(outputDirectory string) error {
-	if _, err := dirtools.GetTree(l.ctx, l.env, l.instanceName, l.tree, outputDirectory, &dirtools.GetTreeOpts{}); err != nil {
+	if _, err := dirtools.DownloadTree(l.ctx, l.env, l.instanceName, l.tree, outputDirectory, &dirtools.DownloadTreeOpts{}); err != nil {
 		return err
 	}
 	entries, err := os.ReadDir(outputDirectory)

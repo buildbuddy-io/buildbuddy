@@ -98,6 +98,7 @@ func NewDirHelper(rootDir string, outputFiles, outputDirectories []string) *DirH
 
 	return c
 }
+
 func (c *DirHelper) CreateOutputDirs() error {
 	for _, dir := range c.dirsToCreate {
 		if err := disk.EnsureDirectoryExists(dir); err != nil {
@@ -396,36 +397,36 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	return txInfo, nil
 }
 
-type filePointer struct {
-	// fullPath is the absolute path to the file, starting with "/" which refers
+type FilePointer struct {
+	// FullPath is the absolute path to the file, starting with "/" which refers
 	// to the root directory of the local file system.
 	// ex: /tmp/remote_execution/abc123/some/package/some_input.go
-	fullPath string
-	// relativePath is the workspace-relative path to the file.
+	FullPath string
+	// RelativePath is the workspace-relative path to the file.
 	// ex: some/package/some_input.go
-	relativePath string
-	fileNode     *repb.FileNode
+	RelativePath string
+	FileNode     *repb.FileNode
 }
 
-// removeExisting removes any existing file pointed to by the filePointer if
+// removeExisting removes any existing file pointed to by the FilePointer if
 // it exists in the opts.Skip (pre-existing files) map. This is needed so that
 // we overwrite existing files without silently dropping errors when linking
 // the file. (Note, it is not needed when writing a fresh copy of the file.)
-func removeExisting(fp *filePointer, opts *GetTreeOpts) error {
-	if _, ok := opts.Skip[fp.relativePath]; ok {
-		if err := os.Remove(fp.fullPath); err != nil && !os.IsNotExist(err) {
+func removeExisting(fp *FilePointer, opts *DownloadTreeOpts) error {
+	if _, ok := opts.Skip[fp.RelativePath]; ok {
+		if err := os.Remove(fp.FullPath); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
 	return nil
 }
 
-func writeFile(fp *filePointer, data []byte) error {
+func writeFile(fp *FilePointer, data []byte) error {
 	var mode os.FileMode = 0644
-	if fp.fileNode.IsExecutable {
+	if fp.FileNode.IsExecutable {
 		mode = 0755
 	}
-	f, err := os.OpenFile(fp.fullPath, os.O_RDWR|os.O_CREATE, mode)
+	f, err := os.OpenFile(fp.FullPath, os.O_RDWR|os.O_CREATE, mode)
 	if err != nil {
 		return err
 	}
@@ -436,31 +437,46 @@ func writeFile(fp *filePointer, data []byte) error {
 	return f.Close()
 }
 
-func copyFile(src *filePointer, dest *filePointer, opts *GetTreeOpts) error {
+func copyFile(src *FilePointer, dest *FilePointer, opts *DownloadTreeOpts) error {
 	if err := removeExisting(dest, opts); err != nil {
 		return err
 	}
-	return fastcopy.FastCopy(src.fullPath, dest.fullPath)
+	return fastcopy.FastCopy(src.FullPath, dest.FullPath)
 }
 
 // linkFileFromFileCache attempts to link the given file path from the local
 // file cache, and returns whether the linking was successful.
-func linkFileFromFileCache(d *repb.Digest, fp *filePointer, fc interfaces.FileCache, opts *GetTreeOpts) (bool, error) {
+func linkFileFromFileCache(d *repb.Digest, fp *FilePointer, fc interfaces.FileCache, opts *DownloadTreeOpts) (bool, error) {
 	if err := removeExisting(fp, opts); err != nil {
 		return false, err
 	}
-	return fc.FastLinkFile(d, fp.fullPath), nil
+	return fc.FastLinkFile(d, fp.FullPath), nil
 }
 
-// fileMap is a map of digests to file pointers containing the contents
+// FileMap is a map of digests to file pointers containing the contents
 // addressed by the digest.
-type fileMap map[digest.Key][]*filePointer
+type FileMap map[digest.Key][]*FilePointer
 
-func batchDownloadFiles(ctx context.Context, env environment.Env, req *repb.BatchReadBlobsRequest, filesToFetch fileMap, opts *GetTreeOpts) error {
-	casClient := env.GetContentAddressableStorageClient()
-	fc := env.GetFileCache()
+type BatchFileFetcher struct {
+	ctx          context.Context
+	instanceName string
+	fileCache    interfaces.FileCache
+	bsClient     bspb.ByteStreamClient
+	casClient    repb.ContentAddressableStorageClient
+}
 
-	rsp, err := casClient.BatchReadBlobs(ctx, req)
+func NewBatchFileFetcher(ctx context.Context, instanceName string, fileCache interfaces.FileCache, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient) *BatchFileFetcher {
+	return &BatchFileFetcher{
+		ctx:          ctx,
+		instanceName: instanceName,
+		fileCache:    fileCache,
+		bsClient:     bsClient,
+		casClient:    casClient,
+	}
+}
+
+func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.BatchReadBlobsRequest, filesToFetch FileMap, opts *DownloadTreeOpts) error {
+	var rsp, err = ff.casClient.BatchReadBlobs(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -480,8 +496,8 @@ func batchDownloadFiles(ctx context.Context, env environment.Env, req *repb.Batc
 		if err := writeFile(ptr, fileResponse.GetData()); err != nil {
 			return err
 		}
-		if fc != nil {
-			fc.AddFile(d, ptr.fullPath)
+		if ff.fileCache != nil {
+			ff.fileCache.AddFile(d, ptr.FullPath)
 		}
 		// Only need to write the first file explicitly; the rest of the files can
 		// be fast-copied from the first.
@@ -494,13 +510,12 @@ func batchDownloadFiles(ctx context.Context, env environment.Env, req *repb.Batc
 	return nil
 }
 
-func fetchFiles(ctx context.Context, env environment.Env, instanceName string, filesToFetch fileMap, opts *GetTreeOpts) error {
+func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeOpts) error {
 	req := &repb.BatchReadBlobsRequest{
-		InstanceName: instanceName,
+		InstanceName: ff.instanceName,
 	}
 	currentBatchRequestSize := int64(0)
-	eg, ctx := errgroup.WithContext(ctx)
-	fc := env.GetFileCache()
+	eg, ctx := errgroup.WithContext(ff.ctx)
 
 	// Note: filesToFetch is keyed by digest, so all files in `filePointers` have
 	// the digest represented by dk.
@@ -520,9 +535,9 @@ func fetchFiles(ctx context.Context, env environment.Env, instanceName string, f
 		// Attempt to link files from the local file cache.
 		numFilesLinked := 0
 		for _, fp := range filePointers {
-			d := fp.fileNode.GetDigest()
-			if fc != nil {
-				linked, err := linkFileFromFileCache(d, fp, fc, opts)
+			d := fp.FileNode.GetDigest()
+			if ff.fileCache != nil {
+				linked, err := linkFileFromFileCache(d, fp, ff.fileCache, opts)
 				if err != nil {
 					return err
 				}
@@ -545,9 +560,9 @@ func fetchFiles(ctx context.Context, env environment.Env, instanceName string, f
 		// it.
 		size := d.GetSizeBytes()
 		if size > gRPCMaxSize {
-			func(d *repb.Digest, fps []*filePointer) {
+			func(d *repb.Digest, fps []*FilePointer) {
 				eg.Go(func() error {
-					return bytestreamReadFiles(ctx, env, instanceName, d, fps, opts)
+					return ff.bytestreamReadFiles(ctx, ff.instanceName, d, fps, opts)
 				})
 			}(d, filePointers)
 			continue
@@ -559,11 +574,11 @@ func fetchFiles(ctx context.Context, env environment.Env, instanceName string, f
 		if currentBatchRequestSize+size > gRPCMaxSize {
 			func(req *repb.BatchReadBlobsRequest) {
 				eg.Go(func() error {
-					return batchDownloadFiles(ctx, env, req, filesToFetch, opts)
+					return ff.batchDownloadFiles(ctx, req, filesToFetch, opts)
 				})
 			}(req)
 			req = &repb.BatchReadBlobsRequest{
-				InstanceName: instanceName,
+				InstanceName: ff.instanceName,
 			}
 			currentBatchRequestSize = 0
 		}
@@ -577,7 +592,7 @@ func fetchFiles(ctx context.Context, env environment.Env, instanceName string, f
 	// Make sure we fire the last request if there is one.
 	if len(req.Digests) > 0 {
 		eg.Go(func() error {
-			return batchDownloadFiles(ctx, env, req, filesToFetch, opts)
+			return ff.batchDownloadFiles(ctx, req, filesToFetch, opts)
 		})
 	}
 	return eg.Wait()
@@ -585,27 +600,27 @@ func fetchFiles(ctx context.Context, env environment.Env, instanceName string, f
 
 // bytestreamReadFiles reads the given digest from the bytestream and creates
 // files pointing to those contents.
-func bytestreamReadFiles(ctx context.Context, env environment.Env, instanceName string, d *repb.Digest, fps []*filePointer, opts *GetTreeOpts) error {
+func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceName string, d *repb.Digest, fps []*FilePointer, opts *DownloadTreeOpts) error {
 	if len(fps) == 0 {
 		return nil
 	}
 	fp := fps[0]
 	var mode os.FileMode = 0644
-	if fp.fileNode.IsExecutable {
+	if fp.FileNode.IsExecutable {
 		mode = 0755
 	}
-	f, err := os.OpenFile(fp.fullPath, os.O_RDWR|os.O_CREATE, mode)
+	f, err := os.OpenFile(fp.FullPath, os.O_RDWR|os.O_CREATE, mode)
 	if err != nil {
 		return err
 	}
-	if err := cachetools.GetBlob(ctx, env.GetByteStreamClient(), digest.NewInstanceNameDigest(fp.fileNode.Digest, instanceName), f); err != nil {
+	if err := cachetools.GetBlob(ctx, ff.bsClient, digest.NewInstanceNameDigest(fp.FileNode.Digest, instanceName), f); err != nil {
 		return err
 	}
 	if err := f.Close(); err != nil {
 		return err
 	}
-	if fc := env.GetFileCache(); fc != nil {
-		fc.AddFile(fp.fileNode.Digest, fp.fullPath)
+	if ff.fileCache != nil {
+		ff.fileCache.AddFile(fp.FileNode.Digest, fp.FullPath)
 	}
 
 	// The rest of the files in the list all have the same digest, so we can
@@ -646,11 +661,23 @@ func dirMapFromTree(tree *repb.Tree) (rootDigest *repb.Digest, dirMap map[digest
 	return rootDigest, dirMap, nil
 }
 
-func dirMapFromRootDirectoryDigest(ctx context.Context, env environment.Env, d *digest.InstanceNameDigest) (map[digest.Key]*repb.Directory, error) {
-	dirMap := make(map[digest.Key]*repb.Directory, 0)
+func BuildDirMap(tree *repb.Tree) (map[digest.Key]*repb.Directory, error) {
+	dirMap := make(map[digest.Key]*repb.Directory)
+	for _, dir := range tree.GetChildren() {
+		d, err := digest.ComputeForMessage(dir)
+		if err != nil {
+			return nil, err
+		}
+		dirMap[digest.NewKey(d)] = dir
+	}
+	return dirMap, nil
+}
+
+func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, d *digest.InstanceNameDigest) (*repb.Tree, error) {
+	var dirs []*repb.Directory
 	nextPageToken := ""
 	for {
-		stream, err := env.GetContentAddressableStorageClient().GetTree(ctx, &repb.GetTreeRequest{
+		stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
 			RootDigest:   d.Digest,
 			InstanceName: d.GetInstanceName(),
 			PageToken:    nextPageToken,
@@ -668,21 +695,52 @@ func dirMapFromRootDirectoryDigest(ctx context.Context, env environment.Env, d *
 			}
 			nextPageToken = rsp.GetNextPageToken()
 			for _, child := range rsp.GetDirectories() {
-				d, err := digest.ComputeForMessage(child)
-				if err != nil {
-					return nil, err
-				}
-				dirMap[digest.NewKey(d)] = child
+				dirs = append(dirs, child)
 			}
 		}
 		if nextPageToken == "" {
 			break
 		}
 	}
+
+	if len(dirs) == 0 {
+		return &repb.Tree{Root: &repb.Directory{}}, nil
+	}
+
+	return &repb.Tree{
+		Root:     dirs[0],
+		Children: dirs[1:],
+	}, nil
+}
+
+func dirMapFromRootDirectoryDigest(ctx context.Context, env environment.Env, d *digest.InstanceNameDigest) (map[digest.Key]*repb.Directory, error) {
+	tree, err := GetTreeFromRootDirectoryDigest(ctx, env.GetContentAddressableStorageClient(), d)
+	if err != nil {
+		return nil, err
+	}
+
+	dirMap := make(map[digest.Key]*repb.Directory, 0)
+	addDir := func(dir *repb.Directory) error {
+		d, err := digest.ComputeForMessage(dir)
+		if err != nil {
+			return err
+		}
+		dirMap[digest.NewKey(d)] = dir
+		return nil
+	}
+
+	if err := addDir(tree.GetRoot()); err != nil {
+		return nil, err
+	}
+	for _, child := range tree.GetChildren() {
+		if err := addDir(child); err != nil {
+			return nil, err
+		}
+	}
 	return dirMap, nil
 }
 
-type GetTreeOpts struct {
+type DownloadTreeOpts struct {
 	// Skip specifies file paths to skip, along with their digests. If the digest
 	// of a file to be downloaded doesn't match the digest of the file in this
 	// map, then it is re-downloaded (not skipped).
@@ -692,7 +750,7 @@ type GetTreeOpts struct {
 	TrackTransfers bool
 }
 
-func GetTree(ctx context.Context, env environment.Env, instanceName string, tree *repb.Tree, rootDir string, opts *GetTreeOpts) (*TransferInfo, error) {
+func DownloadTree(ctx context.Context, env environment.Env, instanceName string, tree *repb.Tree, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 
@@ -701,10 +759,10 @@ func GetTree(ctx context.Context, env environment.Env, instanceName string, tree
 		return nil, err
 	}
 
-	return getTree(ctx, env, instanceName, rootDirectoryDigest, rootDir, dirMap, startTime, txInfo, opts)
+	return downloadTree(ctx, env, instanceName, rootDirectoryDigest, rootDir, dirMap, startTime, txInfo, opts)
 }
 
-func GetTreeFromRootDirectoryDigest(ctx context.Context, env environment.Env, d *digest.InstanceNameDigest, rootDir string, opts *GetTreeOpts) (*TransferInfo, error) {
+func DownloadTreeFromRootDirectoryDigest(ctx context.Context, env environment.Env, d *digest.InstanceNameDigest, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 
@@ -718,10 +776,10 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, env environment.Env, d 
 		return nil, err
 	}
 
-	return getTree(ctx, env, d.GetInstanceName(), d.Digest, rootDir, dirMap, startTime, txInfo, opts)
+	return downloadTree(ctx, env, d.GetInstanceName(), d.Digest, rootDir, dirMap, startTime, txInfo, opts)
 }
 
-func getTree(ctx context.Context, env environment.Env, instanceName string, rootDirectoryDigest *repb.Digest, rootDir string, dirMap map[digest.Key]*repb.Directory, startTime time.Time, txInfo *TransferInfo, opts *GetTreeOpts) (*TransferInfo, error) {
+func downloadTree(ctx context.Context, env environment.Env, instanceName string, rootDirectoryDigest *repb.Digest, rootDir string, dirMap map[digest.Key]*repb.Directory, startTime time.Time, txInfo *TransferInfo, opts *DownloadTreeOpts) (*TransferInfo, error) {
 	trackFn := func(relPath string, digest *repb.Digest) {}
 	if opts.TrackTransfers {
 		txInfo.Transfers = map[string]*repb.Digest{}
@@ -730,7 +788,7 @@ func getTree(ctx context.Context, env environment.Env, instanceName string, root
 		}
 	}
 
-	filesToFetch := make(map[digest.Key][]*filePointer, 0)
+	filesToFetch := make(map[digest.Key][]*FilePointer, 0)
 	var fetchDirFn func(dir *repb.Directory, parentDir string) error
 	fetchDirFn = func(dir *repb.Directory, parentDir string) error {
 		for _, fileNode := range dir.GetFiles() {
@@ -747,10 +805,10 @@ func getTree(ctx context.Context, env environment.Env, instanceName string, root
 					// this count.
 					txInfo.BytesTransferred += d.GetSizeBytes()
 				}
-				filesToFetch[dk] = append(filesToFetch[dk], &filePointer{
-					fileNode:     node,
-					fullPath:     fullPath,
-					relativePath: relPath,
+				filesToFetch[dk] = append(filesToFetch[dk], &FilePointer{
+					FileNode:     node,
+					FullPath:     fullPath,
+					RelativePath: relPath,
 				})
 				txInfo.FileCount += 1
 				trackFn(relPath, d)
@@ -780,8 +838,11 @@ func getTree(ctx context.Context, env environment.Env, instanceName string, root
 	if err := fetchDirFn(dirMap[digest.NewKey(rootDirectoryDigest)], rootDir); err != nil {
 		return nil, err
 	}
+
+	ff := NewBatchFileFetcher(ctx, instanceName, env.GetFileCache(), env.GetByteStreamClient(), env.GetContentAddressableStorageClient())
+
 	// Download any files into the directory structure.
-	if err := fetchFiles(ctx, env, instanceName, filesToFetch, opts); err != nil {
+	if err := ff.FetchFiles(filesToFetch, opts); err != nil {
 		return nil, err
 	}
 	endTime := time.Now()
