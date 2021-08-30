@@ -340,6 +340,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 	// `buildEventPublisher.Wait()`
 
 	bep := ar.bep
+	optionsDescription := ""
+	if ws.buildbuddyAPIKey != "" {
+		optionsDescription = fmt.Sprintf("--remote_header='x-buildbuddy-api-key=%s'", ws.buildbuddyAPIKey)
+	}
 
 	startedEvent := &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}}},
@@ -351,8 +355,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 			{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
 		},
 		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
-			Uuid:            ar.invocationID,
-			StartTimeMillis: timeutil.ToMillis(startTime),
+			Uuid:               ar.invocationID,
+			StartTimeMillis:    timeutil.ToMillis(startTime),
+			OptionsDescription: optionsDescription,
 		}},
 	}
 	if err := bep.Publish(startedEvent); err != nil {
