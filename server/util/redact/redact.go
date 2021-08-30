@@ -223,7 +223,9 @@ func redactOptionsDescription(optionsDescription string) string {
 	options, err := shellwords.Parse(optionsDescription)
 	if err != nil {
 		alert.UnexpectedEvent("invalid_bazel_options_description", "Invalid options description")
-		return optionsDescription
+		// Conservatively return "<INVALID>" since we can't properly redact if we
+		// can't parse the options description as a sequence of shell arguments.
+		return "<INVALID>"
 	}
 	// Redact platform props
 	for i, option := range options {
