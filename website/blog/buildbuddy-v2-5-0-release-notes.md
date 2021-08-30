@@ -57,7 +57,7 @@ Thanks to everyone using open source, cloud-hosted, and enterprise BuildBuddy. W
 
 ![](images/settings.png)
 
-- **And much much more** - Every release comes packed with so many new features, performance improvements and bug fixes that we can't get to them them all. Here are some more highlights:
+- **And much much more** - Every release comes packed with so many new features, performance improvements and bug fixes that we can't get to them all. Here are some more highlights:
   - Support for serving static files from a CDN
   - Support for MinIO as a storage backend
   - BuildKite links now link to the specific BuildKite job that spawned the invocation
