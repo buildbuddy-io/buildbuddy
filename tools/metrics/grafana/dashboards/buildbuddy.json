@@ -6789,7 +6789,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(redis_commands_total{instance=~\"$instance\"} [1m])) by (cmd)",
+              "expr": "sum(rate(redis_commands_total{instance=~\"$instance\"} [${window}])) by (cmd)",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -6899,7 +6899,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(irate(redis_commands_duration_seconds_total{instance =~ \"$instance\"}[1m])) by (cmd)\n  /\nsum(irate(redis_commands_total{instance =~ \"$instance\"}[1m])) by (cmd)\n",
+              "expr": "sum(irate(redis_commands_duration_seconds_total{instance =~ \"$instance\"}[${window}])) by (cmd)\n  /\nsum(irate(redis_commands_total{instance =~ \"$instance\"}[${window}])) by (cmd)\n",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -7007,7 +7007,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(irate(redis_commands_duration_seconds_total{instance=~\"$instance\"}[1m])) by (cmd) != 0",
+              "expr": "sum(irate(redis_commands_duration_seconds_total{instance=~\"$instance\"}[${window}])) by (cmd) != 0",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
