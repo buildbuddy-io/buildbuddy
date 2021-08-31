@@ -1,33 +1,47 @@
-name: "release"
+name: "test-release"
 
 on:
-  push:
-    tags:
-      - "v*"
+  pull_request:
+    branches:
+      - master
+
+# on:
+#   push:
+#     tags:
+#       - "v*"
 
 jobs:
-  create-release:
-    runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, 'release skip')"
-    steps:
-      - uses: "marvinpinto/action-automatic-releases@latest"
-        with:
-          repo_token: "${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}"
-          prerelease: false
-          draft: true
+  # create-release:
+  #   runs-on: ubuntu-latest
+  #   if: "!contains(github.event.head_commit.message, 'release skip')"
+  #   steps:
+  #     - uses: "marvinpinto/action-automatic-releases@latest"
+  #       with:
+  #         repo_token: "${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}"
+  #         prerelease: false
+  #         draft: true
 
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.platform }}
     if: "!contains(github.event.head_commit.message, 'release skip')"
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        platform: [macos-latest, ubuntu-latest, m1]
         include:
-          - os: macos-latest
+          - platform: macos-latest
             OSName: darwin
+            arch: amd64
+            prefix: ""
 
-          - os: ubuntu-latest
+          - platform: ubuntu-latest
             OSName: linux
+            arch: amd64
+            prefix: ""
+
+          - platform: m1
+            OSName: darwin
+            arch: arm64
+            prefix: "arch -arm64 "
     steps:
       - name: Checkout
         uses: actions/checkout@v1
@@ -47,8 +61,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          "${GITHUB_WORKSPACE}/bin/bazel" build --config=release --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --define version=${{ steps.tag.outputs.TAG }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
+          ${{matrix.prefix}}"${GITHUB_WORKSPACE}/bin/bazel" build --config=release --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --define version=${{ steps.tag.outputs.TAG }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
           cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-${{matrix.OSName}}-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-${{matrix.OSName}}-amd64
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-${{matrix.OSName}}-amd64
-          gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-${{matrix.OSName}}-amd64 buildbuddy-enterprise-${{matrix.OSName}}-amd64 executor-enterprise-${{matrix.OSName}}-amd64 --clobber
+          ls
+          # gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-${{matrix.OSName}}-amd64 buildbuddy-enterprise-${{matrix.OSName}}-amd64 executor-enterprise-${{matrix.OSName}}-amd64 --clobber
