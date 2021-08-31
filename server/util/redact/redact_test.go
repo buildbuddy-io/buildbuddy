@@ -40,17 +40,17 @@ func structuredCommandLineEvent(option *clpb.Option) *bespb.BuildEvent {
 	}
 }
 
-func TestRedactMetadata_BuildStarted_StripsSecrets(t *testing.T) {
+func TestRedactMetadata_BuildStarted_RedactsOptionsDescription(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	buildStarted := &bespb.BuildStarted{
-		OptionsDescription: "213wZJyTUyhXkj381312@foo",
+		OptionsDescription: `--some_flag --another_flag`,
 	}
 
 	redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Started{Started: buildStarted},
 	})
 
-	assert.Equal(t, "foo", buildStarted.OptionsDescription)
+	assert.Equal(t, "<REDACTED>", buildStarted.OptionsDescription)
 }
 
 func TestRedactMetadata_UnstructuredCommandLine_RemovesArgs(t *testing.T) {
@@ -68,7 +68,7 @@ func TestRedactMetadata_UnstructuredCommandLine_RemovesArgs(t *testing.T) {
 	assert.Equal(t, []string{}, unstructuredCommandLine.Args)
 }
 
-func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecrets(t *testing.T) {
+func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	// Started event specified which env vars shouldn't be redacted.
 	buildStarted := &bespb.BuildStarted{
@@ -90,6 +90,8 @@ func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecr
 		{"remote_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
 		{"remote_cache_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
 		{"some_url", "https://token@foo.com", "https://foo.com"},
+		{"remote_default_exec_properties", "container-registry-username=SECRET_USERNAME", "container-registry-username=<REDACTED>"},
+		{"remote_default_exec_properties", "container-registry-password=SECRET_PASSWORD", "container-registry-password=<REDACTED>"},
 	} {
 		option := &clpb.Option{
 			OptionName:   testCase.optionName,
