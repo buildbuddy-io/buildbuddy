@@ -48,20 +48,23 @@ flags to your build:
 
 ```
 --remote_default_exec_properties=container-registry-username=USERNAME
---remote_default_exec_properties=container-registry-password=PASSWORD
+--remote_default_exec_properties=container-registry-password=ACCESS_TOKEN
 ```
 
-For the password, we recommend generating a short lived token using
-the appropriate utility for your cloud provider.
+For the values of `USERNAME` and `ACCESS_TOKEN`, we recommend generating a
+short lived token using the appropriate utility for your cloud provider.
 
-For GCR (Google Container Registry):
+For GCR (Google Container Registry), the username must be `_dcgcloud_token`
+and a token can be generated with `gcloud auth print-access-token`:
 
 ```
 --remote_default_exec_properties=container-registry-username=_dcgcloud_token
 --remote_default_exec_properties=container-registry-password="$(gcloud auth print-access-token)"
 ```
 
-For Amazon ECR (Elastic Container Registry) (replace `REGION` with the region matching the ECR image URL):
+For Amazon ECR (Elastic Container Registry), the username must be `AWS`
+and a token can be generated with `aws ecr get-login-password --region REGION`
+(replace `REGION` with the region matching the ECR image URL):
 
 ```
 --remote_default_exec_properties=container-registry-username=AWS
