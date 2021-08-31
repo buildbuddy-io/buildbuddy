@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
@@ -135,6 +136,8 @@ type CommandRunner struct {
 	Container container.CommandContainer
 	// Workspace holds the data which is used by this runner.
 	Workspace *workspace.Workspace
+	// CASFS holds the FUSE-backed virtual filesystem, if it's enabled.
+	CASFS *casfs.CASFS
 
 	// State is the current state of the runner as it pertains to reuse.
 	state state
@@ -181,11 +184,16 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.Execution
 }
 
 func (r *CommandRunner) Run(ctx context.Context, task *repb.ExecutionTask, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
+	wsPath := r.Workspace.Path()
+	if r.CASFS != nil {
+		wsPath = r.CASFS.GetMountDir()
+	}
+
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
 		// TODO: Remove this `Run` method and call lifecycle methods directly.
-		return r.Container.Run(ctx, task, r.Workspace.Path(), r.pullCredentials(), fsLayout)
+		return r.Container.Run(ctx, task, wsPath, r.pullCredentials(), fsLayout)
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
@@ -194,7 +202,7 @@ func (r *CommandRunner) Run(ctx context.Context, task *repb.ExecutionTask, fsLay
 		if err := container.PullImageIfNecessary(ctx, r.Container, r.pullCredentials()); err != nil {
 			return commandutil.ErrorResult(err)
 		}
-		if err := r.Container.Create(ctx, r.Workspace.Path()); err != nil {
+		if err := r.Container.Create(ctx, wsPath); err != nil {
 			return commandutil.ErrorResult(err)
 		}
 		r.state = ready
@@ -222,6 +230,11 @@ func (r *CommandRunner) Remove(ctx context.Context) error {
 	}
 	if err := r.Workspace.Remove(); err != nil {
 		errs = append(errs, err)
+	}
+	if r.CASFS != nil {
+		if err := r.CASFS.Unmount(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	if len(errs) > 0 {
 		return errSlice(errs)
@@ -561,6 +574,9 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			"runner recycling is not supported for anonymous builds " +
 				`(recycling was requested via platform property "recycle-runner=true")`)
 	}
+	if props.RecycleRunner && props.EnableCASFS {
+		return nil, status.InvalidArgumentError("CASFS is not yet supported for recycled runners")
+	}
 
 	instanceName := task.GetExecuteRequest().GetInstanceName()
 
@@ -593,6 +609,20 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	if err != nil {
 		return nil, err
 	}
+	var cfs *casfs.CASFS
+	enableCASFS := p.env.GetConfigurator().GetExecutorConfig().EnableCASFS && props.EnableCASFS
+	// Firecracker requires mounting the FS inside the guest VM so we can't just swap out the directory in the runner.
+	if enableCASFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType {
+		casfsDir := ws.Path() + "_casfs"
+		if err := os.Mkdir(casfsDir, 0755); err != nil {
+			return nil, status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
+		}
+
+		cfs = casfs.New(ws.Path(), casfsDir, &casfs.Options{})
+		if err := cfs.Mount(); err != nil {
+			return nil, status.UnavailableErrorf("unable to mount CASFS at %q: %s", casfsDir, err)
+		}
+	}
 	r := &CommandRunner{
 		env:                p.env,
 		ACL:                ACLForUser(user),
@@ -601,6 +631,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		WorkerKey:          workerKey,
 		Container:          ctr,
 		Workspace:          ws,
+		CASFS:              cfs,
 	}
 	p.runners = append(p.runners, r)
 	return r, nil

@@ -8,16 +8,13 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -52,7 +49,6 @@ type DockerOptions struct {
 
 // dockerCommandContainer containerizes a command's execution using a Docker container.
 type dockerCommandContainer struct {
-	env   environment.Env
 	image string
 	// hostRootDir is the path on the _host_ machine ("node", in k8s land) of the
 	// root data dir for builds. We need this information because we are interfacing
@@ -71,7 +67,6 @@ type dockerCommandContainer struct {
 
 func NewDockerContainer(env environment.Env, client *dockerclient.Client, image, hostRootDir string, options *DockerOptions) *dockerCommandContainer {
 	return &dockerCommandContainer{
-		env:         env,
 		image:       image,
 		hostRootDir: hostRootDir,
 		client:      client,
@@ -92,34 +87,6 @@ func (r *dockerCommandContainer) Run(ctx context.Context, task *repb.ExecutionTa
 		return result
 	}
 
-	containerRootDir := workDir
-	if r.options.EnableCASFS && r.env.GetConfigurator().GetExecutorConfig().EnableCASFS {
-		casfsDir := workDir + "_casfs"
-		if err := os.Mkdir(casfsDir, 0755); err != nil {
-			result.Error = status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
-			return result
-		}
-
-		cfs := casfs.New(workDir, &casfs.Options{})
-		if err := cfs.Mount(casfsDir); err != nil {
-			result.Error = status.UnavailableErrorf("unable to mount CASFS at %q: %s", casfsDir, err)
-			return result
-		}
-		fileFetcher := dirtools.NewBatchFileFetcher(ctx, task.GetExecuteRequest().GetInstanceName(), r.env.GetFileCache(), r.env.GetByteStreamClient(), r.env.GetContentAddressableStorageClient())
-		err = cfs.PrepareForTask(ctx, fileFetcher, task.GetExecutionId(), fsLayout)
-		if err != nil {
-			result.Error = status.UnavailableErrorf("unable to prepare CASFS layout at %q: %s", casfsDir, err)
-			return result
-		}
-		defer func() {
-			err := cfs.Unmount()
-			if err != nil {
-				log.Warningf("CASFS unmount failed: %s", err)
-			}
-		}()
-		containerRootDir = casfsDir
-	}
-
 	// explicitly pull the image before running to avoid the
 	// pull output logs spilling into the execution logs.
 	if err := container.PullImageIfNecessary(ctx, r, creds); err != nil {
@@ -130,7 +97,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, task *repb.ExecutionTa
 	containerCfg, err := r.containerConfig(
 		command.GetArguments(),
 		commandutil.EnvStringList(command),
-		containerRootDir,
+		workDir,
 	)
 	if err != nil {
 		result.Error = err
@@ -139,7 +106,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, task *repb.ExecutionTa
 	createResponse, err := r.client.ContainerCreate(
 		ctx,
 		containerCfg,
-		r.hostConfig(containerRootDir),
+		r.hostConfig(workDir),
 		/*networkingConfig=*/ nil,
 		/*platform=*/ nil,
 		containerName,

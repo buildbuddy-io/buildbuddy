@@ -24,6 +24,7 @@ import (
 
 type CASFS struct {
 	scratchDir string
+	mountDir   string
 	verbose    bool
 	logFUSEOps bool
 
@@ -45,9 +46,10 @@ type Options struct {
 	LogFUSEOps bool
 }
 
-func New(scratchDir string, options *Options) *CASFS {
+func New(scratchDir string, mountDir string, options *Options) *CASFS {
 	cfs := &CASFS{
 		scratchDir: scratchDir,
+		mountDir:   mountDir,
 		verbose:    options.Verbose,
 		logFUSEOps: options.LogFUSEOps,
 	}
@@ -56,8 +58,16 @@ func New(scratchDir string, options *Options) *CASFS {
 	return cfs
 }
 
-func (cfs *CASFS) Mount(dir string) error {
-	server, err := fs.Mount(dir, cfs.root, &fs.Options{
+func (cfs *CASFS) GetMountDir() string {
+	return cfs.mountDir
+}
+
+func (cfs *CASFS) Mount() error {
+	if cfs.server != nil {
+		return status.FailedPreconditionError("CASFS already mounted")
+	}
+
+	server, err := fs.Mount(cfs.mountDir, cfs.root, &fs.Options{
 		MountOptions: fuse.MountOptions{
 			AllowOther:    true,
 			Debug:         cfs.logFUSEOps,
@@ -65,7 +75,7 @@ func (cfs *CASFS) Mount(dir string) error {
 		},
 	})
 	if err != nil {
-		return status.UnknownErrorf("could not mount CAS FS at %q: %s", dir, err)
+		return status.UnknownErrorf("could not mount CAS FS at %q: %s", cfs.mountDir, err)
 	}
 	cfs.server = server
 	return nil
@@ -77,14 +87,15 @@ func (cfs *CASFS) Mount(dir string) error {
 // The passed `taskID` os only used for logging purposes.
 func (cfs *CASFS) PrepareForTask(ctx context.Context, fileFetcher *dirtools.BatchFileFetcher, taskID string, fsLayout *container.FileSystemLayout) error {
 	cfs.mu.Lock()
-	defer cfs.mu.Unlock()
+	cfs.internalTaskID = taskID
+	cfs.fileFetcher = fileFetcher
+	cfs.mu.Unlock()
 
 	_, dirMap, err := dirtools.DirMapFromTree(fsLayout.Inputs)
 	if err != nil {
 		return err
 	}
 
-	cfs.internalTaskID = taskID
 	var walkDir func(dir *repb.Directory, node *Node) error
 	walkDir = func(dir *repb.Directory, parentNode *Node) error {
 		for _, childDirNode := range dir.GetDirectories() {
@@ -162,8 +173,6 @@ func (cfs *CASFS) PrepareForTask(ctx context.Context, fileFetcher *dirtools.Batc
 			}
 		}
 	}
-
-	cfs.fileFetcher = fileFetcher
 
 	return nil
 }

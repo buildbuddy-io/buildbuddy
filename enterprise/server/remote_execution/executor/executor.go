@@ -207,11 +207,23 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		return finishWithErrFn(err)
 	}
 
-	enableCASFS := r.PlatformProperties.EnableCASFS && s.enableCASFS
+	layout := &container.FileSystemLayout{
+		Inputs:      inputTree,
+		OutputDirs:  task.GetCommand().GetOutputDirectories(),
+		OutputFiles: task.GetCommand().GetOutputFiles(),
+	}
+
+	if r.CASFS != nil {
+		fileFetcher := dirtools.NewBatchFileFetcher(ctx, task.GetExecuteRequest().GetInstanceName(), s.env.GetFileCache(), s.env.GetByteStreamClient(), s.env.GetContentAddressableStorageClient())
+		if err := r.CASFS.PrepareForTask(ctx, fileFetcher, task.GetExecutionId(), layout); err != nil {
+			return status.UnavailableErrorf("unable to prepare CASFS layout: %s", err)
+		}
+	}
+
 	rxInfo := &dirtools.TransferInfo{}
 	// Don't download inputs if the FUSE-based filesystem is enabled.
 	// TODO(vadim): integrate CASFS stats
-	if !enableCASFS {
+	if r.CASFS == nil {
 		rxInfo, err = r.Workspace.DownloadInputs(ctx, inputTree)
 		if err != nil {
 			return finishWithErrFn(err)
@@ -234,12 +246,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	}
 	ctx, cancel := context.WithTimeout(ctx, execDuration)
 	defer cancel()
-
-	layout := &container.FileSystemLayout{
-		Inputs:      inputTree,
-		OutputDirs:  task.GetCommand().GetOutputDirectories(),
-		OutputFiles: task.GetCommand().GetOutputFiles(),
-	}
 
 	cmdResultChan := make(chan *interfaces.CommandResult, 1)
 	go func() {
