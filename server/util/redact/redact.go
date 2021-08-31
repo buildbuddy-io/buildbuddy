@@ -43,6 +43,10 @@ var (
 		"CIRCLE_BRANCH", "GITHUB_HEAD_REF", "BUILDKITE_BRANCH", "TRAVIS_BRANCH",
 		"GIT_BRANCH", "CI_COMMIT_BRANCH", "GITHUB_REF",
 	}
+
+	redactedPlatformProps = []string{
+		"container-registry-username", "container-registry-password",
+	}
 )
 
 func stripURLSecrets(input string) string {
@@ -155,6 +159,16 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 				option.OptionValue = parts[0] + envVarSeparator + envVarRedactedPlaceholder
 				option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + envVarRedactedPlaceholder
 			}
+
+			// Redact sensitive platform props
+			if option.OptionName == "remote_default_exec_properties" {
+				for _, propName := range redactedPlatformProps {
+					if strings.HasPrefix(option.OptionValue, propName+"=") {
+						option.OptionValue = propName + "=<REDACTED>"
+						option.CombinedForm = "--remote_default_exec_properties=" + propName + "=<REDACTED>"
+					}
+				}
+			}
 		}
 	}
 }
@@ -223,8 +237,11 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		}
 	case *bespb.BuildEvent_Started:
 		{
-			p.Started.OptionsDescription = stripURLSecrets(p.Started.OptionsDescription)
 			r.allowedEnvVars = append(r.allowedEnvVars, parseAllowedEnv(p.Started.OptionsDescription)...)
+			// Redact the whole options description to avoid having to parse individual
+			// options. The StructuredCommandLine should contain all of these options
+			// anyway.
+			p.Started.OptionsDescription = "<REDACTED>"
 		}
 	case *bespb.BuildEvent_UnstructuredCommandLine:
 		{

@@ -113,8 +113,7 @@ func structuredCommandLineEvent(env map[string]string) *anypb.Any {
 func assertAPIKeyRedacted(t *testing.T, invocation *inpb.Invocation, apiKey string) {
 	txt := proto.MarshalTextString(invocation)
 	assert.NotContains(t, txt, apiKey, "API key %q should not appear in invocation", apiKey)
-	assert.Contains(t, txt, "--remote_header='x-buildbuddy-api-key=<REDACTED>'", "All remote headers should be redacted")
-	assert.Contains(t, txt, "--should_be_redacted=<REDACTED>", "BuildBuddy API key should be redacted, even if not in remote header")
+	assert.NotContains(t, txt, "x-buildbuddy-api-key", "All remote headers should be redacted")
 }
 
 func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
