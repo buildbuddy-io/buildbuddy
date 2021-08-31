@@ -50,7 +50,7 @@ jobs:
         run: |
           curl -LO "https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-${{matrix.OSName}}-${{matrix.arch}}"
           mkdir -p "${GITHUB_WORKSPACE}/bin/"
-          mv bazelisk-${{matrix.OSName}}-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
+          mv bazelisk-${{matrix.OSName}}-${{matrix.arch}} "${GITHUB_WORKSPACE}/bin/bazel"
           chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
 
       - name: Get Tag
@@ -62,8 +62,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ${{matrix.prefix}}"${GITHUB_WORKSPACE}/bin/bazel" build --config=release --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --define version=${{ steps.tag.outputs.TAG }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
-          cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-${{matrix.OSName}}-amd64
-          cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-${{matrix.OSName}}-amd64
-          cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-${{matrix.OSName}}-amd64
+          cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-${{matrix.OSName}}-${{matrix.arch}}
+          cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-${{matrix.OSName}}-${{matrix.arch}}
+          cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-${{matrix.OSName}}-${{matrix.arch}}
           ls
-          # gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-${{matrix.OSName}}-amd64 buildbuddy-enterprise-${{matrix.OSName}}-amd64 executor-enterprise-${{matrix.OSName}}-amd64 --clobber
+          # gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-${{matrix.OSName}}-${{matrix.arch}} buildbuddy-enterprise-${{matrix.OSName}}-${{matrix.arch}} executor-enterprise-${{matrix.OSName}}-${{matrix.arch}} --clobber
