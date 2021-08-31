@@ -363,7 +363,7 @@ func (r *dockerCommandContainer) create(ctx context.Context, workDir string) err
 func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	var res *interfaces.CommandResult
 	// Ignore error from this function; it is returned as part of res.
-	_ = commandutil.RetryIfTextFileBusy(func() error {
+	commandutil.RetryIfTextFileBusy(func() error {
 		res = r.exec(ctx, command, stdin, stdout)
 		return res.Error
 	})

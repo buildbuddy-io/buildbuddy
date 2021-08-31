@@ -30,9 +30,9 @@ func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error
 	return nil
 }
 
-func (c *bareCommandContainer) Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	// TODO(siggisim): Wire up stdin/stdout to support persistent workers on bare commands.
-	return commandutil.Run(ctx, command, c.WorkDir)
+	return commandutil.Run(ctx, cmd, c.WorkDir)
 }
 
 func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }
