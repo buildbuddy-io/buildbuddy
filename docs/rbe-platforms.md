@@ -43,8 +43,8 @@ This assumes you've placed this rule in your root BUILD file. If you place it el
 
 ### Passing credentials for Docker images
 
-You can pass credentials for container images by adding the following two
-flags to your build:
+You can pull images from private container registries by adding the following
+flags to your `bazel` command:
 
 ```
 --remote_default_exec_properties=container-registry-username=USERNAME
