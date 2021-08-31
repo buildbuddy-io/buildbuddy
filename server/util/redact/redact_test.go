@@ -40,6 +40,22 @@ func structuredCommandLineEvent(option *clpb.Option) *bespb.BuildEvent {
 	}
 }
 
+func getCommandLineOptions(event *bespb.BuildEvent) []*clpb.Option {
+	p, ok := event.Payload.(*bespb.BuildEvent_StructuredCommandLine)
+	if !ok {
+		return nil
+	}
+	sections := p.StructuredCommandLine.Sections
+	if len(sections) == 0 {
+		return nil
+	}
+	s, ok := sections[0].SectionType.(*clpb.CommandLineSection_OptionList)
+	if !ok {
+		return nil
+	}
+	return s.OptionList.Option
+}
+
 func TestRedactMetadata_BuildStarted_StripsSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	buildStarted := &bespb.BuildStarted{
@@ -90,6 +106,7 @@ func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecr
 		{"remote_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
 		{"remote_cache_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
 		{"some_url", "https://token@foo.com", "https://foo.com"},
+		{"default_override", "1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET", "<REDACTED>"},
 	} {
 		option := &clpb.Option{
 			OptionName:   testCase.optionName,

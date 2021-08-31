@@ -2,6 +2,7 @@ package redact
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -130,10 +131,12 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 			option.OptionValue = stripURLSecrets(option.OptionValue)
 			option.CombinedForm = stripURLSecrets(option.CombinedForm)
 
-			// Redact remote header values
-			if option.OptionName == "remote_header" || option.OptionName == "remote_cache_header" {
-				option.OptionValue = envVarRedactedPlaceholder
-				option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + envVarRedactedPlaceholder
+			// Redact remote header values. Also redact default_overrides for now
+			// since we don't have a use for them (yet) and they may contain sensitive
+			// info.
+			if option.OptionName == "remote_header" || option.OptionName == "remote_cache_header" || option.OptionName == "default_override" {
+				option.OptionValue = "<REDACTED>"
+				option.CombinedForm = fmt.Sprintf("--%s=<REDACTED>", option.OptionName)
 			}
 
 			// Redact non-allowed env vars
