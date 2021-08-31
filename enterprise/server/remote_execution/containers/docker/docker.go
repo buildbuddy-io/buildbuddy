@@ -15,7 +15,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -65,7 +64,7 @@ type dockerCommandContainer struct {
 	workDir string
 }
 
-func NewDockerContainer(env environment.Env, client *dockerclient.Client, image, hostRootDir string, options *DockerOptions) *dockerCommandContainer {
+func NewDockerContainer(client *dockerclient.Client, image, hostRootDir string, options *DockerOptions) *dockerCommandContainer {
 	return &dockerCommandContainer{
 		image:       image,
 		hostRootDir: hostRootDir,

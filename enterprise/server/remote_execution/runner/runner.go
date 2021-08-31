@@ -644,8 +644,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd
 		opts := p.dockerOptions()
 		opts.ForceRoot = props.DockerForceRoot
 		opts.EnableCASFS = props.EnableCASFS
-		ctr = docker.NewDockerContainer(p.env,
-			p.dockerClient, props.ContainerImage, p.hostBuildRoot(), opts)
+		ctr = docker.NewDockerContainer(p.dockerClient, props.ContainerImage, p.hostBuildRoot(), opts)
 	case platform.ContainerdContainerType:
 		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
 	case platform.FirecrackerContainerType:

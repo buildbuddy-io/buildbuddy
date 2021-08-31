@@ -10,7 +10,6 @@ go_library(
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//proto:remote_execution_go_proto",
-        "//server/environment",
         "//server/interfaces",
         "//server/util/log",
         "//server/util/random",

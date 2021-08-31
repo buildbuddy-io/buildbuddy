@@ -525,6 +525,44 @@ svg.invocation-query-graph .nodes rect {
   ry: 8px;
 }
 
+.invocation-query-graph-hidden-card .show-anyway {
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.invocation-query-graph-summary-card .graph-summary {
+  margin-top: 16px;
+}
+
+.invocation-query-graph-summary-card .summary-section {
+  margin-top: 16px;
+}
+
+.invocation-query-graph-summary-card .summary-header {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.invocation-query-graph-summary-card .summary-explanation {
+  margin-bottom: 8px;
+  color: #616161;
+}
+
+.invocation-query-graph-summary-card .summary-table {
+  display: grid;
+  margin-top: 8px;
+  gap: 4px 16px;
+  grid-template-columns: auto 1fr;
+}
+
+.invocation-query-graph-summary-card .summary-numeric-value {
+  font-weight: 600;
+  min-width: 48px;
+  color: #424242;
+  text-align: right;
+}
+
 .invocation .build-logs-card .loading.loading-dark {
   background: transparent;
 }
