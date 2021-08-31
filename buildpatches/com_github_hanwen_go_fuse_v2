@@ -1,0 +1,41 @@
+diff --git a/fuse/server.go b/fuse/server.go
+index 4b5c242..aa4a963 100644
+--- a/fuse/server.go
++++ b/fuse/server.go
+@@ -16,6 +16,8 @@ import (
+ 	"syscall"
+ 	"time"
+ 	"unsafe"
++
++	"github.com/hanwen/go-fuse/v2/splice"
+ )
+ 
+ const (
+@@ -134,8 +136,14 @@ func (ms *Server) Unmount() (err error) {
+ 	return err
+ }
+ 
++var initSplice sync.Once
++
+ // NewServer creates a server and attaches it to the given directory.
+ func NewServer(fs RawFileSystem, mountPoint string, opts *MountOptions) (*Server, error) {
++	initSplice.Do(func() {
++		splice.Init()
++	})
++
+ 	if opts == nil {
+ 		opts = &MountOptions{
+ 			MaxBackground: _DEFAULT_BACKGROUND_TASKS,
+diff --git a/splice/splice.go b/splice/splice.go
+index cbb20b4..dea2913 100644
+--- a/splice/splice.go
++++ b/splice/splice.go
+@@ -33,7 +33,7 @@ const DefaultPipeSize = 16 * 4096
+ // We empty pipes by splicing to /dev/null.
+ var devNullFD uintptr
+ 
+-func init() {
++func Init() {
+ 	content, err := ioutil.ReadFile("/proc/sys/fs/pipe-max-size")
+ 	if err != nil {
+ 		maxPipeSize = DefaultPipeSize

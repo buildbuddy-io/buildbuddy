@@ -20,6 +20,10 @@ const (
 	containerImagePropertyName = "container-image"
 	DefaultContainerImage      = "gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"
 	dockerPrefix               = "docker://"
+
+	containerRegistryUsernamePropertyName = "container-registry-username"
+	containerRegistryPasswordPropertyName = "container-registry-password"
+
 	// container-image prop value which behaves the same way as if the prop were
 	// empty or unset.
 	unsetContainerImageVal = "none"
@@ -48,12 +52,14 @@ const (
 
 // Properties represents the platform properties parsed from a command.
 type Properties struct {
-	OS                    string
-	ContainerImage        string
-	WorkloadIsolationType string
-	DockerForceRoot       bool
-	EnableXcodeOverride   bool
-	RecycleRunner         bool
+	OS                        string
+	ContainerImage            string
+	ContainerRegistryUsername string
+	ContainerRegistryPassword string
+	WorkloadIsolationType     string
+	DockerForceRoot           bool
+	EnableXcodeOverride       bool
+	RecycleRunner             bool
 	EnableCASFS           bool
 	// PreserveWorkspace specifies whether to delete all files in the workspace
 	// before running each action. If true, all files are kept except for output
@@ -83,17 +89,19 @@ func ParseProperties(plat *repb.Platform) *Properties {
 		m[strings.ToLower(prop.GetName())] = strings.TrimSpace(prop.GetValue())
 	}
 	return &Properties{
-		OS:                    stringProp(m, operatingSystemPropertyName, defaultOperatingSystemName),
-		ContainerImage:        stringProp(m, containerImagePropertyName, ""),
-		WorkloadIsolationType: stringProp(m, workloadIsolationPropertyName, ""),
-		DockerForceRoot:       boolProp(m, dockerRunAsRootPropertyName, false),
-		EnableXcodeOverride:   boolProp(m, enableXcodeOverridePropertyName, false),
-		RecycleRunner:         boolProp(m, RecycleRunnerPropertyName, false),
+		OS:                        stringProp(m, operatingSystemPropertyName, defaultOperatingSystemName),
+		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
+		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
+		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
+		WorkloadIsolationType:     stringProp(m, workloadIsolationPropertyName, ""),
+		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
+		EnableXcodeOverride:       boolProp(m, enableXcodeOverridePropertyName, false),
+		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
 		EnableCASFS:           boolProp(m, enableCASFSPropertyName, false),
-		PreserveWorkspace:     boolProp(m, preserveWorkspacePropertyName, false),
-		PersistentWorker:      boolProp(m, persistentWorkerPropertyName, false),
-		PersistentWorkerKey:   stringProp(m, persistentWorkerKeyPropertyName, ""),
-		WorkflowID:            stringProp(m, WorkflowIDPropertyName, ""),
+		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
+		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
+		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
+		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
 	}
 }
 

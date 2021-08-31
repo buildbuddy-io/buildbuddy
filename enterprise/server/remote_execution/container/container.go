@@ -88,15 +88,28 @@ type CommandContainer interface {
 
 // PullImageIfNecessary pulls the image configured for the container if it
 // is not cached locally.
-func PullImageIfNecessary(ctx context.Context, ctr CommandContainer, creds PullCredentials) error {
+func PullImageIfNecessary(ctx context.Context, env environment.Env, cacheAuth *ImageCacheAuthenticator, ctr CommandContainer, creds PullCredentials, imageRef string) error {
 	isCached, err := ctr.IsImageCached(ctx)
 	if err != nil {
 		return err
 	}
-	if isCached {
+	cacheToken, err := NewImageCacheToken(ctx, env, creds, imageRef)
+	if err != nil {
+		return status.WrapError(err, "create image cache token")
+	}
+	// If the image is cached and these credentials have been used recently
+	// by this group to pull the image, no need to re-auth.
+	if isCached && cacheAuth.IsAuthorized(cacheToken) {
 		return nil
 	}
-	return ctr.PullImage(ctx, creds)
+	if err := ctr.PullImage(ctx, creds); err != nil {
+		return err
+	}
+	// Pull was successful, which means auth was successful. Refresh the token so
+	// we don't have to keep re-authenticating on every action until the token
+	// expires.
+	cacheAuth.Refresh(cacheToken)
+	return nil
 }
 
 type PullCredentials struct {
@@ -130,10 +143,11 @@ func NewImageCacheToken(ctx context.Context, env environment.Env, creds PullCred
 	groupID := ""
 	u, err := perms.AuthenticatedUser(ctx, env)
 	if err != nil {
-		if !status.IsUnauthenticatedError(err) && !status.IsPermissionDeniedError(err) {
+		// PermissionDenied, Unauthenticated, Unimplemented all imply that this is an
+		// anonymous execution, so ignore those.
+		if !status.IsUnauthenticatedError(err) && !status.IsPermissionDeniedError(err) && !status.IsUnimplementedError(err) {
 			return ImageCacheToken{}, err
 		}
-		// Anonymous user.
 	} else {
 		groupID = u.GetGroupID()
 	}
@@ -207,7 +221,12 @@ func GetPullCredentials(env environment.Env, props *platform.Properties) PullCre
 		return PullCredentials{}
 	}
 
-	// TODO(bduffany): Accept credentials from platform props as well.
+	if props.ContainerRegistryUsername != "" || props.ContainerRegistryPassword != "" {
+		return PullCredentials{
+			Username: props.ContainerRegistryUsername,
+			Password: props.ContainerRegistryPassword,
+		}
+	}
 
 	regCfgs := env.GetConfigurator().GetExecutorConfig().ContainerRegistries
 	if len(regCfgs) == 0 {
