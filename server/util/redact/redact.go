@@ -116,16 +116,26 @@ func stripRepoURLCredentialsFromCommandLineOption(option *clpb.Option) {
 	}
 }
 
-func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars []string) map[string]string {
-	envVarMap := make(map[string]string)
-	if commandLine == nil {
-		return envVarMap
+func filterCommandLineOptions(options []*clpb.Option) []*clpb.Option {
+	filtered := []*clpb.Option{}
+	for _, option := range options {
+		// Remove default_overrides for now since we don't have a use for them (yet)
+		// and they may contain sensitive info.
+		if option.OptionName == "default_override" {
+			continue
+		}
+		filtered = append(filtered, option)
 	}
+	return filtered
+}
+
+func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars []string) {
 	for _, section := range commandLine.Sections {
 		p, ok := section.SectionType.(*clpb.CommandLineSection_OptionList)
 		if !ok {
 			continue
 		}
+		p.OptionList.Option = filterCommandLineOptions(p.OptionList.Option)
 		for _, option := range p.OptionList.Option {
 			// Strip URL secrets. Strip git URLs explicitly first, since
 			// gitutil.StripRepoURLCredentials is URL-aware. Then fall back to
@@ -161,7 +171,6 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 			}
 		}
 	}
-	return envVarMap
 }
 
 func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
