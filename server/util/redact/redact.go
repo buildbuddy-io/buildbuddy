@@ -227,8 +227,17 @@ func redactOptionsDescription(optionsDescription string) string {
 		// can't parse the options description as a sequence of shell arguments.
 		return "<INVALID>"
 	}
-	// Redact platform props
+	// Redact remote headers and platform props
 	for i, option := range options {
+		if strings.HasPrefix(option, "--remote_header=") {
+			options[i] = "--remote_header=<REDACTED>"
+			continue
+		}
+		if strings.HasPrefix(option, "--remote_cache_header=") {
+			options[i] = "--remote_cache_header=<REDACTED>"
+			continue
+		}
+
 		if !strings.HasPrefix(option, "--remote_default_exec_properties=") {
 			continue
 		}

@@ -45,6 +45,8 @@ func TestRedactMetadata_BuildStarted_StripsSecrets(t *testing.T) {
 	buildStarted := &bespb.BuildStarted{
 		OptionsDescription: "--bes_backend=grpcs://SECRET@cloud.buildbuddy.io " +
 			"--some_url=213wZJyTUyhXkj381312@foo.com " +
+			"--remote_header='foo=bar' " +
+			"--remote_cache_header='foo=bar' " +
 			"--remote_default_exec_properties='container-registry-username=_json_token' " +
 			`--remote_default_exec_properties='container-registry-password={"json token with spaces": "and escaped single quotes: '\''"}'`,
 	}
@@ -56,6 +58,8 @@ func TestRedactMetadata_BuildStarted_StripsSecrets(t *testing.T) {
 	assert.Equal(t,
 		"--bes_backend=grpcs://cloud.buildbuddy.io "+
 			"--some_url=foo.com "+
+			"--remote_header='<REDACTED>' "+
+			"--remote_cache_header='<REDACTED>' "+
 			"--remote_default_exec_properties='container-registry-username=<REDACTED>' "+
 			"--remote_default_exec_properties='container-registry-password=<REDACTED>'",
 		buildStarted.OptionsDescription)
