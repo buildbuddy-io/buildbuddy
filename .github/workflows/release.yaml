@@ -26,22 +26,27 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'release skip')"
     strategy:
       matrix:
-        platform: [macos-latest, ubuntu-latest, m1]
+        # platform: [macos-latest, ubuntu-latest, m1]
+        platform: [m1]
         include:
           - platform: macos-latest
             OSName: darwin
             arch: amd64
             prefix: ""
+            flags: ""
 
           - platform: ubuntu-latest
             OSName: linux
             arch: amd64
             prefix: ""
+            flags: ""
 
           - platform: m1
             OSName: darwin
             arch: arm64
             prefix: "arch -arm64 "
+            flags: ""
+            # flags: "--macos_cpus=arm64"
     steps:
       - name: Checkout
         uses: actions/checkout@v1
@@ -61,7 +66,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ${{matrix.prefix}}"${GITHUB_WORKSPACE}/bin/bazel" build --config=release --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --define version=${{ steps.tag.outputs.TAG }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
+          ${{matrix.prefix}}"${GITHUB_WORKSPACE}/bin/bazel" build --config=release ${{matrix.flags}} --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --define version=${{ steps.tag.outputs.TAG }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
           cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-${{matrix.OSName}}-${{matrix.arch}}
           cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-${{matrix.OSName}}-${{matrix.arch}}
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-${{matrix.OSName}}-${{matrix.arch}}
