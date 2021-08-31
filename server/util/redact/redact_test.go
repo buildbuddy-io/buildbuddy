@@ -40,22 +40,6 @@ func structuredCommandLineEvent(option *clpb.Option) *bespb.BuildEvent {
 	}
 }
 
-func getCommandLineOptions(event *bespb.BuildEvent) []*clpb.Option {
-	p, ok := event.Payload.(*bespb.BuildEvent_StructuredCommandLine)
-	if !ok {
-		return nil
-	}
-	sections := p.StructuredCommandLine.Sections
-	if len(sections) == 0 {
-		return nil
-	}
-	s, ok := sections[0].SectionType.(*clpb.CommandLineSection_OptionList)
-	if !ok {
-		return nil
-	}
-	return s.OptionList.Option
-}
-
 func TestRedactMetadata_BuildStarted_StripsSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	buildStarted := &bespb.BuildStarted{
