@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
@@ -95,14 +94,14 @@ func withAuthenticatedUser(t *testing.T, ctx context.Context, userID string) con
 }
 
 func runMinimalCommand(t *testing.T, r *runner.CommandRunner) {
-	res := r.Run(context.Background(), &repb.ExecutionTask{Command: &repb.Command{Arguments: []string{"pwd"}}}, &container.FileSystemLayout{})
+	res := r.Run(context.Background(), &repb.Command{Arguments: []string{"pwd"}})
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
 }
 
 func runShellCommand(t *testing.T, r *runner.CommandRunner, command string) {
-	res := r.Run(context.Background(), &repb.ExecutionTask{Command: &repb.Command{Arguments: []string{"sh", "-c", command}}}, &container.FileSystemLayout{})
+	res := r.Run(context.Background(), &repb.Command{Arguments: []string{"sh", "-c", command}})
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}

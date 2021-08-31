@@ -73,8 +73,7 @@ func NewDockerContainer(client *dockerclient.Client, image, hostRootDir string, 
 	}
 }
 
-func (r *dockerCommandContainer) Run(ctx context.Context, task *repb.ExecutionTask, workDir string, creds container.PullCredentials, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
-	command := task.GetCommand()
+func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -361,11 +360,11 @@ func (r *dockerCommandContainer) create(ctx context.Context, workDir string) err
 	return nil
 }
 
-func (r *dockerCommandContainer) Exec(ctx context.Context, task *repb.ExecutionTask, fsLayout *container.FileSystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	var res *interfaces.CommandResult
 	// Ignore error from this function; it is returned as part of res.
 	_ = commandutil.RetryIfTextFileBusy(func() error {
-		res = r.exec(ctx, task.GetCommand(), stdin, stdout)
+		res = r.exec(ctx, command, stdin, stdout)
 		return res.Error
 	})
 	return res

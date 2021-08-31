@@ -284,6 +284,9 @@ type FirecrackerContainer struct {
 	workspaceFSPath  string // the path to the workspace ext4 image
 	containerFSPath  string // the path to the container ext4 image
 
+	// when CASFS is enabled, this contains the layout for the next execution
+	fsLayout *container.FileSystemLayout
+
 	jailerRoot           string            // the root dir the jailer will work in
 	machine              *fcclient.Machine // the firecracker machine object.
 	env                  environment.Env
@@ -760,12 +763,16 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	return networking.DeleteRoute(ctx, c.vmIdx)
 }
 
+func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileSystemLayout) {
+	c.fsLayout = fsLayout
+}
+
 // Run the given command within the container and remove the container after
 // it is done executing.
 //
 // It is approximately the same as calling PullImageIfNecessary, Create,
 // Exec, then Remove.
-func (c *FirecrackerContainer) Run(ctx context.Context, task *repb.ExecutionTask, actionWorkingDir string, creds container.PullCredentials, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string, creds container.PullCredentials) *interfaces.CommandResult {
 	start := time.Now()
 	defer func() {
 		log.Debugf("Run took %s", time.Since(start))
@@ -812,7 +819,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, task *repb.ExecutionTask
 
 	defer c.Remove(ctx)
 
-	cmdResult := c.Exec(ctx, task, fsLayout, nil /*=stdin*/, nil /*=stdout*/)
+	cmdResult := c.Exec(ctx, command, nil /*=stdin*/, nil /*=stdout*/)
 	return cmdResult
 }
 
@@ -873,8 +880,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 // the executed process.
 // If stdout is non-nil, the stdout of the executed process will be written to the
 // stdout writer.
-func (c *FirecrackerContainer) Exec(ctx context.Context, task *repb.ExecutionTask, fsLayout *container.FileSystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
-	cmd := task.GetCommand()
+func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	start := time.Now()
 	defer func() {
 		log.Debugf("Exec took %s", time.Since(start))

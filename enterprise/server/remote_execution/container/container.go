@@ -50,7 +50,7 @@ type CommandContainer interface {
 	//
 	// It is approximately the same as calling PullImageIfNecessary, Create,
 	// Exec, then Remove.
-	Run(ctx context.Context, task *repb.ExecutionTask, workingDir string, creds PullCredentials, fsLayout *FileSystemLayout) *interfaces.CommandResult
+	Run(ctx context.Context, command *repb.Command, workingDir string, creds PullCredentials) *interfaces.CommandResult
 
 	// IsImageCached returns whether the configured image is cached locally.
 	IsImageCached(ctx context.Context) (bool, error)
@@ -73,7 +73,7 @@ type CommandContainer interface {
 	// the executed process.
 	// If stdout is non-nil, the stdout of the executed process will be written to the
 	// stdout writer.
-	Exec(ctx context.Context, task *repb.ExecutionTask, fsLayout *FileSystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult
+	Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult
 	// Unpause un-freezes a container so that it can be used to execute commands.
 	Unpause(ctx context.Context) error
 	// Pause freezes a container so that it no longer consumes CPU resources.
@@ -236,67 +236,67 @@ func GetPullCredentials(env environment.Env, props *platform.Properties) PullCre
 
 // TracedCommandContainer is a wrapper that creates tracing spans for all CommandContainer methods.
 type TracedCommandContainer struct {
-	delegate CommandContainer
+	Delegate CommandContainer
 	implAttr attribute.KeyValue
 }
 
-func (t *TracedCommandContainer) Run(ctx context.Context, task *repb.ExecutionTask, workingDir string, creds PullCredentials, fsLayout *FileSystemLayout) *interfaces.CommandResult {
+func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds PullCredentials) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Run(ctx, task, workingDir, creds, fsLayout)
+	return t.Delegate.Run(ctx, command, workingDir, creds)
 }
 
 func (t *TracedCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.IsImageCached(ctx)
+	return t.Delegate.IsImageCached(ctx)
 }
 
 func (t *TracedCommandContainer) PullImage(ctx context.Context, creds PullCredentials) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.PullImage(ctx, creds)
+	return t.Delegate.PullImage(ctx, creds)
 }
 
 func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Create(ctx, workingDir)
+	return t.Delegate.Create(ctx, workingDir)
 }
 
-func (t *TracedCommandContainer) Exec(ctx context.Context, task *repb.ExecutionTask, fsLayout *FileSystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Exec(ctx, task, fsLayout, stdin, stdout)
+	return t.Delegate.Exec(ctx, command, stdin, stdout)
 }
 
 func (t *TracedCommandContainer) Unpause(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Unpause(ctx)
+	return t.Delegate.Unpause(ctx)
 }
 
 func (t *TracedCommandContainer) Pause(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Pause(ctx)
+	return t.Delegate.Pause(ctx)
 }
 
 func (t *TracedCommandContainer) Remove(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Remove(ctx)
+	return t.Delegate.Remove(ctx)
 }
 
 func (t *TracedCommandContainer) Stats(ctx context.Context) (*Stats, error) {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Stats(ctx)
+	return t.Delegate.Stats(ctx)
 }
 
 func NewTracedCommandContainer(delegate CommandContainer) *TracedCommandContainer {
 	return &TracedCommandContainer{
-		delegate: delegate,
+		Delegate: delegate,
 		implAttr: attribute.String("container.impl", fmt.Sprintf("%T", delegate)),
 	}
 }

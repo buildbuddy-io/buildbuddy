@@ -21,8 +21,8 @@ func NewBareCommandContainer() container.CommandContainer {
 	return &bareCommandContainer{}
 }
 
-func (c *bareCommandContainer) Run(ctx context.Context, task *repb.ExecutionTask, workDir string, creds container.PullCredentials, fsLayout *container.FileSystemLayout) *interfaces.CommandResult {
-	return commandutil.Run(ctx, task.GetCommand(), workDir)
+func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
+	return commandutil.Run(ctx, command, workDir)
 }
 
 func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error {
@@ -30,9 +30,9 @@ func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error
 	return nil
 }
 
-func (c *bareCommandContainer) Exec(ctx context.Context, task *repb.ExecutionTask, fsLayout *container.FileSystemLayout, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (c *bareCommandContainer) Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	// TODO(siggisim): Wire up stdin/stdout to support persistent workers on bare commands.
-	return commandutil.Run(ctx, task.GetCommand(), c.WorkDir)
+	return commandutil.Run(ctx, command, c.WorkDir)
 }
 
 func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }
