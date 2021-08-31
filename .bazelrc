@@ -69,7 +69,7 @@ build:workflows --color=yes
 build:workflows --disk_cache=
 
 # Configuration used for BuildBuddy release workflow
-build:release --config=remote
+#build:release --config=remote
 build:release --remote_instance_name=buildbuddy-io/buildbuddy/release
 build:release -c opt
 build:release --stamp
