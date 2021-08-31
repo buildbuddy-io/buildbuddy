@@ -40,6 +40,22 @@ func structuredCommandLineEvent(option *clpb.Option) *bespb.BuildEvent {
 	}
 }
 
+func getCommandLineOptions(event *bespb.BuildEvent) []*clpb.Option {
+	p, ok := event.Payload.(*bespb.BuildEvent_StructuredCommandLine)
+	if !ok {
+		return nil
+	}
+	sections := p.StructuredCommandLine.Sections
+	if len(sections) == 0 {
+		return nil
+	}
+	s, ok := sections[0].SectionType.(*clpb.CommandLineSection_OptionList)
+	if !ok {
+		return nil
+	}
+	return s.OptionList.Option
+}
+
 func TestRedactMetadata_BuildStarted_StripsSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	buildStarted := &bespb.BuildStarted{
@@ -68,7 +84,7 @@ func TestRedactMetadata_UnstructuredCommandLine_RemovesArgs(t *testing.T) {
 	assert.Equal(t, []string{}, unstructuredCommandLine.Args)
 }
 
-func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecrets(t *testing.T) {
+func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	// Started event specified which env vars shouldn't be redacted.
 	buildStarted := &bespb.BuildStarted{
@@ -90,7 +106,6 @@ func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecr
 		{"remote_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
 		{"remote_cache_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
 		{"some_url", "https://token@foo.com", "https://foo.com"},
-		{"default_override", "1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET", "<REDACTED>"},
 	} {
 		option := &clpb.Option{
 			OptionName:   testCase.optionName,
@@ -104,6 +119,20 @@ func TestRedactMetadata_StructuredCommandLine_RedactsEnvVarsAndHeadersAndURLSecr
 		assert.Equal(t, expectedCombinedForm, option.CombinedForm)
 		assert.Equal(t, testCase.expectedValue, option.OptionValue)
 	}
+
+	// default_override flags should be dropped altogether.
+
+	option := &clpb.Option{
+		OptionName:   "default_override",
+		OptionValue:  "1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET",
+		CombinedForm: "--default_override=1:build:remote=--remote_default_exec_properties=container-registry-password=SECRET",
+	}
+	event := structuredCommandLineEvent(option)
+	assert.NotEmpty(t, getCommandLineOptions(event), "sanity check: --default_override should be an option before redacting")
+
+	redactor.RedactMetadata(event)
+
+	assert.Empty(t, getCommandLineOptions(event), "--default_override options should be removed")
 }
 
 func TestRedactMetadata_OptionsParsed_StripsURLSecrets(t *testing.T) {
