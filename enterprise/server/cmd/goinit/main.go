@@ -264,6 +264,8 @@ func main() {
 		}
 		log.Infof("Starting vm exec listener on vsock port: %d", *port)
 		server := grpc.NewServer()
+		// TODO(vadim): run this as a standalone binary so we don't need to worry about init() code running before
+		// VM is fully setup.
 		vmService := vmexec.NewServer(&reapMutex)
 		vmxpb.RegisterExecServer(server, vmService)
 		return server.Serve(listener)
