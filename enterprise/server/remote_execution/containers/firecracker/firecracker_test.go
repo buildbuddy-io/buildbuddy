@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -128,6 +129,8 @@ func TestFirecrackerRun(t *testing.T) {
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	rootDir := makeDir(t, "/tmp")
 	workDir := makeDir(t, rootDir)
 
@@ -147,7 +150,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := container.PullImageIfNecessary(ctx, c, container.PullCredentials{}); err != nil {
+	if err := container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage); err != nil {
 		t.Fatalf("unable to pull image: %s", err)
 	}
 

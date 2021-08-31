@@ -26,9 +26,12 @@ go_test(
     deps = [
         ":container",
         "//enterprise/server/remote_execution/platform",
+        "//proto:remote_execution_go_proto",
         "//server/config",
+        "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

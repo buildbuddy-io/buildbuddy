@@ -92,8 +92,10 @@ func main() {
 		ForceVMIdx:             vmIdx,
 	}
 
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+
 	if *snapshotID != "" {
-		c, err := firecracker.NewContainer(env, opts)
+		c, err := firecracker.NewContainer(env, auth, opts)
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}
@@ -109,12 +111,12 @@ func main() {
 		return
 	}
 
-	c, err := firecracker.NewContainer(env, opts)
+	c, err := firecracker.NewContainer(env, auth, opts)
 	if err != nil {
 		log.Fatalf("Error creating container: %s", err)
 	}
 	creds := container.PullCredentials{Username: *registryUser, Password: *registryPassword}
-	if err := container.PullImageIfNecessary(ctx, c, creds); err != nil {
+	if err := container.PullImageIfNecessary(ctx, env, auth, c, creds, opts.ContainerImage); err != nil {
 		log.Fatalf("Unable to PullImageIfNecessary: %s", err)
 	}
 	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {

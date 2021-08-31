@@ -115,7 +115,8 @@ type state int
 
 // CommandRunner represents a command container and attached workspace.
 type CommandRunner struct {
-	env environment.Env
+	env            environment.Env
+	imageCacheAuth *container.ImageCacheAuthenticator
 
 	// ACL controls who can use this runner.
 	ACL *aclpb.ACL
@@ -174,7 +175,11 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.Execution
 
 	// Pull the container image before Run() is called, so that we don't
 	// use up the whole exec ctx timeout with a slow container pull.
-	if err := container.PullImageIfNecessary(ctx, r.Container, r.pullCredentials()); err != nil {
+	err := container.PullImageIfNecessary(
+		ctx, r.env, r.imageCacheAuth,
+		r.Container, r.pullCredentials(), r.PlatformProperties.ContainerImage,
+	)
+	if err != nil {
 		return status.UnavailableErrorf("Error pulling container: %s", err)
 	}
 	return nil
@@ -191,7 +196,11 @@ func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfa
 	// Get the container to "ready" state so that we can exec commands in it.
 	switch r.state {
 	case initial:
-		if err := container.PullImageIfNecessary(ctx, r.Container, r.pullCredentials()); err != nil {
+		err := container.PullImageIfNecessary(
+			ctx, r.env, r.imageCacheAuth,
+			r.Container, r.pullCredentials(), r.PlatformProperties.ContainerImage,
+		)
+		if err != nil {
 			return commandutil.ErrorResult(err)
 		}
 		if err := r.Container.Create(ctx, r.Workspace.Path()); err != nil {
@@ -263,6 +272,7 @@ func ACLForUser(user interfaces.UserInfo) *aclpb.ACL {
 // usage in this case.
 type Pool struct {
 	env              environment.Env
+	imageCacheAuth   *container.ImageCacheAuthenticator
 	podID            string
 	buildRoot        string
 	dockerClient     *dockerclient.Client
@@ -319,6 +329,7 @@ func NewPool(env environment.Env) (*Pool, error) {
 
 	p := &Pool{
 		env:              env,
+		imageCacheAuth:   container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}),
 		podID:            podID,
 		dockerClient:     dockerClient,
 		containerdSocket: containerdSocket,
@@ -509,7 +520,11 @@ func (p *Pool) WarmupDefaultImage() {
 
 		eg.Go(func() error {
 			creds := container.GetPullCredentials(p.env, platProps)
-			if err := container.PullImageIfNecessary(egCtx, c, creds); err != nil {
+			err := container.PullImageIfNecessary(
+				egCtx, p.env, p.imageCacheAuth,
+				c, creds, platProps.ContainerImage,
+			)
+			if err != nil {
 				return err
 			}
 			log.Infof("Warmup: %s pulled default image %q in %s", containerType, image, time.Since(start))
@@ -598,6 +613,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	}
 	r := &CommandRunner{
 		env:                p.env,
+		imageCacheAuth:     p.imageCacheAuth,
 		ACL:                ACLForUser(user),
 		PlatformProperties: props,
 		InstanceName:       instanceName,
@@ -616,7 +632,9 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd
 		opts := p.dockerOptions()
 		opts.ForceRoot = props.DockerForceRoot
 		ctr = docker.NewDockerContainer(
-			p.dockerClient, props.ContainerImage, p.hostBuildRoot(), opts)
+			p.env, p.imageCacheAuth, p.dockerClient, props.ContainerImage,
+			p.hostBuildRoot(), opts,
+		)
 	case platform.ContainerdContainerType:
 		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
 	case platform.FirecrackerContainerType:
@@ -630,7 +648,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd
 			JailerRoot:             p.buildRoot,
 			AllowSnapshotStart:     false,
 		}
-		c, err := firecracker.NewContainer(p.env, opts)
+		c, err := firecracker.NewContainer(p.env, p.imageCacheAuth, opts)
 		if err != nil {
 			return nil, err
 		}

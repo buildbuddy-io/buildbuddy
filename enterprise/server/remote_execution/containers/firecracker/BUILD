@@ -63,6 +63,7 @@ go_test(
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/content_addressable_storage_server",
+        "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/util/disk",
