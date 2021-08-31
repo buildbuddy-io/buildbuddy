@@ -72,7 +72,7 @@ For Amazon ECR (Elastic Container Registry) (replace `REGION` with the region ma
 
 You can configure BuildBuddy RBE to use a custom executor pool, by adding the following rule to a BUILD file:
 
-```
+```python
 platform(
     name = "gpu_platform",
     constraint_values = [
@@ -103,7 +103,7 @@ For instructions on how to deploy custom executor pools, we the [RBE Executor Po
 
 If you want different targets to run in different RBE environments, you can specify `exec_properties` at the target level. For example if you want to run one set of tests in a high-memory pool, or another set of targets on executors with GPUs.
 
-```
+```python
 go_test(
     name = "memory_hogging_test",
     srcs = ["memory_hogging_test.go"],
