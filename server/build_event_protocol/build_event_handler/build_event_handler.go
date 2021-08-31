@@ -372,15 +372,10 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 }
 
 func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid string) error {
-	// Redact metadata *before* redacting API keys, since some metadata parsing
-	// logic relies on Bazel's guarantee that certain string fields (such as
-	// BuildStarted.options_description) are valid sequences of shell words.
-	// Redaction may break that guarantee since we redact with the string
-	// "<REDACTED>" which contains chars interpreted specially by the shell.
-	e.redactor.RedactMetadata(event.BuildEvent)
 	if err := e.redactor.RedactAPIKey(e.ctx, event.BuildEvent); err != nil {
 		return err
 	}
+	e.redactor.RedactMetadata(event.BuildEvent)
 
 	e.beValues.AddEvent(event.BuildEvent) // in-memory structure to hold common values we want from the event.
 
