@@ -60,7 +60,7 @@ type Properties struct {
 	DockerForceRoot           bool
 	EnableXcodeOverride       bool
 	RecycleRunner             bool
-	EnableCASFS           bool
+	EnableCASFS               bool
 	// PreserveWorkspace specifies whether to delete all files in the workspace
 	// before running each action. If true, all files are kept except for output
 	// files and directories.
@@ -97,7 +97,7 @@ func ParseProperties(plat *repb.Platform) *Properties {
 		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
 		EnableXcodeOverride:       boolProp(m, enableXcodeOverridePropertyName, false),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
-		EnableCASFS:           boolProp(m, enableCASFSPropertyName, false),
+		EnableCASFS:               boolProp(m, enableCASFSPropertyName, false),
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
 		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
 		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
