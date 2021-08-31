@@ -60,7 +60,7 @@ Thanks to everyone using open source, cloud-hosted, and enterprise BuildBuddy. W
 - **And much much more** - Every release comes packed with so many new features, performance improvements and bug fixes that we can't get to them all. Here are some more highlights:
   - Support for serving static files from a CDN
   - Support for MinIO as a storage backend
-  - BuildKite links now link to the specific BuildKite job that spawned the invocation
+  - Buildkite links now link to the specific Buildkite job that spawned the invocation
   - Support for distributed tracing backends like Jaeger, Google Cloud Trace, and others
 
 That's it for this release. Stay tuned for more updates coming soon!
