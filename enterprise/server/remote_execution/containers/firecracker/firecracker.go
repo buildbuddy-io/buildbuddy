@@ -942,6 +942,9 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 	if err != nil {
 		return false, err
 	}
+	if diskImagePath != "" {
+		c.containerFSPath = diskImagePath
+	}
 	return diskImagePath != "", nil
 }
 
