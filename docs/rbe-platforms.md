@@ -74,7 +74,8 @@ and a token can be generated with `aws ecr get-login-password --region REGION`
 Some cloud providers may also allow the use of long-lived tokens, which
 can be set directly in your `platform` definition, rather than at the
 command line. For example, GCR allows setting a username of `_json_key`
-and then using a service account's JSON key as the password:
+and then using a service account's [JSON-format private key](https://cloud.google.com/iam/docs/creating-managing-service-account-keys)
+as the password:
 
 ```python
 SERVICE_ACCOUNT_KEY = """
