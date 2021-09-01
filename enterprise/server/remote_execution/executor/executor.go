@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
@@ -213,14 +214,13 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		OutputFiles: task.GetCommand().GetOutputFiles(),
 	}
 
-	// TODO(vadim): re-enable this
-	//if s.env.GetConfigurator().GetExecutorConfig().EnableCASFS && r.PlatformProperties.EnableCASFS {
-	//	// Unlike other "container" implementations, for Firecracker CASFS is mounted inside the guest VM so we need to
-	//	// pass the layout information to the implementation.
-	//	if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
-	//		fc.SetTaskFileSystemLayout(layout)
-	//	}
-	//}
+	if s.env.GetConfigurator().GetExecutorConfig().EnableCASFS && r.PlatformProperties.EnableCASFS {
+		// Unlike other "container" implementations, for Firecracker CASFS is mounted inside the guest VM so we need to
+		// pass the layout information to the implementation.
+		if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
+			fc.SetTaskFileSystemLayout(layout)
+		}
+	}
 
 	if r.CASFS != nil {
 		fileFetcher := dirtools.NewBatchFileFetcher(ctx, task.GetExecuteRequest().GetInstanceName(), s.env.GetFileCache(), s.env.GetByteStreamClient(), s.env.GetContentAddressableStorageClient())
