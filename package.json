@@ -12,7 +12,7 @@
     "@bazel/esbuild": "^3.7.0",
     "@bazel/ibazel": "^0.13.2",
     "@bazel/jasmine": "^3.3.0",
-    "@bazel/labs": "^3.3.0",
+    "@bazel/labs": "^4.0.0",
     "@bazel/typescript": "^3.3.0",
     "@types/diff": "^4.0.2",
     "@types/diff-match-patch": "^1.0.32",

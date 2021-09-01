@@ -29,17 +29,17 @@ jobs:
         # platform: [macos-latest, ubuntu-latest, m1]
         platform: [m1]
         include:
-          - platform: macos-latest
-            OSName: darwin
-            arch: amd64
-            prefix: ""
-            flags: ""
+          # - platform: macos-latest
+          #   OSName: darwin
+          #   arch: amd64
+          #   prefix: ""
+          #   flags: ""
 
-          - platform: ubuntu-latest
-            OSName: linux
-            arch: amd64
-            prefix: ""
-            flags: ""
+          # - platform: ubuntu-latest
+          #   OSName: linux
+          #   arch: amd64
+          #   prefix: ""
+          #   flags: ""
 
           - platform: m1
             OSName: darwin
