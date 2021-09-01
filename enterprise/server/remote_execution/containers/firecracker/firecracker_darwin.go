@@ -17,7 +17,7 @@ import (
 
 type firecrackerContainer struct{}
 
-func NewContainer(env environment.Env, opts ContainerOpts) (*firecrackerContainer, error) {
+func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*firecrackerContainer, error) {
 	c := &firecrackerContainer{}
 	return c, nil
 }
