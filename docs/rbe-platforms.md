@@ -83,7 +83,7 @@ as the password:
 SERVICE_ACCOUNT_KEY = """
 {
     "type": "service_account",
-    "project_id": my-project-id",
+    "project_id": "YOUR_PROJECT_ID",
     "private_key_id": "...",
     "private_key": "...",
     // More fields omitted
