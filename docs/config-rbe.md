@@ -21,7 +21,7 @@ RBE configuration must be enabled in your `config.yaml` file, but most configura
 
 ## Example section
 
-```
+```yaml
 remote_execution:
   enable_remote_exec: true
 ```
@@ -32,7 +32,7 @@ BuildBuddy RBE executors take their own configuration file that is pulled from `
 
 Here is an example:
 
-```
+```yaml
 executor:
   app_target: "grpcs://your.buildbuddy.install:443"
   root_directory: "/buildbuddy/remotebuilds/"
@@ -41,7 +41,55 @@ executor:
   docker_socket: /var/run/docker.sock
 ```
 
-## Executor environment variables.
+### Container registry authentication
+
+By default, executors will respect the container registry configuration in
+`~/.docker/config.json`. The format of this file is described [here](https://docs.docker.com/engine/reference/commandline/login/).
+Any credential helpers configured there will be respected.
+
+For convenience, per-registry credentials can also be statically configured
+in the executor config YAML. These credentials will take priority over the
+configuration in `~/.docker/config.json`.
+
+Here is an example:
+
+```yaml
+executor:
+  container_registries:
+    - hostnames:
+        - "my-private-registry.io"
+        - "subdomain.my-private-registry.io"
+      username: "registry-username"
+      password: "registry-password-or-long-lived-token"
+```
+
+This is especially useful for registries that allow using static tokens
+for authentication, which avoids the need to set up credential helpers.
+
+For example, Google Container Registry allows setting a username of
+"\_json_key" and then passing the service account key directly:
+
+```yaml
+executor:
+  container_registries:
+    - hostnames:
+        - "gcr.io"
+        - "marketplace.gcr.io"
+      username: "_json_key"
+      # Note: the YAML multiline string syntax ">" is used to embed the
+      # key JSON as a raw string. Be sure to indent as shown below:
+      password: >
+        {
+          "type": "service_account",
+          "project_id": my-project-id",
+          "private_key_id": "...",
+          "private_key": "...",
+          // More fields omitted
+          ...
+        }
+```
+
+## Executor environment variables
 
 In addition to the config.yaml, there are also environment variables that executors consume. To get more information about their environment. All of these are optional, but can be useful for more complex configurations.
 
@@ -54,22 +102,22 @@ In addition to the config.yaml, there are also environment variables that execut
 
 Many of these environment variables are typically set based on Kubernetes FieldRefs like so:
 
-```
-  env:
-    - name: SYS_MEMORY_BYTES
-      valueFrom:
-        resourceFieldRef:
-          resource: limits.memory
-    - name: SYS_MILLICPU
-      valueFrom:
-        resourceFieldRef:
-          resource: limits.cpu
-    - name: MY_HOSTNAME
-      valueFrom:
-        fieldRef:
-          fieldPath: status.podIP
-    - name: MY_NODENAME
-      valueFrom:
-        fieldRef:
-          fieldPath: spec.nodeName
+```yaml
+env:
+  - name: SYS_MEMORY_BYTES
+    valueFrom:
+      resourceFieldRef:
+        resource: limits.memory
+  - name: SYS_MILLICPU
+    valueFrom:
+      resourceFieldRef:
+        resource: limits.cpu
+  - name: MY_HOSTNAME
+    valueFrom:
+      fieldRef:
+        fieldPath: status.podIP
+  - name: MY_NODENAME
+    valueFrom:
+      fieldRef:
+        fieldPath: spec.nodeName
 ```
