@@ -459,11 +459,14 @@ type FileMap map[digest.Key][]*FilePointer
 type BatchFileFetcher struct {
 	ctx          context.Context
 	instanceName string
-	fileCache    interfaces.FileCache
+	fileCache    interfaces.FileCache // OPTIONAL
 	bsClient     bspb.ByteStreamClient
-	casClient    repb.ContentAddressableStorageClient
+	casClient    repb.ContentAddressableStorageClient // OPTIONAL
 }
 
+// NewBatchFileFetcher creates a CAS fetcher that can automatically batch small requests and stream large files.
+// `fileCache` is optional. If present, it's used to cache a copy of the data for use by future reads.
+// `casClient` is optional. If not specified, all requests will use the ByteStream API.
 func NewBatchFileFetcher(ctx context.Context, instanceName string, fileCache interfaces.FileCache, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient) *BatchFileFetcher {
 	return &BatchFileFetcher{
 		ctx:          ctx,
@@ -475,6 +478,10 @@ func NewBatchFileFetcher(ctx context.Context, instanceName string, fileCache int
 }
 
 func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.BatchReadBlobsRequest, filesToFetch FileMap, opts *DownloadTreeOpts) error {
+	if ff.casClient == nil {
+		return status.FailedPreconditionErrorf("cannot batch download files when casClient is noet set")
+	}
+
 	var rsp, err = ff.casClient.BatchReadBlobs(ctx, req)
 	if err != nil {
 		return err
@@ -558,7 +565,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 		// fit in the batch call, so we'll have to bytestream
 		// it.
 		size := d.GetSizeBytes()
-		if size > gRPCMaxSize {
+		if size > gRPCMaxSize || ff.casClient == nil {
 			func(d *repb.Digest, fps []*FilePointer) {
 				eg.Go(func() error {
 					return ff.bytestreamReadFiles(ctx, ff.instanceName, d, fps, opts)

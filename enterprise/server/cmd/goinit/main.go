@@ -266,7 +266,10 @@ func main() {
 		server := grpc.NewServer()
 		// TODO(vadim): run this as a standalone binary so we don't need to worry about init() code running before
 		// VM is fully setup.
-		vmService := vmexec.NewServer(&reapMutex)
+		vmService, err := vmexec.NewServer(&reapMutex)
+		if err != nil {
+			return err
+		}
 		vmxpb.RegisterExecServer(server, vmService)
 		return server.Serve(listener)
 	})
