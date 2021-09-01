@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
@@ -133,9 +134,11 @@ type CommandRunner struct {
 
 	// Container is the handle on the container (possibly the bare /
 	// NOP container) that is used to execute commands.
-	Container container.CommandContainer
+	Container *container.TracedCommandContainer
 	// Workspace holds the data which is used by this runner.
 	Workspace *workspace.Workspace
+	// CASFS holds the FUSE-backed virtual filesystem, if it's enabled.
+	CASFS *casfs.CASFS
 
 	// State is the current state of the runner as it pertains to reuse.
 	state state
@@ -182,15 +185,21 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.Execution
 	if err != nil {
 		return status.UnavailableErrorf("Error pulling container: %s", err)
 	}
+
 	return nil
 }
 
 func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+	wsPath := r.Workspace.Path()
+	if r.CASFS != nil {
+		wsPath = r.CASFS.GetMountDir()
+	}
+
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
 		// TODO: Remove this `Run` method and call lifecycle methods directly.
-		return r.Container.Run(ctx, command, r.Workspace.Path(), r.pullCredentials())
+		return r.Container.Run(ctx, command, wsPath, r.pullCredentials())
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
@@ -203,7 +212,7 @@ func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfa
 		if err != nil {
 			return commandutil.ErrorResult(err)
 		}
-		if err := r.Container.Create(ctx, r.Workspace.Path()); err != nil {
+		if err := r.Container.Create(ctx, wsPath); err != nil {
 			return commandutil.ErrorResult(err)
 		}
 		r.state = ready
@@ -231,6 +240,11 @@ func (r *CommandRunner) Remove(ctx context.Context) error {
 	}
 	if err := r.Workspace.Remove(); err != nil {
 		errs = append(errs, err)
+	}
+	if r.CASFS != nil {
+		if err := r.CASFS.Unmount(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	if len(errs) > 0 {
 		return errSlice(errs)
@@ -576,6 +590,9 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			"runner recycling is not supported for anonymous builds " +
 				`(recycling was requested via platform property "recycle-runner=true")`)
 	}
+	if props.RecycleRunner && props.EnableCASFS {
+		return nil, status.InvalidArgumentError("CASFS is not yet supported for recycled runners")
+	}
 
 	instanceName := task.GetExecuteRequest().GetInstanceName()
 
@@ -604,12 +621,23 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	}
 	wsOpts := &workspace.Opts{Preserve: props.PreserveWorkspace}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
-	if err != nil {
-		return nil, err
-	}
 	ctr, err := p.newContainer(ctx, props, task.GetCommand())
 	if err != nil {
 		return nil, err
+	}
+	var cfs *casfs.CASFS
+	enableCASFS := p.env.GetConfigurator().GetExecutorConfig().EnableCASFS && props.EnableCASFS
+	// Firecracker requires mounting the FS inside the guest VM so we can't just swap out the directory in the runner.
+	if enableCASFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType {
+		casfsDir := ws.Path() + "_casfs"
+		if err := os.Mkdir(casfsDir, 0755); err != nil {
+			return nil, status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
+		}
+
+		cfs = casfs.New(ws.Path(), casfsDir, &casfs.Options{})
+		if err := cfs.Mount(); err != nil {
+			return nil, status.UnavailableErrorf("unable to mount CASFS at %q: %s", casfsDir, err)
+		}
 	}
 	r := &CommandRunner{
 		env:                p.env,
@@ -620,17 +648,19 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		WorkerKey:          workerKey,
 		Container:          ctr,
 		Workspace:          ws,
+		CASFS:              cfs,
 	}
 	p.runners = append(p.runners, r)
 	return r, nil
 }
 
-func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd *repb.Command) (container.CommandContainer, error) {
+func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd *repb.Command) (*container.TracedCommandContainer, error) {
 	var ctr container.CommandContainer
 	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:
 		opts := p.dockerOptions()
 		opts.ForceRoot = props.DockerForceRoot
+		opts.EnableCASFS = props.EnableCASFS
 		ctr = docker.NewDockerContainer(
 			p.env, p.imageCacheAuth, p.dockerClient, props.ContainerImage,
 			p.hostBuildRoot(), opts,

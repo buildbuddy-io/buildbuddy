@@ -34,6 +34,7 @@ const (
 	persistentWorkerKeyPropertyName = "persistentWorkerKey"
 	WorkflowIDPropertyName          = "workflow-id"
 	workloadIsolationPropertyName   = "workload-isolation-type"
+	enableCASFSPropertyName         = "enable-casfs"
 
 	enableXcodeOverridePropertyName = "enableXcodeOverride"
 
@@ -59,6 +60,7 @@ type Properties struct {
 	DockerForceRoot           bool
 	EnableXcodeOverride       bool
 	RecycleRunner             bool
+	EnableCASFS               bool
 	// PreserveWorkspace specifies whether to delete all files in the workspace
 	// before running each action. If true, all files are kept except for output
 	// files and directories.
@@ -78,7 +80,7 @@ type ExecutorProperties struct {
 	DefaultXCodeVersion     string
 }
 
-// Parse properties parses the client provided properties into a struct.
+// ParseProperties parses the client provided properties into a struct.
 // Before use the returned platform.Properties object *must* have overrides
 // applied via the ApplyOverrides function.
 func ParseProperties(plat *repb.Platform) *Properties {
@@ -95,6 +97,7 @@ func ParseProperties(plat *repb.Platform) *Properties {
 		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
 		EnableXcodeOverride:       boolProp(m, enableXcodeOverridePropertyName, false),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
+		EnableCASFS:               boolProp(m, enableCASFSPropertyName, false),
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
 		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
 		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),

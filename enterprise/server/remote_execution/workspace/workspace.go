@@ -8,11 +8,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -37,6 +37,7 @@ type Workspace struct {
 	task      *repb.ExecutionTask
 	dirHelper *dirtools.DirHelper
 	opts      *Opts
+	casFs     *casfs.CASFS
 	// Action input files known to exist in the workspace, as a map of
 	// workspace-relative paths to digests.
 	// TODO: Make sure these files are written read-only
@@ -63,6 +64,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 	if err := os.MkdirAll(rootDir, 0755); err != nil {
 		return nil, status.UnavailableErrorf("failed to create workspace at %q", rootDir)
 	}
+
 	return &Workspace{
 		env:     env,
 		rootDir: rootDir,
@@ -111,7 +113,7 @@ func (ws *Workspace) CreateOutputDirs() error {
 }
 
 // DownloadInputs downloads any missing inputs for the current action.
-func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo, error) {
+func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirtools.TransferInfo, error) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
@@ -121,17 +123,12 @@ func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	rootInstanceDigest := digest.NewInstanceNameDigest(
-		ws.task.GetAction().GetInputRootDigest(),
-		ws.task.GetExecuteRequest().GetInstanceName(),
-	)
-
 	opts := &dirtools.DownloadTreeOpts{}
 	if ws.opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
-	txInfo, err := dirtools.DownloadTreeFromRootDirectoryDigest(ctx, ws.env, rootInstanceDigest, ws.rootDir, opts)
+	txInfo, err := dirtools.DownloadTree(ctx, ws.env, ws.task.GetExecuteRequest().GetInstanceName(), tree, ws.rootDir, opts)
 	if err == nil {
 		for path, digest := range txInfo.Transfers {
 			ws.Inputs[path] = digest

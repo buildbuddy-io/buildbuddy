@@ -284,6 +284,9 @@ type FirecrackerContainer struct {
 	workspaceFSPath  string // the path to the workspace ext4 image
 	containerFSPath  string // the path to the container ext4 image
 
+	// when CASFS is enabled, this contains the layout for the next execution
+	fsLayout *container.FileSystemLayout
+
 	jailerRoot           string            // the root dir the jailer will work in
 	machine              *fcclient.Machine // the firecracker machine object.
 	env                  environment.Env
@@ -760,6 +763,10 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 		return err
 	}
 	return networking.DeleteRoute(ctx, c.vmIdx)
+}
+
+func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileSystemLayout) {
+	c.fsLayout = fsLayout
 }
 
 // Run the given command within the container and remove the container after

@@ -255,67 +255,67 @@ func GetPullCredentials(env environment.Env, props *platform.Properties) PullCre
 
 // TracedCommandContainer is a wrapper that creates tracing spans for all CommandContainer methods.
 type TracedCommandContainer struct {
-	delegate CommandContainer
+	Delegate CommandContainer
 	implAttr attribute.KeyValue
 }
 
 func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds PullCredentials) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Run(ctx, command, workingDir, creds)
+	return t.Delegate.Run(ctx, command, workingDir, creds)
 }
 
 func (t *TracedCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.IsImageCached(ctx)
+	return t.Delegate.IsImageCached(ctx)
 }
 
 func (t *TracedCommandContainer) PullImage(ctx context.Context, creds PullCredentials) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.PullImage(ctx, creds)
+	return t.Delegate.PullImage(ctx, creds)
 }
 
 func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Create(ctx, workingDir)
+	return t.Delegate.Create(ctx, workingDir)
 }
 
 func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Exec(ctx, command, stdin, stdout)
+	return t.Delegate.Exec(ctx, command, stdin, stdout)
 }
 
 func (t *TracedCommandContainer) Unpause(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Unpause(ctx)
+	return t.Delegate.Unpause(ctx)
 }
 
 func (t *TracedCommandContainer) Pause(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Pause(ctx)
+	return t.Delegate.Pause(ctx)
 }
 
 func (t *TracedCommandContainer) Remove(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Remove(ctx)
+	return t.Delegate.Remove(ctx)
 }
 
 func (t *TracedCommandContainer) Stats(ctx context.Context) (*Stats, error) {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.delegate.Stats(ctx)
+	return t.Delegate.Stats(ctx)
 }
 
 func NewTracedCommandContainer(delegate CommandContainer) *TracedCommandContainer {
 	return &TracedCommandContainer{
-		delegate: delegate,
+		Delegate: delegate,
 		implAttr: attribute.String("container.impl", fmt.Sprintf("%T", delegate)),
 	}
 }

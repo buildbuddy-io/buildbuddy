@@ -6,12 +6,12 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/remote_execution/casfs",
         "//enterprise/server/remote_execution/dirtools",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/cachetools",
-        "//server/remote_cache/digest",
         "//server/util/disk",
         "//server/util/log",
         "//server/util/status",
