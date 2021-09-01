@@ -71,6 +71,39 @@ and a token can be generated with `aws ecr get-login-password --region REGION`
 --remote_default_exec_properties=container-registry-password="$(aws ecr get-login-password --region REGION)"
 ```
 
+Some cloud providers may also allow the use of long-lived tokens, which
+can be set directly in your `platform` definition, rather than at the
+command line. For example, GCR allows setting a username of `_json_key`
+and then using a service account's JSON key as the password:
+
+```python
+SERVICE_ACCOUNT_KEY = """
+{
+    "type": "service_account",
+    "project_id": my-project-id",
+    "private_key_id": "...",
+    "private_key": "...",
+    // More fields omitted
+    ...
+}
+"""
+
+platform(
+    name = "docker_image_platform",
+    constraint_values = [
+        "@bazel_tools//platforms:x86_64",
+        "@bazel_tools//platforms:linux",
+        "@bazel_tools//tools/cpp:clang",
+    ],
+    exec_properties = {
+        "OSFamily": "Linux",
+        "container-image": "docker://gcr.io/YOUR:IMAGE",
+        "container-registry-username": "_json_key",
+        "container-registry-password": SERVICE_ACCOUNT_KEY,
+    },
+)
+```
+
 ## Specifying a custom executor pool
 
 You can configure BuildBuddy RBE to use a custom executor pool, by adding the following rule to a BUILD file:
