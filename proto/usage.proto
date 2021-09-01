@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package usage;
+
+import "proto/context.proto";
+
+message GetUsageRequest {
+  // Request context. Note that the client's time zone does not affect usage
+  // periods.
+  context.RequestContext request_context = 1;
+}
+
+message GetUsageResponse {
+  // Response context.
+  context.ResponseContext response_context = 1;
+
+  // Usage for the current month in UTC.
+  Usage current = 2;
+
+  // Usage for the previous month in UTC.
+  Usage previous = 3;
+}
+
+// Usage represents a count of BuildBuddy resources used for a particular time
+// period.
+message Usage {
+  // The number of invocations.
+  int64 invocation_count = 1;
+
+  // The number of action cache hits.
+  int64 action_cache_hit_count = 2;
+
+  // The number of content addressable store hits.
+  int64 cas_hit_count = 3;
+
+  // The number of bytes downloaded from the content addressable store.
+  int64 cas_total_bytes_downloaded = 4;
+}
