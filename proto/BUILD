@@ -670,6 +670,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "usage_ts_proto",
+    proto = ":usage_proto",
+)
+
+ts_proto_library(
     name = "group_ts_proto",
     proto = ":group_proto",
 )

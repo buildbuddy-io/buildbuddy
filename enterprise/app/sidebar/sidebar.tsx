@@ -83,6 +83,10 @@ export default class SidebarComponent extends React.Component {
     return this.props.path.startsWith("/docs/setup/");
   }
 
+  isUsageSelected() {
+    return this.props.path.startsWith("/usage/");
+  }
+
   refreshCurrentPage() {
     rpcService.events.next("refresh");
   }
@@ -96,6 +100,11 @@ export default class SidebarComponent extends React.Component {
       ? this.refreshCurrentPage()
       : router.navigateToTrends();
   }
+
+  navigateToUsage() {
+    this.isUsageSelected() ? this.refreshCurrentPage() : router.navigateToUsage();
+  }
+
   navigateToExecutors() {
     this.isExecutorsSelected() && this.props.search.toString().length == 0
       ? this.refreshCurrentPage()
@@ -153,6 +162,13 @@ export default class SidebarComponent extends React.Component {
             onClick={this.navigateToTrends.bind(this)}>
             <img src="/image/bar-chart-white.svg" /> Trends
           </div>
+          {capabilities.usage && (
+            <div
+              className={`sidebar-item ${this.isUsageSelected() ? "selected" : ""}`}
+              onClick={this.navigateToUsage.bind(this)}>
+              <img src="/image/gauge-white.svg" /> Usage
+            </div>
+          )}
           {capabilities.test && (
             <div
               className={`sidebar-item ${this.isTapSelected() ? "selected" : ""}`}
