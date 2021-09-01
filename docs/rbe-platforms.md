@@ -43,19 +43,21 @@ This assumes you've placed this rule in your root BUILD file. If you place it el
 
 ### Passing credentials for Docker images
 
-You can pull images from private container registries by adding the following
-flags to your `bazel` command:
+You can use images from private container registries by adding the following
+flags to your `bazel` command (replace `USERNAME` and `ACCESS_TOKEN` with
+the appropriate credentials for the container registry):
 
 ```
 --remote_default_exec_properties=container-registry-username=USERNAME
 --remote_default_exec_properties=container-registry-password=ACCESS_TOKEN
 ```
 
-For the values of `USERNAME` and `ACCESS_TOKEN`, we recommend generating a
-short lived token using the appropriate utility for your cloud provider.
+For the value of `ACCESS_TOKEN`, we recommend generating a short-lived
+token using the command-line tool for your cloud provider.
 
-For GCR (Google Container Registry), the username must be `_dcgcloud_token`
-and a token can be generated with `gcloud auth print-access-token`:
+To generate a short-lived token for GCR (Google Container Registry),
+the username must be `_dcgcloud_token` and the token can be generated with
+`gcloud auth print-access-token`:
 
 ```
 --remote_default_exec_properties=container-registry-username=_dcgcloud_token
@@ -63,7 +65,7 @@ and a token can be generated with `gcloud auth print-access-token`:
 ```
 
 For Amazon ECR (Elastic Container Registry), the username must be `AWS`
-and a token can be generated with `aws ecr get-login-password --region REGION`
+and a short-lived token can be generated with `aws ecr get-login-password --region REGION`
 (replace `REGION` with the region matching the ECR image URL):
 
 ```
