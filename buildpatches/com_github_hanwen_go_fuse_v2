@@ -1,17 +1,8 @@
 diff --git a/fuse/server.go b/fuse/server.go
-index 4b5c242..aa4a963 100644
+index 4b5c242..6fe8188 100644
 --- a/fuse/server.go
 +++ b/fuse/server.go
-@@ -16,6 +16,8 @@ import (
- 	"syscall"
- 	"time"
- 	"unsafe"
-+
-+	"github.com/hanwen/go-fuse/v2/splice"
- )
- 
- const (
-@@ -134,8 +136,14 @@ func (ms *Server) Unmount() (err error) {
+@@ -134,8 +134,14 @@ func (ms *Server) Unmount() (err error) {
  	return err
  }
  
@@ -20,12 +11,41 @@ index 4b5c242..aa4a963 100644
  // NewServer creates a server and attaches it to the given directory.
  func NewServer(fs RawFileSystem, mountPoint string, opts *MountOptions) (*Server, error) {
 +	initSplice.Do(func() {
-+		splice.Init()
++		InitSplice()
 +	})
 +
  	if opts == nil {
  		opts = &MountOptions{
  			MaxBackground: _DEFAULT_BACKGROUND_TASKS,
+diff --git a/fuse/splice_darwin.go b/fuse/splice_darwin.go
+index dc4774a..4eaf99e 100644
+--- a/fuse/splice_darwin.go
++++ b/fuse/splice_darwin.go
+@@ -8,6 +8,9 @@ import (
+ 	"fmt"
+ )
+ 
++func InitSplice() {
++}
++
+ func (s *Server) setSplice() {
+ 	s.canSplice = false
+ }
+diff --git a/fuse/splice_linux.go b/fuse/splice_linux.go
+index 70f836a..b0fb4b7 100644
+--- a/fuse/splice_linux.go
++++ b/fuse/splice_linux.go
+@@ -11,6 +11,10 @@ import (
+ 	"github.com/hanwen/go-fuse/v2/splice"
+ )
+ 
++func InitSplice() {
++	splice.Init()
++}
++
+ func (s *Server) setSplice() {
+ 	s.canSplice = splice.Resizable()
+ }
 diff --git a/splice/splice.go b/splice/splice.go
 index cbb20b4..dea2913 100644
 --- a/splice/splice.go
