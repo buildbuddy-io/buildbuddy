@@ -72,6 +72,9 @@ func (cfs *CASFS) Mount() error {
 			AllowOther:    true,
 			Debug:         cfs.logFUSEOps,
 			DisableXAttrs: true,
+			// Don't depend on the `fusermount` binary to make things simpler under Firecracker.
+			DirectMount: true,
+			FsName:      "casfs",
 		},
 	})
 	if err != nil {
