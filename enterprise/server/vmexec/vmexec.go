@@ -70,9 +70,10 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 		cmd.Dir = req.GetWorkingDirectory()
 	}
 
-	if req.Casfs != nil {
-		ff := dirtools.NewBatchFileFetcher(context.Background(), req.Casfs.RemoteInstanceName, nil /* =fileCache */, x.bsClient, nil /* casClient= */)
-		if err := x.cfs.PrepareForTask(ctx, ff, "fc" /* =taskID */, &container.FileSystemLayout{Inputs: req.Casfs.FileSystemLayout.GetInputs()}); err != nil {
+	if req.CasfsConfiguration != nil {
+		layout := req.CasfsConfiguration.GetFileSystemLayout()
+		ff := dirtools.NewBatchFileFetcher(context.Background(), layout.GetRemoteInstanceName(), nil /* =fileCache */, x.bsClient, nil /* casClient= */)
+		if err := x.cfs.PrepareForTask(ctx, ff, "fc" /* =taskID */, &container.FileSystemLayout{Inputs: layout.GetInputs()}); err != nil {
 			return nil, err
 		}
 	}
@@ -103,7 +104,7 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 	defer x.reapMutex.RUnlock()
 
 	rsp := &vmxpb.ExecResponse{}
-	if req.GetCasfs().GetDebugSkipExecute() {
+	if req.GetCasfsConfiguration().GetDebugSkipExecute() {
 		return rsp, nil
 	}
 

@@ -479,7 +479,7 @@ func NewBatchFileFetcher(ctx context.Context, instanceName string, fileCache int
 
 func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.BatchReadBlobsRequest, filesToFetch FileMap, opts *DownloadTreeOpts) error {
 	if ff.casClient == nil {
-		return status.FailedPreconditionErrorf("cannot batch download files when casClient is noet set")
+		return status.FailedPreconditionErrorf("cannot batch download files when casClient is not set")
 	}
 
 	var rsp, err = ff.casClient.BatchReadBlobs(ctx, req)
