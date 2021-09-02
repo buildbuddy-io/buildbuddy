@@ -8,5 +8,7 @@ go_library(
     deps = [
         "//proto:usage_go_proto",
         "//server/environment",
+        "//server/util/alert",
+        "//server/util/timeutil",
     ],
 )
