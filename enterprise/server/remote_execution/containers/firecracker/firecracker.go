@@ -1056,9 +1056,11 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		WorkingDirectory: "/workspace/",
 	}
 	if c.fsLayout != nil {
-		execRequest.Casfs = &vmxpb.CASFS{
-			RemoteInstanceName: c.fsLayout.RemoteInstanceName,
-			FileSystemLayout:   &vmxpb.FileSystemLayout{Inputs: c.fsLayout.Inputs},
+		execRequest.CasfsConfiguration = &vmxpb.CASFSConfiguration{
+			FileSystemLayout: &vmxpb.FileSystemLayout{
+				RemoteInstanceName: c.fsLayout.RemoteInstanceName,
+				Inputs:             c.fsLayout.Inputs,
+			},
 		}
 		execRequest.WorkingDirectory = "/casfs/"
 	}
