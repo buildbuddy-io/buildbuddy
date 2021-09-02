@@ -104,6 +104,7 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 	defer x.reapMutex.RUnlock()
 
 	rsp := &vmxpb.ExecResponse{}
+	if req.GetCasfsConfiguration().GetDebugSkipExecute() {
 		return rsp, nil
 	}
 

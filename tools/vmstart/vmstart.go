@@ -180,9 +180,9 @@ func main() {
 		execRequest := &vmxpb.ExecRequest{
 			Arguments:        cmd.GetArguments(),
 			WorkingDirectory: "/casfs/",
-			Casfs: &vmxpb.CASFS{
-				RemoteInstanceName: *remoteInstanceName,
+			CasfsConfiguration: &vmxpb.CASFSConfiguration{
 				FileSystemLayout: &vmxpb.FileSystemLayout{
+					RemoteInstanceName: *remoteInstanceName,
 					Inputs: tree,
 				},
 				DebugSkipExecute: true,
