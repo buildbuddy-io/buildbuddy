@@ -9,6 +9,7 @@ go_library(
         "//proto:usage_go_proto",
         "//server/environment",
         "//server/util/alert",
+        "//server/util/perms",
         "//server/util/timeutil",
     ],
 )

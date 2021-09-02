@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
@@ -25,6 +26,11 @@ func New(env environment.Env) *usageService {
 }
 
 func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error) {
+	u, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
+
 	db := s.env.GetDBHandle()
 
 	// Get the timestamp corresponding to the start of the current month in UTC,
@@ -43,9 +49,10 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 	SUM(total_download_size_bytes) AS total_download_size_bytes
 	FROM Invocations
 	WHERE created_at_usec >= ? AND created_at_usec < ?
+	AND group_id = ?
 	GROUP BY period
 	ORDER BY period ASC
-	`, timeutil.ToUsec(createdAfter), timeutil.ToUsec(createdBefore)).Rows()
+	`, u.GetGroupID(), timeutil.ToUsec(createdAfter), timeutil.ToUsec(createdBefore)).Rows()
 	if err != nil {
 		return nil, err
 	}
