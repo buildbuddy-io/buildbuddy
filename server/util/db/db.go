@@ -413,6 +413,22 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 	return dbh, nil
 }
 
+// TODO(bduffany): FROM_UNIXTIME uses the SYSTEM time by default which is not
+// guaranteed to be UTC. We should either make sure the MySQL `time_zone` is
+// UTC, or do an explicit timezone conversion here from `@@session.time_zone`
+// to UTC.
+
+// UTCMonthFromUsecTimestamp returns an SQL expression that converts the value
+// of the given field from a Unix timestamp (in microseconds since the Unix
+// Epoch) to a month in UTC time, formatted as "YYYY-MM".
+func (h *DBHandle) UTCMonthFromUsecTimestamp(fieldName string) string {
+	timestampExpr := fieldName + `/1000000`
+	if h.dialect == sqliteDialect {
+		return `STRFTIME(DATE(` + timestampExpr + `), '%Y-%m')`
+	}
+	return `DATE_FORMAT(FROM_UNIXTIME(` + timestampExpr + `), '%Y-%m')`
+}
+
 // DateFromUsecTimestamp returns an SQL expression that converts the value
 // of the given field from a Unix timestamp (in microseconds since the Unix
 // Epoch) to a date offset by the given UTC offset. The offset is defined
