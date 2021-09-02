@@ -8,6 +8,7 @@ ts_library(
     name = "usage",
     srcs = glob(["*.tsx"]),
     deps = [
+        "//app/auth",
         "//app/components/select",
         "//app/errors",
         "//app/service",

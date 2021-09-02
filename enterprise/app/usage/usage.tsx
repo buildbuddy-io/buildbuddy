@@ -1,10 +1,13 @@
 import React from "react";
 import errorService from "../../../app/errors/error_service";
 import rpcService from "../../../app/service/rpc_service";
+import { User } from "../../../app/auth/auth_service";
 import { usage } from "../../../proto/usage_ts_proto";
 import Select, { Option } from "../../../app/components/select/select";
 
-export interface UsageProps {}
+export interface UsageProps {
+  user?: User;
+}
 
 interface State {
   response?: usage.GetUsageResponse;
@@ -38,6 +41,8 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
       ? this.state.response.usage.find((usage) => usage.period === this.state.selectedPeriod)
       : null;
 
+    const orgName = this.props.user.selectedGroup?.name;
+
     return (
       <div className="usage-page">
         <div className="container usage-page-container">
@@ -49,8 +54,11 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
             <div className="card usage-card">
               <div className="content">
                 <div className="usage-period-header">
-                  <div className="selected-period-label">
-                    Usage for <span className="usage-period">{usage.period} (UTC)</span>
+                  <div>
+                    {orgName && <div className="org-name">{orgName}</div>}
+                    <div className="selected-period-label">
+                      BuildBuddy usage for <span className="usage-period">{usage.period} (UTC)</span>
+                    </div>
                   </div>
                   <Select title="Usage period" onChange={this.onChangePeriod.bind(this)}>
                     {this.state.response.usage.map((usage, i) => (

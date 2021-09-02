@@ -2,6 +2,10 @@
   max-width: 768px;
 }
 
+.usage-page .org-name {
+  color: #616161;
+}
+
 .usage-page .usage-header {
   margin: 32px 0;
   display: flex;
