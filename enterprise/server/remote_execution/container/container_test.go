@@ -278,7 +278,7 @@ func TestGetPullCredentials(t *testing.T) {
 	} {
 		props := &platform.Properties{ContainerImage: testCase.imageRef}
 
-		creds := container.GetPullCredentials(env, props)
+		creds := container.GetPullCredentials(env, props, nil /*=task*/)
 
 		assert.Equal(
 			t, testCase.expectedCredentials, creds,

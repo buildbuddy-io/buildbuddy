@@ -143,6 +143,9 @@ type CommandRunner struct {
 	// State is the current state of the runner as it pertains to reuse.
 	state state
 
+	// task is the current task being worked on.
+	task *repb.ExecutionTask
+
 	// Stdin handle to send persistent WorkRequests to.
 	stdinWriter io.Writer
 	// Stdout handle to read persistent WorkResponses from.
@@ -159,10 +162,11 @@ type CommandRunner struct {
 }
 
 func (r *CommandRunner) pullCredentials() container.PullCredentials {
-	return container.GetPullCredentials(r.env, r.PlatformProperties)
+	return container.GetPullCredentials(r.env, r.PlatformProperties, r.task)
 }
 
 func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.ExecutionTask) error {
+	r.task = task
 	r.Workspace.SetTask(task)
 	// Clean outputs for the current task if applicable, in case
 	// those paths were written as read-only inputs in a previous action.
@@ -533,7 +537,7 @@ func (p *Pool) WarmupDefaultImage() {
 		}
 
 		eg.Go(func() error {
-			creds := container.GetPullCredentials(p.env, platProps)
+			creds := container.GetPullCredentials(p.env, platProps, nil /*=task*/)
 			err := container.PullImageIfNecessary(
 				egCtx, p.env, p.imageCacheAuth,
 				c, creds, platProps.ContainerImage,

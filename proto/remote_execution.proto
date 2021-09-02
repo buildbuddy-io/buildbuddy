@@ -1606,13 +1606,19 @@ message TreeToken {
   repeated SizedDirectory sized_directories = 1;
 }
 
-// Next tag: 8
+message ContainerRegistryCredentials {
+  string username = 1;
+  string password = 2;
+}
+
+// Next tag: 9
 message ExecutionTask {
   ExecuteRequest execute_request = 1;
   Action action = 4;
   Command command = 5;
   string execution_id = 6;
   string jwt = 2;
+  ContainerRegistryCredentials container_registry_credentials = 8;
   string invocation_id = 3;
   google.protobuf.Timestamp queued_timestamp = 7;
 }

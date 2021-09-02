@@ -303,6 +303,18 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if jwt, ok := ctx.Value("x-buildbuddy-jwt").(string); ok {
 		executionTask.Jwt = jwt
 	}
+	crCreds := &repb.ContainerRegistryCredentials{}
+	// Allow execution worker to auth with the container registry (if necessary)
+	if crUser, ok := ctx.Value("x-buildbuddy-container-registry-username").(string); ok {
+		crCreds.Username = crUser
+	}
+	if crPass, ok := ctx.Value("x-buildbuddy-container-registry-password").(string); ok {
+		crCreds.Password = crPass
+	}
+	if crCreds.Username != "" || crCreds.Password != "" {
+		executionTask.ContainerRegistryCredentials = crCreds
+	}
+
 	executionTask.QueuedTimestamp = ptypes.TimestampNow()
 	serializedTask, err := proto.Marshal(executionTask)
 	if err != nil {
