@@ -34,11 +34,11 @@ var (
 	registryUser       = flag.String("container_registry_user", "", "User to use when pulling the image")
 	registryPassword   = flag.String("container_registry_password", "", "Password to use when pulling the image")
 	cacheTarget        = flag.String("cache_target", "grpcs://remote.buildbuddy.dev", "The remote cache target")
-	remoteInstanceName = flag.String("remote_instance_name", "", "The remote_instance_name for caching snapshots")
+	remoteInstanceName = flag.String("remote_instance_name", "", "The remote_instance_name for caching snapshots and interacting with the CAS if an action digest is specified")
 	forceVMIdx         = flag.Int("force_vm_idx", -1, "VM index to force to avoid network conflicts -- random by default")
 	snapshotID         = flag.String("snapshot_id", "", "The snapshot ID to load")
 	apiKey             = flag.String("api_key", "", "The API key to use to interact with the remote cache.")
-	actionDigest       = flag.String("action_digest", "", "The digest of the action you want to mount.")
+	actionDigest       = flag.String("action_digest", "", "The optional digest of the action you want to mount.")
 )
 
 func getToolEnv() *real_environment.RealEnv {
@@ -183,7 +183,7 @@ func main() {
 			CasfsConfiguration: &vmxpb.CASFSConfiguration{
 				FileSystemLayout: &vmxpb.FileSystemLayout{
 					RemoteInstanceName: *remoteInstanceName,
-					Inputs: tree,
+					Inputs:             tree,
 				},
 				DebugSkipExecute: true,
 			},
