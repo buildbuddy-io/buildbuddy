@@ -51,7 +51,8 @@ type Workspace struct {
 type Opts struct {
 	// Preserve specifies whether to preserve all files in the workspace except
 	// for output dirs.
-	Preserve bool
+	Preserve    bool
+	CleanInputs string
 }
 
 // New creates a new workspace directly under the given parent directory.
@@ -130,6 +131,10 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 	}
 	txInfo, err := dirtools.DownloadTree(ctx, ws.env, ws.task.GetExecuteRequest().GetInstanceName(), tree, ws.rootDir, opts)
 	if err == nil {
+		if err := ws.CleanInputsIfNecessary(txInfo.Skips); err != nil {
+			return txInfo, err
+		}
+
 		for path, digest := range txInfo.Transfers {
 			ws.Inputs[path] = digest
 		}
@@ -137,6 +142,38 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 		log.Debugf("GetTree downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
 	return txInfo, err
+}
+
+func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.Digest) error {
+	if ws.opts.CleanInputs == "" {
+		return nil
+	}
+	inputFilesToCleanUp := make(map[string]*repb.Digest)
+	for path, digest := range ws.Inputs {
+		if ws.opts.CleanInputs == "*" {
+			inputFilesToCleanUp[path] = digest
+			continue
+		}
+		patterns := strings.Split(ws.opts.CleanInputs, ",")
+		for _, pattern := range patterns {
+			if strings.Contains(path, pattern) {
+				inputFilesToCleanUp[path] = digest
+				continue
+			}
+		}
+	}
+	for path, _ := range keep {
+		delete(inputFilesToCleanUp, path)
+	}
+	if len(inputFilesToCleanUp) > 0 {
+		for path, _ := range inputFilesToCleanUp {
+			if err := os.RemoveAll(filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {
+				return status.UnavailableErrorf("Failed to clean inputs: %s", err)
+			}
+			delete(ws.Inputs, path)
+		}
+	}
+	return nil
 }
 
 // UploadOutputs uploads any outputs created by the last executed command
