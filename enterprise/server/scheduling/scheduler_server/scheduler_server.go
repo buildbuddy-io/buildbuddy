@@ -50,7 +50,7 @@ const (
 	maxAllowedExecutionNodesStaleness = 10 * time.Second
 
 	// The maximum number of times a task may be re-enqueued.
-	maxTaskAttemptCount = 5
+	maxTaskAttemptCount = 0
 
 	// Number of unclaimed tasks to try to assign to a node that newly joined.
 	tasksToEnqueueOnJoin = 20

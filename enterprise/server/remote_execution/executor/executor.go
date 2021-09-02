@@ -96,7 +96,7 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 	} else {
 		return nil, status.FailedPreconditionError("Missing health checker in env")
 	}
-	go s.runnerPool.WarmupDefaultImage()
+	//go s.runnerPool.WarmupDefaultImage()
 	return s, nil
 }
 
@@ -215,7 +215,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		OutputFiles:        task.GetCommand().GetOutputFiles(),
 	}
 
-	if s.env.GetConfigurator().GetExecutorConfig().EnableCASFS && r.PlatformProperties.EnableCASFS {
+	casfsEnabled := s.env.GetConfigurator().GetExecutorConfig().EnableCASFS && r.PlatformProperties.EnableCASFS
+	if casfsEnabled {
 		// Unlike other "container" implementations, for Firecracker CASFS is mounted inside the guest VM so we need to
 		// pass the layout information to the implementation.
 		if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
@@ -224,8 +225,12 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	}
 
 	if r.CASFS != nil {
-		fileFetcher := dirtools.NewBatchFileFetcher(ctx, task.GetExecuteRequest().GetInstanceName(), s.env.GetFileCache(), s.env.GetByteStreamClient(), s.env.GetContentAddressableStorageClient())
-		if err := r.CASFS.PrepareForTask(ctx, fileFetcher, task.GetExecutionId(), layout); err != nil {
+		if err := r.CASFS.PrepareForTask(ctx, task.GetExecutionId(), layout); err != nil {
+			return status.UnavailableErrorf("unable to prepare CASFS layout: %s", err)
+		}
+	}
+	if r.VFS != nil {
+		if err := r.VFS.Prepare(ctx, layout); err != nil {
 			return status.UnavailableErrorf("unable to prepare CASFS layout: %s", err)
 		}
 	}
@@ -233,7 +238,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	rxInfo := &dirtools.TransferInfo{}
 	// Don't download inputs if the FUSE-based filesystem is enabled.
 	// TODO(vadim): integrate CASFS stats
-	if r.CASFS == nil {
+	if !casfsEnabled {
 		rxInfo, err = r.Workspace.DownloadInputs(ctx, inputTree)
 		if err != nil {
 			return finishWithErrFn(err)
@@ -305,6 +310,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	if err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
 	}
+
 	md.OutputUploadCompletedTimestamp = ptypes.TimestampNow()
 	md.WorkerCompletedTimestamp = ptypes.TimestampNow()
 	actionResult.ExecutionMetadata = md

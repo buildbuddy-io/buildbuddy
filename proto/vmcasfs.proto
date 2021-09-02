@@ -9,6 +9,12 @@ message FileSystemLayout {
   string remote_instance_name = 1;
   // The layout of the inputs to the command to be executed.
   build.bazel.remote.execution.v2.Tree inputs = 2;
+  // Set of expected output files. Matching files in the filesystem will be
+  // written to the CAS.
+  repeated string output_files = 3;
+  // Set of expected output directories. Matching files in the filesystem will
+  // be written to the CAS.
+  repeated string output_directories = 4;
 }
 
 message PrepareRequest {
@@ -27,12 +33,6 @@ message Stats {
 message FinishResponse {
   // Stats for activity since the last Prepare call.
   Stats stats = 1;
-  // Files written to the CAS matching the output_files set in the layout.
-  repeated build.bazel.remote.execution.v2.OutputFile output_files = 2;
-  // Files written to the CAS under any of the directories in the layout
-  // output_directories list.
-  repeated build.bazel.remote.execution.v2.OutputDirectory output_directories =
-      3;
 }
 
 // FileSystem is a service for controlling the FUSE CASFS filesystem inside a

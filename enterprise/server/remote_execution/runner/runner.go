@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -36,10 +38,12 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 	dockerclient "github.com/docker/docker/client"
 )
@@ -139,6 +143,7 @@ type CommandRunner struct {
 	Workspace *workspace.Workspace
 	// CASFS holds the FUSE-backed virtual filesystem, if it's enabled.
 	CASFS *casfs.CASFS
+	VFS   *vfs_server.Server
 
 	// State is the current state of the runner as it pertains to reuse.
 	state state
@@ -194,6 +199,9 @@ func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfa
 	if r.CASFS != nil {
 		wsPath = r.CASFS.GetMountDir()
 	}
+	if r.VFS != nil {
+		r.VFS.SetExecutionContext(ctx)
+	}
 
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
@@ -238,13 +246,16 @@ func (r *CommandRunner) Remove(ctx context.Context) error {
 			errs = append(errs, err)
 		}
 	}
-	if err := r.Workspace.Remove(); err != nil {
-		errs = append(errs, err)
-	}
 	if r.CASFS != nil {
 		if err := r.CASFS.Unmount(); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if r.VFS != nil {
+		r.VFS.Stop()
+	}
+	if err := r.Workspace.Remove(); err != nil {
+		errs = append(errs, err)
 	}
 	if len(errs) > 0 {
 		return errSlice(errs)
@@ -626,6 +637,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		return nil, err
 	}
 	var cfs *casfs.CASFS
+	var vfs *vfs_server.Server
 	enableCASFS := p.env.GetConfigurator().GetExecutorConfig().EnableCASFS && props.EnableCASFS
 	// Firecracker requires mounting the FS inside the guest VM so we can't just swap out the directory in the runner.
 	if enableCASFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType {
@@ -634,7 +646,23 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			return nil, status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
 		}
 
-		cfs = casfs.New(ws.Path(), casfsDir, &casfs.Options{})
+		vfs = vfs_server.New(p.env, ws.Path())
+		unixSocket := filepath.Join(ws.Path(), "fsproxy.sock")
+
+		lis, err := net.Listen("unix", unixSocket)
+		if err != nil {
+			return nil, err
+		}
+		if err := vfs.Start(lis); err != nil {
+			return nil, err
+		}
+
+		conn, err := grpc.Dial("unix://"+unixSocket, grpc.WithInsecure())
+		if err != nil {
+			return nil, err
+		}
+		fsProxyClient := vfspb.NewFileSystemClient(conn)
+		cfs = casfs.New(fsProxyClient, casfsDir, &casfs.Options{})
 		if err := cfs.Mount(); err != nil {
 			return nil, status.UnavailableErrorf("unable to mount CASFS at %q: %s", casfsDir, err)
 		}
@@ -649,6 +677,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		Container:          ctr,
 		Workspace:          ws,
 		CASFS:              cfs,
+		VFS:                vfs,
 	}
 	p.runners = append(p.runners, r)
 	return r, nil
@@ -673,7 +702,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd
 			ContainerImage:         props.ContainerImage,
 			ActionWorkingDirectory: p.hostBuildRoot(),
 			NumCPUs:                int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
-			MemSizeMB:              int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
+			MemSizeMB:              int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6) + 500),
 			EnableNetworking:       true,
 			JailerRoot:             p.buildRoot,
 			AllowSnapshotStart:     false,
