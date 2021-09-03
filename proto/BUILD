@@ -144,6 +144,11 @@ proto_library(
 proto_library(
     name = "vmexec_proto",
     srcs = ["vmexec.proto"],
+)
+
+proto_library(
+    name = "vmcasfs_proto",
+    srcs = ["vmcasfs.proto"],
     deps = [":remote_execution_proto"],
 )
 
@@ -415,6 +420,15 @@ go_proto_library(
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/vmexec",
     proto = ":vmexec_proto",
+    deps = [
+    ],
+)
+
+go_proto_library(
+    name = "vmcasfs_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/vmcasfs",
+    proto = ":vmcasfs_proto",
     deps = [
         ":remote_execution_go_proto",
     ],

@@ -39,6 +39,7 @@ import (
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmcasfs"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
@@ -101,9 +102,6 @@ const (
 	// Workspace slack space is how much extra space will be allocated in the
 	// workspace disk image beyond the size of the existing files.
 	workspaceSlackBytes = 100 * 1e6 // 100MB
-
-	// This is the port on which the guest connects to the bytestream proxy on the host.
-	byteStreamProxyPort = 9292
 )
 
 var (
@@ -890,7 +888,7 @@ func (c *FirecrackerContainer) setupByteStreamProxy() error {
 		return nil
 	}
 
-	vsockServerPath := filepath.Join(c.getChroot(), firecrackerVSockPath) + "_" + strconv.Itoa(byteStreamProxyPort)
+	vsockServerPath := filepath.Join(c.getChroot(), firecrackerVSockPath) + "_" + strconv.Itoa(vsock.HostByteStreamProxyPort)
 	if err := os.MkdirAll(filepath.Dir(vsockServerPath), 0755); err != nil {
 		return err
 	}
@@ -1027,20 +1025,36 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 }
 
 func (c FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
+	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+	defer cancel()
+
+	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
+	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMExecPort)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	execClient := vmxpb.NewExecClient(conn)
+	rsp, err := execClient.Exec(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return rsp, err
+}
+
+func (c FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
 	c.bsProxy.SetExecutionContext(ctx)
 
 	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
 	defer cancel()
 
 	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
-	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath)
+	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMCASFSPort)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
-
-	execClient := vmxpb.NewExecClient(conn)
-	rsp, err := execClient.Exec(ctx, req)
+	client := vmfspb.NewFileSystemClient(conn)
+	rsp, err := client.Prepare(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -1064,17 +1078,25 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		ExitCode:           commandutil.NoExitCode,
 	}
 
+	if c.fsLayout != nil {
+		req := &vmfspb.PrepareRequest{
+			FileSystemLayout: &vmfspb.FileSystemLayout{
+				RemoteInstanceName: c.fsLayout.RemoteInstanceName,
+				Inputs:             c.fsLayout.Inputs,
+			},
+		}
+		_, err := c.SendPrepareFileSystemRequestToGuest(ctx, req)
+		if err != nil {
+			result.Error = err
+			return result
+		}
+	}
+
 	execRequest := &vmxpb.ExecRequest{
 		Arguments:        cmd.GetArguments(),
 		WorkingDirectory: "/workspace/",
 	}
 	if c.fsLayout != nil {
-		execRequest.CasfsConfiguration = &vmxpb.CASFSConfiguration{
-			FileSystemLayout: &vmxpb.FileSystemLayout{
-				RemoteInstanceName: c.fsLayout.RemoteInstanceName,
-				Inputs:             c.fsLayout.Inputs,
-			},
-		}
 		execRequest.WorkingDirectory = "/casfs/"
 	}
 	for _, ev := range cmd.GetEnvironmentVariables() {

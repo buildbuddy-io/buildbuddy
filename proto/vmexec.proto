@@ -2,22 +2,6 @@ syntax = "proto3";
 
 package vmexec;
 
-import "proto/remote_execution.proto";
-
-message FileSystemLayout {
-  // The "remote instance name" to use when interacting with the CAS.
-  string remote_instance_name = 1;
-  // The layout of the inputs to the command to be executed.
-  build.bazel.remote.execution.v2.Tree inputs = 2;
-}
-
-message CASFSConfiguration {
-  // Description of the filesystem layout.
-  FileSystemLayout file_system_layout = 1;
-  // Whether to prepare the filesystem, but skip the execution.
-  bool debug_skip_execute = 2;
-}
-
 message ExecRequest {
   string working_directory = 1;
 
@@ -42,9 +26,6 @@ message ExecRequest {
   int32 stdin_vsock_port = 4;
   int32 stdout_vsock_port = 5;
   int32 stderr_vsock_port = 6;
-
-  // Optional. Used to configure the CASFS filesystem on the VM.
-  CASFSConfiguration casfs_configuration = 7;
 }
 
 message ExecResponse {
