@@ -29,7 +29,9 @@ const (
 	minCID = 3
 	maxCID = math.MaxUint32
 
-	DefaultPort = 25415
+	VMExecPort              = 25415
+	VMCASFSPort             = 25416
+	HostByteStreamProxyPort = 25410
 )
 
 // GetContextID returns ths next available vsock context ID.
@@ -142,9 +144,9 @@ func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.C
 // a vsock. This method WILL BLOCK until a connection is made or a timeout is
 // hit.
 // N.B. Callers are responsible for closing the returned connection.
-func SimpleGRPCDial(ctx context.Context, socketPath string) (*grpc.ClientConn, error) {
+func SimpleGRPCDial(ctx context.Context, socketPath string, port uint32) (*grpc.ClientConn, error) {
 	bufDialer := func(ctx context.Context, _ string) (net.Conn, error) {
-		return dialHostToGuest(ctx, socketPath, DefaultPort)
+		return dialHostToGuest(ctx, socketPath, port)
 	}
 
 	// These params are tuned for a fast-reconnect to the vmexec server
