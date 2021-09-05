@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -158,7 +159,7 @@ func contains(haystack []ContainerType, needle ContainerType) bool {
 
 // ApplyOverrides modifies the platformProps and command as needed to match the
 // locally configured executor properties.
-func ApplyOverrides(executorProps *ExecutorProperties, platformProps *Properties, command *repb.Command) error {
+func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, platformProps *Properties, command *repb.Command) error {
 	if len(executorProps.SupportedIsolationTypes) == 0 {
 		return status.FailedPreconditionError("No workload isolation types configured.")
 	}
@@ -212,17 +213,17 @@ func ApplyOverrides(executorProps *ExecutorProperties, platformProps *Properties
 			case "APPLE_SDK_PLATFORM":
 				appleSDKPlatform = v.Value
 			case "XCODE_VERSION_OVERRIDE":
-				if versionComponents := strings.Split(v.Value, "."); len(versionComponents) > 1 && platformProps.EnableXcodeOverride {
-					// Just grab the first 2 components of the xcode version i.e. "12.4".
-					xcodeVersion = versionComponents[0] + "." + versionComponents[1]
+				if platformProps.EnableXcodeOverride {
+					xcodeVersion = v.Value
 				}
 			}
 		}
 
-		developerDir := "/Applications/Xcode.app/Contents/Developer"
-		if executorProps.DefaultXCodeVersion != "" {
-			developerDir = fmt.Sprintf("/Applications/Xcode_%s.app/Contents/Developer", xcodeVersion)
+		developerDir, err := env.GetXCodeLocator().DeveloperDirForVersion(xcodeVersion)
+		if err != nil {
+			return err
 		}
+		// TODO(siggisim): Do SDK matching and get rid of the enableXcodeOverride platform property.
 		sdkRoot := fmt.Sprintf("%s/Platforms/%s.platform/Developer/SDKs/%s%s.sdk", developerDir, appleSDKPlatform, appleSDKPlatform, appleSDKVersion)
 
 		command.EnvironmentVariables = append(command.EnvironmentVariables, []*repb.Command_EnvironmentVariable{
