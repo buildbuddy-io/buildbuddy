@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
