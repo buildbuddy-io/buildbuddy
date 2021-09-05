@@ -237,7 +237,6 @@ func TestParse_ApplyOverrides(t *testing.T) {
 	}
 }
 
-
 type xcodeLocator struct {
 }
 

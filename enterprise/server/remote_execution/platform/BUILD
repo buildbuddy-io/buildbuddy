@@ -19,8 +19,8 @@ go_test(
     srcs = ["platform_test.go"],
     deps = [
         ":platform",
-        "//server/testutil/testenv",
         "//proto:remote_execution_go_proto",
+        "//server/testutil/testenv",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
