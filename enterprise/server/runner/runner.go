@@ -25,17 +25,21 @@ import (
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
+const (
+	runnerBinaryRunfile  = "enterprise/server/cmd/ci_runner/ci_runner_/ci_runner"
+	runnerContainerImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner@sha256:fbff6d1e88e9e1085c7e46bd0c5de4f478e97b630246631e5f9d7c720c968e2e"
+)
+
 type runnerService struct {
 	env              environment.Env
 	runnerBinaryPath string
 }
 
 func New(env environment.Env) (*runnerService, error) {
-	runnerPath, err := bazel.Runfile("enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
+	runnerPath, err := bazel.Runfile(runnerBinaryRunfile)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not find runner binary runfile: %s", err)
 	}
-
 	return &runnerService{
 		env:              env,
 		runnerBinaryPath: runnerPath,
@@ -65,6 +69,7 @@ func (r *runnerService) lookupAPIKey(ctx context.Context) (string, error) {
 	return k.Value, nil
 }
 
+// checkPreconditions verifies the RunRequest is not missing any required params.
 func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
 	if req.GetGitRepo().GetRepoUrl() == "" {
 		return status.InvalidArgumentError("A repo url is required.")
@@ -75,6 +80,9 @@ func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
 	return nil
 }
 
+// createAction creates and uploads an action that will trigger the CI runner
+// to checkout the specified repo and execute the specified bazel action,
+// uploading any logs to an invcocation page with the specified ID.
 func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, invocationID string) (*repb.Digest, error) {
 	cache := r.env.GetCache()
 	if cache == nil {
@@ -126,9 +134,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		},
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "container-image", Value: "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.7"},
+				{Name: "container-image", Value: runnerContainerImage},
 				{Name: "recycle-runner", Value: "true"},
-				{Name: "preserve-workspace", Value: "true"},
 				{Name: "workload-isolation-type", Value: "firecracker"},
 			},
 		},
@@ -146,8 +153,10 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	return actionDigest, err
 }
 
-// Run dispatches an execution that will call the CI-runner and run the (bazel)
-// command specified in RunRequest.
+// Run creates and dispatches an execution that will call the CI-runner and run
+// the (bazel) command specified in RunRequest. It ruturns as soon as an
+// invocation has been created by the execution or an error has been
+// encountered.
 func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {
 	if err := r.checkPreconditions(req); err != nil {
 		return nil, err
@@ -166,8 +175,8 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	if err != nil {
 		return nil, err
 	}
+	log.Debugf("Uploaded runner action to cache. Digest: %s/%d", actionDigest.GetHash(), actionDigest.GetSizeBytes())
 
-	log.Printf("Uploaded action to cache. Digest: %s/%d", actionDigest.GetHash(), actionDigest.GetSizeBytes())
 	executionID, err := r.env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{
 		InstanceName:    req.GetInstanceName(),
 		SkipCacheLookup: true,
@@ -176,7 +185,6 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	if err != nil {
 		return nil, err
 	}
-
 	if err := waitUntilInvocationExists(ctx, r.env, executionID, invocationID); err != nil {
 		return nil, err
 	}
@@ -184,6 +192,8 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	return &rnpb.RunResponse{InvocationId: invocationID}, nil
 }
 
+// waitUntilInvocationExists waits until the specified invocationID exists or
+// an error is encountered. Borrowed from workflow.go.
 func waitUntilInvocationExists(ctx context.Context, env environment.Env, executionID, invocationID string) error {
 	executionClient := env.GetRemoteExecutionClient()
 	if executionClient == nil {
@@ -226,22 +236,25 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			return ctx.Err()
 		case err := <-errCh:
 			return err
-		case op := <-opCh:
-			stage = operation.ExtractStage(op)
 		case <-time.After(1 * time.Second):
 			break
-		}
-		if stage == repb.ExecutionStage_EXECUTING || stage == repb.ExecutionStage_COMPLETED {
-			_, err := invocationDB.LookupInvocation(ctx, invocationID)
-			if err == nil {
-				return nil
+		case op := <-opCh:
+			stage = operation.ExtractStage(op)
+			if stage == repb.ExecutionStage_EXECUTING || stage == repb.ExecutionStage_COMPLETED {
+				_, err := invocationDB.LookupInvocation(ctx, invocationID)
+				if err == nil {
+					return nil
+				}
+				if !db.IsRecordNotFound(err) {
+					return err
+				}
 			}
-			if !db.IsRecordNotFound(err) {
-				return err
+			if stage == repb.ExecutionStage_COMPLETED {
+				if execResponse := operation.ExtractExecuteResponse(op); execResponse != nil {
+					return status.InternalErrorf("Failed to create runner invocation (execution ID: %q): %s", executionID, execResponse.GetStatus().GetMessage())
+				}
+				return status.InternalErrorf("Failed to create runner invocation (execution ID: %s)", executionID)
 			}
-		}
-		if stage == repb.ExecutionStage_COMPLETED {
-			return status.InternalErrorf("Failed to create runner invocation (execution ID: %s)", executionID)
 		}
 	}
 }

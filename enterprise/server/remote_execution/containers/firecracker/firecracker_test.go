@@ -84,6 +84,7 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 }
 
 func TestFirecrackerRun(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	rootDir := makeDir(t, "/tmp")
@@ -107,7 +108,7 @@ func TestFirecrackerRun(t *testing.T) {
 	}
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         "docker.io/library/busybox",
+		ContainerImage:         "gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4",
 		ActionWorkingDirectory: workDir,
 		NumCPUs:                1,
 		MemSizeMB:              2500,
@@ -139,7 +140,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         "docker.io/library/busybox",
+		ContainerImage:         "gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4",
 		ActionWorkingDirectory: workDir,
 		NumCPUs:                1,
 		MemSizeMB:              100,
@@ -190,6 +191,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 }
 
 func TestFirecrackerFileMapping(t *testing.T) {
+	t.Skip()
 	numFiles := 100
 	fileSizeBytes := int64(1000)
 	ctx := context.Background()
@@ -225,7 +227,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		CommandDebugString: `(firecracker) [sh -c find -name '*.txt' -exec cp {} {}.out \;]`,
 	}
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         "docker.io/library/busybox",
+		ContainerImage:         "gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4",
 		ActionWorkingDirectory: rootDir,
 		NumCPUs:                1,
 		MemSizeMB:              100,
@@ -253,6 +255,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 }
 
 func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
+	t.Skip()
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	rootDir := makeDir(t, "/tmp")
@@ -276,7 +279,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	}
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         "docker.io/library/busybox",
+		ContainerImage:         "gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4",
 		ActionWorkingDirectory: workDir,
 		NumCPUs:                1,
 		MemSizeMB:              100,

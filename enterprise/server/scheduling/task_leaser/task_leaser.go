@@ -47,12 +47,10 @@ func (t *TaskLeaser) pingServer() ([]byte, error) {
 	req := &scpb.LeaseTaskRequest{
 		TaskId: t.taskID,
 	}
-	t.log.Debugf("TaskLeaser ping-SEND %q, req: %+v", t.taskID, req)
 	if err := t.stream.Send(req); err != nil {
 		return nil, err
 	}
 	rsp, err := t.stream.Recv()
-	t.log.Debugf("TaskLeaser ping-RECV %q, req: %+v,  err: %v", t.taskID, rsp, err)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +125,6 @@ func isBazelRetryableError(taskError error) bool {
 func (t *TaskLeaser) Close(taskErr error) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.log.Infof("TaskLeaser %q Close() called with err: %v", t.taskID, taskErr)
 	if t.closed {
 		t.log.Infof("TaskLeaser %q was already closed. Short-circuiting.", t.taskID)
 		return nil
@@ -142,13 +139,10 @@ func (t *TaskLeaser) Close(taskErr error) error {
 			TaskId:   t.taskID,
 			Finalize: true,
 		}
-		t.log.Debugf("TaskLeaser close-SEND %q, req: %+v", t.taskID, req)
 		t.stream.Send(req)
 		for {
 			rsp, err := t.stream.Recv()
-			t.log.Debugf("TaskLeaser close-RECV %q, req: %+v, err: %v", t.taskID, rsp, err)
 			if err == io.EOF {
-				t.log.Debugf("TaskLeaser %q: Got EOF from lease stream.", t.taskID)
 				break
 			}
 			if err != nil {
@@ -169,8 +163,6 @@ func (t *TaskLeaser) Close(taskErr error) error {
 		} else {
 			t.log.Infof("TaskLeaser %q: Successfully re-enqueued.", t.taskID)
 		}
-	} else {
-		t.log.Infof("TaskLeaser %q: closed cleanly :)", t.taskID)
 	}
 
 	t.closed = true

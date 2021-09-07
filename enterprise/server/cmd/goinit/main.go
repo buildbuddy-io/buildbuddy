@@ -253,8 +253,12 @@ func main() {
 			if _, err := c.CombinedOutput(); err != nil {
 				log.Errorf("Error setting root pw: %s", err)
 			}
-			c2 := exec.CommandContext(ctx, "getty", "-L", "ttyS0", "115200", "vt100")
-			return c2.Run()
+			for {
+				c2 := exec.CommandContext(ctx, "getty", "-L", "ttyS0", "115200", "vt100")
+				if err := c2.Run(); err != nil {
+					return err
+				}
+			}
 		})
 	}
 	eg.Go(func() error {

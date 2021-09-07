@@ -257,6 +257,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	ctx, cancel := context.WithTimeout(ctx, execDuration)
 	defer cancel()
 
+	log.Warningf("Running command: %+v", task.GetCommand())
 	cmdResultChan := make(chan *interfaces.CommandResult, 1)
 	go func() {
 		cmdResultChan <- r.Run(ctx, task.GetCommand())
@@ -288,8 +289,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		// These errors are failure-specific. Pass through unchanged.
 		log.Warningf("Task %q command finished with error: %s", taskID, cmdResult.Error)
 		return finishWithErrFn(cmdResult.Error)
-	} else {
-		log.Infof("Task %q command finished with error: %v", taskID, cmdResult.Error)
 	}
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, uploadDeadlineExtension)
