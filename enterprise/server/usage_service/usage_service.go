@@ -2,21 +2,29 @@ package usage_service
 
 import (
 	"context"
+<<<<<<< HEAD
 	"fmt"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+=======
+
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+>>>>>>> master
 
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 )
 
+<<<<<<< HEAD
 const (
 	// Allow the user to view this many months of usage data.
 	maxNumMonthsOfUsageToReturn = 6
 )
 
+=======
+>>>>>>> master
 type usageService struct {
 	env environment.Env
 }

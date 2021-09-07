@@ -38,9 +38,10 @@ type Stats struct {
 }
 
 type FileSystemLayout struct {
-	Inputs      *repb.Tree
-	OutputDirs  []string
-	OutputFiles []string
+	RemoteInstanceName string
+	Inputs             *repb.Tree
+	OutputDirs         []string
+	OutputFiles        []string
 }
 
 // CommandContainer provides an execution environment for commands.

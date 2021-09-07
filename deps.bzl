@@ -1583,10 +1583,10 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_hanwen_go_fuse_v2",
         importpath = "github.com/hanwen/go-fuse/v2",
-        sum = "h1:+32ffteETaLYClUj0a3aHjZ1hOPxxaNEHiZiujuDaek=",
-        version = "v2.1.0",
         patch_args = ["-p1"],
         patches = ["@%s//buildpatches:com_github_hanwen_go_fuse_v2" % workspace_name],
+        sum = "h1:+32ffteETaLYClUj0a3aHjZ1hOPxxaNEHiZiujuDaek=",
+        version = "v2.1.0",
     )
 
     go_repository(
@@ -3449,12 +3449,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "gorm.io/driver/mysql",
         sum = "h1:TATTzt+kR+IV0+h3iUB3dHUe8omCvQ0rOkmfCsUBohk=",
         version = "v1.0.4",
-    )
-    go_repository(
-        name = "io_gorm_driver_postgres",
-        importpath = "gorm.io/driver/postgres",
-        sum = "h1:PAgM+PaHOSAeroTjHkCHCBIHHoBIf9RgPWGo8dF2DA8=",
-        version = "v1.0.8",
     )
     go_repository(
         name = "io_gorm_driver_sqlite",
