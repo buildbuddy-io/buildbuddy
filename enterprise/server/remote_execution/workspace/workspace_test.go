@@ -162,7 +162,8 @@ func TestCleanInputsIfNecessary_CleanNone(t *testing.T) {
 		"foo/KEEPME":     &repb.Digest{},
 		"foo/bar/KEEPME": &repb.Digest{}}
 
-	ws.CleanInputsIfNecessary(keep)
+	err := ws.CleanInputsIfNecessary(keep)
+	require.NoError(t, err)
 
 	assert.Equal(
 		t, keepmePaths(filePaths), actualFilePaths(t, ws),
@@ -210,7 +211,7 @@ func TestCleanInputsIfNecessary_CleanMatching(t *testing.T) {
 		"foo/KEEPME",
 		"foo/bar/KEEPME",
 	}
-	ws := newWorkspace(t, &workspace.Opts{Preserve: true, CleanInputs: ".h,.framework/"})
+	ws := newWorkspace(t, &workspace.Opts{Preserve: true, CleanInputs: "**.h,**.framework/**"})
 	writeEmptyFiles(t, ws, filePaths)
 
 	for _, file := range filePaths {
@@ -222,7 +223,8 @@ func TestCleanInputsIfNecessary_CleanMatching(t *testing.T) {
 		"foo/KEEPME":     &repb.Digest{},
 		"foo/bar/KEEPME": &repb.Digest{}}
 
-	ws.CleanInputsIfNecessary(keep)
+	err := ws.CleanInputsIfNecessary(keep)
+	require.NoError(t, err)
 
 	assert.Equal(
 		t, keepmePaths(filePaths), actualFilePaths(t, ws),

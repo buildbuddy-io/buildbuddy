@@ -3,6 +3,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/gobwas/glob"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
@@ -149,17 +151,14 @@ func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.Digest) error 
 		return nil
 	}
 	inputFilesToCleanUp := make(map[string]*repb.Digest)
+	// Curly braces indicate a comma separated list of patterns: https://pkg.go.dev/github.com/gobwas/glob#Compile
+	glob, err := glob.Compile(fmt.Sprintf("{%s}", ws.opts.CleanInputs), os.PathSeparator)
+	if err != nil {
+		return status.FailedPreconditionErrorf("Invalid glob {%s} used for input cleaning: %s", ws.opts.CleanInputs, err.Error())
+	}
 	for path, digest := range ws.Inputs {
-		if ws.opts.CleanInputs == "*" {
+		if ws.opts.CleanInputs == "*" || glob.Match(path) {
 			inputFilesToCleanUp[path] = digest
-			continue
-		}
-		patterns := strings.Split(ws.opts.CleanInputs, ",")
-		for _, pattern := range patterns {
-			if strings.Contains(path, pattern) {
-				inputFilesToCleanUp[path] = digest
-				continue
-			}
 		}
 	}
 	for path, _ := range keep {

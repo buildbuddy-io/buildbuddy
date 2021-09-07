@@ -16,6 +16,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/tracing",
+        "@com_github_gobwas_glob//:glob",
         "@com_github_google_uuid//:uuid",
         "@org_golang_x_sync//errgroup",
     ],
