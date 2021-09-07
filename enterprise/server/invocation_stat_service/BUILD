@@ -9,6 +9,7 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//proto:context_go_proto",
         "//proto:invocation_go_proto",
         "//server/environment",
         "//server/util/blocklist",

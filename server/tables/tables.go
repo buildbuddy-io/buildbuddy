@@ -2,6 +2,7 @@ package tables
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -97,6 +98,7 @@ type Invocation struct {
 	RepoURL      string `gorm:"index:repo_url_index"`
 	CommitSHA    string `gorm:"index:commit_sha_index"`
 	LastChunkId  string
+	BranchName   string `gorm:"index:branch_name_index"`
 	Model
 	DurationUsec                     int64
 	UploadThroughputBytesPerSecond   int64
@@ -225,7 +227,7 @@ func (u *User) ToProto() *uspb.DisplayUser {
 			Id: u.UserID,
 		},
 		Name: &uspb.Name{
-			Full:  u.FirstName + " " + u.LastName,
+			Full:  strings.TrimSpace(u.FirstName + " " + u.LastName),
 			First: u.FirstName,
 			Last:  u.LastName,
 		},
@@ -338,28 +340,6 @@ type TelemetryLog struct {
 
 func (t *TelemetryLog) TableName() string {
 	return "TelemetryLog"
-}
-
-type ExecutionNode struct {
-	Model
-	GroupID               string `gorm:"primaryKey;default:''"`
-	Host                  string `gorm:"primaryKey"`
-	Port                  int32  `gorm:"primaryKey;autoIncrement:false"`
-	OS                    string
-	Arch                  string
-	Pool                  string
-	Version               string
-	Constraints           string
-	AssignableMemoryBytes int64
-	AssignableMilliCPU    int64
-	SchedulerHostPort     string
-	UserID                string
-	Perms                 int
-	ExecutorID            string
-}
-
-func (n *ExecutionNode) TableName() string {
-	return "ExecutionNodes"
 }
 
 type ExecutionTask struct {
@@ -524,15 +504,6 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		})
 	}
 
-	executorsTable := (&ExecutionNode{}).TableName()
-	// If the table doesn't have group_id column yet, drop the whole table so that GORM re-creates it with a new
-	// primary key that includes group_id.
-	if m.HasTable(executorsTable) && !m.HasColumn(&ExecutionNode{}, "group_id") {
-		if err := m.DropTable(executorsTable); err != nil {
-			return nil, err
-		}
-	}
-
 	return postMigrate, nil
 }
 
@@ -545,6 +516,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 		"invocations_stats_user_index":        "(`group_id`, `user`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
 		"invocations_stats_host_index":        "(`group_id`, `host`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
 		"invocations_stats_repo_index":        "(`group_id`, `repo_url`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+		"invocations_stats_branch_index":      "(`group_id`, `branch_name`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
 		"invocations_stats_commit_index":      "(`group_id`, `commit_sha`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
 		"invocations_stats_role_index":        "(`group_id`, `role`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
 	}
@@ -573,7 +545,6 @@ func init() {
 	registerTable("TO", &Token{})
 	registerTable("EX", &Execution{})
 	registerTable("TL", &TelemetryLog{})
-	registerTable("EN", &ExecutionNode{})
 	registerTable("ET", &ExecutionTask{})
 	registerTable("CL", &CacheLog{})
 	registerTable("TA", &Target{})

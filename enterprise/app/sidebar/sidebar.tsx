@@ -59,6 +59,10 @@ export default class SidebarComponent extends React.Component {
     return this.props.path.startsWith("/history/repo/") || this.props.hash == "#repos";
   }
 
+  isBranchesSelected() {
+    return this.props.path.startsWith("/history/branch/") || this.props.hash == "#branches";
+  }
+
   isCommitsSelected() {
     return this.props.path.startsWith("/history/commit/") || this.props.hash == "#commits";
   }
@@ -79,6 +83,10 @@ export default class SidebarComponent extends React.Component {
     return this.props.path.startsWith("/docs/setup/");
   }
 
+  isUsageSelected() {
+    return this.props.path.startsWith("/usage/");
+  }
+
   refreshCurrentPage() {
     rpcService.events.next("refresh");
   }
@@ -92,6 +100,11 @@ export default class SidebarComponent extends React.Component {
       ? this.refreshCurrentPage()
       : router.navigateToTrends();
   }
+
+  navigateToUsage() {
+    this.isUsageSelected() ? this.refreshCurrentPage() : router.navigateToUsage();
+  }
+
   navigateToExecutors() {
     this.isExecutorsSelected() && this.props.search.toString().length == 0
       ? this.refreshCurrentPage()
@@ -108,6 +121,10 @@ export default class SidebarComponent extends React.Component {
 
   navigateToRepos() {
     this.isReposSelected() ? this.refreshCurrentPage() : router.navigateHome("#repos");
+  }
+
+  navigateToBranches() {
+    this.isBranchesSelected() ? this.refreshCurrentPage() : router.navigateHome("#branches");
   }
 
   navigateToCommits() {
@@ -163,6 +180,11 @@ export default class SidebarComponent extends React.Component {
             <img src="/image/github-white.svg" /> Repos
           </div>
           <div
+            className={`sidebar-item ${this.isBranchesSelected() ? "selected" : ""}`}
+            onClick={this.navigateToBranches.bind(this)}>
+            <img src="/image/git-branch-white.svg" /> Branches
+          </div>
+          <div
             className={`sidebar-item ${this.isCommitsSelected() ? "selected" : ""}`}
             onClick={this.navigateToCommits.bind(this)}>
             <img src="/image/git-commit-white.svg" /> Commits
@@ -198,6 +220,13 @@ export default class SidebarComponent extends React.Component {
             onClick={() => router.navigateToSetup()}>
             <img src="/image/settings-white.svg" /> Setup
           </div>
+          {capabilities.usage && (
+            <div
+              className={`sidebar-item ${this.isUsageSelected() ? "selected" : ""}`}
+              onClick={this.navigateToUsage.bind(this)}>
+              <img src="/image/gauge-white.svg" /> Usage
+            </div>
+          )}
           <a className="sidebar-item" href="https://www.buildbuddy.io/docs/" target="_blank">
             <img src="/image/book-open-white.svg" /> Docs
           </a>
@@ -252,7 +281,9 @@ export default class SidebarComponent extends React.Component {
                 src={this.props.user?.displayUser?.profileImageUrl || "/image/user-regular.svg"}
               />
               <div className="sidebar-profile-name">
-                <div className="sidebar-profile-user">{this.props.user?.displayUser?.name?.full}</div>
+                <div className="sidebar-profile-user">
+                  {this.props.user?.displayUser?.name?.full || this.props.user?.displayUser?.email}
+                </div>
                 <div className="sidebar-profile-org">{this.props.user?.selectedGroupName()}</div>
               </div>
               <img

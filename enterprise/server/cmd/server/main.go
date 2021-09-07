@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
@@ -119,6 +120,10 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 
 	search := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle())
 	env.SetInvocationSearchService(search)
+
+	if env.GetConfigurator().GetAppUsageEnabled() {
+		env.SetUsageService(usage_service.New(env))
+	}
 
 	apiServer := api.NewAPIServer(env)
 	env.SetAPIService(apiServer)

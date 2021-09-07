@@ -131,6 +131,57 @@ func TestReader(t *testing.T) {
 	}
 }
 
+func TestReaderMaxOffset(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "auth.enable_anonymous_usage", "true")
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	if err := c.StartListening(); err != nil {
+		t.Fatalf("Error setting up cacheproxy: %s", err)
+	}
+	waitUntilServerIsAlive(peer)
+
+	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
+
+	// Read some random bytes.
+	buf := new(bytes.Buffer)
+	io.CopyN(buf, randomSrc, 100)
+	readSeeker := bytes.NewReader(buf.Bytes())
+
+	// Compute a digest for the random bytes.
+	d, err := digest.Compute(readSeeker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readSeeker.Seek(0, 0)
+
+	instanceName := "foo"
+	// Set the random bytes in the cache (with a prefix)
+	err = te.GetCache().WithPrefix(instanceName).Set(ctx, d, buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Remote-read the random bytes back.
+	r, err := c.RemoteReader(ctx, peer, instanceName, &dcpb.Isolation{}, d, d.GetSizeBytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	d2 := testdigest.ReadDigestAndClose(t, r)
+	emptyHash := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	if emptyHash != d2.GetHash() {
+		t.Fatalf("Digest uploaded %q != %q downloaded", emptyHash, d2.GetHash())
+	}
+
+}
+
 func TestWriter(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
@@ -619,8 +670,12 @@ func TestEmptyRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Remote-read the random bytes back.
-	_, err = c.RemoteReader(ctx, peer, prefix, &dcpb.Isolation{}, d, 0)
+	r, err := c.RemoteReader(ctx, peer, prefix, &dcpb.Isolation{}, d, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = r.Read(nil)
 	if err != io.EOF {
 		t.Fatal(err)
 	}
@@ -1098,9 +1153,14 @@ func TestEmptyRead_Isolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Remote-read the random bytes back.
-	_, err = c.RemoteReader(ctx, peer, remoteInstanceName, isolation, d, 0)
+	r, err := c.RemoteReader(ctx, peer, remoteInstanceName, isolation, d, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = r.Read(nil)
 	if err != io.EOF {
 		t.Fatal(err)
 	}
+
 }

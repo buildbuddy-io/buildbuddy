@@ -3,20 +3,22 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/gobwas/glob"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
@@ -37,6 +39,7 @@ type Workspace struct {
 	task      *repb.ExecutionTask
 	dirHelper *dirtools.DirHelper
 	opts      *Opts
+	casFs     *casfs.CASFS
 	// Action input files known to exist in the workspace, as a map of
 	// workspace-relative paths to digests.
 	// TODO: Make sure these files are written read-only
@@ -50,7 +53,8 @@ type Workspace struct {
 type Opts struct {
 	// Preserve specifies whether to preserve all files in the workspace except
 	// for output dirs.
-	Preserve bool
+	Preserve    bool
+	CleanInputs string
 }
 
 // New creates a new workspace directly under the given parent directory.
@@ -63,6 +67,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 	if err := os.MkdirAll(rootDir, 0755); err != nil {
 		return nil, status.UnavailableErrorf("failed to create workspace at %q", rootDir)
 	}
+
 	return &Workspace{
 		env:     env,
 		rootDir: rootDir,
@@ -111,7 +116,7 @@ func (ws *Workspace) CreateOutputDirs() error {
 }
 
 // DownloadInputs downloads any missing inputs for the current action.
-func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo, error) {
+func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirtools.TransferInfo, error) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
@@ -121,18 +126,17 @@ func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	rootInstanceDigest := digest.NewInstanceNameDigest(
-		ws.task.GetAction().GetInputRootDigest(),
-		ws.task.GetExecuteRequest().GetInstanceName(),
-	)
-
-	opts := &dirtools.GetTreeOpts{}
+	opts := &dirtools.DownloadTreeOpts{}
 	if ws.opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
-	txInfo, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, ws.env, rootInstanceDigest, ws.rootDir, opts)
+	txInfo, err := dirtools.DownloadTree(ctx, ws.env, ws.task.GetExecuteRequest().GetInstanceName(), tree, ws.rootDir, opts)
 	if err == nil {
+		if err := ws.CleanInputsIfNecessary(txInfo.Skips); err != nil {
+			return txInfo, err
+		}
+
 		for path, digest := range txInfo.Transfers {
 			ws.Inputs[path] = digest
 		}
@@ -140,6 +144,35 @@ func (ws *Workspace) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo
 		log.Debugf("GetTree downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
 	return txInfo, err
+}
+
+func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.Digest) error {
+	if ws.opts.CleanInputs == "" {
+		return nil
+	}
+	inputFilesToCleanUp := make(map[string]*repb.Digest)
+	// Curly braces indicate a comma separated list of patterns: https://pkg.go.dev/github.com/gobwas/glob#Compile
+	glob, err := glob.Compile(fmt.Sprintf("{%s}", ws.opts.CleanInputs), os.PathSeparator)
+	if err != nil {
+		return status.FailedPreconditionErrorf("Invalid glob {%s} used for input cleaning: %s", ws.opts.CleanInputs, err.Error())
+	}
+	for path, digest := range ws.Inputs {
+		if ws.opts.CleanInputs == "*" || glob.Match(path) {
+			inputFilesToCleanUp[path] = digest
+		}
+	}
+	for path, _ := range keep {
+		delete(inputFilesToCleanUp, path)
+	}
+	if len(inputFilesToCleanUp) > 0 {
+		for path, _ := range inputFilesToCleanUp {
+			if err := os.RemoveAll(filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {
+				return status.UnavailableErrorf("Failed to clean inputs: %s", err)
+			}
+			delete(ws.Inputs, path)
+		}
+	}
+	return nil
 }
 
 // UploadOutputs uploads any outputs created by the last executed command

@@ -121,6 +121,10 @@ class Router {
     this.navigateTo(Path.trendsPath);
   }
 
+  navigateToUsage() {
+    this.navigateTo(Path.usagePath);
+  }
+
   navigateToExecutors() {
     if (!capabilities.canNavigateToPath(Path.executorsPath)) {
       alert(`Executors are not available in ${capabilities.name}`);
@@ -181,6 +185,16 @@ class Router {
       return;
     }
     this.navigateTo(`${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}`);
+  }
+
+  navigateToBranchHistory(branch: string) {
+    if (!capabilities.canNavigateToPath(Path.branchHistoryPath)) {
+      alert(
+        `Branch history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
+      );
+      return;
+    }
+    this.navigateTo(Path.branchHistoryPath + branch);
   }
 
   navigateToCommitHistory(commit: string) {
@@ -245,13 +259,33 @@ class Router {
   getHistoryRepo(path: string) {
     let repoComponent = this.getLastPathComponent(path, Path.repoHistoryPath);
     if (repoComponent?.includes("/")) {
-      return `https://github.com/${repoComponent}.git`;
+      return `https://github.com/${repoComponent}`;
     }
     return repoComponent ? atob(repoComponent) : "";
   }
 
+  getHistoryBranch(path: string) {
+    return this.getLastPathComponent(path, Path.branchHistoryPath);
+  }
+
   getHistoryCommit(path: string) {
     return this.getLastPathComponent(path, Path.commitHistoryPath);
+  }
+
+  isFiltering() {
+    const url = new URL(window.location.href);
+    for (const param of GLOBAL_FILTER_PARAM_NAMES) {
+      if (url.searchParams.has(param)) return true;
+    }
+    return false;
+  }
+
+  clearFilters() {
+    const url = new URL(window.location.href);
+    for (const param of GLOBAL_FILTER_PARAM_NAMES) {
+      url.searchParams.delete(param);
+    }
+    this.replaceParams(Object.fromEntries(url.searchParams.entries()));
   }
 }
 
@@ -298,12 +332,14 @@ export class Path {
   static userHistoryPath = "/history/user/";
   static hostHistoryPath = "/history/host/";
   static repoHistoryPath = "/history/repo/";
+  static branchHistoryPath = "/history/branch/";
   static commitHistoryPath = "/history/commit/";
   static setupPath = "/docs/setup/";
   static settingsPath = "/settings/";
   static createOrgPath = "/org/create";
   static editOrgPath = "/org/edit";
   static trendsPath = "/trends/";
+  static usagePath = "/usage/";
   static executorsPath = "/executors/";
   static tapPath = "/tests/";
   static workflowsPath = "/workflows/";

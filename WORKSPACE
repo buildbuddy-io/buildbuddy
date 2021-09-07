@@ -34,14 +34,14 @@ go_download_sdk(
     name = "go_sdk_linux",
     goarch = "amd64",
     goos = "linux",
-    version = "1.16.2",
+    version = "1.16.7",
 )
 
 go_download_sdk(
     name = "go_sdk_darwin",
     goarch = "amd64",
     goos = "darwin",
-    version = "1.16.2",
+    version = "1.16.7",
 )
 
 go_register_toolchains(

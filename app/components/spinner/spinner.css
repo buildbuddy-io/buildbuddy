@@ -1,0 +1,21 @@
+.spinner {
+  --size: 24px;
+
+  width: var(--size);
+  height: var(--size);
+
+  opacity: 0.8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner:before {
+  content: "";
+  display: block;
+  animation: rotate 2s linear infinite;
+  width: inherit;
+  height: inherit;
+  background-image: url("/image/loader.svg");
+  background-size: cover;
+}

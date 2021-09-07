@@ -35,8 +35,17 @@ var (
 	}
 
 	defaultAllowedEnvVars = []string{
-		"USER", "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_RUN_ID",
-		"BUILDKITE_BUILD_URL", "BUILDKITE_JOB_ID",
+		"USER", "GITHUB_ACTOR", "GITHUB_SHA", "GITHUB_RUN_ID",
+		"BUILDKITE_BUILD_URL", "BUILDKITE_JOB_ID", "CIRCLE_REPOSITORY_URL",
+		"GITHUB_REPOSITORY", "BUILDKITE_REPO", "TRAVIS_REPO_SLUG", "GIT_URL",
+		"CI_REPOSITORY_URL", "REPO_URL", "CIRCLE_SHA1", "BUILDKITE_COMMIT",
+		"TRAVIS_COMMIT", "GIT_COMMIT", "CI_COMMIT_SHA", "COMMIT_SHA", "CI", "CI_RUNNER",
+		"CIRCLE_BRANCH", "GITHUB_HEAD_REF", "BUILDKITE_BRANCH", "TRAVIS_BRANCH",
+		"GIT_BRANCH", "CI_COMMIT_BRANCH", "GITHUB_REF",
+	}
+
+	redactedPlatformProps = []string{
+		"container-registry-username", "container-registry-password",
 	}
 )
 
@@ -107,16 +116,26 @@ func stripRepoURLCredentialsFromCommandLineOption(option *clpb.Option) {
 	}
 }
 
-func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars []string) map[string]string {
-	envVarMap := make(map[string]string)
-	if commandLine == nil {
-		return envVarMap
+func filterCommandLineOptions(options []*clpb.Option) []*clpb.Option {
+	filtered := []*clpb.Option{}
+	for _, option := range options {
+		// Remove default_overrides for now since we don't have a use for them (yet)
+		// and they may contain sensitive info.
+		if option.OptionName == "default_override" {
+			continue
+		}
+		filtered = append(filtered, option)
 	}
+	return filtered
+}
+
+func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars []string) {
 	for _, section := range commandLine.Sections {
 		p, ok := section.SectionType.(*clpb.CommandLineSection_OptionList)
 		if !ok {
 			continue
 		}
+		p.OptionList.Option = filterCommandLineOptions(p.OptionList.Option)
 		for _, option := range p.OptionList.Option {
 			// Strip URL secrets. Strip git URLs explicitly first, since
 			// gitutil.StripRepoURLCredentials is URL-aware. Then fall back to
@@ -140,9 +159,18 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 				option.OptionValue = parts[0] + envVarSeparator + envVarRedactedPlaceholder
 				option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + envVarRedactedPlaceholder
 			}
+
+			// Redact sensitive platform props
+			if option.OptionName == "remote_default_exec_properties" {
+				for _, propName := range redactedPlatformProps {
+					if strings.HasPrefix(option.OptionValue, propName+"=") {
+						option.OptionValue = propName + "=<REDACTED>"
+						option.CombinedForm = "--remote_default_exec_properties=" + propName + "=<REDACTED>"
+					}
+				}
+			}
 		}
 	}
-	return envVarMap
 }
 
 func isAllowedEnvVar(variableName string, allowedEnvVars []string) bool {
@@ -209,8 +237,11 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		}
 	case *bespb.BuildEvent_Started:
 		{
-			p.Started.OptionsDescription = stripURLSecrets(p.Started.OptionsDescription)
 			r.allowedEnvVars = append(r.allowedEnvVars, parseAllowedEnv(p.Started.OptionsDescription)...)
+			// Redact the whole options description to avoid having to parse individual
+			// options. The StructuredCommandLine should contain all of these options
+			// anyway.
+			p.Started.OptionsDescription = "<REDACTED>"
 		}
 	case *bespb.BuildEvent_UnstructuredCommandLine:
 		{

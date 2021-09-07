@@ -11,6 +11,7 @@ import "proto/target.proto";
 import "proto/user.proto";
 import "proto/workflow.proto";
 import "proto/scheduler.proto";
+import "proto/usage.proto";
 
 package buildbuddy.service;
 
@@ -85,4 +86,7 @@ service BuildBuddyService {
   // Eventlog API
   rpc GetEventLogChunk(eventlog.GetEventLogChunkRequest)
       returns (eventlog.GetEventLogChunkResponse);
+
+  // Usage API
+  rpc GetUsage(usage.GetUsageRequest) returns (usage.GetUsageResponse);
 }

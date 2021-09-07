@@ -57,6 +57,7 @@ type appConfig struct {
 	IgnoreForcedTracingHeader bool     `yaml:"ignore_forced_tracing_header" usage:"If set, we will not honor the forced tracing header."`
 	CodeEditorEnabled         bool     `yaml:"code_editor_enabled" usage:"If set, code editor functionality will be enabled."`
 	GlobalFilterEnabled       bool     `yaml:"global_filter_enabled" usage:"If set, the global filter will be enabled in the UI."`
+	UsageEnabled              bool     `yaml:"usage_enabled" usage:"If set, the usage page will be enabled in the UI."`
 }
 
 type buildEventProxy struct {
@@ -98,6 +99,7 @@ type DiskConfig struct {
 	RootDirectory     string                      `yaml:"root_directory" usage:"The root directory to store all blobs in, if using disk based storage."`
 	Partitions        []DiskCachePartition        `yaml:"partitions"`
 	PartitionMappings []DiskCachePartitionMapping `yaml:"partition_mappings"`
+	UseV2Layout       bool                        `yaml:"use_v2_layout" usage:"If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description."`
 }
 
 type GCSConfig struct {
@@ -216,27 +218,34 @@ type RemoteExecutionConfig struct {
 	RequireExecutorAuthorization  bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
 	EnableUserOwnedExecutors      bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
 	EnableExecutorKeyCreation     bool   `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
-	UseRedisForExecutorPools      bool   `yaml:"use_redis_for_executor_pools" usage:"If enabled, executor pool information will be read from Redis instead of database."`
 }
 
 type ExecutorConfig struct {
-	AppTarget                 string           `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
-	RootDirectory             string           `yaml:"root_directory" usage:"The root directory to use for build files."`
-	LocalCacheDirectory       string           `yaml:"local_cache_directory" usage:"A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result."`
-	LocalCacheSizeBytes       int64            `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
-	DisableLocalCache         bool             `yaml:"disable_local_cache" usage:"If true, a local file cache will not be used."`
-	DockerSocket              string           `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
-	APIKey                    string           `yaml:"api_key" usage:"API Key used to authorize the executor with the BuildBuddy app server."`
-	ContainerdSocket          string           `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
-	DockerMountMode           string           `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/"`
-	RunnerPool                RunnerPoolConfig `yaml:"runner_pool"`
-	DockerNetHost             bool             `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
-	DockerSiblingContainers   bool             `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
-	DockerInheritUserIDs      bool             `yaml:"docker_inherit_user_ids" usage:"If set, run docker containers using the same uid and gid as the user running the executor process."`
-	DefaultXCodeVersion       string           `yaml:"default_xcode_version" usage:"Sets the default XCode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
-	EnableBareRunner          bool             `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
-	EnableFirecracker         bool             `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
-	HostExecutorRootDirectory string           `yaml:"host_executor_root_directory" usage:"Path on the host where the executor container root directory is mounted."`
+	AppTarget                 string                    `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
+	RootDirectory             string                    `yaml:"root_directory" usage:"The root directory to use for build files."`
+	LocalCacheDirectory       string                    `yaml:"local_cache_directory" usage:"A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result."`
+	LocalCacheSizeBytes       int64                     `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
+	DisableLocalCache         bool                      `yaml:"disable_local_cache" usage:"If true, a local file cache will not be used."`
+	DockerSocket              string                    `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
+	APIKey                    string                    `yaml:"api_key" usage:"API Key used to authorize the executor with the BuildBuddy app server."`
+	ContainerdSocket          string                    `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
+	DockerMountMode           string                    `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/"`
+	RunnerPool                RunnerPoolConfig          `yaml:"runner_pool"`
+	DockerNetHost             bool                      `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
+	DockerSiblingContainers   bool                      `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
+	DockerInheritUserIDs      bool                      `yaml:"docker_inherit_user_ids" usage:"If set, run docker containers using the same uid and gid as the user running the executor process."`
+	DefaultXCodeVersion       string                    `yaml:"default_xcode_version" usage:"Sets the default XCode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
+	EnableBareRunner          bool                      `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
+	EnableFirecracker         bool                      `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
+	HostExecutorRootDirectory string                    `yaml:"host_executor_root_directory" usage:"Path on the host where the executor container root directory is mounted."`
+	ContainerRegistries       []ContainerRegistryConfig `yaml:"container_registries"`
+	EnableCASFS               bool                      `yaml:"enable_casfs" usage:"Whether FUSE based CAS filesystem is enabled."`
+}
+
+type ContainerRegistryConfig struct {
+	Hostnames []string `yaml:"hostnames" json:"hostnames"`
+	Username  string   `yaml:"username" json:"username"`
+	Password  string   `yaml:"password" json:"password"`
 }
 
 func (c *ExecutorConfig) GetAppTarget() string {
@@ -550,6 +559,10 @@ func (c *Configurator) GetCodeEditorEnabled() bool {
 
 func (c *Configurator) GetAppGlobalFilterEnabled() bool {
 	return c.gc.App.GlobalFilterEnabled
+}
+
+func (c *Configurator) GetAppUsageEnabled() bool {
+	return c.gc.App.UsageEnabled
 }
 
 func (c *Configurator) GetGRPCMaxRecvMsgSizeBytes() int {

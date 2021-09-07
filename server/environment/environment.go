@@ -71,4 +71,5 @@ type Env interface {
 	GetWorkflowService() interfaces.WorkflowService
 	GetRunnerService() interfaces.RunnerService
 	GetGitProviders() interfaces.GitProviders
+	GetUsageService() interfaces.UsageService
 }

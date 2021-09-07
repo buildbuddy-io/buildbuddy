@@ -32,7 +32,7 @@ func testSize(testSize string) (int64, int64) {
 	switch testSize {
 	case "small":
 		mb = 20
-		cpu = 1000
+		cpu = 600
 	case "medium":
 		mb = 100
 		cpu = 1000

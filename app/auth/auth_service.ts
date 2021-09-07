@@ -5,6 +5,8 @@ import { user_id } from "../../proto/user_id_ts_proto";
 import { user } from "../../proto/user_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
+import errorService from "../errors/error_service";
+import { BuildBuddyError } from "../../app/util/errors";
 
 const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
 
@@ -38,9 +40,8 @@ export class AuthService {
         this.emitUser(this.userFromResponse(response));
       })
       .catch((error: any) => {
-        console.log(error);
-        // TODO(siggisim): make this more robust.
-        if (error.includes("not found")) {
+        // TODO(siggisim): Remove "not found" string matching after the next release.
+        if (BuildBuddyError.parse(error).code == "Unauthenticated" || error.includes("not found")) {
           this.createUser();
         } else {
           this.onUserRpcError(error);
@@ -67,14 +68,19 @@ export class AuthService {
         this.refreshUser();
       })
       .catch((error: any) => {
-        this.onUserRpcError(error);
+        // TODO(siggisim): Remove "No user token" string matching after the next release.
+        if (BuildBuddyError.parse(error).code == "Unauthenticated" || error.includes("No user token")) {
+          console.log("User was not created because no auth cookie was set, this is normal.");
+          this.emitUser(null);
+        } else {
+          this.onUserRpcError(error);
+        }
       });
   }
 
   onUserRpcError(error: any) {
-    console.log(error);
+    errorService.handleError(error);
     this.emitUser(null);
-    // TODO(siggisim): figure out what we should do in this case.
   }
 
   userFromResponse(response: user.GetUserResponse) {
@@ -94,19 +100,17 @@ export class AuthService {
   emitUser(user: User) {
     console.log("User", user);
     this.user = user;
-    rpcService.requestContext = this.getRequestContext();
+    this.updateRequestContext();
     this.userStream.next(user);
   }
 
-  getRequestContext() {
+  updateRequestContext() {
     let cookieName = "userId";
     let match = document.cookie.match("(^|[^;]+)\\s*" + cookieName + "\\s*=\\s*([^;]+)");
     let userIdFromCookie = match ? match.pop() : "";
-    let requestContext = new context.RequestContext();
-    requestContext.userId = new user_id.UserId();
-    requestContext.userId.id = userIdFromCookie;
-    requestContext.groupId = this.user?.selectedGroup?.id || "";
-    return requestContext;
+    rpcService.requestContext.userId = new user_id.UserId();
+    rpcService.requestContext.userId.id = userIdFromCookie;
+    rpcService.requestContext.groupId = this.user?.selectedGroup?.id || "";
   }
 
   async setSelectedGroupId(groupId: string, { reload = false }: { reload?: boolean } = {}) {

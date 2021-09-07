@@ -16,6 +16,7 @@ go_library(
         "//proto:runner_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:telemetry_go_proto",
+        "//proto:usage_go_proto",
         "//proto:workflow_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/tables",

@@ -66,7 +66,10 @@ export function compactDurationSec(duration: number | Long) {
   if (seconds > 60) {
     return `${(seconds / 60).toFixed(0)}m`;
   }
-  return `${seconds.toFixed(0)}s`;
+  if (seconds >= 1) {
+    return `${seconds.toFixed(0)}s`;
+  }
+  return `${(seconds * 1000).toFixed(0)}ms`;
 }
 
 export function bytes(bytes: number | Long) {
