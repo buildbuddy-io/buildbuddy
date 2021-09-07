@@ -42,16 +42,16 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 	createdBefore := addCalendarMonths(startOfMonth(now), 1)
 
 	rows, err := db.Raw(`
-	SELECT `+db.UTCMonthFromUsecTimestamp("created_at_usec")+` AS period,
-	COUNT(1) AS total_num_builds,
-	SUM(action_cache_hits) AS action_cache_hits,
-	SUM(cas_cache_hits) AS cas_cache_hits,
-	SUM(total_download_size_bytes) AS total_download_size_bytes
-	FROM Invocations
-	WHERE created_at_usec >= ? AND created_at_usec < ?
-	AND group_id = ?
-	GROUP BY period
-	ORDER BY period ASC
+		SELECT `+db.UTCMonthFromUsecTimestamp("created_at_usec")+` AS period,
+		COUNT(1) AS total_num_builds,
+		SUM(action_cache_hits) AS action_cache_hits,
+		SUM(cas_cache_hits) AS cas_cache_hits,
+		SUM(total_download_size_bytes) AS total_download_size_bytes
+		FROM Invocations
+		WHERE created_at_usec >= ? AND created_at_usec < ?
+		AND group_id = ?
+		GROUP BY period
+		ORDER BY period ASC
 	`, u.GetGroupID(), timeutil.ToUsec(createdAfter), timeutil.ToUsec(createdBefore)).Rows()
 	if err != nil {
 		return nil, err
