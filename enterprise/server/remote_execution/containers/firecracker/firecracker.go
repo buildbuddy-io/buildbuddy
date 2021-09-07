@@ -887,7 +887,7 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 
 func (c *FirecrackerContainer) setupByteStreamProxy() error {
 	if c.bsProxy != nil {
-		return status.FailedPreconditionErrorf("ByteStream proxy already initialized")
+		return nil
 	}
 
 	vsockServerPath := filepath.Join(c.getChroot(), firecrackerVSockPath) + "_" + strconv.Itoa(byteStreamProxyPort)
