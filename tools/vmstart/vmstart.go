@@ -160,17 +160,13 @@ func main() {
 		}
 
 		actionInstanceDigest := digest.NewInstanceNameDigest(d, *remoteInstanceName)
-		action := &repb.Action{}
-		if err := cachetools.GetBlobAsProto(ctx, env.GetByteStreamClient(), actionInstanceDigest, action); err != nil {
-			log.Fatalf("Error fetching action: %s", err)
-		}
-		log.Infof("Fetched action:\n%s", proto.MarshalTextString(action))
 
-		cmd := &repb.Command{}
-		if err := cachetools.GetBlobAsProto(ctx, env.GetByteStreamClient(), digest.NewInstanceNameDigest(action.GetCommandDigest(), *remoteInstanceName), cmd); err != nil {
-			log.Fatalf("Error fetching command: %s", err)
+		action, cmd, err := cachetools.GetActionAndCommand(ctx, env.GetByteStreamClient(), actionInstanceDigest)
+		if err != nil {
+			log.Fatal(err.Error())
 		}
-		log.Infof("Fetched command:\n%s", proto.MarshalTextString(action))
+		log.Infof("Action:\n%s", proto.MarshalTextString(action))
+		log.Infof("Command:\n%s", proto.MarshalTextString(cmd))
 
 		tree, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, env.GetContentAddressableStorageClient(), digest.NewInstanceNameDigest(action.GetInputRootDigest(), *remoteInstanceName))
 		if err != nil {
