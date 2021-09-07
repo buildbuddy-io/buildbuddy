@@ -26,8 +26,8 @@ func New(env environment.Env) *usageService {
 }
 
 func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error) {
-	u, err := perms.AuthenticatedUser(ctx, s.env)
-	if err != nil {
+	groupID := req.GetRequestContext().GetGroupId()
+	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
 		return nil, err
 	}
 
@@ -52,7 +52,7 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 		AND group_id = ?
 		GROUP BY period
 		ORDER BY period ASC
-	`, u.GetGroupID(), timeutil.ToUsec(createdAfter), timeutil.ToUsec(createdBefore)).Rows()
+	`, timeutil.ToUsec(createdAfter), timeutil.ToUsec(createdBefore), groupID).Rows()
 	if err != nil {
 		return nil, err
 	}
