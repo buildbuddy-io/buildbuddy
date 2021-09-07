@@ -19,6 +19,7 @@ import SettingsComponent from "../settings/settings";
 import SidebarComponent from "../sidebar/sidebar";
 import TapComponent from "../tap/tap";
 import TrendsComponent from "../trends/trends";
+import UsageComponent from "../usage/usage";
 const CodeComponent = React.lazy(() => import("../code/code"));
 // TODO(siggisim): lazy load all components that make sense more gracefully.
 
@@ -107,6 +108,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let orgCreate = this.state.path === Path.createOrgPath;
     let orgJoinAuthenticated = this.state.path.startsWith("/join") && this.state.user;
     let trends = this.state.user && this.state.path.startsWith("/trends");
+    let usage = this.state.user && this.state.path.startsWith("/usage/");
     let executors = this.state.user && this.state.path.startsWith("/executors");
     let tests = this.state.user && this.state.path.startsWith("/tests");
     let workflows = this.state.user && this.state.path.startsWith("/workflows");
@@ -118,6 +120,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !org &&
       !orgJoinAuthenticated &&
       !trends &&
+      !usage &&
       !executors &&
       !tests &&
       !invocationId &&
@@ -243,6 +246,7 @@ export default class EnterpriseRootComponent extends React.Component {
                     <TrendsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
                   </Suspense>
                 )}
+                {usage && <UsageComponent />}
                 {executors && (
                   <ExecutorsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
                 )}

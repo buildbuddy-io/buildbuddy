@@ -121,6 +121,10 @@ class Router {
     this.navigateTo(Path.trendsPath);
   }
 
+  navigateToUsage() {
+    this.navigateTo(Path.usagePath);
+  }
+
   navigateToExecutors() {
     if (!capabilities.canNavigateToPath(Path.executorsPath)) {
       alert(`Executors are not available in ${capabilities.name}`);
@@ -335,6 +339,7 @@ export class Path {
   static createOrgPath = "/org/create";
   static editOrgPath = "/org/edit";
   static trendsPath = "/trends/";
+  static usagePath = "/usage/";
   static executorsPath = "/executors/";
   static tapPath = "/tests/";
   static workflowsPath = "/workflows/";

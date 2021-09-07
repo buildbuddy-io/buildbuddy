@@ -22,6 +22,7 @@ export class Capabilities {
   code: boolean;
   sso: boolean;
   globalFilter: boolean;
+  usage: boolean;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
@@ -47,6 +48,7 @@ export class Capabilities {
     this.code = Boolean(config.code_editor_enabled);
     this.paths = new Set(paths);
     this.globalFilter = Boolean(config.global_filter_enabled);
+    this.usage = Boolean(config.usage_enabled);
     if (window.gtag) {
       window.gtag("set", {
         app_name: this.name,
