@@ -619,7 +619,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			return r, nil
 		}
 	}
-	wsOpts := &workspace.Opts{Preserve: props.PreserveWorkspace}
+	wsOpts := &workspace.Opts{Preserve: props.PreserveWorkspace, CleanInputs: props.CleanWorkspaceInputs}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	ctr, err := p.newContainer(ctx, props, task.GetCommand())
 	if err != nil {

@@ -57,6 +57,7 @@ type appConfig struct {
 	IgnoreForcedTracingHeader bool     `yaml:"ignore_forced_tracing_header" usage:"If set, we will not honor the forced tracing header."`
 	CodeEditorEnabled         bool     `yaml:"code_editor_enabled" usage:"If set, code editor functionality will be enabled."`
 	GlobalFilterEnabled       bool     `yaml:"global_filter_enabled" usage:"If set, the global filter will be enabled in the UI."`
+	UsageEnabled              bool     `yaml:"usage_enabled" usage:"If set, the usage page will be enabled in the UI."`
 }
 
 type buildEventProxy struct {
@@ -558,6 +559,10 @@ func (c *Configurator) GetCodeEditorEnabled() bool {
 
 func (c *Configurator) GetAppGlobalFilterEnabled() bool {
 	return c.gc.App.GlobalFilterEnabled
+}
+
+func (c *Configurator) GetAppUsageEnabled() bool {
+	return c.gc.App.UsageEnabled
 }
 
 func (c *Configurator) GetGRPCMaxRecvMsgSizeBytes() int {

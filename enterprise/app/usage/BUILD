@@ -1,0 +1,17 @@
+load("@npm//@bazel/typescript:index.bzl", "ts_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["usage.css"])
+
+ts_library(
+    name = "usage",
+    srcs = glob(["*.tsx"]),
+    deps = [
+        "//app/errors",
+        "//app/service",
+        "//proto:usage_ts_proto",
+        "@npm//@types/react",
+        "@npm//react",
+    ],
+)
