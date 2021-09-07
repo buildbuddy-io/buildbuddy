@@ -59,8 +59,8 @@ jobs:
         id: tag
         run: echo ::set-output name=TAG::${GITHUB_REF/refs\/tags\//}
 
-      - name: Upload Artifacts
-        if: "!${{matrix.executorOnly}}"
+      - name: Upload All Artifacts
+        if: ${{!matrix.executorOnly}}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -72,7 +72,7 @@ jobs:
           # gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-${{matrix.OSName}}-${{matrix.arch}} buildbuddy-enterprise-${{matrix.OSName}}-${{matrix.arch}} executor-enterprise-${{matrix.OSName}}-${{matrix.arch}} --clobber
 
       - name: Upload Executor Artifacts
-        if: "${{matrix.executorOnly}}"
+        if: ${{matrix.executorOnly}}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
