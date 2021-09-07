@@ -94,13 +94,11 @@ func (x *xcodeLocator) locate() {
 	versionMap := make(map[string]*xcodeVersion)
 	for _, urlRef := range urlRefs {
 		path := "/" + strings.TrimLeft(stringFromCFString(C.CFURLGetString(C.CFURLRef(urlRef))), filePrefix)
-
 		versionFileReader, err := os.Open(path + versionPlistPath)
 		if err != nil {
 			log.Warningf("Error reading version file for XCode located at %s: %s", path, err.Error())
 			continue
 		}
-
 		// The interesting bits to pull from XCode's version plist.
 		var xcodePlist struct {
 			CFBundleShortVersionString string `plist:"CFBundleShortVersionString"`
@@ -110,15 +108,13 @@ func (x *xcodeLocator) locate() {
 			log.Warningf("Error decoding plist for XCode located at %s: %s", path, err.Error())
 			continue
 		}
-
 		developerDirPath := path + developerDirectoryPath
-
 		sdks, err := fs.Glob(os.DirFS(developerDirPath), "Platforms/*.platform/Developer/SDKs/*")
 		if err != nil {
 			log.Warningf("Error reading XCode SDKs from %s: %s", path, err.Error())
 			continue
 		}
-
+		log.Infof("Found XCode version %s.%s at path %s", xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion, path)
 		versions := expandXCodeVersions(xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion)
 		mostPreciseVersion := versions[len(versions)-1]
 		for _, version := range versions {
@@ -126,8 +122,7 @@ func (x *xcodeLocator) locate() {
 			if ok && mostPreciseVersion < existingXcode.version {
 				continue
 			}
-			log.Infof("Found XCode version: %s=>%s", version, developerDirPath)
-			log.Debugf("With SDKs %+v", sdks)
+			log.Debugf("Mapped XCode Version %s=>%s with SDKs %+v", version, developerDirPath, sdks)
 			versionMap[version] = &xcodeVersion{
 				version:          mostPreciseVersion,
 				developerDirPath: developerDirPath,
@@ -135,7 +130,6 @@ func (x *xcodeLocator) locate() {
 			}
 		}
 	}
-
 	x.versions = versionMap
 }
 
