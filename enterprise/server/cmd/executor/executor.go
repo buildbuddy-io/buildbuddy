@@ -115,9 +115,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		log.Infof("No authentication will be configured: %s", err)
 	}
 
-	xcodeLocator := xcode.NewXcodeLocator()
-	xcodeLocator.Locate()
-	realEnv.SetXCodeLocator(xcodeLocator)
+	realEnv.SetXCodeLocator(xcode.NewXcodeLocator())
 
 	if gcsCacheConfig := configurator.GetCacheGCSConfig(); gcsCacheConfig != nil {
 		opts := make([]option.ClientOption, 0)

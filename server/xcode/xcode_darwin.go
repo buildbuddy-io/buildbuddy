@@ -10,9 +10,9 @@ package xcode
 import "C"
 
 import (
+	"io/fs"
 	"os"
 	"strings"
-	"unicode/utf16"
 	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -26,28 +26,58 @@ const developerDirectoryPath = "Contents/Developer"
 const filePrefix = "file://"
 
 type xcodeLocator struct {
-	versions map[string]string
+	versions map[string]*xcodeVersion
+}
+
+type xcodeVersion struct {
+	version          string
+	developerDirPath string
+	sdks             []string
 }
 
 func NewXcodeLocator() *xcodeLocator {
-	return &xcodeLocator{}
+	xl := &xcodeLocator{}
+	xl.locate()
+	return xl
 }
 
 // Finds the XCode developer directory that most closely matches the given XCode version.
 func (x *xcodeLocator) DeveloperDirForVersion(version string) (string, error) {
-	versionComponents := strings.Split(version, ".")
-	for i, _ := range versionComponents {
-		subVersion := strings.Join(versionComponents[0:len(versionComponents)-i], ".")
-		if path, ok := x.versions[subVersion]; ok {
-			return path, nil
+	xv := x.xcodeVersionForVersionString(version)
+	if xv == nil {
+		return "", status.FailedPreconditionErrorf("XCode version %s not installed on remote executor. Available Xcode versions are %+v", version, x.versions)
+	}
+	return xv.developerDirPath, nil
+}
+
+// Return true if the given SDK path is present in the given XCode version.
+func (x *xcodeLocator) IsSDKPathPresentForVersion(sdkPath, version string) bool {
+	xv := x.xcodeVersionForVersionString(version)
+	if xv == nil {
+		return false
+	}
+	for _, sdk := range xv.sdks {
+		if sdk == sdkPath {
+			return true
 		}
 	}
-	return "", status.FailedPreconditionErrorf("XCode version %s not installed on remote executor. Available Xcode versions are %+v", version, x.versions)
+	return false
+}
+
+func (x *xcodeLocator) xcodeVersionForVersionString(version string) *xcodeVersion {
+	versionComponents := strings.Split(version, ".")
+	for i := range versionComponents {
+		subVersion := strings.Join(versionComponents[0:len(versionComponents)-i], ".")
+		if xcodeVersion, ok := x.versions[subVersion]; ok {
+			return xcodeVersion
+		}
+	}
+	return nil
 }
 
 // Locates all all XCode versions installed on the host machine.
 // Very losely based on https://github.com/bazelbuild/bazel/blob/master/tools/osx/xcode_locator.m
-func (x *xcodeLocator) Locate() {
+func (x *xcodeLocator) locate() {
 	bundleID := stringToCFString(xcodeBundleID)
 	defer C.CFRelease(C.CFTypeRef(bundleID))
 
@@ -60,7 +90,7 @@ func (x *xcodeLocator) Locate() {
 	urlRefs := make([]C.CFURLRef, n)
 	C.CFArrayGetValues(urlsArrayRef, C.CFRange{0, n}, (*unsafe.Pointer)(unsafe.Pointer(&urlRefs[0])))
 
-	versionMap := make(map[string]string)
+	versionMap := make(map[string]*xcodeVersion)
 	for _, urlRef := range urlRefs {
 		path := "/" + strings.TrimLeft(stringFromCFString(C.CFURLGetString(C.CFURLRef(urlRef))), filePrefix)
 
@@ -71,32 +101,44 @@ func (x *xcodeLocator) Locate() {
 		}
 
 		// The interesting bits to pull from XCode's version plist.
-		var xcodeVersion struct {
+		var xcodePlist struct {
 			CFBundleShortVersionString string `plist:"CFBundleShortVersionString"`
 			ProductBuildVersion        string `plist:"ProductBuildVersion"`
 		}
-		if err := plist.NewXMLDecoder(versionFileReader).Decode(&xcodeVersion); err != nil {
+		if err := plist.NewXMLDecoder(versionFileReader).Decode(&xcodePlist); err != nil {
 			log.Warningf("Error decoding plist for XCode located at %s: %s", path, err.Error())
 			continue
 		}
 
-		versions := expandXCodeVersions(xcodeVersion.CFBundleShortVersionString, xcodeVersion.ProductBuildVersion)
+		developerDirPath := path + developerDirectoryPath
+
+		sdks, err := fs.Glob(os.DirFS(developerDirPath), "Platforms/*.platform/Developer/SDKs/*")
+		if err != nil {
+			log.Warningf("Error reading XCode SDKs from %s: %s", path, err.Error())
+			continue
+		}
+
+		versions := expandXCodeVersions(xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion)
+		mostPreciseVersion := versions[len(versions)-1]
 		for _, version := range versions {
-			existingVersion, ok := versionMap[version]
-			if ok && version < existingVersion {
-				log.Debugf("Error decoding plist for XCode located at %s: %s", path, err.Error())
+			existingXcode, ok := versionMap[version]
+			if ok && mostPreciseVersion < existingXcode.version {
 				continue
 			}
-			versionMap[version] = path + developerDirectoryPath
+			log.Infof("Found XCode version: %s=>%s", version, developerDirPath)
+			log.Debugf("With SDKs %+v", sdks)
+			versionMap[version] = &xcodeVersion{
+				version:          mostPreciseVersion,
+				developerDirPath: developerDirPath,
+				sdks:             sdks,
+			}
 		}
 	}
 
 	x.versions = versionMap
-
-	log.Infof("Found XCode versions: %+v", x.versions)
 }
 
-// Expands a single XCode version into all component combinations.
+// Expands a single XCode version into all component combinations in order of increasing precision.
 // i.e. 12.5 => 12, 12.5, 12.5.0, 12.5.0.abc123
 func expandXCodeVersions(xcodeVersion string, productVersion string) []string {
 	versions := make([]string, 0)
@@ -123,39 +165,6 @@ func stringToCFString(gostr string) C.CFStringRef {
 }
 
 // Converts a CFStringRef into a go string.
-func stringFromCFString(s C.CFStringRef) string {
-	ptr := C.CFStringGetCStringPtr(s, C.kCFStringEncodingUTF8)
-	if ptr != nil {
-		return C.GoString(ptr)
-	}
-	length := uint32(C.CFStringGetLength(s))
-	uniPtr := C.CFStringGetCharactersPtr(s)
-	if uniPtr == nil || length == 0 {
-		return ""
-	}
-	return stringFromUint16Ptr((*uint16)(uniPtr), length)
-}
-
-// Converts a *uint64 into a go string.
-func stringFromUint16Ptr(p *uint16, length uint32) string {
-	r := []uint16{}
-	ptr := uintptr(unsafe.Pointer(p))
-	for i := uint32(0); i < length; i++ {
-		c := *(*uint16)(unsafe.Pointer(ptr))
-		r = append(r, c)
-		if c == 0 {
-			break
-		}
-		ptr = ptr + unsafe.Sizeof(c)
-	}
-	r = append(r, uint16(0))
-	decoded := utf16.Decode(r)
-	n := 0
-	for i, r := range decoded {
-		if r == rune(0) {
-			n = i
-			break
-		}
-	}
-	return string(decoded[:n])
+func stringFromCFString(cfStr C.CFStringRef) string {
+	return C.GoString(C.CFStringGetCStringPtr(cfStr, C.kCFStringEncodingUTF8))
 }

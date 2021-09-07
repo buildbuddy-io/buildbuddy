@@ -37,8 +37,6 @@ const (
 	workloadIsolationPropertyName   = "workload-isolation-type"
 	enableCASFSPropertyName         = "enable-casfs"
 
-	enableXcodeOverridePropertyName = "enableXcodeOverride"
-
 	operatingSystemPropertyName = "OSFamily"
 	defaultOperatingSystemName  = "linux"
 	darwinOperatingSystemName   = "darwin"
@@ -59,7 +57,6 @@ type Properties struct {
 	ContainerRegistryPassword string
 	WorkloadIsolationType     string
 	DockerForceRoot           bool
-	EnableXcodeOverride       bool
 	RecycleRunner             bool
 	EnableCASFS               bool
 	// PreserveWorkspace specifies whether to delete all files in the workspace
@@ -96,7 +93,6 @@ func ParseProperties(plat *repb.Platform) *Properties {
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
 		WorkloadIsolationType:     stringProp(m, workloadIsolationPropertyName, ""),
 		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
-		EnableXcodeOverride:       boolProp(m, enableXcodeOverridePropertyName, false),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
 		EnableCASFS:               boolProp(m, enableCASFSPropertyName, false),
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
@@ -207,15 +203,11 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 			// Environment variables from: https://github.com/bazelbuild/bazel/blob/4ed65b05637cd37f0a6c5e79fdc4dfe0ece3fa68/src/main/java/com/google/devtools/build/lib/rules/apple/AppleConfiguration.java#L43
 			switch v.Name {
 			case "APPLE_SDK_VERSION_OVERRIDE":
-				if platformProps.EnableXcodeOverride {
-					appleSDKVersion = v.Value
-				}
+				appleSDKVersion = v.Value
 			case "APPLE_SDK_PLATFORM":
 				appleSDKPlatform = v.Value
 			case "XCODE_VERSION_OVERRIDE":
-				if platformProps.EnableXcodeOverride {
-					xcodeVersion = v.Value
-				}
+				xcodeVersion = v.Value
 			}
 		}
 
@@ -223,9 +215,13 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		if err != nil {
 			return err
 		}
-		// TODO(siggisim): Do SDK matching and get rid of the enableXcodeOverride platform property.
-		sdkRoot := fmt.Sprintf("%s/Platforms/%s.platform/Developer/SDKs/%s%s.sdk", developerDir, appleSDKPlatform, appleSDKPlatform, appleSDKVersion)
 
+		sdkPath := fmt.Sprintf("Platforms/%s.platform/Developer/SDKs/%s%s.sdk", appleSDKPlatform, appleSDKPlatform, appleSDKVersion)
+		if !env.GetXCodeLocator().IsSDKPathPresentForVersion(sdkPath, xcodeVersion) {
+			sdkPath = fmt.Sprintf("Platforms/%s.platform/Developer/SDKs/%s.sdk", appleSDKPlatform, appleSDKPlatform)
+		}
+
+		sdkRoot := fmt.Sprintf("%s/%s", developerDir, sdkPath)
 		command.EnvironmentVariables = append(command.EnvironmentVariables, []*repb.Command_EnvironmentVariable{
 			{Name: "SDKROOT", Value: sdkRoot},
 			{Name: "DEVELOPER_DIR", Value: developerDir},
