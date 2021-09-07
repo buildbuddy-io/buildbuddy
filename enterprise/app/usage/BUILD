@@ -11,6 +11,7 @@ ts_library(
         "//app/auth",
         "//app/components/select",
         "//app/errors",
+        "//app/format",
         "//app/service",
         "//proto:usage_ts_proto",
         "@npm//@types/react",
