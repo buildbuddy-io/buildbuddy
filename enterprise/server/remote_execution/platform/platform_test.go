@@ -111,8 +111,7 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		// Darwin with no overrides
 		{[]*repb.Platform_Property{
 			{Name: "OSFamily", Value: "Darwin"},
-		}, []*repb.Command_EnvironmentVariable{
-		}, []*repb.Command_EnvironmentVariable{
+		}, []*repb.Command_EnvironmentVariable{}, []*repb.Command_EnvironmentVariable{
 			{Name: "SDKROOT", Value: "/Applications/Xcode_12.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"},
 			{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode_12.2.app/Contents/Developer"},
 		},

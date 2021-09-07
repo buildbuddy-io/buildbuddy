@@ -64,6 +64,7 @@ func (x *xcodeLocator) IsSDKPathPresentForVersion(sdkPath, version string) bool 
 	return false
 }
 
+// Returns the xcodeVersion most closely matching the version string.
 func (x *xcodeLocator) xcodeVersionForVersionString(version string) *xcodeVersion {
 	versionComponents := strings.Split(version, ".")
 	for i := range versionComponents {
