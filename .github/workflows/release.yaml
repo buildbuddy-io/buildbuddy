@@ -33,20 +33,17 @@ jobs:
           #   OSName: darwin
           #   arch: amd64
           #   prefix: ""
-          #   flags: ""
 
           # - platform: ubuntu-latest
           #   OSName: linux
           #   arch: amd64
           #   prefix: ""
-          #   flags: ""
 
           - platform: m1
             OSName: darwin
             arch: arm64
+            executorOnly: true
             prefix: "arch -arm64 "
-            flags: ""
-            # flags: "--macos_cpus=arm64"
     steps:
       - name: Checkout
         uses: actions/checkout@v1
@@ -63,10 +60,23 @@ jobs:
         run: echo ::set-output name=TAG::${GITHUB_REF/refs\/tags\//}
 
       - name: Upload Artifacts
+        if: "!${{matrix.executorOnly}}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          "${GITHUB_WORKSPACE}/bin/bazel" clean --expunge && ${{matrix.prefix}}"${GITHUB_WORKSPACE}/bin/bazel" build --config=release ${{matrix.flags}} --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --define version=${{ steps.tag.outputs.TAG }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
+          "${GITHUB_WORKSPACE}/bin/bazel" clean --expunge && ${{matrix.prefix}}"${GITHUB_WORKSPACE}/bin/bazel" build --config=release --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --define version=${{ steps.tag.outputs.TAG }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
+          cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-${{matrix.OSName}}-${{matrix.arch}}
+          cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-${{matrix.OSName}}-${{matrix.arch}}
+          cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-${{matrix.OSName}}-${{matrix.arch}}
+          ls
+          # gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-${{matrix.OSName}}-${{matrix.arch}} buildbuddy-enterprise-${{matrix.OSName}}-${{matrix.arch}} executor-enterprise-${{matrix.OSName}}-${{matrix.arch}} --clobber
+
+      - name: Upload Executor Artifacts
+        if: "${{matrix.executorOnly}}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          "${GITHUB_WORKSPACE}/bin/bazel" clean --expunge && ${{matrix.prefix}}"${GITHUB_WORKSPACE}/bin/bazel" build --config=release --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --define version=${{ steps.tag.outputs.TAG }} //enterprise/server/cmd/executor:executor
           cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-${{matrix.OSName}}-${{matrix.arch}}
           cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-${{matrix.OSName}}-${{matrix.arch}}
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-${{matrix.OSName}}-${{matrix.arch}}
