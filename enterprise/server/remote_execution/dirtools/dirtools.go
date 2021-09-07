@@ -36,6 +36,7 @@ type TransferInfo struct {
 	// Transfers tracks the digests of files that were transferred, keyed by their
 	// workspace-relative paths.
 	Transfers map[string]*repb.Digest
+	Skips     map[string]*repb.Digest
 }
 
 // DirHelper is a poor mans trie that helps us check if a partial path like
@@ -730,11 +731,16 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 }
 
 func downloadTree(ctx context.Context, env environment.Env, instanceName string, rootDirectoryDigest *repb.Digest, rootDir string, dirMap map[digest.Key]*repb.Directory, startTime time.Time, txInfo *TransferInfo, opts *DownloadTreeOpts) (*TransferInfo, error) {
-	trackFn := func(relPath string, digest *repb.Digest) {}
+	trackTransfersFn := func(relPath string, digest *repb.Digest) {}
+	trackSkipsFn := func(relPath string, digest *repb.Digest) {}
 	if opts.TrackTransfers {
 		txInfo.Transfers = map[string]*repb.Digest{}
-		trackFn = func(relPath string, digest *repb.Digest) {
+		txInfo.Skips = map[string]*repb.Digest{}
+		trackTransfersFn = func(relPath string, digest *repb.Digest) {
 			txInfo.Transfers[relPath] = digest
+		}
+		trackSkipsFn = func(relPath string, digest *repb.Digest) {
+			txInfo.Skips[relPath] = digest
 		}
 	}
 
@@ -747,6 +753,7 @@ func downloadTree(ctx context.Context, env environment.Env, instanceName string,
 				fullPath := filepath.Join(location, node.Name)
 				relPath := trimPathPrefix(fullPath, rootDir)
 				if skipDigest, ok := opts.Skip[relPath]; ok && digestsEqual(skipDigest, d) {
+					trackSkipsFn(relPath, d)
 					return
 				}
 				dk := digest.NewKey(d)
@@ -761,7 +768,7 @@ func downloadTree(ctx context.Context, env environment.Env, instanceName string,
 					RelativePath: relPath,
 				})
 				txInfo.FileCount += 1
-				trackFn(relPath, d)
+				trackTransfersFn(relPath, d)
 			}(fileNode, parentDir)
 		}
 		for _, child := range dir.GetDirectories() {
