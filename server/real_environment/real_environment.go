@@ -71,6 +71,7 @@ type RealEnv struct {
 	remoteExecutionRedisPubSubClient *redis.Client
 	buildEventProxyClients           []pepb.PublishBuildEventClient
 	webhooks                         []interfaces.Webhook
+	xcodeLocator                     interfaces.XcodeLocator
 }
 
 func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
@@ -298,6 +299,12 @@ func (r *RealEnv) GetGitProviders() interfaces.GitProviders {
 }
 func (r *RealEnv) SetGitProviders(gp interfaces.GitProviders) {
 	r.gitProviders = gp
+}
+func (r *RealEnv) GetXCodeLocator() interfaces.XcodeLocator {
+	return r.xcodeLocator
+}
+func (r *RealEnv) SetXCodeLocator(xl interfaces.XcodeLocator) {
+	r.xcodeLocator = xl
 }
 
 func (r *RealEnv) SetCacheRedisClient(redisClient *redis.Client) {
