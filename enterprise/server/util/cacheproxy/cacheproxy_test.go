@@ -76,61 +76,6 @@ func copyAndClose(wc io.WriteCloser, r io.Reader) error {
 	return wc.Close()
 }
 
-func TestReader(t *testing.T) {
-	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
-
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
-
-	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
-	}
-	waitUntilServerIsAlive(peer)
-
-	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
-	testSizes := []int64{
-		1, 10, 100, 1000, 10000, 1000000, 10000000,
-	}
-
-	for _, testSize := range testSizes {
-		prefix := fmt.Sprintf("prefix/%d", testSize)
-
-		// Read some random bytes.
-		buf := new(bytes.Buffer)
-		io.CopyN(buf, randomSrc, testSize)
-		readSeeker := bytes.NewReader(buf.Bytes())
-
-		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker)
-		if err != nil {
-			t.Fatal(err)
-		}
-		readSeeker.Seek(0, 0)
-
-		// Set the random bytes in the cache (with a prefix)
-		err = te.GetCache().WithPrefix(prefix).Set(ctx, d, buf.Bytes())
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Remote-read the random bytes back.
-		r, err := c.RemoteReader(ctx, peer, prefix, &dcpb.Isolation{}, d, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		d2 := testdigest.ReadDigestAndClose(t, r)
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Digest uploaded %q != %q downloaded", d.GetHash(), d2.GetHash())
-		}
-	}
-}
-
 func TestReaderMaxOffset(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
@@ -163,14 +108,21 @@ func TestReaderMaxOffset(t *testing.T) {
 	readSeeker.Seek(0, 0)
 
 	instanceName := "foo"
+	isolation := &dcpb.Isolation{
+		RemoteInstanceName: instanceName,
+		CacheType:          dcpb.Isolation_CAS_CACHE,
+	}
 	// Set the random bytes in the cache (with a prefix)
-	err = te.GetCache().WithPrefix(instanceName).Set(ctx, d, buf.Bytes())
+	cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, instanceName)
+	require.NoError(t, err)
+
+	err = cache.Set(ctx, d, buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Remote-read the random bytes back.
-	r, err := c.RemoteReader(ctx, peer, instanceName, &dcpb.Isolation{}, d, d.GetSizeBytes())
+	r, err := c.RemoteReader(ctx, peer, isolation, d, d.GetSizeBytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,76 +134,9 @@ func TestReaderMaxOffset(t *testing.T) {
 
 }
 
-func TestWriter(t *testing.T) {
-	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
-
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
-
-	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
-	}
-
-	waitUntilServerIsAlive(peer)
-
-	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
-	testSizes := []int64{
-		1, 10, 100, 1000, 10000, 1000000, 10000000,
-	}
-
-	for _, testSize := range testSizes {
-		prefix := fmt.Sprintf("prefix/%d", testSize)
-
-		// Read some random bytes.
-		buf := new(bytes.Buffer)
-		io.CopyN(buf, randomSrc, testSize)
-		readSeeker := bytes.NewReader(buf.Bytes())
-
-		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker)
-		if err != nil {
-			t.Fatal(err)
-		}
-		readSeeker.Seek(0, 0)
-
-		// Remote-write the random bytes to the cache (with a prefix).
-		wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, &dcpb.Isolation{}, d)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := copyAndClose(wc, readSeeker); err != nil {
-			t.Fatal(err)
-		}
-
-		// Read the bytes back directly from the cache and check that
-		// they match..
-		r, err := te.GetCache().WithPrefix(prefix).Reader(ctx, d, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		d2 := testdigest.ReadDigestAndClose(t, r)
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Digest uploaded %q != %q downloaded", d.GetHash(), d2.GetHash())
-		}
-	}
-}
-
 type snitchCache struct {
 	interfaces.Cache
 	writeCount map[string]int
-}
-
-func (s *snitchCache) WithPrefix(prefix string) interfaces.Cache {
-	return &snitchCache{
-		s.Cache.WithPrefix(prefix),
-		s.writeCount,
-	}
 }
 
 func (s *snitchCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
@@ -296,13 +181,12 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 
 	testSize := int64(10000000)
 	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
-	prefix := ""
 	isolation := &dcpb.Isolation{
 		CacheType: dcpb.Isolation_CAS_CACHE,
 	}
 
 	// Remote-write the random bytes to the cache (with a prefix).
-	wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, isolation, d)
+	wc, err := c.RemoteWriter(ctx, peer, noHandoff, isolation, d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +200,7 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 
 	// Reset readSeeker.
 	readSeeker.Seek(0, 0)
-	wc, err = c.RemoteWriter(ctx, peer, noHandoff, prefix, isolation, d)
+	wc, err = c.RemoteWriter(ctx, peer, noHandoff, isolation, d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,14 +236,13 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 
 	testSize := int64(10000000)
 	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
-	prefix := ""
 
 	isolation := &dcpb.Isolation{
 		CacheType: dcpb.Isolation_ACTION_CACHE,
 	}
 
 	// Remote-write the random bytes to the cache (with a prefix).
-	wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, isolation, d)
+	wc, err := c.RemoteWriter(ctx, peer, noHandoff, isolation, d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +256,7 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 
 	// Reset readSeeker.
 	readSeeker.Seek(0, 0)
-	wc, err = c.RemoteWriter(ctx, peer, noHandoff, prefix, isolation, d)
+	wc, err = c.RemoteWriter(ctx, peer, noHandoff, isolation, d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,6 +266,181 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 
 	if writeCounts[d.GetHash()] != 2 {
 		t.Fatalf("Snitch cache should have been written to twice.")
+	}
+}
+
+func TestReader(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "auth.enable_anonymous_usage", "true")
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	if err := c.StartListening(); err != nil {
+		t.Fatalf("Error setting up cacheproxy: %s", err)
+	}
+	waitUntilServerIsAlive(peer)
+
+	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
+	testSizes := []int64{
+		1, 10, 100, 1000, 10000, 1000000, 10000000,
+	}
+
+	for _, testSize := range testSizes {
+		remoteInstanceName := fmt.Sprintf("prefix/%d", testSize)
+		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+
+		// Read some random bytes.
+		buf := new(bytes.Buffer)
+		io.CopyN(buf, randomSrc, testSize)
+		readSeeker := bytes.NewReader(buf.Bytes())
+
+		// Compute a digest for the random bytes.
+		d, err := digest.Compute(readSeeker)
+		if err != nil {
+			t.Fatal(err)
+		}
+		readSeeker.Seek(0, 0)
+
+		// Set the random bytes in the cache (with a prefix)
+		cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
+		require.NoError(t, err)
+		err = cache.Set(ctx, d, buf.Bytes())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Remote-read the random bytes back.
+		r, err := c.RemoteReader(ctx, peer, isolation, d, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d2 := testdigest.ReadDigestAndClose(t, r)
+		if d.GetHash() != d2.GetHash() {
+			t.Fatalf("Digest uploaded %q != %q downloaded", d.GetHash(), d2.GetHash())
+		}
+	}
+}
+
+func TestWriter(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "auth.enable_anonymous_usage", "true")
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	if err := c.StartListening(); err != nil {
+		t.Fatalf("Error setting up cacheproxy: %s", err)
+	}
+
+	waitUntilServerIsAlive(peer)
+
+	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
+	testSizes := []int64{
+		1, 10, 100, 1000, 10000, 1000000, 10000000,
+	}
+
+	for _, testSize := range testSizes {
+		remoteInstanceName := fmt.Sprintf("prefix/%d", testSize)
+		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+
+		// Read some random bytes.
+		buf := new(bytes.Buffer)
+		io.CopyN(buf, randomSrc, testSize)
+		readSeeker := bytes.NewReader(buf.Bytes())
+
+		// Compute a digest for the random bytes.
+		d, err := digest.Compute(readSeeker)
+		if err != nil {
+			t.Fatal(err)
+		}
+		readSeeker.Seek(0, 0)
+
+		// Remote-write the random bytes to the cache (with a prefix).
+		wc, err := c.RemoteWriter(ctx, peer, noHandoff, isolation, d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := copyAndClose(wc, readSeeker); err != nil {
+			t.Fatal(err)
+		}
+
+		// Read the bytes back directly from the cache and check that
+		// they match..
+		cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
+		require.NoError(t, err)
+		r, err := cache.Reader(ctx, d, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d2 := testdigest.ReadDigestAndClose(t, r)
+		if d.GetHash() != d2.GetHash() {
+			t.Fatalf("Digest uploaded %q != %q downloaded", d.GetHash(), d2.GetHash())
+		}
+	}
+}
+
+func TestWriteAlreadyExists(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "auth.enable_anonymous_usage", "true")
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	writeCounts := make(map[string]int, 0)
+	sc := snitchCache{te.GetCache(), writeCounts}
+
+	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	c := cacheproxy.NewCacheProxy(te, &sc, peer)
+	if err := c.StartListening(); err != nil {
+		t.Fatalf("Error setting up cacheproxy: %s", err)
+	}
+
+	waitUntilServerIsAlive(peer)
+
+	testSize := int64(10000000)
+	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
+	remoteInstanceName := ""
+	isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+
+	// Remote-write the random bytes to the cache (with a prefix).
+	wc, err := c.RemoteWriter(ctx, peer, noHandoff, isolation, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := copyAndClose(wc, readSeeker); err != nil {
+		t.Fatal(err)
+	}
+
+	if writeCounts[d.GetHash()] != 1 {
+		t.Fatalf("Snitch cache was not written to. It should have been.")
+	}
+
+	// Reset readSeeker.
+	readSeeker.Seek(0, 0)
+	wc, err = c.RemoteWriter(ctx, peer, noHandoff, isolation, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := copyAndClose(wc, readSeeker); err != nil {
+		t.Fatal(err)
+	}
+
+	if writeCounts[d.GetHash()] != 1 {
+		t.Fatalf("Snitch cache was written to, but digest already existed.")
 	}
 }
 
@@ -409,7 +467,8 @@ func TestContains(t *testing.T) {
 	}
 
 	for _, testSize := range testSizes {
-		prefix := fmt.Sprintf("prefix/%d", testSize)
+		remoteInstanceName := fmt.Sprintf("prefix/%d", testSize)
+		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
 
 		// Read some random bytes.
 		buf := new(bytes.Buffer)
@@ -423,13 +482,15 @@ func TestContains(t *testing.T) {
 		}
 
 		// Set the random bytes in the cache (with a prefix)
-		err = te.GetCache().WithPrefix(prefix).Set(ctx, d, buf.Bytes())
+		cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
+		require.NoError(t, err)
+		err = cache.Set(ctx, d, buf.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		// Ensure key exists.
-		ok, err := c.RemoteContains(ctx, peer, prefix, &dcpb.Isolation{}, d)
+		ok, err := c.RemoteContains(ctx, peer, isolation, d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -438,13 +499,13 @@ func TestContains(t *testing.T) {
 		}
 
 		// Delete the key.
-		err = te.GetCache().WithPrefix(prefix).Delete(ctx, d)
+		err = cache.Delete(ctx, d)
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		// Ensure it no longer exists.
-		ok, err = c.RemoteContains(ctx, peer, prefix, &dcpb.Isolation{}, d)
+		ok, err = c.RemoteContains(ctx, peer, isolation, d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -478,7 +539,8 @@ func TestOversizeBlobs(t *testing.T) {
 	}
 
 	for _, testSize := range testSizes {
-		prefix := fmt.Sprintf("prefix/%d", testSize)
+		remoteInstanceName := fmt.Sprintf("prefix/%d", testSize)
+		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
 
 		// Read some random bytes.
 		buf := new(bytes.Buffer)
@@ -496,7 +558,7 @@ func TestOversizeBlobs(t *testing.T) {
 		readSeeker = bytes.NewReader(buf.Bytes())
 
 		// Remote-write the random bytes to the cache (with a prefix).
-		wc, err := c.RemoteWriter(ctx, peer, noHandoff, prefix, &dcpb.Isolation{}, d)
+		wc, err := c.RemoteWriter(ctx, peer, noHandoff, isolation, d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -514,7 +576,7 @@ func TestOversizeBlobs(t *testing.T) {
 		}
 
 		// Remote-read the random bytes back.
-		r, err := c.RemoteReader(ctx, peer, prefix, &dcpb.Isolation{}, d, 0)
+		r, err := c.RemoteReader(ctx, peer, isolation, d, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -548,7 +610,8 @@ func TestContainsMulti(t *testing.T) {
 	}
 
 	for _, numDigests := range testSizes {
-		prefix := fmt.Sprintf("prefix/%d", numDigests)
+		remoteInstanceName := fmt.Sprintf("prefix/%d", numDigests)
+		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
 
 		digests := make([]*repb.Digest, 0, numDigests)
 		for i := 0; i < numDigests; i++ {
@@ -564,14 +627,16 @@ func TestContainsMulti(t *testing.T) {
 			}
 			digests = append(digests, d)
 			// Set the random bytes in the cache (with a prefix)
-			err = te.GetCache().WithPrefix(prefix).Set(ctx, d, buf.Bytes())
+			cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
+			require.NoError(t, err)
+			err = cache.Set(ctx, d, buf.Bytes())
 			if err != nil {
 				t.Fatal(err)
 			}
 		}
 
 		// Ensure key exists.
-		foundMap, err := c.RemoteContainsMulti(ctx, peer, prefix, &dcpb.Isolation{}, digests)
+		foundMap, err := c.RemoteContainsMulti(ctx, peer, isolation, digests)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -607,7 +672,8 @@ func TestGetMulti(t *testing.T) {
 	}
 
 	for _, numDigests := range testSizes {
-		prefix := fmt.Sprintf("prefix/%d", numDigests)
+		remoteInstanceName := fmt.Sprintf("prefix/%d", numDigests)
+		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
 
 		digests := make([]*repb.Digest, 0, numDigests)
 		for i := 0; i < numDigests; i++ {
@@ -623,14 +689,16 @@ func TestGetMulti(t *testing.T) {
 			}
 			digests = append(digests, d)
 			// Set the random bytes in the cache (with a prefix)
-			err = te.GetCache().WithPrefix(prefix).Set(ctx, d, buf.Bytes())
+			cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
+			require.NoError(t, err)
+			err = cache.Set(ctx, d, buf.Bytes())
 			if err != nil {
 				t.Fatal(err)
 			}
 		}
 
 		// Ensure key exists.
-		gotMap, err := c.RemoteGetMulti(ctx, peer, prefix, &dcpb.Isolation{}, digests)
+		gotMap, err := c.RemoteGetMulti(ctx, peer, isolation, digests)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -660,486 +728,6 @@ func TestEmptyRead(t *testing.T) {
 	}
 	waitUntilServerIsAlive(peer)
 
-	prefix := "null"
-	d := &repb.Digest{
-		Hash:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-		SizeBytes: 0,
-	}
-	err = te.GetCache().WithPrefix(prefix).Set(ctx, d, []byte{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	r, err := c.RemoteReader(ctx, peer, prefix, &dcpb.Isolation{}, d, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = r.Read(nil)
-	if err != io.EOF {
-		t.Fatal(err)
-	}
-}
-
-func TestReader_Isolation(t *testing.T) {
-	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
-
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
-
-	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
-	}
-	waitUntilServerIsAlive(peer)
-
-	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
-	testSizes := []int64{
-		1, 10, 100, 1000, 10000, 1000000, 10000000,
-	}
-
-	for _, testSize := range testSizes {
-		remoteInstanceName := fmt.Sprintf("prefix/%d", testSize)
-		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
-
-		// Read some random bytes.
-		buf := new(bytes.Buffer)
-		io.CopyN(buf, randomSrc, testSize)
-		readSeeker := bytes.NewReader(buf.Bytes())
-
-		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker)
-		if err != nil {
-			t.Fatal(err)
-		}
-		readSeeker.Seek(0, 0)
-
-		// Set the random bytes in the cache (with a prefix)
-		cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
-		require.NoError(t, err)
-		err = cache.Set(ctx, d, buf.Bytes())
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Remote-read the random bytes back.
-		r, err := c.RemoteReader(ctx, peer, remoteInstanceName, isolation, d, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		d2 := testdigest.ReadDigestAndClose(t, r)
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Digest uploaded %q != %q downloaded", d.GetHash(), d2.GetHash())
-		}
-	}
-}
-
-func TestWriter_Isolation(t *testing.T) {
-	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
-
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
-
-	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
-	}
-
-	waitUntilServerIsAlive(peer)
-
-	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
-	testSizes := []int64{
-		1, 10, 100, 1000, 10000, 1000000, 10000000,
-	}
-
-	for _, testSize := range testSizes {
-		remoteInstanceName := fmt.Sprintf("prefix/%d", testSize)
-		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
-
-		// Read some random bytes.
-		buf := new(bytes.Buffer)
-		io.CopyN(buf, randomSrc, testSize)
-		readSeeker := bytes.NewReader(buf.Bytes())
-
-		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker)
-		if err != nil {
-			t.Fatal(err)
-		}
-		readSeeker.Seek(0, 0)
-
-		// Remote-write the random bytes to the cache (with a prefix).
-		wc, err := c.RemoteWriter(ctx, peer, noHandoff, remoteInstanceName, isolation, d)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := copyAndClose(wc, readSeeker); err != nil {
-			t.Fatal(err)
-		}
-
-		// Read the bytes back directly from the cache and check that
-		// they match..
-		cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
-		require.NoError(t, err)
-		r, err := cache.Reader(ctx, d, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		d2 := testdigest.ReadDigestAndClose(t, r)
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Digest uploaded %q != %q downloaded", d.GetHash(), d2.GetHash())
-		}
-	}
-}
-
-func TestWriteAlreadyExists_Isolation(t *testing.T) {
-	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
-
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
-
-	writeCounts := make(map[string]int, 0)
-	sc := snitchCache{te.GetCache(), writeCounts}
-
-	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	c := cacheproxy.NewCacheProxy(te, &sc, peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
-	}
-
-	waitUntilServerIsAlive(peer)
-
-	testSize := int64(10000000)
-	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
-	remoteInstanceName := ""
-	isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
-
-	// Remote-write the random bytes to the cache (with a prefix).
-	wc, err := c.RemoteWriter(ctx, peer, noHandoff, remoteInstanceName, isolation, d)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := copyAndClose(wc, readSeeker); err != nil {
-		t.Fatal(err)
-	}
-
-	if writeCounts[d.GetHash()] != 1 {
-		t.Fatalf("Snitch cache was not written to. It should have been.")
-	}
-
-	// Reset readSeeker.
-	readSeeker.Seek(0, 0)
-	wc, err = c.RemoteWriter(ctx, peer, noHandoff, remoteInstanceName, isolation, d)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := copyAndClose(wc, readSeeker); err != nil {
-		t.Fatal(err)
-	}
-
-	if writeCounts[d.GetHash()] != 1 {
-		t.Fatalf("Snitch cache was written to, but digest already existed.")
-	}
-}
-
-func TestContains_Isolation(t *testing.T) {
-	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
-
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
-
-	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
-	}
-	waitUntilServerIsAlive(peer)
-
-	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
-	testSizes := []int64{
-		1, 10, 100, 1000, 10000, 1000000, 10000000,
-	}
-
-	for _, testSize := range testSizes {
-		remoteInstanceName := fmt.Sprintf("prefix/%d", testSize)
-		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
-
-		// Read some random bytes.
-		buf := new(bytes.Buffer)
-		io.CopyN(buf, randomSrc, testSize)
-		readSeeker := bytes.NewReader(buf.Bytes())
-
-		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Set the random bytes in the cache (with a prefix)
-		cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
-		require.NoError(t, err)
-		err = cache.Set(ctx, d, buf.Bytes())
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Ensure key exists.
-		ok, err := c.RemoteContains(ctx, peer, remoteInstanceName, isolation, d)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !ok {
-			t.Fatalf("Digest %q was uploaded but is not contained in cache", d.GetHash())
-		}
-
-		// Delete the key.
-		err = cache.Delete(ctx, d)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Ensure it no longer exists.
-		ok, err = c.RemoteContains(ctx, peer, remoteInstanceName, isolation, d)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if ok {
-			t.Fatalf("Digest %q was removed but is still contained in cache", d.GetHash())
-		}
-	}
-}
-
-func TestOversizeBlobs_Isolation(t *testing.T) {
-	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
-
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
-
-	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
-	}
-
-	waitUntilServerIsAlive(peer)
-
-	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
-	testSizes := []int64{
-		1, 10, 100, 1000, 10000, 1000000, 10000000,
-	}
-
-	for _, testSize := range testSizes {
-		remoteInstanceName := fmt.Sprintf("prefix/%d", testSize)
-		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
-
-		// Read some random bytes.
-		buf := new(bytes.Buffer)
-		io.CopyN(buf, randomSrc, testSize)
-		readSeeker := bytes.NewReader(buf.Bytes())
-
-		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Now tack on a little bit of "extra" data.
-		buf.Write([]byte("overload"))
-		readSeeker = bytes.NewReader(buf.Bytes())
-
-		// Remote-write the random bytes to the cache (with a prefix).
-		wc, err := c.RemoteWriter(ctx, peer, noHandoff, remoteInstanceName, isolation, d)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := copyAndClose(wc, readSeeker); err != nil {
-			t.Fatal(err)
-		}
-
-		// Ensure that the bytes remotely read back match the
-		// bytes that were uploaded, even though they are keyed
-		// under a different digest.
-		readSeeker.Seek(0, 0)
-		d1, err := digest.Compute(readSeeker)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Remote-read the random bytes back.
-		r, err := c.RemoteReader(ctx, peer, remoteInstanceName, isolation, d, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		d2 := testdigest.ReadDigestAndClose(t, r)
-		if d1.GetHash() != d2.GetHash() {
-			t.Fatalf("Digest of uploaded contents %q != %q downloaded contents", d.GetHash(), d2.GetHash())
-		}
-	}
-}
-
-func TestContainsMulti_Isolation(t *testing.T) {
-	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
-
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
-
-	peer := net.JoinHostPort("localhost", fmt.Sprintf("%d", app.FreePort(t)))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error starting cache proxy: %s", err)
-	}
-	waitUntilServerIsAlive(peer)
-
-	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
-	testSizes := []int{
-		1, 10, 100, 1000, 10000,
-	}
-
-	for _, numDigests := range testSizes {
-		remoteInstanceName := fmt.Sprintf("prefix/%d", numDigests)
-		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
-
-		digests := make([]*repb.Digest, 0, numDigests)
-		for i := 0; i < numDigests; i++ {
-			// Read some random bytes.
-			buf := new(bytes.Buffer)
-			io.CopyN(buf, randomSrc, 100)
-			readSeeker := bytes.NewReader(buf.Bytes())
-
-			// Compute a digest for the random bytes.
-			d, err := digest.Compute(readSeeker)
-			if err != nil {
-				t.Fatal(err)
-			}
-			digests = append(digests, d)
-			// Set the random bytes in the cache (with a prefix)
-			cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
-			require.NoError(t, err)
-			err = cache.Set(ctx, d, buf.Bytes())
-			if err != nil {
-				t.Fatal(err)
-			}
-		}
-
-		// Ensure key exists.
-		foundMap, err := c.RemoteContainsMulti(ctx, peer, remoteInstanceName, isolation, digests)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, d := range digests {
-			exists, ok := foundMap[d]
-			if !ok || !exists {
-				t.Fatalf("Digest %q was uploaded but is not contained in cache", d.GetHash())
-			}
-		}
-	}
-}
-
-func TestGetMulti_Isolation(t *testing.T) {
-	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
-
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
-
-	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
-	}
-	waitUntilServerIsAlive(peer)
-
-	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
-	testSizes := []int{
-		1, 10, 100, 1000, 10000,
-	}
-
-	for _, numDigests := range testSizes {
-		remoteInstanceName := fmt.Sprintf("prefix/%d", numDigests)
-		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
-
-		digests := make([]*repb.Digest, 0, numDigests)
-		for i := 0; i < numDigests; i++ {
-			// Read some random bytes.
-			buf := new(bytes.Buffer)
-			io.CopyN(buf, randomSrc, 100)
-			readSeeker := bytes.NewReader(buf.Bytes())
-
-			// Compute a digest for the random bytes.
-			d, err := digest.Compute(readSeeker)
-			if err != nil {
-				t.Fatal(err)
-			}
-			digests = append(digests, d)
-			// Set the random bytes in the cache (with a prefix)
-			cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
-			require.NoError(t, err)
-			err = cache.Set(ctx, d, buf.Bytes())
-			if err != nil {
-				t.Fatal(err)
-			}
-		}
-
-		// Ensure key exists.
-		gotMap, err := c.RemoteGetMulti(ctx, peer, remoteInstanceName, isolation, digests)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, d := range digests {
-			buf, ok := gotMap[d]
-			if !ok || int64(len(buf)) != d.GetSizeBytes() {
-				t.Fatalf("Digest %q was uploaded but is not contained in cache", d.GetHash())
-			}
-		}
-	}
-}
-
-func TestEmptyRead_Isolation(t *testing.T) {
-	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
-
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
-
-	peer := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
-	if err := c.StartListening(); err != nil {
-		t.Fatalf("Error setting up cacheproxy: %s", err)
-	}
-	waitUntilServerIsAlive(peer)
-
 	remoteInstanceName := "null"
 	isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
 	d := &repb.Digest{
@@ -1153,7 +741,7 @@ func TestEmptyRead_Isolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := c.RemoteReader(ctx, peer, remoteInstanceName, isolation, d, 0)
+	r, err := c.RemoteReader(ctx, peer, isolation, d, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

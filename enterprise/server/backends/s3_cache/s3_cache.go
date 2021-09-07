@@ -184,22 +184,6 @@ func isNotFoundErr(err error) bool {
 	}
 }
 
-func (s3c *S3Cache) WithPrefix(prefix string) interfaces.Cache {
-	newPrefix := filepath.Join(append(filepath.SplitList(s3c.prefix), prefix)...)
-	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
-		newPrefix += "/"
-	}
-
-	return &S3Cache{
-		s3:         s3c.s3,
-		bucket:     s3c.bucket,
-		downloader: s3c.downloader,
-		uploader:   s3c.uploader,
-		ttlInDays:  s3c.ttlInDays,
-		prefix:     newPrefix,
-	}
-}
-
 func (s3c *S3Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
 	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {

@@ -154,11 +154,6 @@ func (t CacheType) Prefix() string {
 // Similar to the Cache above, a digest cache allows for more intelligent
 // storing of blob data based on its size.
 type Cache interface {
-	// Returns a new Cache that will store everything under the prefix
-	// specified by "prefix". The prefix specified is concatenated onto the
-	// currently set prefix -- so this is a relative operation, not an
-	// absolute one.
-	WithPrefix(prefix string) Cache
 	// WithIsolation returns a cache accessor that guarantees that data for a given cacheType and
 	// remoteInstanceCombination is isolated from any other cacheType and remoteInstanceName combination.
 	WithIsolation(ctx context.Context, cacheType CacheType, remoteInstanceName string) (Cache, error)

@@ -56,19 +56,6 @@ func (m *MemoryCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	return userPrefix + m.prefix + hash, nil
 }
 
-func (m *MemoryCache) WithPrefix(prefix string) interfaces.Cache {
-	newPrefix := filepath.Join(append(filepath.SplitList(m.prefix), prefix)...)
-	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
-		newPrefix += "/"
-	}
-
-	return &MemoryCache{
-		l:      m.l,
-		lock:   m.lock,
-		prefix: newPrefix,
-	}
-}
-
 func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
 	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
