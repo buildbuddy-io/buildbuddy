@@ -209,9 +209,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	}
 
 	layout := &container.FileSystemLayout{
-		Inputs:      inputTree,
-		OutputDirs:  task.GetCommand().GetOutputDirectories(),
-		OutputFiles: task.GetCommand().GetOutputFiles(),
+		RemoteInstanceName: task.GetExecuteRequest().GetInstanceName(),
+		Inputs:             inputTree,
+		OutputDirs:         task.GetCommand().GetOutputDirectories(),
+		OutputFiles:        task.GetCommand().GetOutputFiles(),
 	}
 
 	if s.env.GetConfigurator().GetExecutorConfig().EnableCASFS && r.PlatformProperties.EnableCASFS {

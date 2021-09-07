@@ -144,6 +144,7 @@ proto_library(
 proto_library(
     name = "vmexec_proto",
     srcs = ["vmexec.proto"],
+    deps = [":remote_execution_proto"],
 )
 
 proto_library(
@@ -414,6 +415,9 @@ go_proto_library(
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/vmexec",
     proto = ":vmexec_proto",
+    deps = [
+        ":remote_execution_go_proto",
+    ],
 )
 
 go_proto_library(
