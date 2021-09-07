@@ -110,21 +110,6 @@ func (g *GCSCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	return userPrefix + g.prefix + hash, nil
 }
 
-func (g *GCSCache) WithPrefix(prefix string) interfaces.Cache {
-	newPrefix := filepath.Join(append(filepath.SplitList(g.prefix), prefix)...)
-	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
-		newPrefix += "/"
-	}
-
-	return &GCSCache{
-		gcsClient:    g.gcsClient,
-		bucketHandle: g.bucketHandle,
-		projectID:    g.projectID,
-		ttlInDays:    g.ttlInDays,
-		prefix:       newPrefix,
-	}
-}
-
 func (g *GCSCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
 	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {

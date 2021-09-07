@@ -45,12 +45,11 @@ type CacheConfig struct {
 type hintedHandoffOrder struct {
 	ctx       context.Context
 	d         *repb.Digest
-	prefix    string
 	isolation *dcpb.Isolation
 }
 
 func (o *hintedHandoffOrder) String() string {
-	return fmt.Sprintf("{digest:%q prefix:%q isolation:{%s}}", o.d.GetHash(), o.prefix, o.isolation)
+	return fmt.Sprintf("{digest:%q isolation:{%s}}", o.d.GetHash(), o.isolation)
 }
 
 type Cache struct {
@@ -65,7 +64,6 @@ type Cache struct {
 	heartbeatChannel     *heartbeat.Channel
 	heartbeatMu          *sync.Mutex
 	shutDownChan         chan bool
-	prefix               string
 	isolation            *dcpb.Isolation
 	config               CacheConfig
 }
@@ -151,7 +149,7 @@ func (c *Cache) recvHeartbeatCallback(peer string) {
 	c.heartbeatMu.Unlock()
 }
 
-func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer, prefix string, isolation *dcpb.Isolation, d *repb.Digest) {
+func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) {
 	c.hintedHandoffsMu.Lock()
 	defer c.hintedHandoffsMu.Unlock()
 	if _, ok := c.hintedHandoffsByPeer[peer]; !ok {
@@ -161,7 +159,6 @@ func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer, prefix stri
 	}
 	order := &hintedHandoffOrder{
 		ctx:       ctx,
-		prefix:    prefix,
 		isolation: isolation,
 		d:         d,
 	}
@@ -181,7 +178,7 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 		select {
 		case handoffOrder := <-c.hintedHandoffsByPeer[peer]:
 			ctx, cancel := background.ExtendContextForFinalization(handoffOrder.ctx, 10*time.Second)
-			err := c.sendFile(ctx, handoffOrder.d, handoffOrder.prefix, handoffOrder.isolation, peer)
+			err := c.sendFile(ctx, handoffOrder.d, handoffOrder.isolation, peer)
 			if err != nil {
 				c.log.Warningf("unable to complete hinted handoff to peer: %q: %s (order %s)", peer, err, handoffOrder)
 				return
@@ -243,17 +240,6 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	return c.cacheProxy.Shutdown(ctx)
 }
 
-func (c *Cache) WithPrefix(prefix string) interfaces.Cache {
-	newPrefix := filepath.Join(append(filepath.SplitList(c.prefix), prefix)...)
-	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
-		newPrefix += "/"
-	}
-	clone := *c
-	clone.prefix = newPrefix
-	clone.local = c.local.WithPrefix(prefix)
-	return &clone
-}
-
 func toProtoCacheType(cacheType interfaces.CacheType) (dcpb.Isolation_CacheType, error) {
 	switch cacheType {
 	case interfaces.CASCacheType:
@@ -276,7 +262,6 @@ func (c *Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTyp
 		newPrefix += "/"
 	}
 	clone := *c
-	clone.prefix = newPrefix
 	protoCacheType, err := toProtoCacheType(cacheType)
 	if err != nil {
 		return nil, err
@@ -304,67 +289,61 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 	return peerset.NewRead(c.config.ListenAddr, allPeers[:c.config.ReplicationFactor], allPeers[c.config.ReplicationFactor:])
 }
 
-func (c *Cache) remoteContains(ctx context.Context, peer, prefix string, isolation *dcpb.Isolation, d *repb.Digest) (bool, error) {
+func (c *Cache) remoteContains(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) (bool, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
 		return c.local.Contains(ctx, d)
 	}
-	return c.cacheProxy.RemoteContains(ctx, peer, prefix, isolation, d)
+	return c.cacheProxy.RemoteContains(ctx, peer, isolation, d)
 }
-func (c *Cache) remoteContainsMulti(ctx context.Context, peer, prefix string, isolation *dcpb.Isolation, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
+func (c *Cache) remoteContainsMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
 		return c.local.ContainsMulti(ctx, digests)
 	}
-	return c.cacheProxy.RemoteContainsMulti(ctx, peer, prefix, isolation, digests)
+	return c.cacheProxy.RemoteContainsMulti(ctx, peer, isolation, digests)
 }
-func (c *Cache) remoteGetMulti(ctx context.Context, peer, prefix string, isolation *dcpb.Isolation, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
 		return c.local.GetMulti(ctx, digests)
 	}
-	return c.cacheProxy.RemoteGetMulti(ctx, peer, prefix, isolation, digests)
+	return c.cacheProxy.RemoteGetMulti(ctx, peer, isolation, digests)
 }
-func (c *Cache) remoteReader(ctx context.Context, peer, prefix string, isolation *dcpb.Isolation, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *Cache) remoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
 		return c.local.Reader(ctx, d, offset)
 	}
-	return c.cacheProxy.RemoteReader(ctx, peer, prefix, isolation, d, offset)
+	return c.cacheProxy.RemoteReader(ctx, peer, isolation, d, offset)
 }
-func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer, prefix string, isolation *dcpb.Isolation, d *repb.Digest) (io.WriteCloser, error) {
+func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (io.WriteCloser, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
 		return c.local.Writer(ctx, d)
 	}
-	return c.cacheProxy.RemoteWriter(ctx, peer, handoffPeer, prefix, isolation, d)
+	return c.cacheProxy.RemoteWriter(ctx, peer, handoffPeer, isolation, d)
 }
 
-func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, prefix string, isolation *dcpb.Isolation, dest string) error {
-	if exists, err := c.cacheProxy.RemoteContains(ctx, dest, prefix, isolation, d); err == nil && exists {
+func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, isolation *dcpb.Isolation, dest string) error {
+	if exists, err := c.cacheProxy.RemoteContains(ctx, dest, isolation, d); err == nil && exists {
 		return nil
 	}
 
-	var localCache interfaces.Cache
-	if isolation.GetCacheType() != dcpb.Isolation_UNKNOWN_TYPE {
-		cacheType, err := cacheproxy.ProtoCacheTypeToCacheType(isolation.GetCacheType())
-		if err != nil {
-			return err
-		}
-		ic, err := c.local.WithIsolation(ctx, cacheType, isolation.GetRemoteInstanceName())
-		if err != nil {
-			return err
-		}
-		localCache = ic
-	} else {
-		localCache = c.local.WithPrefix(prefix)
+	cacheType, err := cacheproxy.ProtoCacheTypeToCacheType(isolation.GetCacheType())
+	if err != nil {
+		return err
+	}
+	localCache, err := c.local.WithIsolation(ctx, cacheType, isolation.GetRemoteInstanceName())
+	if err != nil {
+		return err
 	}
 	r, err := localCache.Reader(ctx, d, 0)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
-	rwc, err := c.cacheProxy.RemoteWriter(ctx, dest, "", prefix, isolation, d)
+	rwc, err := c.cacheProxy.RemoteWriter(ctx, dest, "", isolation, d)
 	if err != nil {
 		return err
 	}
@@ -374,16 +353,16 @@ func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, prefix string, iso
 	return rwc.Close()
 }
 
-func (c *Cache) copyFile(ctx context.Context, d *repb.Digest, source, prefix string, isolation *dcpb.Isolation, dest string) error {
-	if exists, err := c.remoteContains(ctx, dest, prefix, isolation, d); err == nil && exists {
+func (c *Cache) copyFile(ctx context.Context, d *repb.Digest, source string, isolation *dcpb.Isolation, dest string) error {
+	if exists, err := c.remoteContains(ctx, dest, isolation, d); err == nil && exists {
 		return nil
 	}
-	r, err := c.remoteReader(ctx, source, prefix, isolation, d, 0)
+	r, err := c.remoteReader(ctx, source, isolation, d, 0)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
-	rwc, err := c.remoteWriter(ctx, dest, "", prefix, isolation, d)
+	rwc, err := c.remoteWriter(ctx, dest, "", isolation, d)
 	if err != nil {
 		return err
 	}
@@ -421,7 +400,7 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) e
 	for _, bf := range backfills {
 		bf := bf
 		eg.Go(func() error {
-			return c.copyFile(gCtx, bf.d, bf.source, c.prefix, c.isolation, bf.dest)
+			return c.copyFile(gCtx, bf.d, bf.source, c.isolation, bf.dest)
 		})
 	}
 	return eg.Wait()
@@ -459,7 +438,7 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
-		exists, err := c.remoteContains(ctx, peer, c.prefix, c.isolation, d)
+		exists, err := c.remoteContains(ctx, peer, c.isolation, d)
 		if err == nil {
 			if exists {
 				c.log.Debugf("Contains(%q) found on peer %q", d, peer)
@@ -526,7 +505,7 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 			peer := peer
 			digests := digests
 			eg.Go(func() error {
-				peerRsp, err := c.remoteContainsMulti(gCtx, peer, c.prefix, c.isolation, digests)
+				peerRsp, err := c.remoteContainsMulti(gCtx, peer, c.isolation, digests)
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
@@ -593,14 +572,14 @@ func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset in
 	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
-		r, err := c.remoteReader(ctx, peer, c.prefix, c.isolation, d, offset)
+		r, err := c.remoteReader(ctx, peer, c.isolation, d, offset)
 		if err == nil {
-			c.log.Debugf("Reader(%q) found on peer %s", c.prefix+d.GetHash(), peer)
+			c.log.Debugf("Reader(%q) found on peer %s", cacheproxy.IsolationToString(c.isolation)+d.GetHash(), peer)
 			backfill()
 			return r, err
 		}
 		if status.IsNotFoundError(err) {
-			c.log.Debugf("Reader(%q) not found on peer %s", c.prefix+d.GetHash(), peer)
+			c.log.Debugf("Reader(%q) not found on peer %s", cacheproxy.IsolationToString(c.isolation)+d.GetHash(), peer)
 			continue
 		}
 
@@ -669,7 +648,7 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 			peer := peer
 			digests := digests
 			eg.Go(func() error {
-				peerRsp, err := c.remoteGetMulti(gCtx, peer, c.prefix, c.isolation, digests)
+				peerRsp, err := c.remoteGetMulti(gCtx, peer, c.isolation, digests)
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
@@ -723,7 +702,7 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 type multiWriteCloser struct {
 	ctx           context.Context
 	log           log.Logger
-	prefix        string
+	isolation     *dcpb.Isolation
 	peerClosers   map[string]io.WriteCloser
 	mu            *sync.Mutex
 	d             *repb.Digest
@@ -759,7 +738,7 @@ func (mc *multiWriteCloser) Close() error {
 			if err := wc.Close(); err != nil {
 				return err
 			}
-			mc.log.Debugf("Succesfully wrote %s to %q", mc.prefix+mc.d.GetHash(), peer)
+			mc.log.Debugf("Successfully wrote %s to %q", cacheproxy.IsolationToString(mc.isolation)+mc.d.GetHash(), peer)
 			return nil
 		})
 	}
@@ -769,7 +748,7 @@ func (mc *multiWriteCloser) Close() error {
 		for peer := range mc.peerClosers {
 			peers = append(peers, peer)
 		}
-		mc.log.Debugf("Writer(%q) successfully wrote to peers %s", mc.prefix+mc.d.GetHash(), peers)
+		mc.log.Debugf("Writer(%q) successfully wrote to peers %s", cacheproxy.IsolationToString(mc.isolation)+mc.d.GetHash(), peers)
 	}
 	return err
 }
@@ -784,14 +763,14 @@ func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser
 	mwc := &multiWriteCloser{
 		ctx:         ctx,
 		log:         c.log,
-		prefix:      c.prefix,
 		d:           d,
 		peerClosers: make(map[string]io.WriteCloser, 0),
 		mu:          &sync.Mutex{},
 		listenAddr:  c.config.ListenAddr,
+		isolation:   c.isolation,
 	}
 	for peer, hintedHandoff := ps.GetNextPeerAndHandoff(); peer != ""; peer, hintedHandoff = ps.GetNextPeerAndHandoff() {
-		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, c.prefix, c.isolation, d)
+		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, c.isolation, d)
 		if err != nil {
 			ps.MarkPeerAsFailed(peer)
 			log.Debugf("Error opening remote writer for %q to peer %q: %s", d.GetHash(), peer, err)
