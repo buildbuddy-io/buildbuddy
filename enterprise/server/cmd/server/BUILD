@@ -28,6 +28,7 @@ go_library(
         "//enterprise/server/scheduling/task_router",
         "//enterprise/server/splash",
         "//enterprise/server/telemetry",
+        "//enterprise/server/usage_service",
         "//enterprise/server/util/redisutil",
         "//enterprise/server/webhooks/bitbucket",
         "//enterprise/server/webhooks/github",
