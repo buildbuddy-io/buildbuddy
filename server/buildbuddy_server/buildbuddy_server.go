@@ -689,6 +689,7 @@ func (s *BuildBuddyServer) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
+
 func (s *BuildBuddyServer) GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error) {
 	if us := s.env.GetUsageService(); us != nil {
 		return us.GetUsage(ctx, req)

@@ -679,10 +679,10 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd
 			AllowSnapshotStart:     false,
 		}
 		c, err := firecracker.NewContainer(p.env, p.imageCacheAuth, opts)
-		log.Printf("Starting firecracker container with opts: %+v", opts)
 		if err != nil {
 			return nil, err
 		}
+		log.Printf("Starting firecracker container with opts: %+v", opts)
 		ctr = c
 	default:
 		ctr = bare.NewBareCommandContainer()
