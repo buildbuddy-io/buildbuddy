@@ -296,8 +296,6 @@ func main() {
 		}
 		log.Infof("Starting vm exec listener on vsock port: %d", *vmExecPort)
 		server := grpc.NewServer()
-		// TODO(vadim): run this as a standalone binary so we don't need to worry about init() code running before
-		// VM is fully setup.
 		vmService, err := vmexec.NewServer(&reapMutex)
 		if err != nil {
 			return err
