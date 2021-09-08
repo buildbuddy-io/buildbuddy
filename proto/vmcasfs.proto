@@ -17,14 +17,14 @@ message PrepareRequest {
 
 message PrepareResponse {}
 
-message SyncRequest {}
+message CloseRequest {}
 
 message Stats {
   int64 read_io_bytes = 1;
   int64 write_io_bytes = 2;
 }
 
-message SyncResponse {
+message CloseResponse {
   // Stats for activity since the last Prepare call.
   Stats stats = 1;
   // Files written to the CAS matching the output_files set in the layout.
@@ -40,5 +40,5 @@ service FileSystem {
   // Prepare the filesystem for use.
   rpc Prepare(PrepareRequest) returns (PrepareResponse);
   // Finish any outstanding work (such as uploading data to the CAS).
-  rpc Sync(SyncRequest) returns (SyncResponse);
+  rpc Close(CloseRequest) returns (CloseResponse);
 }
