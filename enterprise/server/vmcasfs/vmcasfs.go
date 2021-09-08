@@ -53,17 +53,17 @@ func NewServer() (*casfsServer, error) {
 	}, nil
 }
 
-func (x *casfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
+func (s *casfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
 	layout := req.GetFileSystemLayout()
-	ff := dirtools.NewBatchFileFetcher(context.Background(), layout.GetRemoteInstanceName(), nil /* =fileCache */, x.bsClient, nil /* casClient= */)
-	if err := x.cfs.PrepareForTask(context.Background(), ff, "fc" /* =taskID */, &container.FileSystemLayout{Inputs: layout.GetInputs()}); err != nil {
+	ff := dirtools.NewBatchFileFetcher(context.Background(), layout.GetRemoteInstanceName(), nil /* =fileCache */, s.bsClient, nil /* casClient= */)
+	if err := s.cfs.PrepareForTask(context.Background(), ff, "fc" /* =taskID */, &container.FileSystemLayout{Inputs: layout.GetInputs()}); err != nil {
 		return nil, err
 	}
 
 	return &vmfspb.PrepareResponse{}, nil
 }
 
-func (x *casfsServer) Sync(ctx context.Context, request *vmfspb.SyncRequest) (*vmfspb.SyncResponse, error) {
+func (s *casfsServer) Sync(ctx context.Context, request *vmfspb.SyncRequest) (*vmfspb.SyncResponse, error) {
 	// TODO(vadim): implement
 	return &vmfspb.SyncResponse{}, nil
 }
