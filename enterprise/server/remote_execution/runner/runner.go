@@ -575,7 +575,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	executorProps := platform.GetExecutorProperties(p.env.GetConfigurator().GetExecutorConfig())
 	props := platform.ParseProperties(task.GetCommand().GetPlatform())
 	// TODO: This mutates the task; find a cleaner way to do this.
-	if err := platform.ApplyOverrides(executorProps, props, task.GetCommand()); err != nil {
+	if err := platform.ApplyOverrides(p.env, executorProps, props, task.GetCommand()); err != nil {
 		return nil, err
 	}
 

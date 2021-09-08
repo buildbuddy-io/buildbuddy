@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -204,11 +205,17 @@ type namedCache struct {
 func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
 	dc := getDistributedDiskCache(b, te)
 	time.Sleep(100 * time.Millisecond)
-	return []*namedCache{
+	caches := []*namedCache{
 		{getMemoryCache(b), "Memory"},
 		{getDiskCache(b, te), "Disk"},
 		{dc, "DDisk"},
 	}
+	for _, c := range caches {
+		ic, err := c.WithIsolation(context.Background(), interfaces.CASCacheType, "")
+		require.NoError(b, err)
+		c.Cache = ic
+	}
+	return caches
 }
 
 func BenchmarkSet(b *testing.B) {

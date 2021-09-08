@@ -251,7 +251,7 @@ func waitUntilExists(ctx context.Context, maxWait time.Duration, localPath strin
 func getLogrusLogger(debugMode bool) *logrus.Entry {
 	logrusLogger := logrus.New()
 	logrusLogger.SetLevel(logrus.ErrorLevel)
-	if debugMode || true {
+	if debugMode {
 		logrusLogger.SetLevel(logrus.TraceLevel)
 	}
 	return logrus.NewEntry(logrusLogger)
@@ -596,7 +596,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	}
 
 	c.externalJailerCmd = cmd
-	
 	// Wait for the jailer directory to be created. We have to do this because we
 	// are starting the command ourselves and loading a snapshot, rather than
 	// going through the normal flow and letting the library start the cmd.
@@ -888,7 +887,7 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 
 func (c *FirecrackerContainer) setupByteStreamProxy() error {
 	if c.bsProxy != nil {
-		return status.FailedPreconditionErrorf("ByteStream proxy already initialized")
+		return nil
 	}
 
 	vsockServerPath := filepath.Join(c.getChroot(), firecrackerVSockPath) + "_" + strconv.Itoa(byteStreamProxyPort)
