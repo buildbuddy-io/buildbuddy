@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 )
@@ -82,5 +83,9 @@ func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.MaxRecvMsgSize(env.GetConfigurator().GetGRPCMaxRecvMsgSizeBytes()),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			// https://cloud.google.com/load-balancing/docs/https#timeouts_and_retries
+			Timeout: 620 * time.Second,
+		})),
 	}
 }
