@@ -981,7 +981,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		req, err := stream.Recv()
 		log.Debugf("LeaseTask RECV %q, req: %+v, err: %v", taskID, req, err)
 		if err == io.EOF {
-			log.Debugf("LeaseTask %q got EOF", taskID)
+			log.Warningf("LeaseTask %q got EOF: %s", taskID, err)
 			break
 		}
 		if err != nil {
