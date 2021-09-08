@@ -5,6 +5,7 @@ import (
 	"flag"
 	"net"
 	"os"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
@@ -26,6 +27,11 @@ var (
 type casfsServer struct {
 	cfs      *casfs.CASFS
 	bsClient bspb.ByteStreamClient
+
+	mu sync.Mutex
+	// Context & cancel func for CAS RPS.
+	remoteRPCCtx       context.Context
+	cancelRemoteRPCCtx context.CancelFunc
 }
 
 func NewServer() (*casfsServer, error) {
@@ -54,9 +60,18 @@ func NewServer() (*casfsServer, error) {
 }
 
 func (s *casfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
+	s.mu.Lock()
+	if s.cancelRemoteRPCCtx != nil {
+		s.cancelRemoteRPCCtx()
+	}
+	rpcCtx, cancel := context.WithCancel(context.Background())
+	s.remoteRPCCtx = rpcCtx
+	s.cancelRemoteRPCCtx = cancel
+	s.mu.Unlock()
+
 	layout := req.GetFileSystemLayout()
-	ff := dirtools.NewBatchFileFetcher(context.Background(), layout.GetRemoteInstanceName(), nil /* =fileCache */, s.bsClient, nil /* casClient= */)
-	if err := s.cfs.PrepareForTask(context.Background(), ff, "fc" /* =taskID */, &container.FileSystemLayout{Inputs: layout.GetInputs()}); err != nil {
+	ff := dirtools.NewBatchFileFetcher(s.remoteRPCCtx, layout.GetRemoteInstanceName(), nil /* =fileCache */, s.bsClient, nil /* casClient= */)
+	if err := s.cfs.PrepareForTask(ctx, ff, "fc" /* =taskID */, &container.FileSystemLayout{Inputs: layout.GetInputs()}); err != nil {
 		return nil, err
 	}
 
@@ -64,6 +79,11 @@ func (s *casfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (
 }
 
 func (s *casfsServer) Sync(ctx context.Context, request *vmfspb.SyncRequest) (*vmfspb.SyncResponse, error) {
+	s.mu.Lock()
+	if s.cancelRemoteRPCCtx != nil {
+		s.cancelRemoteRPCCtx()
+	}
+	s.mu.Unlock()
 	// TODO(vadim): implement
 	return &vmfspb.SyncResponse{}, nil
 }
