@@ -650,7 +650,22 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return status.InternalErrorf("error resuming VM: %s", err)
 	}
 
-	return nil
+	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+	defer cancel()
+
+	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
+	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	execClient := vmxpb.NewExecClient(conn)
+	_, err = execClient.Initialize(ctx, &vmxpb.InitializeRequest{
+		UnixTimestampNanoseconds: time.Now().UnixNano(),
+		ClearArpCache:            true,
+	})
+	return err
 }
 
 func nonCmdExit(err error) *interfaces.CommandResult {
@@ -659,6 +674,10 @@ func nonCmdExit(err error) *interfaces.CommandResult {
 		Error:    err,
 		ExitCode: -2,
 	}
+}
+
+func (c *FirecrackerContainer) startedFromSnapshot() bool {
+	return c.externalJailerCmd != nil
 }
 
 func (c *FirecrackerContainer) newID() error {
@@ -931,12 +950,10 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 		return nonCmdExit(err)
 	}
 
-	startedFromSnapshot := false
 	// See if we can lookup a cached snapshot to run from; if not, it's not
 	// a huge deal, we can start a new VM and create one.
 	if c.allowSnapshotStart {
 		if err := c.LoadSnapshot(ctx, actionWorkingDir, "" /*=instanceName*/, snapDigest); err == nil {
-			startedFromSnapshot = true
 			log.Debugf("Started from snapshot %s/%d!", snapDigest.GetHash(), snapDigest.GetSizeBytes())
 		}
 	}
@@ -952,7 +969,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 			return nonCmdExit(err)
 		}
 
-		if c.allowSnapshotStart && !startedFromSnapshot {
+		if c.allowSnapshotStart && !c.startedFromSnapshot() {
 			// save the workspaceFSPath in a local variable and null it out
 			// before saving the snapshot so it's not uploaded.
 			wsPath := c.workspaceFSPath
