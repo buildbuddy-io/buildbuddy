@@ -78,14 +78,14 @@ func (s *casfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (
 	return &vmfspb.PrepareResponse{}, nil
 }
 
-func (s *casfsServer) Close(ctx context.Context, request *vmfspb.CloseRequest) (*vmfspb.CloseResponse, error) {
+func (s *casfsServer) Finish(ctx context.Context, request *vmfspb.FinishRequest) (*vmfspb.FinishResponse, error) {
 	s.mu.Lock()
 	if s.cancelRemoteRPCCtx != nil {
 		s.cancelRemoteRPCCtx()
 	}
 	s.mu.Unlock()
 	// TODO(vadim): implement
-	return &vmfspb.CloseResponse{}, nil
+	return &vmfspb.FinishResponse{}, nil
 }
 
 func main() {
