@@ -24,9 +24,6 @@ jobs:
   build:
     runs-on: ${{ matrix.platform }}
     if: "!contains(github.event.head_commit.message, 'release skip')"
-    defaults:
-      run:
-        shell: "/usr/bin/arch -arch arm64e /bin/bash --noprofile --norc -eo pipefail {0}"
     strategy:
       matrix:
         # platform: [macos-latest, ubuntu-latest, m1]
@@ -79,7 +76,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          "${GITHUB_WORKSPACE}/bin/bazel" clean --expunge && "${GITHUB_WORKSPACE}/bin/bazel" build --config=release --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --define version=${{ steps.tag.outputs.TAG }} //enterprise/server/cmd/executor:executor
+          /usr/bin/arch -arch arm64e /bin/bash --noprofile --norc -eo pipefail -c \""${GITHUB_WORKSPACE}/bin/bazel" clean --expunge && "${GITHUB_WORKSPACE}/bin/bazel" build --config=release --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --define version=${{ steps.tag.outputs.TAG }} //enterprise/server/cmd/executor:executor\"
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-${{matrix.OSName}}-${{matrix.arch}}
           ls
           # gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-${{matrix.OSName}}-${{matrix.arch}} buildbuddy-enterprise-${{matrix.OSName}}-${{matrix.arch}} executor-enterprise-${{matrix.OSName}}-${{matrix.arch}} --clobber
