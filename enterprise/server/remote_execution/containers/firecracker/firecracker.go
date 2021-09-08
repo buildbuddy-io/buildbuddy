@@ -665,10 +665,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		UnixTimestampNanoseconds: time.Now().UnixNano(),
 		ClearArpCache:            true,
 	})
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func nonCmdExit(err error) *interfaces.CommandResult {
