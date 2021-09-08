@@ -86,6 +86,6 @@ func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			// https://cloud.google.com/load-balancing/docs/https#timeouts_and_retries
 			Timeout: 620 * time.Second,
-		})),
+		}),
 	}
 }
