@@ -412,7 +412,7 @@ type FirecrackerContainer struct {
 	// is loaded. This slightly breaks the firecracker SDK's "Wait()"
 	// method, so in that case we wait for the external jailer command
 	// to finish, rather than calling "Wait()" on the sdk machine object.
-	externalJailerCmd      *exec.Cmd
+	externalJailerCmd *exec.Cmd
 }
 
 // ConfigurationHash returns a digest that can be used to look up or save a
@@ -594,8 +594,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	if err != nil {
 		return status.InternalErrorf("Failed starting firecracker binary: %s", err)
 	}
-
 	c.externalJailerCmd = cmd
+
 	// Wait for the jailer directory to be created. We have to do this because we
 	// are starting the command ourselves and loading a snapshot, rather than
 	// going through the normal flow and letting the library start the cmd.
@@ -687,7 +687,7 @@ func (c *FirecrackerContainer) getChroot() string {
 	// the same path.
 	return filepath.Join(c.jailerRoot, "firecracker", c.id, "root")
 }
-	
+
 func (c *FirecrackerContainer) getJailerCommand(ctx context.Context) *exec.Cmd {
 	builder := fcclient.NewJailerCommandBuilder().
 		WithBin(jailerBinPath).
