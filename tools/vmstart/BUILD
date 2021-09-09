@@ -15,6 +15,7 @@ go_library(
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/firecracker",
         "//enterprise/server/remote_execution/dirtools",
+        "//enterprise/server/remote_execution/filecache",
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",
         "//server/config",
