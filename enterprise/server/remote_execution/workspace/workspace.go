@@ -133,7 +133,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 	}
 	txInfo, err := dirtools.DownloadTree(ctx, ws.env, ws.task.GetExecuteRequest().GetInstanceName(), tree, ws.rootDir, opts)
 	if err == nil {
-		if err := ws.CleanInputsIfNecessary(txInfo.Skips); err != nil {
+		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
 			return txInfo, err
 		}
 
