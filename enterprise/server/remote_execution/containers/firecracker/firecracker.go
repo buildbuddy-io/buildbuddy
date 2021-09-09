@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
@@ -122,14 +123,6 @@ var (
 	vmIdx   int
 	vmIdxMu sync.Mutex
 )
-
-func hashString(input string) (string, error) {
-	h := sha256.New()
-	if _, err := h.Write([]byte(input)); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
-}
 
 func getFileReader(ctx context.Context, fileName string) (io.Reader, error) {
 	sourcePath := ""
@@ -417,7 +410,7 @@ type FirecrackerContainer struct {
 
 // ConfigurationHash returns a digest that can be used to look up or save a
 // cached snapshot for this container configuration.
-func (c *FirecrackerContainer) ConfigurationHash() (*repb.Digest, error) {
+func (c *FirecrackerContainer) ConfigurationHash() *repb.Digest {
 	params := []string{
 		fmt.Sprintf("cpus=%d", c.constants.NumCPUs),
 		fmt.Sprintf("mb=%d", c.constants.MemSizeMB),
@@ -425,12 +418,8 @@ func (c *FirecrackerContainer) ConfigurationHash() (*repb.Digest, error) {
 		fmt.Sprintf("debug=%t", c.constants.DebugMode),
 		fmt.Sprintf("container=%s", c.containerImage),
 	}
-	hashedString, err := hashString(strings.Join(params, "&"))
-	if err != nil {
-		return nil, err
-	}
 	return &repb.Digest{
-		Hash:      hashedString,
+		Hash:      hash.String(strings.Join(params, "&")),
 		SizeBytes: int64(102),
 	}, nil
 }
@@ -926,10 +915,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 		log.Debugf("Run took %s", time.Since(start))
 	}()
 
-	snapDigest, err := c.ConfigurationHash()
-	if err != nil {
-		return nonCmdExit(err)
-	}
+	snapDigest := c.ConfigurationHash()
 
 	startedFromSnapshot := false
 	// See if we can lookup a cached snapshot to run from; if not, it's not
