@@ -421,7 +421,7 @@ func (c *FirecrackerContainer) ConfigurationHash() *repb.Digest {
 	return &repb.Digest{
 		Hash:      hash.String(strings.Join(params, "&")),
 		SizeBytes: int64(102),
-	}, nil
+	}
 }
 
 func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {

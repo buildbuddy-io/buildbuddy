@@ -8,4 +8,3 @@ import (
 func String(input string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(input)))
 }
-
