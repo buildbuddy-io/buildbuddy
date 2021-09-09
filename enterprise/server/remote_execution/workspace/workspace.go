@@ -38,7 +38,7 @@ type Workspace struct {
 	rootDir   string
 	task      *repb.ExecutionTask
 	dirHelper *dirtools.DirHelper
-	opts      *Opts
+	Opts      *Opts
 	casFs     *casfs.CASFS
 	// Action input files known to exist in the workspace, as a map of
 	// workspace-relative paths to digests.
@@ -71,7 +71,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 	return &Workspace{
 		env:     env,
 		rootDir: rootDir,
-		opts:    opts,
+		Opts:    opts,
 		Inputs:  map[string]*repb.Digest{},
 	}, nil
 }
@@ -127,7 +127,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 	defer span.End()
 
 	opts := &dirtools.DownloadTreeOpts{}
-	if ws.opts.Preserve {
+	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
@@ -147,17 +147,17 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 }
 
 func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.Digest) error {
-	if ws.opts.CleanInputs == "" {
+	if ws.Opts.CleanInputs == "" {
 		return nil
 	}
 	inputFilesToCleanUp := make(map[string]*repb.Digest)
 	// Curly braces indicate a comma separated list of patterns: https://pkg.go.dev/github.com/gobwas/glob#Compile
-	glob, err := glob.Compile(fmt.Sprintf("{%s}", ws.opts.CleanInputs), os.PathSeparator)
+	glob, err := glob.Compile(fmt.Sprintf("{%s}", ws.Opts.CleanInputs), os.PathSeparator)
 	if err != nil {
-		return status.FailedPreconditionErrorf("Invalid glob {%s} used for input cleaning: %s", ws.opts.CleanInputs, err.Error())
+		return status.FailedPreconditionErrorf("Invalid glob {%s} used for input cleaning: %s", ws.Opts.CleanInputs, err.Error())
 	}
 	for path, digest := range ws.Inputs {
-		if ws.opts.CleanInputs == "*" || glob.Match(path) {
+		if ws.Opts.CleanInputs == "*" || glob.Match(path) {
 			inputFilesToCleanUp[path] = digest
 		}
 	}
@@ -262,7 +262,7 @@ func (ws *Workspace) Clean() error {
 
 	// If preserving the workspace, only remove outputs and leave other files
 	// as-is.
-	if ws.opts.Preserve {
+	if ws.Opts.Preserve {
 		cmd := ws.task.GetCommand()
 		for _, path := range cmd.GetOutputFiles() {
 			if err := os.RemoveAll(filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {
