@@ -35,6 +35,7 @@ go_library(
             "//server/environment",
             "//server/interfaces",
             "//server/util/disk",
+            "//server/util/hash",
             "//server/util/log",
             "//server/util/status",
             "@com_github_firecracker_microvm_firecracker_go_sdk//:firecracker-go-sdk",

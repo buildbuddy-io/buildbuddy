@@ -2,7 +2,6 @@ package container
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"sync"
@@ -11,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -155,13 +155,9 @@ func NewImageCacheToken(ctx context.Context, env environment.Env, creds PullCred
 	return ImageCacheToken{
 		GroupID:      groupID,
 		ImageRef:     imageRef,
-		UserHash:     hashString(creds.Username),
-		PasswordHash: hashString(creds.Password),
+		UserHash:     hash.String(creds.Username),
+		PasswordHash: hash.String(creds.Password),
 	}, nil
-}
-
-func hashString(value string) string {
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
 }
 
 // ImageCacheAuthenticator grants access to short-lived tokens for accessing
