@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
@@ -122,14 +123,6 @@ var (
 	vmIdx   int
 	vmIdxMu sync.Mutex
 )
-
-func hashString(input string) (string, error) {
-	h := sha256.New()
-	if _, err := h.Write([]byte(input)); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
-}
 
 func getFileReader(ctx context.Context, fileName string) (io.Reader, error) {
 	sourcePath := ""
@@ -417,7 +410,7 @@ type FirecrackerContainer struct {
 
 // ConfigurationHash returns a digest that can be used to look up or save a
 // cached snapshot for this container configuration.
-func (c *FirecrackerContainer) ConfigurationHash() (*repb.Digest, error) {
+func (c *FirecrackerContainer) ConfigurationHash() *repb.Digest {
 	params := []string{
 		fmt.Sprintf("cpus=%d", c.constants.NumCPUs),
 		fmt.Sprintf("mb=%d", c.constants.MemSizeMB),
@@ -425,14 +418,10 @@ func (c *FirecrackerContainer) ConfigurationHash() (*repb.Digest, error) {
 		fmt.Sprintf("debug=%t", c.constants.DebugMode),
 		fmt.Sprintf("container=%s", c.containerImage),
 	}
-	hashedString, err := hashString(strings.Join(params, "&"))
-	if err != nil {
-		return nil, err
-	}
 	return &repb.Digest{
-		Hash:      hashedString,
+		Hash:      hash.String(strings.Join(params, "&")),
 		SizeBytes: int64(102),
-	}, nil
+	}
 }
 
 func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
@@ -650,7 +639,22 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return status.InternalErrorf("error resuming VM: %s", err)
 	}
 
-	return nil
+	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+	defer cancel()
+
+	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
+	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	execClient := vmxpb.NewExecClient(conn)
+	_, err = execClient.Initialize(ctx, &vmxpb.InitializeRequest{
+		UnixTimestampNanoseconds: time.Now().UnixNano(),
+		ClearArpCache:            true,
+	})
+	return err
 }
 
 func nonCmdExit(err error) *interfaces.CommandResult {
@@ -659,6 +663,10 @@ func nonCmdExit(err error) *interfaces.CommandResult {
 		Error:    err,
 		ExitCode: -2,
 	}
+}
+
+func (c *FirecrackerContainer) startedFromSnapshot() bool {
+	return c.externalJailerCmd != nil
 }
 
 func (c *FirecrackerContainer) newID() error {
@@ -926,17 +934,12 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 		log.Debugf("Run took %s", time.Since(start))
 	}()
 
-	snapDigest, err := c.ConfigurationHash()
-	if err != nil {
-		return nonCmdExit(err)
-	}
+	snapDigest := c.ConfigurationHash()
 
-	startedFromSnapshot := false
 	// See if we can lookup a cached snapshot to run from; if not, it's not
 	// a huge deal, we can start a new VM and create one.
 	if c.allowSnapshotStart {
 		if err := c.LoadSnapshot(ctx, actionWorkingDir, "" /*=instanceName*/, snapDigest); err == nil {
-			startedFromSnapshot = true
 			log.Debugf("Started from snapshot %s/%d!", snapDigest.GetHash(), snapDigest.GetSizeBytes())
 		}
 	}
@@ -952,7 +955,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 			return nonCmdExit(err)
 		}
 
-		if c.allowSnapshotStart && !startedFromSnapshot {
+		if c.allowSnapshotStart && !c.startedFromSnapshot() {
 			// save the workspaceFSPath in a local variable and null it out
 			// before saving the snapshot so it's not uploaded.
 			wsPath := c.workspaceFSPath
