@@ -10,6 +10,7 @@ ts_library(
     ]),
     deps = [
         "//app/alert",
+        "//app/router",
         "//app/util:errors",
     ],
 )

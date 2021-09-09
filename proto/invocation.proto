@@ -85,6 +85,9 @@ message Invocation {
 
   // This field indicates to the client if we have chunked event logs
   bool has_chunked_event_logs = 22;
+
+  // The name of the git branch for this invocation, if any
+  string branch_name = 23;
 }
 
 message InvocationEvent {
@@ -168,8 +171,9 @@ message InvocationQuery {
   // The commit sha used for the build.
   string commit_sha = 5;
 
-  // The ROLE metadata set on the build.
-  string role = 6;
+  // The ROLE metadata set on the build. If multiple filters are specified, they
+  // are combined with "OR".
+  repeated string role = 6;
 
   // The timestamp on or after which the build was last updated (inclusive).
   google.protobuf.Timestamp updated_after = 7;
@@ -180,6 +184,9 @@ message InvocationQuery {
   // Status of the build. If multiple are specified, they are combined with
   // "OR".
   repeated OverallStatus status = 9;
+
+  // The git branch used for the build.
+  string branch_name = 10;
 }
 
 // OverallStatus is a status representing both the completion status and
@@ -254,6 +261,7 @@ enum AggType {
   REPO_URL_AGGREGATION_TYPE = 4;
   COMMIT_SHA_AGGREGATION_TYPE = 5;
   DATE_AGGREGATION_TYPE = 6;
+  BRANCH_AGGREGATION_TYPE = 7;
 }
 
 message InvocationStat {
@@ -302,8 +310,9 @@ message InvocationStatQuery {
   // The commit sha used for the build.
   string commit_sha = 5;
 
-  // The role played by the build. Ex: "CI"
-  string role = 6;
+  // The role played by the build. Ex: "CI". If multiple role filters are
+  // specified, they are combined with "OR".
+  repeated string role = 6;
 
   // The timestamp on or after which the build was last updated (inclusive).
   google.protobuf.Timestamp updated_after = 7;
@@ -314,6 +323,9 @@ message InvocationStatQuery {
   // Status of the build. If multiple are specified, they are combined with
   // "OR".
   repeated OverallStatus status = 9;
+
+  // The git branch used for the build.
+  string branch_name = 10;
 }
 
 message GetInvocationStatRequest {
@@ -379,6 +391,9 @@ message TrendStat {
   int64 total_upload_size_bytes = 17;
   int64 total_download_usec = 18;
   int64 total_upload_usec = 19;
+
+  // The number of unique branches that were built.
+  int64 branch_count = 20;
 }
 
 message TrendQuery {
@@ -398,8 +413,8 @@ message TrendQuery {
   // The commit sha used for the build.
   string commit_sha = 5;
 
-  // The role played by the build. Ex: "CI". Multiple filters are combined with
-  // OR.
+  // The role played by the build. Ex: "CI". If multiple filters are specified,
+  // they are combined with "OR".
   repeated string role = 6;
 
   // The timestamp on or after which the build was last updated (inclusive).
@@ -411,6 +426,9 @@ message TrendQuery {
   // Status of the build. If multiple are specified, they are combined with
   // "OR".
   repeated OverallStatus status = 9;
+
+  // The git branch used for the build.
+  string branch_name = 10;
 }
 
 message GetTrendRequest {

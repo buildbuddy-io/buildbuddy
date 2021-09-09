@@ -82,6 +82,7 @@ var (
 		"/settings/",
 		"/tests/",
 		"/trends/",
+		"/usage/",
 		"/workflows/",
 		"/executors/",
 		"/code/",

@@ -55,4 +55,7 @@ message FrontendConfig {
 
   // Whether or not the global invocation filter is enabled.
   bool global_filter_enabled = 14;
+
+  // Whether or not the usage page is enabled.
+  bool usage_enabled = 15;
 }

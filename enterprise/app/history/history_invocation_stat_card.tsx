@@ -5,13 +5,11 @@ import router from "../../../app/router/router";
 import format from "../../../app/format/format";
 
 interface Props {
-  invocationStat: invocation.InvocationStat;
+  invocationStat: invocation.IInvocationStat;
   type: invocation.AggType;
 }
 
-export default class HistoryInvocationStatCardComponent extends React.Component {
-  props: Props;
-
+export default class HistoryInvocationStatCardComponent extends React.Component<Props> {
   handleStatClicked() {
     console.log(this.props.invocationStat);
     if (this.props.type == invocation.AggType.USER_AGGREGATION_TYPE) {
@@ -22,6 +20,9 @@ export default class HistoryInvocationStatCardComponent extends React.Component 
     }
     if (this.props.type == invocation.AggType.REPO_URL_AGGREGATION_TYPE) {
       router.navigateToRepoHistory(this.props.invocationStat.name);
+    }
+    if (this.props.type == invocation.AggType.BRANCH_AGGREGATION_TYPE) {
+      router.navigateToBranchHistory(this.props.invocationStat.name);
     }
     if (this.props.type == invocation.AggType.COMMIT_SHA_AGGREGATION_TYPE) {
       router.navigateToCommitHistory(this.props.invocationStat.name);
@@ -37,6 +38,9 @@ export default class HistoryInvocationStatCardComponent extends React.Component 
     }
     if (this.props.type == invocation.AggType.REPO_URL_AGGREGATION_TYPE) {
       return format.formatGitUrl(this.props.invocationStat.name) || "Unknown repo";
+    }
+    if (this.props.type == invocation.AggType.BRANCH_AGGREGATION_TYPE) {
+      return this.props.invocationStat.name || "Unknown branch";
     }
     if (this.props.type == invocation.AggType.COMMIT_SHA_AGGREGATION_TYPE) {
       return this.props.invocationStat.name

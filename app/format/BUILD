@@ -12,6 +12,7 @@ ts_library(
         "@npm//date-fns",
         "@npm//long",
         "@npm//moment",
+        "@npm//tslib",
     ],
 )
 
@@ -29,5 +30,6 @@ ts_library(
 
 jasmine_node_test(
     name = "format_test",
+    templated_args = ["--bazel_patch_module_resolver"],
     deps = [":format_test_ts"],
 )

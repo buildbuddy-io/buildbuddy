@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,11 +29,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
+	"google.golang.org/grpc"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
@@ -39,6 +43,7 @@ import (
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -66,6 +71,7 @@ const (
 	workspaceDriveID = "workspacefs"
 
 	// The containerfs drive ID.
+	containerFSName  = "containerfs.ext4"
 	containerDriveID = "containerfs"
 
 	// The networking deets for host and vm interfaces.
@@ -96,6 +102,9 @@ const (
 	// Workspace slack space is how much extra space will be allocated in the
 	// workspace disk image beyond the size of the existing files.
 	workspaceSlackBytes = 100 * 1e6 // 100MB
+
+	// This is the port on which the guest connects to the bytestream proxy on the host.
+	byteStreamProxyPort = 9292
 )
 
 var (
@@ -114,14 +123,6 @@ var (
 	vmIdx   int
 	vmIdxMu sync.Mutex
 )
-
-func hashString(input string) (string, error) {
-	h := sha256.New()
-	if _, err := h.Write([]byte(input)); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
-}
 
 func getFileReader(ctx context.Context, fileName string) (io.Reader, error) {
 	sourcePath := ""
@@ -244,7 +245,7 @@ func getLogrusLogger(debugMode bool) *logrus.Entry {
 	logrusLogger := logrus.New()
 	logrusLogger.SetLevel(logrus.ErrorLevel)
 	if debugMode {
-		logrusLogger.SetLevel(logrus.DebugLevel)
+		logrusLogger.SetLevel(logrus.TraceLevel)
 	}
 	return logrus.NewEntry(logrusLogger)
 }
@@ -258,6 +259,110 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 		}
 	}
 	return true
+}
+
+// byteStreamProxy is a server that proxies ByteStream RPCs between the guest VM and the remote cache.
+// Prior to executing a task in the VM, `SetExecutionContext` context should be called to set the context to use
+// to communicate with the remote cache.
+// TODO(vadim): ideally we should also check if the server context is cancelled, not just the execution context
+// TODO(vadim): take advantage of the file cache instead of always streaming from remote cache
+type byteStreamProxy struct {
+	target         bspb.ByteStreamClient
+	unixSocketPath string
+
+	mu      sync.Mutex
+	server  *grpc.Server
+	context context.Context
+}
+
+func (c *byteStreamProxy) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadServer) error {
+	c.mu.Lock()
+	ctx := c.context
+	c.mu.Unlock()
+	stream, err := c.target.Read(ctx, request)
+	if err != nil {
+		return err
+	}
+	for {
+		rsp, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := server.Send(rsp); err != nil {
+			return err
+		}
+	}
+}
+
+func (c *byteStreamProxy) Write(server bspb.ByteStream_WriteServer) error {
+	c.mu.Lock()
+	ctx := c.context
+	c.mu.Unlock()
+	stream, err := c.target.Write(ctx)
+	if err != nil {
+		return err
+	}
+	for {
+		req, err := server.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(req); err != nil {
+			return err
+		}
+	}
+}
+
+func (c *byteStreamProxy) QueryWriteStatus(ctx context.Context, request *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
+	c.mu.Lock()
+	ctx = c.context
+	c.mu.Unlock()
+	return c.target.QueryWriteStatus(ctx, request)
+}
+
+func (c *byteStreamProxy) Start() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.server != nil {
+		return status.FailedPreconditionError("ByteStreamProxy already started")
+	}
+
+	c.server = grpc.NewServer()
+	bspb.RegisterByteStreamServer(c.server, c)
+	lis, err := net.Listen("unix", c.unixSocketPath)
+	if err != nil {
+		return err
+	}
+	go func() {
+		c.server.Serve(lis)
+	}()
+	return nil
+}
+
+func (c *byteStreamProxy) Stop() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.server == nil {
+		return
+	}
+	c.server.Stop()
+	c.server = nil
+}
+
+func (c *byteStreamProxy) SetExecutionContext(ctx context.Context) {
+	c.mu.Lock()
+	c.context = ctx
+	c.mu.Unlock()
+}
+
+func newBSProxy(unixSocketPath string, target bspb.ByteStreamClient) *byteStreamProxy {
+	return &byteStreamProxy{target: target, unixSocketPath: unixSocketPath, context: context.Background()}
 }
 
 // Container invariants which cannot bechanged across snapshot/resume cycles.
@@ -284,16 +389,28 @@ type FirecrackerContainer struct {
 	workspaceFSPath  string // the path to the workspace ext4 image
 	containerFSPath  string // the path to the container ext4 image
 
+	// when CASFS is enabled, this contains the layout for the next execution
+	fsLayout *container.FileSystemLayout
+	bsProxy  *byteStreamProxy
+
 	jailerRoot           string            // the root dir the jailer will work in
 	machine              *fcclient.Machine // the firecracker machine object.
 	env                  environment.Env
+	imageCacheAuth       *container.ImageCacheAuthenticator
 	pausedSnapshotDigest *repb.Digest
 	allowSnapshotStart   bool
+
+	// If a container is resumed from a snapshot, the jailer
+	// is started first using an external command and then the snapshot
+	// is loaded. This slightly breaks the firecracker SDK's "Wait()"
+	// method, so in that case we wait for the external jailer command
+	// to finish, rather than calling "Wait()" on the sdk machine object.
+	externalJailerCmd *exec.Cmd
 }
 
 // ConfigurationHash returns a digest that can be used to look up or save a
 // cached snapshot for this container configuration.
-func (c *FirecrackerContainer) ConfigurationHash() (*repb.Digest, error) {
+func (c *FirecrackerContainer) ConfigurationHash() *repb.Digest {
 	params := []string{
 		fmt.Sprintf("cpus=%d", c.constants.NumCPUs),
 		fmt.Sprintf("mb=%d", c.constants.MemSizeMB),
@@ -301,17 +418,13 @@ func (c *FirecrackerContainer) ConfigurationHash() (*repb.Digest, error) {
 		fmt.Sprintf("debug=%t", c.constants.DebugMode),
 		fmt.Sprintf("container=%s", c.containerImage),
 	}
-	hashedString, err := hashString(strings.Join(params, "&"))
-	if err != nil {
-		return nil, err
-	}
 	return &repb.Digest{
-		Hash:      hashedString,
+		Hash:      hash.String(strings.Join(params, "&")),
 		SizeBytes: int64(102),
-	}, nil
+	}
 }
 
-func NewContainer(env environment.Env, opts ContainerOpts) (*FirecrackerContainer, error) {
+func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
 	// WARNING: because of the limitation on the length of unix sock file
 	// paths (103), this directory path needs to be short. Specifically, a
 	// full sock path will look like:
@@ -346,6 +459,7 @@ func NewContainer(env environment.Env, opts ContainerOpts) (*FirecrackerContaine
 		containerImage:     opts.ContainerImage,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
 		env:                env,
+		imageCacheAuth:     imageCacheAuth,
 		allowSnapshotStart: opts.AllowSnapshotStart,
 	}
 
@@ -365,6 +479,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	}()
 
 	if err := c.machine.PauseVM(ctx); err != nil {
+		log.Errorf("Error pausing VM: %s", err)
 		return nil, err
 	}
 	memSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
@@ -376,6 +491,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 
 	machineStart := time.Now()
 	if err := c.machine.CreateSnapshot(ctx, fullMemSnapshotName, fullDiskSnapshotName); err != nil {
+		log.Errorf("Error creating snapshot: %s", err)
 		return nil, err
 	}
 	log.Debugf("VMM CreateSnapshot took %s", time.Since(machineStart))
@@ -390,8 +506,8 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		DiskSnapshotPath:    diskSnapshotPath,
 		KernelImagePath:     kernelImagePath,
 		InitrdImagePath:     initrdImagePath,
-		ContainerFSPath:     c.containerFSPath,
-		WorkspaceFSPath:     c.workspaceFSPath,
+		ContainerFSPath:     filepath.Join(c.getChroot(), containerFSName),
+		WorkspaceFSPath:     filepath.Join(c.getChroot(), workspaceFSName),
 		ForceSnapshotDigest: d,
 	}
 
@@ -414,7 +530,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOverride, instanceName string, snapshotDigest *repb.Digest) error {
 	start := time.Now()
 	defer func() {
-		log.Debugf("LoadSnapshot took %s", time.Since(start))
+		log.Debugf("LoadSnapshot %s took %s", snapshotDigest.GetHash(), time.Since(start))
 	}()
 
 	if err := c.newID(); err != nil {
@@ -461,16 +577,24 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		fcclient.WithLogger(getLogrusLogger(c.constants.DebugMode)),
 		fcclient.WithProcessRunner(cmd),
 	}
+
 	// Start Firecracker
 	err = cmd.Start()
 	if err != nil {
 		return status.InternalErrorf("Failed starting firecracker binary: %s", err)
 	}
 
+	c.externalJailerCmd = cmd
+
 	// Wait for the jailer directory to be created. We have to do this because we
 	// are starting the command ourselves and loading a snapshot, rather than
 	// going through the normal flow and letting the library start the cmd.
 	waitUntilExists(ctx, jailerDirectoryCreationTimeout, c.getChroot())
+
+	// Wait until jailer directory exists because the host vsock socket is created in that directory.
+	if err := c.setupByteStreamProxy(); err != nil {
+		return err
+	}
 
 	if err := loader.UnpackSnapshot(c.getChroot()); err != nil {
 		return err
@@ -515,7 +639,22 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return status.InternalErrorf("error resuming VM: %s", err)
 	}
 
-	return nil
+	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+	defer cancel()
+
+	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
+	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	execClient := vmxpb.NewExecClient(conn)
+	_, err = execClient.Initialize(ctx, &vmxpb.InitializeRequest{
+		UnixTimestampNanoseconds: time.Now().UnixNano(),
+		ClearArpCache:            true,
+	})
+	return err
 }
 
 func nonCmdExit(err error) *interfaces.CommandResult {
@@ -526,6 +665,10 @@ func nonCmdExit(err error) *interfaces.CommandResult {
 	}
 }
 
+func (c *FirecrackerContainer) startedFromSnapshot() bool {
+	return c.externalJailerCmd != nil
+}
+
 func (c *FirecrackerContainer) newID() error {
 	vmIdxMu.Lock()
 	defer vmIdxMu.Unlock()
@@ -533,11 +676,11 @@ func (c *FirecrackerContainer) newID() error {
 	if err != nil {
 		return err
 	}
+	vmIdx += 1
 	log.Debugf("Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u.String(), vmIdx)
 	c.id = u.String()
-
 	c.vmIdx = vmIdx
-	vmIdx += 1
+
 	if vmIdx > maxVMSPerHost {
 		vmIdx = 0
 	}
@@ -750,6 +893,22 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	return nil
 }
 
+func (c *FirecrackerContainer) setupByteStreamProxy() error {
+	if c.bsProxy != nil {
+		return nil
+	}
+
+	vsockServerPath := filepath.Join(c.getChroot(), firecrackerVSockPath) + "_" + strconv.Itoa(byteStreamProxyPort)
+	if err := os.MkdirAll(filepath.Dir(vsockServerPath), 0755); err != nil {
+		return err
+	}
+	c.bsProxy = newBSProxy(vsockServerPath, c.env.GetByteStreamClient())
+	if err := c.bsProxy.Start(); err != nil {
+		return status.InternalErrorf("Could not start ByteStreamServer proxy: %s", err)
+	}
+	return nil
+}
+
 func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	if !c.constants.EnableNetworking {
 		return nil
@@ -760,28 +919,27 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	return networking.DeleteRoute(ctx, c.vmIdx)
 }
 
+func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileSystemLayout) {
+	c.fsLayout = fsLayout
+}
+
 // Run the given command within the container and remove the container after
 // it is done executing.
 //
 // It is approximately the same as calling PullImageIfNecessary, Create,
 // Exec, then Remove.
-func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string, creds container.PullCredentials) *interfaces.CommandResult {
 	start := time.Now()
 	defer func() {
 		log.Debugf("Run took %s", time.Since(start))
 	}()
 
-	snapDigest, err := c.ConfigurationHash()
-	if err != nil {
-		return nonCmdExit(err)
-	}
+	snapDigest := c.ConfigurationHash()
 
-	startedFromSnapshot := false
 	// See if we can lookup a cached snapshot to run from; if not, it's not
 	// a huge deal, we can start a new VM and create one.
 	if c.allowSnapshotStart {
 		if err := c.LoadSnapshot(ctx, actionWorkingDir, "" /*=instanceName*/, snapDigest); err == nil {
-			startedFromSnapshot = true
 			log.Debugf("Started from snapshot %s/%d!", snapDigest.GetHash(), snapDigest.GetSizeBytes())
 		}
 	}
@@ -789,7 +947,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 	// If a snapshot was already loaded, then c.machine will be set, so
 	// there's no need to Create the machine.
 	if c.machine == nil {
-		if err := c.PullImageIfNecessary(ctx); err != nil {
+		if err := container.PullImageIfNecessary(ctx, c.env, c.imageCacheAuth, c, creds, c.containerImage); err != nil {
 			return nonCmdExit(err)
 		}
 
@@ -797,7 +955,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 			return nonCmdExit(err)
 		}
 
-		if c.allowSnapshotStart && !startedFromSnapshot {
+		if c.allowSnapshotStart && !c.startedFromSnapshot() {
 			// save the workspaceFSPath in a local variable and null it out
 			// before saving the snapshot so it's not uploaded.
 			wsPath := c.workspaceFSPath
@@ -851,6 +1009,10 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		return err
 	}
 
+	if err := c.setupByteStreamProxy(); err != nil {
+		return err
+	}
+
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger(c.constants.DebugMode)),
 		fcclient.WithProcessRunner(c.getJailerCommand(ctx)),
@@ -867,6 +1029,27 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	return nil
 }
 
+func (c FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
+	c.bsProxy.SetExecutionContext(ctx)
+
+	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+	defer cancel()
+
+	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
+	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	execClient := vmxpb.NewExecClient(conn)
+	rsp, err := execClient.Exec(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return rsp, err
+}
+
 // Exec runs a command inside a container, with the same working dir set when
 // creating the container.
 // If stdin is non-nil, the contents of stdin reader will be piped to the stdin of
@@ -878,26 +1061,24 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer func() {
 		log.Debugf("Exec took %s", time.Since(start))
 	}()
+
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(firecracker) %s", cmd.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
 	}
 
-	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
-	defer cancel()
-
-	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
-	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath)
-	if err != nil {
-		result.Error = err
-		return result
-	}
-	defer conn.Close()
-
-	execClient := vmxpb.NewExecClient(conn)
 	execRequest := &vmxpb.ExecRequest{
 		Arguments:        cmd.GetArguments(),
 		WorkingDirectory: "/workspace/",
+	}
+	if c.fsLayout != nil {
+		execRequest.CasfsConfiguration = &vmxpb.CASFSConfiguration{
+			FileSystemLayout: &vmxpb.FileSystemLayout{
+				RemoteInstanceName: c.fsLayout.RemoteInstanceName,
+				Inputs:             c.fsLayout.Inputs,
+			},
+		}
+		execRequest.WorkingDirectory = "/casfs/"
 	}
 	for _, ev := range cmd.GetEnvironmentVariables() {
 		execRequest.EnvironmentVariables = append(execRequest.EnvironmentVariables, &vmxpb.ExecRequest_EnvironmentVariable{
@@ -905,7 +1086,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		})
 	}
 
-	rsp, err := execClient.Exec(ctx, execRequest)
+	rsp, err := c.SendExecRequestToGuest(ctx, execRequest)
 	if err != nil {
 		result.Error = err
 		return result
@@ -935,17 +1116,29 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	return result
 }
 
-// PullImageIfNecessary pulls the container image if it is not already
-// available locally.
-func (c *FirecrackerContainer) PullImageIfNecessary(ctx context.Context) error {
+func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) {
+	diskImagePath, err := containerutil.CachedDiskImagePath(c.jailerRoot, c.containerImage)
+	if err != nil {
+		return false, err
+	}
+	if diskImagePath != "" {
+		c.containerFSPath = diskImagePath
+	}
+	return diskImagePath != "", nil
+}
+
+// PullImage pulls the container image from the remote. It always
+// re-authenticates the request, but may serve the image from a local cache
+// in order to avoid re-downloading the image.
+func (c *FirecrackerContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
 	start := time.Now()
 	defer func() {
-		log.Debugf("PullImageIfNecessary took %s", time.Since(start))
+		log.Debugf("PullImage took %s", time.Since(start))
 	}()
 	if c.containerFSPath != "" {
 		return nil
 	}
-	containerFSPath, err := containerutil.GetOrCreateImage(ctx, c.jailerRoot, c.containerImage)
+	containerFSPath, err := containerutil.CreateDiskImage(ctx, c.jailerRoot, c.containerImage, creds)
 	if err != nil {
 		return err
 	}
@@ -978,6 +1171,9 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
 		log.Errorf("Error removing chroot: %s", err)
 	}
+	if c.bsProxy != nil {
+		c.bsProxy.Stop()
+	}
 	return nil
 }
 
@@ -989,6 +1185,7 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	}()
 	snapshotDigest, err := c.SaveSnapshot(ctx, "" /*=instanceName*/, nil /*=digest*/)
 	if err != nil {
+		log.Errorf("Error saving snapshot: %s", err)
 		return err
 	}
 	c.pausedSnapshotDigest = snapshotDigest
@@ -1012,6 +1209,9 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 // Wait waits until the underlying VM exits. It returns an error if one is
 // encountered while waiting.
 func (c *FirecrackerContainer) Wait(ctx context.Context) error {
+	if c.externalJailerCmd != nil {
+		return c.externalJailerCmd.Wait()
+	}
 	return c.machine.Wait(ctx)
 }
 

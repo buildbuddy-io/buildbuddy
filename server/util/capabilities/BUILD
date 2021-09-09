@@ -9,8 +9,6 @@ go_library(
         "//proto:api_key_go_proto",
         "//server/environment",
         "//server/util/status",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
     ],
 )
 

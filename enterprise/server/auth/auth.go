@@ -754,9 +754,8 @@ func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, e
 		}
 		return claims, nil
 	}
-	// NB: DO NOT CHANGE THIS ERROR MESSAGE. The client app matches it in
-	// order to trigger the CreateUser flow.
-	return nil, status.PermissionDeniedError("User not found")
+	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
+	return nil, status.UnauthenticatedError("User not found")
 }
 
 func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
@@ -773,7 +772,8 @@ func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces
 func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
 	t, ok := ctx.Value(contextUserKey).(*userToken)
 	if !ok {
-		return status.FailedPreconditionErrorf("No user token available to fill user")
+		// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
+		return status.UnauthenticatedError("No user token available to fill user")
 	}
 
 	pk, err := tables.PrimaryKeyForTable("Users")
@@ -893,21 +893,16 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	if slug := r.URL.Query().Get(slugParam); slug != "" {
 		auth = a.getAuthConfigForSlug(slug)
 		if auth == nil {
-
 			a.loginWithSAML(w, r)
+			// redirectWithError(w, r, status.PermissionDeniedErrorf("No SSO config found for slug: %s", slug))
 			return
-
-			// err := status.PermissionDeniedErrorf("No SSO config found for slug: %s", slug)
-			// http.Error(w, err.Error(), http.StatusUnauthorized)
-			// return
 		}
 		issuer = auth.getIssuer()
 
 	}
 
 	if auth == nil {
-		err := status.PermissionDeniedErrorf("No config found for issuer: %s", issuer)
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		redirectWithError(w, r, status.PermissionDeniedErrorf("No config found for issuer: %s", issuer))
 		return
 	}
 
@@ -918,7 +913,7 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 
 	redirectURL := r.URL.Query().Get(authRedirectParam)
 	if err := a.validateRedirectURL(redirectURL); err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		redirectWithError(w, r, err)
 		return
 	}
 
@@ -950,17 +945,13 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 
 	// Verify "state" cookie match.
 	if r.FormValue("state") != getCookie(r, stateCookie) {
-		log.Printf("state mismatch: %s != %s", r.FormValue("state"), getCookie(r, stateCookie))
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		redirectWithError(w, r, status.PermissionDeniedErrorf("state mismatch: %s != %s", r.FormValue("state"), getCookie(r, stateCookie)))
 		return
 	}
 
 	authError := r.URL.Query().Get("error")
 	if authError != "" {
-		authErrorDesc := r.URL.Query().Get("error_desc")
-		authErrorDescription := r.URL.Query().Get("error_description")
-		log.Warningf("Authenticator returned error: %s (%s %s)", authError, authErrorDesc, authErrorDescription)
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		redirectWithError(w, r, status.PermissionDeniedErrorf("Authenticator returned error: %s (%s %s)", authError, r.URL.Query().Get("error_desc"), r.URL.Query().Get("error_description")))
 		return
 	}
 
@@ -968,29 +959,27 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	issuer := getCookie(r, authIssuerCookie)
 	auth := a.getAuthConfig(issuer)
 	if auth == nil {
-		err := status.PermissionDeniedErrorf("No config found for issuer: %s", issuer)
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		redirectWithError(w, r, status.PermissionDeniedErrorf("No config found for issuer: %s", issuer))
 		return
 	}
 
 	code := r.URL.Query().Get("code")
 	oauth2Token, err := auth.exchange(ctx, code, authCodeOption...)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		redirectWithError(w, r, status.PermissionDeniedErrorf("Error exchanging code for auth token: %s", code))
 		return
 	}
 
 	// Extract the ID Token (JWT) from OAuth2 token.
 	jwt, ok := oauth2Token.Extra("id_token").(string)
 	if !ok {
-		err := status.PermissionDeniedErrorf("ID Token not present in auth response")
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		redirectWithError(w, r, status.PermissionDeniedError("ID Token not present in auth response"))
 		return
 	}
 
 	ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, true)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		redirectWithError(w, r, err)
 		return
 
 	}
@@ -1037,5 +1026,11 @@ func UserFromTrustedJWT(ctx context.Context) (interfaces.UserInfo, error) {
 		}
 		return claims, nil
 	}
-	return nil, status.PermissionDeniedError("User not found")
+	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
+	return nil, status.UnauthenticatedError("User not found")
+}
+
+func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
+	log.Warning(err.Error())
+	http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
 }

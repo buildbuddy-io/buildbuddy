@@ -33,7 +33,7 @@ func TestStatusIs(t *testing.T) {
 	assert.True(t, status.IsOutOfRangeError(err))
 	err = status.UnimplementedErrorf("Unimplemented")
 	assert.True(t, status.IsUnimplementedError(err))
-	err = status.InternalErrorf("nternal")
+	err = status.InternalErrorf("Internal")
 	assert.True(t, status.IsInternalError(err))
 	err = status.UnavailableErrorf("Unavailable")
 	assert.True(t, status.IsUnavailableError(err))

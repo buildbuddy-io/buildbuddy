@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/remote_execution/container",
         "//enterprise/server/util/ext4",
         "//server/util/disk",
         "//server/util/log",

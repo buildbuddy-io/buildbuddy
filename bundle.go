@@ -17,7 +17,7 @@ import (
 var all embed.FS
 
 type aliasFS struct {
-	embed.FS
+	FS            embed.FS
 	remappedPaths map[string]string
 }
 
@@ -34,7 +34,7 @@ func Get() (fs.FS, error) {
 		FS:            all,
 		remappedPaths: make(map[string]string, 0),
 	}
-	// This is annoying but necesary -- we bundle some binary files that
+	// This is annoying but necessary -- we bundle some binary files that
 	// end up in a bazel-out/$arch/bin directory. Rather than try to read
 	// them by their full name, which is $arch dependent, we glob them
 	// and alias them under a path that does not contain the $arch

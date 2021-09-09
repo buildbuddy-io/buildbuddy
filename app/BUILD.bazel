@@ -59,6 +59,7 @@ genrule(
         "//app/components/select:select.css",
         "//app/components/radio:radio.css",
         "//app/components/checkbox:checkbox.css",
+        "//app/components/spinner:spinner.css",
     ],
     outs = ["style.css"],
     cmd_bash = """

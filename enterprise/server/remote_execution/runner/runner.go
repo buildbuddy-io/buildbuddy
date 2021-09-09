@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
@@ -115,6 +116,9 @@ type state int
 
 // CommandRunner represents a command container and attached workspace.
 type CommandRunner struct {
+	env            environment.Env
+	imageCacheAuth *container.ImageCacheAuthenticator
+
 	// ACL controls who can use this runner.
 	ACL *aclpb.ACL
 	// PlatformProperties holds the platform properties for the last
@@ -130,9 +134,11 @@ type CommandRunner struct {
 
 	// Container is the handle on the container (possibly the bare /
 	// NOP container) that is used to execute commands.
-	Container container.CommandContainer
+	Container *container.TracedCommandContainer
 	// Workspace holds the data which is used by this runner.
 	Workspace *workspace.Workspace
+	// CASFS holds the FUSE-backed virtual filesystem, if it's enabled.
+	CASFS *casfs.CASFS
 
 	// State is the current state of the runner as it pertains to reuse.
 	state state
@@ -152,7 +158,11 @@ type CommandRunner struct {
 	diskUsageBytes   int64
 }
 
-func (r *CommandRunner) PrepareForTask(task *repb.ExecutionTask) error {
+func (r *CommandRunner) pullCredentials() container.PullCredentials {
+	return container.GetPullCredentials(r.env, r.PlatformProperties)
+}
+
+func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.ExecutionTask) error {
 	r.Workspace.SetTask(task)
 	// Clean outputs for the current task if applicable, in case
 	// those paths were written as read-only inputs in a previous action.
@@ -165,24 +175,44 @@ func (r *CommandRunner) PrepareForTask(task *repb.ExecutionTask) error {
 	if err := r.Workspace.CreateOutputDirs(); err != nil {
 		return status.UnavailableErrorf("Error creating output directory: %s", err.Error())
 	}
+
+	// Pull the container image before Run() is called, so that we don't
+	// use up the whole exec ctx timeout with a slow container pull.
+	err := container.PullImageIfNecessary(
+		ctx, r.env, r.imageCacheAuth,
+		r.Container, r.pullCredentials(), r.PlatformProperties.ContainerImage,
+	)
+	if err != nil {
+		return status.UnavailableErrorf("Error pulling container: %s", err)
+	}
+
 	return nil
 }
 
 func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+	wsPath := r.Workspace.Path()
+	if r.CASFS != nil {
+		wsPath = r.CASFS.GetMountDir()
+	}
+
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
 		// TODO: Remove this `Run` method and call lifecycle methods directly.
-		return r.Container.Run(ctx, command, r.Workspace.Path())
+		return r.Container.Run(ctx, command, wsPath, r.pullCredentials())
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
 	switch r.state {
 	case initial:
-		if err := r.Container.PullImageIfNecessary(ctx); err != nil {
+		err := container.PullImageIfNecessary(
+			ctx, r.env, r.imageCacheAuth,
+			r.Container, r.pullCredentials(), r.PlatformProperties.ContainerImage,
+		)
+		if err != nil {
 			return commandutil.ErrorResult(err)
 		}
-		if err := r.Container.Create(ctx, r.Workspace.Path()); err != nil {
+		if err := r.Container.Create(ctx, wsPath); err != nil {
 			return commandutil.ErrorResult(err)
 		}
 		r.state = ready
@@ -210,6 +240,11 @@ func (r *CommandRunner) Remove(ctx context.Context) error {
 	}
 	if err := r.Workspace.Remove(); err != nil {
 		errs = append(errs, err)
+	}
+	if r.CASFS != nil {
+		if err := r.CASFS.Unmount(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	if len(errs) > 0 {
 		return errSlice(errs)
@@ -251,6 +286,7 @@ func ACLForUser(user interfaces.UserInfo) *aclpb.ACL {
 // usage in this case.
 type Pool struct {
 	env              environment.Env
+	imageCacheAuth   *container.ImageCacheAuthenticator
 	podID            string
 	buildRoot        string
 	dockerClient     *dockerclient.Client
@@ -307,6 +343,7 @@ func NewPool(env environment.Env) (*Pool, error) {
 
 	p := &Pool{
 		env:              env,
+		imageCacheAuth:   container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}),
 		podID:            podID,
 		dockerClient:     dockerClient,
 		containerdSocket: containerdSocket,
@@ -496,7 +533,12 @@ func (p *Pool) WarmupDefaultImage() {
 		}
 
 		eg.Go(func() error {
-			if err := c.PullImageIfNecessary(egCtx); err != nil {
+			creds := container.GetPullCredentials(p.env, platProps)
+			err := container.PullImageIfNecessary(
+				egCtx, p.env, p.imageCacheAuth,
+				c, creds, platProps.ContainerImage,
+			)
+			if err != nil {
 				return err
 			}
 			log.Infof("Warmup: %s pulled default image %q in %s", containerType, image, time.Since(start))
@@ -533,20 +575,23 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	executorProps := platform.GetExecutorProperties(p.env.GetConfigurator().GetExecutorConfig())
 	props := platform.ParseProperties(task.GetCommand().GetPlatform())
 	// TODO: This mutates the task; find a cleaner way to do this.
-	if err := platform.ApplyOverrides(executorProps, props, task.GetCommand()); err != nil {
+	if err := platform.ApplyOverrides(p.env, executorProps, props, task.GetCommand()); err != nil {
 		return nil, err
 	}
 
-	// PermissionDenied and Unimplemented both imply that this is an
+	// PermissionDenied, Unauthenticated, Unimplemented all imply that this is an
 	// anonymous execution, so ignore those.
 	user, err := auth.UserFromTrustedJWT(ctx)
-	if err != nil && !status.IsPermissionDeniedError(err) && !status.IsUnimplementedError(err) {
+	if err != nil && !status.IsPermissionDeniedError(err) && !status.IsUnauthenticatedError(err) && !status.IsUnimplementedError(err) {
 		return nil, err
 	}
 	if props.RecycleRunner && err != nil {
 		return nil, status.InvalidArgumentError(
 			"runner recycling is not supported for anonymous builds " +
 				`(recycling was requested via platform property "recycle-runner=true")`)
+	}
+	if props.RecycleRunner && props.EnableCASFS {
+		return nil, status.InvalidArgumentError("CASFS is not yet supported for recycled runners")
 	}
 
 	instanceName := task.GetExecuteRequest().GetInstanceName()
@@ -557,13 +602,15 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		workerKey = strings.Join(workerArgs, " ")
 	}
 
+	wsOpts := &workspace.Opts{Preserve: props.PreserveWorkspace, CleanInputs: props.CleanWorkspaceInputs}
 	if props.RecycleRunner {
 		r, err := p.take(ctx, &query{
-			User:           user,
-			ContainerImage: props.ContainerImage,
-			WorkflowID:     props.WorkflowID,
-			InstanceName:   instanceName,
-			WorkerKey:      workerKey,
+			User:             user,
+			ContainerImage:   props.ContainerImage,
+			WorkflowID:       props.WorkflowID,
+			InstanceName:     instanceName,
+			WorkerKey:        workerKey,
+			WorkspaceOptions: wsOpts,
 		})
 		if err != nil {
 			return nil, err
@@ -574,35 +621,51 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			return r, nil
 		}
 	}
-	wsOpts := &workspace.Opts{Preserve: props.PreserveWorkspace}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
-	if err != nil {
-		return nil, err
-	}
 	ctr, err := p.newContainer(ctx, props, task.GetCommand())
 	if err != nil {
 		return nil, err
 	}
+	var cfs *casfs.CASFS
+	enableCASFS := p.env.GetConfigurator().GetExecutorConfig().EnableCASFS && props.EnableCASFS
+	// Firecracker requires mounting the FS inside the guest VM so we can't just swap out the directory in the runner.
+	if enableCASFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType {
+		casfsDir := ws.Path() + "_casfs"
+		if err := os.Mkdir(casfsDir, 0755); err != nil {
+			return nil, status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
+		}
+
+		cfs = casfs.New(ws.Path(), casfsDir, &casfs.Options{})
+		if err := cfs.Mount(); err != nil {
+			return nil, status.UnavailableErrorf("unable to mount CASFS at %q: %s", casfsDir, err)
+		}
+	}
 	r := &CommandRunner{
+		env:                p.env,
+		imageCacheAuth:     p.imageCacheAuth,
 		ACL:                ACLForUser(user),
 		PlatformProperties: props,
 		InstanceName:       instanceName,
 		WorkerKey:          workerKey,
 		Container:          ctr,
 		Workspace:          ws,
+		CASFS:              cfs,
 	}
 	p.runners = append(p.runners, r)
 	return r, nil
 }
 
-func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd *repb.Command) (container.CommandContainer, error) {
+func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd *repb.Command) (*container.TracedCommandContainer, error) {
 	var ctr container.CommandContainer
 	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:
 		opts := p.dockerOptions()
 		opts.ForceRoot = props.DockerForceRoot
+		opts.EnableCASFS = props.EnableCASFS
 		ctr = docker.NewDockerContainer(
-			p.dockerClient, props.ContainerImage, p.hostBuildRoot(), opts)
+			p.env, p.imageCacheAuth, p.dockerClient, props.ContainerImage,
+			p.hostBuildRoot(), opts,
+		)
 	case platform.ContainerdContainerType:
 		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
 	case platform.FirecrackerContainerType:
@@ -616,7 +679,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd
 			JailerRoot:             p.buildRoot,
 			AllowSnapshotStart:     false,
 		}
-		c, err := firecracker.NewContainer(p.env, opts)
+		c, err := firecracker.NewContainer(p.env, p.imageCacheAuth, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -648,6 +711,9 @@ type query struct {
 	// creating the runner.
 	// Required; the zero-value "" corresponds to the default instance name.
 	InstanceName string
+	// The workspace options for the desired runner. This query will only match
+	// runners with matching workspace options.
+	WorkspaceOptions *workspace.Opts
 }
 
 // take finds the most recently used runner in the pool that matches the given
@@ -662,7 +728,8 @@ func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 			r.PlatformProperties.ContainerImage != q.ContainerImage ||
 			r.PlatformProperties.WorkflowID != q.WorkflowID ||
 			r.WorkerKey != q.WorkerKey ||
-			r.InstanceName != q.InstanceName {
+			r.InstanceName != q.InstanceName ||
+			*r.Workspace.Opts != *q.WorkspaceOptions {
 			continue
 		}
 		if authErr := perms.AuthorizeWrite(&q.User, r.ACL); authErr != nil {

@@ -1,4 +1,4 @@
-export type ErrorCode = "Unknown" | "NotFound" | "PermissionDenied";
+export type ErrorCode = "Unknown" | "NotFound" | "PermissionDenied" | "Unauthenticated";
 
 export class BuildBuddyError extends Error {
   constructor(public code: ErrorCode, public description: string) {
@@ -14,7 +14,7 @@ export class BuildBuddyError extends Error {
     const pattern = /code = (.*?) desc = (.*)$/;
     const match = error.match(pattern);
     if (!match) {
-      return new BuildBuddyError("Unknown", "Internal error");
+      return new BuildBuddyError("Unknown", error || "Internal error");
     }
 
     const [_, code, description] = match;

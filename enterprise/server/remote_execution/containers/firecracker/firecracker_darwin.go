@@ -15,45 +15,52 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-type firecrackerContainer struct{}
+type FirecrackerContainer struct{}
 
-func NewContainer(env environment.Env, opts ContainerOpts) (*firecrackerContainer, error) {
-	c := &firecrackerContainer{}
+func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
+	c := &FirecrackerContainer{}
 	return c, nil
 }
 
-func (c *firecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string, creds container.PullCredentials) *interfaces.CommandResult {
 	return &interfaces.CommandResult{}
 }
 
-func (c *firecrackerContainer) Create(ctx context.Context, actionWorkingDir string) error {
+func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir string) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *firecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	return &interfaces.CommandResult{}
 }
 
-func (c *firecrackerContainer) PullImageIfNecessary(ctx context.Context) error {
+func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) {
+	return false, status.UnimplementedError("Not yet implemented.")
+}
+
+func (c *FirecrackerContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *firecrackerContainer) Remove(ctx context.Context) error {
+func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *firecrackerContainer) Pause(ctx context.Context) error {
+func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *firecrackerContainer) Unpause(ctx context.Context) error {
+func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *firecrackerContainer) Wait(ctx context.Context) error {
+func (c *FirecrackerContainer) Wait(ctx context.Context) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *firecrackerContainer) Stats(ctx context.Context) (*container.Stats, error) {
+func (c *FirecrackerContainer) Stats(ctx context.Context) (*container.Stats, error) {
 	return nil, status.UnimplementedError("Not yet implemented.")
+}
+
+func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileSystemLayout) {
 }

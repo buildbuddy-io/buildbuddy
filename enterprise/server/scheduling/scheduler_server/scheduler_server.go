@@ -1,7 +1,6 @@
 package scheduler_server
 
 import (
-	"container/list"
 	"context"
 	"fmt"
 	"io"
@@ -16,13 +15,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
-	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis/v8"
@@ -31,7 +27,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 
-	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -71,7 +66,9 @@ const (
 	redisTaskClaimedField     = "claimed"
 
 	// Maximum number of unclaimed task IDs we track per pool.
-	maxUnclaimedTasksTracked = 1000
+	maxUnclaimedTasksTracked = 10_000
+	// TTL for sets used to track unclaimed tasks in Redis. TTL is extended when new tasks are added.
+	unclaimedTaskSetTTL = 1 * time.Hour
 
 	unusedSchedulerClientExpiration    = 5 * time.Minute
 	unusedSchedulerClientCheckInterval = 1 * time.Minute
@@ -178,79 +175,44 @@ type nodePoolKey struct {
 	pool    string
 }
 
-func (k *nodePoolKey) toRedisKey() string {
-	key := "executorPool/"
+func (k *nodePoolKey) redisKeySuffix() string {
+	key := ""
 	if k.groupID != "" {
 		key += k.groupID + "-"
 	}
 	return key + fmt.Sprintf("%s-%s-%s", k.os, k.arch, k.pool)
 }
 
+func (k *nodePoolKey) redisPoolKey() string {
+	return "executorPool/" + k.redisKeySuffix()
+}
+
+func (k *nodePoolKey) redisUnclaimedTasksKey() string {
+	return "unclaimedTasks/" + k.redisKeySuffix()
+}
+
 type nodePool struct {
-	env            environment.Env
-	mu             sync.Mutex
-	lastFetch      time.Time
-	useRedis       bool
-	nodes          []*executionNode
-	key            nodePoolKey
-	unclaimedTasks *unclaimedTasksList
+	env       environment.Env
+	rdb       *redis.Client
+	mu        sync.Mutex
+	lastFetch time.Time
+	nodes     []*executionNode
+	key       nodePoolKey
 	// Executors that are currently connected to this instance of the scheduler server.
 	connectedExecutors []*executionNode
 }
 
-func newNodePool(env environment.Env, key nodePoolKey, useRedis bool) *nodePool {
+func newNodePool(env environment.Env, key nodePoolKey) *nodePool {
 	np := &nodePool{
-		env:            env,
-		key:            key,
-		useRedis:       useRedis,
-		unclaimedTasks: newUnclaimedTasksList(),
+		env: env,
+		key: key,
+		rdb: env.GetRemoteExecutionRedisClient(),
 	}
 	return np
 }
 
-// TODO(tylerw): if/when we have "enough" execution nodes, we could do some of the
-// coarse filtering (in sql) by constraints.
-func (np *nodePool) fetchExecutionNodesFromDB(ctx context.Context) ([]*executionNode, error) {
-	db := np.env.GetDBHandle()
-	if db == nil {
-		return nil, status.FailedPreconditionError("database not configured")
-	}
-
-	sql := `SELECT * FROM ExecutionNodes WHERE os = ? AND pool = ? AND arch = ?`
-	args := []interface{}{np.key.os, np.key.pool, np.key.arch}
-	if np.key.groupID != "" {
-		sql += ` AND group_id = ?`
-		args = append(args, np.key.groupID)
-	}
-	sql += ` LIMIT 1000`
-
-	rows, err := db.WithContext(ctx).Raw(sql, args...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	executionNodes := make([]*executionNode, 0)
-	for rows.Next() {
-		en := tables.ExecutionNode{}
-		if err := db.ScanRows(rows, &en); err != nil {
-			return nil, err
-		}
-		node := &executionNode{
-			executorID:            en.ExecutorID,
-			schedulerHostPort:     en.SchedulerHostPort,
-			assignableMemoryBytes: en.AssignableMemoryBytes,
-			assignableMilliCpu:    en.AssignableMilliCPU,
-		}
-		executionNodes = append(executionNodes, node)
-	}
-	return executionNodes, nil
-}
-
-func (np *nodePool) fetchExecutionNodesFromRedis(ctx context.Context) ([]*executionNode, error) {
-	rdb := np.env.GetRemoteExecutionRedisClient()
-
-	redisExecutors, err := rdb.HGetAll(ctx, np.key.toRedisKey()).Result()
+func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, error) {
+	redisExecutors, err := np.rdb.HGetAll(ctx, np.key.redisPoolKey()).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -270,13 +232,6 @@ func (np *nodePool) fetchExecutionNodesFromRedis(ctx context.Context) ([]*execut
 	}
 
 	return executors, nil
-}
-
-func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, error) {
-	if np.useRedis {
-		return np.fetchExecutionNodesFromRedis(ctx)
-	}
-	return np.fetchExecutionNodesFromDB(ctx)
 }
 
 func (np *nodePool) RefreshNodes(ctx context.Context) error {
@@ -361,70 +316,52 @@ func (np *nodePool) FindConnectedExecutorByID(executorID string) *executionNode 
 	return nil
 }
 
-// unclaimedTasksList maintains a subset of unclaimed task IDs that can be given out to newly registered executors.
-// Only the most recent maxUnclaimedTasksTracked task IDs are kept.
-type unclaimedTasksList struct {
-	taskList *list.List
-	taskMap  map[string]*list.Element
-	mu       sync.Mutex
+func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
+	key := np.key.redisUnclaimedTasksKey()
+	m := &redis.Z{
+		Member: taskID,
+		Score:  float64(time.Now().Unix()),
+	}
+	err := np.rdb.ZAdd(ctx, key, m).Err()
+	if err != nil {
+		return err
+	}
+	err = np.rdb.Expire(ctx, key, unclaimedTaskSetTTL).Err()
+	if err != nil {
+		return err
+	}
+
+	// Trim the set if necessary.
+	// The next 2 commands are not atomic but it's okay if the list length is not exactly what we want.
+	n, err := np.rdb.ZCard(ctx, key).Result()
+	if err != nil {
+		return err
+	}
+	if n > maxUnclaimedTasksTracked {
+		// Trim the oldest tasks. We use the task insertion timestamp as the score so the oldest task is at rank 0, next
+		// oldest is at rank 1 and so on. We subtract 1 because the indexes are inclusive.
+		return np.rdb.ZRemRangeByRank(ctx, key, 0, n-maxUnclaimedTasksTracked-1).Err()
+	}
+	return nil
 }
 
-func newUnclaimedTasksList() *unclaimedTasksList {
-	l := &unclaimedTasksList{}
-	l.taskList = list.New()
-	l.taskMap = make(map[string]*list.Element)
-	return l
+func (np *nodePool) RemoveUnclaimedTask(ctx context.Context, taskID string) error {
+	return np.rdb.ZRem(ctx, np.key.redisUnclaimedTasksKey(), taskID).Err()
 }
 
-func (l *unclaimedTasksList) addTask(taskID string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if _, exists := l.taskMap[taskID]; exists {
-		return
+func (np *nodePool) SampleUnclaimedTasks(ctx context.Context, n int) ([]string, error) {
+	// Get all task IDs. Redis >=6.2 has a ZRANDMEMBER command, but we don't want to assume that onprem customers have a
+	// relatively new Redis version.
+	unclaimed, err := np.rdb.ZRange(ctx, np.key.redisUnclaimedTasksKey(), 0, -1).Result()
+	if err != nil {
+		return nil, err
 	}
-	e := l.taskList.PushBack(taskID)
-	l.taskMap[taskID] = e
-	if l.taskList.Len() > maxUnclaimedTasksTracked {
-		v := l.taskList.Remove(l.taskList.Front())
-		s, ok := v.(string)
-		if !ok { // Should never happen.
-			log.Warningf("non-string value in list: %T", v)
-			return
-		}
-		delete(l.taskMap, s)
-	}
-}
-
-func (l *unclaimedTasksList) removeTask(taskID string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	e, ok := l.taskMap[taskID]
-	if !ok {
-		return
-	}
-	delete(l.taskMap, taskID)
-	l.taskList.Remove(e)
-}
-
-func (l *unclaimedTasksList) sample(n int) []string {
-	l.mu.Lock()
-	unclaimed := make([]string, 0, l.taskList.Len())
-	for e := l.taskList.Front(); e != nil; e = e.Next() {
-		taskID, ok := e.Value.(string)
-		if !ok {
-			log.Warningf("Unexpected type in container: %T", e.Value)
-			continue
-		}
-		unclaimed = append(unclaimed, taskID)
-	}
-	l.mu.Unlock()
-
 	// Random sample (without replacement) up to `count` tasks from the
 	// returned results.
 	rand.Shuffle(len(unclaimed), func(i, j int) {
 		unclaimed[i], unclaimed[j] = unclaimed[j], unclaimed[i]
 	})
-	return unclaimed[:minInt(n, len(unclaimed))]
+	return unclaimed[:minInt(n, len(unclaimed))], nil
 }
 
 type persistedTask struct {
@@ -593,9 +530,6 @@ func (s *SchedulerServer) checkPreconditions(node *scpb.ExecutionNode) error {
 		return status.FailedPreconditionErrorf("Cannot register node with empty host/port: %s:%d", node.GetHost(), node.GetPort())
 	}
 
-	if s.env.GetDBHandle() == nil {
-		return status.FailedPreconditionError("No database configured")
-	}
 	return nil
 }
 
@@ -624,31 +558,11 @@ func (s *SchedulerServer) RemoveConnectedExecutor(ctx context.Context, handle ex
 	log.Infof("Scheduler: unregistered worker node: %q", addr)
 }
 
-func (s *SchedulerServer) deleteNodeFromDB(ctx context.Context, node *scpb.ExecutionNode) error {
-	if err := s.checkPreconditions(node); err != nil {
-		return err
-	}
-	return s.env.GetDBHandle().WithContext(ctx).Exec("DELETE FROM ExecutionNodes WHERE host = ? and port = ?",
-		node.GetHost(), node.GetPort()).Error
-}
-
-func (s *SchedulerServer) deleteNodeFromRedis(ctx context.Context, node *scpb.ExecutionNode, poolKey nodePoolKey) error {
-	if err := s.checkPreconditions(node); err != nil {
-		return err
-	}
-	return s.rdb.HDel(ctx, poolKey.toRedisKey(), node.GetExecutorId()).Err()
-}
-
 func (s *SchedulerServer) deleteNode(ctx context.Context, node *scpb.ExecutionNode, poolKey nodePoolKey) error {
-	err := s.deleteNodeFromDB(ctx, node)
-	if err != nil {
+	if err := s.checkPreconditions(node); err != nil {
 		return err
 	}
-	err = s.deleteNodeFromRedis(ctx, node, poolKey)
-	if err != nil {
-		return err
-	}
-	return nil
+	return s.rdb.HDel(ctx, poolKey.redisPoolKey(), node.GetExecutorId()).Err()
 }
 
 func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle executor_handle.ExecutorHandle, node *scpb.ExecutionNode) error {
@@ -679,66 +593,12 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle execu
 
 }
 
-func (s *SchedulerServer) insertOrUpdateNodeInDB(ctx context.Context, executorHandle executor_handle.ExecutorHandle, node *scpb.ExecutionNode, permissions int) error {
-	host := node.GetHost()
-	port := node.GetPort()
-	groupID := executorHandle.GroupID()
-
-	tableNode := &tables.ExecutionNode{
-		Host:                  host,
-		Port:                  port,
-		AssignableMemoryBytes: node.GetAssignableMemoryBytes(),
-		AssignableMilliCPU:    node.GetAssignableMilliCpu(),
-		OS:                    node.GetOs(),
-		Arch:                  node.GetArch(),
-		Pool:                  node.GetPool(),
-		SchedulerHostPort:     s.ownHostPort,
-		GroupID:               groupID,
-		Version:               node.GetVersion(),
-		Perms:                 permissions,
-		ExecutorID:            node.GetExecutorId(),
-	}
-
-	return s.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
-		var existing tables.ExecutionNode
-		if err := tx.Where("group_id = ? AND host = ? AND port = ?", groupID, host, port).First(&existing).Error; err != nil {
-			if db.IsRecordNotFound(err) {
-				return tx.Create(tableNode).Error
-			}
-			return err
-		}
-		return tx.Model(&existing).Where("group_id = ? AND host = ? AND port = ?", groupID, host, port).Updates(tableNode).Error
-	})
-}
-
 func (s *SchedulerServer) redisKeyForExecutorPools(groupID string) string {
 	key := "executorPools/"
 	if s.enableUserOwnedExecutors {
 		key += groupID
 	}
 	return key
-}
-
-func (s *SchedulerServer) insertOrUpdateNodeInRedis(ctx context.Context, executorHandle executor_handle.ExecutorHandle, node *scpb.ExecutionNode, poolKey nodePoolKey, acl *aclpb.ACL) error {
-	groupID := executorHandle.GroupID()
-
-	r := &scpb.RegisteredExecutionNode{
-		Registration:      node,
-		SchedulerHostPort: s.ownHostPort,
-		GroupId:           groupID,
-		Acl:               acl,
-	}
-	b, err := proto.Marshal(r)
-	if err != nil {
-		return err
-	}
-
-	pipe := s.rdb.TxPipeline()
-	poolRedisKey := poolKey.toRedisKey()
-	pipe.HSet(ctx, poolRedisKey, node.GetExecutorId(), b)
-	pipe.SAdd(ctx, s.redisKeyForExecutorPools(groupID), poolRedisKey)
-	_, err = pipe.Exec(ctx)
-	return err
 }
 
 func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle executor_handle.ExecutorHandle, node *scpb.ExecutionNode, poolKey nodePoolKey) error {
@@ -754,14 +614,24 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 	}
 	acl := perms.ToACLProto(nil /* userID= */, executorHandle.GroupID(), permissions)
 
-	err := s.insertOrUpdateNodeInDB(ctx, executorHandle, node, permissions)
+	groupID := executorHandle.GroupID()
+
+	r := &scpb.RegisteredExecutionNode{
+		Registration:      node,
+		SchedulerHostPort: s.ownHostPort,
+		GroupId:           groupID,
+		Acl:               acl,
+	}
+	b, err := proto.Marshal(r)
 	if err != nil {
 		return err
 	}
-	err = s.insertOrUpdateNodeInRedis(ctx, executorHandle, node, poolKey, acl)
-	if err != nil {
-		return err
-	}
+
+	pipe := s.rdb.TxPipeline()
+	poolRedisKey := poolKey.redisPoolKey()
+	pipe.HSet(ctx, poolRedisKey, node.GetExecutorId(), b)
+	pipe.SAdd(ctx, s.redisKeyForExecutorPools(groupID), poolRedisKey)
+	_, err = pipe.Exec(ctx)
 	return err
 }
 
@@ -990,7 +860,7 @@ func (s *SchedulerServer) getOrCreatePool(key nodePoolKey) *nodePool {
 	if ok {
 		return nodePool
 	}
-	nodePool = newNodePool(s.env, key, s.env.GetConfigurator().GetRemoteExecutionConfig().UseRedisForExecutorPools)
+	nodePool = newNodePool(s.env, key)
 	s.pools[key] = nodePool
 	return nodePool
 }
@@ -1000,7 +870,10 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 	if !ok {
 		return nil, nil
 	}
-	taskIDs := nodePool.unclaimedTasks.sample(count)
+	taskIDs, err := nodePool.SampleUnclaimedTasks(ctx, count)
+	if err != nil {
+		return nil, err
+	}
 	tasks, err := s.readTasks(ctx, taskIDs)
 	if err != nil {
 		return nil, err
@@ -1106,13 +979,12 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 
 	for {
 		req, err := stream.Recv()
-		log.Debugf("LeaseTask RECV %q, req: %+v, err: %v", taskID, req, err)
 		if err == io.EOF {
-			log.Debugf("LeaseTask %q got EOF", taskID)
+			log.Warningf("LeaseTask %q got EOF: %s", taskID, err)
 			break
 		}
 		if err != nil {
-			log.Debugf("LeaseTask %q recv with err: %s", taskID, err.Error())
+			log.Warningf("LeaseTask %q recv with err: %s", taskID, err)
 			break
 		}
 		if req.GetTaskId() == "" || taskID != "" && req.GetTaskId() != taskID {
@@ -1150,7 +1022,10 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			}
 			nodePool, ok := s.getPool(key)
 			if ok {
-				nodePool.unclaimedTasks.removeTask(taskID)
+				err := nodePool.RemoveUnclaimedTask(ctx, taskID)
+				if err != nil {
+					log.Warningf("Could not remove task from unclaimed list: %s", err)
+				}
 			}
 
 			// Prometheus: observe queue wait time.
@@ -1161,15 +1036,17 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 
 		closing = req.GetFinalize()
 		if closing && claimed {
-			if err := s.deleteClaimedTask(ctx, taskID); err == nil {
+			err := s.deleteClaimedTask(ctx, taskID)
+			if err == nil {
 				claimed = false
 				log.Infof("LeaseTask task %q successfully finalized by %q", taskID, executorID)
+			} else {
+				log.Warningf("Could not delete claimed task %q: %s", taskID, err)
 			}
 		}
 
 		rsp.ClosedCleanly = !claimed
 		lastCheckin = time.Now()
-		log.Debugf("LeaseTask SEND %q, req: %+v", taskID, rsp)
 		if err := stream.Send(rsp); err != nil {
 			return err
 		}
@@ -1210,7 +1087,10 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		return err
 	}
 
-	nodeBalancer.unclaimedTasks.addTask(enqueueRequest.GetTaskId())
+	err = nodeBalancer.AddUnclaimedTask(ctx, enqueueRequest.GetTaskId())
+	if err != nil {
+		log.Warningf("Could not add task to unclaimed task list: %s", err)
+	}
 
 	probeCount := minInt(opts.numReplicas, nodeCount)
 	probesSent := 0
@@ -1428,52 +1308,6 @@ func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupI
 	return executionNodes, nil
 }
 
-func (s *SchedulerServer) getExecutionNodesFromDB(ctx context.Context, groupID string) ([]*scpb.ExecutionNode, error) {
-	db := s.env.GetDBHandle()
-	if db == nil {
-		return nil, status.FailedPreconditionError("database not configured")
-	}
-
-	// If executor auth is not enabled, executors do not belong to any group.
-	if !s.requireExecutorAuthorization {
-		groupID = ""
-	}
-
-	q := query_builder.NewQuery("SELECT * FROM ExecutionNodes")
-	q.AddWhereClause("group_id = ?", groupID)
-	if err := perms.AddPermissionsCheckToQuery(ctx, s.env, q); err != nil {
-		return nil, err
-	}
-	query, args := q.Build()
-	rows, err := db.WithContext(ctx).Raw(query, args...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	executionNodes := make([]*scpb.ExecutionNode, 0)
-	for rows.Next() {
-		en := tables.ExecutionNode{}
-		if err := db.ScanRows(rows, &en); err != nil {
-			return nil, err
-		}
-		node := &scpb.ExecutionNode{
-			Host:                  en.Host,
-			Port:                  en.Port,
-			AssignableMemoryBytes: en.AssignableMemoryBytes,
-			AssignableMilliCpu:    en.AssignableMilliCPU,
-			Os:                    en.OS,
-			Arch:                  en.Arch,
-			Pool:                  en.Pool,
-			ExecutorId:            en.ExecutorID,
-			Version:               en.Version,
-		}
-		executionNodes = append(executionNodes, node)
-	}
-
-	return executionNodes, nil
-}
-
 func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error) {
 	groupID := req.GetRequestContext().GetGroupId()
 	if groupID == "" {
@@ -1485,19 +1319,9 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		groupID = ""
 	}
 
-	var executionNodes []*scpb.ExecutionNode
-	if s.env.GetConfigurator().GetRemoteExecutionConfig().UseRedisForExecutorPools {
-		ns, err := s.getExecutionNodesFromRedis(ctx, groupID)
-		if err != nil {
-			return nil, err
-		}
-		executionNodes = ns
-	} else {
-		ns, err := s.getExecutionNodesFromDB(ctx, groupID)
-		if err != nil {
-			return nil, err
-		}
-		executionNodes = ns
+	executionNodes, err := s.getExecutionNodesFromRedis(ctx, groupID)
+	if err != nil {
+		return nil, err
 	}
 
 	userOwnedExecutorsEnabled := s.enableUserOwnedExecutors

@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 
@@ -114,8 +113,7 @@ func structuredCommandLineEvent(env map[string]string) *anypb.Any {
 func assertAPIKeyRedacted(t *testing.T, invocation *inpb.Invocation, apiKey string) {
 	txt := proto.MarshalTextString(invocation)
 	assert.NotContains(t, txt, apiKey, "API key %q should not appear in invocation", apiKey)
-	assert.Contains(t, txt, "--remote_header='x-buildbuddy-api-key=<REDACTED>'", "All remote headers should be redacted")
-	assert.Contains(t, txt, "--should_be_redacted=<REDACTED>", "BuildBuddy API key should be redacted, even if not in remote header")
+	assert.NotContains(t, txt, "x-buildbuddy-api-key", "All remote headers should be redacted")
 }
 
 func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
@@ -165,6 +163,7 @@ func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
+	assert.Equal(t, "", invocation.RepoUrl)
 
 	assertAPIKeyRedacted(t, invocation, "USER1")
 }
@@ -205,79 +204,7 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
-
-	assertAPIKeyRedacted(t, invocation, "USER1")
-}
-
-func TestAuthenticatedHandleEventWithStartedFirst_OptimizedAPIKeyRedaction(t *testing.T) {
-	flags.Set(t, "enable_optimized_redaction", "true")
-	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
-	te.SetAuthenticator(auth)
-	ctx := context.Background()
-
-	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, "test-invocation-id")
-
-	// Send authenticated started event with api key
-	request := streamRequest(startedEvent("--remote_upload_local_results --remote_header='"+testauth.APIKeyHeader+"=USER1' --remote_instance_name=foo --should_be_redacted=USER1"), "test-invocation-id", 1)
-	err := channel.HandleEvent(request)
-	assert.NoError(t, err)
-
-	// Look up the invocation and make sure it's only visible to group
-	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
-	assert.NoError(t, err)
-	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
-
-	// Now write the workspace status event to ensure all events are written,
-	// then make sure the API key is not visible in the returned invocation.
-	request = streamRequest(workspaceStatusEvent("", ""), "test-invocation-id", 2)
-	err = channel.HandleEvent(request)
-	assert.NoError(t, err)
-	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
-	assert.NoError(t, err)
-	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
-
-	assertAPIKeyRedacted(t, invocation, "USER1")
-}
-
-func TestAuthenticatedHandleEventWithProgressFirst_OptimizedAPIKeyRedaction(t *testing.T) {
-	flags.Set(t, "enable_optimized_redaction", "true")
-	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
-	te.SetAuthenticator(auth)
-	ctx := context.Background()
-
-	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, "test-invocation-id")
-
-	// Send progress event
-	request := streamRequest(progressEvent(), "test-invocation-id", 1)
-	err := channel.HandleEvent(request)
-	assert.NoError(t, err)
-
-	// Make sure invocation isn't written yet
-	invocation, err := build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
-	assert.Error(t, err)
-
-	// Send started event with api key
-	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1' --should_be_redacted=USER1"), "test-invocation-id", 2)
-	err = channel.HandleEvent(request)
-	assert.NoError(t, err)
-
-	// Look up the invocation and make sure it's only visible to group
-	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
-	assert.NoError(t, err)
-	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
-
-	// Now write the workspace status event to ensure all events are written,
-	// then make sure the API key is not visible in the returned invocation.
-	request = streamRequest(workspaceStatusEvent("", ""), "test-invocation-id", 2)
-	err = channel.HandleEvent(request)
-	assert.NoError(t, err)
-	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
-	assert.NoError(t, err)
-	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
+	assert.Equal(t, "", invocation.RepoUrl)
 
 	assertAPIKeyRedacted(t, invocation, "USER1")
 }
@@ -435,61 +362,7 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 	// Look up the invocation and make sure we redacted correctly
 	invocation, err := build_event_handler.LookupInvocation(te, ctx, "test-invocation-id")
 	assert.NoError(t, err)
-	txt := proto.MarshalTextString(invocation)
-	assert.NotContains(t, txt, "secret_env_value", "Env secrets should not appear in invocation")
-	assert.NotContains(t, txt, "githubToken", "URL secrets should not appear in invocation")
-	assert.Contains(t, txt, "--client_env=FOO_ALLOWED=public_env_value", "Values of allowed env vars should not be redacted")
-	assert.Contains(t, txt, "--client_env=FOO_SECRET=<REDACTED>", "Values of non-allowed env vars should be redacted")
-}
-
-func TestHandleEventWithEnvAndMetadataRedaction_OptimizedRedactionEnabled(t *testing.T) {
-	flags.Set(t, "enable_optimized_redaction", "true")
-	te := testenv.GetTestEnv(t)
-	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
-	te.SetAuthenticator(auth)
-	ctx := context.Background()
-
-	handler := build_event_handler.NewBuildEventHandler(te)
-	channel := handler.OpenChannel(ctx, "test-invocation-id")
-
-	// Send unauthenticated started event without an api key
-	request := streamRequest(startedEvent(
-		"--remote_upload_local_results "+
-			"--build_metadata='ALLOW_ENV=FOO_ALLOWED' "+
-			"--build_metadata='REPO_URL=https://username:githubToken@github.com/acme-inc/acme'",
-	), "test-invocation-id", 1)
-	err := channel.HandleEvent(request)
-	assert.NoError(t, err)
-
-	// Send env and metadata with info that should be redacted
-	request = streamRequest(structuredCommandLineEvent(map[string]string{
-		"FOO_ALLOWED": "public_env_value",
-		"FOO_SECRET":  "secret_env_value",
-	}), "test-invocation-id", 2)
-	err = channel.HandleEvent(request)
-	assert.NoError(t, err)
-
-	request = streamRequest(buildMetadataEvent(map[string]string{
-		// Note: ALLOW_ENV is also present in the build metadata event (not just the
-		// started event). The build metadata event may come after the structured
-		// command line event, which contains the env vars, but we should still
-		// redact properly in this case.
-		"ALLOW_ENV": "FOO_ALLOWED",
-		"REPO_URL":  "https://username:githubToken@github.com/acme-inc/acme",
-	}), "test-invocation-id", 3)
-	err = channel.HandleEvent(request)
-	assert.NoError(t, err)
-
-	// Send workspace status so events get flushed. Include a secret here as well.
-	request = streamRequest(workspaceStatusEvent(
-		"REPO_URL", "https://username:githubToken@github.com/acme-inc/acme",
-	), "test-invocation-id", 4)
-	err = channel.HandleEvent(request)
-	assert.NoError(t, err)
-
-	// Look up the invocation and make sure we redacted correctly
-	invocation, err := build_event_handler.LookupInvocation(te, ctx, "test-invocation-id")
-	assert.NoError(t, err)
+	assert.Equal(t, "https://github.com/acme-inc/acme", invocation.RepoUrl)
 	txt := proto.MarshalTextString(invocation)
 	assert.NotContains(t, txt, "secret_env_value", "Env secrets should not appear in invocation")
 	assert.NotContains(t, txt, "githubToken", "URL secrets should not appear in invocation")

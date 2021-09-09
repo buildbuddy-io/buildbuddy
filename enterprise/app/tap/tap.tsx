@@ -342,7 +342,9 @@ export default class TapComponent extends React.Component<Props> {
                         {targetHistory.targetStatus
                           .slice(0, this.state.invocationLimit)
                           .map((status: target.TargetStatus) => {
-                            let destinationUrl = `/invocation/${status.invocationId}?target=${targetHistory.target.label}`;
+                            let destinationUrl = `/invocation/${status.invocationId}?target=${encodeURIComponent(
+                              targetHistory.target.label
+                            )}`;
                             return (
                               <a
                                 key={targetHistory.target.id + status.invocationId}

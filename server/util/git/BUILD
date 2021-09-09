@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//server/util/log",
         "//server/util/status",
-        "@com_github_whilp_git_urls//:git-urls",
     ],
 )
 

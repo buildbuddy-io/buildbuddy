@@ -8,8 +8,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -69,9 +72,12 @@ func TestDockerRun(t *testing.T) {
 		Stderr:             []byte("foo"),
 		CommandDebugString: "(docker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
 	}
-	c := docker.NewDockerContainer(dc, "docker.io/library/busybox", rootDir, cfg)
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c := docker.NewDockerContainer(env, cacheAuth, dc, "docker.io/library/busybox", rootDir, cfg)
 
-	res := c.Run(ctx, cmd, workDir)
+	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
 
 	assert.Equal(t, expectedResult, res)
 }
@@ -102,7 +108,10 @@ func TestDockerLifecycleControl(t *testing.T) {
 		Stderr:             []byte("foo"),
 		CommandDebugString: "(docker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
 	}
-	c := docker.NewDockerContainer(dc, "docker.io/library/busybox", rootDir, cfg)
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c := docker.NewDockerContainer(env, cacheAuth, dc, "docker.io/library/busybox", rootDir, cfg)
 
 	isContainerRunning := false
 	t.Cleanup(func() {

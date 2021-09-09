@@ -70,4 +70,6 @@ type Env interface {
 	GetRepoDownloader() interfaces.RepoDownloader
 	GetWorkflowService() interfaces.WorkflowService
 	GetGitProviders() interfaces.GitProviders
+	GetUsageService() interfaces.UsageService
+	GetXCodeLocator() interfaces.XcodeLocator
 }

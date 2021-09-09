@@ -20,6 +20,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
+	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 )
 
@@ -155,11 +156,6 @@ func (t CacheType) Prefix() string {
 // Similar to the Cache above, a digest cache allows for more intelligent
 // storing of blob data based on its size.
 type Cache interface {
-	// Returns a new Cache that will store everything under the prefix
-	// specified by "prefix". The prefix specified is concatenated onto the
-	// currently set prefix -- so this is a relative operation, not an
-	// absolute one.
-	WithPrefix(prefix string) Cache
 	// WithIsolation returns a cache accessor that guarantees that data for a given cacheType and
 	// remoteInstanceCombination is isolated from any other cacheType and remoteInstanceName combination.
 	WithIsolation(ctx context.Context, cacheType CacheType, remoteInstanceName string) (Cache, error)
@@ -252,6 +248,10 @@ type InvocationStatService interface {
 type InvocationSearchService interface {
 	IndexInvocation(ctx context.Context, invocation *inpb.Invocation) error
 	QueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error)
+}
+
+type UsageService interface {
+	GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error)
 }
 
 type ApiService interface {
@@ -497,4 +497,13 @@ type HealthChecker interface {
 	// This is intended to be used by tests as normally shutdown is automatically initiated upon receipt of a SIGTERM
 	// signal.
 	Shutdown()
+}
+
+// Locates all XCode versions installed on the host system.
+type XcodeLocator interface {
+	// Returns the developer directory and SDKs for the given XCode version.
+	DeveloperDirForVersion(version string) (string, error)
+
+	// Returns true if the given SDK path is present in the given XCode version.
+	IsSDKPathPresentForVersion(sdkPath, version string) bool
 }

@@ -107,9 +107,7 @@ type OrClauses struct {
 
 func (o *OrClauses) AddOr(clause string, args ...interface{}) *OrClauses {
 	o.whereClauses = append(o.whereClauses, pad(clause))
-	for _, arg := range args {
-		o.arguments = append(o.arguments, arg)
-	}
+	o.arguments = append(o.arguments, args...)
 	return o
 }
 

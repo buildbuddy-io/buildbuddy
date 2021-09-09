@@ -13,7 +13,7 @@ storage:
   disk:
     root_directory: /tmp/buildbuddy_enterprise
 cache:
-  max_size_bytes: 1000000000 # 1 GB
+  max_size_bytes: 10000000000 # 10 GB
   #in_memory: true
   disk:
     root_directory: /tmp/buildbuddy-enterprise-cache

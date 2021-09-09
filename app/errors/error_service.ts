@@ -1,12 +1,26 @@
-import { BuildBuddyError } from "../../app/util/errors";
+import router from "../router/router";
+import { BuildBuddyError, ErrorCode } from "../util/errors";
 import alertService from "../alert/alert_service";
 
+const ERROR_SEARCH_PARAM = "error";
 export class ErrorService {
-  handleError(e: any) {
-    console.error(e);
+  register() {
+    let searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.has(ERROR_SEARCH_PARAM)) {
+      this.handleError(searchParams.get(ERROR_SEARCH_PARAM));
+      searchParams.delete(ERROR_SEARCH_PARAM);
+      router.replaceParams(Object.fromEntries(searchParams.entries()));
+    }
+  }
 
-    const message = String(e instanceof BuildBuddyError ? e : BuildBuddyError.parse(e));
-    alertService.error(message);
+  handleError(e: any, options?: { ignoreErrorCodes: ErrorCode[] }) {
+    console.error(e);
+    const error = e instanceof BuildBuddyError ? e : BuildBuddyError.parse(e);
+    if (options?.ignoreErrorCodes?.includes(error.code)) {
+      console.log("Ignoring error code: " + error.code);
+      return;
+    }
+    alertService.error(String(error));
   }
 }
 

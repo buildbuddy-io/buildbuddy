@@ -1,21 +1,29 @@
 import moment from "moment";
 import React from "react";
-import { DateRangePicker, OnChangeProps, RangeWithKey } from "react-date-range";
+import { DateRangePicker, OnChangeProps, Range } from "react-date-range";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Popup from "../../../app/components/popup/popup";
 import Radio from "../../../app/components/radio/radio";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import { formatDateRange } from "../../../app/format/format";
-import router from "../../../app/router/router";
-import { invocation } from "../../../proto/invocation_ts_proto";
-import {
-  parseStatusParam,
-  statusToString,
-  toStatusParam,
+import router, {
   START_DATE_PARAM_NAME,
   END_DATE_PARAM_NAME,
   ROLE_PARAM_NAME,
   STATUS_PARAM_NAME,
+  LAST_N_DAYS_PARAM_NAME,
+} from "../../../app/router/router";
+import { invocation } from "../../../proto/invocation_ts_proto";
+import {
+  parseRoleParam,
+  toRoleParam,
+  parseStatusParam,
+  toStatusParam,
+  statusToString,
+  getEndDate,
+  getStartDate,
+  DATE_PARAM_FORMAT,
+  DEFAULT_LAST_N_DAYS,
 } from "./filter_util";
 
 export interface FilterProps {
@@ -27,7 +35,24 @@ interface State {
   isFilterMenuOpen?: boolean;
 }
 
-const DATE_PARAM_FORMAT = "YYYY-MM-DD";
+type PresetRange = {
+  label: string;
+  isSelected?: (range: Range) => boolean;
+  range: () => CustomDateRange;
+};
+
+/**
+ * CustomDateRange is a react-date-range `Range` extended with some custom properties.
+ */
+type CustomDateRange = Range & {
+  /**
+   * For the "last {N} days" options, the number of days to look
+   * back (relative to today).
+   */
+  days?: number;
+};
+
+const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
 
 export default class FilterComponent extends React.Component<FilterProps, State> {
   state: State = {};
@@ -39,11 +64,21 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     this.setState({ isDatePickerOpen: false });
   }
   private onDateChange(range: OnChangeProps) {
-    const selection = (range as { selection: RangeWithKey }).selection;
+    const selection = (range as { selection: CustomDateRange }).selection;
+    if (selection.days) {
+      router.setQuery({
+        ...Object.fromEntries(this.props.search.entries()),
+        [START_DATE_PARAM_NAME]: "",
+        [END_DATE_PARAM_NAME]: "",
+        [LAST_N_DAYS_PARAM_NAME]: String(selection.days),
+      });
+      return;
+    }
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
       [START_DATE_PARAM_NAME]: moment(selection.startDate).format(DATE_PARAM_FORMAT),
       [END_DATE_PARAM_NAME]: moment(selection.endDate).format(DATE_PARAM_FORMAT),
+      [LAST_N_DAYS_PARAM_NAME]: "",
     });
   }
 
@@ -61,10 +96,16 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     });
   }
 
-  private onRoleChange(role: string) {
+  private onRoleToggle(role: string, selected: Set<string>) {
+    selected = new Set(selected); // clone
+    if (selected.has(role)) {
+      selected.delete(role);
+    } else {
+      selected.add(role);
+    }
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
-      [ROLE_PARAM_NAME]: role,
+      [ROLE_PARAM_NAME]: toRoleParam(selected),
     });
   }
 
@@ -79,6 +120,15 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       ...Object.fromEntries(this.props.search.entries()),
       [STATUS_PARAM_NAME]: toStatusParam(selected),
     });
+  }
+
+  private renderRoleCheckbox(label: string, role: string, selected: Set<string>) {
+    return (
+      <label onClick={this.onRoleToggle.bind(this, role, selected)}>
+        <Checkbox checked={selected.has(role)} />
+        <span className={`role-badge ${role || "DEFAULT"}`}>{label}</span>
+      </label>
+    );
   }
 
   private renderStatusCheckbox(
@@ -96,17 +146,43 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   }
 
   render() {
-    const startDateParam = this.props.search.get(START_DATE_PARAM_NAME);
-    const endDateParam = this.props.search.get(END_DATE_PARAM_NAME);
-
-    const startDate = (startDateParam ? moment(startDateParam) : moment().subtract(7, "days")).toDate();
-    const endDate = (endDateParam ? moment(endDateParam) : moment()).toDate();
+    const now = new Date();
+    const startDate = getStartDate(this.props.search);
+    // Not using `getEndDate` here because it's set to "start of day after the one specified
+    // in the URL" which causes an off-by-one error if we were to render that directly in
+    // the calendar.
+    const endDate = this.props.search.get(END_DATE_PARAM_NAME)
+      ? moment(this.props.search.get(END_DATE_PARAM_NAME)).toDate()
+      : now;
 
     const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
     const statusValue = this.props.search.get(STATUS_PARAM_NAME) || "";
 
     const isFiltering = Boolean(roleValue || statusValue);
+    const selectedRoles = new Set(parseRoleParam(roleValue));
     const selectedStatuses = new Set(parseStatusParam(statusValue));
+
+    const isDateRangeSelected =
+      this.props.search.get(LAST_N_DAYS_PARAM_NAME) ||
+      this.props.search.get(START_DATE_PARAM_NAME) ||
+      this.props.search.get(END_DATE_PARAM_NAME);
+
+    const presetDateRanges: PresetRange[] = LAST_N_DAYS_OPTIONS.map((n) => {
+      const start = moment(now)
+        .add(-n + 1, "days")
+        .toDate();
+      return {
+        label: formatDateRange(start, now, { now }),
+        isSelected: () =>
+          this.props.search.get(LAST_N_DAYS_PARAM_NAME) === String(n) ||
+          (!isDateRangeSelected && n === DEFAULT_LAST_N_DAYS),
+        range: () => ({
+          startDate: start,
+          endDate: now,
+          days: n,
+        }),
+      };
+    });
 
     return (
       <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>
@@ -128,8 +204,9 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             {selectedStatuses.has(invocation.OverallStatus.DISCONNECTED) && (
               <span className="status-block disconnected" />
             )}
-            {roleValue === "CI" && <span className="role-badge CI">CI</span>}
-            {roleValue === "CI_RUNNER" && <span className="role-badge CI_RUNNER">Workflow</span>}
+            {selectedRoles.has("") && <span className="role-badge DEFAULT">Default</span>}
+            {selectedRoles.has("CI") && <span className="role-badge CI">CI</span>}
+            {selectedRoles.has("CI_RUNNER") && <span className="role-badge CI_RUNNER">Workflow</span>}
           </OutlinedButton>
           <Popup
             isOpen={this.state.isFilterMenuOpen}
@@ -139,18 +216,9 @@ export default class FilterComponent extends React.Component<FilterProps, State>
               <div className="option-group">
                 <div className="option-group-title">Role</div>
                 <div className="option-group-options">
-                  <label onClick={this.onRoleChange.bind(this, "")}>
-                    <Radio value="" checked={roleValue === ""} />
-                    <span>Any</span>
-                  </label>
-                  <label onClick={this.onRoleChange.bind(this, "CI")}>
-                    <Radio value="CI" checked={roleValue === "CI"} />
-                    <span className="role-badge CI">CI</span>
-                  </label>
-                  <label onClick={this.onRoleChange.bind(this, "CI_RUNNER")}>
-                    <Radio value="CI_RUNNER" checked={roleValue === "CI_RUNNER"} />
-                    <span className="role-badge CI_RUNNER">Workflow</span>
-                  </label>
+                  {this.renderRoleCheckbox("Default", "", selectedRoles)}
+                  {this.renderRoleCheckbox("CI", "CI", selectedRoles)}
+                  {this.renderRoleCheckbox("Workflow", "CI_RUNNER", selectedRoles)}
                 </div>
               </div>
               <div className="option-group">
@@ -177,8 +245,20 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             <DateRangePicker
               ranges={[{ startDate, endDate, key: "selection" }]}
               onChange={this.onDateChange.bind(this)}
+              // When showing "All time" we don't want to set the currently
+              // visible month to the Unix epoch... so always show the end
+              // date when initially rendering the component
+              shownDate={endDate}
+              // We want our `CustomDateRange` type here, which is compatible
+              // with the `StaticRange` type, so the cast to `any` is OK here.
+              staticRanges={presetDateRanges as any}
               // Disable textbox inputs, like "days from today", or "days until today".
               inputRanges={[]}
+              editableDateInputs
+              color="#263238"
+              rangeColors={["#263238"]}
+              startDatePlaceholder="Start date"
+              endDatePlaceholder="End date"
             />
           </Popup>
         </div>

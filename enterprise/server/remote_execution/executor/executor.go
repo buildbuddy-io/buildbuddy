@@ -7,6 +7,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -52,10 +55,11 @@ const (
 )
 
 type Executor struct {
-	env        environment.Env
-	runnerPool *runner.Pool
-	id         string
-	name       string
+	env         environment.Env
+	runnerPool  *runner.Pool
+	id          string
+	name        string
+	enableCASFS bool
 }
 
 type Options struct {
@@ -80,12 +84,12 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 	if err != nil {
 		return nil, err
 	}
-
 	s := &Executor{
-		env:        env,
-		id:         id,
-		name:       name,
-		runnerPool: runnerPool,
+		env:         env,
+		id:          id,
+		name:        name,
+		runnerPool:  runnerPool,
+		enableCASFS: executorConfig.EnableCASFS,
 	}
 	if hc := env.GetHealthChecker(); hc != nil {
 		hc.RegisterShutdownFunction(runnerPool.Shutdown)
@@ -184,7 +188,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	if err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error creating runner for command: %s", err.Error()))
 	}
-	if err := r.PrepareForTask(task); err != nil {
+	if err := r.PrepareForTask(ctx, task); err != nil {
 		return finishWithErrFn(err)
 	}
 
@@ -194,9 +198,46 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	}()
 
 	md.InputFetchStartTimestamp = ptypes.TimestampNow()
-	rxInfo, err := r.Workspace.DownloadInputs(ctx)
+
+	rootInstanceDigest := digest.NewInstanceNameDigest(
+		task.GetAction().GetInputRootDigest(),
+		task.GetExecuteRequest().GetInstanceName(),
+	)
+	inputTree, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, s.env.GetContentAddressableStorageClient(), rootInstanceDigest)
 	if err != nil {
 		return finishWithErrFn(err)
+	}
+
+	layout := &container.FileSystemLayout{
+		RemoteInstanceName: task.GetExecuteRequest().GetInstanceName(),
+		Inputs:             inputTree,
+		OutputDirs:         task.GetCommand().GetOutputDirectories(),
+		OutputFiles:        task.GetCommand().GetOutputFiles(),
+	}
+
+	if s.env.GetConfigurator().GetExecutorConfig().EnableCASFS && r.PlatformProperties.EnableCASFS {
+		// Unlike other "container" implementations, for Firecracker CASFS is mounted inside the guest VM so we need to
+		// pass the layout information to the implementation.
+		if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
+			fc.SetTaskFileSystemLayout(layout)
+		}
+	}
+
+	if r.CASFS != nil {
+		fileFetcher := dirtools.NewBatchFileFetcher(ctx, task.GetExecuteRequest().GetInstanceName(), s.env.GetFileCache(), s.env.GetByteStreamClient(), s.env.GetContentAddressableStorageClient())
+		if err := r.CASFS.PrepareForTask(ctx, fileFetcher, task.GetExecutionId(), layout); err != nil {
+			return status.UnavailableErrorf("unable to prepare CASFS layout: %s", err)
+		}
+	}
+
+	rxInfo := &dirtools.TransferInfo{}
+	// Don't download inputs if the FUSE-based filesystem is enabled.
+	// TODO(vadim): integrate CASFS stats
+	if r.CASFS == nil {
+		rxInfo, err = r.Workspace.DownloadInputs(ctx, inputTree)
+		if err != nil {
+			return finishWithErrFn(err)
+		}
 	}
 	md.InputFetchCompletedTimestamp = ptypes.TimestampNow()
 
@@ -234,6 +275,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 				return status.UnavailableErrorf("could not publish periodic execution update for %q: %s", taskID, err)
 			}
 		}
+	}
+
+	if cmdResult.ExitCode != 0 {
+		log.Debugf("%q finished with non-zero exit code (%d). Stdout: %s, Stderr: %s", taskID, cmdResult.ExitCode, cmdResult.Stdout, cmdResult.Stderr)
 	}
 
 	// Only upload action outputs if the error is something that the client can

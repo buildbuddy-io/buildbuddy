@@ -7,3 +7,9 @@ export function dateToTimestamp(date: Date): google.protobuf.Timestamp {
     nanos: (timestampMillis % 1e3) * 1e6,
   });
 }
+
+/** Converts a proto timestamp to a local date. */
+export function timestampToDate(timestamp: google.protobuf.ITimestamp) {
+  const timestampMillis = Math.floor(((timestamp.seconds as any) + timestamp.nanos / 1e9) * 1e3);
+  return new Date(timestampMillis);
+}

@@ -33,6 +33,7 @@ import (
 	gstatus "google.golang.org/grpc/status"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -130,16 +131,12 @@ type EventChannel struct {
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string, invocation *inpb.Invocation) error {
 	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), iid)
-	redactor := redact.NewStreamingRedactor(e.env)
 	parser := event_parser.NewStreamingEventParser()
 	parser.FillInvocation(invocation)
 	for {
 		event := &inpb.InvocationEvent{}
 		err := pr.ReadProto(ctx, event)
 		if err == nil {
-			if !*enableOptimizedRedaction {
-				redactor.RedactMetadata(event.BuildEvent)
-			}
 			parser.ParseEvent(event)
 		} else if err == io.EOF {
 			break
@@ -327,9 +324,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			InvocationID:     iid,
 			InvocationPK:     md5Int64(iid),
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
-		}
-		if *enableOptimizedRedaction {
-			ti.RedactionFlags = redact.RedactionFlagStandardRedactions
+			RedactionFlags:   redact.RedactionFlagStandardRedactions,
 		}
 
 		if auth := e.env.GetAuthenticator(); auth != nil {
@@ -377,12 +372,10 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 }
 
 func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid string) error {
-	if *enableOptimizedRedaction {
-		if err := e.redactor.RedactAPIKey(e.ctx, event.BuildEvent); err != nil {
-			return err
-		}
-		e.redactor.RedactMetadata(event.BuildEvent)
+	if err := e.redactor.RedactAPIKey(e.ctx, event.BuildEvent); err != nil {
+		return err
 	}
+	e.redactor.RedactMetadata(event.BuildEvent)
 
 	e.beValues.AddEvent(event.BuildEvent) // in-memory structure to hold common values we want from the event.
 
@@ -486,7 +479,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			log.Warningf("Error reading proto from log: %s", err)
 			return nil, err
 		}
-		if !*enableOptimizedRedaction || ti.RedactionFlags&redact.RedactionFlagStandardRedactions == 0 {
+		if ti.RedactionFlags&redact.RedactionFlagStandardRedactions == 0 {
 			if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
 				return nil, err
 			}
@@ -507,6 +500,10 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 	i.DurationUsec = p.DurationUsec
 	i.Host = p.Host
 	i.RepoURL = p.RepoUrl
+	if norm, err := gitutil.NormalizeRepoURL(p.RepoUrl); err == nil {
+		i.RepoURL = norm.String()
+	}
+	i.BranchName = p.BranchName
 	i.CommitSHA = p.CommitSha
 	i.Role = p.Role
 	i.Command = p.Command
@@ -520,9 +517,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 		i.Perms = perms.OTHERS_READ
 	}
 	i.LastChunkId = p.LastChunkId
-	if *enableOptimizedRedaction {
-		i.RedactionFlags = redact.RedactionFlagStandardRedactions
-	}
+	i.RedactionFlags = redact.RedactionFlagStandardRedactions
 	return i
 }
 
@@ -534,6 +529,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	out.DurationUsec = i.DurationUsec
 	out.Host = i.Host
 	out.RepoUrl = i.RepoURL
+	out.BranchName = i.BranchName
 	out.CommitSha = i.CommitSHA
 	out.Role = i.Role
 	out.Command = i.Command

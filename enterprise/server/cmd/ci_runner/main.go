@@ -15,23 +15,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
-	"google.golang.org/grpc/metadata"
 	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -81,17 +76,18 @@ const (
 )
 
 var (
-	besBackend    = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
-	besResultsURL = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
-	triggerEvent  = flag.String("trigger_event", "", "Event type that triggered the action runner.")
-	pushedRepoURL = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
-	pushedBranch  = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
-	commitSHA     = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
-	targetRepoURL = flag.String("target_repo_url", "", "URL of the target repo.")
-	targetBranch  = flag.String("target_branch", "", "Branch to check action triggers against.")
-	workflowID    = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
-	actionName    = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
-	invocationID  = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
+	besBackend      = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
+	besResultsURL   = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
+	triggerEvent    = flag.String("trigger_event", "", "Event type that triggered the action runner.")
+	pushedRepoURL   = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
+	pushedBranch    = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
+	commitSHA       = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
+	targetRepoURL   = flag.String("target_repo_url", "", "URL of the target repo.")
+	targetBranch    = flag.String("target_branch", "", "Branch to check action triggers against.")
+	workflowID      = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
+	actionName      = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
+	invocationID    = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
+	bazelSubCommand = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
 
 	bazelCommand      = flag.String("bazel_command", bazeliskBinaryName, "Bazel command to use.")
 	bazelStartupFlags = flag.String("bazel_startup_flags", "", "Startup flags to pass to bazel. The value can include spaces and will be properly tokenized.")
@@ -108,6 +104,18 @@ type workspace struct {
 	// of any action's logs yet.
 	reportedInitMetrics bool
 
+	// The machine's hostname.
+	hostname string
+
+	// The operating user's username.
+	username string
+
+	// The buildbuddy API key, or "" if none was found.
+	buildbuddyAPIKey string
+
+	// An invocation ID that should be forced, or "" if any is allowed.
+	forcedInvocationID string
+
 	// An error that occurred while setting up the workspace, which should be
 	// reported for all action logs instead of actually executing the action.
 	setupError error
@@ -123,12 +131,18 @@ type workspace struct {
 }
 
 func main() {
-	ws := &workspace{startTime: time.Now()}
+	flag.Parse()
+
+	ws := &workspace{
+		startTime:          time.Now(),
+		buildbuddyAPIKey:   os.Getenv(buildbuddyAPIKeyEnvVarName),
+		forcedInvocationID: *invocationID,
+	}
+
 	// Write setup logs to the current task's stderr (to make debugging easier),
 	// and also to a buffer to be flushed to the first workflow action's logs.
 	ws.log = io.MultiWriter(os.Stderr, &ws.logBuf)
-
-	flag.Parse()
+	ws.hostname, ws.username = getHostAndUserName()
 
 	if *bazelCommand == "" {
 		*bazelCommand = bazeliskBinaryName
@@ -155,49 +169,53 @@ func main() {
 		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
 	}
 
-	ws.RunAllActions(ctx, cfg)
+	var actions []*config.Action
+	if *bazelSubCommand != "" {
+		actions = []*config.Action{{
+			Name: "run",
+			BazelCommands: []string{
+				*bazelSubCommand,
+			},
+		}}
+	} else if *actionName != "" {
+		// If a specific action was specified, filter to configured
+		// actions with a matching action name.
+		actions = filterActions(cfg.Actions, func(action *config.Action) bool {
+			return action.Name == *actionName
+		})
+	} else {
+		// If no action was specified; filter to configured actions that
+		// match any trigger.
+		actions = filterActions(cfg.Actions, func(action *config.Action) bool {
+			match := matchesAnyTrigger(action, *triggerEvent, *targetBranch)
+			if !match {
+				log.Debugf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *targetBranch, actionDebugString(action))
+			}
+			return match
+		})
+	}
+	if *invocationID != "" && len(actions) > 1 {
+		fatal(status.InvalidArgumentError("Cannot specify --invocationID when running multiple actions"))
+	}
+
+	ws.RunAllActions(ctx, actions)
 }
 
-// RunAllActions runs all triggered actions in the BuildBuddy config in serial, creating
-// a synthetic invocation for each one.
-func (ws *workspace) RunAllActions(ctx context.Context, cfg *config.BuildBuddyConfig) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		log.Errorf("failed to get hostname: %s", err)
-		hostname = ""
-	}
-	user, err := user.Current()
-	username := ""
-	if err != nil {
-		log.Errorf("failed to get user: %s", err)
-	} else {
-		username = user.Username
-	}
-
-	for _, action := range cfg.Actions {
+// RunAllActions runs the specified actions in serial, creating a synthetic
+// invocation for each one.
+func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action) {
+	for _, action := range actions {
 		startTime := time.Now()
 
-		if *actionName != "" {
-			if action.Name != *actionName {
-				continue
-			}
-		} else if !matchesAnyTrigger(action, *triggerEvent, *targetBranch) {
-			log.Debugf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *targetBranch, actionDebugString(action))
-			continue
-		}
-
-		iid := ""
-		// Respect the invocation ID flag only when running a single action
-		// (via ExecuteWorkflow).
-		if *actionName != "" {
-			iid = *invocationID
-		} else {
+		iid := ws.forcedInvocationID
+		if iid == "" {
 			iid = newUUID()
 		}
-		bep := newBuildEventPublisher(&bepb.StreamId{
-			InvocationId: iid,
-			BuildId:      newUUID(),
-		})
+
+		bep, err := build_event_publisher.New(*besBackend, ws.buildbuddyAPIKey, iid)
+		if err != nil {
+			fatal(status.UnavailableErrorf("failed to initialize build event publisher: %s", err))
+		}
 		bep.Start(ctx)
 
 		// NB: Anything logged to `ar.log` gets output to both the stdout of this binary
@@ -205,11 +223,12 @@ func (ws *workspace) RunAllActions(ctx context.Context, cfg *config.BuildBuddyCo
 		// the user to see in the invocation UI needs to go in that log, instead of
 		// the global `log.Print`.
 		ar := &actionRunner{
-			action:   action,
-			log:      newInvocationLog(),
-			bep:      bep,
-			hostname: hostname,
-			username: username,
+			action:       action,
+			log:          newInvocationLog(),
+			bep:          bep,
+			invocationID: iid,
+			hostname:     ws.hostname,
+			username:     ws.username,
 		}
 		exitCode := 0
 		exitCodeName := "OK"
@@ -297,161 +316,14 @@ func (invLog *invocationLog) Printf(format string, vals ...interface{}) {
 	invLog.Write([]byte(fmt.Sprintf(format+"\n", vals...)))
 }
 
-// buildEventPublisher publishes Bazel build events for a single build event stream.
-type buildEventPublisher struct {
-	err      error
-	streamID *bepb.StreamId
-	done     chan struct{}
-	events   chan *bespb.BuildEvent
-	mu       sync.Mutex
-}
-
-func newBuildEventPublisher(streamID *bepb.StreamId) *buildEventPublisher {
-	return &buildEventPublisher{
-		streamID: streamID,
-		// We probably won't ever saturate this buffer since we only need to
-		// publish a few events for the actions themselves and progress events
-		// are rate-limited. Also, events are sent to the server with low
-		// latency compared to the rate limiting interval.
-		events: make(chan *bespb.BuildEvent, 256),
-		done:   make(chan struct{}, 1),
-	}
-}
-
-// Start the event publishing loop in the background. Stops handling new events
-// as soon as the first call to `Wait()` occurs.
-func (bep *buildEventPublisher) Start(ctx context.Context) {
-	go bep.run(ctx)
-}
-func (bep *buildEventPublisher) run(ctx context.Context) {
-	defer func() {
-		bep.done <- struct{}{}
-	}()
-
-	conn, err := grpc_client.DialTarget(*besBackend)
-	if err != nil {
-		bep.setError(status.WrapError(err, "error dialing bes_backend"))
-		return
-	}
-	defer conn.Close()
-	besClient := pepb.NewPublishBuildEventClient(conn)
-	buildbuddyAPIKey := os.Getenv(buildbuddyAPIKeyEnvVarName)
-	if buildbuddyAPIKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, buildbuddyAPIKey)
-	}
-	stream, err := besClient.PublishBuildToolEventStream(ctx)
-	if err != nil {
-		bep.setError(status.WrapError(err, "error opening build event stream"))
-		return
-	}
-
-	doneReceiving := make(chan struct{}, 1)
-	go func() {
-		for {
-			_, err := stream.Recv()
-			if err == nil {
-				continue
-			}
-			if err == io.EOF {
-				log.Debug("Received all acks from server.")
-			} else {
-				log.Errorf("Error receiving acks from the server: %s", err)
-				bep.setError(err)
-			}
-			doneReceiving <- struct{}{}
-			return
-		}
-	}()
-
-	for seqNo := int64(1); ; seqNo++ {
-		event := <-bep.events
-		if event == nil {
-			// Wait() was called, meaning no more events to publish.
-			// Send ComponentStreamFinished event before closing the stream.
-			start := time.Now()
-			err = stream.Send(&pepb.PublishBuildToolEventStreamRequest{
-				OrderedBuildEvent: &pepb.OrderedBuildEvent{
-					StreamId:       bep.streamID,
-					SequenceNumber: seqNo,
-					Event: &bepb.BuildEvent{
-						EventTime: ptypes.TimestampNow(),
-						Event: &bepb.BuildEvent_ComponentStreamFinished{ComponentStreamFinished: &bepb.BuildEvent_BuildComponentStreamFinished{
-							Type: bepb.BuildEvent_BuildComponentStreamFinished_FINISHED,
-						}},
-					},
-				},
-			})
-			log.Debugf("BEP: published FINISHED event (#%d) in %s", seqNo, time.Since(start))
-
-			if err != nil {
-				bep.setError(err)
-				return
-			}
-			break
-		}
-
-		bazelEvent, err := ptypes.MarshalAny(event)
-		if err != nil {
-			bep.setError(status.WrapError(err, "failed to marshal bazel event"))
-			return
-		}
-		start := time.Now()
-		err = stream.Send(&pepb.PublishBuildToolEventStreamRequest{
-			OrderedBuildEvent: &pepb.OrderedBuildEvent{
-				StreamId:       bep.streamID,
-				SequenceNumber: seqNo,
-				Event: &bepb.BuildEvent{
-					EventTime: ptypes.TimestampNow(),
-					Event:     &bepb.BuildEvent_BazelEvent{BazelEvent: bazelEvent},
-				},
-			},
-		})
-		log.Debugf("BEP: published event (#%d) in %s", seqNo, time.Since(start))
-		if err != nil {
-			bep.setError(err)
-			return
-		}
-	}
-	// After successfully transmitting all events, close our side of the stream
-	// and wait for server ACKs before closing the connection.
-	if err := stream.CloseSend(); err != nil {
-		bep.setError(status.WrapError(err, "failed to close build event stream"))
-		return
-	}
-	<-doneReceiving
-}
-func (bep *buildEventPublisher) Publish(e *bespb.BuildEvent) error {
-	bep.mu.Lock()
-	defer bep.mu.Unlock()
-	if bep.err != nil {
-		return status.WrapError(bep.err, "cannot publish event due to previous error")
-	}
-	bep.events <- e
-	return nil
-}
-func (bep *buildEventPublisher) Wait() error {
-	bep.events <- nil
-	<-bep.done
-	return bep.err
-}
-func (bep *buildEventPublisher) getError() error {
-	bep.mu.Lock()
-	defer bep.mu.Unlock()
-	return bep.err
-}
-func (bep *buildEventPublisher) setError(err error) {
-	bep.mu.Lock()
-	defer bep.mu.Unlock()
-	bep.err = err
-}
-
 // actionRunner runs a single action in the BuildBuddy config.
 type actionRunner struct {
-	action   *config.Action
-	log      *invocationLog
-	bep      *buildEventPublisher
-	username string
-	hostname string
+	action       *config.Action
+	log          *invocationLog
+	bep          *build_event_publisher.Publisher
+	invocationID string
+	username     string
+	hostname     string
 
 	mu            sync.Mutex // protects(progressCount)
 	progressCount int32
@@ -461,13 +333,17 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 	ar.log.Printf("Running action %q", ar.action.Name)
 
 	// Only print this to the local logs -- it's mostly useful for development purposes.
-	log.Infof("Invocation URL:  %s", invocationURL(ar.bep.streamID.InvocationId))
+	log.Infof("Invocation URL:  %s", invocationURL(ar.invocationID))
 
 	// NOTE: In this func we return immediately with an error of nil if event publishing fails,
 	// because that error is instead surfaced in the caller func when calling
 	// `buildEventPublisher.Wait()`
 
 	bep := ar.bep
+	optionsDescription := ""
+	if ws.buildbuddyAPIKey != "" {
+		optionsDescription = fmt.Sprintf("--remote_header='x-buildbuddy-api-key=%s'", ws.buildbuddyAPIKey)
+	}
 
 	startedEvent := &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}}},
@@ -479,8 +355,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 			{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
 		},
 		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
-			Uuid:            ar.bep.streamID.InvocationId,
-			StartTimeMillis: timeutil.ToMillis(startTime),
+			Uuid:               ar.invocationID,
+			StartTimeMillis:    timeutil.ToMillis(startTime),
+			OptionsDescription: optionsDescription,
 		}},
 	}
 	if err := bep.Publish(startedEvent); err != nil {
@@ -730,6 +607,32 @@ func ensurePath() error {
 		return nil
 	}
 	return os.Setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+}
+
+func getHostAndUserName() (string, string) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Errorf("failed to get hostname: %s", err)
+		hostname = ""
+	}
+	user, err := user.Current()
+	username := ""
+	if err != nil {
+		log.Errorf("failed to get user: %s", err)
+	} else {
+		username = user.Username
+	}
+	return hostname, username
+}
+
+func filterActions(actions []*config.Action, fn func(action *config.Action) bool) []*config.Action {
+	matched := make([]*config.Action, 0)
+	for _, action := range actions {
+		if fn(action) {
+			matched = append(matched, action)
+		}
+	}
+	return matched
 }
 
 func (ws *workspace) setup(ctx context.Context) error {
