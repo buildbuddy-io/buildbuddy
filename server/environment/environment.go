@@ -73,4 +73,5 @@ type Env interface {
 	GetGitProviders() interfaces.GitProviders
 	GetUsageService() interfaces.UsageService
 	GetUsageTracker() interfaces.UsageTracker
+	GetXCodeLocator() interfaces.XcodeLocator
 }

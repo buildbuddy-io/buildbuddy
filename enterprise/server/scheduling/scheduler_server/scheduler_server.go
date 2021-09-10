@@ -979,13 +979,12 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 
 	for {
 		req, err := stream.Recv()
-		log.Debugf("LeaseTask RECV %q, req: %+v, err: %v", taskID, req, err)
 		if err == io.EOF {
-			log.Debugf("LeaseTask %q got EOF", taskID)
+			log.Warningf("LeaseTask %q got EOF: %s", taskID, err)
 			break
 		}
 		if err != nil {
-			log.Debugf("LeaseTask %q recv with err: %s", taskID, err.Error())
+			log.Warningf("LeaseTask %q recv with err: %s", taskID, err)
 			break
 		}
 		if req.GetTaskId() == "" || taskID != "" && req.GetTaskId() != taskID {
@@ -1037,15 +1036,17 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 
 		closing = req.GetFinalize()
 		if closing && claimed {
-			if err := s.deleteClaimedTask(ctx, taskID); err == nil {
+			err := s.deleteClaimedTask(ctx, taskID)
+			if err == nil {
 				claimed = false
 				log.Infof("LeaseTask task %q successfully finalized by %q", taskID, executorID)
+			} else {
+				log.Warningf("Could not delete claimed task %q: %s", taskID, err)
 			}
 		}
 
 		rsp.ClosedCleanly = !claimed
 		lastCheckin = time.Now()
-		log.Debugf("LeaseTask SEND %q, req: %+v", taskID, rsp)
 		if err := stream.Send(rsp); err != nil {
 			return err
 		}

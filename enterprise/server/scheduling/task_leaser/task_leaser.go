@@ -47,12 +47,10 @@ func (t *TaskLeaser) pingServer() ([]byte, error) {
 	req := &scpb.LeaseTaskRequest{
 		TaskId: t.taskID,
 	}
-	t.log.Debugf("TaskLeaser ping-SEND %q, req: %+v", t.taskID, req)
 	if err := t.stream.Send(req); err != nil {
 		return nil, err
 	}
 	rsp, err := t.stream.Recv()
-	t.log.Debugf("TaskLeaser ping-RECV %q, req: %+v,  err: %v", t.taskID, rsp, err)
 	if err != nil {
 		return nil, err
 	}
@@ -142,13 +140,10 @@ func (t *TaskLeaser) Close(taskErr error) error {
 			TaskId:   t.taskID,
 			Finalize: true,
 		}
-		t.log.Debugf("TaskLeaser close-SEND %q, req: %+v", t.taskID, req)
 		t.stream.Send(req)
 		for {
 			rsp, err := t.stream.Recv()
-			t.log.Debugf("TaskLeaser close-RECV %q, req: %+v, err: %v", t.taskID, rsp, err)
 			if err == io.EOF {
-				t.log.Debugf("TaskLeaser %q: Got EOF from lease stream.", t.taskID)
 				break
 			}
 			if err != nil {

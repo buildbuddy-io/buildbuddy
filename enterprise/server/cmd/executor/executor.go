@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 
 	"github.com/google/uuid"
 	"google.golang.org/api/option"
@@ -113,6 +114,8 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	} else {
 		log.Infof("No authentication will be configured: %s", err)
 	}
+
+	realEnv.SetXCodeLocator(xcode.NewXcodeLocator())
 
 	if gcsCacheConfig := configurator.GetCacheGCSConfig(); gcsCacheConfig != nil {
 		opts := make([]option.ClientOption, 0)

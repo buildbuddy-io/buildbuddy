@@ -102,41 +102,35 @@ func main() {
 		ContainerImage:         *image,
 		ActionWorkingDirectory: emptyActionDir,
 		NumCPUs:                1,
-		MemSizeMB:              100,
+		MemSizeMB:              2500,
 		EnableNetworking:       true,
 		DebugMode:              true,
 		ForceVMIdx:             vmIdx,
+		JailerRoot:             "/tmp/remote_build/",
 	}
 
+	var c *firecracker.FirecrackerContainer
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-
 	if *snapshotID != "" {
-		c, err := firecracker.NewContainer(env, auth, opts)
+		c, err = firecracker.NewContainer(env, auth, opts)
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}
 		if err := c.LoadSnapshot(ctx, "" /*workspaceFS*/, *remoteInstanceName, parseSnapshotID(*snapshotID)); err != nil {
 			log.Fatalf("Error loading snapshot: %s", err)
 		}
-		if err := c.Wait(ctx); err != nil {
-			log.Printf("Wait err: %s", err)
+	} else {
+		c, err = firecracker.NewContainer(env, auth, opts)
+		if err != nil {
+			log.Fatalf("Error creating container: %s", err)
 		}
-		if err := c.Remove(ctx); err != nil {
-			log.Errorf("Error removing container: %s", err)
+		creds := container.PullCredentials{Username: *registryUser, Password: *registryPassword}
+		if err := container.PullImageIfNecessary(ctx, env, auth, c, creds, opts.ContainerImage); err != nil {
+			log.Fatalf("Unable to PullImageIfNecessary: %s", err)
 		}
-		return
-	}
-
-	c, err := firecracker.NewContainer(env, auth, opts)
-	if err != nil {
-		log.Fatalf("Error creating container: %s", err)
-	}
-	creds := container.PullCredentials{Username: *registryUser, Password: *registryPassword}
-	if err := container.PullImageIfNecessary(ctx, env, auth, c, creds, opts.ContainerImage); err != nil {
-		log.Fatalf("Unable to PullImageIfNecessary: %s", err)
-	}
-	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
-		log.Fatalf("Unable to Create container: %s", err)
+		if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+			log.Fatalf("Unable to Create container: %s", err)
+		}
 	}
 
 	sigc := make(chan os.Signal, 1)

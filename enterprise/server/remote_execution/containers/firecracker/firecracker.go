@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
@@ -70,6 +71,7 @@ const (
 	workspaceDriveID = "workspacefs"
 
 	// The containerfs drive ID.
+	containerFSName  = "containerfs.ext4"
 	containerDriveID = "containerfs"
 
 	// The networking deets for host and vm interfaces.
@@ -121,14 +123,6 @@ var (
 	vmIdx   int
 	vmIdxMu sync.Mutex
 )
-
-func hashString(input string) (string, error) {
-	h := sha256.New()
-	if _, err := h.Write([]byte(input)); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
-}
 
 func getFileReader(ctx context.Context, fileName string) (io.Reader, error) {
 	sourcePath := ""
@@ -251,7 +245,7 @@ func getLogrusLogger(debugMode bool) *logrus.Entry {
 	logrusLogger := logrus.New()
 	logrusLogger.SetLevel(logrus.ErrorLevel)
 	if debugMode {
-		logrusLogger.SetLevel(logrus.DebugLevel)
+		logrusLogger.SetLevel(logrus.TraceLevel)
 	}
 	return logrus.NewEntry(logrusLogger)
 }
@@ -405,11 +399,18 @@ type FirecrackerContainer struct {
 	imageCacheAuth       *container.ImageCacheAuthenticator
 	pausedSnapshotDigest *repb.Digest
 	allowSnapshotStart   bool
+
+	// If a container is resumed from a snapshot, the jailer
+	// is started first using an external command and then the snapshot
+	// is loaded. This slightly breaks the firecracker SDK's "Wait()"
+	// method, so in that case we wait for the external jailer command
+	// to finish, rather than calling "Wait()" on the sdk machine object.
+	externalJailerCmd *exec.Cmd
 }
 
 // ConfigurationHash returns a digest that can be used to look up or save a
 // cached snapshot for this container configuration.
-func (c *FirecrackerContainer) ConfigurationHash() (*repb.Digest, error) {
+func (c *FirecrackerContainer) ConfigurationHash() *repb.Digest {
 	params := []string{
 		fmt.Sprintf("cpus=%d", c.constants.NumCPUs),
 		fmt.Sprintf("mb=%d", c.constants.MemSizeMB),
@@ -417,14 +418,10 @@ func (c *FirecrackerContainer) ConfigurationHash() (*repb.Digest, error) {
 		fmt.Sprintf("debug=%t", c.constants.DebugMode),
 		fmt.Sprintf("container=%s", c.containerImage),
 	}
-	hashedString, err := hashString(strings.Join(params, "&"))
-	if err != nil {
-		return nil, err
-	}
 	return &repb.Digest{
-		Hash:      hashedString,
+		Hash:      hash.String(strings.Join(params, "&")),
 		SizeBytes: int64(102),
-	}, nil
+	}
 }
 
 func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
@@ -482,6 +479,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	}()
 
 	if err := c.machine.PauseVM(ctx); err != nil {
+		log.Errorf("Error pausing VM: %s", err)
 		return nil, err
 	}
 	memSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
@@ -493,6 +491,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 
 	machineStart := time.Now()
 	if err := c.machine.CreateSnapshot(ctx, fullMemSnapshotName, fullDiskSnapshotName); err != nil {
+		log.Errorf("Error creating snapshot: %s", err)
 		return nil, err
 	}
 	log.Debugf("VMM CreateSnapshot took %s", time.Since(machineStart))
@@ -507,8 +506,8 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		DiskSnapshotPath:    diskSnapshotPath,
 		KernelImagePath:     kernelImagePath,
 		InitrdImagePath:     initrdImagePath,
-		ContainerFSPath:     c.containerFSPath,
-		WorkspaceFSPath:     c.workspaceFSPath,
+		ContainerFSPath:     filepath.Join(c.getChroot(), containerFSName),
+		WorkspaceFSPath:     filepath.Join(c.getChroot(), workspaceFSName),
 		ForceSnapshotDigest: d,
 	}
 
@@ -531,7 +530,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOverride, instanceName string, snapshotDigest *repb.Digest) error {
 	start := time.Now()
 	defer func() {
-		log.Debugf("LoadSnapshot took %s", time.Since(start))
+		log.Debugf("LoadSnapshot %s took %s", snapshotDigest.GetHash(), time.Since(start))
 	}()
 
 	if err := c.newID(); err != nil {
@@ -578,11 +577,14 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		fcclient.WithLogger(getLogrusLogger(c.constants.DebugMode)),
 		fcclient.WithProcessRunner(cmd),
 	}
+
 	// Start Firecracker
 	err = cmd.Start()
 	if err != nil {
 		return status.InternalErrorf("Failed starting firecracker binary: %s", err)
 	}
+
+	c.externalJailerCmd = cmd
 
 	// Wait for the jailer directory to be created. We have to do this because we
 	// are starting the command ourselves and loading a snapshot, rather than
@@ -637,7 +639,22 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return status.InternalErrorf("error resuming VM: %s", err)
 	}
 
-	return nil
+	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+	defer cancel()
+
+	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
+	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	execClient := vmxpb.NewExecClient(conn)
+	_, err = execClient.Initialize(ctx, &vmxpb.InitializeRequest{
+		UnixTimestampNanoseconds: time.Now().UnixNano(),
+		ClearArpCache:            true,
+	})
+	return err
 }
 
 func nonCmdExit(err error) *interfaces.CommandResult {
@@ -648,6 +665,10 @@ func nonCmdExit(err error) *interfaces.CommandResult {
 	}
 }
 
+func (c *FirecrackerContainer) startedFromSnapshot() bool {
+	return c.externalJailerCmd != nil
+}
+
 func (c *FirecrackerContainer) newID() error {
 	vmIdxMu.Lock()
 	defer vmIdxMu.Unlock()
@@ -655,11 +676,11 @@ func (c *FirecrackerContainer) newID() error {
 	if err != nil {
 		return err
 	}
+	vmIdx += 1
 	log.Debugf("Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u.String(), vmIdx)
 	c.id = u.String()
-
 	c.vmIdx = vmIdx
-	vmIdx += 1
+
 	if vmIdx > maxVMSPerHost {
 		vmIdx = 0
 	}
@@ -874,7 +895,7 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 
 func (c *FirecrackerContainer) setupByteStreamProxy() error {
 	if c.bsProxy != nil {
-		return status.FailedPreconditionErrorf("ByteStream proxy already initialized")
+		return nil
 	}
 
 	vsockServerPath := filepath.Join(c.getChroot(), firecrackerVSockPath) + "_" + strconv.Itoa(byteStreamProxyPort)
@@ -913,17 +934,12 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 		log.Debugf("Run took %s", time.Since(start))
 	}()
 
-	snapDigest, err := c.ConfigurationHash()
-	if err != nil {
-		return nonCmdExit(err)
-	}
+	snapDigest := c.ConfigurationHash()
 
-	startedFromSnapshot := false
 	// See if we can lookup a cached snapshot to run from; if not, it's not
 	// a huge deal, we can start a new VM and create one.
 	if c.allowSnapshotStart {
 		if err := c.LoadSnapshot(ctx, actionWorkingDir, "" /*=instanceName*/, snapDigest); err == nil {
-			startedFromSnapshot = true
 			log.Debugf("Started from snapshot %s/%d!", snapDigest.GetHash(), snapDigest.GetSizeBytes())
 		}
 	}
@@ -939,7 +955,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 			return nonCmdExit(err)
 		}
 
-		if c.allowSnapshotStart && !startedFromSnapshot {
+		if c.allowSnapshotStart && !c.startedFromSnapshot() {
 			// save the workspaceFSPath in a local variable and null it out
 			// before saving the snapshot so it's not uploaded.
 			wsPath := c.workspaceFSPath
@@ -1169,6 +1185,7 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	}()
 	snapshotDigest, err := c.SaveSnapshot(ctx, "" /*=instanceName*/, nil /*=digest*/)
 	if err != nil {
+		log.Errorf("Error saving snapshot: %s", err)
 		return err
 	}
 	c.pausedSnapshotDigest = snapshotDigest
@@ -1192,6 +1209,9 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 // Wait waits until the underlying VM exits. It returns an error if one is
 // encountered while waiting.
 func (c *FirecrackerContainer) Wait(ctx context.Context) error {
+	if c.externalJailerCmd != nil {
+		return c.externalJailerCmd.Wait()
+	}
 	return c.machine.Wait(ctx)
 }
 

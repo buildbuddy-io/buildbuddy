@@ -1555,6 +1555,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:pdN6V1QBWetyv/0+wjACpqVH+eVULgEjkurDLq3goeM=",
         version = "v0.0.0-20180305231024-9cad4c3443a7",
     )
+    go_repository(
+        name = "com_github_groob_plist",
+        importpath = "github.com/groob/plist",
+        sum = "h1:RyfUvLxQ4XCqPzRlNc0rlN/yYaLgReYhpAWmBdtm6ak=",
+        version = "v0.0.0-20210519001750-9f754062e6d6",
+    )
 
     go_repository(
         name = "com_github_grpc_ecosystem_go_grpc_middleware",

@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/mdlayher/vsock"
+	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
@@ -59,6 +60,55 @@ func NewServer(reapMutex *sync.RWMutex) (*execServer, error) {
 		cfs:       cfs,
 		bsClient:  bsClient,
 	}, nil
+}
+
+func clearARPCache() error {
+	handle, err := netlink.NewHandle(syscall.NETLINK_ROUTE)
+	if err != nil {
+		return err
+	}
+	links, err := netlink.LinkList()
+	if err != nil {
+		return err
+	}
+	for _, link := range links {
+		attrs := link.Attrs()
+		if attrs == nil {
+			continue
+		}
+		neigbors, err := handle.NeighList(attrs.Index, netlink.FAMILY_V4)
+		if err != nil {
+			return err
+		}
+		v6neigbors, err := handle.NeighList(attrs.Index, netlink.FAMILY_V6)
+		if err != nil {
+			return err
+		}
+		neigbors = append(neigbors, v6neigbors...)
+		for _, neigh := range neigbors {
+			if err := handle.NeighDel(&neigh); err != nil {
+				log.Errorf("Error deleting neighbor: %s", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeRequest) (*vmxpb.InitializeResponse, error) {
+	if req.GetClearArpCache() {
+		if err := clearARPCache(); err != nil {
+			return nil, err
+		}
+		log.Debugf("Cleared ARP cache")
+	}
+	if req.GetUnixTimestampNanoseconds() > 1 {
+		tv := syscall.NsecToTimeval(req.GetUnixTimestampNanoseconds())
+		if err := syscall.Settimeofday(&tv); err != nil {
+			return nil, err
+		}
+		log.Debugf("Set time of day to %d", req.GetUnixTimestampNanoseconds())
+	}
+	return &vmxpb.InitializeResponse{}, nil
 }
 
 func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
