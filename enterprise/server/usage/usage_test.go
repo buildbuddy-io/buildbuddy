@@ -96,7 +96,7 @@ func TestUsageTracker_Increment_UpdatesRedisStateAcrossCollectionPeriods(t *test
 
 	groupIDs1, err := rdb.SMembers(ctx, groupsKey1).Result()
 	require.NoError(t, err)
-	assert.Equal(t, []string{"GR1"}, groupIDs1, "groups should equal the groups with usage data")
+	assert.ElementsMatch(t, []string{"GR1"}, groupIDs1, "groups should equal the groups with usage data")
 
 	counts2, err := rdb.HGetAll(ctx, countsKey2).Result()
 	require.NoError(t, err)
@@ -107,8 +107,7 @@ func TestUsageTracker_Increment_UpdatesRedisStateAcrossCollectionPeriods(t *test
 
 	groupIDs2, err := rdb.SMembers(ctx, groupsKey2).Result()
 	require.NoError(t, err)
-	assert.Equal(t, []string{"GR1"}, groupIDs2, "groups should equal the groups with usage data")
-
+	assert.ElementsMatch(t, []string{"GR1"}, groupIDs2, "groups should equal the groups with usage data")
 }
 
 func TestUsageTracker_Increment_UpdatesRedisStateForDifferentGroups(t *testing.T) {
@@ -130,7 +129,9 @@ func TestUsageTracker_Increment_UpdatesRedisStateForDifferentGroups(t *testing.T
 	countsKey1 := "usage/counts/GR1/" + usecString(usage1Collection1Start)
 	countsKey2 := "usage/counts/GR2/" + usecString(usage1Collection1Start)
 	groupsKey := "usage/groups/" + usecString(usage1Collection1Start)
-	require.ElementsMatch(t, []string{countsKey1, countsKey2, groupsKey}, keys, "redis keys should match expected format")
+	require.ElementsMatch(
+		t, []string{countsKey1, countsKey2, groupsKey}, keys,
+		"redis keys should match expected format")
 
 	counts1, err := rdb.HGetAll(ctx, countsKey1).Result()
 	require.NoError(t, err)
@@ -165,7 +166,7 @@ func TestUsageTracker_ObserveInvocation_UpdatesRedisState(t *testing.T) {
 	require.NoError(t, err)
 	invocationsKey := "usage/invocations/GR1/" + usecString(usage1Collection1Start)
 	groupsKey := "usage/groups/" + usecString(usage1Collection1Start)
-	require.Equal(t, []string{invocationsKey, groupsKey}, keys, "redis key should match the expected format")
+	require.ElementsMatch(t, []string{invocationsKey, groupsKey}, keys, "redis key should match the expected format")
 
 	invocationIDs, err := rdb.SMembers(ctx, invocationsKey).Result()
 	require.NoError(t, err)
