@@ -59,7 +59,7 @@ func TestUsageTracker_Increment_UpdatesRedisStateAcrossCollectionPeriods(t *test
 	clock := clockwork.NewFakeClockAt(usage1Collection1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
-	ut, err := usage.NewTrackerWithOpts(te, &usage.TrackerOpts{Clock: clock})
+	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
 	require.NoError(t, err)
 
 	// Increment some counts
@@ -103,7 +103,7 @@ func TestUsageTracker_Increment_UpdatesRedisStateForDifferentGroups(t *testing.T
 	te := setupEnv(t)
 	ctx1 := authContext(te, "US1")
 	ctx2 := authContext(te, "US2")
-	ut, err := usage.NewTrackerWithOpts(te, &usage.TrackerOpts{Clock: clock})
+	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
 	require.NoError(t, err)
 
 	// Increment for group 1, then group 2
@@ -135,7 +135,7 @@ func TestUsageTracker_ObserveInvocation_UpdatesRedisState(t *testing.T) {
 	clock := clockwork.NewFakeClockAt(usage1Collection1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
-	ut, err := usage.NewTrackerWithOpts(te, &usage.TrackerOpts{Clock: clock})
+	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
 	require.NoError(t, err)
 
 	ut.ObserveInvocation(ctx, "abc-123")

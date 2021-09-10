@@ -191,7 +191,7 @@ func main() {
 			DB: 1,
 		}, healthChecker, "usage_redis")
 		realEnv.SetUsageRedisClient(redisClient)
-		ut, err := usage.NewTracker(realEnv)
+		ut, err := usage.NewTracker(realEnv, &usage.TrackerOpts{})
 		if err != nil {
 			log.Fatalf("Failed to create usage tracker: %s", err)
 		}

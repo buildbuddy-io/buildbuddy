@@ -31,11 +31,7 @@ type tracker struct {
 	clock clockwork.Clock
 }
 
-func NewTracker(env environment.Env) (*tracker, error) {
-	return NewTrackerWithOpts(env, &TrackerOpts{})
-}
-
-func NewTrackerWithOpts(env environment.Env, opts *TrackerOpts) (*tracker, error) {
+func NewTracker(env environment.Env, opts *TrackerOpts) (*tracker, error) {
 	rdb := env.GetUsageRedisClient()
 	if rdb == nil {
 		return nil, status.UnimplementedError("Missing redis client for usage")
