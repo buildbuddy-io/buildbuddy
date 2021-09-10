@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
+	"github.com/go-redis/redis/v8"
 	"google.golang.org/api/option"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
@@ -183,7 +184,12 @@ func main() {
 	}
 
 	if redisTarget := configurator.GetUsageRedisTarget(); redisTarget != "" {
-		redisClient := redisutil.NewClient(redisTarget, healthChecker, "usage_redis")
+		redisClient := redisutil.NewClientWithOpts(&redis.Options{
+			Addr: redisTarget,
+			// Use db1 for usage data since we use SCAN to iterate over all usage
+			// keys and scanning over unrelated keys would hurt performance.
+			DB: 1,
+		}, healthChecker, "usage_redis")
 		realEnv.SetUsageRedisClient(redisClient)
 		ut, err := usage.NewTracker(realEnv)
 		if err != nil {
