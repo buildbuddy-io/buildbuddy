@@ -119,7 +119,10 @@ func (ut *tracker) ObserveInvocation(ctx context.Context, invocationID string) e
 	}
 
 	ik := invocationsRedisKey(groupID, t)
-	if _, err := ut.rdb.SAdd(ctx, ik, invocationID).Result(); err != nil {
+	pipe := ut.rdb.TxPipeline()
+	pipe.SAdd(ctx, ik, invocationID)
+	pipe.Expire(ctx, ik, redisKeyTTL)
+	if _, err := pipe.Exec(); err != nil {
 		return err
 	}
 
@@ -131,7 +134,10 @@ func (ut *tracker) ObserveInvocation(ctx context.Context, invocationID string) e
 // the data for a given period.
 func (ut *tracker) observeGroup(ctx context.Context, groupID string, t time.Time) error {
 	gk := groupsRedisKey(t)
-	if _, err := ut.rdb.SAdd(ctx, gk, groupID).Result(); err != nil {
+	pipe := ut.rdb.TxPipeline()
+	pipe.SAdd(ctx, gk, groupID)
+	pipe.Expire(ctx, gk, redisKeyTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
 		return err
 	}
 	return nil
