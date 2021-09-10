@@ -64,6 +64,7 @@ type Env interface {
 	GetSchedulerService() interfaces.SchedulerService
 	GetTaskRouter() interfaces.TaskRouter
 	GetCacheRedisClient() *redis.Client
+	GetUsageRedisClient() *redis.Client
 	GetRemoteExecutionRedisClient() *redis.Client
 	GetRemoteExecutionRedisPubSubClient() *redis.Client
 	GetMetricsCollector() interfaces.MetricsCollector
@@ -71,4 +72,5 @@ type Env interface {
 	GetWorkflowService() interfaces.WorkflowService
 	GetGitProviders() interfaces.GitProviders
 	GetUsageService() interfaces.UsageService
+	GetUsageTracker() interfaces.UsageTracker
 }

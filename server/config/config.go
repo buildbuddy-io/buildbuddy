@@ -58,6 +58,7 @@ type appConfig struct {
 	CodeEditorEnabled         bool     `yaml:"code_editor_enabled" usage:"If set, code editor functionality will be enabled."`
 	GlobalFilterEnabled       bool     `yaml:"global_filter_enabled" usage:"If set, the global filter will be enabled in the UI."`
 	UsageEnabled              bool     `yaml:"usage_enabled" usage:"If set, the usage page will be enabled in the UI."`
+	UsageRedisTarget          string   `yaml:"usage_redis_target" usage:"If set, store usage data using the given redis target."`
 }
 
 type buildEventProxy struct {
@@ -688,6 +689,10 @@ func (c *Configurator) GetRemoteExecutionRedisTarget() string {
 	// Fall back to the cache redis target if redis target is not specified in remote execution config.
 	// Historically we did not have a separate redis target for remote execution.
 	return c.GetCacheRedisTarget()
+}
+
+func (c *Configurator) GetUsageRedisTarget() string {
+	return c.gc.App.UsageRedisTarget
 }
 
 func (c *Configurator) GetExecutorConfig() *ExecutorConfig {

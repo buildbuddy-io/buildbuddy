@@ -341,6 +341,12 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 					}
 					return status.UnknownError(fmt.Sprintf("%v", authError))
 				}
+				// Record invocation usage as soon as we know the authenticated user.
+				if ut := e.env.GetUsageTracker(); ut != nil {
+					if err := ut.ObserveInvocation(e.ctx, iid); err != nil {
+						log.Warningf("Failed to record invocation usage: %s", err)
+					}
+				}
 			}
 		}
 
