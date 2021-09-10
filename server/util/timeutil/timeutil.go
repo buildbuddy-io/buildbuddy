@@ -58,6 +58,7 @@ func (*clock) Now() time.Time {
 	return time.Now()
 }
 
+// NewClock returns a clock reflecting the actual time.
 func NewClock() Clock {
 	return &clock{}
 }
