@@ -47,6 +47,7 @@ go_library(
         "//server/util/log",
         "//server/util/tracing",
         "//server/version",
+        "@com_github_go_redis_redis_v8//:redis",
         "@org_golang_google_api//option:go_default_library",
     ],
 )
