@@ -255,3 +255,31 @@ func AuthenticateSelectedGroupID(ctx context.Context, env environment.Env, proto
 	}
 	return groupID, nil
 }
+
+// AuthenticatedGroupID returns the authenticated group ID from the given
+// context. This is preferred for API requests, since the group ID can be
+// determined directly from the API key. UI requests should instead use
+// `AuthenticateSelectedGroupID`, since the API key is not available, and the
+// user's selected group ID needs to be taken into account.
+//
+// If there is no authenticated user and anonymous usage is enabled, this will
+// return the empty string for the user ID, and a nil error.
+func AuthenticatedGroupID(ctx context.Context, env environment.Env) (string, error) {
+	u, err := AuthenticatedUser(ctx, env)
+	if err != nil {
+		if IsAnonymousUserError(err) && env.GetConfigurator().GetAnonymousUsageEnabled() {
+			// Valid anonymous user request.
+			return "", nil
+		}
+		return "", err
+	}
+	groupID := u.GetGroupID()
+	if groupID == "" {
+		return "", status.FailedPreconditionError("Authenticated user does not have an associated group ID")
+	}
+	return groupID, nil
+}
+
+func IsAnonymousUserError(err error) bool {
+	return status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) || status.IsUnimplementedError(err)
+}

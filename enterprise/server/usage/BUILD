@@ -12,7 +12,6 @@ go_library(
         "//server/util/status",
         "//server/util/timeutil",
         "@com_github_go_redis_redis_v8//:redis",
-        "@com_github_jonboulle_clockwork//:clockwork",
     ],
 )
 
@@ -25,10 +24,10 @@ go_test(
         "//enterprise/server/util/redisutil",
         "//server/tables",
         "//server/testutil/testauth",
+        "//server/testutil/testclock",
         "//server/testutil/testenv",
         "//server/util/timeutil",
         "@com_github_go_redis_redis_v8//:redis",
-        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
