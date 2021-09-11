@@ -24,13 +24,13 @@ const (
 	authRedirectParam      = "redirect_url"
 	slugParam              = "slug"
 	slugCookie             = "Slug"
-	loginCookieDuration    = 365*24*time.Hour + time.Hour
+	cookieDuration         = 365 * 24 * time.Hour
 	contextSamlSessionKey  = "saml.session"
 	contextSamlEntityIDKey = "saml.entityID"
 )
 
 var (
-	samlSubjectAttributes   = []string{"urn:oasis:names:tc:SAML:attribute:subject-id", "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent	", "user_id", "username", "mail", "email", "mail", "emailAddress", "Email", "emailaddress", "email_address", "email", "mail", "emailAddress", "Email", "emailaddress", "email_address"}
+	samlSubjectAttributes   = []string{"urn:oasis:names:tc:SAML:attribute:subject-id", "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent", "user_id", "username", "mail", "email", "mail", "emailAddress", "Email", "emailaddress", "email_address", "email", "mail", "emailAddress", "Email", "emailaddress", "email_address"}
 	samlFirstNameAttributes = []string{"FirstName", "givenName", "givenname", "given_name"}
 	samlLastNameAttributes  = []string{"LastName", "surname", "sn"}
 	samlEmailAttributes     = []string{"email", "mail", "emailAddress", "Email", "emailaddress", "email_address"}
@@ -56,15 +56,12 @@ func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 		a.fallback.Login(w, r)
 		return
 	}
-
 	sp, err := a.serviceProviderFromRequest(r)
 	if err != nil {
 		a.fallback.Login(w, r)
 		return
 	}
-
-	auth.SetCookie(w, slugCookie, slug, time.Now().Add(loginCookieDuration))
-
+	auth.SetCookie(w, slugCookie, slug, time.Now().Add(cookieDuration))
 	session, err := sp.Session.GetSession(r)
 	if session != nil {
 		redirectURL := r.URL.Query().Get(authRedirectParam)
@@ -74,7 +71,6 @@ func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 		return
 	}
-
 	sp.HandleStartAuthFlow(w, r)
 }
 
@@ -89,7 +85,6 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 			return ctx
 		}
 	}
-
 	return a.fallback.AuthenticatedHTTPContext(w, r)
 }
 
@@ -98,7 +93,6 @@ func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 	if err != nil {
 		return err
 	}
-
 	if subjectID, session := a.subjectIDAndSessionFromContext(ctx); subjectID != "" && session != nil {
 		attributes := session.GetAttributes()
 		user.UserID = pk
@@ -132,14 +126,12 @@ func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 		a.fallback.Auth(w, r)
 		return
 	}
-
 	sp, err := a.serviceProviderFromRequest(r)
 	if err != nil {
 		log.Warningf("SAML Auth Failed: %s", err)
 		a.fallback.Auth(w, r)
 		return
 	}
-
 	sp.ServeHTTP(w, r)
 }
 
@@ -168,12 +160,10 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	if ok {
 		return provider, nil
 	}
-
 	SAMLConfig := a.env.GetConfigurator().GetSAMLConfig()
 	if SAMLConfig == nil {
 		return nil, status.NotFoundError("No SAML Configured")
 	}
-
 	keyPair, err := tls.LoadX509KeyPair(SAMLConfig.CertFile, SAMLConfig.KeyFile)
 	if err != nil {
 		return nil, err
@@ -182,41 +172,29 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	if err != nil {
 		return nil, err
 	}
-
-	samlURL, err := a.getSAMLUrlForSlug(r.Context(), slug)
+	idpMetadataURL, err := a.getSAMLMetadataUrlForSlug(r.Context(), slug)
 	if err != nil {
 		return nil, err
 	}
-
-	idpMetadataURL, err := url.Parse(samlURL)
-	if err != nil {
-		return nil, err
-	}
-
 	idpMetadata, err := samlsp.FetchMetadata(context.Background(), http.DefaultClient,
 		*idpMetadataURL)
 	if err != nil {
 		return nil, err
 	}
-
 	myURL, err := url.Parse(a.env.GetConfigurator().GetAppBuildBuddyURL())
 	if err != nil {
 		return nil, err
 	}
-
 	authURL, err := myURL.Parse("/auth/")
 	if err != nil {
 		return nil, err
 	}
-
 	entityURL, err := myURL.Parse("saml/metadata")
 	if err != nil {
 		return nil, err
 	}
-
 	query := fmt.Sprintf("%s=%s", slugParam, slug)
 	entityURL.RawQuery = query
-
 	samlSP, _ := samlsp.New(samlsp.Options{
 		EntityID:    entityURL.String(),
 		URL:         *authURL,
@@ -224,11 +202,9 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 		Certificate: keyPair.Leaf,
 		IDPMetadata: idpMetadata,
 	})
-
 	samlSP.ServiceProvider.MetadataURL.RawQuery = query
 	samlSP.ServiceProvider.AcsURL.RawQuery = query
 	samlSP.ServiceProvider.SloURL.RawQuery = query
-
 	a.samlProviders[slug] = samlSP
 	return samlSP, nil
 }
@@ -241,15 +217,19 @@ func (a *SAMLAuthenticator) getSlugFromRequest(r *http.Request) string {
 	return slug
 }
 
-func (a *SAMLAuthenticator) getSAMLUrlForSlug(ctx context.Context, slug string) (string, error) {
+func (a *SAMLAuthenticator) getSAMLMetadataUrlForSlug(ctx context.Context, slug string) (*url.URL, error) {
 	group, err := a.groupForSlug(ctx, slug)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if group.SamlIdpMetadataUrl == "" {
-		return "", status.NotFoundErrorf("Group %s does not have SAML configured", slug)
+		return nil, status.NotFoundErrorf("Group %s does not have SAML configured", slug)
 	}
-	return group.SamlIdpMetadataUrl, nil
+	metadataUrl, err := url.Parse(group.SamlIdpMetadataUrl)
+	if err != nil {
+		return nil, err
+	}
+	return metadataUrl, nil
 }
 
 func (a *SAMLAuthenticator) groupForSlug(ctx context.Context, slug string) (*tables.Group, error) {
@@ -268,7 +248,6 @@ func (a *SAMLAuthenticator) subjectIDAndSessionFromContext(ctx context.Context) 
 	if !ok || entityID == "" {
 		return "", nil
 	}
-
 	if sa, ok := ctx.Value(contextSamlSessionKey).(samlsp.SessionWithAttributes); ok {
 		return fmt.Sprintf("%s/%s", entityID, firstSet(sa.GetAttributes(), samlSubjectAttributes)), sa
 	}

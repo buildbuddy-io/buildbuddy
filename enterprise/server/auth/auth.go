@@ -654,9 +654,8 @@ func (a *OpenIDAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 }
 
 func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
-	ctx := r.Context()
-
 	claims, userToken, err := a.authenticateUser(w, r)
+	ctx := r.Context()
 	if userToken != nil {
 		// Store the user information in the context even if authentication fails.
 		// This information is used in the user creation flow.
@@ -775,7 +774,6 @@ func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 	if err != nil {
 		return err
 	}
-
 	user.UserID = pk
 	user.SubID = t.GetSubID()
 	user.FirstName = t.GivenName
