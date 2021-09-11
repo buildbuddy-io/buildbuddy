@@ -179,6 +179,7 @@ type Group struct {
 	// executors.
 	UseGroupOwnedExecutors bool
 
+	// The SAML IDP Metadata URL for this group.
 	SamlIdpMetadataUrl string
 }
 

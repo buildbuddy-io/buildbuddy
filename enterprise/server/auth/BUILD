@@ -9,6 +9,7 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//enterprise/server/saml",
         "//proto:api_key_go_proto",
         "//server/config",
         "//server/environment",
@@ -24,8 +25,6 @@ go_library(
         "//server/util/status",
         "//server/util/timeutil",
         "@com_github_coreos_go_oidc//:go-oidc",
-        "@com_github_crewjam_saml//:saml",
-        "@com_github_crewjam_saml//samlsp",
         "@com_github_dgrijalva_jwt_go//:jwt-go",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//metadata",

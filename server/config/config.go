@@ -182,7 +182,6 @@ type authConfig struct {
 	JWTKey               string          `yaml:"jwt_key" usage:"The key to use when signing JWT tokens."`
 	APIKeyGroupCacheTTL  string          `yaml:"api_key_group_cache_ttl" usage:"Override for the TTL for API Key to Group caching. Set to '0' to disable cache."`
 	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
-	SAMLProviders        []SAMLProvider  `yaml:"saml_providers"`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
 	SAMLConfig           SAMLConfig      `yaml:"saml" usage:"Configuration for setting up SAML auth support."`
 }
@@ -193,11 +192,6 @@ type OauthProvider struct {
 	ClientSecret string `yaml:"client_secret" usage:"The oauth client secret."`
 	Slug         string `yaml:"slug" usage:"The slug of this OIDC Provider."`
 }
-type SAMLProvider struct {
-	SAMLIDPMetadataURL string `yaml:"saml_idp_metadata_url" usage:"The SAML IDP Metadata URL."`
-	Slug               string `yaml:"slug" usage:"The slug of this SAML Provider."`
-}
-
 type SAMLConfig struct {
 	CertFile string `yaml:"cert_file" usage:"Path to a PEM encoded certificate file used for SAML auth."`
 	KeyFile  string `yaml:"key_file" usage:"Path to a PEM encoded certificate key file used for SAML auth."`
@@ -672,10 +666,6 @@ func (c *Configurator) GetAuthOauthProviders() []OauthProvider {
 		}
 	}
 	return op
-}
-
-func (c *Configurator) GetAuthSAMLProviders() []SAMLProvider {
-	return c.gc.Auth.SAMLProviders
 }
 
 func (c *Configurator) GetAuthAPIKeyGroupCacheTTL() string {
