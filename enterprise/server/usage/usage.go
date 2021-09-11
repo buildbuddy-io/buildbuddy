@@ -122,7 +122,7 @@ func (ut *tracker) ObserveInvocation(ctx context.Context, invocationID string) e
 	pipe := ut.rdb.TxPipeline()
 	pipe.SAdd(ctx, ik, invocationID)
 	pipe.Expire(ctx, ik, redisKeyTTL)
-	if _, err := pipe.Exec(); err != nil {
+	if _, err := pipe.Exec(ctx); err != nil {
 		return err
 	}
 
