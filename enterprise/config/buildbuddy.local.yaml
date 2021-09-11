@@ -27,5 +27,5 @@ github:
   client_id: "${BB_DEV_GITHUB_CLIENT_ID}"
   client_secret: "${BB_DEV_GITHUB_CLIENT_SECRET}"
 remote_execution:
- enable_remote_exec: true
- redis_target: "localhost:6379"
+  enable_remote_exec: true
+  redis_target: "localhost:6379"
