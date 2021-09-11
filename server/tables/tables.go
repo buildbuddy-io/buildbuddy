@@ -180,12 +180,6 @@ type Group struct {
 	UseGroupOwnedExecutors bool
 
 	SamlIdpMetadataUrl string
-
-	OidcIssuerUrl string
-
-	OidcClientId string
-
-	OidcClientSecret string
 }
 
 func (g *Group) TableName() string {

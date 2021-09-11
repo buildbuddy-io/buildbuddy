@@ -737,7 +737,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	// Now try to verify the token again -- this time we check for expiry.
 	// If it succeeds, we're done! Otherwise we fall through to refreshing
 	// the token below.
-	if ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, false); err == nil {
+	if ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, true); err == nil {
 		claims, err := a.claimsFromSubID(ctx, ut.GetSubID())
 		return claims, ut, err
 	}
