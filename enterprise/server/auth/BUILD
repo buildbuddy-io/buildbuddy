@@ -9,7 +9,6 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
-        "//enterprise/server/saml",
         "//proto:api_key_go_proto",
         "//server/config",
         "//server/environment",

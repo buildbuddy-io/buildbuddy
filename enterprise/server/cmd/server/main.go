@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
@@ -101,7 +102,13 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	env.SetAuthDB(authdb.NewAuthDB(env.GetDBHandle()))
 	configureFilesystemsOrDie(env)
+
+	var authenticator interfaces.Authenticator
 	authenticator, err := auth.NewOpenIDAuthenticator(ctx, env)
+	if env.GetConfigurator().GetSAMLConfig() != nil {
+		authenticator = saml.NewSAMLAuthenticator(env, authenticator)
+	}
+
 	if err == nil {
 		env.SetAuthenticator(authenticator)
 	} else {

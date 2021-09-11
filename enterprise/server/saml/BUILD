@@ -9,7 +9,9 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//enterprise/server/auth",
         "//server/environment",
+        "//server/interfaces",
         "//server/tables",
         "//server/util/log",
         "//server/util/status",

@@ -6,12 +6,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -19,35 +21,49 @@ import (
 )
 
 const (
-	authRedirectParam     = "redirect_url"
-	slugParam             = "slug"
-	slugCookie            = "Slug"
-	loginCookieDuration   = 365*24*time.Hour + time.Hour
-	contextSamlSessionKey = "saml.session"
+	authRedirectParam      = "redirect_url"
+	slugParam              = "slug"
+	slugCookie             = "Slug"
+	loginCookieDuration    = 365*24*time.Hour + time.Hour
+	contextSamlSessionKey  = "saml.session"
+	contextSamlEntityIDKey = "saml.entityID"
+)
+
+var (
+	samlSubjectAttributes   = []string{"urn:oasis:names:tc:SAML:attribute:subject-id", "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent	", "user_id", "username", "mail", "email", "mail", "emailAddress", "Email", "emailaddress", "email_address", "email", "mail", "emailAddress", "Email", "emailaddress", "email_address"}
+	samlFirstNameAttributes = []string{"FirstName", "givenName", "givenname", "given_name"}
+	samlLastNameAttributes  = []string{"LastName", "surname", "sn"}
+	samlEmailAttributes     = []string{"email", "mail", "emailAddress", "Email", "emailaddress", "email_address"}
 )
 
 type SAMLAuthenticator struct {
 	env           environment.Env
 	samlProviders map[string]*samlsp.Middleware
+	fallback      interfaces.Authenticator
 }
 
-func NewSAMLAuthenticator(env environment.Env) *SAMLAuthenticator {
+func NewSAMLAuthenticator(env environment.Env, fallback interfaces.Authenticator) *SAMLAuthenticator {
 	return &SAMLAuthenticator{
 		env:           env,
 		samlProviders: make(map[string]*samlsp.Middleware),
+		fallback:      fallback,
 	}
 }
 
 func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
-	if slug := r.URL.Query().Get(slugParam); slug != "" {
-		setCookie(w, slugCookie, slug, time.Now().Add(loginCookieDuration))
+	slug := r.URL.Query().Get(slugParam)
+	if slug == "" {
+		a.fallback.Login(w, r)
+		return
 	}
 
 	sp, err := a.serviceProviderFromRequest(r)
 	if err != nil {
-		redirectWithError(w, r, err)
+		a.fallback.Login(w, r)
 		return
 	}
+
+	auth.SetCookie(w, slugCookie, slug, time.Now().Add(loginCookieDuration))
 
 	session, err := sp.Session.GetSession(r)
 	if session != nil {
@@ -69,16 +85,12 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 		sa, ok := session.(samlsp.SessionWithAttributes)
 		if ok {
 			ctx = context.WithValue(ctx, contextSamlSessionKey, sa)
+			ctx = context.WithValue(ctx, contextSamlEntityIDKey, sp.ServiceProvider.EntityID)
+			return ctx
 		}
 	}
-	return ctx
-}
 
-func (a *SAMLAuthenticator) SubjectIDFromContext(ctx context.Context) string {
-	if sa, ok := ctx.Value(contextSamlSessionKey).(samlsp.SessionWithAttributes); ok {
-		return sa.GetAttributes().Get("urn:oasis:names:tc:SAML:attribute:subject-id")
-	}
-	return ""
+	return a.fallback.AuthenticatedHTTPContext(w, r)
 }
 
 func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
@@ -87,24 +99,64 @@ func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 		return err
 	}
 
-	if sa, ok := ctx.Value(contextSamlSessionKey).(samlsp.SessionWithAttributes); ok {
-		attributes := sa.GetAttributes()
+	if subjectID, session := a.subjectIDAndSessionFromContext(ctx); subjectID != "" && session != nil {
+		attributes := session.GetAttributes()
 		user.UserID = pk
-		user.SubID = attributes.Get("urn:oasis:names:tc:SAML:attribute:subject-id")
-		// todo are these standard?
-		user.FirstName = attributes.Get("givenName")
-		user.LastName = attributes.Get("sn")
-		user.Email = attributes.Get("mail")
-		// user.ImageURL = attributes.Get()
+		user.SubID = subjectID
+		user.FirstName = firstSet(attributes, samlFirstNameAttributes)
+		user.LastName = firstSet(attributes, samlLastNameAttributes)
+		user.Email = firstSet(attributes, samlEmailAttributes)
 		return nil
 	}
-	return status.NotFoundErrorf("User not found")
+	return a.fallback.FillUser(ctx, user)
 }
 
 func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
+	auth.ClearCookie(w, slugCookie)
 	if sp, err := a.serviceProviderFromRequest(r); err == nil {
 		sp.Session.DeleteSession(w, r)
 	}
+	a.fallback.Logout(w, r)
+}
+
+func (a *SAMLAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
+	if s, _ := a.subjectIDAndSessionFromContext(ctx); s != "" {
+		claims, err := auth.ClaimsFromSubID(a.env, ctx, s)
+		return claims, err
+	}
+	return a.fallback.AuthenticatedUser(ctx)
+}
+
+func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasPrefix(r.URL.Path, "/auth/saml/") {
+		a.fallback.Auth(w, r)
+		return
+	}
+
+	sp, err := a.serviceProviderFromRequest(r)
+	if err != nil {
+		log.Warningf("SAML Auth Failed: %s", err)
+		a.fallback.Auth(w, r)
+		return
+	}
+
+	sp.ServeHTTP(w, r)
+}
+
+func (a *SAMLAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
+	return a.fallback.AuthenticatedGRPCContext(ctx)
+}
+
+func (a *SAMLAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
+	return a.fallback.AuthenticateGRPCRequest(ctx)
+}
+
+func (a *SAMLAuthenticator) ParseAPIKeyFromString(s string) string {
+	return a.fallback.ParseAPIKeyFromString(s)
+}
+
+func (a *SAMLAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
+	return a.fallback.AuthContextFromAPIKey(ctx, apiKey)
 }
 
 func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp.Middleware, error) {
@@ -181,20 +233,10 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	return samlSP, nil
 }
 
-func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
-	sp, err := a.serviceProviderFromRequest(r)
-	if err != nil {
-		redirectWithError(w, r, err)
-		return
-	}
-
-	sp.ServeHTTP(w, r)
-}
-
 func (a *SAMLAuthenticator) getSlugFromRequest(r *http.Request) string {
 	slug := r.URL.Query().Get(slugParam)
 	if slug == "" {
-		slug = getCookie(r, slugCookie)
+		slug = auth.GetCookie(r, slugCookie)
 	}
 	return slug
 }
@@ -221,25 +263,25 @@ func (a *SAMLAuthenticator) groupForSlug(ctx context.Context, slug string) (*tab
 	return userDB.GetGroupByURLIdentifier(ctx, slug)
 }
 
-func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
-	log.Warning(err.Error())
-	http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
+func (a *SAMLAuthenticator) subjectIDAndSessionFromContext(ctx context.Context) (string, samlsp.SessionWithAttributes) {
+	entityID, ok := ctx.Value(contextSamlEntityIDKey).(string)
+	if !ok || entityID == "" {
+		return "", nil
+	}
+
+	if sa, ok := ctx.Value(contextSamlSessionKey).(samlsp.SessionWithAttributes); ok {
+		return fmt.Sprintf("%s/%s", entityID, firstSet(sa.GetAttributes(), samlSubjectAttributes)), sa
+	}
+	return "", nil
 }
 
-func setCookie(w http.ResponseWriter, name, value string, expiry time.Time) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     name,
-		Value:    value,
-		Expires:  expiry,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/",
-	})
-}
-
-func getCookie(r *http.Request, name string) string {
-	if c, err := r.Cookie(name); err == nil {
-		return c.Value
+func firstSet(attributes samlsp.Attributes, keys []string) string {
+	for _, key := range keys {
+		value := attributes.Get(key)
+		if value == "" {
+			continue
+		}
+		return value
 	}
 	return ""
 }
