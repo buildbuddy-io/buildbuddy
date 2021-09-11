@@ -347,41 +347,32 @@ type OpenIDAuthenticator struct {
 func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.OauthProvider, authURL *url.URL) ([]authenticator, error) {
 	var authenticators []authenticator
 	for _, authConfig := range authConfigs {
-		provider, err := authProviderForConfig(ctx, authConfig, authURL)
+		provider, err := oidc.NewProvider(ctx, authConfig.IssuerURL)
 		if err != nil {
 			return nil, err
 		}
-		authenticators = append(authenticators, provider)
+		oidcConfig := &oidc.Config{
+			ClientID:        authConfig.ClientID,
+			SkipExpiryCheck: false,
+		}
+		// Configure an OpenID Connect aware OAuth2 client.
+		oauth2Config := &oauth2.Config{
+			ClientID:     authConfig.ClientID,
+			ClientSecret: authConfig.ClientSecret,
+			RedirectURL:  authURL.String(),
+			Endpoint:     provider.Endpoint(),
+			// "openid" is a required scope for OpenID Connect flows.
+			Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
+		}
+		authenticators = append(authenticators, &oidcAuthenticator{
+			slug:         authConfig.Slug,
+			issuer:       authConfig.IssuerURL,
+			oauth2Config: oauth2Config,
+			oidcConfig:   oidcConfig,
+			provider:     provider,
+		})
 	}
 	return authenticators, nil
-}
-
-func authProviderForConfig(ctx context.Context, authConfig config.OauthProvider, authURL *url.URL) (authenticator, error) {
-	provider, err := oidc.NewProvider(ctx, authConfig.IssuerURL)
-	if err != nil {
-		return nil, err
-	}
-	oidcConfig := &oidc.Config{
-		ClientID:        authConfig.ClientID,
-		SkipExpiryCheck: false,
-	}
-	// Configure an OpenID Connect aware OAuth2 client.
-	oauth2Config := &oauth2.Config{
-		ClientID:     authConfig.ClientID,
-		ClientSecret: authConfig.ClientSecret,
-		RedirectURL:  authURL.String(),
-		Endpoint:     provider.Endpoint(),
-		// "openid" is a required scope for OpenID Connect flows.
-		Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
-	}
-
-	return &oidcAuthenticator{
-		slug:         authConfig.Slug,
-		issuer:       authConfig.IssuerURL,
-		oauth2Config: oauth2Config,
-		oidcConfig:   oidcConfig,
-		provider:     provider,
-	}, nil
 }
 
 func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProviders []config.OauthProvider) (*OpenIDAuthenticator, error) {
@@ -474,34 +465,6 @@ func (a *OpenIDAuthenticator) getAuthConfigForSlug(ctx context.Context, slug str
 	for _, a := range a.authenticators {
 		if strings.EqualFold(a.getSlug(), slug) {
 			return a
-		}
-	}
-	group, err := a.groupForSlug(ctx, slug)
-	if err != nil {
-		return nil
-	}
-
-	myURL, err := url.Parse(a.env.GetConfigurator().GetAppBuildBuddyURL())
-	if err != nil {
-		return nil
-	}
-
-	authURL, err := myURL.Parse("/auth/")
-	if err != nil {
-		return nil
-	}
-
-	if group.OidcIssuerUrl != "" {
-		c := config.OauthProvider{
-			IssuerURL:    group.OidcIssuerUrl,
-			ClientID:     group.OidcClientId,
-			ClientSecret: group.OidcClientSecret,
-			Slug:         *group.URLIdentifier,
-		}
-
-		provider, err := authProviderForConfig(ctx, c, authURL)
-		if err == nil {
-			return provider
 		}
 	}
 	return nil
