@@ -30,10 +30,10 @@ const (
 )
 
 var (
-	samlSubjectAttributes   = []string{"urn:oasis:names:tc:SAML:attribute:subject-id", "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent", "user_id", "username", "mail", "email", "mail", "emailAddress", "Email", "emailaddress", "email_address", "email", "mail", "emailAddress", "Email", "emailaddress", "email_address"}
 	samlFirstNameAttributes = []string{"FirstName", "givenName", "givenname", "given_name"}
 	samlLastNameAttributes  = []string{"LastName", "surname", "sn"}
 	samlEmailAttributes     = []string{"email", "mail", "emailAddress", "Email", "emailaddress", "email_address"}
+	samlSubjectAttributes   = append([]string{"urn:oasis:names:tc:SAML:attribute:subject-id", "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent", "user_id", "username"}, samlEmailAttributes...)
 )
 
 type SAMLAuthenticator struct {
@@ -161,7 +161,7 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 		return provider, nil
 	}
 	SAMLConfig := a.env.GetConfigurator().GetSAMLConfig()
-	if SAMLConfig == nil {
+	if SAMLConfig.CertFile == "" || SAMLConfig.KeyFile == "" {
 		return nil, status.NotFoundError("No SAML Configured")
 	}
 	keyPair, err := tls.LoadX509KeyPair(SAMLConfig.CertFile, SAMLConfig.KeyFile)

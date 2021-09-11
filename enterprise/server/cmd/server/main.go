@@ -105,11 +105,11 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 
 	var authenticator interfaces.Authenticator
 	authenticator, err := auth.NewOpenIDAuthenticator(ctx, env)
-	if env.GetConfigurator().GetSAMLConfig() != nil {
-		authenticator = saml.NewSAMLAuthenticator(env, authenticator)
-	}
-
 	if err == nil {
+		if env.GetConfigurator().GetSAMLConfig().CertFile != "" {
+			log.Info("SAML auth configured.")
+			authenticator = saml.NewSAMLAuthenticator(env, authenticator)
+		}
 		env.SetAuthenticator(authenticator)
 	} else {
 		log.Warningf("No authentication will be configured: %s", err)
