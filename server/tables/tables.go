@@ -433,6 +433,51 @@ type UsageCounts struct {
 	TotalDownloadSizeBytes int64
 }
 
+// Usage holds usage counter values for a group during a particular time period.
+type Usage struct {
+	Model
+
+	GroupID string `gorm:"uniqueIndex:group_id_period_start_usec_index,priority:1"`
+
+	// PeriodStartUsec is the time at which the usage period started, in
+	// microseconds since the Unix epoch. The usage period duration is 1 hour.
+	// Only usage data occurring in collection periods inside this 1 hour period
+	// is included in this usage row.
+	PeriodStartUsec int64 `gorm:"uniqueIndex:group_id_period_start_usec_index,priority:2"`
+
+	// FinalBeforeUsec is the time before which all collection period data in this
+	// usage period is finalized. This is used to guarantee that collection period
+	// data is added to this row in strictly increasing order of collection period
+	// start time.
+	FinalBeforeUsec int64
+
+	UsageCounts
+}
+
+func (*Usage) TableName() string {
+	return "Usages"
+}
+
+// InvocationUsage keeps track of usage periods during which invocations
+// occurred.
+type InvocationUsage struct {
+	Model
+
+	GroupID string `gorm:"group_id_period_start_usec_index,priority:1"`
+
+	// PeriodStartUsec is the time at which the usage period started, in
+	// microseconds since the Unix epoch. The unique index prevents recording
+	// usage values more than once for a given usage period. The usage period
+	// duration is implicitly 1 hour.
+	PeriodStartUsec int64 `gorm:"group_id_period_start_usec_index,priority:2"`
+
+	InvocationID string `gorm:"uniqueIndex:invocation_id_index"`
+}
+
+func (*InvocationUsage) TableName() string {
+	return "InvocationUsages"
+}
+
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.
@@ -555,5 +600,6 @@ func init() {
 	registerTable("CL", &CacheLog{})
 	registerTable("TA", &Target{})
 	registerTable("TS", &TargetStatus{})
-	registerTable("WF", &Workflow{})
+	registerTable("UA", &Usage{})
+	registerTable("IU", &InvocationUsage{})
 }

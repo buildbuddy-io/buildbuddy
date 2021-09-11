@@ -4,25 +4,44 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
+	"github.com/go-redsync/redsync/v4"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+
+	redsync_goredis "github.com/go-redsync/redsync/v4/redis/goredis/v8"
 )
 
 const (
-	// collectionPeriodDuration determines the granularity at which we flush data
-	// to the DB.
+	// collectionPeriodDuration determines the length of time for usage data
+	// buckets in Redis. This directly affects the minimum period at which we
+	// can flush data to the DB, since we only flush buckets for past time
+	// periods.
 	//
-	// NOTE: if this value is changed, then the implementation of
-	// collectionPeriodStartUsec needs to change as well. Also note that if this
-	// value is increased, we may lose some usage data for a short period of time,
-	// since keys at smaller granularity may not be properly flushed to the DB.
+	// NOTE: this is not intended to be a "knob" that can be tweaked -- various
+	// pieces of the implementation implicitly rely on this value, and the current
+	// synchronization logic does not account for this being changed. If we do
+	// decide to change this value while the usage tracker is running in production,
+	// we need to be careful not to overcount usage when transitioning to the new
+	// value.
 	collectionPeriodDuration = 1 * time.Minute
+
+	// collectionPeriodSettlingTime is the max length of time that we expect
+	// usage data to be written to a collection period bucket in Redis after the
+	// collection period has ended. This accounts for differences in clocks across
+	// apps as well as Redis latency.
+	collectionPeriodSettlingTime = 10 * time.Second
 
 	// redisKeyTTL defines how long usage keys have to live before they are
 	// deleted automatically by Redis.
@@ -37,6 +56,19 @@ const (
 	redisGroupsKeyPrefix      = redisUsageKeyPrefix + "groups/"
 	redisCountsKeyPrefix      = redisUsageKeyPrefix + "counts/"
 	redisInvocationsKeyPrefix = redisUsageKeyPrefix + "invocations/"
+
+	redisUsageLockKey    = "lock.usage"
+	redisUsageLockExpiry = 45 * time.Second
+	// If a flush fails due to a timeout, extend the timeout by this long so that
+	// we have enough time to unlock the lock.
+	redisUsageLockFinalizationTimeout = 5 * time.Second
+
+	flushInterval = collectionPeriodDuration
+	flushTimeout  = redisUsageLockExpiry - 10*time.Second
+)
+
+var (
+	collectionPeriodZeroValue = collectionPeriodStartingAt(time.Unix(0, 0))
 )
 
 type TrackerOpts struct {
@@ -47,6 +79,9 @@ type tracker struct {
 	env   environment.Env
 	rdb   *redis.Client
 	clock timeutil.Clock
+
+	flushMutex *redsync.Mutex
+	stopFlush  chan struct{}
 }
 
 func NewTracker(env environment.Env, opts *TrackerOpts) (*tracker, error) {
@@ -58,10 +93,19 @@ func NewTracker(env environment.Env, opts *TrackerOpts) (*tracker, error) {
 	if clock == nil {
 		clock = timeutil.NewClock()
 	}
+
+	pool := redsync_goredis.NewPool(rdb)
+	rs := redsync.New(pool)
+	flushMutex := rs.NewMutex(
+		redisUsageLockKey,
+		redsync.WithTries(1), redsync.WithExpiry(redisUsageLockExpiry),
+	)
+
 	return &tracker{
-		env:   env,
-		rdb:   rdb,
-		clock: clock,
+		env:        env,
+		rdb:        rdb,
+		clock:      clock,
+		flushMutex: flushMutex,
 	}, nil
 }
 
@@ -83,13 +127,13 @@ func (ut *tracker) Increment(ctx context.Context, counts *tables.UsageCounts) er
 		return nil
 	}
 
-	t := ut.clock.Now()
+	c := ut.currentCollectionPeriod()
 
-	if err := ut.observeGroup(ctx, groupID, t); err != nil {
+	if err := ut.observeGroup(ctx, groupID, c); err != nil {
 		return err
 	}
 
-	uk := countsRedisKey(groupID, t)
+	uk := countsRedisKey(groupID, c)
 	pipe := ut.rdb.TxPipeline()
 	for k, c := range m {
 		pipe.HIncrBy(ctx, uk, k, c)
@@ -112,13 +156,13 @@ func (ut *tracker) ObserveInvocation(ctx context.Context, invocationID string) e
 		return nil
 	}
 
-	t := ut.clock.Now()
+	c := ut.currentCollectionPeriod()
 
-	if err := ut.observeGroup(ctx, groupID, t); err != nil {
+	if err := ut.observeGroup(ctx, groupID, c); err != nil {
 		return err
 	}
 
-	ik := invocationsRedisKey(groupID, t)
+	ik := invocationsRedisKey(groupID, c)
 	pipe := ut.rdb.TxPipeline()
 	pipe.SAdd(ctx, ik, invocationID)
 	pipe.Expire(ctx, ik, redisKeyTTL)
@@ -132,8 +176,8 @@ func (ut *tracker) ObserveInvocation(ctx context.Context, invocationID string) e
 // observeGroup records that the given group has usage data for the current
 // collection period, so we know which groups to look for when flushing
 // the data for a given period.
-func (ut *tracker) observeGroup(ctx context.Context, groupID string, t time.Time) error {
-	gk := groupsRedisKey(t)
+func (ut *tracker) observeGroup(ctx context.Context, groupID string, c collectionPeriod) error {
+	gk := groupsRedisKey(c)
 	pipe := ut.rdb.TxPipeline()
 	pipe.SAdd(ctx, gk, groupID)
 	pipe.Expire(ctx, gk, redisKeyTTL)
@@ -143,26 +187,264 @@ func (ut *tracker) observeGroup(ctx context.Context, groupID string, t time.Time
 	return nil
 }
 
-func collectionPeriodStartUsec(t time.Time) int64 {
+// StartDBFlush starts a goroutine that periodically flushes usage data from
+// Redis to the DB.
+func (ut *tracker) StartDBFlush() {
+	ut.stopFlush = make(chan struct{})
+	go func() {
+		ctx := context.Background()
+		for {
+			select {
+			case <-time.After(flushInterval):
+				if err := ut.FlushToDB(ctx); err != nil {
+					log.Errorf("Failed to flush usage data to DB: %s", err)
+				}
+			case <-ut.stopFlush:
+				return
+			}
+		}
+	}()
+}
+
+// StopDBFlush cancels the goroutine started by StartDBFlush.
+func (ut *tracker) StopDBFlush() {
+	ut.stopFlush <- struct{}{}
+}
+
+// FlushToDB flushes usage metrics from any finalized collection periods to the
+// DB.
+//
+// Public for testing only.
+func (ut *tracker) FlushToDB(ctx context.Context) error {
+	// redsync.ErrFailed can be safely ignored; it just means that another app
+	// is already trying to flush.
+	if err := ut.flushToDB(ctx); err != nil && err != redsync.ErrFailed {
+		return err
+	}
+	return nil
+}
+
+func (ut *tracker) flushToDB(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, flushTimeout)
+	defer cancel()
+
+	// Grab lock. This will immediately return `redsync.ErrFailed` if another
+	// client already holds the lock.
+	if err := ut.flushMutex.LockContext(ctx); err != nil {
+		return err
+	}
+	defer func() {
+		ctx, cancel := background.ExtendContextForFinalization(ctx, redisUsageLockFinalizationTimeout)
+		defer cancel()
+		if ok, err := ut.flushMutex.UnlockContext(ctx); !ok || err != nil {
+			log.Warningf("Failed to unlock Redis lock: ok=%v, err=%s", ok, err)
+		}
+	}()
+
+	dbh := ut.env.GetDBHandle()
+
+	// Loop through collection periods starting from the oldest collection period
+	// that may exist in Redis (based on key expiration time) and looping up until
+	// we hit a collection period which is not yet "settled".
+
+	for c := ut.oldestWritableCollectionPeriod(); ut.isSettled(c); c = c.Next() {
+		// Read groups
+		gk := groupsRedisKey(c)
+		groupIDs, err := ut.rdb.SMembers(ctx, gk).Result()
+		if err != nil {
+			return err
+		}
+
+		for _, groupID := range groupIDs {
+			// Read invocations, flush to DB, then delete the Redis data for the
+			// invocations.
+			ik := invocationsRedisKey(groupID, c)
+			iids, err := ut.rdb.SMembers(ctx, ik).Result()
+			if err != nil {
+				return err
+			}
+			for _, iid := range iids {
+				iu := &tables.InvocationUsage{
+					GroupID:         groupID,
+					PeriodStartUsec: timeutil.ToUsec(c.UsagePeriod().Start()),
+					InvocationID:    iid,
+				}
+				err := dbh.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(iu).Error
+				if err != nil {
+					return err
+				}
+			}
+			if _, err := ut.rdb.Del(ctx, ik).Result(); err != nil {
+				return err
+			}
+
+			// Read usage counts, flush to DB, then delete the Redis key for the counts.
+			ck := countsRedisKey(groupID, c)
+			h, err := ut.rdb.HGetAll(ctx, ck).Result()
+			if err != nil {
+				return err
+			}
+			counts, err := stringMapToCounts(h)
+			if err != nil {
+				return err
+			}
+
+			pk := &tables.Usage{
+				GroupID:         groupID,
+				PeriodStartUsec: timeutil.ToUsec(c.UsagePeriod().Start()),
+			}
+			err = dbh.Transaction(ctx, func(tx *db.DB) error {
+				// Create if not exists
+				err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(pk).Error
+				if err != nil {
+					return err
+				}
+				updates, err := ut.usageUpdates(c, counts)
+				if err != nil {
+					return err
+				}
+				// Update if collection period data not already been written
+				return tx.Model(&tables.Usage{}).Where(
+					`group_id = ?
+					AND period_start_usec = ?
+					AND final_before_usec <= ?`,
+					pk.GroupID,
+					pk.PeriodStartUsec,
+					timeutil.ToUsec(c.Start()),
+				).Updates(updates).Error
+			})
+			if err != nil {
+				return err
+			}
+			if _, err := ut.rdb.Del(ctx, ck).Result(); err != nil {
+				return err
+			}
+		}
+
+		// Delete the Redis data for the groups.
+		if _, err := ut.rdb.Del(ctx, gk).Result(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// usageUpdates returns a GORM updates map that finalizes the usage row up to
+// the end of the collection period and increments each field by the
+// corresponding value in counts.
+func (ut *tracker) usageUpdates(c collectionPeriod, counts *tables.UsageCounts) (map[string]interface{}, error) {
+	updates := map[string]interface{}{
+		"final_before_usec": timeutil.ToUsec(c.End()),
+	}
+	m, err := countsToMap(counts)
+	if err != nil {
+		return nil, err
+	}
+	// We need to use SQL expressions here to increment the counts without having
+	// to first read them from the DB. Expressions need to explicitly reference
+	// the SQL column name, which we can look up from the Go field name using the
+	// schema.
+	schema, err := ut.env.GetDBHandle().Schema(&tables.Usage{})
+	if err != nil {
+		return nil, err
+	}
+	for key, count := range m {
+		fieldSchema := schema.LookUpField(key)
+		if fieldSchema == nil {
+			return nil, status.InvalidArgumentErrorf("Failed look get SQL column name for `Usages.%s`", key)
+		}
+		col := fieldSchema.DBName
+		updates[col] = gorm.Expr(fmt.Sprintf("%s + ?", col), count)
+	}
+	return updates, nil
+}
+
+func (ut *tracker) currentCollectionPeriod() collectionPeriod {
+	return collectionPeriodStartingAt(ut.clock.Now())
+}
+
+func (ut *tracker) oldestWritableCollectionPeriod() collectionPeriod {
+	return collectionPeriodStartingAt(ut.clock.Now().Add(-redisKeyTTL))
+}
+
+func (ut *tracker) lastSettledCollectionPeriod() collectionPeriod {
+	return collectionPeriodStartingAt(ut.clock.Now().Add(-(collectionPeriodDuration + collectionPeriodSettlingTime)))
+}
+
+// IsSettled returns whether this collection period is settled.
+func (ut *tracker) isSettled(c collectionPeriod) bool {
+	return !time.Time(c).After(time.Time(ut.lastSettledCollectionPeriod()))
+}
+
+// collectionPeriod is an interval of time starting at the beginning of a minute
+// in UTC time and lasting one minute. Usage data is bucketed by collection
+// period in Redis.
+type collectionPeriod time.Time
+
+func collectionPeriodStartingAt(t time.Time) collectionPeriod {
 	utc := t.UTC()
-	// Start of minute
-	start := time.Date(
+	return collectionPeriod(time.Date(
 		utc.Year(), utc.Month(), utc.Day(),
 		utc.Hour(), utc.Minute(), 0, 0,
-		utc.Location())
-	return timeutil.ToUsec(start)
+		utc.Location()))
 }
 
-func groupsRedisKey(t time.Time) string {
-	return fmt.Sprintf("%s%d", redisGroupsKeyPrefix, collectionPeriodStartUsec(t))
+func parseCollectionPeriod(s string) (collectionPeriod, error) {
+	usec, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return collectionPeriodZeroValue, err
+	}
+	t := timeutil.FromUsec(usec)
+	return collectionPeriodStartingAt(t), nil
 }
 
-func countsRedisKey(groupID string, t time.Time) string {
-	return fmt.Sprintf("%s%s/%d", redisCountsKeyPrefix, groupID, collectionPeriodStartUsec(t))
+func (c collectionPeriod) Start() time.Time {
+	return time.Time(c)
 }
 
-func invocationsRedisKey(groupID string, t time.Time) string {
-	return fmt.Sprintf("%s%s/%d", redisInvocationsKeyPrefix, groupID, collectionPeriodStartUsec(t))
+func (c collectionPeriod) End() time.Time {
+	return c.Start().Add(collectionPeriodDuration)
+}
+
+// Next returns the next collection period after this one.
+func (c collectionPeriod) Next() collectionPeriod {
+	return collectionPeriod(c.End())
+}
+
+// UsagePeriod returns the usage period that this collection period is contained
+// within.
+func (c collectionPeriod) UsagePeriod() usagePeriod {
+	t := c.Start()
+	return usagePeriod(time.Date(
+		t.Year(), t.Month(), t.Day(),
+		t.Hour(), 0, 0, 0,
+		t.Location()))
+}
+
+// String returns a string uniquely identifying this collection period. It can
+// later be reconstructed with parseCollectionPeriod.
+func (c collectionPeriod) String() string {
+	return fmt.Sprintf("%d", timeutil.ToUsec(c.Start()))
+}
+
+// usagePeriod is an interval of time starting at the beginning of each UTC hour
+// and ending at the start of the following hour.
+type usagePeriod time.Time
+
+func (u usagePeriod) Start() time.Time {
+	return time.Time(u)
+}
+
+func groupsRedisKey(c collectionPeriod) string {
+	return fmt.Sprintf("%s%s", redisGroupsKeyPrefix, c)
+}
+
+func countsRedisKey(groupID string, c collectionPeriod) string {
+	return fmt.Sprintf("%s%s/%s", redisCountsKeyPrefix, groupID, c)
+}
+
+func invocationsRedisKey(groupID string, c collectionPeriod) string {
+	return fmt.Sprintf("%s%s/%s", redisInvocationsKeyPrefix, groupID, c)
 }
 
 func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
@@ -180,4 +462,26 @@ func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
 		}
 	}
 	return counts, nil
+}
+
+// stringMapToCounts converts a Redis hashmap containing usage counts to
+// tables.UsageCounts.
+func stringMapToCounts(h map[string]string) (*tables.UsageCounts, error) {
+	hInt64 := map[string]int64{}
+	for k, v := range h {
+		count, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("Invalid usage count in Redis hash: %q => %q", k, v)
+		}
+		hInt64[k] = count
+	}
+	b, err := json.Marshal(hInt64)
+	if err != nil {
+		return nil, err
+	}
+	tu := &tables.UsageCounts{}
+	if err := json.Unmarshal(b, tu); err != nil {
+		return nil, err
+	}
+	return tu, nil
 }

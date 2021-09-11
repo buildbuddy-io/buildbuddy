@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"gorm.io/gorm/schema"
 
 	// We support MySQL (preferred) and Sqlite3.
 	// New dialects need to be added to openDB() as well.
@@ -110,6 +111,14 @@ func (dbh *DBHandle) ReadRow(out interface{}, where ...interface{}) error {
 		return status.NotFoundError("Record not found")
 	}
 	return err
+}
+
+func (dbh *DBHandle) Schema(model interface{}) (*schema.Schema, error) {
+	s := dbh.Model(model).Statement
+	if err := s.Parse(model); err != nil {
+		return nil, err
+	}
+	return s.Schema, nil
 }
 
 func runMigrations(dialect string, gdb *gorm.DB) error {
