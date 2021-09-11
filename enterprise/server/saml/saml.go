@@ -38,7 +38,7 @@ func NewSAMLAuthenticator(env environment.Env) *SAMLAuthenticator {
 	}
 }
 
-func (a *SAMLAuthenticator) LoginWithSAML(w http.ResponseWriter, r *http.Request) {
+func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	if slug := r.URL.Query().Get(slugParam); slug != "" {
 		setCookie(w, slugCookie, slug, time.Now().Add(loginCookieDuration))
 	}
@@ -62,7 +62,7 @@ func (a *SAMLAuthenticator) LoginWithSAML(w http.ResponseWriter, r *http.Request
 	sp.HandleStartAuthFlow(w, r)
 }
 
-func (a *SAMLAuthenticator) ContextWithSamlSession(r *http.Request) context.Context {
+func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
 	ctx := r.Context()
 	if sp, err := a.serviceProviderFromRequest(r); err == nil {
 		session, _ := sp.Session.GetSession(r)
@@ -152,25 +152,36 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 		return nil, err
 	}
 
+	authURL, err := myURL.Parse("/auth/")
+	if err != nil {
+		return nil, err
+	}
+
+	entityURL, err := myURL.Parse("saml/metadata")
+	if err != nil {
+		return nil, err
+	}
+
+	query := fmt.Sprintf("%s=%s", slugParam, slug)
+	entityURL.RawQuery = query
+
 	samlSP, _ := samlsp.New(samlsp.Options{
-		EntityID:    "io.buildbuddy." + slug,
-		URL:         *myURL,
+		EntityID:    entityURL.String(),
+		URL:         *authURL,
 		Key:         keyPair.PrivateKey.(*rsa.PrivateKey),
 		Certificate: keyPair.Leaf,
 		IDPMetadata: idpMetadata,
 	})
 
-	query := fmt.Sprintf("%s=%s", slugParam, slug)
 	samlSP.ServiceProvider.MetadataURL.RawQuery = query
 	samlSP.ServiceProvider.AcsURL.RawQuery = query
 	samlSP.ServiceProvider.SloURL.RawQuery = query
-	samlSP.ServiceProvider.EntityID = samlSP.ServiceProvider.MetadataURL.String()
 
 	a.samlProviders[slug] = samlSP
 	return samlSP, nil
 }
 
-func (a *SAMLAuthenticator) SAML(w http.ResponseWriter, r *http.Request) {
+func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	sp, err := a.serviceProviderFromRequest(r)
 	if err != nil {
 		redirectWithError(w, r, err)

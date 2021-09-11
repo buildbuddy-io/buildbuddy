@@ -657,7 +657,7 @@ func (a *OpenIDAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 }
 
 func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
-	r = r.WithContext(a.samlAuthenticator.ContextWithSamlSession(r))
+	r = r.WithContext(a.samlAuthenticator.AuthenticatedHTTPContext(w, r))
 
 	ctx := r.Context()
 
@@ -774,11 +774,6 @@ func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces
 	return claims, nil
 }
 
-func (a *OpenIDAuthenticator) SAML(w http.ResponseWriter, r *http.Request) {
-	a.samlAuthenticator.SAML(w, r)
-}
-
-
 func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
 	if err := a.samlAuthenticator.FillUser(ctx, user); err == nil {
 		return nil
@@ -811,7 +806,7 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	if slug := r.URL.Query().Get(slugParam); slug != "" {
 		auth = a.getAuthConfigForSlug(slug)
 		if auth == nil {
-			a.samlAuthenticator.LoginWithSAML(w, r)
+			a.samlAuthenticator.Login(w, r)
 			return
 		}
 		issuer = auth.getIssuer()
@@ -860,6 +855,11 @@ func (a *OpenIDAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
 
 func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
+	if strings.HasPrefix(r.URL.Path, "/auth/saml/") {
+		a.samlAuthenticator.Auth(w, r)
+		return
+	}
 
 	// Verify "state" cookie match.
 	if r.FormValue("state") != getCookie(r, stateCookie) {
