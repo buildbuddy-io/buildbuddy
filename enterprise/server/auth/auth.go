@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"fmt"
-
 	"net/http"
 	"net/url"
 	"regexp"
@@ -256,7 +255,6 @@ func (a *oidcAuthenticator) verifyTokenAndExtractUser(ctx context.Context, jwt s
 	conf.SkipExpiryCheck = !checkExpiry
 	validToken, err := a.provider.Verifier(conf).Verify(ctx, jwt)
 	if err != nil {
-		log.Printf("Error verifying jwt: %+v %+v", jwt, err)
 		return nil, err
 	}
 	return extractToken(a.issuer, validToken)
@@ -455,7 +453,7 @@ func (a *OpenIDAuthenticator) getAuthConfig(issuer string) authenticator {
 	return nil
 }
 
-func (a *OpenIDAuthenticator) getAuthConfigForSlug(ctx context.Context, slug string) authenticator {
+func (a *OpenIDAuthenticator) getAuthConfigForSlug(slug string) authenticator {
 	for _, a := range a.authenticators {
 		if strings.EqualFold(a.getSlug(), slug) {
 			return a
@@ -786,15 +784,15 @@ func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 		return nil
 	}
 
-	pk, err := tables.PrimaryKeyForTable("Users")
-	if err != nil {
-		return err
-	}
-
 	t, ok := ctx.Value(contextUserKey).(*userToken)
 	if !ok {
 		// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
 		return status.UnauthenticatedError("No user token available to fill user")
+	}
+
+	pk, err := tables.PrimaryKeyForTable("Users")
+	if err != nil {
+		return err
 	}
 
 	user.UserID = pk
@@ -811,7 +809,7 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	auth := a.getAuthConfig(issuer)
 
 	if slug := r.URL.Query().Get(slugParam); slug != "" {
-		auth = a.getAuthConfigForSlug(r.Context(), slug)
+		auth = a.getAuthConfigForSlug(slug)
 		if auth == nil {
 			a.samlAuthenticator.LoginWithSAML(w, r)
 			return
