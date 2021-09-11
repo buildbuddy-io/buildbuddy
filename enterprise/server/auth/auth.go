@@ -52,6 +52,8 @@ const (
 	// to/from the outgoing/incoming request contexts.
 	contextTokenStringKey = "x-buildbuddy-jwt"
 
+	contextSamlSessionKey = "saml.session"
+
 	// The key that the basicAuth object is stored under in the
 	// context.
 	contextBasicAuthKey = "basicauth.user"
@@ -74,6 +76,7 @@ const (
 	// The name of the auth cookies used to authenticate the
 	// client.
 	jwtCookie        = "Authorization"
+	slugCookie       = "Slug"
 	authIssuerCookie = "Authorization-Issuer"
 	stateCookie      = "State-Token"
 	redirCookie      = "Redirect-Url"
@@ -338,42 +341,53 @@ type OpenIDAuthenticator struct {
 	myURL            *url.URL
 	apiKeyGroupCache *apiKeyGroupCache
 	authenticators   []authenticator
+	samlProviders    map[string]*samlsp.Middleware
 }
 
 func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.OauthProvider, authURL *url.URL) ([]authenticator, error) {
 	var authenticators []authenticator
 	for _, authConfig := range authConfigs {
-		provider, err := oidc.NewProvider(ctx, authConfig.IssuerURL)
+		provider, err := authProviderForConfig(ctx, authConfig, authURL)
 		if err != nil {
 			return nil, err
 		}
-		oidcConfig := &oidc.Config{
-			ClientID:        authConfig.ClientID,
-			SkipExpiryCheck: false,
-		}
-		// Configure an OpenID Connect aware OAuth2 client.
-		oauth2Config := &oauth2.Config{
-			ClientID:     authConfig.ClientID,
-			ClientSecret: authConfig.ClientSecret,
-			RedirectURL:  authURL.String(),
-			Endpoint:     provider.Endpoint(),
-			// "openid" is a required scope for OpenID Connect flows.
-			Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
-		}
-		authenticators = append(authenticators, &oidcAuthenticator{
-			slug:         authConfig.Slug,
-			issuer:       authConfig.IssuerURL,
-			oauth2Config: oauth2Config,
-			oidcConfig:   oidcConfig,
-			provider:     provider,
-		})
+		authenticators = append(authenticators, provider)
 	}
 	return authenticators, nil
 }
 
+func authProviderForConfig(ctx context.Context, authConfig config.OauthProvider, authURL *url.URL) (authenticator, error) {
+	provider, err := oidc.NewProvider(ctx, authConfig.IssuerURL)
+	if err != nil {
+		return nil, err
+	}
+	oidcConfig := &oidc.Config{
+		ClientID:        authConfig.ClientID,
+		SkipExpiryCheck: false,
+	}
+	// Configure an OpenID Connect aware OAuth2 client.
+	oauth2Config := &oauth2.Config{
+		ClientID:     authConfig.ClientID,
+		ClientSecret: authConfig.ClientSecret,
+		RedirectURL:  authURL.String(),
+		Endpoint:     provider.Endpoint(),
+		// "openid" is a required scope for OpenID Connect flows.
+		Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
+	}
+
+	return &oidcAuthenticator{
+		slug:         authConfig.Slug,
+		issuer:       authConfig.IssuerURL,
+		oauth2Config: oauth2Config,
+		oidcConfig:   oidcConfig,
+		provider:     provider,
+	}, nil
+}
+
 func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProviders []config.OauthProvider) (*OpenIDAuthenticator, error) {
 	oia := &OpenIDAuthenticator{
-		env: env,
+		env:           env,
+		samlProviders: make(map[string]*samlsp.Middleware),
 	}
 
 	myURL, err := url.Parse(env.GetConfigurator().GetAppBuildBuddyURL())
@@ -456,10 +470,38 @@ func (a *OpenIDAuthenticator) getAuthConfig(issuer string) authenticator {
 	return nil
 }
 
-func (a *OpenIDAuthenticator) getAuthConfigForSlug(slug string) authenticator {
+func (a *OpenIDAuthenticator) getAuthConfigForSlug(ctx context.Context, slug string) authenticator {
 	for _, a := range a.authenticators {
 		if strings.EqualFold(a.getSlug(), slug) {
 			return a
+		}
+	}
+	group, err := a.groupForSlug(ctx, slug)
+	if err != nil {
+		return nil
+	}
+
+	myURL, err := url.Parse(a.env.GetConfigurator().GetAppBuildBuddyURL())
+	if err != nil {
+		return nil
+	}
+
+	authURL, err := myURL.Parse("/auth/")
+	if err != nil {
+		return nil
+	}
+
+	if group.OidcIssuerUrl != "" {
+		c := config.OauthProvider{
+			IssuerURL:    group.OidcIssuerUrl,
+			ClientID:     group.OidcClientId,
+			ClientSecret: group.OidcClientSecret,
+			Slug:         *group.URLIdentifier,
+		}
+
+		provider, err := authProviderForConfig(ctx, c, authURL)
+		if err == nil {
+			return provider
 		}
 	}
 	return nil
@@ -660,8 +702,18 @@ func (a *OpenIDAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 }
 
 func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
-	claims, userToken, err := a.authenticateUser(w, r)
 	ctx := r.Context()
+
+	if sp, err := a.serviceProviderFromRequest(r); err == nil {
+		session, _ := sp.Session.GetSession(r)
+		sa, ok := session.(samlsp.SessionWithAttributes)
+		if ok {
+			ctx = context.WithValue(ctx, contextSamlSessionKey, sa)
+			r = r.WithContext(ctx)
+		}
+	}
+
+	claims, userToken, err := a.authenticateUser(w, r)
 	if userToken != nil {
 		// Store the user information in the context even if authentication fails.
 		// This information is used in the user creation flow.
@@ -696,6 +748,11 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	ctx := r.Context()
 	if apiKey := r.Header.Get(APIKeyHeader); apiKey != "" {
 		claims, err := a.claimsFromAPIKey(ctx, apiKey)
+		return claims, nil, err
+	}
+
+	if sa, ok := ctx.Value(contextSamlSessionKey).(samlsp.SessionWithAttributes); ok {
+		claims, err := a.claimsFromSubID(ctx, sa.GetAttributes().Get("urn:oasis:names:tc:SAML:attribute:subject-id"))
 		return claims, nil, err
 	}
 
@@ -770,16 +827,29 @@ func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces
 }
 
 func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
+	pk, err := tables.PrimaryKeyForTable("Users")
+	if err != nil {
+		return err
+	}
+
+	if sa, ok := ctx.Value(contextSamlSessionKey).(samlsp.SessionWithAttributes); ok {
+		attributes := sa.GetAttributes()
+		user.UserID = pk
+		user.SubID = attributes.Get("urn:oasis:names:tc:SAML:attribute:subject-id")
+		// todo are these standard?
+		user.FirstName = attributes.Get("givenName")
+		user.LastName = attributes.Get("sn")
+		user.Email = attributes.Get("mail")
+		// user.ImageURL = attributes.Get()
+		return nil
+	}
+
 	t, ok := ctx.Value(contextUserKey).(*userToken)
 	if !ok {
 		// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
 		return status.UnauthenticatedError("No user token available to fill user")
 	}
 
-	pk, err := tables.PrimaryKeyForTable("Users")
-	if err != nil {
-		return err
-	}
 	user.UserID = pk
 	user.SubID = t.GetSubID()
 	user.FirstName = t.GivenName
@@ -790,100 +860,131 @@ func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 }
 
 func (a *OpenIDAuthenticator) SAML(w http.ResponseWriter, r *http.Request) {
-	SAMLConfig := a.env.GetConfigurator().GetSAMLConfig()
-	if SAMLConfig == nil {
-		log.Printf("No SAML Config")
-		return // TODO handle error
-	}
-
-	keyPair, err := tls.LoadX509KeyPair(SAMLConfig.CertFile, SAMLConfig.KeyFile)
+	sp, err := a.serviceProviderFromRequest(r)
 	if err != nil {
-		panic(err) // TODO handle error
-	}
-	keyPair.Leaf, err = x509.ParseCertificate(keyPair.Certificate[0])
-	if err != nil {
-		panic(err) // TODO handle error
-	}
-
-	idpMetadataURL, err := url.Parse(a.getSAMLUrlFromRequest(r))
-	if err != nil {
-		panic(err) // TODO handle error
-	}
-	idpMetadata, err := samlsp.FetchMetadata(context.Background(), http.DefaultClient,
-		*idpMetadataURL)
-	if err != nil {
-		panic(err) // TODO handle error
-	}
-
-	rootURL, err := url.Parse("http://localhost:8080")
-	if err != nil {
-		panic(err) // TODO handle error
-	}
-
-	samlSP, _ := samlsp.New(samlsp.Options{
-		URL:         *rootURL,
-		Key:         keyPair.PrivateKey.(*rsa.PrivateKey),
-		Certificate: keyPair.Leaf,
-		IDPMetadata: idpMetadata,
-	})
-
-	samlSP.ServeHTTP(w, r)
-}
-
-func (a *OpenIDAuthenticator) getSAMLUrlFromRequest(r *http.Request) string {
-	if slug := r.URL.Query().Get(slugParam); slug == "samltest" {
-		return "https://samltest.id/saml/idp"
-	}
-	return ""
-}
-
-func (a *OpenIDAuthenticator) loginWithSAML(w http.ResponseWriter, r *http.Request) {
-	SAMLConfig := a.env.GetConfigurator().GetSAMLConfig()
-	if SAMLConfig == nil {
-		log.Printf("No SAML Config")
-		return // TODO handle error
-	}
-
-	keyPair, err := tls.LoadX509KeyPair(SAMLConfig.CertFile, SAMLConfig.KeyFile)
-	if err != nil {
-		panic(err) // TODO handle error
-	}
-	keyPair.Leaf, err = x509.ParseCertificate(keyPair.Certificate[0])
-	if err != nil {
-		panic(err) // TODO handle error
-	}
-
-	idpMetadataURL, err := url.Parse(a.getSAMLUrlFromRequest(r))
-	if err != nil {
-		panic(err) // TODO handle error
-	}
-	idpMetadata, err := samlsp.FetchMetadata(context.Background(), http.DefaultClient,
-		*idpMetadataURL)
-	if err != nil {
-		panic(err) // TODO handle error
-	}
-
-	rootURL, err := url.Parse("http://localhost:8080")
-	if err != nil {
-		panic(err) // TODO handle error
-	}
-
-	samlSP, _ := samlsp.New(samlsp.Options{
-		URL:         *rootURL,
-		Key:         keyPair.PrivateKey.(*rsa.PrivateKey),
-		Certificate: keyPair.Leaf,
-		IDPMetadata: idpMetadata,
-	})
-
-	session, err := samlSP.Session.GetSession(r)
-	if session != nil {
-		log.Printf("YOU'RE IN! %+v %+v", session, err)
-		http.Redirect(w, r, "/yourein", http.StatusTemporaryRedirect)
-
+		redirectWithError(w, r, err)
 		return
 	}
 
-	samlSP.HandleStartAuthFlow(w, r)
+	sp.ServeHTTP(w, r)
+}
+
+func (a *OpenIDAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp.Middleware, error) {
+	slug := a.getSlugFromRequest(r)
+	if slug == "" {
+		return nil, status.FailedPreconditionError("Organization slug not set")
+	}
+	provider, ok := a.samlProviders[slug]
+	if ok {
+		return provider, nil
+	}
+
+	SAMLConfig := a.env.GetConfigurator().GetSAMLConfig()
+	if SAMLConfig == nil {
+		return nil, status.NotFoundError("No SAML Configured")
+	}
+
+	keyPair, err := tls.LoadX509KeyPair(SAMLConfig.CertFile, SAMLConfig.KeyFile)
+	if err != nil {
+		return nil, err
+	}
+	keyPair.Leaf, err = x509.ParseCertificate(keyPair.Certificate[0])
+	if err != nil {
+		return nil, err
+	}
+
+	samlURL, err := a.getSAMLUrlForSlug(r.Context(), slug)
+	if err != nil {
+		return nil, err
+	}
+
+	idpMetadataURL, err := url.Parse(samlURL)
+	if err != nil {
+		return nil, err
+	}
+
+	idpMetadata, err := samlsp.FetchMetadata(context.Background(), http.DefaultClient,
+		*idpMetadataURL)
+	if err != nil {
+		return nil, err
+	}
+
+	myURL, err := url.Parse(a.env.GetConfigurator().GetAppBuildBuddyURL())
+	if err != nil {
+		return nil, err
+	}
+
+	samlSP, _ := samlsp.New(samlsp.Options{
+		EntityID:    "io.buildbuddy." + slug,
+		URL:         *myURL,
+		Key:         keyPair.PrivateKey.(*rsa.PrivateKey),
+		Certificate: keyPair.Leaf,
+		IDPMetadata: idpMetadata,
+	})
+
+	slugURL := &url.URL{RawQuery: "slug=" + slug}
+	samlSP.ServiceProvider.MetadataURL = *samlSP.ServiceProvider.MetadataURL.ResolveReference(slugURL)
+	samlSP.ServiceProvider.AcsURL = *samlSP.ServiceProvider.AcsURL.ResolveReference(slugURL)
+	samlSP.ServiceProvider.SloURL = *samlSP.ServiceProvider.SloURL.ResolveReference(slugURL)
+
+	// todo - do we need to mutex this or something?
+	a.samlProviders[slug] = samlSP
+	return samlSP, nil
+}
+
+func (a *OpenIDAuthenticator) getSlugFromRequest(r *http.Request) string {
+	slug := r.URL.Query().Get(slugParam)
+	if slug == "" {
+		slug = getCookie(r, slugCookie)
+	}
+	return slug
+}
+
+func (a *OpenIDAuthenticator) getSAMLUrlForSlug(ctx context.Context, slug string) (string, error) {
+	for _, samlProvider := range a.env.GetConfigurator().GetAuthSAMLProviders() {
+		if strings.EqualFold(samlProvider.Slug, slug) {
+			return samlProvider.SAMLIDPMetadataURL, nil
+		}
+	}
+	group, err := a.groupForSlug(ctx, slug)
+	if err != nil {
+		return "", err
+	}
+	if group.SamlIdpMetadataUrl == "" {
+		return "", status.NotFoundErrorf("Group %s does not have SAML configured", slug)
+	}
+	return group.SamlIdpMetadataUrl, nil
+}
+
+func (a *OpenIDAuthenticator) groupForSlug(ctx context.Context, slug string) (*tables.Group, error) {
+	userDB := a.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	if slug == "" {
+		return nil, status.InvalidArgumentError("Slug is required.")
+	}
+	return userDB.GetGroupByURLIdentifier(ctx, slug)
+}
+
+func (a *OpenIDAuthenticator) loginWithSAML(w http.ResponseWriter, r *http.Request) {
+	sp, err := a.serviceProviderFromRequest(r)
+	if err != nil {
+		redirectWithError(w, r, err)
+		return
+	}
+
+	session, err := sp.Session.GetSession(r)
+	if session != nil {
+		redirectURL := r.URL.Query().Get(authRedirectParam)
+		if redirectURL == "" {
+			redirectURL = "/" // default to redirecting home.
+		}
+		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
+		return
+	}
+
+	sp.HandleStartAuthFlow(w, r)
 }
 
 func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
@@ -891,14 +992,13 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	auth := a.getAuthConfig(issuer)
 
 	if slug := r.URL.Query().Get(slugParam); slug != "" {
-		auth = a.getAuthConfigForSlug(slug)
+		auth = a.getAuthConfigForSlug(r.Context(), slug)
 		if auth == nil {
+			setCookie(w, slugCookie, slug, time.Now().Add(loginCookieDuration+(1*time.Hour)))
 			a.loginWithSAML(w, r)
-			// redirectWithError(w, r, status.PermissionDeniedErrorf("No SSO config found for slug: %s", slug))
 			return
 		}
 		issuer = auth.getIssuer()
-
 	}
 
 	if auth == nil {
@@ -932,6 +1032,10 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 
 func (a *OpenIDAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
 	clearLoginCookie(w)
+
+	if sp, err := a.serviceProviderFromRequest(r); err == nil {
+		sp.Session.DeleteSession(w, r)
+	}
 
 	redirURL := r.URL.Query().Get(authRedirectParam)
 	if redirURL == "" {
@@ -981,7 +1085,6 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		redirectWithError(w, r, err)
 		return
-
 	}
 
 	// OK, the token is valid so we will: store the refresh token in our DB

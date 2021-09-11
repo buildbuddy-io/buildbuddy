@@ -178,6 +178,14 @@ type Group struct {
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
 	UseGroupOwnedExecutors bool
+
+	SamlIdpMetadataUrl string
+
+	OidcIssuerUrl string
+
+	OidcClientId string
+
+	OidcClientSecret string
 }
 
 func (g *Group) TableName() string {
