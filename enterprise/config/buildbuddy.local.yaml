@@ -4,10 +4,8 @@ app:
   create_group_per_user: true
   add_user_to_domain_group: true
   code_editor_enabled: true
-  log_level: debug
 database:
   data_source: "sqlite3:///tmp/buildbuddy-enterprise.db"
-  log_queries: true
 storage:
   ttl_seconds: 86400 # One day in seconds.
   disk:
@@ -19,9 +17,6 @@ cache:
     root_directory: /tmp/buildbuddy-enterprise-cache
 auth:
   enable_anonymous_usage: true
-  saml:
-    cert_file: /Users/siggi/Code/buildbuddy-internal/enterprise/config/dev-ca.crt
-    key_file: /Users/siggi/Code/buildbuddy-internal/enterprise/config/dev-ca.pem
   oauth_providers:
     - issuer_url: "https://accounts.google.com"
       client_id: "${BB_DEV_OAUTH_CLIENT_ID}"
@@ -31,6 +26,6 @@ api:
 github:
   client_id: "${BB_DEV_GITHUB_CLIENT_ID}"
   client_secret: "${BB_DEV_GITHUB_CLIENT_SECRET}"
-#remote_execution:
-#  enable_remote_exec: true
-#  redis_target: "localhost:6379"
+remote_execution:
+ enable_remote_exec: true
+ redis_target: "localhost:6379"
