@@ -9,5 +9,8 @@ go_library(
         "version": "{VERSION}",
         "commitSha": "{COMMIT_SHA}",
     },
-    deps = ["//server/util/log"],
+    deps = [
+        "//server/util/log",         
+        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+    ],
 )
