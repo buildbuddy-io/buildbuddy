@@ -12,7 +12,7 @@ go_library(
         "//server/resources",
         "//server/util/log",
         "//server/util/status",
-        "//server/version:version_minimal",
+        "//server/version",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@org_golang_google_grpc//metadata",
     ],
