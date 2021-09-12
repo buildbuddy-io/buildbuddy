@@ -1,12 +1,9 @@
 name: "release-m1"
 
 on:
-  # push:
-  #   tags:
-  #     - "v*"
-  pull_request:
-    branches:
-      - master
+  push:
+    tags:
+      - "v*"
 
 jobs:
   build:
@@ -36,4 +33,4 @@ jobs:
         run: |
           "${GITHUB_WORKSPACE}/bin/bazel" build --config=release-m1 --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --define version=${{ steps.tag.outputs.TAG }} //enterprise/server/cmd/executor:executor
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-darwin-arm64
-          # gh release upload ${{ steps.tag.outputs.TAG }} executor-enterprise-darwin-arm64 --clobber
+          gh release upload ${{ steps.tag.outputs.TAG }} executor-enterprise-darwin-arm64 --clobber
