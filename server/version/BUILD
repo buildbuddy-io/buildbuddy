@@ -9,7 +9,7 @@ go_library(
         "commitSha": "{COMMIT_SHA}",
     },
     deps = [
-        "//:bundle",
+        "//:bundle_version",
         "//server/util/log",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],

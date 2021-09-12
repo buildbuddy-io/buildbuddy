@@ -114,12 +114,10 @@ go_library(
     srcs = ["bundle.go"],
     embedsrcs = select({
         ":fastbuild": [
-            "//:VERSION",
             "//:config_files",
             "//static",
         ],
         "//conditions:default": [
-            "//:VERSION",
             "//:config_files",
             "//app:app_bundle",
             "//app:style.css",
@@ -127,6 +125,18 @@ go_library(
             "//static",
         ],
     }),
+    importpath = "github.com/buildbuddy-io/buildbuddy",
+    deps = [
+        "//server/util/log",
+    ],
+)
+
+go_library(
+    name = "bundle_version",
+    srcs = ["bundle.go"],
+    embedsrcs = [
+        "//:VERSION",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy",
     deps = [
         "//server/util/log",
