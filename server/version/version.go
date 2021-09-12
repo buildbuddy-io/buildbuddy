@@ -10,8 +10,6 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-
-	bundle "github.com/buildbuddy-io/buildbuddy"
 )
 
 const (
