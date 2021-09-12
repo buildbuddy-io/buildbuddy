@@ -79,7 +79,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          "${GITHUB_WORKSPACE}/bin/bazel" clean --expunge && "${GITHUB_WORKSPACE}/bin/bazel" build --config=release-m1 --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --define version=${{ steps.tag.outputs.TAG }} //enterprise/server/cmd/executor:executor
+          "${GITHUB_WORKSPACE}/bin/bazel" clean --expunge && "${GITHUB_WORKSPACE}/bin/bazel" build --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --define version=${{ steps.tag.outputs.TAG }} //enterprise/server/cmd/executor:executor
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-${{matrix.OSName}}-${{matrix.arch}}
           ls
           # gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-${{matrix.OSName}}-${{matrix.arch}} buildbuddy-enterprise-${{matrix.OSName}}-${{matrix.arch}} executor-enterprise-${{matrix.OSName}}-${{matrix.arch}} --clobber
