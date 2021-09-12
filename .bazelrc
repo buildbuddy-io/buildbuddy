@@ -69,12 +69,18 @@ build:workflows --color=yes
 build:workflows --disk_cache=
 
 # Configuration used for BuildBuddy release workflow
-#build:release --config=remote
+build:release --config=remote
 build:release --remote_instance_name=buildbuddy-io/buildbuddy/release
 build:release -c opt
 build:release --stamp
 build:release --define release=true
 build:release --remote_download_toplevel
+
+build:release-m1 --remote_instance_name=buildbuddy-io/buildbuddy/release-m1
+build:release-m1 -c opt
+build:release-m1 --stamp
+build:release-m1 --define release=true
+build:release-m1 --remote_download_toplevel
 
 # By default, build logs get sent to the production server
 build --bes_results_url=https://app.buildbuddy.io/invocation/
