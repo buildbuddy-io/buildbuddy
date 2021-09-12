@@ -2,13 +2,8 @@ package version
 
 import (
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"runtime"
-	"strings"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
