@@ -114,10 +114,12 @@ go_library(
     srcs = ["bundle.go"],
     embedsrcs = select({
         ":fastbuild": [
+            "//:VERSION",
             "//:config_files",
             "//static",
         ],
         "//conditions:default": [
+            "//:VERSION",
             "//:config_files",
             "//app:app_bundle",
             "//app:style.css",
