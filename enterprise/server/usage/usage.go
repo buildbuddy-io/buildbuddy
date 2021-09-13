@@ -371,7 +371,8 @@ func (ut *tracker) lastSettledCollectionPeriod() collectionPeriod {
 	return collectionPeriodStartingAt(ut.clock.Now().Add(-(collectionPeriodDuration + collectionPeriodSettlingTime)))
 }
 
-// IsSettled returns whether this collection period is settled.
+// isSettled returns whether the given collection period will no longer have
+// usage data written to it and is therefore safe to flush to the DB.
 func (ut *tracker) isSettled(c collectionPeriod) bool {
 	return !time.Time(c).After(time.Time(ut.lastSettledCollectionPeriod()))
 }
