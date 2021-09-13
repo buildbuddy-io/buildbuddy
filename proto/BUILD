@@ -102,6 +102,16 @@ proto_library(
 )
 
 proto_library(
+    name = "usage_proto",
+    srcs = [
+        "usage.proto",
+    ],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+proto_library(
     name = "eventlog_proto",
     srcs = [
         "eventlog.proto",
@@ -134,6 +144,7 @@ proto_library(
 proto_library(
     name = "vmexec_proto",
     srcs = ["vmexec.proto"],
+    deps = [":remote_execution_proto"],
 )
 
 proto_library(
@@ -222,6 +233,7 @@ proto_library(
         ":invocation_proto",
         ":scheduler_proto",
         ":target_proto",
+        ":usage_proto",
         ":user_proto",
         ":workflow_proto",
     ],
@@ -361,6 +373,15 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "usage_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/usage",
+    proto = ":usage_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "build_event_stream_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream",
     proto = ":build_event_stream_proto",
@@ -394,6 +415,9 @@ go_proto_library(
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/vmexec",
     proto = ":vmexec_proto",
+    deps = [
+        ":remote_execution_go_proto",
+    ],
 )
 
 go_proto_library(
@@ -453,6 +477,7 @@ go_proto_library(
         ":invocation_go_proto",
         ":scheduler_go_proto",
         ":target_go_proto",
+        ":usage_go_proto",
         ":user_go_proto",
         ":workflow_go_proto",
     ],
@@ -646,6 +671,11 @@ ts_proto_library(
 ts_proto_library(
     name = "invocation_ts_proto",
     proto = ":invocation_proto",
+)
+
+ts_proto_library(
+    name = "usage_ts_proto",
+    proto = ":usage_proto",
 )
 
 ts_proto_library(

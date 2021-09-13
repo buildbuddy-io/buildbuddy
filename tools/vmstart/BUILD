@@ -14,12 +14,18 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/firecracker",
+        "//enterprise/server/remote_execution/dirtools",
         "//proto:remote_execution_go_proto",
+        "//proto:vmexec_go_proto",
         "//server/config",
         "//server/real_environment",
+        "//server/remote_cache/cachetools",
+        "//server/remote_cache/digest",
         "//server/util/grpc_client",
         "//server/util/healthcheck",
         "//server/util/log",
+        "@com_github_golang_protobuf//proto:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
+        "@org_golang_google_grpc//metadata",
     ],
 )

@@ -36,6 +36,9 @@ type TransferInfo struct {
 	// Transfers tracks the digests of files that were transferred, keyed by their
 	// workspace-relative paths.
 	Transfers map[string]*repb.Digest
+	// Exists tracks the digests of files that already existed, keyed by their
+	// workspace-relative paths.
+	Exists map[string]*repb.Digest
 }
 
 // DirHelper is a poor mans trie that helps us check if a partial path like
@@ -459,11 +462,14 @@ type FileMap map[digest.Key][]*FilePointer
 type BatchFileFetcher struct {
 	ctx          context.Context
 	instanceName string
-	fileCache    interfaces.FileCache
+	fileCache    interfaces.FileCache // OPTIONAL
 	bsClient     bspb.ByteStreamClient
-	casClient    repb.ContentAddressableStorageClient
+	casClient    repb.ContentAddressableStorageClient // OPTIONAL
 }
 
+// NewBatchFileFetcher creates a CAS fetcher that can automatically batch small requests and stream large files.
+// `fileCache` is optional. If present, it's used to cache a copy of the data for use by future reads.
+// `casClient` is optional. If not specified, all requests will use the ByteStream API.
 func NewBatchFileFetcher(ctx context.Context, instanceName string, fileCache interfaces.FileCache, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient) *BatchFileFetcher {
 	return &BatchFileFetcher{
 		ctx:          ctx,
@@ -475,6 +481,10 @@ func NewBatchFileFetcher(ctx context.Context, instanceName string, fileCache int
 }
 
 func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.BatchReadBlobsRequest, filesToFetch FileMap, opts *DownloadTreeOpts) error {
+	if ff.casClient == nil {
+		return status.FailedPreconditionErrorf("cannot batch download files when casClient is not set")
+	}
+
 	var rsp, err = ff.casClient.BatchReadBlobs(ctx, req)
 	if err != nil {
 		return err
@@ -558,7 +568,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 		// fit in the batch call, so we'll have to bytestream
 		// it.
 		size := d.GetSizeBytes()
-		if size > gRPCMaxSize {
+		if size > gRPCMaxSize || ff.casClient == nil {
 			func(d *repb.Digest, fps []*FilePointer) {
 				eg.Go(func() error {
 					return ff.bytestreamReadFiles(ctx, ff.instanceName, d, fps, opts)
@@ -723,11 +733,16 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 }
 
 func downloadTree(ctx context.Context, env environment.Env, instanceName string, rootDirectoryDigest *repb.Digest, rootDir string, dirMap map[digest.Key]*repb.Directory, startTime time.Time, txInfo *TransferInfo, opts *DownloadTreeOpts) (*TransferInfo, error) {
-	trackFn := func(relPath string, digest *repb.Digest) {}
+	trackTransfersFn := func(relPath string, digest *repb.Digest) {}
+	trackExistsFn := func(relPath string, digest *repb.Digest) {}
 	if opts.TrackTransfers {
 		txInfo.Transfers = map[string]*repb.Digest{}
-		trackFn = func(relPath string, digest *repb.Digest) {
+		txInfo.Exists = map[string]*repb.Digest{}
+		trackTransfersFn = func(relPath string, digest *repb.Digest) {
 			txInfo.Transfers[relPath] = digest
+		}
+		trackExistsFn = func(relPath string, digest *repb.Digest) {
+			txInfo.Exists[relPath] = digest
 		}
 	}
 
@@ -739,7 +754,11 @@ func downloadTree(ctx context.Context, env environment.Env, instanceName string,
 				d := node.GetDigest()
 				fullPath := filepath.Join(location, node.Name)
 				relPath := trimPathPrefix(fullPath, rootDir)
-				if skipDigest, ok := opts.Skip[relPath]; ok && digestsEqual(skipDigest, d) {
+				skipDigest, ok := opts.Skip[relPath]
+				if ok {
+					trackExistsFn(relPath, d)
+				}
+				if ok && digestsEqual(skipDigest, d) {
 					return
 				}
 				dk := digest.NewKey(d)
@@ -754,7 +773,7 @@ func downloadTree(ctx context.Context, env environment.Env, instanceName string,
 					RelativePath: relPath,
 				})
 				txInfo.FileCount += 1
-				trackFn(relPath, d)
+				trackTransfersFn(relPath, d)
 			}(fileNode, parentDir)
 		}
 		for _, child := range dir.GetDirectories() {

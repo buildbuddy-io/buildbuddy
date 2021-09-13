@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -37,9 +38,10 @@ type Stats struct {
 }
 
 type FileSystemLayout struct {
-	Inputs      *repb.Tree
-	OutputDirs  []string
-	OutputFiles []string
+	RemoteInstanceName string
+	Inputs             *repb.Tree
+	OutputDirs         []string
+	OutputFiles        []string
 }
 
 // CommandContainer provides an execution environment for commands.

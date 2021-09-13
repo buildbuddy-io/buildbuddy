@@ -52,6 +52,7 @@ type RealEnv struct {
 	buildEventHandler                interfaces.BuildEventHandler
 	invocationSearchService          interfaces.InvocationSearchService
 	invocationStatService            interfaces.InvocationStatService
+	usageService                     interfaces.UsageService
 	splashPrinter                    interfaces.SplashPrinter
 	actionCacheClient                repb.ActionCacheClient
 	byteStreamClient                 bspb.ByteStreamClient
@@ -70,6 +71,7 @@ type RealEnv struct {
 	remoteExecutionRedisPubSubClient *redis.Client
 	buildEventProxyClients           []pepb.PublishBuildEventClient
 	webhooks                         []interfaces.Webhook
+	xcodeLocator                     interfaces.XcodeLocator
 }
 
 func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
@@ -145,6 +147,13 @@ func (r *RealEnv) GetInvocationSearchService() interfaces.InvocationSearchServic
 }
 func (r *RealEnv) SetInvocationSearchService(s interfaces.InvocationSearchService) {
 	r.invocationSearchService = s
+}
+
+func (r *RealEnv) GetUsageService() interfaces.UsageService {
+	return r.usageService
+}
+func (r *RealEnv) SetUsageService(s interfaces.UsageService) {
+	r.usageService = s
 }
 
 func (r *RealEnv) GetBuildEventProxyClients() []pepb.PublishBuildEventClient {
@@ -290,6 +299,12 @@ func (r *RealEnv) GetGitProviders() interfaces.GitProviders {
 }
 func (r *RealEnv) SetGitProviders(gp interfaces.GitProviders) {
 	r.gitProviders = gp
+}
+func (r *RealEnv) GetXCodeLocator() interfaces.XcodeLocator {
+	return r.xcodeLocator
+}
+func (r *RealEnv) SetXCodeLocator(xl interfaces.XcodeLocator) {
+	r.xcodeLocator = xl
 }
 
 func (r *RealEnv) SetCacheRedisClient(redisClient *redis.Client) {

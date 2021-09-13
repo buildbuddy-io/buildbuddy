@@ -139,3 +139,95 @@ func TestWorkspaceCleanup_PreserveWorkspace_PreservesAllFilesExceptOutputs(t *te
 		"expected all KEEPME filePaths (and no others) in the workspace after cleanup",
 	)
 }
+
+func TestCleanInputsIfNecessary_CleanNone(t *testing.T) {
+	filePaths := []string{
+		"some_input_directory/foo.framework/KEEPME",
+		"some/nested/input/directory/KEEPME.h",
+		"some_input_file_KEEPME",
+		"some/nested/input/file/KEEPME",
+		"KEEPME",
+		"foo/KEEPME",
+		"foo/bar/KEEPME",
+	}
+	ws := newWorkspace(t, &workspace.Opts{Preserve: true})
+	writeEmptyFiles(t, ws, filePaths)
+
+	for _, file := range filePaths {
+		ws.Inputs[file] = &repb.Digest{}
+	}
+
+	keep := map[string]*repb.Digest{
+		"KEEPME":         &repb.Digest{},
+		"foo/KEEPME":     &repb.Digest{},
+		"foo/bar/KEEPME": &repb.Digest{}}
+
+	err := ws.CleanInputsIfNecessary(keep)
+	require.NoError(t, err)
+
+	assert.Equal(
+		t, keepmePaths(filePaths), actualFilePaths(t, ws),
+		"expected all KEEPME filePaths (and no others) in the workspace after cleanup",
+	)
+}
+
+func TestCleanInputsIfNecessary_CleanAll(t *testing.T) {
+	filePaths := []string{
+		"some_input_directory/foo.framework/DELETEME",
+		"some/nested/input/directory/DELETEME.h",
+		"some_input_file_DELETEME",
+		"some/nested/input/file/DELETEME",
+		"KEEPME",
+		"foo/KEEPME",
+		"foo/bar/KEEPME",
+	}
+	ws := newWorkspace(t, &workspace.Opts{Preserve: true, CleanInputs: "*"})
+	writeEmptyFiles(t, ws, filePaths)
+
+	for _, file := range filePaths {
+		ws.Inputs[file] = &repb.Digest{}
+	}
+
+	keep := map[string]*repb.Digest{
+		"KEEPME":         &repb.Digest{},
+		"foo/KEEPME":     &repb.Digest{},
+		"foo/bar/KEEPME": &repb.Digest{}}
+
+	ws.CleanInputsIfNecessary(keep)
+
+	assert.Equal(
+		t, keepmePaths(filePaths), actualFilePaths(t, ws),
+		"expected all KEEPME filePaths (and no others) in the workspace after cleanup",
+	)
+}
+
+func TestCleanInputsIfNecessary_CleanMatching(t *testing.T) {
+	filePaths := []string{
+		"some_input_directory/foo.framework/DELETEME",
+		"some/nested/input/directory/DELETEME.h",
+		"some_input_file_KEEPME",
+		"some/nested/input/file/KEEPME",
+		"KEEPME",
+		"foo/KEEPME",
+		"foo/bar/KEEPME",
+	}
+	ws := newWorkspace(t, &workspace.Opts{Preserve: true, CleanInputs: "**.h,**.framework/**"})
+	writeEmptyFiles(t, ws, filePaths)
+
+	for _, file := range filePaths {
+		ws.Inputs[file] = &repb.Digest{}
+	}
+
+	keep := map[string]*repb.Digest{
+		"KEEPME":         &repb.Digest{},
+		"foo/KEEPME":     &repb.Digest{},
+		"foo/bar/KEEPME": &repb.Digest{}}
+
+	err := ws.CleanInputsIfNecessary(keep)
+	require.NoError(t, err)
+
+	assert.Equal(
+		t, keepmePaths(filePaths), actualFilePaths(t, ws),
+		"expected all KEEPME filePaths (and no others) in the workspace after cleanup",
+	)
+}

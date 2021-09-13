@@ -1,9 +1,11 @@
 package platform_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -43,7 +45,9 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 		}}
 
 		platformProps := platform.ParseProperties(plat)
-		err := platform.ApplyOverrides(testCase.execProps, platformProps, &repb.Command{})
+		env := testenv.GetTestEnv(t)
+		env.RealEnv.SetXCodeLocator(&xcodeLocator{})
+		err := platform.ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
 		require.NoError(t, err)
 		assert.Equal(t, testCase.expected, platformProps.ContainerImage, testCase)
 	}
@@ -65,7 +69,9 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 		}}
 
 		platformProps := platform.ParseProperties(plat)
-		err := platform.ApplyOverrides(testCase.execProps, platformProps, &repb.Command{})
+		env := testenv.GetTestEnv(t)
+		env.RealEnv.SetXCodeLocator(&xcodeLocator{})
+		err := platform.ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
 		assert.Error(t, err)
 	}
 }
@@ -85,8 +91,8 @@ func TestParse_ApplyOverrides(t *testing.T) {
 			{Name: "XCODE_VERSION_OVERRIDE", Value: "12.4.123"},
 		},
 			[]*repb.Command_EnvironmentVariable{
-				{Name: "SDKROOT", Value: "/Applications/Xcode_12.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"},
-				{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode_12.2.app/Contents/Developer"},
+				{Name: "SDKROOT", Value: "/Applications/Xcode_12.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"},
+				{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode_12.4.app/Contents/Developer"},
 			},
 			"12.2",
 		},
@@ -97,19 +103,15 @@ func TestParse_ApplyOverrides(t *testing.T) {
 			{Name: "APPLE_SDK_VERSION_OVERRIDE", Value: "11.1"},
 			{Name: "XCODE_VERSION_OVERRIDE", Value: "12.4.123"},
 		}, []*repb.Command_EnvironmentVariable{
-			{Name: "SDKROOT", Value: "/Applications/Xcode_12.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"},
-			{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode_12.2.app/Contents/Developer"},
+			{Name: "SDKROOT", Value: "/Applications/Xcode_12.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"},
+			{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode_12.4.app/Contents/Developer"},
 		},
 			"12.2",
 		},
 		// Darwin with no overrides
 		{[]*repb.Platform_Property{
 			{Name: "OSFamily", Value: "Darwin"},
-			{Name: "enablexcodeoverride", Value: "false"},
-		}, []*repb.Command_EnvironmentVariable{
-			{Name: "APPLE_SDK_VERSION_OVERRIDE", Value: "11.1"},
-			{Name: "XCODE_VERSION_OVERRIDE", Value: "12.4.123"},
-		}, []*repb.Command_EnvironmentVariable{
+		}, []*repb.Command_EnvironmentVariable{}, []*repb.Command_EnvironmentVariable{
 			{Name: "SDKROOT", Value: "/Applications/Xcode_12.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"},
 			{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode_12.2.app/Contents/Developer"},
 		},
@@ -118,27 +120,25 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		// Darwin with sdk platform
 		{[]*repb.Platform_Property{
 			{Name: "OSFamily", Value: "Darwin"},
-			{Name: "enablexcodeoverride", Value: "false"},
 		}, []*repb.Command_EnvironmentVariable{
 			{Name: "APPLE_SDK_VERSION_OVERRIDE", Value: "11.1"},
 			{Name: "APPLE_SDK_PLATFORM", Value: "iPhone"},
 			{Name: "XCODE_VERSION_OVERRIDE", Value: "12.4.123"},
 		}, []*repb.Command_EnvironmentVariable{
-			{Name: "SDKROOT", Value: "/Applications/Xcode_12.2.app/Contents/Developer/Platforms/iPhone.platform/Developer/SDKs/iPhone.sdk"},
-			{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode_12.2.app/Contents/Developer"},
+			{Name: "SDKROOT", Value: "/Applications/Xcode_12.4.app/Contents/Developer/Platforms/iPhone.platform/Developer/SDKs/iPhone.sdk"},
+			{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode_12.4.app/Contents/Developer"},
 		},
 			"12.2",
 		},
-		// Darwin with xcode override
+		// Darwin with valid sdk platform
 		{[]*repb.Platform_Property{
 			{Name: "OSFamily", Value: "Darwin"},
-			{Name: "enablexcodeoverride", Value: "true"},
 		}, []*repb.Command_EnvironmentVariable{
-			{Name: "APPLE_SDK_VERSION_OVERRIDE", Value: "11.1"},
+			{Name: "APPLE_SDK_VERSION_OVERRIDE", Value: "ACTUALLY_EXISTS_11.1"},
 			{Name: "APPLE_SDK_PLATFORM", Value: "iPhone"},
 			{Name: "XCODE_VERSION_OVERRIDE", Value: "12.4.123"},
 		}, []*repb.Command_EnvironmentVariable{
-			{Name: "SDKROOT", Value: "/Applications/Xcode_12.4.app/Contents/Developer/Platforms/iPhone.platform/Developer/SDKs/iPhone11.1.sdk"},
+			{Name: "SDKROOT", Value: "/Applications/Xcode_12.4.app/Contents/Developer/Platforms/iPhone.platform/Developer/SDKs/iPhoneACTUALLY_EXISTS_11.1.sdk"},
 			{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode_12.4.app/Contents/Developer"},
 		},
 			"12.2",
@@ -159,13 +159,12 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		// Case insensitive darwin with xcode override
 		{[]*repb.Platform_Property{
 			{Name: "OSFAMILY", Value: "dArWiN"},
-			{Name: "EnableXcodeOverride", Value: "true"},
 		}, []*repb.Command_EnvironmentVariable{
-			{Name: "APPLE_SDK_VERSION_OVERRIDE", Value: "11.1"},
+			{Name: "APPLE_SDK_VERSION_OVERRIDE", Value: "ACTUALLY_EXISTS_11.1"},
 			{Name: "APPLE_SDK_PLATFORM", Value: "iPhone"},
 			{Name: "XCODE_VERSION_OVERRIDE", Value: "12.4.123"},
 		}, []*repb.Command_EnvironmentVariable{
-			{Name: "SDKROOT", Value: "/Applications/Xcode_12.4.app/Contents/Developer/Platforms/iPhone.platform/Developer/SDKs/iPhone11.1.sdk"},
+			{Name: "SDKROOT", Value: "/Applications/Xcode_12.4.app/Contents/Developer/Platforms/iPhone.platform/Developer/SDKs/iPhoneACTUALLY_EXISTS_11.1.sdk"},
 			{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode_12.4.app/Contents/Developer"},
 		},
 			"12.2",
@@ -176,24 +175,23 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		}, []*repb.Command_EnvironmentVariable{
 			{Name: "APPLE_SDK_VERSION_OVERRIDE", Value: "11.1"},
 			{Name: "APPLE_SDK_PLATFORM", Value: "iPhone"},
-			{Name: "XCODE_VERSION_OVERRIDE", Value: "12.4.123"},
+			{Name: "XCODE_VERSION_OVERRIDE", Value: "12.5.123"},
 		}, []*repb.Command_EnvironmentVariable{
 			{Name: "SDKROOT", Value: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhone.platform/Developer/SDKs/iPhone.sdk"},
 			{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode.app/Contents/Developer"},
 		},
 			"",
 		},
-		// Case insensitive darwin with no default xcode version and xcode override
+		// Case insensitive darwin with no default xcode version and existing sdk
 		{[]*repb.Platform_Property{
 			{Name: "OSFAMILY", Value: "dArWiN"},
-			{Name: "EnableXcodeOverride", Value: "true"},
 		}, []*repb.Command_EnvironmentVariable{
-			{Name: "APPLE_SDK_VERSION_OVERRIDE", Value: "11.1"},
+			{Name: "APPLE_SDK_VERSION_OVERRIDE", Value: "ACTUALLY_EXISTS_11.1"},
 			{Name: "APPLE_SDK_PLATFORM", Value: "iPhone"},
 			{Name: "XCODE_VERSION_OVERRIDE", Value: "12.4.123"},
 		}, []*repb.Command_EnvironmentVariable{
-			{Name: "SDKROOT", Value: "/Applications/Xcode.app/Contents/Developer/Platforms/iPhone.platform/Developer/SDKs/iPhone11.1.sdk"},
-			{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode.app/Contents/Developer"},
+			{Name: "SDKROOT", Value: "/Applications/Xcode_12.4.app/Contents/Developer/Platforms/iPhone.platform/Developer/SDKs/iPhoneACTUALLY_EXISTS_11.1.sdk"},
+			{Name: "DEVELOPER_DIR", Value: "/Applications/Xcode_12.4.app/Contents/Developer"},
 		},
 			"",
 		},
@@ -223,8 +221,27 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		execProps := bare
 		execProps.DefaultXCodeVersion = testCase.defaultXCodeVersion
 		command := &repb.Command{EnvironmentVariables: testCase.startingEnvVars}
-		err := platform.ApplyOverrides(execProps, platformProps, command)
+		env := testenv.GetTestEnv(t)
+		env.RealEnv.SetXCodeLocator(&xcodeLocator{})
+		err := platform.ApplyOverrides(env, execProps, platformProps, command)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, command.EnvironmentVariables, append(testCase.startingEnvVars, testCase.expectedEnvVars...))
 	}
+}
+
+type xcodeLocator struct {
+}
+
+func (x *xcodeLocator) DeveloperDirForVersion(version string) (string, error) {
+	if strings.HasPrefix(version, "12.4") {
+		return "/Applications/Xcode_12.4.app/Contents/Developer", nil
+	}
+	if strings.HasPrefix(version, "12.2") {
+		return "/Applications/Xcode_12.2.app/Contents/Developer", nil
+	}
+	return "/Applications/Xcode.app/Contents/Developer", nil
+}
+
+func (x *xcodeLocator) IsSDKPathPresentForVersion(sdkPath, version string) bool {
+	return strings.Contains(sdkPath, "ACTUALLY_EXISTS")
 }

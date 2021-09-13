@@ -579,7 +579,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	executorProps := platform.GetExecutorProperties(p.env.GetConfigurator().GetExecutorConfig())
 	props := platform.ParseProperties(task.GetCommand().GetPlatform())
 	// TODO: This mutates the task; find a cleaner way to do this.
-	if err := platform.ApplyOverrides(executorProps, props, task.GetCommand()); err != nil {
+	if err := platform.ApplyOverrides(p.env, executorProps, props, task.GetCommand()); err != nil {
 		return nil, err
 	}
 
@@ -606,13 +606,15 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		workerKey = strings.Join(workerArgs, " ")
 	}
 
+	wsOpts := &workspace.Opts{Preserve: props.PreserveWorkspace, CleanInputs: props.CleanWorkspaceInputs}
 	if props.RecycleRunner {
 		r, err := p.take(ctx, &query{
-			User:           user,
-			ContainerImage: props.ContainerImage,
-			WorkflowID:     props.WorkflowID,
-			InstanceName:   instanceName,
-			WorkerKey:      workerKey,
+			User:             user,
+			ContainerImage:   props.ContainerImage,
+			WorkflowID:       props.WorkflowID,
+			InstanceName:     instanceName,
+			WorkerKey:        workerKey,
+			WorkspaceOptions: wsOpts,
 		})
 		if err != nil {
 			return nil, err
@@ -623,7 +625,6 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			return r, nil
 		}
 	}
-	wsOpts := &workspace.Opts{Preserve: props.PreserveWorkspace}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	ctr, err := p.newContainer(ctx, props, task.GetCommand())
 	if err != nil {
@@ -714,6 +715,9 @@ type query struct {
 	// creating the runner.
 	// Required; the zero-value "" corresponds to the default instance name.
 	InstanceName string
+	// The workspace options for the desired runner. This query will only match
+	// runners with matching workspace options.
+	WorkspaceOptions *workspace.Opts
 }
 
 // take finds the most recently used runner in the pool that matches the given
@@ -728,7 +732,8 @@ func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 			r.PlatformProperties.ContainerImage != q.ContainerImage ||
 			r.PlatformProperties.WorkflowID != q.WorkflowID ||
 			r.WorkerKey != q.WorkerKey ||
-			r.InstanceName != q.InstanceName {
+			r.InstanceName != q.InstanceName ||
+			*r.Workspace.Opts != *q.WorkspaceOptions {
 			continue
 		}
 		if authErr := perms.AuthorizeWrite(&q.User, r.ACL); authErr != nil {
